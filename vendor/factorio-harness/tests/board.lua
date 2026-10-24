@@ -627,6 +627,39 @@ r=sol('board_update',{id=c.id,allow={}}); eq(r.item.allow,nil)
 local c2=grok('board_post',{kind='claim',title='oil',allow={'sol','nick','Sol'},area={left_top={x=20000,y=0},right_bottom={x=20010,y=10}}}).item
 eq(table.concat(c2.allow,','),'nick,sol')
 fails(function() grok('board_post',{kind='claim',title='oil',allow={'sol','nobody'},area={left_top={x=20000,y=0},right_bottom={x=20010,y=10}}}) end,'unknown agent nobody')
+-- (d22 batch113 BW1, viewer Aurora: Sonnet covered Gleba while Grok rested) cover: a teammate marks itself as covering a
+-- claim; it hears the claim's alerts with its owner (pushalerts.lua), is allowed, and its work keeps the claim open.
+fails(function() sol('board_update',{id=c.id,cover=true}) end,'is your own claim: cover is for a teammate')
+fails(function() astra('board_update',{id=c.id,cover='yes'}) end,'cover is true')
+fails(function() op('board_update',{id=c.id,cover=true}) end,'cover marks the agent who calls it')
+local rq=astra('board_post',{kind='request',title='cover check'}).item
+fails(function() grok('board_update',{id=rq.id,cover=true}) end,'cover is for an active claim')
+op('rest',{agent='sol',until_clock='16:00',until_day='Sat',until_s=86400,reason='quota'})
+jump(31*3600)
+eq(astra('board',{id=c.id}).item.stale,true)
+r=astra('board_update',{id=c.id,cover=true})
+eq(r.changed[1],'covered'); eq(r.item.covers[1].name,'astra'); eq(r.item.stale,nil,'the coverer\'s update keeps it active')
+eq(r.item.notes[#r.item.notes].text,'astra covers it: hears its alerts with sol (resting until Sat 16:00 (quota))')
+eq(runtime.claims.other({name='astra',surface=surface},{x=10001,y=10001}),nil,'a coverer is allowed')
+assert(runtime.claims.label(storage.agent_harness.board.items[c.id],{name='grok'}):find('covered by astra',1,true))
+eq(astra('board_update',{id=c.id,cover=true}).changed,nil,'covering again: no change')
+-- the coverer's request in its area keeps it active, as the owner's
+jump(31*3600)
+local apos=body('astra').position
+body('astra').position={x=10005,y=10005}
+astra('status')
+eq(astra('board',{id=c.id}).item.owner_active,'0s ago')
+body('astra').position=apos
+local tm=astra('status').teammates
+assert(tm:find('(resting until Sat 16:00 (quota))',1,true),tm)   -- no alert group goes to sol here: no note
+local rn=runtime.pushalerts.resting_note
+runtime.pushalerts.resting_note=function(name) return name=='sol' and '6 alert groups go to it (claim #'..c.id..' 6); also heard by astra (covers) 6' or nil end
+tm=astra('status').teammates
+assert(tm:find('(resting until Sat 16:00 (quota); 6 alert groups go to it (claim #'..c.id..' 6); also heard by astra (covers) 6)',1,true),tm)
+runtime.pushalerts.resting_note=rn
+r=astra('board_update',{id=c.id,cover=false})
+eq(r.changed[1],'uncovered'); eq(r.item.covers,nil); eq(r.item.notes[#r.item.notes].text,'astra no longer covers it')
+op('rest',{agent='sol',done=true})
 -- 2 h with no activity by its owner: the harness closes it, and its owner hears so.
 local seq0=op('board_events',{since_seq=0,limit=1}).latest
 jump(120*3600)

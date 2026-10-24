@@ -1,9 +1,10 @@
 -- Unanswered mentions (d17 batch14 B1, Sol for viewer Foobator: compaction or a build batch buried what agents were
 -- asked; reading chat cleared it). What an agent owes an answer, kept apart from the mentions inbox a read delivers:
 -- - a viewer's @mention of it, a teammate's @mention, and a teammate's mention by name or tell that asks (holds '?');
--- - closed when the agent answers: a say or tell that names the sender (@name or the name; a viewer's line only while it
---   is that viewer's one open line, d20 batch57 S1), a tell to the sender, or reply_to its seq on say or tell; or
---   chat_ack {seq} (several, or "all");
+-- - closed when the agent answers: reply_to its seq on say or tell (exactly the lines it names); without reply_to, a
+--   say or team tell that names the sender (@name or the name), or a tell to the sender, while it is that sender's one
+--   open line here (d20 batch57 S1 for viewers; d22 batch122 CE1, viewer Aurora 08:48: for teammates too, one unrelated
+--   reply to Sol closed all of Sol's open requests); or chat_ack {seq} (several, or "all");
 -- - every reply's unanswered line gives how many, the oldest's age, who and the call that closes it; one reminder each
 --   (a wake: a sleep or a remote plan's wait ends on it) once it is REMIND old.
 -- Bounded: MAX per agent (the oldest dropped first, counted).
@@ -65,49 +66,67 @@ return function(api)
     local n = sender(it.from):lower()
     return #n >= 2 and (has_word(t, '@' .. n) or has_word(t, n))
   end
-  local function viewer_counts(index)
+  -- open lines here by sender (lower case)
+  local function counts(index)
     local o, n = store()[index], {}
-    for _, it in ipairs(o and o.items or {}) do
-      if it.viewer then local k = sender(it.from):lower(); n[k] = (n[k] or 0) + 1 end
-    end
+    for _, it in ipairs(o and o.items or {}) do local k = sender(it.from):lower(); n[k] = (n[k] or 0) + 1 end
     return n
   end
-  -- The second value (d22 batch75 AK6): the viewer lines it closed by name, by seq (chat.lua links the say to them).
+  -- A say or team tell naming senders (linked: it had reply_to, which closes by seq alone). The second value (d22
+  -- batch75 AK6): the viewer lines it closed by name, by seq (chat.lua links the say to them).
   function M.said(index, text, linked)
+    if linked ~= nil then return 0, {} end
     local t = tostring(text or ''):lower()
-    local n = viewer_counts(index)
+    local n = counts(index)
     local viewers = {}
     local count = close(index, function(it)
-      if not named(t, it) then return true end
-      if it.viewer then
-        if linked ~= nil or n[sender(it.from):lower()] > 1 then return true end
-        viewers[#viewers+1] = it.seq
-      end
+      if not named(t, it) or n[sender(it.from):lower()] > 1 then return true end
+      if it.viewer then viewers[#viewers+1] = it.seq end
       return false
     end)
     return count, viewers
   end
-  -- After a say without reply_to: the viewers it names whose lines it left open (two or more each), or nil.
-  function M.held(index, text)
-    local t, o, out, by = tostring(text or ''):lower(), store()[index], {}, {}
+  local function hold_lines(index, pick)
+    local o, out, by = store()[index], {}, {}
     for _, it in ipairs(o and o.items or {}) do
-      if it.viewer and named(t, it) then
+      if pick(it) then
         local k = sender(it.from)
         if not by[k] then by[k] = {}; out[#out+1] = k end
-        by[k][#by[k]+1] = '#' .. it.seq
+        by[k][#by[k]+1] = it
       end
     end
-    if #out == 0 then return nil end
-    for i, k in ipairs(out) do
-      out[i] = string.format('%s has %d open lines to you (%s): a say naming them closes none; reply_to closes the one it names', k, #by[k], table.concat(by[k], ', '))
+    local lines = {}
+    for _, k in ipairs(out) do
+      local list = by[k]
+      if #list > 1 then
+        local seqs = {}
+        for i, it in ipairs(list) do seqs[i] = '#' .. it.seq end
+        lines[#lines+1] = list[1].viewer
+          and string.format('%s has %d open lines to you (%s): a say naming them closes none; reply_to closes the one it names', k, #list, table.concat(seqs, ', '))
+          or string.format('%s has %d open requests to you (%s): a say or tell naming them closes none; reply_to closes the one it names', k, #list, table.concat(seqs, ', '))
+      end
     end
-    return table.concat(out, '; ')
+    return #lines > 0 and table.concat(lines, '; ') or nil
   end
-  -- A tell from index to name: closes what name asked.
-  function M.told(index, names)
+  -- After a say (or team tell) without reply_to: the senders it names whose lines it left open (two or more each), or nil.
+  function M.held(index, text)
+    local t = tostring(text or ''):lower()
+    return hold_lines(index, function(it) return named(t, it) end)
+  end
+  -- After a tell without reply_to: the recipients whose requests to index it left open (two or more each), or nil.
+  function M.held_for(index, names)
     local set = {}
     for _, n in ipairs(type(names) == 'table' and names or {names}) do set[tostring(n):lower()] = true end
-    return close(index, function(it) return not set[sender(it.from):lower()] end)
+    return hold_lines(index, function(it) return set[sender(it.from):lower()] end)
+  end
+  -- A tell from index to name (linked: it had reply_to, which closes by seq alone): closes what name asked while it is
+  -- their one open line here.
+  function M.told(index, names, linked)
+    if linked ~= nil then return 0 end
+    local set = {}
+    for _, n in ipairs(type(names) == 'table' and names or {names}) do set[tostring(n):lower()] = true end
+    local n = counts(index)
+    return close(index, function(it) local k = sender(it.from):lower(); return not set[k] or n[k] > 1 end)
   end
   -- reply_to or chat_ack: by seq (a chat line's or a tell's), several, or "all". Also marks those tells read (board.lua
   -- unread tells; d17 batch29 C2): the second value is how many.
@@ -126,7 +145,7 @@ return function(api)
     local name = sender(it.from)
     -- (d20 batch57 S1) a viewer's line: by name only while it is their one open line
     local how = it.viewer and string.format('reply_to: %d answers it (a say naming %s does while it is their only open line)', it.seq, name)
-      or string.format('a say or tell naming %s (or reply_to: %d) answers it', name, it.seq)
+      or string.format('reply_to: %d answers it (a say or tell naming %s, or a tell to them, does while it is their only open request)', it.seq, name)
     return string.format('%d unanswered (oldest %s ago: %s%s #%d: "%s"); %s, chat_ack {seq: %d} closes it%s',
       #o.items, ago(game.tick - it.tick), it.from, it.source and ' (' .. it.source .. ')' or it.tell and ' (tell)' or '', it.seq, it.text, how, it.seq,
       o.dropped > 0 and string.format('; %d older dropped', o.dropped) or '')
@@ -147,7 +166,7 @@ return function(api)
     end
   end
   M.schema = {chat_ack = {seq='a chat line\'s or tell\'s seq (as the unanswered line gives it), an array of them, or "all"', all='true: as seq "all"',
-    returns='closed (how many unanswered mentions it closed), read (unread tells it marked read), unanswered (the line, or none). A say or tell that names the sender, or reply_to its seq, closes one too (a viewer\'s line by name only while it is their one open line); reading chat does not'}}
+    returns='closed (how many unanswered mentions it closed), read (unread tells it marked read), unanswered (the line, or none). reply_to its seq on a say or tell closes one too; without reply_to, a say or tell that names the sender, or a tell to them, closes theirs only while it is their one open line; reading chat does not'}}
   M.handlers = {}
   function M.handlers.chat_ack(p, a)
     -- (d22 batch90 AZ3: 20 refusals of {all: true} in s55-57) all: true is seq "all"

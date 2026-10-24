@@ -2,7 +2,8 @@
 """Clipped lines on the stream overlay (batch115 BX1, Nick d22 22:13): python3 tools/stream/test_marquee.py
 
 - static/marquee.js timing under node: a line that fits never moves; one that overflows pans to its end (past the
-  edge fade), holds there and pans back, then rests at its start at least 12 s and as long as it was away; the pan
+  edge fade), holds there and cuts back to its start (d23 batch124 CG3, Nick: the pan back was "a little excessive":
+  a 0.2 s fade out, a jump, a 0.2 s fade in), then rests at its start at least 12 s and as long as it was away; the pan
   speed follows the font size; numbers alone changing keep a line's turn, new words reset it;
 - the turns: ten overflowing lines over 15 minutes never have more than two away at once, start 4 s apart or more,
   each pans within 5 minutes and shows its start more than half the time;
@@ -37,6 +38,7 @@ const short = m.timeline(60, 14), long = m.timeline(1300, 14), big = m.timeline(
 const at = (tl, t) => m.offsetAt(tl, t);
 console.log(JSON.stringify({fits, zero, nan, short, long, big,
   path: [at(short, 0), at(short, short.pan / 2), at(short, short.pan + 1), at(short, short.away - 0.0001), at(short, short.away + 1)],
+  cutpath: [at(short, short.pan + 2.5 + 0.1), at(short, short.pan + 2.5 + 0.1999), at(short, short.pan + 2.5 + 0.2001), at(short, short.pan + 2.5 + 0.3)],
   keys: [m.resetKey("waiting: sleep, up to 38 s (idle 0 s)"),
          m.resetKey("GPT-6 · plan line, set 6 min ago: AQ brine"), m.resetKey("GPT-6 · plan line, set 7 min ago: AQ brine"),
          m.resetKey("GPT-6 · plan line, set 7 min ago: Gleba eggs"), m.resetKey("242 done · Levels: Mining productivity 16"),
@@ -48,13 +50,17 @@ console.log(JSON.stringify({fits, zero, nan, short, long, big,
     # past the clipped edge by the fade (1.5 em), so the last letters end clear of it
     assert s["dist"] == 60 + 21 and b["dist"] == 60 + 36, (s, b)
     assert abs(s["pan"] - 81 / 49) < 1e-9 and abs(b["pan"] - 96 / 84) < 1e-9  # 3.5 font sizes a second
-    assert s["holdEnd"] == 2.5 and 1 <= s["back"] <= 3 and l["back"] == 3  # the way back is quicker, capped
-    assert abs(s["away"] - (s["pan"] + 2.5 + s["back"])) < 1e-9
-    # rest at the start between pans: 12 s at least, and as long as the pan takes for a long line (1300 px: 30 s)
-    assert s["rest"] == out["hold"] == 12 and l["rest"] == l["away"] > 30, l
-    assert [f["x"] for f in s["frames"]] == [0, -81, -81, 0] and s["frames"][-1]["offset"] == 1
+    assert s["holdEnd"] == 2.5 and s["cut"] == 0.2 and "back" not in s  # no pan back: a fade cut
+    assert abs(s["away"] - (s["pan"] + 2.5 + 0.4)) < 1e-9
+    # rest at the start between pans: 12 s at least, and as long as it is away for a long line (1300 px: about 30 s)
+    assert s["rest"] == out["hold"] == 12 and l["rest"] == l["away"] > 29, l
+    f = s["frames"]
+    assert [x["x"] for x in f] == [0, -81, -81, -81, 0, 0] and [x["o"] for x in f] == [1, 1, 1, 0, 0, 1], f
+    assert f[3]["offset"] == f[4]["offset"] and f[-1]["offset"] == 1, f  # the jump: two keyframes at one offset
+    assert abs((1 - f[4]["offset"]) * s["away"] - 0.2) < 1e-9 and abs((f[3]["offset"] - f[2]["offset"]) * s["away"] - 0.2) < 1e-9
     p = out["path"]
-    assert p[0] == 0 and -81 < p[1] < 0 and p[2] == -81 and abs(p[3]) < 0.1 and p[4] == 0, p
+    assert p[0] == 0 and -81 < p[1] < 0 and p[2] == -81 and p[3] == 0 and p[4] == 0, p  # at the start before the end
+    assert out["cutpath"] == [-81, -81, 0, 0], out["cutpath"]  # held at the end through the fade out, then at the start
     k = out["keys"]
     assert k[0] == "waiting: sleep, up to # s (idle # s)"
     assert k[1] == k[2] and k[2] != k[3], k  # an age ticking keeps the turn; a new job resets
@@ -119,7 +125,7 @@ const r = { fits: [...a.classList.s], over: b.classList.contains("mq-over") && c
 T = 5; m.tick(); r.at5 = anims.length;                               // resting
 T = 12; m.tick(); r.at12 = anims.map((x) => x.box === b);           // b's turn (rested as long, made first)
 r.pan = { dist: -parseFloat(anims[0].frames[1].transform.slice(11)), iters: anims[0].opts.iterations,
-  ease: anims[0].frames.map((f) => f.easing), dur: anims[0].opts.duration };
+  ease: anims[0].frames.map((f) => f.easing), ops: anims[0].frames.map((f) => f.opacity), dur: anims[0].opts.duration };
 T = 13; m.tick(); r.at13 = anims.length;                             // 4 s between starts
 T = 16; m.tick(); r.at16 = anims.length && anims[1].box === c;
 m.set(c, LONG + " now");                                              // new words while panning: back to the start
@@ -139,7 +145,8 @@ console.log(JSON.stringify(r));
     assert out["at5"] == 0 and out["at12"] == [True], out
     assert out["pan"]["dist"] == 343 - 140 + 21 and "iters" not in out["pan"], out["pan"]  # one pan, then rest
     e = out["pan"]["ease"]
-    assert e[0] != "linear" and e[2] != "linear" and e[1] == e[3] == "linear", e  # eased moves, still holds
+    assert e[0] != "linear" and all(x == "linear" for x in e[1:]), e  # the pan eased; the hold and the cut linear
+    assert out["pan"]["ops"] == [1, 1, 1, 0, 0, 1], out["pan"]  # the fade out and in round the jump back
     assert out["at13"] == 1 and out["at16"] is True and out["reset"] is True and out["at20"] == 2, out
     assert out["keep"] is True and out["at28"] == 3 and out["at28c"] is True, out
     assert out["grown"] == {"cancelled": True, "over": False} and out["plain"] == "x", out

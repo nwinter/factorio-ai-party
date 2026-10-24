@@ -1376,6 +1376,10 @@ fh board events --since 40
   reply that succeeded whole (Muse, shift12: an OPERATOR line ahead of the JSON on every data call).
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
+  `unread` counts every chat line after your last chat read, to anyone, of the newest 200 the log keeps (`of_newest:
+  200` when the oldest kept is unread too: older lines are gone uncounted); `to_you` counts those naming you (each
+  also reached you as a mention in a team block). Only a chat read marks chat lines read: `chat_ack` closes unanswered
+  lines and marks tells read (d23 batch121 CD1, viewer Aurora: Opus's 158 were the team's lines since his last read).
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
@@ -3550,8 +3554,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
     another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
     tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
-    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
-    ghost over a machine it upgrades reads `ok` with `replaces ...`. What the call takes in its way follows the
+    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, except
+    for one of its fast-replace group of ours standing on its tiles (a splitter over a belt, a turbo belt over a fast
+    belt): the game's ghost check takes it as a player's fast replace, and a script ghost does not go in, so
+    place_ghosts and a `normal` or `forced` paste read it blocked, as the call refuses it (d22 batch122, below). What
+    the call takes in its way follows the
     call: place_ghosts and a `forced` paste mark trees and rocks (`ok`, `marks tree-01 (5.5,0.5) for removal`), a
     `superforced` paste our own entities too, while a `normal` paste and a hand build take nothing (`blocked by
     tree-01 ...`). Rails may cross rails. A hand build over one of its fast-replace group that is off its centre or of
@@ -4249,11 +4256,17 @@ Items on the ground:
   centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
   {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
   `from_machine` and `from_building` as `to_player`, for every entity kind.
-- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
-  more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
-  (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, count, slots, items: [{name, count,
+  stacks, slots, box}], more_items}`), by item, instead of one row per stack; rows for them come only when the call
+  filters for them (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+  (d23 batch121 CD3, viewer Aurora: 11,793 entities read as full stacks made a 120-chest estimate for 8) `stacks` counts
+  entities on the ground (each one item stack, often of 1 item), `count` the items they hold, `slots` the storage slots
+  those items fill at each item's stack size. The status lines below and `deconstruct {items_on_ground}` (`items_total`,
+  `storage_slots_needed`, `storage_free_slots`: empty slots in the covering networks' storage chests with no filter or
+  a filter on one of those items, up to 256 chests read; `counts`, one line) label the three apart.
 - `status` `alerts.ground_items`: a cargo landing pad that is full while item stacks lie within 40 tiles of it
-  (position, slots, stacks, the items), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
+  (position, slots, then `entities N (each an item stack on the ground); items N: the items; storage slots they fill
+  N`), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
   (box, stacks, items; the largest 3). Item counts come from up to 5000 stacks per place (the line says so when
   there are more). One pass per force every 30 s, run on demand; a place new to you, or grown by half since you
   were told, is also in the reply's `team.alerts` once.
@@ -4930,9 +4943,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `sleep` also ends early with `woke: board` (and `board: <line>`) when a board line about the sleeper's own items
   arrives (any of the `board` lines above except new unowned requests and the 2-minute nudge).
 - `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions` (tells
-  included), `at_mentions` (@name/@everyone, and tells), `tells`, `unread_board` (board lines about their items not yet
-  in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent that was
-  mentioned. It does not consume anything.
+  included), `at_mentions` (@name/@everyone, and tells), `tells` (pending: not yet shown in a team block),
+  `unacked_tells` and `unacked_oldest_tick` (shown in a team block and not yet marked read by `chat_ack`, `reply_to` or
+  a `tells` read; the newest 8 kept; fyi and operator tells are never owed one), `unread_board` (board lines about their
+  items not yet in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent
+  that was mentioned. It does not consume anything.
 - `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
   The operator answers with notes and a `server: harness vN: ...` chat line.
 - Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
@@ -5015,7 +5030,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
   they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
-  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
+  `unread_chat` (with `unread_chat_to_you`, those naming it, and `unread_chat_kept` 200 when the count reached the
+  log's oldest line), `unread_mentions` (tells included), `unread_tells` (pending delivery), `unacked_tells` and
+  `unacked_oldest_s` (delivered in a team block, not acknowledged), `unread_board`, `last_request_s`, `stand_ended
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
   messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
   game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,
@@ -7076,7 +7093,7 @@ fh watch    # deploy on every change
   checked (one a call, every 2 s): our entities in its area, else in its owner's active claims (robots, characters,
   vehicles left out); what it needs (names with counts) reaching the count on its owner's planet; shipment lines of
   platforms its title names; its board edits and notes. Any of them: progress. None: unchanged; across 2 checks:
-  stalled, unless its owner is in a sleep, wait step or wait_until or has a queue running (waiting). Each check puts
+  stalled, unless its owner waits on something (wait_until, a sleep with a game condition, a queue running: waiting) or rests (a quota or pace rest: resting; d22 batch122 CE2); a sleep or wait_ticks on no condition counts toward stalled. Each check puts
   one line in the owner's reply (team.alerts): progress seen, its next action or blocker as last written (the owner's
   last note, a project's next step), or that none is written. Nothing reassigns. `board_progress {owner?, id?}`: the
   checks per item, stalled first, the age of the last board change, the owner's repeated failures (selfview) and
@@ -8823,6 +8840,14 @@ fh watch    # deploy on every change
   for carbon-fiber >= 250: the hub holds 0, 250 short; fulgora holds 100 (100 in its logistic networks, 0 outside them)
   and made 0 a minute over the last 10 min: not met at this rate` (world n, Kestrel II). The rate is the planet's
   making, not what reaches the hub. 0.01-2.5 ms a platform on world n.
+  (d23 batch121 CD2, viewer Aurora: Anvil docked 2 h at Vulcanus on copper-plate >= 5000 while its hub asked for
+  copper from Nauvis only) Where the item can come from at that stop follows (`sources:`): the hub's import requests
+  for it (active sections; only a request from that planet brings it up there), what was made aboard over the last 10
+  minutes (the platform surface's production statistics) and the crafting machines aboard set to a recipe that makes
+  it (up to 200 read), and with a request from that planet the other platforms that stop there holding it. With none,
+  the line says `no known source at vulcanus: the hub asks for it from nauvis only, not from vulcanus, nothing aboard
+  made it over the last 10 min and no machine aboard is set to make it (...)`; a request from the planet that holds
+  none, made none, with no platform bringing it and nothing aboard says `no known source` too. A fact: the wait stays.
 - A hub too full for its payload (B3, Grok: Spindle's hub filled with ore twice and the science rocket could not board,
   seen only in the silo line's hub_full): every 10 s one platform waiting at a stop, in turn (hubfull.lua); each silo
   of ours on that planet (census list) whose request row for it reads hub_full is told once per wait, as a line that
@@ -12517,6 +12542,71 @@ Sol's 18 band calls on the copy, every page, same load (host load average 12-14)
   129-220 ms outlier band in a run under load.
 - The copy reads about 2.2 times world n's cost for these calls (210 against 96 ms on average), so a full page should
   be near 20-25 ms on world n.
+## d22 batch122 CE1 (eng/d20-batch122): a reply closes only what it answers, for teammates too
+
+Viewer Aurora (08:48): "can an unrelated reply to someone clear their other unanswered requests?" It could, for
+teammates. batch57 S1 had held a viewer's lines to closing by name only while one was open, but for a teammate:
+- a say or team tell naming the sender closed every open request of theirs, with or without `reply_to`;
+- any tell to them closed all of theirs, including a tell with `reply_to` to one of them.
+
+Case (tests/d22_batch122.lua, through the runtime): Sol asked Muse two things; Muse's `say {reply_to: <the second>,
+text: "@sol yes, sending 50 plates now."}` closed both.
+
+Now (owed.lua, board.lua, tells.lua), the same rule for viewers and teammates:
+- `reply_to` on a say or tell closes exactly the lines it names.
+- Without it, a say or team tell naming the sender, or a tell to them, closes their line only while it is their one
+  open line to you.
+- A say's or tell's `left_open` names the senders it left several open lines of: "sol has 2 open requests to you
+  (#11, #12): a say or tell naming them closes none; reply_to closes the one it names".
+- The unanswered line for a teammate reads "reply_to: 11 answers it (a say or tell naming sol, or a tell to them,
+  does while it is their only open request)".
+
+## d22 batch122 CE2: board progress tells repeated sleeps from waits and rests (viewer Aurora site:4485)
+
+Before, a board item's 10-minute check (progress.lua) read "waiting (sleep)" whenever its owner was in an fh sleep,
+and the unchanged count stood still: an agent sleeping in repeated 300 s sleeps with no progress kept its items
+"waiting" for ever, never stalled. A quota rest (rests.lua) read "stalled". A board_focus on a task (no step) never
+flagged. Now the runtime gives the owner's wait a kind:
+- a wait on something (wait_until, a sleep with a game condition, a running queue or its wait step): "waiting
+  (wait_until)", "waiting (sleep until item_count)"; the count holds;
+- a rest: "resting until 15:59 (quota)"; the count holds;
+- a sleep with no game condition, or a direct wait_ticks: the count goes on, said beside it: "stalled: unchanged across
+  2 checks (its owner in a sleep on no game condition at this check; at 1 of these 2)".
+A focus on the item alone counts its unchanged checks by the same rule: "the focused item shows no progress across 2
+checks". board_critical's agents line gives the same wait text. The idle nudge (tools/idle_nudge.py) and supervise.sh
+were checked with the same cases: repeated sleeps, wait_until and wait_ticks are nudged with the wait named ("sleeping 5
+min", "in wait_until"), a rest in resting.json is skipped ("out of quota until Sat 09:25"); unchanged.
+
+## d22 batch122 CE2: nutrient accounting, fuel, spoiling, time windows and stock scope (viewer Aurora 10:13)
+
+Measured on a private 2.0.77 copy of world n's 10:26 save:
+- spoiling counts on neither side of the production statistics: 100 nutrients spoiled in a chest read used 0, and
+  spoilage made 0;
+- fuel counts as used when a burner takes it from its fuel slot (a biochamber's 5 nutrients: used 5);
+- a productivity bonus's extra products count as made, ingredients only for the crafts run; a returned catalyst
+  (pentapod-egg: 1 in, 2 out) counts on neither side, so an egg craft at +50% reads 1.5 made;
+- the ten-minute flow read (count) matched the running totals' difference over the same 10 minutes within 0.2%
+  (40,509 against 40,585 made over 36,045 ticks);
+- Gleba, 10 game minutes: nutrients made 40,585 and used 34,943 (egg recipes 2,992 a minute, biochambers' fuel about
+  500 a minute); every place held 3,758 then 3,704, so 5,696 (569 a minute) spoiled. That is the positive balance.
+
+Before: supply, stock, freight_audit, fuel_budget and dependency gave made above used with no word of spoiling;
+supply's `where` left out fuel slots (195 of Gleba's 3,792) and the ground; stock counts networks, chests, pads, silos
+and labs (2,687); dependency read nutrients "sustained" and took the egg crafts as 74.6 a minute (made / 2), 99.7
+measured.
+
+Now (spoilflow.lua):
+- supply `flow` of an item that spoils says what the statistics leave out; a read of the whole surface keeps its count,
+  and the next one 1-60 min later gives `uncounted`: "over the last 5 min (whole-surface counts at tick T and now): made
+  20120, used 17445; held 3758 then, 3770 now; 2663 left uncounted (532.6 a minute): spoiled, or carried off the
+  surface". `where` adds fuel slots (machines, heating towers, boilers, burner drills, vehicles) and, read whole, the
+  stacks on the ground as the ground watch last binned them.
+- stock {item, surface}, freight_audit, fuel_budget: the made/used line of an item that spoils adds the note, and the
+  last measure (at most 30 min old) a minute.
+- dependency: an ingredient that spoils is short or not sustained by made - used - what left uncounted a minute, when
+  supply measured it; otherwise the last line names it as not counted. The crafts run: made over what the statistics
+  count a craft (products past a returned catalyst, with the makers' average productivity bonus from the census).
+Regression: tests/d22_batch122b.lua.
 - cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
   tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
   - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
@@ -12551,3 +12641,116 @@ Sol's 18 band calls on the copy, every page, same load (host load average 12-14)
     1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
     Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
 
+
+## d22 batch118 CA1 (eng/d20-batch118): circuit_signal on an unwired hub reads 0, as the game does
+
+Astra (shift62 seq 916): "Asterion hub unwired; wait_until circuit_signal rocket below4850 not met, saw no red or green
+wire: no signal to read", so a reserve guard on it could never fire. The game's rule, measured on a copy of world n:
+a platform schedule's circuit wait condition reads an unwired hub's signals as 0. Asterion (hub unwired, 10 rockets
+aboard, paused at Aquilo), given the stop condition `rocket < 4850` and unpaused, left at once (on_the_path to its next
+stop). Crucible (hub unwired, no rockets), each run from a paused stop: `rocket < 4850` met (twice), `rocket > -1` met;
+its hub wired to an empty constant combinator: `rocket < 4850` met, `rocket > 4850` not met (still waiting after 300
+ticks). The first run on Crucible, from its unscheduled state, stayed waiting 368 ticks and is not explained.
+
+- `circuit_signal` with no red or green wire on the hub now reads the signal as 0: `below N` (over 0) is met, `at_least
+  N` (over 0) is not; saw: "Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit
+  conditions read an unwired hub (met)" or "(never met while it has none)".
+- A guard whose `when` can never be met as things stand (circuit_signal `at_least` over 0 on an unwired hub, alone or
+  inside `all`) is refused at queue_submit, in a dry run and in queue_edit guards, in every lane, naming why. A `below`
+  guard there is met at its first check.
+
+### d22 batch113 BW1: a teammate covering a resting owner's claim
+
+Viewer Aurora (21:31): "Could factory digests follow temporary ownership? Sonnet is covering Gleba, but its alerts went
+to Grok on quota rest while Sonnet got Vulcanus updates." Grok's account hit its weekly limit at 20:04. Grok rests until
+Sat 16:00 (rests.lua; batch108), and Astra arranged at 20:06 for Sonnet to cover Gleba.
+
+- What happened (runs/shift60; the board and alerts on a copy of world n's autosave from about 21:24):
+  - Grok's last request was at 20:03:59. It has received nothing since: alerts to it wait unseen.
+  - Grok's claim #1130 "Gleba science, breeder, cultivator" covers (-16,8)-(36,56) on Gleba. The 6 alert groups
+    there went to grok alone:
+    - 31 logistic containers that lost their source;
+    - 3 machines held off by their conditions;
+    - a catalyst gone;
+    - deliveries waiting;
+    - a full output chest;
+    - a full requester.
+  - 7 more Gleba groups went to grok as the nearest agent: its character stands on Gleba nearer than Sonnet's.
+  - The claim was 81 min without Grok's activity, so it closes at 2 h (about 22:04). Its groups then go by builder
+    or nearness, which is Grok again.
+  - The 21:28 factory digest sent its Gleba blockers to grok, since #1130 is the only claim on Gleba
+    (tools/factory_digest.py `owners`).
+  - Sonnet (20:06-21:36): 129 distinct alert lines.
+    - 47 name Gleba: 35 platform arrivals and departures, heating towers, eggs, coverage. Some Gleba groups outside
+      #1130 came as the nearest agent then.
+    - None came from inside #1130.
+    - Sonnet holds #1961 (a request on Gleba calcite) and no claim on Gleba.
+- What routes by claim owner:
+  - pushalerts `owners` (team alerts, game_alerts' `to`, sleep levels): claims over a group's centre or a boiler's
+    feed chest, else builders, else the nearest agent; ammo_low by builders and agents within 64 tiles.
+  - urgent.lua `my_claim`: losses in a fresh claim of yours wake a sleep, as do outposts' drills.
+  - tools/factory_digest.py `owners`: claims holding a fact's positions, else every claim on the surface, else the
+    holders of items that name it.
+  - The board's own claim news goes to the owner.
+  - alertdigest.lua and platdigest.lua do not route by owner.
+- What the board had: a claim stays with its poster (board_update refuses `owner` on a claim). `allow` names agents whose
+  stock sweeps include it, the owner's call only. Nothing let a teammate hear a claim's alerts.
+- The change: one argument of an existing action, `board_update {id, cover: true|false}`:
+  - Who: any agent but the owner and the operator, on an active claim; at most 4 coverers.
+  - The claim keeps `covers` [{name, since}], shown on the board and in its label ("covered by sonnet").
+  - A note says "sonnet covers it: hears its alerts with grok (resting until Sat 16:00 (quota))", or "sonnet no longer
+    covers it".
+  - A coverer hears the claim's alert groups with its owner (pushalerts `owners`: why `covers`). Its line ends
+    "(claim #1130 by grok, resting until Sat 16:00 (quota); you cover it)".
+  - A coverer's sleep wakes for losses in it: "buildings destroyed in claim #6 "iron" by opus, which you cover".
+  - The factory digest sends the claim's facts to its coverers too (the board read's `covers`).
+  - A coverer counts as allowed (stock sweeps), and its requests in the area and its updates on the claim keep the
+    claim fresh, as the owner's do. So a covered claim does not close while the coverer works there.
+  - For as long as it is set, not only while the owner rests. The owner keeps hearing everything, so a cover takes
+    nothing away. A rest ends by itself at the owner's first request or its tick, which says nothing of whether the
+    owner is back on that area. The agents set and clear the cover; the harness never picks a coverer.
+- Where the team reads an alert routed to a resting owner:
+  - The teammates line (status): "Grok (resting until Sat 16:00 (quota); 13 alert groups go to it (claim #1130 6,
+    nearest 7), heard by no one else)". Once Sonnet covers it: "...; also heard by sonnet (covers) 6; 7 by no one
+    else". Read from the last scan, kept a second.
+  - game_alerts `to`: "grok (claim; resting until Sat 16:00 (quota))", "grok (nearest; resting until ...)",
+    "sonnet (covers claim #1130 by grok)".
+  - The factory digest's team part: "to agents resting: grok (resting until Sat 16:00 (quota)): N facts went to it;
+    sonnet got M" (or "to no one else"). Read from runs/RUN/AGENT/resting.json, as tools/stream/pacing.py reads it.
+- Not changed: the nearest-agent rule still names a resting agent (7 of Gleba's groups at 21:24). The teammates line
+  and game_alerts now say so; choosing someone else there would pick for the agents.
+- On the copy (copy of the 21:24 save, paused): status by astra takes 11.1-11.4 ms on the branch against 11.2-12.0 on
+  main, warm. game_alerts on Gleba (18.3 KB) takes 12.7 ms.
+## d22 batch122: place_ghosts over one of its fast-replace group (Astra #2064, 14:32)
+
+Astra's dry run of a fast-splitter at (23,-38.5) on Asterion read `6 placeable (of 6)` over the fast belt at
+(23.5,-38.5); the call refused it with a bare `placement blocked`, and placed it after the belt was marked for
+deconstruction. Measured on a 2.0.77 copy of world n (its 14:31 save): `can_place_entity` with `manual_ghost` (forced
+or not) and `manual` takes the splitter there, and `blueprint_ghost` does not; `create_entity` of the ghost gives nil,
+with `fast_replace` or without. The same holds on a belt's centre for a turbo belt, a fast underground belt and a fast
+belt turned another way. A blueprint of the splitter placed no ghost in `normal` or `forced` mode; `superforced` marked
+the belt for deconstruction and placed it. With the belt marked for deconstruction `create_entity` placed the splitter
+ghost. A straight rail ghost crossing a built straight rail went in (rails are left to the game's check).
+
+Now `construction.ghost_replaces` lists ours of the entity's fast-replace group standing in its footprint and not marked
+for deconstruction, and `ghost_placeable` (the check the dry run and the call share) is false while any stands. The call
+refuses the entry with, and the dry run blocks it with:
+
+`placement blocked by fast-transport-belt (23.5,-38.5), of its fast-replace group (transport-belt): a player's ghost
+over it is a fast replace, which a script ghost is not; place_ghosts puts its ghost in over one marked for
+deconstruction (deconstruct it first)`
+
+On the entity's own centre and of its size, another of its type adds `; upgrade {position: {x: 23.5, y: -39.5}, to:
+"turbo-transport-belt"} changes the one standing there in place, keeping its wires and settings`, and the same entity
+turned adds `; rotate {position, direction} turns the one standing there`. An entry standing as asked is still skipped
+(`already`). A `normal` or `forced` paste's dry run reads it blocked too, adding `; a superforced paste marks it for
+deconstruction and places the ghost`; a `superforced` one reads `ok` and names the belt it marks. Regression:
+tests/dryrun.lua (the d20 batch122 block), failing on the old dryrun.lua and construction.lua.
+
+Astra #2066 (14:54), taken with it: `place_ghosts {check_inserters: true, dry_run: false}` refused with `dry_run must be
+true or false`. check_inserters runs the call's own dry run first and passed every argument on, `dry_run: false` among
+them, and the `dry_run` action took only true or nothing in its args. The check no longer passes the call's `dry_run`
+on, and the `dry_run` action takes its args' `dry_run` true, false or left out (anything else is still refused). On the
+copy, Astra's belt and filtered inserter with `check_inserters` and `dry_run: false` placed 2 with the inserter's row ok;
+`dry_run: true` checked them and placed nothing. Regression: mod/tests/runtime_test.lua (the check_inserters block),
+failing on the old runtime.lua with Astra's error.

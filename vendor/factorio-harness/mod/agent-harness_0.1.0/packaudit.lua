@@ -197,6 +197,9 @@ return function(api)
     row.total = row.networks + row.requesters + row.pads - row.pads_in_networks + row.chests + row.silos + row.labs
     if row.pads_in_networks == 0 then row.pads_in_networks = nil end
     local parts = {string.format('%s: made %d/min, used %d/min', surface.name, row.made_per_min, row.used_per_min)}
+    -- (d20 batch122 CE2, viewer Aurora 10:13) an item that spoils: what the statistics leave out (spoilflow.lua)
+    row.spoiling = api.spoilflow and api.spoilflow.text(force, surface, item) or nil
+    if row.spoiling then parts[1] = parts[1] .. ' (' .. row.spoiling .. ')' end
     parts[#parts+1] = string.format('logistic networks %d', row.networks)
     if row.requesters > 0 then parts[#parts+1] = string.format('requester chests %d', row.requesters) end
     if row.unmet > 0 then parts[#parts+1] = string.format('their requesters lack %d (%d requester%s)', row.unmet, row.requesters_short, row.requesters_short == 1 and '' or 's') end
@@ -300,6 +303,6 @@ return function(api)
     return api.reuse('freight_audit|' .. force.name .. '|' .. item, function() return M.fresh(force, item) end)
   end
   M.schema = {freight_audit = {item='an item name (a science pack, ...)',
-    returns='one item across every planet and platform (Luna, 16:50): lines (one per planet, then one per platform), planets [{surface, made_per_min, used_per_min (10 min), networks (what its logistic networks hold), unmet and requesters_short (what their requesters lack: asked less held and on the way), pads (landing pads), pads_in_networks (of those, in a logistic network: in networks already, not added to total), chests and chests_holding (plain chests and landed cargo pods in no network), chests_unread (past the cap: the total is partial), silos and silo_rows (each silo: its rocket cargo of it, room for more by weight), labs (held), labs_without (labs holding none while the research needs it), spoil (the first stack to spoil: when, how spoiled, where), total, line}], platforms [{platform, where, hub (main and trash), spoil, arrival (flying: how many spoil before it), requests (import planet, short), line}], total, research_needs_it, note; kept 10 s. Read only'}}
+    returns='one item across every planet and platform (Luna, 16:50): lines (one per planet, then one per platform), planets [{surface, made_per_min, used_per_min (10 min), spoiling (an item that spoils: the statistics leave spoiling out; what left uncounted a minute when a whole-surface supply measured it in the last 30 min), networks (what its logistic networks hold), unmet and requesters_short (what their requesters lack: asked less held and on the way), pads (landing pads), pads_in_networks (of those, in a logistic network: in networks already, not added to total), chests and chests_holding (plain chests and landed cargo pods in no network), chests_unread (past the cap: the total is partial), silos and silo_rows (each silo: its rocket cargo of it, room for more by weight), labs (held), labs_without (labs holding none while the research needs it), spoil (the first stack to spoil: when, how spoiled, where), total, line}], platforms [{platform, where, hub (main and trash), spoil, arrival (flying: how many spoil before it), requests (import planet, short), line}], total, research_needs_it, note; kept 10 s. Read only'}}
   return M
 end

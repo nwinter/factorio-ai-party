@@ -84,8 +84,13 @@ def nudge_text(row, standing_s=None):
     def count(n, what):
         return f"{n} {what}" + ("" if n == 1 else "s")
     mentions = max(0, (row.get("unread_mentions") or 0) - (row.get("unread_tells") or 0))
-    unread = [count(row.get("unread_chat") or 0, "chat message"), count(mentions, "mention"),
-              count(row.get("unread_tells") or 0, "tell")]
+    chat = count(row.get("unread_chat") or 0, "chat message")
+    if row.get("unread_chat") and row.get("unread_chat_to_you") is not None:  # (d23 batch121 CD1) those naming you
+        chat += f" ({row['unread_chat_to_you']} naming you)"
+    unread = [chat, count(mentions, "mention"), count(row.get("unread_tells") or 0, "tell")]
+    if row.get("unacked_tells"):  # shown in a team block, not yet marked read (chat_ack, reply_to or a tells read)
+        unread.append(count(row["unacked_tells"], "tell") + " shown, not acknowledged"
+                      + (f" (oldest {minutes(row['unacked_oldest_s'])} min)" if row.get("unacked_oldest_s") is not None else ""))
     if row.get("unread_board"):
         unread.append(count(row["unread_board"], "board line"))
     act = row.get("action")
@@ -237,8 +242,8 @@ class Nudger:
             entry = {"t": datetime.datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds"),
                      "agent": row["name"], "standing_min": minutes(standing), "action": row.get("action"),
                      "queue": queue_text(row.get("queue")), "sleeping_min": minutes(row.get("sleeping_s")) or None,
-                     "unread": {k: row.get(k) or 0 for k in ("unread_chat", "unread_mentions", "unread_tells",
-                                                             "unread_board")},
+                     "unread": {k: row.get(k) or 0 for k in ("unread_chat", "unread_chat_to_you", "unread_mentions",
+                                                             "unread_tells", "unacked_tells", "unread_board")},
                      "last_request_min": minutes(row.get("last_request_s")) if row.get("last_request_s") is not None
                      else None, "counted": (row.get("counted") or {}).get("text"), "text": text}
             if flagged(row.get("measures")):

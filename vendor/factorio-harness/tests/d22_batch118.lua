@@ -301,4 +301,51 @@ do
   eq(#r.double_counts,1); assert(r.double_counts[1]:find('transport-belt (0.5,8.5) and transport-belt (0.5,3.5) both read one belt segment (6 belts shared) onto green network #31',1,true) or r.double_counts[1]:find('transport-belt (0.5,3.5) and transport-belt (0.5,8.5) both read one belt segment (6 belts shared)',1,true),r.double_counts[1])
 end
 
+-- CA1 (Astra, shift62 seq 916: "Asterion hub unwired; wait_until circuit_signal rocket below4850 not met, saw no red or
+-- green wire"): an unwired hub reads every signal as 0, as the game's own circuit conditions do (measured on a copy of
+-- world n: Asterion's schedule condition rocket < 4850, hub unwired, met at once). A guard that can never be met while
+-- the hub has no wire (at_least over 0) is refused at queue_submit and in a dry run.
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2},inventory={hub_main=1}}
+  prototypes={item={rocket={type='ammo'},['iron-plate']={}},fluid={},virtual_signal={['signal-A']={}},quality={normal={}}}
+  game={tick=100}
+  local nets={}
+  local hub={valid=true,get_circuit_network=function(id) return nets[id] end}
+  local ast={valid=true,name='Asterion',index=3,hub=hub}
+  local force={name='player',platforms={ast}}
+  local p={force=force,index=1}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){}
+  local function check(c) c['until']='circuit_signal'; c.platform='Asterion'; C.validate(c); return C.check(p,c) end
+  local met,saw=check({signal='rocket',below=4850})
+  eq(met,true); eq(saw,"Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit conditions read an unwired hub (met)")
+  met,saw=check({signal='rocket',at_least=100})
+  eq(met,false); eq(saw,"Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit conditions read an unwired hub (never met while it has none)")
+  eq(check({signal='rocket',at_least=0}),true,'at_least 0: 0 meets it')
+  -- wired: the signal, absent reads 0 as before
+  nets[2]={get_signal=function(sg) return sg.name=='rocket' and 5000 or 0 end}
+  met,saw=check({signal='rocket',below=4850}); eq(met,false); eq(saw,"rocket 5000 on Asterion's hub (green)")
+  met=check({signal='signal-A',below=1}); eq(met,true,'a wire without that signal: 0')
+  eq(C.guard_refusal(p,{['until']='circuit_signal',platform='Asterion',signal='rocket',at_least=100}),nil,'wired')
+  nets[2]=nil
+  local want="circuit_signal rocket at_least 100 on Asterion: its hub has no red or green wire, so rocket reads 0 there (as the game's own circuit conditions read an unwired hub) and at_least 100 is never met while it has none"
+  eq(C.guard_refusal(p,{['until']='circuit_signal',platform='Asterion',signal='rocket',at_least=100}),want)
+  eq(C.guard_refusal(p,{['until']='circuit_signal',platform='Asterion',signal='rocket',below=4850}),nil,'below: met at once, not refused')
+  eq(C.guard_refusal(p,{['until']='all',conditions={{['until']='circuit_signal',platform='Asterion',signal='rocket',at_least=100}}}),want,'inside all')
+  -- queue_submit and dry runs in the platform lane, the remote lane and the body lane
+  local s={active={}}
+  local base={state=function() return s end,player=function() return p end,handlers={},busy=function() return false end,stop=function() end,stop_index=function() end,
+    direct_action=function() return nil end,condition=function() return false,'' end,validate_condition=function(c) C.validate(c) end,
+    guard_refusal=function(pp,c) return C.guard_refusal(pp,c) end}
+  package.loaded.scheduler=nil
+  local make=dofile('mod/agent-harness_0.1.0/scheduler.lua')
+  local q=dofile('mod/agent-harness_0.1.0/queue_lanes.lua'){scheduler=make(base),factory=make,base=base,is_read=function() return false end}
+  local never={['until']='circuit_signal',platform='Asterion',signal='rocket',at_least=100}
+  local wait={action='wait_until',args={['until']='circuit_signal',platform='Asterion',signal='rocket',below=4850,timeout=60}}
+  for _,lane in ipairs({'platform:Asterion','remote'}) do
+    fails(function() q.handlers.queue_submit(p,{lane=lane,dry_run=true,steps={wait},guards={{when=never}}}) end,'guards[1]: when: '..want)
+    fails(function() q.handlers.queue_submit(p,{lane=lane,steps={wait},guards={{when=never}}}) end,want)
+    eq(q.handlers.queue_submit(p,{lane=lane,dry_run=true,steps={wait},guards={{when={['until']='circuit_signal',platform='Asterion',signal='rocket',below=4850}}}}).steps,1)
+  end
+end
+
 print('d22_batch118: ok')

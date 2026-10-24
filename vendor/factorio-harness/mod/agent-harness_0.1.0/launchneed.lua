@@ -80,11 +80,67 @@ return function(api)
   -- count and what elsewhere.lua finds outside them), what that planet made of it a minute over the last 10 minutes,
   -- and at that rate when the hub's count would be reached; "0 a minute: not met at this rate" when nothing made it.
   local CMP = {['≥']='>=', ['>']='>', ['=']='='}
+  -- (d23 batch121 CD2, viewer Aurora site:4404: "Anvil waited on a copper gate at the wrong stop. Could schedule checks
+  -- flag unmet gates with no known supply there, including imports and onboard production?") Where the item can come
+  -- from at that stop: the hub's import requests for it (only one from that planet brings it up there; Anvil's copper
+  -- request named Nauvis while its Vulcanus stop waited for 5000 copper, 2 h docked, shift62), what was made aboard
+  -- over the last 10 min and the machines aboard set to make it, and the other platforms that stop at that planet
+  -- holding it. Facts only; the wait stays as set. sources(pl) once a call: {from = {item = {planets}}, makers = {item =
+  -- n}} or nil when the hub's sections cannot be read.
+  M.MAKERS = 200  -- crafting machines aboard read for their recipes
+  local function sources(pl, hub)
+    local secs = try(function() return hub.get_logistic_sections() end)
+    if not secs then return nil end
+    local from = {}
+    for i = 1, secs.sections_count or 0 do
+      local sec = secs.get_section(i)
+      if sec and sec.active ~= false and (sec.multiplier or 1) > 0 then
+        for _, f in ipairs(sec.filters or {}) do
+          local v = f.value
+          local name = type(v) == 'table' and v.name or v
+          local planet = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+          if type(name) == 'string' and planet and (f.min or 0) > 0 then
+            from[name] = from[name] or {}
+            from[name][planet] = true
+          end
+        end
+      end
+    end
+    local makers = {}
+    local list = try(function() return pl.surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=pl.force, limit=M.MAKERS} end) or {}
+    for _, e in ipairs(list) do
+      local r = try(function() return e.get_recipe() end) or try(function() return e.previous_recipe and e.previous_recipe.name end)
+      for _, pr in ipairs(r and try(function() return r.products end) or {}) do
+        if pr.type == 'item' and pr.name then makers[pr.name] = (makers[pr.name] or 0) + 1 end
+      end
+    end
+    return {from=from, makers=makers}
+  end
+  local function planets_text(set)
+    local t = {}
+    for k in pairs(set or {}) do t[#t+1] = k end
+    table.sort(t)
+    return table.concat(t, ', ')
+  end
+  -- Other platforms of the force with `planet` among their stops whose hub holds `item` (they may bring it down there).
+  local function others(pl, planet, item)
+    local out = {}
+    for _, o in pairs(try(function() return pl.force.platforms end) or {}) do
+      if o ~= pl and try(function() return o.valid end) and try(function() return o.name ~= pl.name end) then
+        local stops = false
+        for _, r in ipairs(try(function() return o.schedule and o.schedule.records end) or {}) do if r.station == planet then stops = true end end
+        local n = stops and (try(function() return o.hub and o.hub.valid and o.hub.get_item_count(item) end) or 0) or 0
+        if n > 0 then out[#out+1] = string.format('%s %d', o.name, n) end
+      end
+      if #out >= 3 then break end
+    end
+    return out
+  end
   function M.wait_lines(pl)
     local sch = try(function() return pl.schedule end)
     local hub = try(function() return pl.hub end)
     if not (sch and sch.records and hub and hub.valid) then return nil end
-    local lines = {}
+    local lines, src = {}, false
     for i, r in ipairs(sch.records) do
       for _, w in ipairs(r.wait_conditions or {}) do
         local c = w.type == 'item_count' and w.condition
@@ -107,9 +163,38 @@ return function(api)
             local stats = try(function() return pl.force.get_item_production_statistics(s) end)
             local made = stats and try(function() return stats.get_flow_count{name=f, category='input', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
             local per_min = math.floor(made / 10 + 0.5)
-            local eta = per_min > 0 and string.format('about %d min at this rate', math.ceil(need / per_min)) or 'not met at this rate'
-            lines[#lines+1] = string.format('%s, %d short; %s holds %d (%d in its logistic networks, %d outside them) and made %d a minute over the last 10 min: %s',
-              head, need, planet, net + (outside or 0), net, outside or 0, per_min, eta)
+            local stock = string.format('%s holds %d (%d in its logistic networks, %d outside them) and made %d a minute over the last 10 min', planet, net + (outside or 0), net, outside or 0, per_min)
+            if src == false then src = sources(pl, hub) end
+            if not src then
+              local eta = per_min > 0 and string.format('about %d min at this rate', math.ceil(need / per_min)) or 'not met at this rate'
+              lines[#lines+1] = string.format('%s, %d short; %s: %s', head, need, stock, eta)
+            else
+              local asks = src.from[f]
+              local here = asks and asks[planet]
+              local req = here and string.format('the hub asks for it from %s', planet)
+                or asks and string.format('the hub asks for it from %s only, not from %s', planets_text(asks), planet)
+                or 'the hub has no request for it'
+              local aboard_stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
+              local aboard = aboard_stats and try(function() return aboard_stats.get_flow_count{name=f, category='input', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
+              local makers = src.makers[f] or 0
+              local onboard = aboard > 0 and string.format('made aboard %d a minute over the last 10 min', math.floor(aboard / 10 + 0.5))
+                or 'nothing aboard made it over the last 10 min'
+              onboard = onboard .. (makers > 0 and string.format(', %d machine%s aboard set to make it', makers, makers == 1 and '' or 's') or '')
+              if not here and aboard == 0 and makers == 0 then
+                lines[#lines+1] = string.format('%s, %d short; no known source at %s: %s, nothing aboard made it over the last 10 min and no machine aboard is set to make it (%s; it reaches the hub only by a request from %s)',
+                  head, need, planet, req, stock, planet)
+              else
+                local by = here and others(pl, planet, f) or {}
+                if here and aboard == 0 and makers == 0 and #by == 0 and per_min == 0 and net + (outside or 0) == 0 then
+                  lines[#lines+1] = string.format('%s, %d short; no known source at %s: the hub asks for it from %s, which holds none and made none over the last 10 min; no other platform stopping there holds it; nothing aboard made it or is set to make it',
+                    head, need, planet, planet)
+                else
+                  local eta = here and per_min > 0 and string.format('about %d min at %s\'s rate', math.ceil(need / per_min), planet) or nil
+                  lines[#lines+1] = string.format('%s, %d short; %s; sources: %s; %s%s%s', head, need, stock, req, onboard,
+                    #by > 0 and '; other platforms stopping at ' .. planet .. ' hold it: ' .. table.concat(by, ', ') or '', eta and '; ' .. eta or '')
+                end
+              end
+            end
           end
         end
       end

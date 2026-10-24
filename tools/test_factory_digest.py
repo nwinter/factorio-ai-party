@@ -48,7 +48,7 @@ def main():
     huge = {'surfaces': [{'surface': 'é'*600, 'machines': {}}]}
     assert all(len(m.encode()) <= LIMIT for m in messages(huge))
     # ---- (d17 batch35 D2) the scheduled digest as a delta, to owners by claim ------------------------------------------
-    from factory_digest import current, delta, delta_messages, owners, moved
+    from factory_digest import current, delta, delta_messages, owners, moved, rest_rows, rest_labels
     CLAIMS = [{'id': 1, 'kind': 'claim', 'status': 'claimed', 'owner': 'astra', 'surface': 'nauvis',
                'area': {'left_top': {'x': -1, 'y': 0}, 'right_bottom': {'x': 1.5, 'y': 3}}},
               {'id': 2, 'kind': 'claim', 'status': 'claimed', 'owner': 'opus', 'surface': 'nauvis',
@@ -69,6 +69,24 @@ def main():
              {'id': 9, 'kind': 'task', 'status': 'done', 'owner': 'grok', 'title': 'fulgora old'}]
     assert owners('fulgora', [], CLAIMS, DOING) == ['gemini', 'sol'], 'no claim there: the agents holding items that name it'
     assert owners('fulgoran', [], CLAIMS, DOING) == ['team']
+    # (d22 batch113 BW1) a claim's coverers get its facts with its owner; a recipient resting now is named to the team
+    covered = [dict(c, covers=[{'name': 'sonnet', 'since': '5m ago'}]) if c.get('owner') == 'astra' else c for c in CLAIMS]
+    assert owners('nauvis', [{'x': 0, 'y': 2}], covered) == ['astra', 'sonnet'], owners('nauvis', [{'x': 0, 'y': 2}], covered)
+    rows = [('grok', 'blocker', 'gleba: input shortage 18 assembling-machine'), ('grok', 'blocker', 'gleba: output full 9 assembling-machine'),
+            ('sonnet', 'blocker', 'gleba: input shortage 18 assembling-machine'), ('astra', 'blocker', 'nauvis: labs not working 3')]
+    labels = {'grok': 'resting until Sat 16:00 (quota)'}
+    assert rest_rows(rows, labels) == [('team', 'resting', 'grok (resting until Sat 16:00 (quota)): 2 facts went to it; sonnet got 1')], rest_rows(rows, labels)
+    assert rest_rows(rows[:2], labels) == [('team', 'resting', 'grok (resting until Sat 16:00 (quota)): 2 facts went to it, to no one else')]
+    assert rest_rows(rows, {}) == []
+    with tempfile.TemporaryDirectory() as run:
+        os.makedirs(os.path.join(run, 'grok'))
+        with open(os.path.join(run, 'grok', 'resting.json'), 'w') as f:
+            json.dump({'since': 1000, 'until': 1000 + 3 * 86400, 'reason': 'quota'}, f)
+        got = rest_labels(run, {'grok', 'sonnet', 'team'}, 2000)
+        assert list(got) == ['grok'] and got['grok'].startswith('resting until ') and got['grok'].endswith(' (quota)'), got
+        assert rest_labels(run, {'grok'}, 1000 + 3 * 86400 + 1) == {}, 'over'
+    msgs = delta_messages(rest_rows(rows, labels), 'tick 1')
+    assert msgs['team'][0].endswith('to agents resting: grok (resting until Sat 16:00 (quota)): 2 facts went to it; sonnet got 1.'), msgs
     assert moved(None, 3) and moved(3, 0) and not moved(10, 11) and moved(10, 12) and not moved(4, 4)
     cur = current(REPORT, CLAIMS, BLOCKED, OPEN, LESSONS)
     assert cur['dry|nauvis|electric-mining-drill']['to'] == ['astra'], cur['dry|nauvis|electric-mining-drill']

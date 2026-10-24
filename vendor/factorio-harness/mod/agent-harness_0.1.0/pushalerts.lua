@@ -1713,7 +1713,8 @@ return function(api)
     return out
   end
   M.claims_over = claims_over
-  local function owners(g, roster)
+  -- (d22 batch113 BW1) info: optional table, filled with name -> the claim it hears the group by (owners and coverers)
+  local function owners(g, roster, info)
     local out = {}
     -- ammo_low (C1): who built them, and every agent within 64 tiles of the group
     if g.kind == 'ammo_low' then
@@ -1725,10 +1726,20 @@ return function(api)
       end
       return out
     end
-    for _, i in ipairs(claims_over(g, g.center)) do out[i.owner] = 'claim' end
+    local over = claims_over(g, g.center)
+    for _, i in ipairs(over) do out[i.owner] = 'claim'; if info then info[i.owner] = info[i.owner] or i end end
     -- A boiler's feed chest in someone's claim (Haiku, shift17 10:50: "an alert that names the owner of a claimed boiler
     -- feed chest when it is empty, so the fuel owner is told directly"): that owner hears it too.
-    for _, i in ipairs(claims_over(g, g.chest_at)) do out[i.owner] = out[i.owner] or 'claim' end
+    local chest = claims_over(g, g.chest_at)
+    for _, i in ipairs(chest) do out[i.owner] = out[i.owner] or 'claim'; if info then info[i.owner] = info[i.owner] or i end end
+    -- (BW1) a claim's coverers (board_update cover) hear it with its owner
+    for _, list in ipairs({over, chest}) do
+      for _, i in ipairs(list) do
+        for _, c in ipairs(i.covers or {}) do
+          if not out[c.name] then out[c.name] = 'covers'; if info then info[c.name] = i end end
+        end
+      end
+    end
     if next(out) then return out end
     for name in pairs(g.by) do if roster[name] then out[name] = 'built' end end
     if next(out) then return out end
@@ -1747,6 +1758,69 @@ return function(api)
     local out = {}
     for _, a in ipairs(try(api.agents) or {}) do out[a.name] = {index=a.index, place=api.place and try(function() return api.place(a.index) end)} end
     return out
+  end
+  -- (d22 batch113 BW1) a resting agent's rest (rests.lua), or nil
+  local function rest_of(name) return api.rest_label and try(function() return api.rest_label(name) end) or nil end
+  -- The tail of a coverer's alert line: whose claim, its owner's rest.
+  function M.covers_text(i)
+    if not i then return '' end
+    local rest = rest_of(i.owner)
+    return string.format(' (claim #%d by %s%s; you cover it)', i.id, tostring(i.owner), rest and ', ' .. rest or '')
+  end
+  -- game_alerts' `to`: "grok (claim; resting until Sat 16:00 (quota))", "sonnet (covers claim #1130 by grok)".
+  function M.to_text(name, why, i)
+    local parts = {why == 'covers' and i and string.format('covers claim #%d by %s', i.id, tostring(i.owner)) or why}
+    local rest = rest_of(name)
+    if rest then parts[#parts+1] = rest end
+    return name .. ' (' .. table.concat(parts, '; ') .. ')'
+  end
+  -- For the teammates line of a resting agent: the alert groups that go to it now and who else hears them, e.g.
+  -- "6 alert groups go to it (claim #1130 6), none heard by anyone else" or "...; sonnet hears 6 of them (covers)".
+  -- From the last scan (never scans); nil when none goes to it. Kept a second per name.
+  local rest_memo = {}
+  function M.resting_note(name, force)
+    local m = rest_memo[name]
+    if m and m.force == force.name and game.tick - m.tick < 60 then return m.text end
+    local who = roster()
+    local n, alone, by, order, others, oorder = 0, 0, {}, {}, {}, {}
+    for _, g in ipairs(M.cached_groups(force)) do
+      if g.kind ~= 'captive_urgent' and g.kind ~= 'captive_died' then  -- (URGENT_KINDS, told in the urgent part)
+        local info = {}
+        local o = owners(g, who, info)
+        local why = o[name]
+        if why then
+          n = n + 1
+          local k = why == 'claim' and info[name] and 'claim #' .. info[name].id or why
+          if not by[k] then by[k] = 0; order[#order+1] = k end
+          by[k] = by[k] + 1
+          local any = false
+          for other, ow in pairs(o) do
+            if other ~= name then
+              any = true
+              local ok = other .. (ow == 'covers' and ' (covers)' or '')
+              if not others[ok] then others[ok] = 0; oorder[#oorder+1] = ok end
+              others[ok] = others[ok] + 1
+            end
+          end
+          if not any then alone = alone + 1 end
+        end
+      end
+    end
+    local text
+    if n > 0 then
+      local parts = {}
+      for _, k in ipairs(order) do parts[#parts+1] = k .. ' ' .. by[k] end
+      text = string.format('%d alert group%s go%s to it (%s)', n, n == 1 and '' or 's', n == 1 and 'es' or '', table.concat(parts, ', '))
+      if alone == n then text = text .. ', heard by no one else'
+      else
+        table.sort(oorder)
+        local hs = {}
+        for _, k in ipairs(oorder) do hs[#hs+1] = k .. ' ' .. others[k] end
+        text = text .. '; also heard by ' .. table.concat(hs, ', ') .. (alone > 0 and string.format('; %d by no one else', alone) or '')
+      end
+    end
+    rest_memo[name] = {tick=game.tick, force=force.name, text=text}
+    return text
   end
   local function what(g)
     local names = {}
@@ -2133,14 +2207,16 @@ return function(api)
     local now, lines, more = {}, {}, 0
     for _, g0 in ipairs(c.groups) do
       -- One of yours, a turret group read again first: refilled since, it is not shown (nor counted as told).
-      local g = not URGENT_KINDS[g0.kind] and owners(g0, who)[me] and M.recheck(g0, p.force) or nil
+      local info = {}
+      local why = not URGENT_KINDS[g0.kind] and owners(g0, who, info)[me]
+      local g = why and M.recheck(g0, p.force) or nil
       if g then
         local level = g.rank or g.n
         now[g.key] = level
         local told = mem.told[g.key]
         if not told or level > told then
           if #lines < MAX_LINES then
-            lines[#lines+1] = M.text(g, here, told and (mem.said and mem.said[g.key] or (not g.rank and told)) or nil)
+            lines[#lines+1] = M.text(g, here, told and (mem.said and mem.said[g.key] or (not g.rank and told)) or nil) .. (why == 'covers' and M.covers_text(info[me]) or '')
             mem.told[g.key] = level
             if g.now_text then mem.said = mem.said or {}; mem.said[g.key] = g.now_text end
           else more = more + 1 end
@@ -2507,8 +2583,8 @@ return function(api)
       if g then
         -- One group that fails to read is listed with why; the others still are.
         local ok, row = pcall(function()
-          local to = {}
-          for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
+          local to, info = {}, {}
+          for name, why in pairs(owners(g, who, info)) do to[#to+1] = M.to_text(name, why, info[name]) end
           table.sort(to)
           return {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost, robots=g.robots,
             ore=g.ore, still_mining=g.still, untapped=g.untapped, drill_site=g.drill_site, observed_tick=g.observed_tick, checked_tick=g.checked_tick, stale=g.stale, line=M.text(g, here), to=#to > 0 and to or nil}

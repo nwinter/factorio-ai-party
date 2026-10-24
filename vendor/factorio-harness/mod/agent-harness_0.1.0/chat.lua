@@ -81,7 +81,7 @@ return function(api)
     return append('viewer ' .. name, text, nil, nil, true, nil, nil, source, nil, {source_id=id})
   end
   M.schema = {
-    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too; a viewer\'s line only while it is their one open line). A viewer\'s line: your line is threaded under it on the stream\'s site and starts "@Name " in the game chat when it names them nowhere (the reply\'s reply_to {seq, to, addressed, also}); an array links every viewer line in it (up to 8). Without reply_to, a say naming a viewer whose one open line to you it closes is linked to that line (the reply\'s linked)',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
+    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes exactly those as unanswered (without reply_to, a say naming the sender closes theirs only while it is their one open line; left_open says when it left several). A viewer\'s line: your line is threaded under it on the stream\'s site and starts "@Name " in the game chat when it names them nowhere (the reply\'s reply_to {seq, to, addressed, also}); an array links every viewer line in it (up to 8). Without reply_to, a say naming a viewer whose one open line to you it closes is linked to that line (the reply\'s linked)',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
       aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do',
       look='optional: what the stream camera might show while the line is read out, a hint the director may take: {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
@@ -299,20 +299,32 @@ return function(api)
   -- Summary for other replies: count and newest unread message from someone
   -- else. Shown when the newest unread message changed since this player was
   -- last told (always for 'always', without remembering for 'peek').
+  -- (d23 batch121 CD1, viewer Aurora site:4387: "Is Opus's 158 unread count current, and does it include messages
+  -- addressed to him?") unread counts every chat line after your read, to anyone, of the newest MAX_LOG kept (of_newest
+  -- when the oldest kept is unread too, so older ones are gone uncounted); to_you: those naming you (each reached you as
+  -- a mention in a team block). chat_ack closes unanswered lines and marks tells read; only a chat read marks chat lines.
   function M.unread(index, mode)
     local c = log()
-    local n, latest = 0, nil
+    local n, latest, first = 0, nil, nil
     for _, m in ipairs(c.messages) do
-      if not is_read(c, index, m) then n = n + 1; latest = m end
+      if not is_read(c, index, m) then n = n + 1; latest = m; first = first or m end
     end
     if n == 0 then c.told[index] = nil; return nil end
     if mode ~= 'peek' then
       if mode ~= 'always' and c.told[index] == latest.seq then return nil end
       c.told[index] = latest.seq
     end
+    local to_you = 0
+    if api.mention_of then
+      for _, m in ipairs(c.messages) do
+        if not is_read(c, index, m) and api.mention_of(index, m) then to_you = to_you + 1 end
+      end
+    end
     local where = api.where_from and api.where_from(index)
     local away = where and where(latest.from)
-    return {unread=n, latest=latest.from .. (away and ' (' .. away .. ')' or '') .. ': ' .. latest.text, read_with='chat'}
+    return {unread=n, to_you=to_you, of_newest=#c.messages >= MAX_LOG and first == c.messages[1] and MAX_LOG or nil,
+      latest=latest.from .. (away and ' (' .. away .. ')' or '') .. ': ' .. latest.text,
+      read_with='chat (chat_ack does not mark chat lines read)'}
   end
   function M.on_console_chat(event)
     local p = event.player_index and game.get_player(event.player_index)

@@ -114,9 +114,11 @@ eq(r.linked,'linked to #'..e1.seq..' Enginerd (it names them; their one open lin
 local ln=muse('chat',{since=r.seq-1}).messages[1]
 eq(ln.reply_to,e1.seq); eq(ln.linked_by,'name'); eq(ln.replies_to[1].seq,e1.seq); eq(ln.replies_to[1].name,'Enginerd')
 eq(ln.replies_to[1].text,'Okay, so add more power.','the relay\'s @muse left out')
--- a teammate's mentions still close by name
-sol('say',{text='@muse wall status?'}); sol('say',{text='@muse and the north gate?'})
-muse('say',{text='@sol both hold.'})
+-- a teammate's mentions close by name only while one is open (d22 batch122 CE1): with two, the say closes none
+local w1=sol('say',{text='@muse wall status?'}); local w2=sol('say',{text='@muse and the north gate?'})
+r=muse('say',{text='@sol both hold.'})
+eq(r.left_open,'sol has 2 open requests to you (#'..w1.seq..', #'..w2.seq..'): a say or tell naming them closes none; reply_to closes the one it names')
+muse('say',{text='@sol both hold.',reply_to={w1.seq,w2.seq}})
 eq(muse('status').unanswered,nil)
 -- the reminder for a viewer's line names reply_to
 jump(1300)
