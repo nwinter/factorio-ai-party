@@ -22,7 +22,8 @@ function playwright() {
 const BASE = (process.argv[2] || 'http://127.0.0.1:8765').replace(/\/$/, '');
 const OUT = process.argv[3] || 'site-shots';
 const PAGES = [['home', '/'], ['live', '/live/'], ['run', '/runs/long/'], ['shift', '/runs/long/shift-2/'],
-  ['agents', '/agents/'], ['timeline', '/timeline/'], ['chat', '/chat/'], ['search', '/search/?q=rocket'], ['about', '/about/']];
+  ['agents', '/agents/'], ['timeline', '/timeline/'], ['chat', '/chat/'], ['search', '/search/?q=rocket'], ['about', '/about/'],
+  ['blueprints', '/blueprints/'], ['blueprints-filtered', '/blueprints/?q=turret&place=platform&sort=used']];
 const SIZES = [['phone', 390, 844], ['desktop', 1300, 900]];
 
 // in the page: what breaks the layout at this width
