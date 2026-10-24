@@ -307,4 +307,55 @@ do
   eq(F2.incoming(pl),nil,'kept a minute at most')
   trash={}
 end
+-- (d20 batch132 PD1, Sol #2093) a pod's receipt says what the pad asked of its cargo when it left the hub, as the pad's
+-- window showed it: on a copy of world n Gleba's pad section 1, set by the circuit network, asked processing-unit
+-- 1000..inf while the network held under 1000, and section 12 asked 300..300; pods of 1000 and 300 came down.
+do
+  defines.logistic_section_type={manual=0,circuit_controlled=1}
+  local st2={}
+  local gl={name='gleba'}
+  local secs={[1]={active=true,type=1,filters={{value={name='foundry'},min=3},{value={name='processing-unit'},min=1000}}},
+    [2]={active=false,type=0,filters={{value={name='processing-unit'},min=500}}},
+    [12]={active=true,type=0,filters={{value={name='processing-unit'},min=300,max=300}}}}
+  local gpad={valid=true,name='cargo-landing-pad',position={x=54,y=8},surface=gl,
+    get_logistic_sections=function() return {sections_count=12,get_section=function(i) return secs[i] or {active=true,type=0,filters={}} end} end,
+    get_inventory=function() return {get_item_count=function() return 0 end,get_contents=function() return {} end} end,
+    get_requester_point=function() return {targeted_items_deliver={{name='processing-unit',quality='normal',count=1300}}} end}
+  gl.find_entities_filtered=function(f) eq(f.type,'cargo-landing-pad'); return {gpad} end
+  local hub2={valid=true,get_inventory=function() return inv({['processing-unit']=1500}) end,get_logistic_sections=function() return {sections_count=0} end}
+  local ivc={valid=true,index=7,name='Kestrel IVc',hub=hub2,state=6,space_location={name='gleba'},schedule={records={{station='gleba'}},current=1}}
+  local f2={name='player',platforms={ivc}}; ivc.force=f2
+  local ps={name='platform-7'}
+  local up={}
+  ps.find_entities_filtered=function() return up end
+  ivc.surface=ps
+  local kept_game=game
+  game={tick=960,forces={player=f2},planets={gleba={surface=gl}}}
+  local F3=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st2 end,spoil=dofile('mod/agent-harness_0.1.0/spoil.lua'){state=function() return st2 end}}
+  game.tick=game.tick+60; F3.tick(game.tick)
+  local function gpod(unit,n)
+    local e={valid=true,unit_number=unit,surface=ps,position={x=0,y=-2},cargo_pod_origin=hub2,cargo_pod_destination={station=gpad}}
+    e.get_inventory=function() return inv({['processing-unit']=n}) end
+    return e
+  end
+  local a,b=gpod(31209838,1000),gpod(31209839,300)
+  up={a}
+  game.tick=game.tick+60; F3.pod_tick(game.tick)
+  up={a,b}
+  game.tick=game.tick+60; F3.pod_tick(game.tick)
+  a.surface=gl; b.surface=gl; up={}
+  game.tick=game.tick+60; F3.pod_tick(game.tick)
+  a.valid=false; b.valid=false
+  game.tick=game.tick+60; F3.pod_tick(game.tick)
+  local r=F3.receipts(ivc)
+  eq(#r,2)
+  has(r[2],'processing-unit*1000 received by cargo-landing-pad (54,8) on gleba')
+  has(r[2],'; when it left the hub the pad asked processing-unit 1300 (section 1, set by the circuit network: 1000..inf; section 12: 300..300), held 0, counted 1300 on the way')
+  eq(r[2]:find('in pods followed',1,true),nil)
+  has(r[1],'processing-unit*300 received by')
+  has(r[1],'asked processing-unit 1300 (section 1, set by the circuit network: 1000..inf; section 12: 300..300), held 0, 1000 on the way in pods followed, counted 1300 on the way')
+  -- no pad there: no line
+  eq(F3.asked_text(nil),nil)
+  game=kept_game
+end
 print('freight: ok')

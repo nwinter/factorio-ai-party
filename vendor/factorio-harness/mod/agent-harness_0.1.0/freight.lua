@@ -623,6 +623,64 @@ return function(api)
     return ask, hold
   end
   M.pads = pads
+  -- (d20 batch132 PD1, Sol #2093: pods of 1000 and 300 processing units came down to Gleba's pad for a section asking
+  -- 300; the pad's section 1, set by the circuit network, asked processing-unit 1000..inf when they left the hub and no
+  -- more when Sol read it) what the planet's landing pad of ours asked of each item in cargo when a pod left the hub, as
+  -- the pad's window showed it then: each active section asking it (its index, min..max, set by the circuit network),
+  -- and what the pad held. {pad {x,y}, items {name={ask, hold, parts}}}, or nil with no pad there.
+  local function pad_asked(planet, force, cargo)
+    local s = try(function() return game.planets[planet].surface end) or try(function() return game.get_surface(planet) end)
+    local known = s and api.census_typed and try(function() return api.census_typed(force, s, 'cargo-landing-pad') end)
+    local pad = known and known[1] or s and try(function() return s.find_entities_filtered{type='cargo-landing-pad', force=force, limit=1}[1] end)
+    if not (pad and pget(pad, 'valid')) then return nil end
+    local circuit = defines.logistic_section_type and defines.logistic_section_type.circuit_controlled
+    local items = {}
+    for name in pairs(cargo or {}) do items[name] = {ask=0, hold=0, parts={}} end
+    local secs_ = try(function() return pad.get_logistic_sections() end)
+    for i = 1, secs_ and secs_.sections_count or 0 do
+      local sec = secs_.get_section(i)
+      if sec and sec.active ~= false then
+        local by_circuit = circuit ~= nil and pget(sec, 'type') == circuit
+        for _, f in ipairs(sec.filters or {}) do
+          local v = f.value
+          local name = type(v) == 'table' and v.name or v
+          local it = type(name) == 'string' and items[name]
+          if it and (f.min or 0) > 0 then
+            it.ask = it.ask + f.min
+            it.parts[#it.parts+1] = string.format('section %d%s: %d..%s', i, by_circuit and ', set by the circuit network' or '', f.min, f.max and tostring(f.max) or 'inf')
+          end
+        end
+      end
+    end
+    local inv = defines.inventory.cargo_landing_pad_main and try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
+    for name, it in pairs(items) do it.hold = inv and try(function() return inv.get_item_count(name) end) or 0 end
+    -- the pad's own on-the-way count (its requester point's deliveries: the pods sent to it, this one among them once
+    -- it is sent)
+    local pt = try(function() return pad.get_requester_point() end)
+    for _, d in ipairs(pt and try(function() return pt.targeted_items_deliver end) or {}) do
+      local it = items[d.name]
+      if it then it.coming = (it.coming or 0) + (d.count or 0) end
+    end
+    return {pad=xy(pad.position), items=items}
+  end
+  M.pad_asked = pad_asked
+  -- The line for a pod's pad_asked: "when it left the hub the pad asked processing-unit 1300 (section 1, set by the
+  -- circuit network: 1000..inf; section 12: 300..300), held 0, 1000 on the way in pods followed, counted 1300 on the
+  -- way" (the last: the pad's own count).
+  function M.asked_text(a)
+    if not a then return nil end
+    local names = {}
+    for name in pairs(a.items or {}) do names[#names+1] = name end
+    table.sort(names)
+    local parts = {}
+    for _, name in ipairs(names) do
+      local it = a.items[name]
+      parts[#parts+1] = string.format('%s %d%s, held %d%s%s', name, it.ask, #it.parts > 0 and ' (' .. table.concat(it.parts, '; ') .. ')' or ' (no active section asks it)',
+        it.hold, (it.way or 0) > 0 and string.format(', %d on the way in pods followed', it.way) or '',
+        it.coming and string.format(', counted %d on the way', it.coming) or '')
+    end
+    return #parts > 0 and 'when it left the hub the pad asked ' .. table.concat(parts, '; ') or nil
+  end
   -- The hub's requests that import from this planet: {item={min, short, way}}; (d20 batch55 P6) less what rockets
   -- launched to the hub carry on the way (its requester point's deliveries, the hub GUI's in-transit count).
   local function hub_asks(pl, planet, counts)
@@ -1246,7 +1304,7 @@ return function(api)
   -- (d22 batch94 BD1) a pod received by a landing pad goes to api.delivered (reminders' on.delivered)
   local function receipt(rec, p, tick, kind, where, pl)
     rec.receipts = rec.receipts or {}
-    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest})
+    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest, asked=p.asked})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
     if kind == 'received' and api.delivered then
       pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where})
@@ -1346,6 +1404,21 @@ return function(api)
     local rec = store()[pl.index]
     return {down=rec and rec.pods or {}, up=rec and rec.incoming or {}}
   end
+  -- (PD1) a followed pod's pad_asked, read once, the first time it is seen with cargo on its platform: the pad's
+  -- requests for that cargo then, and what the other pods followed to that planet carry of it (on the way)
+  local function ask_for(p, pl)
+    if p.asked or not (p.at and next(p.cargo or {})) then return end
+    local asked = try(function() return pad_asked(p.at, pl.force, p.cargo) end)
+    if not asked then return end
+    for _, q in pairs(store()) do
+      for _, o in ipairs(type(q) == 'table' and q.pods or {}) do
+        if o ~= p and o.at == p.at and o.pod and o.pod ~= p.pod then
+          for name, it in pairs(asked.items) do it.way = (it.way or 0) + (o.cargo and o.cargo[name] or 0) end
+        end
+      end
+    end
+    p.asked = asked
+  end
   function M.pod_watch(pl, tick)
     local rec = store()[pl.index]
     if not rec then return end
@@ -1358,7 +1431,7 @@ return function(api)
         local sn, pos = pget(pget(p.pod, 'surface'), 'name'), pget(p.pod, 'position')
         local where = sn ~= nil and pos ~= nil and {surface=sn, position=xy(pos)} or nil
         if where then p.last = where end
-        if where and where.surface == p.from then p.cargo = pod_cargo(p.pod) end
+        if where and where.surface == p.from then p.cargo = pod_cargo(p.pod); ask_for(p, pl) end
         p.dest = pod_dest(p.pod) or p.dest
         keep[#keep+1] = p
       else
@@ -1387,8 +1460,10 @@ return function(api)
         if ok and is then known = true; break end
       end
       if not known and #rec.pods < POD_PENDING and pget(pod, 'valid') and is_mine(pod, pl, hub) then
-        rec.pods[#rec.pods+1] = {pod=pod, unit=try(function() return pod.unit_number end), seg=seg.start, at=seg.at, tick=tick,
+        local p = {pod=pod, unit=try(function() return pod.unit_number end), seg=seg.start, at=seg.at, tick=tick,
           from=s.name, cargo=pod_cargo(pod), dest=pod_dest(pod), last={surface=s.name, position=xy(pod.position)}}
+        ask_for(p, pl)
+        rec.pods[#rec.pods+1] = p
       end
     end
   end
@@ -1792,9 +1867,10 @@ return function(api)
     local out = {}
     for i = #rec.receipts, math.max(1, #rec.receipts - (limit or 8) + 1), -1 do
       local r = rec.receipts[i]
-      out[#out+1] = string.format('%s %s %s, %s ago (pod %s, left the hub %s ago, from the stop at %s)', items_text(r.cargo) or 'empty',
+      local asked = M.asked_text(r.asked)
+      out[#out+1] = string.format('%s %s %s, %s ago (pod %s, left the hub %s ago, from the stop at %s)%s', items_text(r.cargo) or 'empty',
         r.kind == 'received' and 'received by' or r.kind == 'landed' and 'landed as' or r.kind == 'lost' and 'was' or 'was', r.where, secs(game.tick - r.tick),
-        r.unit and '#' .. r.unit or '?', secs(game.tick - r.sent), tostring(r.stop))
+        r.unit and '#' .. r.unit or '?', secs(game.tick - r.sent), tostring(r.stop), asked and '; ' .. asked or '')
     end
     return out
   end
