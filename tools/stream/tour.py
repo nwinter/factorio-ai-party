@@ -66,6 +66,10 @@ AIRED_WAIT_S = 3.0  # after the cut, wait at most this long for the snapshot's l
 START_WAIT_S = 5.0  # after the narration's moment, wait at most this long for the page's start report
 DRIFT_MAX_S = 2.0  # a measured cut drift beyond this is not used
 AGENT_GAP_MAX_S = 25.0  # the longest agent line a stop is held for
+# (CK5) the archive's clip library (batch129, tools/archive/clipmaker.py): <id>.mp4 (H.264, the camera hole's
+# 1208 x 1032, 1:1) and <id>.json {seconds, caption, title, ...}, public on R2
+CLIP_BASE = "https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev/clips/"
+CLIP_END_S = 0.5  # a clip stop lasts at least its play time and this
 
 
 def log(*a):
@@ -96,10 +100,15 @@ def check_stop(stop):
     if not sid:
         return None, "no id"
     t = stop.get("target")
-    if not isinstance(t, dict):
+    clip, why = check_clip(stop["clip"]) if stop.get("clip") is not None else (None, None)
+    if why:
+        return None, f"clip: {why}"
+    if not isinstance(t, dict) and not (t is None and clip):
         return None, "no target"
     try:
-        if t.get("platform"):
+        if t is None:  # (CK5) an old clip with no target: the camera stays where it was, behind the clip
+            target = None
+        elif t.get("platform"):
             target = {"platform": str(t["platform"]).strip()}
         else:
             if not str(t.get("surface") or "").strip():
@@ -115,6 +124,7 @@ def check_stop(stop):
     return {"id": sid, "target": target, "seconds": max(0.0, secs) if secs is not None else None,
             "move": stop.get("move"),  # (CK2) checked by move_for in checked()
             "subtitles": stop.get("subtitles", True),  # (CK4) true, false or "top"
+            "clip": clip,  # (CK5) an old clip played in the camera hole
             "min_seconds": max(0.0, least), "hold_s": max(0.0, min(30.0, hold)),
             "caption": " ".join(str(stop.get("caption") or "").split())[:80],
             "narration": " ".join(str(stop.get("narration") or "").split())}, None
@@ -125,6 +135,10 @@ def move_for(stop, length):
     shot, or "pan" (a whole ship with no move: the director's bow-to-stern pan). ValueError says what is wrong."""
     import camerapath
     raw, t = stop.get("move"), stop["target"]
+    if t is None:
+        if raw not in (None, "hold"):
+            raise ValueError("move: a clip stop with no target has no camera to move")
+        return None
     if raw in (None, "hold"):
         return "pan" if raw is None and "platform" in t and "x" not in t else None
     moves = raw if isinstance(raw, list) else [raw]
@@ -193,6 +207,8 @@ def checked(stops):
             try:
                 move_for(s, 60.0)
                 s["marks"] = tourlay.check_marks(raw.get("marks") if isinstance(raw, dict) else None)
+                if s["marks"] and s.get("clip"):
+                    raise ValueError("marks: a clip stop shows the clip, not the map (no marks)")
             except ValueError as x:
                 s, why = None, str(x) if str(x).startswith(("move", "mark")) else f"move: {x}"
         if s:
@@ -211,18 +227,95 @@ def from_index(rows, start):
     raise SystemExit(f"no stop with id {start!r} (ids: {', '.join(s['id'] for _, s, _ in rows if s)})")
 
 
+def check_clip(c):
+    """(CK5) A stop's clip {id | url, caption?, start_s?, seconds?} -> (clip, None) or (None, why)."""
+    import re
+    if not isinstance(c, dict) or bool(c.get("id")) == bool(c.get("url")):
+        return None, "give id (the clip library's) or url"
+    out = {}
+    if c.get("id"):
+        if not re.fullmatch(r"[\w.-]{1,120}", str(c["id"])):
+            return None, f"id {c['id']!r} is not a clip library id (letters, digits, - _ .)"
+        out["id"] = str(c["id"])
+    else:
+        u = str(c["url"])
+        if not re.match(r"https?://", u) or not u.split("?")[0].endswith((".mp4", ".m3u8")):
+            return None, "url is an http(s) link to an .mp4 (or .m3u8)"
+        out["url"] = u
+    try:
+        out["start_s"] = max(0.0, number(c.get("start_s", 0)))
+        if c.get("seconds") is not None:
+            out["seconds"] = number(c["seconds"])
+            if out["seconds"] <= 0:
+                return None, "seconds must be over 0"
+    except ValueError as x:
+        return None, f"start_s or seconds: {x}"
+    if c.get("caption") is not None:
+        out["caption"] = " ".join(str(c["caption"]).split())[:60]
+    return out, None
+
+
+def resolve_clip(c, base=CLIP_BASE, timeout=8, opener=None):
+    """(CK5) A checked clip -> {url, start_s, play, caption, title}: a library id's .mp4 and its .json (seconds,
+    caption); the file must answer (HEAD 200). ValueError says why not."""
+    opener = opener or urllib.request.urlopen
+    ua = {"User-Agent": "pog-tour/2 (tools/stream/tour.py)"}  # r2.dev refuses Python's own (403)
+    meta = {}
+    if c.get("id"):
+        url = base.rstrip("/") + "/" + c["id"] + ".mp4"
+        try:
+            with opener(urllib.request.Request(base.rstrip("/") + "/" + c["id"] + ".json", headers=ua),
+                        timeout=timeout) as r:
+                meta = json.loads(r.read())
+        except (urllib.error.URLError, OSError, ValueError) as x:
+            raise ValueError(f"{c['id']} is not in the clip library ({type(x).__name__}: {str(x)[:80]}); "
+                             f"tools/archive/clipmaker.py {c['id']} makes it")
+    else:
+        url = c["url"]
+    try:
+        with opener(urllib.request.Request(url, method="HEAD", headers=ua), timeout=timeout) as r:
+            if r.status != 200:
+                raise ValueError(f"{url}: HTTP {r.status}")
+    except (urllib.error.URLError, OSError) as x:
+        raise ValueError(f"{url} does not answer ({type(x).__name__}: {str(x)[:80]})")
+    start = float(c.get("start_s") or 0)
+    total = c.get("seconds") or meta.get("seconds")
+    if not total:
+        raise ValueError("seconds unknown: give the clip's seconds")
+    play = c["seconds"] if c.get("seconds") else max(0.5, float(total) - start)
+    caption = c.get("caption") or meta.get("caption") or "an earlier moment"
+    return {"url": url, "start_s": start, "play": round(float(play), 2), "caption": caption,
+            "title": meta.get("title")}
+
+
+def resolve_all(rows, base=CLIP_BASE, opener=None):
+    """{stop id: resolved clip} and {stop id: why not} for the stops with a clip."""
+    videos, bad = {}, {}
+    for _, s, _ in rows:
+        if s and s.get("clip"):
+            try:
+                videos[s["id"]] = resolve_clip(s["clip"], base, opener=opener)
+            except ValueError as x:
+                bad[s["id"]] = str(x)
+    return videos, bad
+
+
 def target_text(t):
+    if t is None:
+        return "an old clip (the camera stays)"
     if "platform" in t:
         return f"ship {t['platform']}"
     return f"{t['surface']} ({round(t['x'])}, {round(t['y'])})" + (f" zoom {t['zoom']:g}" if "zoom" in t else "")
 
 
-def stop_length(stop, clip_s, lead=LEAD_S, tail=TAIL_S):
+def stop_length(stop, clip_s, lead=LEAD_S, tail=TAIL_S, video=None):
     """A narrated stop: lead + clip + tail + hold_s, at least min_seconds (its seconds are not used). clip_s None, no
-    narration: its seconds (SILENT_S without). Never under MIN_STOP_S."""
+    narration: its seconds (SILENT_S without). Never under MIN_STOP_S. (CK5) An old clip's stop: at least its play
+    time + CLIP_END_S (a narration longer than the clip holds its last frame)."""
+    least = max(MIN_STOP_S, stop["min_seconds"], (video["play"] + CLIP_END_S) if video else 0.0)
     if clip_s:
-        return max(MIN_STOP_S, stop["min_seconds"], lead + clip_s + tail + stop["hold_s"])
-    return max(MIN_STOP_S, stop["min_seconds"], stop["seconds"] if stop["seconds"] is not None else SILENT_S)
+        return max(least, lead + clip_s + tail + stop["hold_s"])
+    return max(least, stop["seconds"] if stop["seconds"] is not None else (0.0 if video else SILENT_S))
 
 
 # ---- clips -------------------------------------------------------------------------------------------------------
@@ -347,8 +440,9 @@ def prepare(a):
 
 
 # ---- the timeline ------------------------------------------------------------------------------------------------
-def timeline(rows, manifest, out, lead=LEAD_S, tail=TAIL_S):
-    """[(stop, seconds, clip seconds or None, estimated)] for the valid stops, and the invalid ones [(index, why)]."""
+def timeline(rows, manifest, out, lead=LEAD_S, tail=TAIL_S, videos=None):
+    """[(stop, seconds, clip seconds or None, estimated)] for the valid stops, and the invalid ones [(index, why)].
+    videos: {stop id: resolved old clip} (resolve_all); a clip stop not in it is planned at its narration alone."""
     plan, bad = [], []
     for i, s, why in rows:
         if not s:
@@ -357,7 +451,7 @@ def timeline(rows, manifest, out, lead=LEAD_S, tail=TAIL_S):
         c = clip_for(manifest, out, s)
         est = c is None and bool(s["narration"])
         clip_s = c["duration"] if c else (len(s["narration"].split()) / WORDS_PER_S if s["narration"] else None)
-        plan.append((s, stop_length(s, clip_s, lead, tail), clip_s, est))
+        plan.append((s, stop_length(s, clip_s, lead, tail, (videos or {}).get(s["id"])), clip_s, est))
     return plan, bad
 
 
@@ -382,27 +476,33 @@ def clock(sec):
     return f"{int(sec // 60):2d}:{int(sec % 60):02d}"
 
 
-def print_timeline(rows, manifest, out, platforms=None, lead=LEAD_S, tail=TAIL_S):
-    plan, bad = timeline(rows, manifest, out, lead, tail)
+def print_timeline(rows, manifest, out, platforms=None, lead=LEAD_S, tail=TAIL_S, videos=None, vbad=None):
+    plan, bad = timeline(rows, manifest, out, lead, tail, videos)
     t = 0.0
     print(f"each narrated stop: cut, {lead:g} s, the clip, {tail:g} s (+ hold_s), then the next cut")
     print(f"{'start':>6}  {'len':>5}  {'clip':>6}  id / target / caption")
     ignored = []
     for s, length, clip_s, est in plan:
         note = ""
-        if "platform" in s["target"] and platforms is not None and \
+        if s["target"] and "platform" in s["target"] and platforms is not None and \
                 s["target"]["platform"].casefold() not in {p.casefold() for p in platforms}:
             note = "   [no such platform now: run would skip it]"
+        if (vbad or {}).get(s["id"]):
+            note += f"   [clip not available: {vbad[s['id']]}; run would skip it]"
         if clip_s and s["seconds"] is not None and abs(s["seconds"] - length) >= 1:
             ignored.append(s["id"])
         clip = "-" if clip_s is None else f"{clip_s:5.1f}" + ("~" if est else "s")
         print(f"{clock(t)}  {length:5.1f}  {clip:>6}  {s['id']} / {target_text(s['target'])} / {s['caption']}{note}")
+        v = (videos or {}).get(s["id"])
+        if v:
+            print(f"{'':22}clip: {v['play']:.1f} s from {v['start_s']:g} s, '{v['caption']}'"
+                  + (f" ({v['title']})" if v.get("title") else "") + f" {v['url']}")
         mv = move_for(s, length)
         if isinstance(mv, dict):
             print(f"{'':22}move: {move_text(mv)}")
         if s.get("marks"):
             off = []
-            if "x" in s["target"]:  # (a whole ship's frame is the director's: not known here)
+            if s["target"] and "x" in s["target"]:  # (a whole ship's frame is the director's: not known here)
                 view = {"position": {"x": s["target"]["x"], "y": s["target"]["y"]},
                         "zoom": s["target"].get("zoom", 0.75)}
                 if isinstance(mv, dict):
@@ -432,7 +532,8 @@ def dry_run(a):
     if m:
         print(f"clips: {m.get('voice')} ({m.get('provider')}), made {m.get('made')}")
     plats = platforms(a.feed)
-    print_timeline(rows, m, out, plats, a.lead, a.tail)
+    videos, vbad = resolve_all(rows, a.clip_base)
+    print_timeline(rows, m, out, plats, a.lead, a.tail, videos, vbad)
     return 0
 
 
@@ -478,11 +579,13 @@ def platforms(feed):
 
 class Tour:
     def __init__(self, svc, rows, manifest, out, log_path, hush_file=HUSH_FILE, stop_file=STOP_FILE,
-                 clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True, subtitles=True):
+                 clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True, subtitles=True,
+                 videos=None):
         self.svc, self.rows, self.manifest, self.out = svc, rows, manifest, out
         self.log_path, self.hush_file, self.stop_file = log_path, hush_file, stop_file
         self.now, self.sleep = clock, sleep
         self.lead, self.tail, self.agent_gaps, self.subtitles = lead, tail, agent_gaps, subtitles
+        self.videos = videos or {}  # (CK5) {stop id: resolved old clip}
         self.stopped = False
         self.drift = 0.0  # aired - cut_at asked, smoothed: later cuts are asked this much sooner
         self.cur = None  # the stop holding the camera: {id, look_until, need_until}
@@ -573,17 +676,23 @@ class Tour:
 
     def overlay_body(self, s, look, cut, end, length, clip=None, narr_at=None):
         subs = self.captions(s, clip)
-        if not s.get("marks") and not subs:
+        video = self.videos.get(s["id"])
+        if not s.get("marks") and not subs and not video:
             return None
-        view = {"surface": look.get("surface") or s["target"].get("surface"),
-                "position": look.get("position") or {"x": s["target"].get("x"), "y": s["target"].get("y")},
-                "zoom": look.get("zoom") or s["target"].get("zoom") or 0.75}
+        t = s["target"] or {}
+        view = {"surface": look.get("surface") or t.get("surface") or "",
+                "position": look.get("position") or {"x": t.get("x", 0), "y": t.get("y", 0)},
+                "zoom": look.get("zoom") or t.get("zoom") or 0.75}
         if isinstance(look.get("move"), dict):
             view["move"] = look["move"]
         body = {"id": s["id"], "cut": round(cut, 3), "until": round(end + LOOK_SPARE_S, 3), "length": round(length, 3),
                 "view": view, "marks": s.get("marks") or []}
         if subs:
-            body.update(subs=subs, subs_at=round(narr_at, 3), subs_pos="top" if s.get("subtitles") == "top" else "bottom")
+            # an old clip has its own speech bubbles low in the frame: its captions go on top unless asked otherwise
+            top = s.get("subtitles") == "top" or (video and s.get("subtitles") is True)
+            body.update(subs=subs, subs_at=round(narr_at, 3), subs_pos="top" if top else "bottom")
+        if video:
+            body["clip"] = video
         return body
 
     def narrate(self, s, clip, at, caption=True):
@@ -653,7 +762,7 @@ class Tour:
             self.record(**row)
 
     def run(self, rows):
-        plan, _ = timeline(rows, self.manifest, self.out, self.lead, self.tail)
+        plan, _ = timeline(rows, self.manifest, self.out, self.lead, self.tail, self.videos)
         lengths = {p[0]["id"]: p[1] for p in plan}
         left = sum(lengths.values())
         self.record(event="start", stops=[s["id"] for s, *_ in plan], planned_s=round(left),
@@ -671,6 +780,13 @@ class Tour:
                     continue
                 clip = clip_for(self.manifest, self.out, s)
                 length = lengths[s["id"]]
+                video = self.videos.get(s["id"])
+                if s.get("clip") and not video:
+                    log(f"[tour] skip {s['id']}: its clip is not available")
+                    self.record(event="skipped", id=s["id"], target=s["target"], reason="clip not available")
+                    skipped += 1
+                    left -= length
+                    continue
                 if not self.wait_until(T - PREROLL_S):
                     break
                 T = max(T, self.now() + MIN_PREROLL_S)
@@ -678,7 +794,12 @@ class Tour:
                 narr_at = cut + self.lead if clip else None
                 self.hush(left + 120)
                 ask = cut - self.drift
-                code, r = self.svc.call("POST", "/look", self.look_body(s, ask, end - cut + LOOK_SPARE_S, length))
+                if s["target"] is None:  # (CK5) an old clip only: the camera stays on the last shot, behind it
+                    code, r = 200, {}
+                    if self.cur:
+                        self.cur["need_until"] = end + LOOK_SPARE_S
+                else:
+                    code, r = self.svc.call("POST", "/look", self.look_body(s, ask, end - cut + LOOK_SPARE_S, length))
                 if code != 200:
                     why = (r or {}).get("error") or f"HTTP {code}"
                     log(f"[tour] skip {s['id']}: {target_text(s['target'])} refused ({why})")
@@ -693,9 +814,10 @@ class Tour:
                 if not self.wait_until(cut):
                     break
                 self.flush(cut)
-                self.cur = {"id": s["id"], "look_until": float(r.get("until") or end + LOOK_SPARE_S),
-                            "need_until": end + LOOK_SPARE_S}
-                t_air = self.aired(s["id"], cut + AIRED_WAIT_S)
+                if s["target"] is not None:
+                    self.cur = {"id": s["id"], "look_until": float(r.get("until") or end + LOOK_SPARE_S),
+                                "need_until": end + LOOK_SPARE_S}
+                t_air = self.aired(s["id"], cut + AIRED_WAIT_S) if s["target"] is not None else None
                 if t_air is not None and abs(t_air - ask) <= DRIFT_MAX_S:
                     self.drift = round(0.5 * self.drift + 0.5 * (t_air - ask), 3)
                 t_narr = self.started(cid, narr_at + START_WAIT_S) if cid else None
@@ -734,7 +856,8 @@ class Tour:
                 "cut_asked": round(ask, 3), "on_air": round(t_air, 3) if t_air is not None else None,
                 "narration_at": round(narr_at, 3) if narr_at else None,
                 "narration_start": round(t_narr, 3) if t_narr is not None else None,
-                "clip_s": clip["duration"] if clip else None, "agent_gap_s": gap or None, "agent_gap_for": who}
+                "clip_s": clip["duration"] if clip else None, "agent_gap_s": gap or None, "agent_gap_for": who,
+                **({"old_clip": self.videos[s["id"]]} if s["id"] in self.videos else {})}
 
     def release(self, kind):
         """Clear a hold of `kind` when it is still the tour's (an operator's own later hold stays)."""
@@ -801,7 +924,11 @@ def run(a):
     log_path = os.path.join(LOG_DIR, time.strftime("tour-%Y%m%d-%H%M%S.jsonl"))
     with open(RUN_FILE, "w") as f:
         json.dump({"pid": os.getpid(), "script": os.path.abspath(a.script), "started": time.time(), "log": log_path}, f)
-    tour = Tour(svc, rows, m, out, log_path, lead=a.lead, tail=a.tail, agent_gaps=a.agent_gaps, subtitles=a.subtitles)
+    videos, vbad = resolve_all(rows, a.clip_base)
+    for sid, why in vbad.items():
+        log(f"[tour] {sid}: {why}; it will be skipped")
+    tour = Tour(svc, rows, m, out, log_path, lead=a.lead, tail=a.tail, agent_gaps=a.agent_gaps, subtitles=a.subtitles,
+                videos=videos)
     signal.signal(signal.SIGTERM, lambda *_: setattr(tour, "stopped", True))
     log(f"[tour] {len([r for r in rows if r[1]])} stops in {m.get('voice')}; log {log_path}")
     try:
@@ -854,6 +981,7 @@ def parser():
         if name in ("dry-run", "run"):
             p.add_argument("--from", dest="start", metavar="ID", help="start at this stop (resume)")
             p.add_argument("--lead", type=float, default=LEAD_S, help="seconds from the cut to the narration")
+            p.add_argument("--clip-base", default=CLIP_BASE, help="the clip library (a stop's clip id: BASE/ID.mp4, .json)")
             p.add_argument("--tail", type=float, default=TAIL_S, help="seconds from the narration's end to the next cut")
         if name == "run":
             p.add_argument("--no-agent-gaps", dest="agent_gaps", action="store_false",

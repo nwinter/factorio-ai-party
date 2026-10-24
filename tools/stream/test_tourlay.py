@@ -72,6 +72,11 @@ def store():
     assert o.post(dict(body("s", 1000, 1030), subs=subs, subs_at=1000.8, subs_pos="side"), 1000)[0] == 400
     assert o.post(dict(body("s", 1000, 1030), subs=subs, subs_at=2000), 1000)[0] == 400
     assert o.post(dict(body("s", 1000, 1030), subs=[{"t0": 0, "t1": 1}], subs_at=1000.8), 1000)[0] == 400
+    # (CK5) an old clip
+    clip = {"url": "https://lib/clips/s1.mp4", "start_s": 2, "play": 20, "caption": "from shift 1", "title": "Opus died"}
+    assert o.post(dict(body("v", 1000, 1030), clip=clip), 1000)[0] == 200 and o.public(1000)[-1]["clip"]["play"] == 20
+    assert o.post(dict(body("v", 1000, 1030), clip=dict(clip, url="file:///x.mp4")), 1000)[0] == 400
+    assert o.post(dict(body("v", 1000, 1030), clip=dict(clip, play=0)), 1000)[0] == 400
     o.post(body("x", 1000, 1030), 1000)
     assert o.clear() == (200, {"tour": None}) and o.public(1001) is None
 

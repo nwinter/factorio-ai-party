@@ -40,6 +40,8 @@ const checks = {
     const e = { subs: [{ t0: 0, t1: 2.5, text: "one" }, { t0: 2.5, t1: 4, text: "two" }], subs_at: 100.8 };
     return T.captionAt(e, 100.7) === null && T.captionAt(e, 100.8).text === "one" && T.captionAt(e, 103.4).text === "two"
       && T.captionAt(e, 104.9) === null && T.captionAt({}, 101) === null; })(),
+  "an old clip plays from start_s at the cut and holds its end": near(T.clipAt({ start_s: 2, play: 20 }, 100, 99), 2)
+    && near(T.clipAt({ start_s: 2, play: 20 }, 100, 105.5), 7.5) && near(T.clipAt({ start_s: 2, play: 20 }, 100, 140), 22),
   "a moving view follows its move": (() => { const p = T.viewAt({ view: { move: MOVE } }, 100, 106); return near(p.x, 34.765184); })(),
 };
 let ok = true;

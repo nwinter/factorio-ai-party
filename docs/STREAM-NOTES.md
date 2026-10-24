@@ -1627,6 +1627,27 @@ Nick (17:30): "get the timing really tight between the shot durations and the me
 - Tests: test_subtitles.py (pieces, timing, pauses on an ffmpeg-made clip), test_tourlay.py (captions in the store,
   captionAt in node), test_tour.py (prepare keeps them; run posts them; off). Seen on the mock (overlay_shot.sh).
 
+## The tour, version 2: old clips (2026-10-23, d20 batch128 CK5)
+
+- A stop's `clip` (tools/stream/tour-FORMAT.md): a clip library id (batch129: R2 <id>.mp4, H.264, already the
+  camera hole's 1208 x 1032; <id>.json with seconds and caption) or an .mp4 url, start_s, seconds, caption.
+  tour.py resolves each in dry-run and run (the .json and a HEAD on the .mp4; r2.dev answers Python's own
+  User-Agent with 403, so it sends `pog-tour/2`); a stop whose clip is not there is skipped. The stop lasts at least
+  the clip's play time + 0.5 s. With no target there is no look: the last stop's look is extended behind the clip.
+- The page: tourlay.js loads a muted <video> per entry with a clip as the entry arrives (a stop ahead), shows it over
+  the whole hole (z 2: marks 3, captions 4), plays it from start_s at the cut, keeps it within 0.35 s of the clock
+  and holds its last frame to the stop's end; an ARCHIVE badge (caption, title) at the top left; captions go on top
+  for a clip stop (the clips carry the old speech bubbles low).
+- Sound: the clip plays muted. Its sound is the old hosts' voices (batch129: "the clip's audio has the old hosts'
+  voices on it") and that hour's game, which would talk over the narrator and the hush; the stream's live game
+  sound goes on as the bed, ducked under the voices by OBS as always (tools/obs.py stream-audio). Ducking it further
+  for a clip was not needed: the bed is the same as on every other stop.
+- Checked: a dry-run against the live library (s01-death-006: 22 s, "from shift 1, Oct 12", Opus died; a missing id
+  named with the clipmaker command); in Chromium the video, badge and top caption are put in the hole (a frame of
+  the video itself was not caught: the headless runs end before it loads); both local Chromes report H.264
+  ("probably"). OBS's browser source (CEF, on the stream machine) was not tried.
+- Tests: test_tour.py `old_clips`, test_tourlay.py (clips in the store), tourlay_selftest.mjs (clipAt).
+
 ## Camera crops after a shift change (2026-10-23, d23 batch124b)
 - Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
 - After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene

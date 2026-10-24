@@ -19,7 +19,7 @@ shot each, with one narrator reading each stop's narration. Check a script with
 | field | required | what it does |
 |---|---|---|
 | `id` | yes | a unique name: the log and `--from ID` (resume) use it |
-| `target` | yes | the shot: a planet spot `{surface, x, y, zoom}` or a ship `{platform: NAME}` (below) |
+| `target` | yes (a clip stop: no) | the shot: a planet spot `{surface, x, y, zoom}` or a ship `{platform: NAME}` (below) |
 | `caption` | no | at most 80 characters (60 reads best); the shot's on-screen label |
 | `narration` | no | the text the narrator reads; `prepare` renders it to a clip |
 | `facts` | no | for the operator: claims and their sources; never aired |
@@ -29,6 +29,7 @@ shot each, with one narrator reading each stop's narration. Check a script with
 | `move` | no | the camera moving within the stop: pan, zoom, a path (below) |
 | `marks` | no | arrows, circles, boxes and labels drawn at map positions over the shot (below) |
 | `subtitles` | no | `true` (default): the narration as captions; `false`; `"top"` (below) |
+| `clip` | no | an old clip from the archive played in the camera instead of a live shot (below); `target` is optional then |
 
 ### target
 
@@ -96,6 +97,35 @@ number counts from the end), `color` (`orange` default, `yellow`, `red`, `green`
 - Text is kept inside the camera; long text near an edge is moved in.
 - An urgent event (an attack) can still put a small inset window over the top right of the camera.
 
+## clip: an old moment from the archive
+
+A stop can play a recorded clip of the stream instead of a live shot: an earlier battle, a first launch, a death.
+
+```json
+{"id": "first-death", "clip": {"id": "s01-death-006"}, "caption": "The first death",
+ "narration": "On the first day, the first death: Opus, alone at the edge of the base."}
+```
+
+| clip field | what it does |
+|---|---|
+| `id` | a clip from the archive's clip library (batch129): `s48-platform_lost-001` and the like. `tools/archive/catalogue.py search` and runs/archive/catalogue.json list them; the operator's scratchpad tour/clip-moments.md has the writer's best 50; `python3 tools/archive/clipmaker.py ID` makes one not cut yet |
+| `url` | instead of `id`: any http(s) link to an .mp4 (then give `seconds`) |
+| `start_s` | seconds into the clip to start from (default 0) |
+| `seconds` | how much of it to play (default: to its end) |
+| `caption` | the archive badge's text (default the library's, e.g. "from shift 48, Oct 20") |
+
+- The clip fills the camera, with an ARCHIVE badge at the top left (its caption and title). It plays **muted**: its
+  own sound is the old hosts' voices and that hour's game, and the narrator speaks over it. The stream's live game
+  sound goes on underneath, as on every stop.
+- The stop lasts at least the clip (its play time + 0.5 s); a narration longer than the clip holds its last frame.
+- `target` is optional on a clip stop: without one the camera stays on the last shot, behind the clip. With one, the
+  camera goes there (so the stop after it can cut from there). A clip stop has no `move` without a target, and no
+  `marks` (they belong to the map, not the clip).
+- The clips already show the old speech bubbles low in the frame, so a clip stop's subtitles go at the top unless it
+  says `"subtitles": "bottom"`.
+- `dry-run` looks each clip up in the library (its length and caption) and marks a clip that is not there; `run`
+  skips that stop.
+
 ## Subtitles
 
 The narration is shown as captions in the camera while the narrator reads it, a phrase at a time (one or two
@@ -121,8 +151,12 @@ speaks over the shot after the narration); the timeline's total does not include
 ## Commands
 
 ```
-python3 tools/stream/tour.py prepare SCRIPT      # render every narration (one narrator voice); re-run after edits
-python3 tools/stream/tour.py dry-run SCRIPT      # the timeline: lengths, skips, notes; no camera, no audio
-python3 tools/stream/tour.py run SCRIPT          # on air (--from ID resumes; --lead/--tail change 0.8 and 1.5 s)
+python3 tools/stream/tour.py prepare SCRIPT      # render every narration (one narrator voice) and time its captions
+python3 tools/stream/tour.py dry-run SCRIPT      # the timeline: lengths, moves, marks, clips, skips; no camera, no audio
+python3 tools/stream/tour.py run SCRIPT          # on air
 python3 tools/stream/tour.py stop                # from another terminal: ends the tour cleanly
 ```
+
+`run` and `dry-run` take `--from ID` (resume at that stop), `--lead` and `--tail` (the 0.8 and 1.5 s around a
+narration) and `--clip-base` (another clip library). `run` also takes `--no-subtitles` and `--no-agent-gaps`.
+Re-run `prepare` after editing a narration: only the changed clips are rendered again.

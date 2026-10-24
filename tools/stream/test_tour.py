@@ -12,7 +12,9 @@
    the hosts are hushed all the while; the log says what aired when.
 5. (CK3, CK4) the overlay: marks with the view the look gave; captions timed from the narration's moment (the
    narrator's own caption box left out then), off by stop or by run.
-6. (CK2) moves: to, zoom, path and lists become camera moves over the stop (times from the cut, "end" and negative
+6. (CK5) old clips: checked, resolved from the clip library, a stop at least the clip long, no look without a target
+   (the last shot stays behind it), the clip in the overlay with captions on top, skipped when the library has none.
+7. (CK2) moves: to, zoom, path and lists become camera moves over the stop (times from the cut, "end" and negative
    counted from the end, holds share the time); a whole ship pans on its own and refuses a move with no spot to start
    from; a bad move makes the stop invalid; the look carries it (dry-run prints it).
 6. caster.py: the hush file keeps the hosts quiet (no lines, no reactions, the gap starts again after it).
@@ -385,6 +387,84 @@ def overlays():
     assert why == ["mark 1: type must be one of arrow, circle, box, label"], why
 
 
+class FakeWeb:
+    """The clip library for resolve_clip: <id>.json and a HEAD on each .mp4."""
+    def __init__(self, clips):
+        self.clips, self.asked = clips, []
+
+    def __call__(self, req, timeout=None):
+        import io, urllib.error
+        url = req if isinstance(req, str) else req.full_url
+        assert isinstance(req, str) or req.get_header("User-agent", "").startswith("pog-tour")
+        self.asked.append(url)
+        name = url.rsplit("/", 1)[-1]
+        cid, ext = name.rsplit(".", 1)
+        if cid not in self.clips:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, io.BytesIO(b""))
+        body = json.dumps(self.clips[cid]).encode() if ext == "json" else b""
+
+        class R(io.BytesIO):
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        return R(body)
+
+
+def old_clips():
+    """(CK5) A stop's clip: checked, resolved from the library (seconds, caption), its stop at least the clip long,
+    played over the last shot when it has no target, skipped when the library has none; marks refused with it."""
+    lib = FakeWeb({"s01-death-006": {"seconds": 22.0, "caption": "from shift 1, Oct 12", "title": "Opus died"}})
+    clip = {"id": "c1", "clip": {"id": "s01-death-006", "start_s": 2}, "narration": "The first death.", "caption": "x"}
+    s = tour.check_stop(clip)[0]
+    assert s["target"] is None and s["clip"] == {"id": "s01-death-006", "start_s": 2.0}
+    v = tour.resolve_clip(s["clip"], "https://lib/clips/", opener=lib)
+    assert v == {"url": "https://lib/clips/s01-death-006.mp4", "start_s": 2.0, "play": 20.0,
+                 "caption": "from shift 1, Oct 12", "title": "Opus died"}, v
+    assert lib.asked == ["https://lib/clips/s01-death-006.json", "https://lib/clips/s01-death-006.mp4"]
+    assert tour.stop_length(s, 5.0, video=v) == 20.0 + tour.CLIP_END_S, "the clip's length wins over a short narration"
+    assert tour.stop_length(s, 30.0, video=v) == tour.LEAD_S + 30 + tour.TAIL_S, "a long narration holds its last frame"
+    assert tour.stop_length(dict(s, narration=""), None, video=v) == 20.5
+    over = dict(s, clip={"id": "s01-death-006", "caption": "from the first day", "seconds": 8})
+    assert tour.resolve_clip(over["clip"], "https://lib/clips", opener=lib)["caption"] == "from the first day"
+    assert tour.resolve_clip(over["clip"], "https://lib/clips", opener=lib)["play"] == 8
+    try:
+        tour.resolve_clip({"id": "s99-none", "start_s": 0}, "https://lib/clips/", opener=lib)
+        raise AssertionError("a clip not in the library")
+    except ValueError as x:
+        assert "s99-none is not in the clip library" in str(x) and "clipmaker.py s99-none" in str(x), x
+    why = [w for _, x, w in tour.checked([dict(clip, clip={"id": "a b"}), dict(clip, clip={"url": "ftp://x/a.mp4"}),
+                                         dict(clip, clip={"id": "a", "url": "https://x/a.mp4"}),
+                                         dict(clip, marks=[{"type": "circle", "at": {"x": 0, "y": 0}}]),
+                                         dict(clip, move={"zoom": 1}), dict(clip, clip=None)])]
+    assert why == ["clip: id 'a b' is not a clip library id (letters, digits, - _ .)",
+                   "clip: url is an http(s) link to an .mp4 (or .m3u8)", "clip: give id (the clip library's) or url",
+                   "marks: a clip stop shows the clip, not the map (no marks)",
+                   "move: a clip stop with no target has no camera to move", "no target"], why
+    # run: the look before it stays on (extended) behind the clip; the overlay carries the clip, captions on top
+    with tempfile.TemporaryDirectory() as d:
+        gone = dict(clip, id="c2", clip={"id": "s99-none"})
+        t, svc, clock, rows = tour_with(d, [LOOK, clip, gone, SHIP], clip_s=6.0)
+        t.videos, bad = tour.resolve_all(rows, "https://lib/clips/", opener=lib)
+        assert list(t.videos) == ["c1"] and list(bad) == ["c2"]
+        aired, skipped = t.run(rows)
+        assert (aired, skipped) == (3, 1)
+        looks = [x[3]["id"] for x in svc.calls if x[1:3] == ("POST", "/look")]
+        assert looks == ["a", "b"], "no look for a clip with no target"
+        o = next(o for o in svc.overlays if o and o["id"] == "c1")
+        assert o["clip"]["url"].endswith("s01-death-006.mp4") and o["subs_pos"] == "top"
+        log = [json.loads(x) for x in open(t.log_path)]
+        c1 = next(r for r in log if r.get("id") == "c1")
+        assert c1["old_clip"]["caption"] == "from shift 1, Oct 12" and c1["on_air"] is None
+        assert abs(c1["seconds"] - 20.5) < 0.05, c1
+        assert next(r for r in log if r.get("id") == "c2")["reason"] == "clip not available"
+        ext = [x for x in svc.calls if x[2] == "/look/extend"]
+        assert ext == [] or all(x[3]["id"] == "a" for x in ext[:1])
+
+
 class Args:
     pass
 
@@ -435,7 +515,7 @@ def cli_dry_run():
 
 if __name__ == "__main__":
     for f in (script_checks, timing, prepare_clips, run_tour, agent_gaps, skip_and_stop, operator_hold_kept, moves,
-              overlays, caster_hush, cli_dry_run):
+              overlays, old_clips, caster_hush, cli_dry_run):
         f()
         print("ok", f.__name__)
     print("test_tour: all ok")

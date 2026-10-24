@@ -5,7 +5,8 @@ hole, from the snapshot's `tour`.
 
 POST /tour/overlay {id, cut, until, length, view {surface, position {x, y}, zoom, move?}, marks?, subs?, subs_at?,
 subs_pos?, clip?} (subs: the narration's captions [{t0, t1, text}], seconds from subs_at, the narration's moment;
-subs_pos bottom or top):
+subs_pos bottom or top; clip: an old clip {url, start_s, play, caption, title?} the page plays muted in the hole from
+the cut, CK5):
 times are epoch seconds (until: the entry's last moment; the next stop's entry takes over at its own cut), length the
 stop's seconds ("end" in a mark's times); marks' and subs' from_s/to_s are seconds from the cut (the page takes the look's `aired` for the cut
 when the look on air has this id). DELETE /tour/overlay ends them all. At most KEEP entries, each gone at its until.
@@ -99,6 +100,18 @@ def check_subs(subs, at, pos, cut):
     return {"subs": out, "subs_at": round(at, 3), "subs_pos": pos}
 
 
+def check_clip(c):
+    """(CK5) An old clip for the camera hole: {url (http(s), .mp4 or .m3u8), start_s, play (seconds), caption, title?}."""
+    if not isinstance(c, dict) or not isinstance(c.get("url"), str) or not c["url"].startswith(("http://", "https://")):
+        raise ValueError("clip is {url, start_s, play, caption}: url an http(s) link")
+    out = {"url": c["url"][:500], "start_s": round(_num(c.get("start_s", 0), "clip start_s", 0, 3600), 2),
+           "play": round(_num(c.get("play"), "clip play", 0.1, 900), 2),
+           "caption": " ".join(str(c.get("caption") or "").split())[:60]}
+    if c.get("title"):
+        out["title"] = " ".join(str(c["title"]).split())[:80]
+    return out
+
+
 def mark_times(m, length):
     """(from, to) in seconds from the cut over a stop of `length` s ("end" and negatives count from its end)."""
     def when(v, default):
@@ -132,8 +145,8 @@ class TourOverlay:
                      "length": round(length, 3), "view": view, "marks": check_marks(body.get("marks"))}
             if body.get("subs"):
                 entry.update(check_subs(body["subs"], body.get("subs_at"), body.get("subs_pos", "bottom"), cut))
-            if body.get("clip") is not None:  # (CK5: tour.py checks it)
-                entry["clip"] = body["clip"]
+            if body.get("clip") is not None:
+                entry["clip"] = check_clip(body["clip"])
         except ValueError as x:
             return 400, {"error": str(x)}
         self.entries = [e for e in self.entries if e["id"] != entry["id"] and e["until"] > now][-(KEEP - 1):] + [entry]

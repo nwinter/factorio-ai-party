@@ -7,6 +7,11 @@
 // view's, or where its move is now (camerapath.py's math, as cameras.lua plays it). ?tourlay=0 turns it off.
 // (CK4) The narration's captions (subs: {t0, t1, text} from subs_at, the narration's moment on the page's audio
 // clock) in a band at the hole's bottom (above the bar) or top (subs_pos top: an old clip has its own bubbles low).
+// (CK5) An old clip (clip {url, start_s, play, caption, title}): a muted <video> over the whole hole (the library's
+// clips are the hole's 1208 x 1032, so 1:1), loaded when the entry arrives (a stop ahead), played from the cut at
+// start_s, kept within 0.35 s of the clock, held on its last frame to the stop's end; an ARCHIVE badge with its
+// caption ("from shift 48, Oct 20"). Muted: its sound is the old hosts' voices and that hour's game, under the
+// narrator; the stream's own game sound goes on as the bed (ducked under the voices as always).
 (() => {
   const params = new URLSearchParams(location.search);
   const NS = "http://www.w3.org/2000/svg";
@@ -112,13 +117,15 @@
     }
     return g;
   }
+  // (CK5) where an old clip should be at now: its start_s plus the time since the cut, held at its end
+  const clipAt = (clip, start, now) => clip.start_s + Math.max(0, Math.min(now - start, clip.play));
   // (CK4) the caption on now: the one whose [t0, t1) holds now - subs_at, or null
   function captionAt(e, now) {
     if (!e || !e.subs || e.subs_at == null) return null;
     const t = now - e.subs_at;
     return e.subs.find((c) => c.t0 <= t && t < c.t1) || null;
   }
-  window.PogTourLay = { moveAt, along, ease, active, viewAt, toScreen, pxPerTile, markGeom, markTimes, captionAt };
+  window.PogTourLay = { moveAt, along, ease, active, viewAt, toScreen, pxPerTile, markGeom, markTimes, captionAt, clipAt };
   if (params.get("tourlay") === "0" || typeof document === "undefined" || !document.createElementNS) return;
 
   // ---- drawing
@@ -132,6 +139,15 @@
     .tour-subs span { max-width: 100%; padding: 6px 16px 8px; border-radius: 3px; background: rgba(20, 20, 20, 0.78);
       color: #f4f4f4; text-align: center; font: 600 31px/1.25 "Titillium Web", "Segoe UI", system-ui, sans-serif;
       text-shadow: 0 1px 2px #000; box-shadow: 0 4px 18px rgba(0,0,0,0.5); }
+    video.tour-clip { position: absolute; object-fit: cover; z-index: 2; opacity: 0; background: #000;
+      transition: opacity 200ms ease; pointer-events: none; }
+    video.tour-clip.on { opacity: 1; }
+    .tour-clipcap { position: absolute; left: 18px; top: 16px; z-index: 4; display: none; align-items: center; gap: 10px;
+      padding: 6px 14px 7px 10px; background: rgba(30, 29, 30, 0.88); border-left: 4px solid #e8c547; border-radius: 0 3px 3px 0;
+      color: #f0f0f0; font: 600 22px/1.2 "Titillium Web", "Segoe UI", system-ui, sans-serif; pointer-events: none; }
+    .tour-clipcap.on { display: flex; }
+    .tour-clipcap b { color: #e8c547; font-size: 15px; letter-spacing: 0.12em; }
+    .tour-clipcap i { font-style: normal; color: #b8b8b8; font-size: 18px; }
     svg.tour-marks text { font: 600 22px "Titillium Web", "Segoe UI", system-ui, sans-serif; fill: #f2f2f2;
       paint-order: stroke; stroke: rgba(0,0,0,0.85); stroke-width: 4px; stroke-linejoin: round; }`;
   document.head.appendChild(style);
@@ -213,6 +229,55 @@
       subsBox.firstChild.textContent = c.text;
     } else subsBox.classList.remove("on");
   }
+  const vids = new Map();  // entry id -> its <video>
+  let badge = null, badgeKey = "";
+  function drawClips(s, on, now) {
+    if (!host) return;
+    const want = new Set();
+    for (const e of (s && s.tour) || []) {
+      if (!e.clip || now >= e.until) continue;
+      want.add(e.id);
+      if (vids.has(e.id)) continue;
+      const v = document.createElement("video");
+      v.className = "tour-clip";
+      v.muted = true; v.defaultMuted = true; v.playsInline = true; v.preload = "auto";
+      v.addEventListener("loadedmetadata", () => { if (v.paused) v.currentTime = e.clip.start_s; });
+      v.src = e.clip.url;
+      Object.assign(v.style, { left: -host.clientLeft + "px", top: -host.clientTop + "px",
+        width: host.offsetWidth + "px", height: host.offsetHeight + "px" });
+      host.appendChild(v);
+      vids.set(e.id, v);
+    }
+    for (const [id, v] of vids) if (!want.has(id)) { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); vids.delete(id); }
+    const cur = on && on.e.clip ? vids.get(on.e.id) : null;
+    for (const v of vids.values()) {
+      v.classList.toggle("on", v === cur);
+      if (v !== cur && !v.paused) v.pause();
+    }
+    if (cur) {
+      const c = on.e.clip, at = clipAt(c, on.start, now), playing = now - on.start < c.play;
+      if (cur.readyState >= 1 && Math.abs(cur.currentTime - at) > 0.35) cur.currentTime = at;
+      if (playing && cur.paused) cur.play().catch(() => {});
+      if (!playing && !cur.paused) cur.pause();  // its last frame stays to the stop's end
+    }
+    if (!badge || badge.parentNode !== host) {
+      badge = document.createElement("div");
+      badge.className = "tour-clipcap";
+      host.appendChild(badge);
+    }
+    const key = cur ? on.e.id : "";
+    if (key !== badgeKey) {
+      badgeKey = key;
+      badge.replaceChildren();
+      if (cur) {
+        const b = document.createElement("b"); b.textContent = "ARCHIVE";
+        const t = document.createElement("span"); t.textContent = on.e.clip.caption || "an earlier moment";
+        badge.append(b, t);
+        if (on.e.clip.title) { const i = document.createElement("i"); i.textContent = on.e.clip.title; badge.append(i); }
+      }
+      badge.classList.toggle("on", !!cur);
+    }
+  }
   // the stop's length (for "end" and negative times): from its cut to its until less the look's spare
   const lengthOf = (e) => (e.length != null ? e.length : e.until - e.cut);
   let shown = "";
@@ -220,7 +285,8 @@
     const s = window.pogState, now = Date.now() / 1000;
     const on = active(s, now);
     const cam = s && s.cameras && s.cameras.main;
-    const live = on && (!cam || !cam.look || !cam.look.id || cam.look.id === on.e.id);
+    // on air: the program shows its look (an old clip's stop shows the clip whatever the camera does)
+    const live = on && (on.e.clip || !cam || !cam.look || !cam.look.id || cam.look.id === on.e.id);
     const L = layer();
     if (L) {
       if (!live || !(on.e.marks || []).length) {
@@ -234,8 +300,9 @@
       }
     }
     drawSubs(on, live, now);
+    drawClips(s, live ? on : null, now);
     if (window.PogTourLay.onFrame) window.PogTourLay.onFrame(s, now, on);
-    // animate while an entry is on (moves and fades); otherwise look again four times a second
+    // animate while an entry is on (moves and fades); otherwise look again four times a second (clips load ahead)
     if (on) requestAnimationFrame(frame); else setTimeout(frame, 250);
   }
   frame();
