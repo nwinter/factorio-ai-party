@@ -13,7 +13,7 @@ return function(api)
     vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight); a spidertron with nothing else: a read of its route and stall; another vehicle with no enter, go_to or targeting switch: refused, naming enter: true',
       enter='true: get in (driver seat if free, else a car or spidertron passenger seat); a train you ride runs its schedule as usual',
       exit='true: get out of the vehicle you are in',
-      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s turning room (a square as wide as its diagonal plus a tile): to the target, else to open ground within 8 then 13 tiles of it (last.stopped_short), else for its length or width only when none of our entities lies within its turning room of that path (else unreachable, naming them). It slows to stop before the path\'s end and before sharp turns, steers no more than 2 tiles past a turn, and brakes to stop 0.5 tiles before any of our entities in its way, turning on the spot only with none within its corners\' sweep (last.spared names them; units it pushes through, ours never). Neither moving nor turning for 1.5 s: it backs off 1 s (not into ours) and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front, or the entity of ours it stopped for)',
+      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600; arrived: stopped within 3 tiles of the target, or at the end of the path to open ground near it (last.stopped_short); last.distance_left: tiles from where it stopped to the target, and last.arrive_rule). It follows the engine\'s path for the vehicle\'s turning room (a square as wide as its diagonal plus a tile): to the target, else to open ground within 8 then 13 tiles of it (last.stopped_short), else for its length or width only when none of our entities lies within its turning room of that path (else unreachable, naming them). It slows to stop before the path\'s end and before sharp turns, steers no more than 2 tiles past a turn, and brakes to stop 0.5 tiles before any of our entities in its way, turning on the spot only with none within its corners\' sweep (last.spared names them; units it pushes through, ours never). Neither moving nor turning for 1.5 s: it backs off 1 s (not into ours) and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front, or the entity of ours it stopped for)',
       dry_run='with drive: true: the path the drive would take, without moving (a timed action of a few ticks: fh --wait): last.preview {path (its corners), path_length, plan, ends, short_of, touches (our entities within the vehicle\'s half-diagonal of the path: what it would touch turning there; none), nearest_ours}; outcome previewed, or unreachable as the drive would end',
       pathfind='with drive: default true; false steers straight at the target',
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
@@ -571,6 +571,18 @@ return function(api)
     nav.finish = path[#path].position
     nav.plan = plan.what
     nav.short_of = plan.near and api.distance(nav.finish, nav.position) or nil
+    -- (d24 batch158, harness review bug 5: a drive from (714.5,698.5) to (734.5,698.5) on cleared ground ended arrived at
+    -- x 729.2) the engine's path ends anywhere within its goal radius (tolerance + 1 + the plan's): a path to the target
+    -- that ends farther than the tolerance from it goes on straight to the target (nav.extended: how far); the braking
+    -- for ours and the stuck rules hold on that stretch as on the path
+    local tol = nav.tolerance or 3
+    local gap = not plan.near and api.distance(nav.finish, nav.position) or 0
+    if gap > tol then
+      path[#path + 1] = {position={x=nav.position.x, y=nav.position.y}}
+      nav.finish = path[#path].position
+      nav.extended = math.floor(gap * 10 + 0.5) / 10
+      nav.path_length = nav.path_length + math.floor(gap + 0.5)
+    end
   end
   -- The next plan, or unreachable: no path, or every narrow one passes our entities.
   function M.next_plan(p, nav)
@@ -895,7 +907,9 @@ return function(api)
     -- The path's end: where a stop-short plan ends, and where any path ends (never steered past it at the target).
     local finish = nav and nav.waypoints and nav.finish
     local df = finish and api.distance(v.position, finish) or d
-    if d <= 3 or (finish and df <= 1.5) then
+    -- arrived: within the tolerance (3 tiles) of the goal, or at the end of a path to open ground near it (a stop-short
+    -- plan: last.stopped_short); a path to the target goes to it (nav.extended)
+    if d <= (nav and nav.tolerance or 3) or (nav and nav.short_of and finish and df <= 1.5) then
       -- A corner of the way around a nest: on to the next leg without stopping.
       if nav and nav.leg and api.leg(view_p, nav) then return nil end
       ride(R.acceleration.braking, R.direction.straight)

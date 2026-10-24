@@ -10,6 +10,8 @@ World `sa` (docs/SPACEAGE.md): game port 34210, RCON 27030. Needs the RCON tunne
   tools/sa_smoke.py [--bot sa1] [--out runs/sa-smoke]
 
 Every step is logged as ok/FAIL with the reply, and later steps still run, so one pass lists everything that breaks.
+The world needs a client connected: a headless server with none charts nothing, and nearest reads charted chunks, so
+the early game's steps would find nothing; each one skipped is a failed step.
 The probe uses operator Lua (like tools/pog.py score); the early game uses only harness actions through a bot.
 """
 import argparse, json, os, subprocess, sys, time
@@ -53,6 +55,32 @@ end
 out.peaceful = s.peaceful_mode
 out.spawn = f.get_spawn_position(s)
 rcon.print(helpers.table_to_json(out))
+"""
+
+
+# (d24 batch158, harness review bug 8: on a fresh headless world sa_smoke passed with its early game skipped: no player
+# charts anything, and nearest reads charted chunks only, so it found no stone, coal or iron) the force charts round
+# spawn first, and the smoke waits until the chunks round it are charted. Measured on a fresh 2.0.77 world in a
+# headless server with no client: force.chart and chart_all left 0 of the 25 chunks charted, so there the chart step
+# fails and so does every early-game step it skips (connect a client, as for the live checks).
+CHART_R = 128   # tiles round spawn charted
+CHART_LUA = r"""
+local f, s = game.forces.player, game.surfaces.nauvis
+local sp = f.get_spawn_position(s)
+f.chart(s, {{sp.x - CHART_R, sp.y - CHART_R}, {sp.x + CHART_R, sp.y + CHART_R}})
+rcon.print(helpers.table_to_json{spawn = sp, tick = game.tick})
+""".replace("CHART_R", str(CHART_R))
+CHARTED_LUA = r"""
+local f, s = game.forces.player, game.surfaces.nauvis
+local sp = f.get_spawn_position(s)
+local n, total = 0, 0
+for cx = math.floor(sp.x / 32) - 2, math.floor(sp.x / 32) + 2 do
+  for cy = math.floor(sp.y / 32) - 2, math.floor(sp.y / 32) + 2 do
+    total = total + 1
+    if f.is_chunk_charted(s, {cx, cy}) then n = n + 1 end
+  end
+end
+rcon.print(helpers.table_to_json{charted = n, total = total, tick = game.tick})
 """
 
 
@@ -121,10 +149,35 @@ def nearest(s, name):
     return rows[0]["position"] if rows else None
 
 
+def skipped(s, step, name):
+    """A step of the early game that could not run is a failed step (it was passed over in silence before)."""
+    s.record(f"{step}: skipped", False, f"no {name} within 64 tiles in charted chunks: nearest found none")
+
+
+def chart(s, sleep=time.sleep, tries=30):
+    """Chart round spawn and wait until the 25 chunks round it are charted (a step: ok or FAIL)."""
+    s.lua("chart round spawn", CHART_LUA)
+    got = None
+    for _ in range(tries):
+        out = s.rcon.command("/silent-command " + " ".join(l.strip() for l in CHARTED_LUA.strip().splitlines()))
+        try:
+            got = json.loads(out)
+        except ValueError:
+            got = {"error": out}
+        if got.get("total") and got.get("charted") == got.get("total"):
+            break
+        sleep(2)
+    done = bool(got and got.get("total") and got.get("charted") == got.get("total"))
+    if not done and isinstance(got, dict):
+        got = dict(got, note="a headless server with no client connected charts nothing (2.0.77): connect a client")
+    s.record("chunks round spawn charted", done, got)
+
+
 def gather(s, name, ticks):
     """Walk to the nearest `name` and hand-mine it for `ticks`."""
     pos = nearest(s, name)
     if not pos:
+        skipped(s, f"gather {name}", name)
         return False
     s.fh(f"move_to {name}", "move_to", {"position": pos, "tolerance": 1.5}, wait=True)
     return s.fh(f"mine {name}", "mine", {"position": pos, "ticks": ticks}, wait=True) is not None
@@ -149,6 +202,7 @@ def main():
 
     # 2. A bot and the harness's own reads.
     s.lua("bot_create", f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))')
+    chart(s)
     for action in ("status", "describe", "status", "observe", "map", "craftable", "technologies", "platforms"):
         s.fh(action, action, {"available": True} if action == "technologies" else None)
 
@@ -166,6 +220,8 @@ def main():
         s.fh("wait for plates", "wait_until", {"until": "item_count", "item": "iron-plate", "at_least": 1,
                                                "timeout": 3600}, wait=True)
         s.fh("collect", "collect", {"radius": 8}, wait=True)
+    else:
+        skipped(s, "drill, furnace and smelting on iron", "iron-ore")
     s.fh("craft iron-gear-wheel", "craft", {"recipe": "iron-gear-wheel", "count": 2})
     s.fh("research report", "research")
     s.fh("research automation", "research", {"technology": "automation"})

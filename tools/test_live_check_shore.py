@@ -109,7 +109,7 @@ def main():
     steps = [l["step"] for l in lines]
     for want in ("game clock runs (a client connected, not auto-paused)", "stage: 10x10 water at (122,202)",
                  "offshore pump on dry land: refused with up to 3 placements", "placements nearest first, within 12 tiles",
-                 "game: can_place_entity (manual) accepts each", "placements read: the same list",
+                 "game: can_place_entity (manual) accepts each", "placements read (limit as many as the refusal lists): the same spots",
                  "build offshore pump at the first placement", "game: the pump stands there, facing that way", "boiler on water: refused by water, with positions facing north",
                  "game: the boiler stands there", "cleanup: the old tiles are back", "cleanup: bot removed"):
         assert want in steps, (want, steps)

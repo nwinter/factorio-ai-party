@@ -34,6 +34,20 @@ def spots(message):
     return [(float(x), float(y), d) for x, y, d in SPOT.findall(tail)]
 
 
+def same_spots(want, found, listed):
+    """The read lists what the refusal does (d24 batch158, harness review bug 8: the read's default is 10 rows to the
+    refusal's 3, and two equally near spots came in the other order): the same distances in order, and the same spots
+    once ties at the last distance are allowed either way."""
+    def dist(r):
+        return round(math.hypot(r[0] - want[0], r[1] - want[1]), 3)
+    if [dist(r) for r in listed] != [dist(r) for r in found]:
+        return False
+    if not found:
+        return True
+    last = dist(found[-1])
+    return {r for r in listed if dist(r) < last} == {r for r in found if dist(r) < last}
+
+
 def nearest_first(want, found, radius):
     d = [math.hypot(x - want[0], y - want[1]) for x, y, _ in found]
     return bool(found) and d == sorted(d) and d[-1] <= radius + 0.01
@@ -44,6 +58,7 @@ def main():
     ap.add_argument("--bot", default="ls1")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--out", default=os.path.join(L.ROOT, "runs", "live-check-shore"))
+    L.add_site_arg(ap)
     a = ap.parse_args()
     world = os.environ.get("POG_WORLD", "live")
     if world in ("a", "b", "c", "n"):
@@ -62,7 +77,7 @@ def main():
     pos = (st.get("result") or {}).get("position")
     if not c.record("bot status", ok and pos is not None, pos):
         sys.exit(1)
-    stage = c.lua(L.stage_lua(pos, ITEMS))
+    stage = c.lua(L.stage_lua(pos, ITEMS, L.parse_site(a.site)))
     if not c.record("stage: site and items", "site" in stage, stage):
         sys.exit(1)
     ox, oy = stage["site"]["x"], stage["site"]["y"]
@@ -129,9 +144,11 @@ def main():
     c.record("placements nearest first, within 12 tiles", nearest_first(want, found, 12), found)
     accepted, raw = game_accepts("offshore-pump", found)
     c.record("game: can_place_entity (manual) accepts each", bool(found) and accepted == [True] * len(found), raw)
-    read = c.step("placements read", "placements", {"name": "offshore-pump", "position": {"x": want[0], "y": want[1]}}) or {}
+    read = c.step("placements read", "placements", {"name": "offshore-pump", "position": {"x": want[0], "y": want[1]},
+                                                    "limit": max(1, len(found))}) or {}
     listed = [(p["position"]["x"], p["position"]["y"], p["direction"]) for p in read.get("placements") or []]
-    c.record("placements read: the same list", listed == found and (read.get("checked") or 0) <= 400,
+    c.record("placements read (limit as many as the refusal lists): the same spots", same_spots(want, found, listed)
+             and (read.get("checked") or 0) <= 400,
              {"read": listed, "checked": read.get("checked")})
     if found:
         x, y, d = found[0]

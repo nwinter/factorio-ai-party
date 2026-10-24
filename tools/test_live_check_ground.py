@@ -11,8 +11,10 @@ import live_check_ground as G  # noqa: E402
 
 state = {"tick": 1000, "stacks": 0, "marked": 0, "plates": 0, "pad": False, "seen": set()}
 compiled, calls = [], []
-PILE = "160 item stacks on the ground at (114,202)-(121,204) on nauvis, near our buildings: 1600 iron-plate"
-PAD = "cargo landing pad at (105,207) on nauvis is full (80/80 slots) and pods spill: 30 item stacks on the ground within 40 tiles: 600 coal"
+PILE = ("items on the ground at (114,202)-(121,204) on nauvis, near our buildings: entities 160 (each an item stack on the ground); "
+        "items 1600: 1600 iron-plate; storage slots they fill 16 (at each item's stack size)")
+PAD = ("cargo landing pad at (105,207) on nauvis is full (80/80 slots) and pods spill within 40 tiles: entities 30 (each an item stack on "
+       "the ground); items 600: 600 coal; storage slots they fill 12 (at each item's stack size)")
 
 
 def fake_lua(self, code):
@@ -78,7 +80,7 @@ def fake_fh(self, action, args=None, wait=False):
         return True, {"result": {"item_stacks": state["stacks"]}}
     if action == "cancel_deconstruction":
         n, state["marked"] = state["marked"], 0
-        return True, {"result": {"item_stacks": n}}
+        return True, {"result": {"item_stacks_cancelled": n}}
     if action == "pickup":
         if not state["stacks"]:
             return False, {"error": {"message": "no items on the ground in (113,200)-(124,206)"}}

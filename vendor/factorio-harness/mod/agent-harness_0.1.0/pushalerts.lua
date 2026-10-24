@@ -1717,8 +1717,18 @@ return function(api)
     return out
   end
   M.claims_over = claims_over
+  -- (d24 batch158, harness review improvement 2: Nauvis's groups went to "haiku (nearest)" while Haiku had been logged
+  -- out for six hours; ammo_low groups of hand-fed turrets with no builder record and no agent within 64 tiles went to no
+  -- one) an agent plays when its place (where.lua) is neither offline (a bot with no request or sleep poll for 15 min) nor
+  -- resting (rests.lua)
+  local function playing(a)
+    local pl = a and a.place
+    return pl ~= nil and not pl.offline and not pl.resting
+  end
+  M.playing = playing
+  local function away_word(pl) return pl and (pl.resting and 'resting' or pl.offline and 'offline') or 'not playing' end
   -- (d22 batch113 BW1) info: optional table, filled with name -> the claim it hears the group by (owners and coverers)
-  local function owners(g, roster, info)
+  local function owners_of(g, roster, info)
     local out = {}
     -- ammo_low (C1): who built them, and every agent within 64 tiles of the group
     if g.kind == 'ammo_low' then
@@ -1747,17 +1757,42 @@ return function(api)
     if next(out) then return out end
     for name in pairs(g.by) do if roster[name] then out[name] = 'built' end end
     if next(out) then return out end
-    local best, d2 = nil, math.huge
+    -- (d24 batch158) the nearest agent on its surface that plays; nearer ones that do not are named
+    local near = {}
     for name, a in pairs(roster) do
       local pl = a.place
       if pl and pl.key == g.surface and pl.position and not pl.dead and g.center then
-        local d = (pl.position.x - g.center.x) ^ 2 + (pl.position.y - g.center.y) ^ 2
-        if d < d2 then best, d2 = name, d end
+        near[#near+1] = {name=name, d=(pl.position.x - g.center.x) ^ 2 + (pl.position.y - g.center.y) ^ 2, a=a}
       end
     end
-    if best then out[best] = 'nearest' end
+    table.sort(near, function(x, y) return x.d < y.d or (x.d == y.d and x.name < y.name) end)
+    local skipped = {}
+    for _, n in ipairs(near) do
+      if playing(n.a) then
+        out[n.name] = #skipped > 0 and 'nearest playing; ' .. table.concat(skipped, ', ') .. ' nearer' or 'nearest'
+        return out
+      end
+      skipped[#skipped+1] = n.name .. ': ' .. away_word(n.a.place)
+    end
+    if #skipped > 0 then out[skipped[1]:match('^[^:]+')] = 'nearest, ' .. skipped[1]:match(': (.+)$') end
     return out
   end
+  -- Who hears a group, and when no one who plays does: '*team' with why, so every playing agent hears it (the team's
+  -- alert line): every one it goes to not playing, or ammo_low with no one (no builder record, no agent within 64
+  -- tiles). A group on a surface with no agent (a platform's) goes to no one, as before.
+  local function owners(g, roster, info)
+    local out = owners_of(g, roster, info)
+    local names = {}
+    for name in pairs(out) do
+      if playing(roster[name]) then return out end
+      names[#names+1] = name .. ' ' .. away_word(roster[name] and roster[name].place)
+    end
+    table.sort(names)
+    if #names > 0 then out['*team'] = 'no agent it goes to plays now (' .. table.concat(names, ', ') .. ')'
+    elseif g.kind == 'ammo_low' then out['*team'] = 'no builder record for these turrets and no agent within 64 tiles of them' end
+    return out
+  end
+  M.owners = owners
   local function roster()
     local out = {}
     for _, a in ipairs(try(api.agents) or {}) do out[a.name] = {index=a.index, place=api.place and try(function() return api.place(a.index) end)} end
@@ -1799,7 +1834,7 @@ return function(api)
           by[k] = by[k] + 1
           local any = false
           for other, ow in pairs(o) do
-            if other ~= name then
+            if other ~= name and other ~= '*team' then
               any = true
               local ok = other .. (ow == 'covers' and ' (covers)' or '')
               if not others[ok] then others[ok] = 0; oorder[#oorder+1] = ok end
@@ -2212,7 +2247,10 @@ return function(api)
     for _, g0 in ipairs(c.groups) do
       -- One of yours, a turret group read again first: refilled since, it is not shown (nor counted as told).
       local info = {}
-      local why = not URGENT_KINDS[g0.kind] and owners(g0, who, info)[me]
+      local o = not URGENT_KINDS[g0.kind] and owners(g0, who, info) or {}
+      local why = o[me]
+      -- (d24 batch158) a group no playing agent hears comes to every playing agent, with why
+      if not why and o['*team'] and playing(who[me]) then why = 'team' end
       local g = why and M.recheck(g0, p.force) or nil
       if g then
         local level = g.rank or g.n
@@ -2221,6 +2259,8 @@ return function(api)
         if not told or level > told then
           if #lines < MAX_LINES then
             lines[#lines+1] = M.text(g, here, told and (mem.said and mem.said[g.key] or (not g.rank and told)) or nil) .. (why == 'covers' and M.covers_text(info[me]) or '')
+              .. (why == 'team' and ' (to the team: ' .. o['*team'] .. ')' or '')
+              .. (type(why) == 'string' and why:find('^nearest playing; ') and ' (you are the ' .. why .. ')' or '')
             mem.told[g.key] = level
             if g.now_text then mem.said = mem.said or {}; mem.said[g.key] = g.now_text end
           else more = more + 1 end
@@ -2588,7 +2628,9 @@ return function(api)
         -- One group that fails to read is listed with why; the others still are.
         local ok, row = pcall(function()
           local to, info = {}, {}
-          for name, why in pairs(owners(g, who, info)) do to[#to+1] = M.to_text(name, why, info[name]) end
+          for name, why in pairs(owners(g, who, info)) do
+            to[#to+1] = name == '*team' and 'the team (every playing agent): ' .. why or M.to_text(name, why, info[name])
+          end
           table.sort(to)
           return {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost, robots=g.robots,
             ore=g.ore, still_mining=g.still, untapped=g.untapped, drill_site=g.drill_site, observed_tick=g.observed_tick, checked_tick=g.checked_tick, stale=g.stale, line=M.text(g, here), to=#to > 0 and to or nil}
@@ -2650,7 +2692,7 @@ return function(api)
       claim='optional board claim id: only the groups whose centre (or feed chest) lies in that open claim\'s area on its surface (compact)', mine='optional true: the same over your own open claims',
       since='optional: the cursor your last game_alerts reply gave (with claim, mine or cursor: true): only the groups not in that reply (by kind, surface and 32-tile cell), new (how many), gone_since (how many of that reply\'s are gone), compact; every reply with claim, mine, since or cursor gives a new cursor (kept per agent, the last one)',
       cursor='optional true: give a cursor without filtering',
-      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest), robots (no_storage: up to 4 robots at the scan, each {unit_number, name, position, cargo {name, quality, count}, heading {x, y} (where it flies), network, line}; the line adds them)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
+      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest (the nearest agent on its surface that plays: not offline, not resting; "nearest playing; haiku: offline nearer" when a nearer one does not), or "the team (every playing agent): why" when no agent it goes to plays, or an ammo_low group has no builder record and no agent within 64 tiles: each playing agent hears it in team.alerts with "(to the team: why)"; none: no agent on its surface), robots (no_storage: up to 4 robots at the scan, each {unit_number, name, position, cargo {name, quality, count}, heading {x, y} (where it flies), network, line}; the line adds them)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
 end
