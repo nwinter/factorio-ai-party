@@ -213,6 +213,8 @@ return function(api)
   end
   -- Over the cap, finished items go first (oldest update first), then notes,
   -- then the oldest of anything but open projects (at most MAX_PROJECTS).
+  local PRUNED_KEPT = 128
+  local KEEP_RULE = 'the board keeps ' .. MAX_ITEMS .. ' items: past that, done and dropped items are pruned first (the oldest update first), then notes, then the oldest of the rest, with lessons and projects not yet done last; plans are not pruned'
   local function prune()
     local b = store()
     while b.count > MAX_ITEMS do
@@ -228,7 +230,28 @@ return function(api)
       b.items[victim.id] = nil
       b.count = b.count - 1
       b.aged = nil
+      -- (d24 batch154) what was pruned and when, for a read of its id (the last PRUNED_KEPT)
+      b.pruned = b.pruned or {}
+      b.pruned[#b.pruned+1] = {id=victim.id, kind=victim.kind, status=victim.status, title=tostring(victim.title or ''):sub(1, 60),
+        updated=victim.updated_tick, tick=game.tick}
+      while #b.pruned > PRUNED_KEPT do table.remove(b.pruned, 1) end
     end
+  end
+  -- (d24 batch154, the batch149 review's bug 7: "no board item #N" for an item pruned) a missing id: pruned when, what
+  -- it was, and the keep rule; or never posted.
+  local function missing(id, what)
+    local b = store()
+    local head = (what and what .. ': ' or '') .. 'no board item #' .. tostring(id)
+    if type(id) ~= 'number' then return head end
+    for i = #(b.pruned or {}), 1, -1 do
+      local x = b.pruned[i]
+      if x.id == id then
+        return string.format('%s: pruned %s ago (tick %d), a %s %s "%s" last updated %s before; %s', head, ago(game.tick - x.tick), x.tick,
+          tostring(x.status), tostring(x.kind), x.title, ago(x.tick - (x.updated or x.tick)), KEEP_RULE)
+      end
+    end
+    if id >= b.next_id or id < 1 then return string.format('%s: none posted with that number (the last posted is #%d)', head, b.next_id - 1) end
+    return string.format('%s: posted and since pruned, before the last %d pruned items kept; %s', head, PRUNED_KEPT, KEEP_RULE)
   end
   -- Claims with no activity by their owner for claims.EXPIRE close (dropped,
   -- a harness note, an `expired` event for the stream and board_events). A
@@ -391,7 +414,7 @@ return function(api)
     assert(type(v) == 'table' and #v <= MAX_LINKS, 'supersedes takes item numbers: a number or an array of up to ' .. MAX_LINKS .. ' ([] clears)')
     local out = {}
     for _, id in ipairs(v) do
-      assert(type(id) == 'number' and store().items[id], 'supersedes: no board item #' .. tostring(id))
+      if not (type(id) == 'number' and store().items[id]) then error(missing(id, 'supersedes'), 0) end
       assert(id ~= self, 'supersedes: an item does not replace itself')
       out[#out+1] = id
     end
@@ -403,7 +426,7 @@ return function(api)
     assert(type(v) == 'table' and #v <= MAX_LINKS, 'blocked_by takes item numbers: a number or an array of up to ' .. MAX_LINKS .. ' ([] clears)')
     local out, seen = {}, {}
     for _, id in ipairs(v) do
-      assert(type(id) == 'number' and store().items[id], 'blocked_by: no board item #' .. tostring(id))
+      if not (type(id) == 'number' and store().items[id]) then error(missing(id, 'blocked_by'), 0) end
       assert(id ~= self, 'blocked_by: an item does not wait for itself')
       if not seen[id] then seen[id] = true; out[#out+1] = id end
     end
@@ -748,7 +771,7 @@ return function(api)
   local function update(by, a)
     assert(type(a.id) == 'number', 'id is required (a board item number)')
     local item = store().items[a.id]
-    assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
+    if not item then error(missing(a.id), 0) end
     local project = item.kind == 'project'
     local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
       or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil or a.evidence ~= nil or a.cover ~= nil
@@ -1092,7 +1115,7 @@ return function(api)
     local b = store()
     if a.id ~= nil then
       local item = b.items[a.id]
-      assert(item, 'no board item #' .. tostring(a.id))
+      if not item then error(missing(a.id), 0) end
       return {item=view(item, true, where_for(by))}
     end
     local limit = a.limit or 30
@@ -1847,7 +1870,7 @@ return function(api)
     local scope = {}
     if a.id ~= nil then
       local root = b.items[a.id]
-      assert(root, 'no board item #' .. tostring(a.id))
+      if not root then error(missing(a.id), 0) end
       scope[#scope+1] = root
       for _, i in pairs(b.items) do if i.parent == root.id then scope[#scope+1] = i end end
     else

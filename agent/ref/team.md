@@ -101,6 +101,8 @@
   `./fh call boilers --args '{"area":{"left_top":{"x":0,"y":30},"right_bottom":{"x":40,"y":60}}}'`
 - `tells {since?}` (`./fh tells`): the last 30 tells you received (time, sender, fyi), shown before or not;
   `./fh tells --since N` lists the ones you sent and received after N. Example: `./fh tells --since 120`
+  `after` is `since`; `unread`, `seq` and `from` are refused naming `since`. A board item, reminder or delivery watch
+  id no longer kept is refused with when it was pruned, removed or dropped, and the keep rule.
 - Claims: a claim labels positions in it (`claimed`); its area's alerts go to its owner, and teammates' `stock` sweeps
   leave its chests out. It stays fresh while its owner works on it (posting or updating it, or the owner's own
   requests standing in it or acting on a position in it); after 30 minutes without that it is `stale` on the board and

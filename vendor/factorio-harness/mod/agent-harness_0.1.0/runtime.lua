@@ -1685,6 +1685,22 @@ local function entity(p,args,read_only)
         pos.x, pos.y, #touch, table.concat(parts, ', '), touch[1].name, tostring(touch[1].unit_number)), 0)
     end
   end
+  -- (d24 batch154, the batch149 review's bug 7: inspect {name: rocket-silo} on a pole read "entity not found ...
+  -- nearest small-electric-pole 0.0 tiles") name left out what stands there: say so, naming it
+  if not found and args.name then
+    local there={}
+    for _,e in pairs(p.surface.find_entities_filtered{position=pos,limit=8}) do
+      if e.valid and e.type~='resource' and e.type~='character' and not attached[e.type] and M.target_rank(e,{})<=2 then
+        there[#there+1]=string.format('%s (%g,%g)%s',e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.name,e.position.x,e.position.y,
+          e.unit_number and ' unit_number '..e.unit_number or '')
+      end
+    end
+    if #there>0 then
+      -- (the text starts as the plain miss does: mine {name} falls back to a tile of that name on it)
+      error(string.format('entity not found at (%g,%g): no %s there; name=%s left out what stands there: %s; without name (or with its own name) that is the target',
+        pos.x,pos.y,tostring(args.name),tostring(args.name),table.concat(there,', ',1,math.min(3,#there))),0)
+    end
+  end
   if not found then
     -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
     -- tile or so from a pole, inserter or belt, or empty).
@@ -6437,6 +6453,27 @@ function M.one_pad(surface,force,proto,pos)
   return string.format('one cargo landing pad per planet (the game\'s rule): %s%s stands at (%g,%g) on %s',
     ghost and 'a ghost of one, ' or 'one, ',whose,e.position.x,e.position.y,surface.name)
 end
+-- (d24 batch154, the batch149 review's bug 3: "placement blocked by logistic-robot (-21.76,-21.20), logistic-robot
+-- (-21.80,-21.16), boompuff", Sonnet) whether entity e meets proto in the game's collision test: their collision masks
+-- share a layer (flying robots, corpses and smoke share none with a building, and never block it). A mask that cannot
+-- be read counts as meeting.
+do local masks={}
+function M.mask_meets(proto,e)
+  local function mask_of(x) local ok,m=pcall(function() return x.collision_mask end); return ok and type(m)=='table' and type(m.layers)=='table' and m or nil end
+  local a=mask_of(proto)
+  local name=e.name
+  local b=masks[name]
+  if b==nil then
+    local ok,ep=pcall(function() return e.prototype end)
+    b=ok and ep and mask_of(ep) or false
+    masks[name]=b
+  end
+  if not a or not b then return true end
+  if a.colliding_with_tiles_only or b.colliding_with_tiles_only then return false end
+  for layer in pairs(a.layers) do if b.layers[layer] then return true end end
+  return false
+end
+end
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
   local pad=M.one_pad(p.surface,p.force,proto,pos)
@@ -6451,7 +6488,8 @@ local function placement_error(p,proto,pos,direction,near)
   local area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
   local found,character,items={},false,false
   local trees,rocks,cliffs=0,0,0
-  for _,e in pairs(p.surface.find_entities_filtered{area=area,limit=16}) do
+  -- (d24 batch154) 48: robots passing over (left out below) leave room for what blocks it
+  for _,e in pairs(p.surface.find_entities_filtered{area=area,limit=48}) do
     if e.valid and e.type=='character' and e==p.character then character=true
     elseif e.valid and e.type=='character' and #found<4 then
       -- Someone else stands there: say who, so the agent can ask them.
@@ -6463,7 +6501,7 @@ local function placement_error(p,proto,pos,direction,near)
     elseif e.valid and e.type=='tile-ghost' then
       -- a tile ordered under it is no blocker: a build reads the tile there now; the game takes an entity ghost over
       -- tile ghosts (d20 batch52 J1: Sol's thrusters were refused "blocked by tile ghost space-platform-foundation")
-    elseif e.valid and e.type~='resource' and #found<4 then
+    elseif e.valid and e.type~='resource' and #found<4 and (e.type=='entity-ghost' or M.mask_meets(proto,e)) then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
       -- An item on the ground (shake4: Grok's 9 tries at one spot): say which.
       if e.type=='item-entity' then items=true; name=name..(e.stack and e.stack.valid_for_read and ' ('..e.stack.name..')' or '') end
@@ -6555,6 +6593,7 @@ local function placement_error(p,proto,pos,direction,near)
  end
  return text
 end
+M.placement_error=placement_error
 local function build_direct(p,stack,pos,direction,quality,kind,place,rail_layer)
   local proto,surface=place or stack.prototype.place_result,p.surface
   -- A rail planner's curve takes 3 rails and a half-diagonal 2, as the game
@@ -12482,7 +12521,12 @@ end
 M.transfer_now=handlers.transfer
 function M.tour_stock() return stock end
 function handlers.transfer(p,a)
-  if a.retry_when_clear==nil then return M.transfer_now(p,a) end
+  -- (d24 batch154, the batch149 review's bug 4) the engine's "Unknown item name: X" is said as the harness's
+  if a.retry_when_clear==nil then
+    local ok,out=pcall(M.transfer_now,p,a)
+    if ok then return out end
+    error(M.argforms.unknown_item(a,out),0)
+  end
   assert(type(a.retry_when_clear)=='boolean','retry_when_clear must be true or false')
   local rest={}
   for k,v in pairs(a) do if k~='retry_when_clear' and k~='retry_ticks' and k~='retries' then rest[k]=v end end
@@ -13374,6 +13418,7 @@ M.paste_plan=blueprint_handlers.plan
 end -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
+M.argforms=require('argforms')
 M.argshapes=require('argshapes')()
 M.hubfull=require('hubfull'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,
   request_rows=function(e,f,only) return M.silo.request_rows(e,f,nil,only) end,listeners=function(pl) return M.platalerts.listeners(pl) end,
@@ -17228,6 +17273,8 @@ function check_args(action,args)
     action=args.scope
     set=allowed_args[action]
   end
+  -- (d24 batch154) item "name@quality" read once (argforms.lua): item and quality where quality is taken, else refused
+  if args.item~=nil then M.argforms.item_quality(action,args,set.quality==true) end
   for key in pairs(args) do
     -- peek (boolean) on any request: read without consuming this agent's
     -- team hints (overlays polling as an agent).
@@ -17274,7 +17321,9 @@ function check_args(action,args)
       if not closest then
         for _,v in ipairs(valid) do if #v>=4 and k:sub(1,#v+1)==v..'_' then closest=v end end
       end
-      error('unknown argument '..k..' for '..action..'; valid: '..(#valid>0 and table.concat(valid,', ') or 'none')
+      -- (d24 batch154) platform where another argument or action takes it, tells' since: the form named
+      local form=M.argforms.refusal(action,k,args,M.takes,M.platform_surface_name)
+      error('unknown argument '..k..' for '..action..(form and ': '..form or '')..'; valid: '..(#valid>0 and table.concat(valid,', ') or 'none')
         ..(closest and '; closest name: '..closest or ''),0)
     end
   end
@@ -17466,6 +17515,29 @@ function M.entity_args(request)
   else what=M.circuits.takes(e) end
   return string.format('; %s at (%g,%g) takes: %s; and position, name, unit_number, platform, surface',e.name,e.position.x,e.position.y,what)
 end
+-- (d24 batch154) the surface name of a platform by its name (argforms.lua), any force's; nil when none
+function M.platform_surface_name(name)
+  if type(name)~='string' then return nil end
+  for _,f in pairs(game.forces) do
+    local ok,list=pcall(function() return f.platforms end)
+    for _,pl in pairs(ok and list or {}) do
+      if pl.valid and pl.name==name and pl.surface and pl.surface.valid then return pl.surface.name end
+    end
+  end
+  return nil
+end
+-- (d24 batch154, the batch149 review's bug 7: observe {surface: "Asterion"} read "no surface Asterion") a surface
+-- refused that is a platform's name: the argument that takes the platform.
+-- (observe {surface} with a platform's name read "needs position there": observe {platform} reads round its hub)
+function M.surface_hint(action,args,msg)
+  if type(args)~='table' or type(args.surface)~='string' then return msg end
+  local takes=M.takes(action,'platform')
+  if not (tostring(msg):find('no surface',1,true) or (takes and tostring(msg):find('surface',1,true))) then return msg end
+  local s=M.platform_surface_name(args.surface)
+  if not s or s==args.surface then return msg end
+  return string.format('%s; %s is a platform (its surface: %s): %s',msg,args.surface,s,
+    takes and action..' takes it as platform="'..args.surface..'"' or 'surface="'..s..'" names its surface')
+end
 -- Whether an action takes an argument (describe's schema, as check_args reads it).
 function M.takes(action,key)
   if not allowed_args then pcall(check_args,'describe',{}) end
@@ -17490,7 +17562,7 @@ function M.unpowered(e)
   return string.format('unpowered: no pole reaches it; nearest pole %s at (%g,%g), %d tiles',best.name,best.position.x,best.position.y,math.floor(bd+0.5))
 end
 -- Common wrong argument names renamed to the real ones (aliases.lua).
-M.aliases=require('aliases'){}
+M.aliases=require('aliases'){platform_surface=function(name) return M.platform_surface_name(name) end}
 -- Out-of-reach calls walk into reach first, within 32 tiles (autowalk.lua; Haiku 22:53, friction1300).
 M.autowalk=require('autowalk'){encode=M.aliases.encode,box_distance=M.box_distance,reach_for=M.reach_for,
   out_of_reach=function(p,e) return M.out_of_reach(p,e) end,distance=distance,handlers=handlers,state=state,reason=reason}
@@ -17860,6 +17932,7 @@ function M.dispatch_inner(request)
       r=reason(r)
       local view=request.action=='observe' and type(request.args)=='table' and type(request.args.scope)=='string' and request.args.scope or request.action
       r=M.with_example(view,request.args,r)
+      r=M.surface_hint(view,request.args,r)
     end
     return corrected and tostring(r)..' [ran as '..corrected.call..': '..table.concat(corrected.notes,'; ')..']' or r
   end

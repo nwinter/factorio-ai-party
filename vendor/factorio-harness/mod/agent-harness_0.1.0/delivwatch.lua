@@ -58,6 +58,31 @@ return function(api)
     s.delivwatch = s.delivwatch or {seq=0, list={}, events={}, eseq=0, rr=0}
     return s.delivwatch
   end
+  -- (d24 batch154, the batch149 review's bug 7: "no delivery watch #N" after the 10-min drop) the last GONE_KEPT watches
+  -- dropped or cleared, for a read of the id: when it ended and when it was dropped, and the keep rule.
+  local GONE_KEPT = 64
+  local KEEP_RULE = 'a watch is kept 10 minutes after it ends (received or reached), or 10 minutes past its deadline while late; clear ends it at once'
+  local function gone(w, why, tick, by)
+    local st = store()
+    st.gone = st.gone or {}
+    st.gone[#st.gone+1] = {id=w.id, item=w.item, setter=w.setter, state=w.state, why=why, by=by,
+      ended=w.ended or (w.state == 'late' and w.deadline) or nil, tick=tick}
+    while #st.gone > GONE_KEPT do table.remove(st.gone, 1) end
+  end
+  local function missing(id)
+    local st = store()
+    local head = 'no delivery watch #' .. tostring(id)
+    for i = #(st.gone or {}), 1, -1 do
+      local x = st.gone[i]
+      if x.id == id then
+        local ended = x.ended and string.format('%s at tick %d (%s ago), ', x.state == 'late' and 'its deadline passed' or 'it ended ' .. tostring(x.state), x.ended, secs(game.tick - x.ended)) or ''
+        return string.format('%s: #%d (%s, set by %s): %s%s at tick %d (%s ago); %s', head, x.id, tostring(x.item), tostring(x.setter), ended,
+          x.why == 'cleared' and 'cleared by ' .. tostring(x.by) or 'dropped', x.tick, secs(game.tick - x.tick), KEEP_RULE)
+      end
+    end
+    if type(id) == 'number' and (id > st.seq or id < 1) then return string.format('%s: none set with that number (the last set is #%d)', head, st.seq) end
+    return string.format('%s: set and since dropped, before the last %d dropped watches kept; %s', head, GONE_KEPT, KEEP_RULE)
+  end
   local function push(w, text)
     local st = store()
     st.eseq = st.eseq + 1
@@ -517,11 +542,11 @@ return function(api)
       assert(type(a.id) == 'number', 'id: the watch to read or clear (delivery_watch {} lists them)')
       for i, w in ipairs(st.list) do
         if w.id == a.id then
-          if a.clear == true then table.remove(st.list, i); return {cleared=a.id, line='delivery watch #' .. a.id .. ' cleared'} end
+          if a.clear == true then gone(w, 'cleared', game.tick, who); table.remove(st.list, i); return {cleared=a.id, line='delivery watch #' .. a.id .. ' cleared'} end
           return {watches={M.row(w)}}
         end
       end
-      error('no delivery watch #' .. tostring(a.id), 0)
+      error(missing(a.id), 0)
     end
     if a.item == nil then
       local rows, lines = {}, {}
@@ -784,7 +809,7 @@ return function(api)
     local st = store()
     for i = #st.list, 1, -1 do
       local w = st.list[i]
-      if (w.ended and tick - w.ended > KEEP) or (w.state == 'late' and tick - w.deadline > KEEP) then table.remove(st.list, i) end
+      if (w.ended and tick - w.ended > KEEP) or (w.state == 'late' and tick - w.deadline > KEEP) then gone(w, 'dropped', tick); table.remove(st.list, i) end
     end
     local open, counting = {}, false
     for _, w in ipairs(st.list) do

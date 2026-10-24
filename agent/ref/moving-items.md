@@ -8,6 +8,9 @@
   reactor's fuel cells go in and out as any burner's; a roboport's robots come out with `{position, direction:
   "to_player", item: "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup
   {belt: true}`.
+  - `item: "name@quality"` (`"iron-plate@uncommon"`) is item and quality in every action that takes quality (transfer,
+    collect, feed, stock, build and its entries, use_item, wait_until; entries of requests `set`, drop and load_silo
+    `items`); an action without quality refuses it, naming quality. transfer refuses a name that is no item.
   - `to_player: "haiku"` hands items to a teammate within your reach: dropped at its feet as loot its character picks
     up (`players` gives teammates' positions).
   - Two places in one call: `{position, to, item, from_inventory, to_inventory}` takes at `position` and gives at
