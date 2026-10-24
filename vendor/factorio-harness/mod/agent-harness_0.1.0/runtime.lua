@@ -1005,6 +1005,22 @@ local function stop_combat(index,outcome)
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
+-- (d22 batch112 BV1) The entries a running build had left: its walk's call for the rest (autowalk.lua) or a step aside's
+-- rerun; nil for anything else.
+function M.left_undone(index)
+  local action=state().active[index]
+  if not action then return nil end
+  local args=action.then_call and action.then_call.action=='build' and action.then_call.args or action.handler=='build' and action.args or nil
+  local list=type(args)=='table' and type(args.builds)=='table' and args.builds or nil
+  if not list or #list==0 then return nil end
+  local pos={}
+  for i=1,math.min(8,#list) do
+    local b=list[i]
+    local q=type(b)=='table' and type(b.position)=='table' and b.position
+    pos[#pos+1]=q and string.format('%s (%g,%g)',tostring(b.item or args.item),q.x or q[1] or 0,q.y or q[2] or 0) or '?'
+  end
+  return {count=#list,positions=pos,line=table.concat(pos,', ')..(#list>8 and string.format(' and %d more',#list-8) or '')}
+end
 -- The tick a read or passive action raised: the bootstrap's failure handler
 -- calls stop_player right after, which must leave the action and queue alone.
 local passive_failed=false
@@ -16275,6 +16291,8 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
+  -- (d22 batch112 BV1) a build's entries its running action had left (a walk for the rest, a step aside): {count, line}
+  left_undone=function(index) return M.left_undone(index) end,
   guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,
   recheck_read=function(rc) return space.recheck_read(rc) end,
   state=state,player=player,handlers=handlers,timed=M.timed,

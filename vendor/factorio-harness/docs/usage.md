@@ -12325,6 +12325,30 @@ the watch's arrivals show the pad holding 1000, 1976, 2448, ... 5602 on each pod
 - Headless copy, after a deploy: watch #75 read `received` (10000, 10 pods, by the pad, from its arrivals) within a
   second, with the line above. Cost: nothing new per tick; at a landing, a chest/silo/machine consumer adds two
   logistic network lookups (1.3 µs each on the copy).
+
+## d22 batch112 BV1 (eng/d20-batch112): queue_edit and the active step (Astra #1962)
+
+Astra (shift60 journal): at ticks 49440819-49440892 she edited pending jobs 36448-36454 by id while job-36447 (a walking
+build of 64 ice-platform tiles, on_fail skip, started 49433476) ran. At tick 49441482 the queue history recorded
+job-36447 `{reason: interrupted}` with 4 tiles unplaced ((-136.5,-394.5), (-147.5,-394.5), (-158.5,-394.5),
+(-202.5,-394.5)), and job-36465 (her edit of 36448) started on the same tick.
+
+- What the journal shows: no request of Astra's between ticks 49441468 and 49441530 (her calls then were sleep_check
+  peeks of a 50 s sleep begun at 49441280), and no harness update notice (the operator's last deploy was 21:03, ticks
+  before). The queue was not left paused: the next step started on that tick.
+- In the runtime, `{reason: interrupted}` alone is what the queue's pause records for an active step (scheduler.lua
+  pause_inner; a build is not run again). queue_edit does not touch the active step (by id, by index, or a move).
+- Headless copy of world n's 20:24 autosave (tick 49429614, Astra's queue at job-36438 with 36447 pending), replayed
+  three times from tick 49433940: with no edit, with her seven queue_edit calls (from the journal) at the same point of
+  the build, and with those plus her sleep and its sleep_check polls: job-36447 ended `done` each time (tick 49441924).
+  What paused the queue at 49441482 on world n is not reproduced.
+- Now (scheduler.lua, runtime.lua; runtime deploy needed):
+  - queue_edit's reply has `active_step`, read after the edit: "job-36447 build: still the active step, its action
+    running; this edit changed pending steps only" (or that it is no longer the active step, or none was active);
+  - a step the queue's pause interrupts is recorded with `paused_by` (what paused it: a direct call that drives the
+    character, stop, a failed call, a death, a harness update ...) and, for a build not run again, `left_undone`
+    {count, positions} and `not_requeued` ("not run again: 4 entries left unbuilt (ice-platform (-136.5,-394.5), ...)").
+
 ## d22 batch117 BZ1 (eng/d20-batch117): platform_ammo_below, a platform's whole ammunition reserve (Astra #1970)
 
 A full-edge abort must keep the return leg's ammunition. `item_count` with `platform` reads the hub alone and
