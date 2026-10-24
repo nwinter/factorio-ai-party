@@ -327,14 +327,34 @@ def newest_evidence(row):
     return dict(row, evidence=ev[-1:], evidence_more=len(ev) - 1)
 
 
+RESULT_FIRST = 100  # characters of the first recipient's result kept when the results are left out
+
+
 def latest_without_results(row, same_only):
-    """A reminder job with its recipients' latest results left out (same_only: only those equal to its last result)."""
+    """A reminder job with its recipients' latest results left out (same_only: only those equal to its last result).
+    (d24 batch150 PV1, viewer Aurora 07:31: reminder 42 read "no result given" in the collapsed view while both
+    recipients had results) each row left out says so: result_omitted "same" (the job's last result, kept whole) or
+    "size"; the job keeps results_given (how many recipients gave one) and result_first (the first: same, the job's last
+    result; else its first RESULT_FIRST characters, shortened said)."""
     latest = row.get("latest") if isinstance(row, dict) else None
     if not isinstance(latest, list):
         return row
-    keep = [dict(x, result=None) if isinstance(x, dict) and x.get("result") and (not same_only or x["result"] == row.get("last_result")) else x
-            for x in latest]
-    return dict(row, latest=keep)
+    cut = lambda x: isinstance(x, dict) and x.get("result") and (not same_only or x["result"] == row.get("last_result"))  # noqa: E731
+    if not any(cut(x) for x in latest):
+        return row
+    out = dict(row, latest=[dict(x, result=None, result_omitted="same" if x["result"] == row.get("last_result") else "size") if cut(x) else x
+                            for x in latest])
+    if "results_given" not in row:
+        given = [x for x in latest if isinstance(x, dict) and (x.get("result") or x.get("result_omitted"))]
+        out["results_given"] = len(given)
+        first = given[0]
+        text = first.get("result")
+        if first.get("result_omitted") == "same" or text == row.get("last_result"):
+            out["result_first"] = {"name": first.get("name"), "agent": first.get("agent"), "same": True}
+        elif text:
+            out["result_first"] = {"name": first.get("name"), "agent": first.get("agent"), "text": text[:RESULT_FIRST - 3].rstrip() + "..."
+                                   if len(text) > RESULT_FIRST else text, "shortened": len(text) > RESULT_FIRST}
+    return out
 
 
 REMINDER_BYTES = 24 * 1024  # the reminders' share of the state: results up to 1000 characters, evidence lines
