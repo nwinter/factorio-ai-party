@@ -71,10 +71,13 @@ def main():
     n = N.Nudger(["muse", "haiku", "luna"], start=T0 - 3600, run_dir=run)
     m = row("muse", 30, unread_tells=5)
     assert [e["agent"] for e in n.step({"agents": [m]}, T0, send, logged.append)] == ["muse"]
+    ask = "open for you: 1 request or tell to you unanswered (tell from haiku 1m02s ago: {})"
+    m["open"] = ask.format("the route")  # (d24 batch168) a repeat goes on something new asked of it
     assert n.step({"agents": [m]}, T0 + 20 * 60, send, logged.append)[0].get("unanswered") == 1
     why = n.due(m, T0 + 50 * 60)
     assert why == ("not answering (1 nudge not delivered and no request of its own since; no request of its own for "
                    "170 min): idle nudges every 40 min while it does not answer"), why
+    m["open"] = ask.format("the foundries")
     assert n.due(m, T0 + 60 * 60) is None, "40 min after the last"
     n.step({"agents": [m]}, T0 + 60 * 60, send, logged.append)
     assert "every 80 min" in n.due(m, T0 + 130 * 60)
@@ -83,7 +86,9 @@ def main():
     assert "every 240 min" in n.due(m, T0 + 61 * 60), "at most 4 h"
     journal(run, "muse", T0 + 62 * 60)  # it asks something of its own: answering again
     n.observe(m, T0 + 63 * 60)
-    assert n.unanswered["muse"] == 0 and n.due(m, T0 + 80 * 60) is None
+    assert n.unanswered["muse"] == 0 and n.due(m, T0 + 80 * 60).startswith("nudged 20 min ago in this idle stretch")
+    m["open"] = ask.format("the belts")
+    assert n.due(m, T0 + 80 * 60) is None, "answering again: the usual 20 min, on something new"
 
     # a pane that reads idle or done with no request of its own for 30 min: a session that stopped, backed off at once
     p = N.Nudger(["haiku"], start=T0 - 3600, run_dir=run, pane_status=lambda name: "done")
@@ -92,7 +97,7 @@ def main():
     p.step({"agents": [h]}, T0, send, logged.append)
     assert p.due(h, T0 + 25 * 60).startswith("not answering (its pane reads done; no request of its own for 145 min)")
     p.pane_status = lambda name: "working"
-    assert p.due(h, T0 + 25 * 60) is None, "a working pane: the usual 20 min"
+    assert p.due(h, T0 + 25 * 60).startswith("nudged 25 min ago in this idle stretch"), "a working pane: the usual rules"
 
     # a rest (resting.json, as the operator marked Muse's until Sun 17:00) is no nudge; while it does not answer, one
     # handoff goes to the active lead, naming what waits on it; never twice
@@ -107,8 +112,10 @@ def main():
     out = q.step(rep, T0, send, logged.append)
     assert [e.get("handoff") for e in out] == [True] and out[0]["lead"] == "luna", out  # haiku: no request in 10 min
     to, text = sent[0]
-    assert to == "luna" and text.startswith("Operator (automatic, facts only): muse does not answer (out of quota until"), text
-    assert "Waiting on it: 1 request or tell to you unanswered (tell from haiku 29m14s ago" in text and len(text.encode()) <= 500, text
+    assert to == "luna" and text.startswith("Operator (automatic, facts only): cover request. muse does not answer (out "
+                                            "of quota until"), text
+    assert "Asked of you until muse makes a request of its own: cover what waits on it." in text, text
+    assert "Waiting on it: 1 request or tell to muse unanswered (tell from haiku 29m14s ago" in text and len(text.encode()) <= 500, text
     assert "8 more of yours" not in text and "30 machines" not in text, "only what waits on it"
     assert q.step(rep, T0 + 600, send, logged.append) == [] and len(sent) == 1, "once"
     # nothing waiting on it: no handoff
