@@ -120,7 +120,7 @@ return function(api)
     local n = 0
     for _ in pairs(job.turrets or {}) do n = n + 1 end
     if not job.turrets and job.result then for _ in ipairs(job.result.turrets or {}) do n = n + 1 end end
-    local seen = job.nast or (job.result and job.result.asteroids) or 0
+    local seen = job.nast and job.nast + (job.untracked or 0) or (job.result and job.result.asteroids) or 0
     return {units=1, gone=job.gone and 1 or 0, scope=string.format('asteroids and %d turret%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
       sample=string.format('%d asteroids seen, %d in view, %d hits on the platform', seen, job.in_view or 0, #(job.hits or {})), empty=false}
   end

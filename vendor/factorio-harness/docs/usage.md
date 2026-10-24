@@ -12885,3 +12885,23 @@ What is new in the reads:
   `nothing`. On the copy it read `iron-plate*100 (cargo pods coming down to it)` for the 1150 ticks a pod flew.
 
 Read only: nothing changes what the hub sends.
+
+## d23 batch133 PE1: the asteroid watch's totals by asteroid name (Sol #2094)
+
+`platform_defense {platform, asteroids: true}` now returns, beside its classes:
+
+- `asteroids` (every asteroid seen in view), `tracked` (those followed one by one: the first `tracked_cap`, 3000),
+  `untracked` (seen past the cap, each counted once; it was counted at every sighting and event: 31427 for about 845
+  asteroids in 73 s on a copy of world n with the cap at 100);
+- `by_name` [{name, seen, destroyed, hit, left_view, in_view, untracked}], every asteroid by name, the most seen first,
+  and `by_name_lines`; an untracked asteroid's outcome comes from the game's events (destroyed, hit the platform), in
+  view from the last sample, left the view otherwise;
+- `scope`: which totals cover which asteroids (by_name every one; classes, platform_hits, the turrets' kills by class
+  and trajectories the tracked ones; the turrets' hits and kills on untracked ones count as untracked), and that
+  asteroid chunks are not entities: the watch does not see them, and nothing it reads is collected
+  (`platform_supply {collection: true}` and its collector_tally watch read chunks and what collectors take).
+
+On the copy (world n's 21:33 save, Asterion flying to the shattered planet, 99 turrets) the watch's tick cost 0.114
+ms a tick before and 0.121 ms after with the cap at 3000 (712 asteroids in 93 s, none past it), and 0.095 against
+0.106 ms with the cap at 100 (745 untracked); the find, the projection and the event handlers did not change.
+Regression: tests/d23_batch133.lua, failing on the old asteroidwatch.lua.
