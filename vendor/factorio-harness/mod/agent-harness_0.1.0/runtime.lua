@@ -14425,8 +14425,9 @@ do local function place_tile_ghost(p,tile,pos)
     for _,e in ipairs(marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
     error('tile placement blocked',0)
   end
-  -- (d24 batch144 PP1) who placed it (ghostlog.lua): remove_ghosts {tiles: true} takes one's own by it
-  pcall(M.ghostlog.placed,M.board.who(p),ghost)
+  -- (d24 batch144 PP1) who placed it (ghostlog.lua): remove_ghosts {tiles: true} takes one's own by it; a record that
+  -- fails never stops the placement
+  pcall(function() M.ghostlog.placed(M.board.who(p),ghost) end)
   return ghost,marked
 end
 -- The reply's line for trees and rocks marked where tile ghosts go.
