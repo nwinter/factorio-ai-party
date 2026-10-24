@@ -237,6 +237,25 @@ def main():
         {"name": "Scout", "at": "fulgora", "to": "fulgora", "hub": True}]}}, t + 10)
     assert [x["kind"] for x in cold.moments] == ["orbit"] and cold.moments[0]["title"] == "Scout reaches Fulgora"
 
+    # (d23 batch131 CN1, Astra #2088) turned back mid-connection: the schedule's stop beyond the connection (Aquilo on
+    # edge->shattered-planet), the distance shrinking: headed back to the edge, said as a turn back
+    tb = model()
+    tb.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "aquilo"], "platforms": [
+        {"name": "Asterion", "at": "solar-system-edge", "to": "shattered-planet", "hub": True}]}}, t)
+    for i, (at, to) in enumerate((("solar-system-edge->shattered-planet 1%", "shattered-planet"),
+                                  ("solar-system-edge->shattered-planet 2%", "shattered-planet"),
+                                  ("solar-system-edge->shattered-planet 2%", "aquilo"),
+                                  ("solar-system-edge->shattered-planet 1%", "aquilo"))):
+        tb.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "aquilo"], "platforms": [
+            {"name": "Asterion", "at": at, "to": to, "hub": True, "state": "on_the_path"}]}}, t + 5 * (i + 1))
+        p = next(x for x in tb.snapshot(t)["space"]["platforms"] if x["name"] == "Asterion")
+        if i == 1:
+            assert p["route"]["to"] == "Shattered Planet" and not p["route"].get("turned_back"), p["route"]
+    assert p["route"] == {"from": "Shattered Planet", "to": "Solar system edge", "pct": 99, "turned_back": True}, p["route"]
+    assert p["where"] == "back to Solar system edge (turned back)", p["where"]
+    assert platform_place({"name": "A", "at": "solar-system-edge->shattered-planet 1%", "toward": "solar-system-edge",
+                           "turned_back": True}) == "turned back, travelling to Solar system edge"
+
     # 4. live.py: the score's fresh location over a detail read from before
     from live import LiveSource
     assert LiveSource.fresh_at({"at": "nauvis"}, {"at": "nauvis->vulcanus 3%"}) == {"at": "nauvis"}  # arrived

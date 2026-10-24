@@ -65,23 +65,41 @@ return function(api)
     if type(name) == 'string' then CONN_ENDS[name] = {from, to, length} end
     return from, to, length
   end
+  -- (d23 batch131 CN1, Astra #2088) The end a platform flies to: the schedule's stop when it is one of the two ends;
+  -- else, the stop beyond the connection, the end with the shorter way on to it (the km left to that end plus the
+  -- shortest way from it: Asterion's guard set Aquilo mid edge->shattered-planet and it turned back to the edge, while
+  -- the leg read on to the Shattered Planet with 4M km left and a fuel alarm); else the way `distance` moved since the
+  -- last read (not paused: a paused platform drifts back); else the end it did not come from (last visited).
+  local MOVED = {}  -- platform index -> {conn, d}: the last distance read
+  local function heading_back(pl, c, from, to, length, d)
+    local sch = pget(pl, 'schedule')
+    local records = sch and sch.records
+    local rec = records and records[sch.current or 1]
+    local stop = rec and rec.station
+    local idx, cname = pget(pl, 'index'), pget(c, 'name')
+    local m = idx and MOVED[idx]
+    local moved
+    if m and m.conn == cname and m.d ~= d and not pget(pl, 'paused') then moved = d < m.d end
+    if idx and not (m and m.conn == cname and m.d == d) then MOVED[idx] = {conn=cname, d=d} end
+    if stop == from or stop == to then return stop == from end
+    if stop and M.path then
+      local pf, pt = M.path(from, stop), M.path(to, stop)
+      if pf and pt then return d * length + pf.km < (1 - d) * length + pt.km end
+      if pf or pt then return pf ~= nil end
+    end
+    if moved ~= nil then return moved end
+    return pget(pget(pl, 'last_visited_space_location'), 'name') == to
+  end
   -- The leg flown now, in the way it is flown: {from, to, flown (share of the
   -- leg behind it), left_km, eta_ticks, length}. A connection is measured from
   -- its own `from` end whichever way it is flown (pl.distance); the end headed
-  -- for is the schedule's stop when it is one of the two ends, else the end the
-  -- platform did not come from (last visited).
+  -- for is heading_back's.
   function M.leg(pl)
     local c = pget(pl, 'space_connection')
     if not c then return nil end
     local from, to, length = conn_ends(c)
     local d = pget(pl, 'distance') or 0
-    local sch = pget(pl, 'schedule')
-    local records = sch and sch.records
-    local rec = records and records[sch.current or 1]
-    local stop = rec and rec.station
-    local last = pget(pget(pl, 'last_visited_space_location'), 'name')
-    local back
-    if stop == from or stop == to then back = stop == from else back = last == to end
+    local back = heading_back(pl, c, from, to, length, d)
     local flown = back and 1 - d or d
     local left = (1 - flown) * length
     local speed = pget(pl, 'speed')
@@ -99,7 +117,10 @@ return function(api)
       local s, by, own = api.leg_speed(pl, since, cruise, cruise and string.format('its cruise on the legs before, %.0f km/s', cruise * 60))
       if s then v, at_cruise, speed_from = s, not own, by end
     end
-    return {from=back and to or from, to=back and from or to, flown=flown, length=length, left_km=left,
+    -- turned_back: it left the end it flies to now (a turn back mid-connection, its from never reached)
+    local heading = back and from or to
+    local turned = pget(pget(pl, 'last_visited_space_location'), 'name') == heading or nil
+    return {from=back and to or from, to=heading, flown=flown, length=length, left_km=left, turned_back=turned,
       eta_ticks=type(v) == 'number' and v > 0 and left / v or nil, back=back, speed_from=speed_from,
       eta_from=at_cruise and string.format('about: it speeds up (%.0f km/s now), the rest at its cruise of %.0f km/s', speed * 60, cruise * 60) or nil}
   end
@@ -116,6 +137,9 @@ return function(api)
       return {at=loc, stopped=true, text='at ' .. loc}
     end
     local l = M.leg(pl)
+    if l and l.turned_back then
+      return {leg=l, text=string.format('flying back to %s, %d km left (turned back on %s->%s)', l.to, math.floor(l.left_km + 0.5), l.to, l.from)}
+    end
     if l then return {leg=l, text=string.format('flying %s->%s %d%%', l.from, l.to, math.floor(l.flown * 100 + 0.5))} end
     return {text='nowhere'}
   end

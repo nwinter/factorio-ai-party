@@ -9,6 +9,14 @@
 -- rest is read when a reply is built, at most every 10 s per platform, and
 -- kept in storage so every peer computes the same lines.
 return function(api)
+  -- (d23 batch131 CN1) the leg as flown (freight.lua's leg: a connection flown back reads to->from), so a turn back
+  -- mid-connection starts a new fuel trend and names the end it flies to
+  local function leg_name(pl)
+    local ok, l = pcall(function() return api.leg and api.leg(pl) end)
+    if ok and l then return l.from .. '->' .. l.to end
+    local ok2, n = pcall(function() return pl.space_connection.from.name .. '->' .. pl.space_connection.to.name end)
+    return ok2 and n or nil
+  end
   local M = {}
   local SCAN_TICKS, KEEP_MINUTES, WORKERS, WORKER_TICKS = 600, 10, 3, 2 * 216000
   local LOW_AMMO = 10            -- rounds in a turret's ammo slots
@@ -398,14 +406,14 @@ return function(api)
     if moving and type(speed) == 'number' and speed * 60 < SLOW_KMS then
       if r.slow_since and game.tick - r.slow_since >= SCAN_TICKS then
         sc.slow = {kms=math.floor(speed * 600 + 0.5) / 10, thrust=api.thrust and try(function() return api.thrust(pl) end),
-          leg=try(function() return pl.space_connection.from.name .. '->' .. pl.space_connection.to.name end)}
+          leg=leg_name(pl)}
       end
       r.slow_since = r.slow_since or game.tick
     else r.slow_since = nil end
     -- The fuel outlook flying (batch27 B1): a fluid that runs out before the leg ends.
     if moving and api.fuel_outlook then sc.fuel = try(function() return api.fuel_outlook(pl) end) end
     -- (V5) and each scan's stock of it this leg, for the trend
-    if moving and sc.fuel then M.fuel_sample(r, sc.fuel, try(function() return pl.space_connection.from.name .. '->' .. pl.space_connection.to.name end) or '?')
+    if moving and sc.fuel then M.fuel_sample(r, sc.fuel, leg_name(pl) or '?')
     else r.fuel_trend = nil end
     r.scan = sc
     return sc
