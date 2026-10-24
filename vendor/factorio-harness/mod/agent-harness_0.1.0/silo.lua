@@ -709,7 +709,7 @@ return function(api)
       local loc = pl.valid and try(function() return pl.space_location.name end)
       if loc == planet and pl.hub and pl.hub.valid and (only == nil or pl.name == only) then
         local main = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
-        local free_slots = main and try(function() return main.count_empty_stacks() end)
+        local free_slots = main and try(function() return main.count_empty_stacks(true, false) end)
         local secs = try(function() return pl.hub.get_logistic_sections() end)
         local coming = M.on_the_way(pl.hub)
         for i = 1, secs and secs.sections_count or 0 do
