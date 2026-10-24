@@ -1539,6 +1539,24 @@ Nick (d23 10:28): a narrated camera tour, scripted ahead. tools/stream/tour.py p
   skipped with why).
 - Tests: tools/stream/test_tour.py.
 
+## Camera crops after a shift change (2026-10-23, d23 batch124b)
+- Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
+- After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene
+  computes the crop from the capture's source size, and a game capture reads 0 x 0 until it hooks a client. The scene
+  is set before the clients join, so crop_for got no size and set no crop. It was fixed live at 16:29 with
+  crop_for(2880, 1620, 1208, 1032).
+- Now `obs.py rehook-cams`, which start-cams runs once the clients have joined, crops each camera after turning it
+  off and on:
+  - A camera that is on is read every 0.5 s until its source has a size, with 10 s for the whole call.
+  - Its crop is crop_for(source size, the item's bounds). The bounds are the hole that stream_scene placed it in.
+  - A camera that is off stays off. It is read once and cropped if it already has a size.
+  - Each camera's part of the reply, logged by start-cams as "OBS captures: …", gives the crop, the source size and
+    the crop it replaced. For example: `stream cam1: re-enabled; crop 492/492 0/0 (source 2880x1620 into
+    1208x1032, was 0/0 0/0)`. A source still with no size says "no source size after 10 s, crop not set".
+- Not changed: "stream host" (Nick's client, off until host view) is still cropped only by stream_scene and
+  host-view-source.
+- Test: `tools/test_obs_rehook.py`.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

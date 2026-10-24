@@ -10,7 +10,7 @@
   tools/.venv/bin/python tools/obs.py shot OUT.png --scene stream                  # any scene, no switching
   tools/.venv/bin/python tools/obs.py scene NAME                                   # switch the program scene
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
-  tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients)
+  tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients), then cropped
   tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
   tools/.venv/bin/python tools/obs.py audio-test --url URL [--game-url URL]        # scratch scene, same mix
   tools/.venv/bin/python tools/obs.py meter --seconds 20 [--inputs a,b]           # peak dBFS per input per second
@@ -167,11 +167,16 @@ MUSIC_FILE = r"D:\pog\music\bed.mp3"  # off (music=False) until the file exists:
 DUCK = {"ratio": 2.5, "threshold": -40.0, "attack_time": 15, "release_time": 700, "output_gain": 0.0}
 
 
-def rehook_cams(c, scene="stream", n=3):
+def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
     """Turn each game capture "stream camN" off and on again so it hooks the client that has just joined (19:15: the
-    captures started before the clients and the picture stayed black). An item that was off stays off."""
+    captures started before the clients and the picture stayed black). An item that was off stays off.
+    (d23 16:28, Nick: the main view letterboxed, cam1 and cam3 at crop 0 after the 16:20 shift change) then each capture
+    is cropped to its hole's shape, as stream_scene does, once its source has a size: a game capture reads 0 x 0 until it
+    hooks a client, and stream_scene runs before the clients join. A re-enabled capture is read every step_s for up to
+    wait_s (the whole call's budget); one off is read once."""
     import time
-    out = []
+    sleep = sleep or time.sleep
+    out, todo = [], []
     for i in range(1, n + 1):
         name = f"stream cam{i}"
         try:
@@ -182,12 +187,36 @@ def rehook_cams(c, scene="stream", n=3):
         was = c.get_scene_item_enabled(scene, item).scene_item_enabled
         if not was:
             out.append(f"{name}: off, left off")
+            todo.append((len(out) - 1, name, item, False))
             continue
         c.set_scene_item_enabled(scene, item, False)
-        time.sleep(0.5)
+        sleep(0.5)
         c.set_scene_item_enabled(scene, item, True)
         out.append(f"{name}: re-enabled")
-    return "; ".join(out)
+        todo.append((len(out) - 1, name, item, True))
+    sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
+    from cuts import crop_for
+    left = wait_s
+    for k, name, item, on in todo:
+        while True:
+            t = c.get_scene_item_transform(scene, item).scene_item_transform
+            sw, sh = t.get("sourceWidth") or 0, t.get("sourceHeight") or 0
+            if (sw and sh) or not on or left <= 0:
+                break
+            sleep(step_s)
+            left -= step_s
+        bw, bh = t.get("boundsWidth") or 0, t.get("boundsHeight") or 0
+        if not (sw and sh and bw and bh):
+            out[k] += (f"; no source size after {wait_s:g} s" if on else "; no source size") + \
+                f", crop not set (left {t.get('cropLeft', 0)}/{t.get('cropRight', 0)} {t.get('cropTop', 0)}/{t.get('cropBottom', 0)})"
+            continue
+        crop = crop_for(sw, sh, bw, bh)
+        was_crop = tuple(t.get(f"crop{side}", 0) for side in ("Left", "Right", "Top", "Bottom"))
+        now = tuple(crop[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
+        c.set_scene_item_transform(scene, item, crop)
+        out[k] += (f"; crop {now[0]}/{now[1]} {now[2]}/{now[3]} (source {sw:g}x{sh:g} into {bw:g}x{bh:g}"
+                   + (", unchanged)" if now == was_crop else f", was {was_crop[0]}/{was_crop[1]} {was_crop[2]}/{was_crop[3]})"))
+    return " | ".join(out)
 
 
 def ensure_filter(c, source, name, kind, settings):
