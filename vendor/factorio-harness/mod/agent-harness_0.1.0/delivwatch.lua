@@ -91,9 +91,18 @@ return function(api)
       w.recv_kind, w.recv_by = 'network', 'landing pads in the consumer\'s logistic network'
     end
   end
+  -- (d20 batch134 PF1) the platforms the received pods came from: "Solstice 365, Kestrel IVa 150"
+  local function by_platform_text(w)
+    local list = {}
+    for name, n in pairs(w.received_by or {}) do list[#list+1] = {name, n} end
+    table.sort(list, function(a, b) if a[2] ~= b[2] then return a[2] > b[2] end return a[1] < b[1] end)
+    for i, x in ipairs(list) do list[i] = x[1] .. ' ' .. x[2] end
+    return #list > 0 and table.concat(list, ', ') or nil
+  end
   local function received_text(w)
-    return string.format('received %d of %d in %d pod%s by %s since the watch was set%s', w.received or 0, w.count, w.received_pods or 0, w.received_pods == 1 and '' or 's', w.recv_by,
-      w.received_tick and ', the last at tick ' .. w.received_tick or '')
+    local from = not w.from and by_platform_text(w)
+    return string.format('received %d of %d in %d pod%s by %s since the watch was set%s%s', w.received or 0, w.count, w.received_pods or 0, w.received_pods == 1 and '' or 's', w.recv_by,
+      from and ' (from ' .. from .. ')' or '', w.received_tick and ', the last at tick ' .. w.received_tick or '')
   end
   -- A requester or buffer chest asking none of the item: the text, else nil.
   local function asks_none(e, item)
@@ -418,7 +427,11 @@ return function(api)
     return {id=w.id, item=w.item, count=w.count, to=w.to, from=w.from, direction=w.direction, setter=w.setter, state=w.state, deadline_tick=w.deadline,
       stages=stages, last_confirmed=w.last, blockers=#b > 0 and b or nil, risks=#rk > 0 and rk or nil,
       diversions=w.diversions and #w.diversions > 0 and w.diversions or nil, diverted=w.diverted, arrivals=w.arrivals, held=w.held or w.base, at_start=w.base, carrier=w.carrier,
-      received={count=w.received or 0, pods=w.received_pods or 0, last_tick=w.received_tick, by=w.recv_by, from_arrivals=w.received_from and true or nil},
+      carrier_guessed=(w.direction == 'down' and not w.from and w.carrier ~= nil) or nil, carrier_note=w.direction == 'down' and not w.from and w.carrier and string.format('a guess (no from given): the first platform of ours seen holding %s whose schedule stops at %s; its stages and blockers are that platform\'s; received counts the pods from any platform of ours landing here (received.by_platform)',
+        w.item, w.to.where) or nil,
+      stock={held=w.held or w.base, at_start=w.base, reached=w.stages.reached ~= nil, line=string.format('the stock test: the consumer holds %d, %d at the start: %s', w.held or w.base, w.base,
+        w.stages.reached and string.format('%d more reached', w.count) or string.format('%d more not reached', w.count))},
+      received={count=w.received or 0, pods=w.received_pods or 0, last_tick=w.received_tick, by=w.recv_by, by_platform=w.received_by, from_arrivals=w.received_from and true or nil},
       line=string.format('delivery watch #%d: %d %s to %s %s on %s, %s; deadline %s; %s; stages: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where,
         w.state, dl >= 0 and 'in ' .. secs(dl) or secs(-dl) .. ' ago', M.status(w), #parts > 0 and table.concat(parts, ', ') or 'none yet')}
   end
@@ -565,7 +578,17 @@ return function(api)
     local force = game.forces[w.force]
     local pl = w.direction == 'down' and w.carrier and platform_named(force, w.carrier) or w.direction == 'up' and platform_named(force, w.to_platform)
     local fol = pl and api.freight and api.freight.followed and try(function() return api.freight.followed(pl) end)
-    if fol and w.direction == 'down' then
+    if w.direction == 'down' and not w.from then
+      -- (d20 batch134 PF1, Sol #2096: watch #254 guessed Kestrel IVa, paused, while Solstice's pod of 365 landed at the
+      -- pad and was not counted) no source given: the pods of every platform of ours sent down at the destination's
+      -- planet with the item, and the guessed carrier's at any stop (as before: a diversion's arrival)
+      for _, x in pairs(try(function() return force.platforms end) or {}) do
+        local fx = x.valid and api.freight and api.freight.followed and try(function() return api.freight.followed(x) end)
+        for _, p in ipairs(fx and fx.down or {}) do
+          if (p.at == w.to.where or x.name == w.carrier) and pod_has(p.pod, w.item) > 0 then follow(st, p.pod, p.unit, w, {platform=x.name, stop=p.at, sent=p.tick}) end
+        end
+      end
+    elseif fol and w.direction == 'down' then
       for _, p in ipairs(fol.down) do
         if pod_has(p.pod, w.item) > 0 then follow(st, p.pod, p.unit, w, {platform=pl.name, stop=p.at, sent=p.tick}) end
       end
@@ -646,6 +669,11 @@ return function(api)
           if counted then
             a.received = true
             w.received, w.received_pods, w.received_tick = w.received + n, w.received_pods + 1, tick
+            -- (PF1) by the platform it came from; a pod from a platform the watch did not guess lands the stage too
+            local from_pl = src.platform or (src.rocket and src.planet) or '?'
+            w.received_by = w.received_by or {}
+            w.received_by[from_pl] = (w.received_by[from_pl] or 0) + n
+            if w.direction == 'down' and not w.from then seen(w, 'landed', string.format('%d %s received by %s (from %s)', n, item, where, from_pl), tick) end
           end
           push(w, string.format('delivery watch #%d: %s%s', w.id, a.text, counted and '; ' .. received_text(w) or ''))
           if counted and w.received >= w.count and (w.state == 'open' or w.state == 'late') then
@@ -709,8 +737,8 @@ return function(api)
   end
   M.schema = {delivery_watch = {item='an item name: set a watch (with count, to, deadline_min)', count='how many the consumer must receive (1..1000000)',
     to='{position {x, y}, surface (a planet; default yours) | platform (a name)}: the consumer, a silo, chest or machine of ours within 2 tiles of position, in a chunk our force has charted',
-    deadline_min='minutes from now (up to 1440)', from='optional: the platform that carries it down, or the planet whose silos launch it up',
+    deadline_min='minutes from now (up to 1440)', from='optional: the platform that carries it down (only its pods count), or the planet whose silos launch it up; none, down: the pods of any platform of ours sent down at the consumer\'s planet count',
     id='with clear: true, the watch to end; alone, read that watch', clear='true, with id: end it',
-    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, received: the received total reached count, the consumer not seen holding count more than at the start, reached: it was), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), received (the received total reached count), reached (the consumer holds count more than at the start)), last_confirmed, blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), arrivals [{tick, pod, from, platform, stop, rocket {planet, silo, launched}, where, count, spoil {\'0-25%\'=n, ...} (for an item that spoils: the count by how spoiled each stack is), stacks [{count, quality, spoil_percent}], read_tick, dest_count, dest_spoil, text}] (each pod with the item from the carrier\'s hub, or each rocket with it launched to the platform, on the tick it was gone: what it held at its last read, read every tick over its destination, and what the pad, hub or container held of it on that tick, before robots take from it; the last 16), held, at_start (the stock test: held now and at the start), received {count, pods, last_tick, by, from_arrivals} (a running total since the watch was set of the pods the consumer received: a landing pad, the pods it received; a platform\'s consumer, the pods its hub received; a chest, silo or machine on a planet, the pods received by a landing pad in its logistic network on the tick each landed, which robots carry on; only the pods the watch followed; from_arrivals: a watch set before the total was kept, counted from its arrivals), carrier, line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, each pod received (with the received total), a blocker gone, the deadline passed while not reached (with the last confirmed stage, the received total and the blocker) and the end: received (the total, pods, the last pod\'s tick, and the stock test apart) or reached; a watch is kept 10 minutes after it ends'}}
+    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, received: the received total reached count, the consumer not seen holding count more than at the start, reached: it was), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), received (the received total reached count), reached (the consumer holds count more than at the start)), last_confirmed, blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), arrivals [{tick, pod, from, platform, stop, rocket {planet, silo, launched}, where, count, spoil {\'0-25%\'=n, ...} (for an item that spoils: the count by how spoiled each stack is), stacks [{count, quality, spoil_percent}], read_tick, dest_count, dest_spoil, text}] (each pod with the item from the carrier\'s hub, or each rocket with it launched to the platform, on the tick it was gone: what it held at its last read, read every tick over its destination, and what the pad, hub or container held of it on that tick, before robots take from it; the last 16), held, at_start (the stock test: held now and at the start), received {count, pods, last_tick, by, from_arrivals} (a running total since the watch was set of the pods the consumer received: a landing pad, the pods it received; a platform\'s consumer, the pods its hub received; a chest, silo or machine on a planet, the pods received by a landing pad in its logistic network on the tick each landed, which robots carry on; only the pods the watch followed: with from, that platform\'s; with none, every platform\'s sent down at the consumer\'s planet; by_platform: the count from each platform; from_arrivals: a watch set before the total was kept, counted from its arrivals), stock {held, at_start, reached, line} (the stock test, apart from received), carrier (from, or with none a guess: carrier_guessed, carrier_note; its stages and blockers are that platform\'s), line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, each pod received (with the received total), a blocker gone, the deadline passed while not reached (with the last confirmed stage, the received total and the blocker) and the end: received (the total, pods, the last pod\'s tick, and the stock test apart) or reached; a watch is kept 10 minutes after it ends'}}
   return M
 end
