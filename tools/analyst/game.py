@@ -192,7 +192,8 @@ class LiveGame:
         if action not in READ_ACTIONS:
             raise ValueError(f"{action} is not a read action")
         args = dict(args or {}, peek=True)
-        req = {"id": "analyst-" + uuid.uuid4().hex[:10], "action": action, "args": args}
+        # (d24 batch148 PT1) reader: the analyst's reads made as a bot are never that agent's own calls
+        req = {"id": "analyst-" + uuid.uuid4().hex[:10], "action": action, "args": args, "reader": "analyst"}
         if bot or self.bot:
             req["bot"] = bot or self.bot
         else:

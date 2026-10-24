@@ -237,7 +237,7 @@ class Broker:
                             # An id sent before with no answer: the game's tick now, so its answer tells applied from new.
                             now_tick = None
                             if before and before.get("state") == "sent":
-                                probe = {"id": f"broker-{uuid.uuid4().hex[:16]}", "action": "status", "args": {"peek": True, "brief": True}, "bot": bot}
+                                probe = {"id": f"broker-{uuid.uuid4().hex[:16]}", "action": "status", "args": {"peek": True, "brief": True}, "bot": bot, "reader": "broker"}
                                 now_tick = tick_of(rcon.command(dispatch(probe)))
                         except (OSError, ConnectionError, struct.error) as e:
                             # Nothing went out: the connection (or its login) failed (Luna, 13:41: these read outcome_unknown).

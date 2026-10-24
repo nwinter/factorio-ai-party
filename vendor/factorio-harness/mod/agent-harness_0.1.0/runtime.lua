@@ -1024,13 +1024,22 @@ end
 -- The tick a read or passive action raised: the bootstrap's failure handler
 -- calls stop_player right after, which must leave the action and queue alone.
 local passive_failed=false
-function M.stop_player(index,outcome)
-  if passive_failed==game.tick and not outcome then passive_failed=false; return end
+-- why (d24 batch148 PT1, Astra #2159: her body lane read "a call of yours failed while your queue ran" each time the
+-- stream service's board_focus read, sent under her bot name, took over her character): what paused it, named with
+-- the action and request id; with neither outcome nor why, the failed call M.dispatch recorded (M.last_failed).
+function M.stop_player(index,outcome,why)
+  if passive_failed==game.tick and not outcome and not why then passive_failed=false; return end
   -- (d17 batch35 A5) the failed call M.dispatch named: its action in the pause record, for the team block's line
   local fc=M.failed_call
-  local mine=not outcome and fc and fc.index==index and fc.tick==game.tick
+  local mine=not outcome and not why and fc and fc.index==index and fc.tick==game.tick
   M.failed_call=nil
-  if scheduler then scheduler.pause(index,outcome and ('your action ended '..tostring(outcome)) or 'a call of yours failed while your queue ran',mine and fc.action or nil,mine and fc.job or nil) end
+  local lf=M.last_failed
+  local failed=not outcome and not why and lf and lf.index==index and lf.tick==game.tick and lf or nil
+  M.last_failed=nil
+  local text=outcome and ('your action ended '..tostring(outcome)) or why
+    or failed and string.format('your %s call (request %s) failed while your queue ran',tostring(failed.action),tostring(failed.id))
+    or 'a call made as you failed while your queue ran (no request recorded)'
+  if scheduler then scheduler.pause(index,text,mine and fc.action or nil,mine and fc.job or nil,failed and failed.id or nil) end
   finish(index,outcome or 'interrupted')
   stop_combat(index,outcome or 'interrupted')
 end
@@ -17055,7 +17064,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true,deliver=true}
+local passive={board_focus=true,reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true,deliver=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
 -- Remote platform and hub settings (A0, Sol 01:59: min_payload {platforms, set} paused the body queue's running
@@ -17684,10 +17693,14 @@ function M.dispatch(request)
     elseif not ok then result=called_as..'; '..tostring(result) end
   end
   if type(request)=='table' and type(request.player)=='number' and request.operator~=true then pcall(M.hauling.done,request.player) end
+  -- (PT1) the failed call, for the pause record should the bootstrap stop the player (M.stop_player)
+  if not ok and type(request)=='table' and type(request.player)=='number' and request.reader==nil then
+    M.last_failed={index=request.player,tick=game.tick,action=request.action,id=request.id}
+  end
   if not ok then
     -- (d17 batch35 A5, Muse 14:16: rocket launches stalled 5+ minutes) a failed call that pauses the running queue (the
     -- bootstrap stops the player after any failure but a read's or a queue call's) says so first: job, step, the resume
-    if type(request)=='table' and type(request.player)=='number' and request.operator~=true and passive_failed~=game.tick
+    if type(request)=='table' and type(request.player)=='number' and request.operator~=true and request.reader==nil and passive_failed~=game.tick
       and type(request.action)=='string' and not M.CONTROL_READS[request.action] and not request.action:match('^queue_') then
       -- paused at the call's start (a direct call that drives the character), else by the failure now
       local dp=M.direct_paused
@@ -17703,7 +17716,8 @@ function M.dispatch(request)
       end
     end
     M.direct_paused=nil
-    pcall(M.selfview.dispatch_failed,request,result); error(result,0)
+    if request.reader==nil then pcall(M.selfview.dispatch_failed,request,result) end
+    error(result,0)
   end
   return result
 end
@@ -17734,8 +17748,17 @@ function M.dispatch_inner(request)
     assert(request.player==nil,'a request may name a player or a bot, not both')
     request.player=M.bots.index_of(request.bot)
   end
+  -- (PT1) reader: another process's read made as an agent (the stream service, the analyst): reads only; it never
+  -- pauses the agent's queue or stops its character, failed or not, and is not counted as the agent's call
+  if request.reader~=nil then
+    assert(type(request.reader)=='string' and #request.reader>=1 and #request.reader<=32,'reader: the reading process\'s name, 1..32 characters')
+    if not M.keeps(request.action,request.args) then
+      passive_failed=game.tick
+      error(string.format('reader %s: %s acts as the agent (it can drive the character); a reader request takes reads only',request.reader,tostring(request.action)),0)
+    end
+  end
   -- Items this request moves by hand are a direct call's (hauling.lua).
-  if type(request.player)=='number' then pcall(M.hauling.begin,request.player,'direct') end
+  if type(request.player)=='number' and request.reader==nil then pcall(M.hauling.begin,request.player,'direct') end
   -- Wrong argument names the harness knows (craft item, move_to target, ...)
   -- run as the call meant; the reply says the call as it ran (corrected).
   local corrected
@@ -17826,7 +17849,7 @@ function M.dispatch_inner(request)
       -- What the agent did, for the nudge's counts and the end of standing (idle.lua).
       if not peek or request.action=='sleep' then
         pcall(M.idle.request,p.index,request.action,request.args,result)
-        pcall(M.selfview.request,p.index,request.action)
+        if request.reader==nil then pcall(M.selfview.request,p.index,request.action) end
       end
       -- An fh --wait poll learns that a tell or mention arrived: it ends the wait (cli.ts).
       if peek and request.action=='status' then
@@ -18095,7 +18118,7 @@ dispatch_request=function(request)
     end
   end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
-  local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.talk(request.action) or M.remote(p,request.action,request.args)
+  local quiet=request.reader~=nil or passive[request.action] or M.read_call(request.action,request.args) or M.talk(request.action) or M.remote(p,request.action,request.args)
     or (request.action:match('^queue_') and ((request.args or {}).lane=='remote' or M.platform_lane(request.args)))
   -- A call refused by its own checks stops nothing: they run before the queue stops (M.preflight).
   if not reads[request.action] and not quiet and M.preflight and M.preflight[request.action] then
@@ -18109,7 +18132,7 @@ dispatch_request=function(request)
     if q and not q.paused then
       -- (d17 batch35 A5) what it pauses, for the reply should the call fail (M.dispatch)
       local okn,note,job=pcall(scheduler.pause_note,p.index,request.action)
-      M.stop_player(p.index)
+      M.stop_player(p.index,nil,string.format('paused by your direct %s call (request %s), which drives your character',tostring(request.action),tostring(request.id)))
       M.direct_paused={index=p.index,tick=game.tick,note=okn and note or nil,job=okn and job or nil}
     end
   end

@@ -141,7 +141,11 @@
   queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it). A failed direct call that
   paused it says so first in its error, and `team.queue_paused` stays on every reply until `queue_resume`.
   `queue_resume_after: true` on the direct call (or queue_submit's `resume_after_direct: true`) runs it again when the call
-  ends.
+  ends. `paused_by` names the call and its request id: `paused by your direct move_to call (request ID), which drives
+  your character`, or `your move_to call (request ID) failed while your queue ran (...)`. An interrupted transfer, feed
+  or deliver step is never dropped: one that had moved nothing goes back to the head as it was; one that had moved some
+  with no remainder known holds the queue (`held: job-N transfer was interrupted after moving N ...`). `board_focus`
+  moves no character, and reads the stream service and the analyst make as you never pause your queue.
 - `queue_repeat {steps, interval_ticks?, times?, for_ticks?, condition?, orders?, name?}`: replaces the queue with a
   repeating plan. `times` (rounds) and `for_ticks` (no round starts after that) end the loop with one `queue:` line
   (`done after N rounds: ...`) and `loop_done` in `queue_status`; `condition: {until: ...}` ends it at a round

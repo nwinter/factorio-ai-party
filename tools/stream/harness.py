@@ -487,7 +487,9 @@ class Harness:
             raise ValueError("board_focus is read with no arguments (with an id it sets a focus)")
         if action == "board_progress" and set(args or {}) - {"peek"}:
             raise ValueError("board_progress is read with no arguments (owner or id reads the game again)")
-        req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}}
+        # (d24 batch148 PT1, Astra #2159) reader: a read made as an agent by this service, never the agent's own call (the
+        # harness never pauses its queue or stops its character for it); an older runtime ignores the field
+        req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}, "reader": "stream"}
         if bot:
             req["bot"] = bot
         else:
