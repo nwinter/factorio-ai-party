@@ -1713,6 +1713,33 @@ a host prompt.
   half the exchanges.
 - Tests: tools/stream/test_hoststory.py (plain_tests).
 
+## Camera crops: the inset, and captures not hooked yet (2026-10-24, d24 batch136 PH2)
+- After the 21:05 shift change (shift66), cam3 read crop 0 at about 21:07, and the operator set it with crop_for.
+- **The change itself left all three cropped:**
+  - OBS restarted at 21:00:51 (the box's clock runs an hour behind the Mac's; its log said 20:00:51).
+  - The captures hooked their clients at 21:03:13 (cam2), 21:03:33 (cam1) and 21:03:56 (cam3).
+  - rehook-cams at 21:04:30 read 2880x1620 and crop 492/492 on all three, so it said "unchanged".
+  - obs-steps' stream-scene at 21:04:33 read the same sizes; OBS logged no capture restart in between.
+- **cam3 was the inset at 21:07:** the director put it there at 21:06:58 ("attention: haiku inspecting"), and again at
+  21:08:26 and 21:08:44. The inset (layout.json `inset`, 408x230) is 16:9, so cuts.py places it uncropped by design.
+  Back in the main hole it is cropped again (place() on the role change).
+- **A fault of the same kind, fixed:** Cuts.place(), stream_scene and host_capture wrote crop_for(0, 0, ...), which is
+  no crop, for a capture not hooked yet (0 x 0). Cuts then kept the role as placed, so a capture that hooked later
+  stayed uncropped in the main hole until its role changed. This fits the 16:20 change (cam1 and cam3 at crop 0).
+- **Now:**
+  - With no source size, the hole is set and the crop left as it is.
+  - Cuts places such a capture again at its next apply, and keeps the role once it is cropped.
+  - rehook-cams still crops each camera once its client joins.
+- **`obs.py cams`** (read only) names each camera's hole by its bounds (main, inset, a trio tile), with its crop and
+  the crop that hole takes: `ok`, `CROP OFF (that hole takes ...)` or `no source size (not hooked)`. obs-steps runs it
+  last, so the change's log shows the cameras after the OBS steps.
+- **Checked through the tunnel (reads only; nothing set or restarted):**
+  - The scene's items read cam3 in the inset (bounds 408x230, crop 0), then in the main hole at 492/492.
+  - `obs.py cams` read the same: "stream cam3: on, inset, crop 0/0 0/0, source 2880x1620: ok".
+  - The box's OBS log gave the hook times.
+- Tests: `tools/stream/test_cuts.py`, `tools/test_obs_hostview.py`, `tools/test_obs_rehook.py`,
+  `tools/test_obs_restart.py`.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

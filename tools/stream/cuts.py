@@ -169,8 +169,11 @@ class Cuts:
         for src, iid in cams.items():  # the hole each capture belongs in: on air and standby share the main one
             role = "trio:" + hole[src] if src in hole else "inset" if src == inset else "main"
             if target["placed"].get(src) != role:
-                self.place(target, iid, role)
-                target["placed"][src] = role
+                # kept as placed only once cropped from a known size: a capture not hooked yet is placed again next time
+                if self.place(target, iid, role):
+                    target["placed"][src] = role
+                else:
+                    target["placed"].pop(src, None)
         front = [s for s in (inset, onair) if s in cams] + [s for s in self.by_slot.values() if s in cams and s not in (inset, onair)]
         stack = dict(cams)
         if HOST in ids:  # in front of every camera while on, behind them while off
@@ -186,13 +189,20 @@ class Cuts:
                 cur.insert(idx, iid)
 
     def place(self, target, iid, role):
+        """The capture into its role's hole, cropped to the hole's shape; True when its source size was known.
+        (d24 batch136 PH2) A game capture reads 0 x 0 until it hooks its client: then the hole is set and the crop left as
+        it is. Before, crop_for(0, 0, ...) wrote no crop and the role was kept as placed, so a capture that hooked later
+        stayed uncropped in the main hole until its role changed (16:20: cam1 and cam3 after the shift change)."""
         o, ref = self.obs, target["ref"]
         x, y, w, h = target["trio"][role[5:]] if role.startswith("trio:") else target["layout"]["cams"][role]
         t = o.call("GetSceneItemTransform", dict(ref, sceneItemId=iid))["sceneItemTransform"]
-        crop = crop_for(t.get("sourceWidth"), t.get("sourceHeight"), w, h)
-        o.call("SetSceneItemTransform", dict(ref, sceneItemId=iid, sceneItemTransform=dict(
-            crop, positionX=float(x), positionY=float(y), boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=float(w),
-            boundsHeight=float(h), boundsAlignment=0, alignment=5)))
+        known = bool(t.get("sourceWidth") and t.get("sourceHeight"))
+        tr = dict(positionX=float(x), positionY=float(y), boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=float(w),
+                  boundsHeight=float(h), boundsAlignment=0, alignment=5)
+        if known:
+            tr.update(crop_for(t["sourceWidth"], t["sourceHeight"], w, h))
+        o.call("SetSceneItemTransform", dict(ref, sceneItemId=iid, sceneItemTransform=tr))
+        return known
 
     def public(self):
         return dict(self.status)

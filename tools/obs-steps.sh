@@ -5,7 +5,8 @@
 # --stream start streaming and check the vertical feed (Aitum Vertical starts with the main stream; started by hand
 # when its status says it is not streaming). The overlay tunnel (start-team) must be up. Prints each step's outcome;
 # exit 1 when the recording (or with --stream the stream) did not start, or was accepted but did not become active
-# within POG_OS_ACTIVE_WAIT s (status / stream-status active=True), else 0.
+# within POG_OS_ACTIVE_WAIT s (status / stream-status active=True), else 0. Last, a read of each camera's crop (obs.py
+# cams).
 # Stubs for tests: POG_OS_OBS, POG_OS_VERTICAL (commands, split on spaces), POG_OS_SLEEP (seconds before the
 # vertical check, default 8), POG_OS_POLL (seconds between active checks, default 1).
 set -uo pipefail
@@ -24,7 +25,7 @@ read -ra obs <<<"${POG_OS_OBS:-$py tools/obs.py}"
 read -ra vertical <<<"${POG_OS_VERTICAL:-$py tools/vertical.py}"
 say() { printf '%s obs-steps: %s\n' "$(date +%H:%M:%S)" "$*"; }
 if [ $dry = 1 ]; then
-  say "plan: ${obs[*]} stream-scene; scene stream; reload-overlay; start (then status until active, ${POG_OS_ACTIVE_WAIT:-10} s)${stream:+; stream-start (then stream-status until active); then ${vertical[*]} status (start --yes if not streaming)}"
+  say "plan: ${obs[*]} stream-scene; scene stream; reload-overlay; start (then status until active, ${POG_OS_ACTIVE_WAIT:-10} s)${stream:+; stream-start (then stream-status until active); then ${vertical[*]} status (start --yes if not streaming)}; cams"
   exit 0
 fi
 bad=0
@@ -68,4 +69,6 @@ if [ "$stream" = --stream ]; then
     fi
   fi
 fi
+# (d24 batch136 PH2) read only: each camera's hole and crop against the crop that hole takes, for the change's log
+run "cameras" 0 "${obs[@]}" cams
 exit $bad

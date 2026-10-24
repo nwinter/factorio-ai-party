@@ -4,7 +4,7 @@
 
 - obs-restart.sh: outputs stopped first (stream, recording, replay buffer), then the box's obs-restart.ps1, then it
   waits for the websocket; exit 0 once OBS answers, 1 when it never does; --dry-run touches nothing.
-- obs-steps.sh: scene, overlay, recording, stream; the vertical started only when its status says it is not
+- obs-steps.sh: scene, overlay, recording, stream, and last a read of the cameras' crops (obs.py cams); the vertical started only when its status says it is not
   streaming; a failed recording or stream start is exit 1, the rest is reported only.
 - obs-recover.sh: an active stream is left alone; one plain retry that works means no restart; an encoder failure
   (outputs never come up) restarts OBS and runs the OBS steps; one at a time.
@@ -143,7 +143,7 @@ def steps():
         assert r.returncode == 0, r.stdout + r.stderr
         assert [l for l in calls.splitlines()] == ["obs stream-scene", "obs scene stream", "obs reload-overlay", "obs start",
                                                    "obs status", "obs stream-start", "obs stream-status",
-                                                   "vertical status"], calls
+                                                   "vertical status", "obs cams"], calls
         assert "recording: active" in r.stdout and "stream: active" in r.stdout, r.stdout
         assert "vertical: streaming (started with the main stream)" in r.stdout, r.stdout
         put(state, stream=0, record=0)
