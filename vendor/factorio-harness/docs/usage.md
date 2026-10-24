@@ -13073,3 +13073,47 @@ Fixed besides gates:
   bounded watches are: status {brief, work} rows, the idle check, the sleep line. No walk, no queue stop.
 - Test: tests/d24_batch140.lua (refusals, sides, one get_signal per signal a sample and none between, a wire cut and a
   network change, where the platform was at the min, the status row, the end and the entity gone).
+## d24 batch141 PM1 (eng/d20-batch141): requests failed after its change; a reply that fails after a change (Sol #2125)
+- Sol's `requests {platform: "Meridian-V", section: 23, set: [{item: "bioflux", min: 20, max: 30, from: "gleba",
+  min_payload: 10}]}` (tick 55693611) set the slot, then answered `bad argument #5 of 9 to 'format' (number expected,
+  got nil)`. The cause was in space.lua's sends_down: batch137's finite max sends all above it, asked or not, and the
+  line named the landing pads' ask at that planet for an item they do not ask for (nil). It now reads 0.
+- The game's "of N" counts stack slots, not values: the same 7-argument call read "of 8" from a function and "of 9"
+  under the copy's traced pcall. The traceback on the copy put the failure in sends_down.
+- The copy also showed that sends_down's per-stop rule was wrong for a platform in flight. Meridian-V, flying from
+  Gleba to Nauvis with 180 bioflux, went from 180..180 to 20..30 from gleba. The 150 over the max were in its trash
+  within 4 s, and all 150 went down to Nauvis's pad at the stop. The 30 stayed aboard (the pad asks 10 but then held
+  the 150), and it left for Gleba with 30. The reply had said `10 down to nauvis, 140 down to gleba`.
+- sends_down now first takes all the hub holds over its max for the item (the maxes of its active requests for it
+  added up, any planet). That part goes to the trash now and down at the first stop, asked or not, and the pads there
+  count it as held for the rest. Then batch137's rule runs as before. The reply now reads `bioflux: the hub holds 180;
+  its requests would keep 30 at gleba (kept 180 at gleba): 150 over its max 30 go to the hub's trash now and down to
+  nauvis at its next stop, asked or not; 30 stay aboard`. KEEP_RULE (sends_down_rule) says it with the measurement.
+- Other format calls in the same code fed by a value that can be nil (no min, no max, no import planet, a quality,
+  a min_payload): filter_text, the imports lines, over_max, the keep lines, construction_overlap, minpayload.lua's
+  lines and shipment's stop lines all guard theirs. sends_down's pad ask was the only bare one (`.ask[` across the mod).
+- A reply that fails after a change:
+  - requests: each part of the reply after the change is read on its own (told_of_edit, sections, sends_down,
+    trash_unrequested, on_the_way, unfilled, note, construction_requests, hub_trash). A part that fails is named with
+    its error in `reply_failed`, and the rest stays. `reply_failed_note` says `the change was made (stored,
+    changed_section)`, or `nothing was changed (dry run)`.
+  - A dry run that fails, in its reply or before it, now puts back what it set. Before, a failure skipped the undo, and
+    the dry run's change stayed.
+  - made.lua: requests, platform_schedule, min_payload and drop mark each change as they make it, and are wrapped last
+    in runtime.lua. A wrapped call that fails after a mark answers ok with `change_made` (each change), `reply_failed`
+    (the error) and `reply_failed_note`. One that fails before any mark fails as before. The marks are each slot set,
+    cleared or kept, a section added, removed, switched or emptied, a group set, the construction, trash and buffer
+    switches, platform_schedule's stops/current/paused before and after, each minimum payload set, and each cargo pod
+    a drop sent.
+  - Checked and left alone: launch, land and platform_create build their replies from reads made before the change.
+  - Also found: platform_schedule_call's edit-log lookup checks `type(pl)=='table'`, which drops every real platform
+    (userdata), the same bug batch100 BJ1 fixed in platform_schedule. So schedule edits are not recorded in the edit
+    log on the game. Left as it is and reported.
+- On a headless copy of world n's 03:41 autosave (paused at tick 55693680, Meridian-V flying gleba->nauvis, hub 180):
+  - before (world n's runtime): `bad argument #5 of 8 to 'format' (number expected, got nil)`, slot set to 20..30.
+  - after: ok, with stored, sends_down as above, and over_max `150 over the max 30`.
+  - With string.format made to fail on chosen texts: requests answered ok with `reply_failed: ["sends_down: forced test
+    failure"]`, and platform_schedule answered ok with `change_made: ["Meridian-V schedule: 1 nauvis, 2 gleba, current 2
+    (was ... current 1)"]`.
+- Tests: tests/d24_batch141.lua (fails on main with Sol's error); tests/d17_batch31.lua's finite-max line now reads the
+  trash wording, with the same counts.

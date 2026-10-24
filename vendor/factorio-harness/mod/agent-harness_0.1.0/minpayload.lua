@@ -65,6 +65,9 @@ return function(api)
             sec.set_slot(slot, nf)
             f = try(function() return sec.get_slot(slot) end) or f
             changed = changed + 1; untouched[item] = nil
+            -- (d24 batch141 PM1) marked (made.lua): a failure after it answers the change made
+            if api.made then api.made(string.format('%s: %s custom minimum payload %s (was %s)', pl.name, item,
+              f.minimum_delivery_count and tostring(f.minimum_delivery_count) or 'none', was and tostring(was) or 'none')) end
             -- (d19 batch46 3) who set it, when, before and after: the platform's reads show the latest (editlog.lua)
             local log = api.editlog and api.editlog()
             if log then

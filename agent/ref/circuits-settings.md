@@ -181,7 +181,12 @@
     request from another planet keeps nothing there: Cinder at Nauvis sent all 85 foundation down under `50..inf from
     fulgora`, while Swift at Nauvis kept 501 magazines under `500..2000 from nauvis`. A change of what its requests keep
     gives `sends_down`: per item, what they would keep and kept by planet, and how many go down to which stop's pads
-    (where it waits first, then its schedule's) or stay aboard. `keep: ["firearm-magazine"]` keeps
+    (where it waits first, then its schedule's) or stay aboard. All the hub holds over its max for an item (the maxes
+    of its active requests for it added up) goes to its trash within a second, in flight too, and down at the first
+    stop, asked or not: Meridian-V flying to Nauvis with bioflux `20..30 from gleba` sent its 150 over 30 down at
+    Nauvis. A part of the reply that fails after the change is named with its error in `reply_failed`, and the change
+    stands (`stored`). requests, platform_schedule, min_payload and drop: a call that fails after its change answers
+    `change_made` (what it changed) and `reply_failed` (the error). `keep: ["firearm-magazine"]` keeps
     those requested up to the count held (with the dropped request's import planet and min payload). `dry_run: true`
     changes nothing and replies with the sections, `stored` and `sends_down` the change would make; on a requester,
     a buffer chest or yourself, `robot_dispatch`: the logistic robots' trips for what it would ask beyond what it holds
