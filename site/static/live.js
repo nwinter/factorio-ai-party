@@ -812,7 +812,7 @@
   var ALERT_TONES = { attack: 'danger', death: 'danger', low_power: 'warn', research: 'info' };
   var ALERT_ICONS = { attack: '⚔', death: '✝', low_power: '⚡', research: '⚗' };
   // The dashboard's cards are made once; each refresh fills their bodies (the map card keeps its viewer).
-  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['plan', 'Team plan'], ['board', 'Board'], ['research', 'Research'], ['chronicle', 'Chronicle'], ['charts', 'Factory'], ['chat', 'Team chat']];
+  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['plan', 'Team plan'], ['research', 'Research'], ['board', 'Board'], ['chronicle', 'Chronicle'], ['charts', 'Factory'], ['chat', 'Team chat']];
   function cards() {
     if ($('#cb-agents')) return;
     $('#dash').innerHTML = CARDS.map(function (c) {
