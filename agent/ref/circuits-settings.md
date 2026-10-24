@@ -73,6 +73,14 @@
   in flow order, from where to where), what it holds now of what the inserter takes, the belts of it past the
   inserter's pickup (it cannot take what they hold), and belts side-loading inside the count (upstream of the pickup
   said).
+- `signal_watch {position, surface | platform, wire, side?, signals, seconds}`: a bounded watch of 1..8 signals (named
+  as `signals` above) on the `wire` (red or green) network of one entity; `side` (input or output) only on an
+  arithmetic, decider or selector combinator. Every 60 ticks for 10..3600 seconds, each signal's count there (0 when
+  absent). `signal_watch {}` reads it: each signal's start, end, min and max with their ticks (on a platform, where it
+  was then and its speed), samples, gaps (no network on that wire, network id changed) and `ended` (entity gone). A
+  count held under 60 ticks can fall between samples. One watch an agent (a new one replaces it); `status {brief,
+  work}` lists it.
+  Example: `./fh call signal_watch --args '{"platform":"Petrel","position":[-13.5,4.5],"wire":"green","signals":"calcite","seconds":600}'`
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, hand_size?, wait_for_full_hand?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?, bar?}`: a machine's or building's

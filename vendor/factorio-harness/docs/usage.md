@@ -13048,3 +13048,28 @@ Fixed besides gates:
   - The tools: idle_nudge.py and idle_report.py only read; no tool sends queue_resume.
 - Test: tests/d24_batch138.lua (fails on main: platform_schedule ran without queue_resume).
 
+
+## d24 batch140 PL1 (eng/d20-batch140): signal_watch, a bounded watch of named circuit signals (Sol #2116)
+- Petrel's zero-hub trial 1177 needed the whole-loop calcite minimum on belt (-13.5,4.5)'s green network 815 through
+  flight and coasting. flight_watch reads fuel and ammunition, an inspect now and then can miss a brief low, and a
+  queue's inspect reads one moment.
+- `signal_watch {position, surface | platform, wire, side?, signals, seconds, reason?}` (signalwatch.lua, measures kind
+  `signal_watch`): the network on one entity's `wire` (red or green); `side` (input or output) only on an arithmetic,
+  decider or selector combinator, and required there. `signals`: 1..8 names as inspect's `signals` takes them
+  (batch136: `name@quality`, `recipe:NAME`, `{type, name, quality}`, a list or one string with `|` or `,`).
+  `seconds`: 10..3600. Refused: no network on that wire, an unknown name, a side on an entity with one side.
+- A sample at the start and every 60 ticks after: one get_signal per signal (0 when absent, as the wire's hover shows).
+  Nothing is read between samples.
+- `signal_watch {}` reads it so far (`watching`) or done (`done`; the first read after the end is its final read):
+  - `signals [{name, start, end, min, max, line}]`, each `{count, tick}`; min and max are the first tick that count was
+    seen, and on a platform `where` it was then (`flying nauvis-gleba, 30 km/s`, `at gleba, 0 km/s`), read only on a
+    sample that set a new min or max;
+  - `samples`, `missed`, `gaps [{why, from_tick, to_tick, missed}]` and `gap_lines`: no network on that wire (a wire cut,
+    its network gone) over a span of samples, and `network changed: #815 to #902` at the tick it was seen (samples go
+    on reading the new network); 32 kept, `gaps_more` past them;
+  - `ended {tick, why}`: the entity or its surface gone; the watch ends there;
+  - `line`, `note` (a count held under 60 ticks can fall between two samples).
+- One watch an agent: a new one replaces it (`replaced` names it). It is the agent's work while it runs, as the other
+  bounded watches are: status {brief, work} rows, the idle check, the sleep line. No walk, no queue stop.
+- Test: tests/d24_batch140.lua (refusals, sides, one get_signal per signal a sample and none between, a wire cut and a
+  network change, where the platform was at the min, the status row, the end and the entity gone).

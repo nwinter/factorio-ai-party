@@ -12,7 +12,7 @@
 return function(api)
   local M = {}
   M.LATE, M.STALE = 300, 600
-  M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally', 'asteroid_watch'}
+  M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally', 'asteroid_watch', 'signal_watch'}
   -- how each kind's final is read (default: KIND {})
   M.READ = {collector_tally='platform_supply {platform, collection: true}', asteroid_watch='platform_defense {platform, asteroids: true}'}
   -- (d20 batch70 AF1, operator d21 13:18) the agent's own reason to wait, given with a watch or a sleep: up to REASON
@@ -123,6 +123,15 @@ return function(api)
     local seen = job.nast and job.nast + (job.untracked or 0) or (job.result and job.result.asteroids) or 0
     return {units=1, gone=job.gone and 1 or 0, scope=string.format('asteroids and %d turret%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
       sample=string.format('%d asteroids seen, %d in view, %d hits on the platform', seen, job.in_view or 0, #(job.hits or {})), empty=false}
+  end
+  -- (d24 batch140 PL1) named signals on one circuit network: signalwatch.lua
+  function DESCRIBE.signal_watch(job)
+    local parts = {}
+    for i, pk in ipairs(job.picks or {}) do
+      local st = job.stats and job.stats[i]
+      if st and st.c1 then parts[#parts+1] = string.format('%s %d (min %d)', pk.text, st.c1, st.mn) end
+    end
+    return {units=1, gone=job.gone and 1 or 0, scope=job.scope or '?', sample=#parts > 0 and table.concat(parts, ', ') or nil, empty=false}
   end
   -- One watch's row; tick = now.
   local function row(kind, job, tick)
