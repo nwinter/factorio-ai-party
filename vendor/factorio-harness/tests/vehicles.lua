@@ -283,6 +283,21 @@ last=astra('status').last
 eq(last.outcome,'arrived'); eq(last.path_length,56)
 assert(lowest<9,'went along the path north of the straight line: lowest y '..lowest)
 assert(math.abs(car.position.x-100)<4 and math.abs(car.position.y-20)<4,car.position.x..','..car.position.y)
+-- (d24 batch158, harness review bug 5: a drive from (714.5,698.5) to (734.5,698.5) ended arrived at x 729.2) the
+-- engine's path ends within its goal radius, here 4 tiles short: the drive goes on straight to the target and arrives
+-- within 3 tiles of it, saying how far it stopped from it
+asked={}
+car.position={x=100,y=20}; car.orientation=0.25; car.speed=0
+r=astra('vehicle',{drive={x=130,y=20}})
+runtime.on_event{name=10,id=900+#asked,path={{position={x=100,y=20}},{position={x=126,y=20}}}}
+for _=1,1500 do physics(); advance(1); if not astra('status').active then break end end
+last=astra('status').last
+eq(last.outcome,'arrived')
+assert(last.distance_left and last.distance_left<=3,'before: arrived '..tostring(130-car.position.x)..' tiles short with no distance_left')
+eq(last.arrive_rule,'arrived: stopped within 3 tiles of the target')
+eq(last.path_extended,'the engine\'s path ended 4.0 tiles from the target (its goal radius); driven on straight to it')
+eq(last.path_length,30)
+assert(car.position.x>127,car.position.x)
 -- Stuck on the way: backs up once with a fresh path, then ends blocked naming what is in front.
 asked={}
 r=astra('vehicle',{drive={x=140,y=20}})
