@@ -61,6 +61,8 @@ return function(api)
     return {{x0, y0}, {x1, y1}}
   end
   function M.networks_read(p, a)
+    -- (d24 batch136 PH1, Sol #2104) signals: each named signal's count on every network read, 0 when absent (circuits.lua)
+    local picks = a.signals ~= nil and api.parse_signals(a.signals) or nil
     local s, force, where = p.surface, p.force, type(p) == 'table' and rawget(p, '__remote') and p.surface.name or 'your surface'
     if a.platform ~= nil then
       local pl = api.platform(p, a.platform)
@@ -101,6 +103,7 @@ return function(api)
             if i <= SIGNALS and sg.signal then row.signals[#row.signals+1] = {name=sg.signal.name, quality=sg.signal.quality, count=sg.count} end
           end
           row.signals_total = #sigs
+          row.picked = picks and api.picked_counts(n.net, picks) or nil
           row.connected = try(function() return n.net.connected_circuit_count end)
           nets[k] = row; order[#order+1] = row
         end
@@ -121,9 +124,10 @@ return function(api)
       end
       local members = {}
       for _, e in ipairs(r.members) do members[#members+1] = {name=e.name, position={x=e.position.x, y=e.position.y}, unit_number=e.unit_number} end
-      rows[#rows+1] = {id=r.id, color=r.color, signals=r.signals, signals_total=r.signals_total, entities=members, connected_entities=r.connected}
-      lines[#lines+1] = string.format('%s #%d: %s%s; of these, %d on it%s: %s%s', r.color, r.id,
+      rows[#rows+1] = {id=r.id, color=r.color, signals=r.signals, signals_total=r.signals_total, picked=r.picked, entities=members, connected_entities=r.connected}
+      lines[#lines+1] = string.format('%s #%d: %s%s%s; of these, %d on it%s: %s%s', r.color, r.id,
         #sig > 0 and 'signals ' .. table.concat(sig, ', ') or 'no signal now', r.signals_total > #sig and string.format(' (+%d more)', r.signals_total - #sig) or '',
+        r.picked and '; named: ' .. api.picked_text(r.picked) or '',
         #r.members, r.connected and string.format(' (%d connected in all)', r.connected) or '', table.concat(on, '; '),
         #r.members > LISTED and string.format('; +%d more', #r.members - LISTED) or '')
     end
@@ -372,6 +376,7 @@ return function(api)
   end
   function M.read(p, a)
     if a.area ~= nil or a.positions ~= nil then return M.networks_read(p, a) end
+    assert(a.signals == nil, 'signals goes with area or positions (the networks of the entities there)')
     local pl = api.platform(p, a.platform)
     local s = pl.surface
     assert(s, 'platform ' .. pl.name .. ' has no surface yet')
@@ -477,7 +482,7 @@ return function(api)
     return {platform=pl.name, lines=lines, belt_readers=#readers, double_counts=#doubles > 0 and doubles or nil, short_reads=#short > 0 and short or nil,
       collectors=#cols > 0 and cols or nil, feeders=#feeders > 0 and feeders or nil, feeder_rows=#feeder_rows > 0 and feeder_rows or nil}
   end
-  M.schema = {circuit_audit = {surface='optional planet, surface or platform name (default yours): with area or positions: the networks of our entities there; one out of sight now (no radar coverage) is not read, said as out_of_sight there by remote view (d20 batch62 X4)',platform='platform name (with area or positions: optional, else your surface)',inserter='optional {x, y}, with platform: that one feeder\'s circuit read (feeders)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
+  M.schema = {circuit_audit = {surface='optional planet, surface or platform name (default yours): with area or positions: the networks of our entities there; one out of sight now (no radar coverage) is not read, said as out_of_sight there by remote view (d20 batch62 X4)',platform='platform name (with area or positions: optional, else your surface)',inserter='optional {x, y}, with platform: that one feeder\'s circuit read (feeders)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',signals='with area or positions: optional 1..32 signal names (items, fluids, virtual signals; name@quality; recipe:NAME ...; a list, or one string with | or ,): networks rows add picked [{name, count}], each named signal\'s count on that network, 0 when absent, past the 24 signals listed (the lines: named: ...); signals and signals_total unchanged',
     returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose segments share belts (those items reach the network twice); each such reader whose belt segment (what the game reads: through corners, undergrounds and tier changes, and along the main line past a side-load; a belt side-loading onto another ends its own segment, and a splitter ends one) is shorter than the belt in line through it, across undergrounds: the belts left out of the read, upstream and downstream (short_reads [{position, segment_tiles, physical_belts, left_out [{side, from, to, belts}]}]); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]; feeders (lines) and feeder_rows [{name, position, filters, set_filters, gated, mode, pickup, readers [{position, mode, belts, from, to, holds, past_pickup, joins}], line}]: each inserter or loader whose filters the circuit sets or which it turns on and off, on the platform or among the entities of area or positions (the first 8; inserter: one): what it takes now, its pickup, the signals on its networks, the combinators putting out onto them and the networks those read (3 deep), constant combinators, the hub\'s own read apart, and each belt reader on them: its read mode, the belts its count covers (whole belt: the game\'s segment, in flow order), what it holds now of what the inserter takes, the belts of it past the inserter\'s pickup (it cannot take those) and side-loads joining inside the count (a read walks at most 160 belts, 400 for one inserter; a reader past that is named, not walked). With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
   return M
 end

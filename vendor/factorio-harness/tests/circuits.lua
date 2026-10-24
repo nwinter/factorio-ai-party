@@ -126,7 +126,13 @@ local function connectors(e)
   e.get_wire_connectors=function() return made end
   e.get_circuit_network=function(id)
     local c=made[id]
-    if c and next(c.links) then return {network_id=100+id,signals=e.signals_now and e.signals_now[id]} end
+    if c and next(c.links) then
+      local list=e.signals_now and e.signals_now[id]
+      return {network_id=100+id,signals=list,get_signal=function(sig)
+        for _,s in ipairs(list or {}) do if s.signal.name==sig.name and (s.signal.type or 'item')==sig.type then return s.count end end
+        return 0
+      end}
+    end
   end
   return made
 end
@@ -375,6 +381,15 @@ eq(ins.circuit.wires.green_output[1].entity,'decider-combinator'); eq(ins.circui
 eq(ins.circuit.networks.red_input.id,101); eq(#ins.circuit.networks.red_input.signals,2)
 eq(ins.circuit.networks.red_input.signals[1].name,'signal-A'); eq(ins.circuit.networks.red_input.signals[1].count,-40)
 eq(ins.circuit.arithmetic.output,'signal-A')
+-- (d24 batch136 PH1, Sol #2104) signals: each named one's count on every network, 0 when absent; a bad name refused
+ins=astra('inspect',{position={x=6,y=0},signals={'signal-A','carbon'}})
+eq(ins.circuit.networks.red_input.picked[1].count,-40); eq(ins.circuit.networks.red_input.picked[2].count,0)
+eq(ins.circuit.networks.red_input.signals[1].name,'signal-A'); eq(ins.circuit.networks.green_output.picked[1].name,'signal-A')
+assert(ins.circuit.signals_picked:find('red_input #101: signal-A -40, carbon 0',1,true),ins.circuit.signals_picked)
+ins=astra('inspect',{positions={{x=6,y=0}},signals='signal-A'})
+eq(ins.entities[1].circuit.networks.red_input.picked[1].count,-40)
+fails(function() astra('inspect',{position={x=6,y=0},signals={'signal-Q'}}) end,'signals[1]: unknown signal signal-Q')
+eq(astra('inspect',{position={x=6,y=0}}).circuit.networks.red_input.picked,nil)
 -- A wire only the game draws (radars) is no wire a player sees.
 local radar_end=thing('small-lamp','lamp',3,cb_of('lamp'),3)
 local rc=radar_end.get_wire_connector(1,true); rc.links[out_c]=1; out_c.links[rc]=1

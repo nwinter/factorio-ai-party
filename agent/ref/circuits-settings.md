@@ -58,8 +58,10 @@
   Example: `./fh call gates --args '{"surface":"nauvis"}'`
 - `circuit_audit {area | positions | platform, inserter?, surface?}` (`surface` with area or positions: those networks
   on another planet by remote view; entities out of sight now are not read, `out_of_sight` counts them): with `area` (up to 128x128) or `positions` (1..64), `platform`
-  optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
-  which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
+  optional: every red and green network those entities are on, by id, each with its signals now (largest first, 24
+  listed, `signals_total`) and which of them are on it with their settings, in one call. `signals` (1..32 names, as
+  conditions write them): `picked` on each network, each one's count there, 0 when absent (also `inspect {position,
+  signals}`, by wire colour and side). With `platform` alone: whole-belt readers
   (`entire_belt_hold`) on one network whose segments share belts (counted twice); each whole-belt reader whose segment
   (the same rule as inspect's) is shorter than the belt in line through it, with the belts left out upstream and
   downstream and where its segment ends (`short_reads`); and each asteroid collector whose filter the circuit sets: the
