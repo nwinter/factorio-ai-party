@@ -1,6 +1,6 @@
 -- platform_digest {platform} (batch24 B1, Luna: about 15 reads across platform, platform_endurance, platform_supply,
 -- platform_defense, inspect and platform_plan to diagnose Kestrel II): one read per platform from those reads' own code,
--- the stopped or blocked first: route and arrival, hub slots and the chunks in it, chunks collected and where each goes,
+-- the stopped or blocked first: route and arrival, hub slots and the chunks in it, chunks made and where each goes,
 -- crushers, thruster fuel and oxidizer makers, tanks with their trend and run-out, ammunition made and used, turrets
 -- and the ammunition that reaches them or is stranded, power. A read that fails is named with its error; the rest stand.
 return function(api)
@@ -66,9 +66,9 @@ return function(api)
     out.hub = (row.hub_slots and ('hub slots ' .. row.hub_slots) or (endu and endu.hub_slots and 'hub slots ' .. endu.hub_slots) or 'hub slots unknown')
       .. (row.hub_chunks and '; ' .. row.hub_chunks or '; no asteroid chunks in the hub')
     lines[#lines+1] = out.hub
-    -- Chunks collected and where each goes.
+    -- Chunks made (the production statistics: the collectors' catch and the crushers' returns) and where each goes.
     out.chunks = {}
-    if endu and endu.chunks_collected then out.chunks[#out.chunks+1] = 'collected: ' .. table.concat(endu.chunks_collected, ', ') end
+    if endu and endu.chunks_made then out.chunks[#out.chunks+1] = 'made (collectors\' catch and crushers\' returns): ' .. table.concat(endu.chunks_made, ', ') end
     for _, c in ipairs(supply and supply.chunks or {}) do out.chunks[#out.chunks+1] = c end
     for _, f in ipairs(supply and supply.chunk_flags or {}) do out.chunks[#out.chunks+1] = f end
     if #out.chunks == 0 then out.chunks = nil end
@@ -112,6 +112,6 @@ return function(api)
     return out
   end
   M.schema = {platform_digest = {platform='platform name',
-    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks collected and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; job: each agent\'s queued or running job that acts on or waits on the platform (owner, lane, the step now and pending, its wait and what it saw, its drops so far); the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power, jobs); errors (a read that failed, by name). Read only'}}
+    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks made (collectors\' catch and crushers\' returns) and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; job: each agent\'s queued or running job that acts on or waits on the platform (owner, lane, the step now and pending, its wait and what it saw, its drops so far); the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power, jobs); errors (a read that failed, by name). Read only'}}
   return M
 end

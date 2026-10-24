@@ -24,6 +24,17 @@
 -- (5.5,-22.5) stands on the hull's north edge, and its reach covers the hull behind it. 2.0.77 has no per-collector catch count: no event for a collected chunk (the
 -- only *chunk* events are map chunks), the collector's arm inventory (defines.inventory.asteroid_collector_arm) reads
 -- nil, and the production statistics are the platform's.
+-- (d24 batch143 PO1, Sol #2133: Limestone's tally called 7 metallic "collected" while its collectors take only oxide and
+-- carbonic, and its reprocessing crusher made 22 crafts) the production statistics count every chunk made on the
+-- platform, the crushers' returns among them (reprocessing and advanced crushing return chunks): made, not what the
+-- collectors caught. What they caught (caught): each collector's output count and its inserters' pickups (a hand empty
+-- at one read and holding a chunk at the next, its pickup target the collector), read more often than an inserter's
+-- half turn, so no pickup falls between reads (chunks stack to 1: a pickup is one chunk). 2.0.77 has no counter for it:
+-- no collector or platform attribute, no event, and the arm inventory reads nil. On a copy of world n's 03:27 save,
+-- Asterion (17 collectors, 14 crushers, fast inserters at 0.04 turns a tick): over 16,359 ticks the platform made 336
+-- carbonic, 273 metallic and 707 oxide; its collectors' outputs received 229, 186 and 508, its crushers' outputs 106,
+-- 88 and 197 (made equalled the two together within 9 a type at every read: the counts' timing), and a read every 6
+-- ticks gave the same catch as one every tick.
 -- Read on a private copy of world n's shift57 save (05:16 PDT, Asterion over Nauvis: 89 chunks, 12 collectors on two
 -- sides facing out): one collector facing east took chunks placed at rest 12 and 12.4 tiles in front of it and not
 -- 12.7; with the others switched off, 2 tiles in front and not 1.2 (docs/usage.md has the rest).
@@ -91,7 +102,8 @@ return function(api)
     end
     return CHUNKS
   end
-  -- Each chunk type's count in the platform's production statistics: total, and over the last minute and ten.
+  -- Each chunk type's count in the platform's production statistics (every chunk made on the platform, the crushers'
+  -- returns among them): total, and over the last minute and ten.
   local function collected(force, s)
     local st = try(function() return force.get_item_production_statistics(s) end)
     if not st then return nil end
@@ -226,11 +238,11 @@ return function(api)
     table.insert(lines, 1, string.format('%d chunk%s in view %s-%s%s; %d in a collector\'s reach now, %d outside every reach; %d collector%s',
       #list, #list == 1 and '' or 's', at(view.left_top), at(view.right_bottom), #type_text > 0 and ' (' .. table.concat(type_text, ', ') .. ')' or '',
       in_reach, #list - in_reach, #cols, #cols == 1 and '' or 's'))
-    if #got_text > 0 then table.insert(lines, 2, 'collected on ' .. pl.name .. ' (production statistics): ' .. table.concat(got_text, '; ')) end
+    if #got_text > 0 then table.insert(lines, 2, 'made on ' .. pl.name .. ' (production statistics: every chunk made on the platform, the crushers\' returns among them; what its collectors caught: seconds starts a collector_tally watch): ' .. table.concat(got_text, '; ')) end
     return {view=view, chunks_in_view=#list, by_type=by_type, groups=groups, nearest=near, in_reach=in_reach, outside_reach=#list - in_reach,
-      collectors=rows, collected=got, lines=lines,
+      collectors=rows, made=got, lines=lines,
       note='reach: within collection_radius (7.5, the Space Age data) of the line from the collector\'s centre to the point collection_box_offset (5, its prototype) tiles in front, as chunks taken on a copy of this world fit; '
-        .. 'a collector\'s arm load has no inventory to read; drift: tiles a second; collected: the platform\'s production statistics, all its collectors together'}
+        .. 'a collector\'s arm load has no inventory to read; drift: tiles a second; made: the platform\'s production statistics for chunks, every chunk made on the platform: its collectors\' catch and the crushers\' returns (reprocessing and advanced crushing return chunks); a collector_tally watch (seconds) counts what the collectors caught'}
   end
 
   -- The tally watch (measures.lua kind collector_tally).
@@ -260,6 +272,94 @@ return function(api)
     end
     return bi, best
   end
+  -- (PO1) The catch: per collector, its output's count by chunk type and its inserters' hands at each read; a chunk
+  -- arrived = the output's rise plus the chunks its inserters picked up since the last read. Read every CATCH ticks at
+  -- most, and under half the shortest half turn of the inserters taking from the collectors.
+  M.CATCH, M.FEEDERS_EVERY = 10, 600
+  local function feeders(c, s, force)
+    local p, out = c.position, {}
+    for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=force, area={{p.x - 4, p.y - 4}, {p.x + 4, p.y + 4}}} end) or {}) do
+      if try(function() return i.pickup_target end) == c then out[#out+1] = i end
+    end
+    return out
+  end
+  local function hand(i)
+    local h = try(function() return i.held_stack end)
+    if h and try(function() return h.valid_for_read end) then return h.name, h.count end
+    return false
+  end
+  local function half_turn(i)
+    local pr = i.prototype
+    local v = try(function() return pr.get_inserter_rotation_speed(i.quality) end) or try(function() return pr.inserter_rotation_speed end)
+    return v and v > 0 and 0.5 / v or nil
+  end
+  local function out_counts(c)
+    local inv = output(c.e)
+    local t = {}
+    for _, n in ipairs(chunk_items()) do t[n] = inv and try(function() return inv.get_item_count(n) end) or 0 end
+    return t, inv and try(function() return inv.get_item_count() end) or 0
+  end
+  local function catch_feeders(job, c)
+    local s = job.pl.surface
+    local was = {}
+    for k, i in ipairs(c.feeders or {}) do if i.valid then was[i.unit_number] = c.hands[k] end end
+    c.feeders, c.hands = feeders(c.e, s, job.pl.force), {}
+    for k, i in ipairs(c.feeders) do
+      local h = was[i.unit_number]
+      if h == nil then h = hand(i) end  -- a new one: its hand now, not a pickup
+      c.hands[k] = h
+    end
+  end
+  local function catch_period(job)
+    local short
+    for _, c in ipairs(job.collectors) do
+      for _, i in ipairs(c.feeders or {}) do
+        local t = i.valid and half_turn(i)
+        if t and (not short or t < short) then short = t end
+      end
+    end
+    return math.max(1, math.min(M.CATCH, short and math.floor(short / 2) or M.CATCH))
+  end
+  function M.catch_start(job, tick)
+    for _, c in ipairs(job.collectors) do
+      if c.e and c.e.valid then
+        catch_feeders(job, c)
+        c.last, c.last_total = out_counts(c)
+        c.caught, c.caught_by = 0, {}
+      end
+    end
+    job.catch_every = catch_period(job)
+    job.catch_next, job.feeders_next = tick + job.catch_every, tick + M.FEEDERS_EVERY
+  end
+  function M.catch_read(job, tick)
+    local refresh = tick >= (job.feeders_next or 0)
+    for _, c in ipairs(job.collectors) do
+      if c.e and c.e.valid and c.last then
+        local picks, any = {}, false
+        for k, i in ipairs(c.feeders) do
+          if i.valid then
+            local n, k2 = hand(i)
+            if n and not c.hands[k] then picks[n] = (picks[n] or 0) + k2; any = true end
+            c.hands[k] = n
+          end
+        end
+        local inv = output(c.e)
+        local total = inv and try(function() return inv.get_item_count() end) or 0
+        if any or total ~= c.last_total then
+          local now = out_counts(c)
+          for _, n in ipairs(chunk_items()) do
+            local d = (now[n] or 0) - (c.last[n] or 0) + (picks[n] or 0)
+            if d < 0 then c.taken_otherwise = (c.taken_otherwise or 0) - d
+            elseif d > 0 then c.caught = c.caught + d; c.caught_by[n] = (c.caught_by[n] or 0) + d end
+          end
+          c.last, c.last_total = now, total
+        end
+        if refresh then catch_feeders(job, c) end
+      end
+    end
+    if refresh then job.catch_every = catch_period(job); job.feeders_next = tick + M.FEEDERS_EVERY end
+    job.catch_reads = (job.catch_reads or 0) + 1
+  end
   function M.start(p, pl, seconds, reason)
     assert(type(seconds) == 'number' and seconds >= 10 and seconds <= 3600 and seconds == math.floor(seconds), 'seconds: 10..3600')
     local s = pl.surface
@@ -279,6 +379,7 @@ return function(api)
       next_tick=game.tick + M.SAMPLE, seconds=seconds, samples=0, collectors=cols, prod0=prod_counts(pl.force, s), reason=reason,
       box={left_top={x=x0 - M.WATCH - 6, y=y0 - M.WATCH - 6}, right_bottom={x=x1 + M.WATCH + 6, y=y1 + M.WATCH + 6}}}
     M.sample(job, game.tick)
+    M.catch_start(job, game.tick)
     store()[p.index] = job
     return replaced
   end
@@ -359,57 +460,69 @@ return function(api)
     local s = game.surfaces[job.surface]
     local prod = s and prod_counts(game.forces[job.force], s) or {}
     local plat = {}
-    local total = 0
+    local made = 0
     for n, v in pairs(prod) do
       local d = v - (job.prod0[n] or 0)
-      if d ~= 0 then plat[#plat+1] = {name=n, count=d}; total = total + d end
+      if d ~= 0 then plat[#plat+1] = {name=n, count=d}; made = made + d end
     end
     table.sort(plat, function(a, b) return a.count > b.count end)
-    local rows, seen, idle, sum_by = {}, 0, 0, {}
+    local rows, seen, idle, sum_by, caught, caught_by, otherwise = {}, 0, 0, {}, 0, {}, 0
+    local function text_of(t) local l = {}; for n, k in pairs(t) do l[#l+1] = k .. ' ' .. n end; table.sort(l); return #l > 0 and table.concat(l, ', ') or nil end
     for _, c in ipairs(job.collectors) do
-      local by = {}
-      for n, k in pairs(c.by) do by[#by+1] = k .. ' ' .. n; sum_by[n] = (sum_by[n] or 0) + k end
-      table.sort(by)
-      rows[#rows+1] = {position=c.position, filters=c.filters and #c.filters > 0 and c.filters or nil, filters_changed=c.changed, gone_in_reach=c.taken,
-        gone_in_reach_by_type=#by > 0 and table.concat(by, ', ') or nil, gone_s=c.gone and math.floor((c.gone - job.start) / 60) or nil}
+      for n, k in pairs(c.by) do sum_by[n] = (sum_by[n] or 0) + k end
+      for n, k in pairs(c.caught_by or {}) do caught_by[n] = (caught_by[n] or 0) + k end
+      rows[#rows+1] = {position=c.position, filters=c.filters and #c.filters > 0 and c.filters or nil, filters_changed=c.changed,
+        caught=c.caught or 0, caught_by_type=text_of(c.caught_by or {}), inserters=c.feeders and #c.feeders or nil, taken_otherwise=c.taken_otherwise,
+        gone_in_reach=c.taken, gone_in_reach_by_type=text_of(c.by), gone_s=c.gone and math.floor((c.gone - job.start) / 60) or nil}
       seen = seen + c.taken
-      if c.taken == 0 then idle = idle + 1 end
+      caught = caught + (c.caught or 0)
+      otherwise = otherwise + (c.taken_otherwise or 0)
+      if (c.caught or 0) == 0 then idle = idle + 1 end
     end
     local secs = math.floor((now - job.start) / 6 + 0.5) / 10
-    local parts, per_type, names = {}, {}, {}
-    for _, x in ipairs(plat) do parts[#parts+1] = x.count .. ' ' .. x.name; names[x.name] = true end
+    local made_parts, caught_parts, per_type, names = {}, {}, {}, {}
+    local got = {}
+    for _, x in ipairs(plat) do made_parts[#made_parts+1] = x.count .. ' ' .. x.name; names[x.name] = true; got[x.name] = x.count end
     for n in pairs(sum_by) do names[n] = true end
+    for n in pairs(caught_by) do names[n] = true end
     local order = {}
     for n in pairs(names) do order[#order+1] = n end
     table.sort(order)
-    local got = {}
-    for _, x in ipairs(plat) do got[x.name] = x.count end
     local diff = {}
     for _, n in ipairs(order) do
-      local a, b = sum_by[n] or 0, got[n] or 0
-      per_type[#per_type+1] = {name=n, inferred=a, collected=b, difference=a - b}
-      if a ~= b then diff[#diff+1] = string.format('%s %s%d', n, a > b and '+' or '', a - b) end
+      local inf, ca, ma = sum_by[n] or 0, caught_by[n] or 0, got[n] or 0
+      if ca > 0 then caught_parts[#caught_parts+1] = ca .. ' ' .. n end
+      per_type[#per_type+1] = {name=n, made=ma, caught=ca, made_minus_caught=ma - ca, inferred=inf, inferred_minus_caught=inf - ca}
+      if inf ~= ca then diff[#diff+1] = string.format('%s %s%d', n, inf > ca and '+' or '', inf - ca) end
     end
-    local off = seen - total
+    local off = seen - caught
     return {watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=secs, start_tick=job.start,
-      end_tick=done and job.until_tick or nil, collected=total, collected_by_type=plat, collectors=rows, gone_in_reach_total=seen,
-      inferred_minus_collected=off, by_type=per_type, hit_hull=job.hit_hull or 0, gone_elsewhere=job.gone_elsewhere or 0,
-      line=string.format('%s %s\'s %d collectors for %gs%s: %d chunks collected (production statistics, exact, the platform\'s: %s); inferred: %d gone at a collector\'s reach whose filters take them (%s the collected count%s), %d collector%s with none',
-        done and 'watched' or 'watching', job.platform, #rows, secs, done and '' or string.format(' of %ds', job.seconds), total,
-        #parts > 0 and table.concat(parts, ', ') or 'none', seen,
-        off == 0 and 'equal to' or string.format('%d %s than', math.abs(off), off > 0 and 'more' or 'fewer'),
-        #diff > 0 and '; by type ' .. table.concat(diff, ', ') or '', idle, idle == 1 and '' or 's')
-        .. string.format('; not counted: %d gone on a hull tile (struck the hull), %d gone away from every reach', job.hit_hull or 0, job.gone_elsewhere or 0),
-      note='collected: the platform\'s production statistics between the start and ' .. (done and 'the end' or 'now') .. ', exact, all its collectors together; gone_in_reach (inferred, not a catch count: 2.0.77 gives none per collector): a chunk seen within ' .. M.WATCH .. ' tiles (and its drift) of the reach of a collector whose filters take its type at one read (every ' .. M.SAMPLE
-        .. ' ticks), gone from where its drift puts it at the next, its path since within ' .. M.SLACK .. ' tile of that reach (collectors take chunks as they cross into it), counted for the collector whose reach it came nearest; not counted: one found where its drift puts it, one gone where its drift puts it on a platform tile (hit_hull: it struck the hull), one whose path came near no such reach (gone_elsewhere); a chunk taken without being seen near a reach first is missed, so the inferred sum can fall short of collected'}
+      end_tick=done and job.until_tick or nil, caught=caught, caught_by_type=text_of(caught_by), read_every=job.catch_every,
+      made=made, made_by_type=plat, made_minus_caught=made - caught, taken_otherwise=otherwise > 0 and otherwise or nil,
+      collectors=rows, gone_in_reach_total=seen, inferred_minus_caught=off, by_type=per_type, hit_hull=job.hit_hull or 0, gone_elsewhere=job.gone_elsewhere or 0,
+      line=string.format('%s %s\'s %d collectors for %gs%s: caught %d (arrived in their outputs, read every %s ticks: %s), %d collector%s with none; made %d on the platform (production statistics, every chunk made there, the crushers\' returns among them: %s), %d more than caught; inferred: %d gone at a collector\'s reach whose filters take them (%s the caught count%s)',
+        done and 'watched' or 'watching', job.platform, #rows, secs, done and '' or string.format(' of %ds', job.seconds), caught, tostring(job.catch_every or '?'),
+        #caught_parts > 0 and table.concat(caught_parts, ', ') or 'none', idle, idle == 1 and '' or 's', made, #made_parts > 0 and table.concat(made_parts, ', ') or 'none', made - caught, seen,
+        off == 0 and 'equal to' or string.format('%d %s than', math.abs(off), off > 0 and 'more' or 'fewer'), #diff > 0 and '; by type ' .. table.concat(diff, ', ') or '')
+        .. string.format('; not counted: %d gone on a hull tile (struck the hull), %d gone away from every reach', job.hit_hull or 0, job.gone_elsewhere or 0)
+        .. (otherwise > 0 and string.format('; %d taken from the outputs by other than their inserters (robots, a hand): not in caught', otherwise) or ''),
+      note='caught: the chunks that arrived in the collectors\' outputs between the start and ' .. (done and 'the end' or 'now') .. ': each output\'s rise plus what the inserters taking from it picked up, read every read_every ticks, under half an inserter\'s half turn (chunks stack to 1: a pickup is one chunk); a chunk still in a collector\'s arm is not yet in it. '
+        .. 'made: the platform\'s production statistics for chunks over the same span: every chunk made on the platform, the collectors\' catch and the crushers\' returns (reprocessing and advanced crushing return chunks); made_minus_caught: the crushers\' returns and the counts\' timing (on a copy of world n, made equalled the collectors\' and the crushers\' outputs together within 9 a type over 16,359 ticks). '
+        .. 'gone_in_reach (inferred, not a catch count): a chunk seen within ' .. M.WATCH .. ' tiles (and its drift) of the reach of a collector whose filters take its type at one read (every ' .. M.SAMPLE
+        .. ' ticks), gone from where its drift puts it at the next, its path since within ' .. M.SLACK .. ' tile of that reach (collectors take chunks as they cross into it), counted for the collector whose reach it came nearest; not counted: one found where its drift puts it, one gone where its drift puts it on a platform tile (hit_hull: it struck the hull), one whose path came near no such reach (gone_elsewhere); a chunk taken without being seen near a reach first is missed'}
   end
   function M.tick(tick)
     local all = api.state().collector_tally
     if not all then return end
     for _, job in pairs(all) do
+      if not job.result and job.catch_next and tick >= job.catch_next and tick < job.until_tick then
+        M.catch_read(job, tick)
+        job.catch_next = tick + job.catch_every
+      end
       if not job.result and tick >= job.next_tick then
         M.sample(job, tick)
         if tick >= job.until_tick then
+          if job.catch_next then M.catch_read(job, tick) end
           job.result = M.result(job, true)
           job.collectors, job.prev, job.pl = nil, nil, nil
         else

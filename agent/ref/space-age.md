@@ -94,7 +94,7 @@
   Example: `./fh call platform_delete --args '{"platform":"Bastion","dry_run":true}'`
 - `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
-  hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
+  hub slots free, power, solar power at the stops, and the asteroid chunks made a minute (the collectors' catch and the crushers' returns); `fuel_outlook`: one line
   of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
   whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
   before the leg ends, once while it lasts: `urgent:` under 2 minutes of it at the rates now, or from 90 s into the
@@ -141,12 +141,15 @@
   chunks, 32 tiles out): by type, in 16-tile groups (count, box, drift in tiles a second) and the 12 nearest a
   collector's reach (`outside`: tiles beyond it); each collector's `reach` (within 7.5 of the line from its centre to
   the point 5 tiles in front), status, what its output holds, the chunks in its reach now and the nearest outside it;
-  `collected`: each chunk type in the platform's production statistics over the last minute and 10 minutes. With
-  `seconds: N` (10..3600) it starts a collector_tally watch: `gone_in_reach` per collector is inferred (2.0.77 has no
-  per-collector catch count): a chunk seen near the reach of a collector whose filters take it and gone at the next
+  `made`: each chunk type in the platform's production statistics over the last minute and 10 minutes: every chunk
+  made on the platform, the crushers' returns among them (reprocessing and advanced crushing return chunks). With
+  `seconds: N` (10..3600) it starts a collector_tally watch. `caught` per collector: the chunks that arrived in its
+  output (its rise plus what the inserters taking from it picked up, read every `read_every` ticks; 2.0.77 has no
+  catch counter). `made` over the same span and `made_minus_caught` (the crushers' returns and the counts' timing):
+  on a copy of world n, Asterion made 1316 chunks in 16,359 ticks, 391 of them crushers' returns. `gone_in_reach`
+  per collector is inferred: a chunk seen near the reach of a collector whose filters take it and gone at the next
   read (every 10 ticks) with its drift's path within 1 tile of that reach; not counted: `hit_hull` (gone on a platform
-  tile) and `gone_elsewhere`. Beside it `collected`, the platform's exact count from production statistics, and
-  `inferred_minus_collected`, also `by_type`; the same read gives `tally` (so far, or done).
+  tile) and `gone_elsewhere`; `inferred_minus_caught`, also `by_type`; the same read gives `tally` (so far, or done).
 - `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
@@ -250,7 +253,7 @@
 - `platform_digest {platform}`: one read of a platform from `platforms`, `platform_supply`, `platform_endurance` and
   `platform_defense`: first what is stopped or blocked (the supply chain's stops: collectors, crushers, fuel and
   oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines
-  on no power), then the route and arrival, hub slots and the chunks in it, chunks collected and where each goes,
+  on no power), then the route and arrival, hub slots and the chunks in it, chunks made and where each goes,
   crushers and makers (state, in and out), thrusters, the fuel outlook, tanks and ammunition (stock, made and used, run-out, stranded),
   turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
 - `platform_tiles {platform, positions | area}`: up to 64 tiles at exact coordinates: the tile, marked for removal, a

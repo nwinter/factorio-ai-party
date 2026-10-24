@@ -73,7 +73,7 @@ do
   eq(out.collectors[1].in_reach,1); eq(out.collectors[1].direction,'east'); eq(out.collectors[1].nearest_outside.outside,0.5)
   eq(out.collectors[2].in_reach,0)
   eq(out.nearest[1].outside,0); eq(out.nearest[1].drift.y,-1)
-  eq(#out.collected,2,'parameter chunks left out'); eq(out.collected[1].last_1m,1)
+  eq(#out.made,2,'parameter chunks left out'); eq(out.made[1].last_1m,1)
   assert(out.lines[1]:find('2 chunks in view',1,true) and out.lines[1]:find('1 in a collector\'s reach now',1,true),out.lines[1])
   -- the tally: the chunk in reach is taken (gone at the next read); the one drifting outside stays; production counts
   local p={index=3}
@@ -84,7 +84,7 @@ do
   produced['metallic-asteroid-chunk']=11
   game.tick=1010; C.tick(1010)
   local t=C.tally(p,pl)
-  eq(t.gone_in_reach_total,1); eq(t.collectors[1].gone_in_reach,1); eq(t.collectors[1].gone_in_reach_by_type,'1 metallic-asteroid-chunk'); eq(t.collected,1)
+  eq(t.gone_in_reach_total,1); eq(t.collectors[1].gone_in_reach,1); eq(t.collectors[1].gone_in_reach_by_type,'1 metallic-asteroid-chunk'); eq(t.made,1)
   -- a chunk drifting through a reach is not taken
   chunk('oxide-asteroid-chunk',57,119.5,1/60,0)
   game.tick=1020; C.tick(1020)
