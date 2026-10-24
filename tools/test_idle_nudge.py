@@ -77,11 +77,10 @@ def main():
     # astra mining; luna in a wait (not work: shift07), nick not on the team. The same report twice: this process's
     # own count has gone on 280 s since it first saw them (25 + 4.7 min)
     assert [e["agent"] for e in out] == ["sonnet", "luna"], out
-    assert sent[0][1] == ("Operator (automatic, facts only): your character has stood idle for 30 min (no action, no "
-                          "queue step, sleeping 10 min). Queue: paused with 3 steps. Unread for you: 7 chat messages, "
-                          "2 mentions, 1 tell."), sent[0][1]
-    assert sent[1][1].startswith("Operator (automatic, facts only): your character has stood idle for 17 min (in "
-                                 "wait_until). Queue: none."), sent[1][1]
+    assert sent[0][1] == ("Operator (automatic, facts only): idle for 30 min (no action, no queue step, sleeping 10 min). "
+                          "Unread for you: 7 chat messages, 2 mentions, 1 tell. Queue: paused with 3 steps."), sent[0][1]
+    assert sent[1][1].startswith("Operator (automatic, facts only): idle for 17 min (in wait_until). Unread for you: "), sent[1][1]
+    assert sent[1][1].endswith("Queue: none."), sent[1][1]
     e = rows[0]
     assert e["sent"] and e["tell_seq"] == 1 and e["standing_min"] == 30 and e["queue"] == "paused with 3 steps" \
         and e["sleeping_min"] == 10 and e["unread"]["unread_chat"] == 7 and "since_last_nudge" not in e, e
@@ -104,7 +103,7 @@ def main():
     assert n.due(row("astra", 30, orders={"set": 2, "running": "restock-ammo"}), T0 + 900) == "running a standing order"
     assert n.due(row("astra", 30, orders={"set": 2}), T0 + 900) is None
     t = N.nudge_text(row("astra", 12, orders={"set": 2}))
-    assert "Queue: none. Standing orders: 2 set, none running. Unread for you:" in t, t
+    assert t.endswith("Queue: none. Standing orders: 2 set, none running."), t
     assert "Standing orders: 1 set, paused." in N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True}))
     t = N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True, "operator_paused": True}))
     assert "Standing orders: 1 set, paused by the operator." in t, t
@@ -132,10 +131,9 @@ def main():
     assert k.standing(row("grok", 0, counted=counted), T0 + 720) == 0, "the harness's standing, not this process's own"
     assert k.standing(row("grok", 0), T0 + 720) >= 660, "an older harness: the longer one"
     t = N.nudge_text(row("haiku", 12, counted=counted))
-    assert ("stood idle for 12 min (no action, no queue step). Counted, last 10 min: 0 game actions (and 35 with no "
-            "effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%, standing 21% (a wait or "
-            "sleep is idle; a game action that changed something, a move to a new spot or 20 s of work in 2 minutes ends "
-            "idle). Queue: none.") in t, t
+    assert t.endswith("Queue: none. Counted, last 10 min: 0 game actions (and 35 with no effect), 12 reads, 2 messages; "
+                      "working 0%, asleep 79% (sleep 300 x2), waiting 0%, standing 21%. Idle: a wait or sleep counts; a "
+                      "game action that changed something, a move to a new spot or 20 s of work in 2 min ends it."), t
     logged = []
     N.Nudger(["haiku"], start=T0).step({"agents": [row("haiku", 12, counted=counted)]}, T0 + 600, send, logged.append)
     assert logged[0]["counted"] == counted["text"], logged
@@ -149,17 +147,17 @@ def main():
     assert m.due(row("grok", 15), T0 + 660) is None
     # board lines show when there are any; no advice in the text
     t = N.nudge_text(row("opus", 11, unread_board=2))
-    assert t.endswith("0 chat messages, 0 mentions, 0 tells, 2 board lines.") and "should" not in t and "please" not in t, t
+    assert "0 chat messages, 0 mentions, 0 tells, 2 board lines. Queue: none." in t and "should" not in t and "please" not in t, t
     # (d23 batch121 CD1, viewer Aurora site:4387, 4406) the unread chat lines naming it, and the tells shown in a team
     # block but not acknowledged, apart from those pending delivery, with the oldest's age
     t = N.nudge_text(row("opus", 11, unread_chat=158, unread_chat_to_you=3, unread_tells=1, unread_mentions=1,
                          unacked_tells=4, unacked_oldest_s=1500))
-    assert t.endswith("Unread for you: 158 chat messages (3 naming you), 0 mentions, 1 tell, "
-                      "4 tells shown, not acknowledged (oldest 25 min)."), t
+    assert ("Unread for you: 158 chat messages (3 naming you), 0 mentions, 1 tell, "
+            "4 tells shown, not acknowledged (oldest 25 min). Queue: none.") in t, t
     assert "naming you" not in N.nudge_text(row("opus", 11, unread_chat=0, unread_chat_to_you=0))
     # what is open for the agent (open.lua, d15 H3) ends the text; a harness before it sends none
     t = N.nudge_text(row("sonnet", 12, open="open for you: 1 board item of yours (#425 purple science [doing])"))
-    assert t.endswith("0 tells. Open for you: 1 board item of yours (#425 purple science [doing])."), t
+    assert t.endswith("Queue: none. Open for you: 1 board item of yours (#425 purple science [doing])."), t
     assert "Open for you" not in N.nudge_text(row("sonnet", 12))
     # (d20 batch70 AF1) Haiku d21 12:11:50: nudged 72 s into a 120 s uptime watch Astra had asked of it. A harness
     # that reports the watch running (measuring) is busy with it; one late, stalled, invalid or with its final unread
@@ -183,7 +181,7 @@ def main():
     assert logged[0]["watches"] == [{"id": "uptime@42744959", "state": "late", "end_tick": 42780959, "final_read": None}], logged
     # (operator d21 13:18) the agent's own reason to wait, given with its sleep, quoted as given; nothing suggested
     t = N.nudge_text(row("haiku", 12, sleeping_s=60, sleep_reason="waiting for astra's go on the wall."))
-    assert "Queue: none. Your reason to wait (your sleep): waiting for astra's go on the wall. Unread for you:" in t, t
+    assert t.endswith("Queue: none. Your reason to wait (your sleep): waiting for astra's go on the wall."), t
     assert "reason" not in N.nudge_text(row("haiku", 12))
     # the run's members and deadline from its files
     d = tempfile.mkdtemp()

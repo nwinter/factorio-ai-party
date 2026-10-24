@@ -13669,3 +13669,21 @@ Fixed besides gates:
   platform as surface (...): no platform of ours is named X". freight_audit, pods, delivery_watch and build refuse it
   with what reads a platform there. tells: `after` is `since`; `unread`, `seq` and `from` are refused naming since.
 - Test: tests/d24_batch154.lua (each part fails on main).
+- Addendum (viewer Aurora 11:50, 11:51), tools/idle_nudge.py:
+  - The tell's 500 bytes: Muse's nudges in shift69 ran 677-1059 bytes, and the harness cut them at 500 inside the
+    unread field ("20"). Now how long, the unread counts and the queue come first ("Operator (automatic, facts only):
+    idle for 1079 min (no action, no queue step). Unread for you: 200 chat messages (3 naming you), 8 mentions, 110
+    tells, 3 tells shown, not acknowledged (oldest 1029 min), 6 board lines. Queue: paused with 0 steps."), then the
+    standing orders, watches, the sleep's reason, what is open (unanswered items first), what was counted and a short
+    idle definition, each while it fits; the first that does not is cut at a word with "...". Muse's 11:46 nudge
+    comes to 495 bytes with the tell from haiku in it.
+  - A session that does not answer: a nudge whose tell was not delivered with no request of its own in the agent's
+    journal since (the harness's last_request_s also counts reads others make of it: Muse's rows read requests while
+    its journal held none), or a herdr pane idle or done with no request of its own for 30 min: idle nudges every
+    every_min doubled per nudge not answered, at most 4 h; a request of its own or a delivered tell resets it. A rest
+    (resting.json; the operator's for Muse until Sun 17:00) is no nudge, as before. Only the idle nudge backs off.
+  - A handoff, once while it rests or does not answer, to the first --lead that is active (a request of its own in the
+    last 10 min, not resting), else the team member with the most recent request of its own: "muse does not answer
+    (out of quota until Sun 17:00). Waiting on it: 1 request or tell to you unanswered (tell from haiku ...)", only
+    when something waits on it (unanswered requests and tells, its board items, claims #N); none: logged.
+  - Tests: tools/test_idle_nudge_answer.py; tools/test_idle_nudge.py takes the new order.
