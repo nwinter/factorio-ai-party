@@ -8,7 +8,11 @@
   milestones, a death, a big fight (from where it got big), a host segment, a viewer's question an agent answered;
 - the description: under 5,000 bytes, no angle brackets, no operator lines, no chat from the shift before;
 - the box plan: concat list in order, Quick Sync HEVC at about 1 GB an hour, low priority;
-- yt_upload --dry-run: every request printed, no sign-in, nothing written; a real run refuses a shift still on.
+- yt_upload --dry-run: every request printed, no sign-in, nothing written; a real run refuses a shift still on;
+- (d24 batch156 PZ1) from the chronicle, weighed against the earlier shifts': the first arrival at the solar system
+  edge (the Space Age victory) leads the title, the chapters and what happened; routine trips are no chapter and are
+  summed by route; a far trip set out for before has no "first time"; a platform built at a place does not reach it
+  "for the first time"; chapters spread to the recording's end.
 """
 import datetime, json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -83,7 +87,68 @@ def make(root):
     return listing
 
 
+def chronicle_case(root):
+    """(d24 batch155 PZ1: shift 63's video read "Kestrel IVb reaches Aquilo and Weaver leaves Nauvis", 24 chapters of
+    routine arrivals in its first 47 minutes, and left out Asterion reaching the solar system edge 2h41m in.) A shift
+    like it, after one whose chronicle already has Gleba, Aquilo and a departure for the edge."""
+    ca, cb = root / "ca", root / "cb"
+    ca.mkdir()
+    cb.mkdir()
+    t0 = datetime.datetime(2026, 10, 23, 8, 0, tzinfo=PDT).timestamp()
+
+    def row(sec, kind, **k):
+        return json.dumps(dict(k, kind=kind, type="event", t=t0 + sec, tick=1000 + sec * 60))
+    (ca / "chronicle.jsonl").write_text("\n".join([
+        row(-90000, "platform_arrived", platform="Petrel", at="gleba"),
+        row(-80000, "platform_arrived", platform="Kestrel", at="aquilo"),
+        row(-70000, "platform_left", platform="Kestrel", at="aquilo", to="solar-system-edge")]) + "\n")
+    (cb / "resumed-from").write_text("ca\n")
+    (cb / "stream.json").write_text(json.dumps({"shift": {"start": t0, "end": t0 + 4 * 3600}}))
+    (cb / "start.log").write_text("07:59:00 world n: resuming\n08:00:05 helper stream-service pid 2 up: x\n")
+    (cb / "scores.jsonl").write_text("\n".join([score("2026-10-23T08:01:00", 1000, ["automation"], rockets=1000),
+                                                score("2026-10-23T11:59:00", 900000, ["automation"], rockets=1600)]) + "\n")
+    rows = []
+    for i in range(12):  # routine: Petrel between Nauvis and Gleba every 2 minutes, all in the first 47 minutes
+        rows.append(row(120 + i * 240, "platform_left", platform="Petrel", at="nauvis", to="gleba"))
+        rows.append(row(180 + i * 240, "platform_arrived", platform="Petrel", at="gleba"))
+        rows.append(row(240 + i * 240, "platform_left", platform="Petrel", at="gleba", to="nauvis"))
+        rows.append(row(300 + i * 240, "platform_arrived", platform="Petrel", at="nauvis"))
+    rows += [row(1200, "platform_created", platform="Weaver", at="nauvis"),
+             row(1800, "platform_left", platform="Asterion", at="aquilo", to="solar-system-edge"),
+             row(2400, "platform_arrived", platform="Weaver", at="nauvis"),
+             row(3600 + 1200, "platform_arrived", platform="Weaver", at="gleba"),
+             row(2 * 3600 + 41 * 60, "platform_arrived", platform="Asterion", at="solar-system-edge"),
+             row(3 * 3600 + 600, "research", name="mining-productivity-3"),
+             row(3 * 3600 + 1800, "research", name="toolbelt-equipment")]
+    rows.append(json.dumps({"type": "entry", "agent": "astra", "title": "Asterion's long watch", "t": t0 + 3 * 3600 + 3000,
+                            "tick": 99}))
+    (cb / "chronicle.jsonl").write_text("\n".join(rows) + "\n")
+
+
 def main():
+    with tempfile.TemporaryDirectory() as d:
+        croot = Path(d) / "chron"
+        croot.mkdir()
+        chronicle_case(croot)
+        vc = sv.build("cb", croot)
+        # the title and the first line of what happened: the biggest moment, the Space Age victory
+        assert vc["title"] == "Factorio AI Party · Shift 2: Asterion reaches the solar system edge: the Space Age victory", vc["title"]
+        chap = {c["title"]: c["at"] for c in vc["chapters"]}
+        assert abs(chap.get("Asterion reaches the solar system edge: the Space Age victory", 0) - (2 * 3600 + 41 * 60 - 5)) <= 1, vc["chapters"]
+        assert not any("Petrel" in t for t in chap), vc["chapters"]  # routine trips are no chapter
+        assert "Asterion leaves Aquilo for the solar system edge" in chap, vc["chapters"]  # set out for before: no "first time"
+        assert "Space platform Weaver built" in chap and "Weaver reaches Gleba for the first time" in chap, vc["chapters"]
+        assert not any(t.startswith("Weaver reaches Nauvis") for t in chap), vc["chapters"]  # built there
+        assert max(chap.values()) > 3 * 3600 and "Toolbelt equipment researched" in chap, vc["chapters"]  # spread to the end
+        assert all(b - a >= sv.MIN_GAP for a, b in zip(sorted(chap.values()), sorted(chap.values())[1:])), vc["chapters"]
+        happened = vc["description"].split("What happened\n", 1)[1].split("\n\n", 1)[0].splitlines()
+        assert happened[0] == "• Asterion reaches the solar system edge: the Space Age victory", happened
+        assert "• 24 routine platform trips: 24 between Gleba and Nauvis (Petrel)" in happened, happened
+        assert happened.index("• 24 routine platform trips: 24 between Gleba and Nauvis (Petrel)") > happened.index(
+            "• Weaver reaches Gleba for the first time"), happened
+        assert any("research finished: toolbelt equipment and mining productivity 3" in h for h in happened), happened
+        assert "• 600 rockets launched" in happened, happened
+
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "runs"
         root.mkdir()
@@ -117,14 +182,15 @@ def main():
                 (1060, "research", "Steel researched", 40), (3000, "depart", "Starling leaves Nauvis", 88),
                 (3040, "research", "Vulcanus discovered", 72)]]
         got = [c["title"] for c in sv.pick_chapters(evs, segs, "Start", 7200)]
-        assert got == ["Start", "First rocket launched; space platform Starling built", "Starling leaves Nauvis"], got
+        assert got == ["Start", "First rocket launched; space platform Starling built", "Starling leaves Nauvis", "Hour 2"], got  # 3000 s to the end: an hour mark
         fight = [t for t in titles if t.startswith("Biters break in: 64 lost")]
         assert fight and titles[fight[0]] == (datetime.datetime(2026, 10, 12, 23, 16) - datetime.datetime(2026, 10, 12, 22, 0, 5)).seconds, ch
         assert "Craig asks: when is the first rocket?" in titles, ch
         assert not any("Research:" in t for t in titles), ch  # research cards repeat the research chapters
 
         assert v["title"].startswith("Factorio AI Party · Shift 2: ") and len(v["title"]) <= 100, v["title"]
-        assert "Starling leaves Nauvis" in v["title"], v["title"]
+        # the heaviest two: the first rockets (92) and the platform built (90), ahead of its departure (88)
+        assert v["title"].endswith(": The first 2 rockets and space platform Starling built"), v["title"]
         desc = v["description"]
         assert len(desc.encode()) < 5000 and "<" not in desc and ">" not in desc
         assert "Craig asked" in desc and "Opus answered" in desc and "the silo is half built" in desc

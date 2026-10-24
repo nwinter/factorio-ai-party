@@ -16,9 +16,11 @@ D:\\pog\\recordings\\2026-10-12 17-36-12.mkv for a recording started at 18:36:12
 optionally followed by ",SECONDS" (ffprobe's csv). Without LIST the recording is estimated from start.log (one file from
 when start-team's helpers came up to the shift's end) and video.json says "estimated": true.
 
-Sources (all read-only): scores.jsonl (research, rockets, platforms, planets), stream-service.log (the director's deaths
-and loss alerts), caster.log (the hosts' segment calls), chat.jsonl (viewers' questions and the agents' answers),
-stream.json and start.log (times only). Nothing from journals, notes or the operator's lines.
+Sources (all read-only): scores.jsonl (research, rockets, platforms, planets), chronicle.jsonl (platforms built, lost
+or deleted, each arrival and departure, the agents' chronicle entries; the earlier shifts' for what the run did before),
+stream-service.log (the director's deaths and loss alerts), caster.log (the hosts' segment calls), chat.jsonl (viewers'
+questions and the agents' answers), stream.json and start.log (times only). Nothing from journals, notes or the
+operator's lines.
 """
 import argparse
 import datetime
@@ -45,6 +47,7 @@ OWNERS = {"nickwinter"}  # the operator's own chat name: not a viewer moment
 VIDEO_KBPS, AUDIO_KBPS = 2000, 128  # about 0.96 GB an hour
 MIN_GAP = 90  # seconds between chapters (YouTube's floor is 10)
 MAX_CHAPTERS = 24
+GAP_FILL = 2700  # seconds with no chapter before a lesser moment or an hour mark fills in
 BIG_FIGHT = 10  # buildings lost in one alert: a fight worth a chapter
 VIEWER_MOMENTS = 3
 
@@ -217,28 +220,38 @@ def ev(t, kind, title, weight, **more):
     return dict(t=t, kind=kind, title=SANITIZE.sub("", title)[:70], weight=weight, **more)
 
 
-def score_events(sc, first_shift, base_rockets):
+def research_weight(tech):
+    """(label, weight): a milestone's own; any other technology 36 when new, 26 for a repeating one's next level."""
+    if tech in TECHS:
+        return TECHS[tech]
+    level = re.search(r"-(\d+)$", tech)
+    return longrun.tech_label(tech), 36 if not level or level.group(1) == "1" else 26
+
+
+def score_events(sc, first_shift, base_rockets, platforms=True, research=True):
     """Research milestones, rockets, platforms and planets, each at the middle of the 2-minute score interval where it
-    first shows."""
+    first shows. platforms=False, research=False: the chronicle tells those (chronicle_events; a repeating technology
+    keeps its name from level to level, so only the chronicle sees its next level)."""
     out = []
     rockets_seen = base_rockets
     for a, b in zip(sc, sc[1:]):
         t = iso_local(a["t"]) + (iso_local(b["t"]) - iso_local(a["t"])) / 2
-        for tech in sorted(b["done"] - a["done"]):
-            if tech in TECHS:
-                label, w = TECHS[tech]
-                title = label if label.endswith("discovered") else f"{label} researched"
-                out.append(ev(t, "research", title, w, tech=tech, label=label))
+        for tech in sorted(b["done"] - a["done"]) if research else []:
+            label, w = research_weight(tech)
+            title = label if label.endswith("discovered") else f"{label} researched"
+            out.append(ev(t, "research", title, w, tech=tech, label=label))
         if b["rockets"] > a["rockets"]:
             n0, n1 = a["rockets"] + 1, b["rockets"]
             if n0 == 1 and rockets_seen == 0:
                 title, w = "First rocket launched", 92
+            elif n1 // 1000 > (n0 - 1) // 1000:  # a thousandth rocket: a chapter; the rest are routine
+                title, w = f"Rocket {n1 // 1000 * 1000:,} launched", 50
             else:
-                title, w = (f"Rocket {n1} launched" if n0 == n1 else f"Rockets {n0} to {n1} launched"), 60
+                title, w = (f"Rocket {n1} launched" if n0 == n1 else f"Rockets {n0} to {n1} launched"), 8
             out.append(ev(t, "rocket", title, w, first=(n0 == 1), count=n1 - n0 + 1))
             rockets_seen = b["rockets"]
         before = {p["name"]: p for p in a.get("platform_rows", [])}
-        for p in b.get("platform_rows", []):
+        for p in (b.get("platform_rows", []) if platforms else []):
             q = before.get(p["name"])
             if p.get("hub", True) and (q is None or not q.get("hub", True)):
                 out.append(ev(t, "platform", f"Space platform {p['name']} built", 90, name=p["name"]))
@@ -266,6 +279,129 @@ def platform_rows(path):
                 rows.append((s["tick"], [dict(p, at=None) if p.get("at") == "in transit" else p
                                          for p in s.get("platforms") or [] if isinstance(p, dict)]))
     return dict(rows)
+
+
+FAR = {"solar-system-edge": "the solar system edge", "shattered-planet": "the Shattered Planet"}
+
+
+def place(p):
+    return FAR.get(p) or (p or "?").replace("-", " ").capitalize()
+
+
+def chronicle_rows(path, kinds=None):
+    """chronicle.jsonl's rows (events with a kind, the agents' entries), each with its t."""
+    out = []
+    if path.exists():
+        for line in path.read_text(errors="replace").splitlines():
+            if kinds and not any(f'"{k}"' in line for k in kinds):
+                continue
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and isinstance(r.get("t"), (int, float)):
+                out.append(r)
+    return out
+
+
+def run_history(d):
+    """What the run did before shift d, from its world's earlier shifts' chronicles (the resumed-from chain): the places a
+    platform reached, each platform's (platform, place) visits (arrived, left or built there), and the far destinations (the edge, the
+    Shattered Planet) set out for."""
+    h = {"places": {"nauvis"}, "visits": set(), "far_left": set(), "told": False}
+    for run in shift_times.earlier_runs(str(d)):
+        rows = chronicle_rows(d.parent / run / "chronicle.jsonl", ("platform_arrived", "platform_left", "platform_created"))
+        h["told"] = h["told"] or bool(rows)
+        for r in rows:
+            if r.get("kind") == "platform_arrived" and r.get("at"):
+                h["places"].add(r["at"])
+                h["visits"].add((r.get("platform"), r["at"]))
+            elif r.get("kind") == "platform_created" and r.get("at"):
+                h["visits"].add((r.get("platform"), r["at"]))
+            elif r.get("kind") == "platform_left":  # it was there: a visit
+                if r.get("at"):
+                    h["visits"].add((r.get("platform"), r["at"]))
+                if r.get("to") in FAR:
+                    h["far_left"].add(r["to"])
+    return h
+
+
+def chronicle_events(rows, start, end, history, planets=()):
+    """The shift's platform story from chronicle.jsonl, weighed against what the run did before (history; planets: the
+    planets the shift's first score already lists, reached before the chronicle began):
+    - the first arrival at the solar system edge (the Space Age victory) or the Shattered Planet; the first platform to
+      reach a planet; a departure for a far place the run never set out for before;
+    - platforms built or lost; a far trip again (the first of the shift for that platform and place); a platform's
+      first visit to a place; the agents' chronicle entries; platforms deleted;
+    - every other arrival and departure is a routine trip (weight under 10: summed by route in the description)."""
+    places, visits, far_left = set(history["places"]) | set(planets), set(history["visits"]), set(history["far_left"])
+    # (a platform's first visit needs an earlier shift's chronicle: before the chronicle began nothing says where it went)
+    out, again = [], set()
+    for r in sorted(rows, key=lambda r: r["t"]):
+        t = local(r["t"])
+        if not start <= t <= end:
+            continue
+        kind, name = r.get("kind"), r.get("platform") or "?"
+        if kind == "platform_arrived" and r.get("at"):
+            at = r["at"]
+            if at not in places:
+                title, w = ((f"{name} reaches the solar system edge: the Space Age victory", 100) if at == "solar-system-edge"
+                            else (f"{name} reaches {place(at)}, the first platform there", 99 if at in FAR else 96))
+                out.append(ev(t, "first", title, w, name=name, at=at))
+            elif at in FAR and (name, "at", at) not in again:
+                again.add((name, "at", at))
+                out.append(ev(t, "far", f"{name} reaches {place(at)} again", 64, name=name, at=at))
+            elif (name, at) not in visits and history.get("told", True):  # no earlier chronicle: no visit known
+                out.append(ev(t, "visit", f"{name} reaches {place(at)} for the first time", 48, name=name, at=at))
+            else:
+                out.append(ev(t, "trip_end", f"{name} reaches {place(at)}", 4, name=name, at=at))
+            places.add(at)
+            visits.add((name, at))
+        elif kind == "platform_left":
+            frm, to = r.get("at"), r.get("to")
+            title = f"{name} leaves {place(frm)} for {place(to)}" if to else f"{name} leaves {place(frm)}"
+            if to in FAR and to not in far_left:
+                out.append(ev(t, "far", title + ", the first time", 90, name=name, at=frm, to=to))
+            elif to in FAR and (name, "for", to) not in again:
+                again.add((name, "for", to))
+                out.append(ev(t, "far", title, 66 if to == "shattered-planet" else 60, name=name, at=frm, to=to))
+            else:
+                out.append(ev(t, "trip", title, 6, name=name, at=frm, to=to))
+            if to in FAR:
+                far_left.add(to)
+            if frm:  # it was there
+                visits.add((name, frm))
+        elif kind == "research" and r.get("name"):
+            label, w = research_weight(r["name"])
+            out.append(ev(t, "research", label if label.endswith("discovered") else f"{label} researched", w,
+                          tech=r["name"], label=label))
+        elif kind == "platform_created":
+            out.append(ev(t, "platform", f"Space platform {name} built", 90, name=name))
+            if r.get("at"):  # built in orbit there: its next arrival there is no first visit
+                visits.add((name, r["at"]))
+        elif kind == "platform_lost":
+            where = (f" ({place(r['from'])} to {place(r['to'])})" if r.get("from") and r.get("to")
+                     else f" (at {place(r.get('at'))})" if r.get("at") else "")
+            out.append(ev(t, "lost", f"Platform {name} lost{where}", 91, name=name))
+        elif kind == "platform_deleted":
+            out.append(ev(t, "deleted", f"Platform {name} taken down", 34, name=name))
+        elif r.get("type") == "entry" and r.get("title"):
+            who = (r.get("agent") or "").capitalize()
+            out.append(ev(t, "note", f"{who}: {r['title']}" if who else r["title"], 33, agent=r.get("agent")))
+    return out
+
+
+def trip_routes(events):
+    """Routine trips (departures) by route: [(count, "Nauvis and Gleba", [platforms])], most first."""
+    by = {}
+    for e in events:
+        if e["kind"] == "trip" and e.get("to"):
+            key = tuple(sorted([e["at"] or "?", e["to"]]))
+            c = by.setdefault(key, [0, []])
+            c[0] += 1
+            if e["name"] not in c[1]:
+                c[1].append(e["name"])
+    return sorted([(c[0], f"{place(a)} and {place(b)}", c[1]) for (a, b), c in by.items()], key=lambda r: (-r[0], r[1]))
 
 
 def fight_events(d, anchor):
@@ -403,25 +539,70 @@ def viewer_moments(d, tick0, names, hide=None):
 
 
 def pick_chapters(events, segs, start_title, total):
-    """YouTube's rules: the first at 0:00, at least three, each at least 10 s long. Heaviest first, MIN_GAP apart,
-    at most MAX_CHAPTERS; hour marks fill in when fewer than three. Two milestones (weight 85 or more) too close for
-    two chapters share one title."""
+    """YouTube's rules: the first at 0:00, at least three, each at least 10 s long; MIN_GAP apart, at most
+    MAX_CHAPTERS. The milestones (weight 85 or more) first, heaviest first; two too close for two chapters share one
+    title. Then the big ones (60 or more) by weight. Then the rest (30 or more), spread over the whole recording: each
+    pick is the heaviest after its
+    weight is scaled down by how near it is to a chapter already placed (full weight from total / MAX_CHAPTERS away).
+    Hour marks fill in when fewer than three."""
     placed = [(0.0, start_title)]
     big = {}  # index in placed -> True for a milestone chapter
+    rest = []
     for e in sorted(events, key=lambda e: (-e["weight"], e["t"])):
         o = offset(segs, e["t"])
         if e["weight"] < 30 or o is None or o < MIN_GAP or o > total - 30:  # under 30: description only
             continue
+        if e["weight"] < 60:
+            rest.append((o, e))
+            continue
+        if e["weight"] < 85:  # big, not a milestone: by weight, never sharing
+            if len(placed) < MAX_CHAPTERS and all(abs(o - p) >= MIN_GAP for p, _ in placed):
+                placed.append((o, e["title"]))
+            continue
         near = [i for i, (p, _) in enumerate(placed) if abs(o - p) < MIN_GAP]
         if not near and len(placed) < MAX_CHAPTERS:
-            big[len(placed)] = e["weight"] >= 85
+            big[len(placed)] = True
             placed.append((o, e["title"]))
-        elif len(near) == 1 and e["weight"] >= 85 and big.get(near[0]):
+        elif len(near) == 1 and big.get(near[0]):
             p, t = placed[near[0]]
             if len(t) + len(e["title"]) < 90:
-                second = e["title"] if e["kind"] in ("depart", "arrive") else lower(e["title"])  # starts with a name
+                second = e["title"] if e["kind"] in ("depart", "arrive", "first", "far") else lower(e["title"])  # starts with a name
                 placed[near[0]] = (p, f"{t}; {second}")
                 big[near[0]] = False  # two to a chapter at most
+    spacing = max(MIN_GAP, total / MAX_CHAPTERS)
+    while rest and len(placed) < MAX_CHAPTERS:
+        best, best_score = None, 0.0
+        for i, (o, e) in enumerate(rest):
+            gap = min(abs(o - p) for p, _ in placed)
+            if gap < MIN_GAP:
+                continue
+            sc = e["weight"] * min(1.0, gap / spacing)
+            if sc > best_score:
+                best, best_score = i, sc
+        if best is None:
+            break
+        o, e = rest.pop(best)
+        placed.append((o, e["title"]))
+    # a stretch of more than GAP_FILL with no chapter: its heaviest moment of weight 20 or more (a repeating
+    # technology's level, a recap), else an hour mark
+    lesser = sorted([(offset(segs, e["t"]), e) for e in events if 20 <= e["weight"] < 30], key=lambda r: -r[1]["weight"])
+    left_open = set()
+    while len(placed) < MAX_CHAPTERS:
+        marks = sorted(p for p, _ in placed) + [total]
+        gaps = [(a, b) for a, b in zip(marks, marks[1:]) if b - a > GAP_FILL and (a, b) not in left_open]
+        if not gaps:
+            break
+        a, b = max(gaps, key=lambda r: r[1] - r[0])
+        pick = next(((o, e["title"]) for o, e in lesser if o is not None and a + MIN_GAP <= o <= b - MIN_GAP), None)
+        if pick is None:
+            hours = [h for h in range(3600, int(b), 3600) if a + MIN_GAP <= h <= b - MIN_GAP]
+            if hours:
+                h = min(hours, key=lambda h: abs(h - (a + b) / 2))
+                pick = (float(h), f"Hour {h // 3600 + 1}")
+        if pick is None:
+            left_open.add((a, b))
+        else:
+            placed.append(pick)
     h = 3600
     while len(placed) < 3 and h < total - 30:
         if all(abs(h - p) >= MIN_GAP for p, _ in placed):
@@ -446,29 +627,43 @@ def agent_names(d):
     return out
 
 
+NOTABLE = ("first", "far", "planet", "arrive", "depart", "platform", "lost", "visit", "deleted")
+
+
 def highlight(events, row, biggest):
-    """The title's few words: the shift's biggest things, heaviest first."""
+    """The title's few words: the shift's biggest moment, and a second one when it is big too (weight 60 or more,
+    another platform or kind) and both fit."""
+    ranked = sorted([e for e in events if e["kind"] in NOTABLE or e["kind"] in ("research", "rocket", "fight")
+                     and e["weight"] >= 50], key=lambda e: (-e["weight"], e["t"]))
     bits = []
-    kinds = {e["kind"]: e for e in sorted(events, key=lambda e: -e["weight"])}
-    for k in ("planet", "arrive", "depart"):
-        if k in kinds:
-            bits.append(kinds[k]["title"])
     rockets = [e for e in events if e["kind"] == "rocket"]
-    if rockets:
+    if rockets:  # the rockets as one phrase, weighed by the first of them
         n = sum(e["count"] for e in rockets)
         first = any(e["first"] for e in rockets)
-        bits.append(("the first rocket" if n == 1 else f"the first {n} rockets") if first else
-                    ("one more rocket" if n == 1 else f"{n} more rockets"))
-    if "platform" in kinds:
-        bits.append(f"space platform {kinds['platform']['name']}")
+        phrase = (("the first rocket" if n == 1 else f"the first {n} rockets") if first else
+                  ("one more rocket" if n == 1 else f"{n} more rockets"))
+        ranked = [e for e in ranked if e["kind"] != "rocket"]
+        w = max(e["weight"] for e in rockets)
+        if w >= 50:
+            ranked.append(dict(rockets[0], title=phrase, weight=w))
+            ranked.sort(key=lambda e: (-e["weight"], e["t"]))
+    for e in ranked:
+        if not bits:
+            bits.append(e)
+        elif e["weight"] >= 60 and (e["kind"] != bits[0]["kind"] or e.get("name") != bits[0].get("name")) \
+                and len(bits[0]["title"]) + len(e["title"]) + 5 <= 70:
+            bits.append(e)
+            break
+    words = [b["title"] if i == 0 or b["kind"] in ("first", "far", "arrive", "depart", "visit") else lower(b["title"])
+             for i, b in enumerate(bits)]
     techs = sorted([e for e in events if e["kind"] == "research"], key=lambda e: -e["weight"])
-    if techs and len(bits) < 2:
-        bits.append(lower(techs[0]["label"]))
-    if biggest >= 50 and len(bits) < 2:
-        bits.append(f"a {biggest}-building biter breach")
-    if not bits:
-        bits.append(f"{row.get('research_new', 0)} new technologies")
-    text = " and ".join(bits[:2])
+    if not words and techs:
+        words.append(f"{techs[0]['label']} researched" if not techs[0]["label"].endswith("discovered") else techs[0]["label"])
+    if biggest >= 50 and len(words) < 2 and sum(len(w) for w in words) < 30:
+        words.append(f"a {biggest}-building biter breach")
+    if not words:
+        words.append(f"{row.get('research_new', 0)} new technologies")
+    text = " and ".join(words[:2])
     return text[:1].upper() + text[1:]
 
 
@@ -483,27 +678,50 @@ def describe(n, row, start, end, events, chapters, team, deaths, biggest, moment
                 f"the save where shift {n - 1} left it.")
     when = f"Streamed live {start.strftime('%b %-d, %Y')}, {pacific(start)} to {pacific(end)} Pacific ({game})."
     lines = [lede, "", when, "", "What happened"]
+    items = []  # (weight, line): the heaviest first; routine trips summed near the end
     if row:
-        techs = [f"the {e['label'].replace(' discovered', ' discovery')}" if e["label"].endswith(" discovered")
-                 else lower(e["label"]) for e in sorted(events, key=lambda e: -e["weight"]) if e["kind"] == "research"][:4]
-        including = ", ".join(techs[:-1]) + f" and {techs[-1]}" if len(techs) > 1 else "".join(techs)
+        research = sorted([e for e in events if e["kind"] == "research"], key=lambda e: -e["weight"])
+        names, count = [], {}
+        for e in research:
+            k = (f"the {e['label'].replace(' discovered', ' discovery')}" if e["label"].endswith(" discovered")
+                 else lower(e["label"]))
+            if k not in count:
+                names.append(k)
+            count[k] = count.get(k, 0) + 1
+        techs = [k + (f" ({count[k]} levels)" if count[k] > 1 else "") for k in names][:5]
+        if len(names) > 5:
+            techs.append(f"{len(names) - 5} more")
+        finished = ", ".join(techs[:-1]) + f" and {techs[-1]}" if len(techs) > 1 else "".join(techs)
         in_all = f" ({row['research']} in all)" if row["research"] != row["research_new"] else ""
-        lines.append(f"• {row['research_new']} new technologies{in_all}"
-                     + (f", including {including}" if techs else ""))
+        # a repeating technology's next level keeps its name: research finished counts it, new technologies do not
+        text = (f"• {row['research_new']} new technologies{in_all}" if row["research_new"] else
+                f"• No new technologies ({row['research']} in all)") + (f"; research finished: {finished}" if techs else "")
+        items.append((research[0]["weight"] if research else 20, text))
         rockets = [e for e in events if e["kind"] == "rocket"]
         if rockets:
             k = sum(e["count"] for e in rockets)
-            lines.append(f"• {k} rocket{'s' if k != 1 else ''} launched" + (", the first of the run" if any(e["first"] for e in rockets) else ""))
+            items.append((max(e["weight"] for e in rockets) if any(e["first"] for e in rockets) else 25,
+                          f"• {k} rocket{'s' if k != 1 else ''} launched" + (", the first of the run" if any(e["first"] for e in rockets) else "")))
         for e in events:
-            if e["kind"] in ("platform", "depart", "arrive", "planet"):
-                lines.append(f"• {e['title']}")
+            if e["kind"] in NOTABLE and e["weight"] >= 30:
+                items.append((e["weight"], f"• {e['title']}"))
+        routes = trip_routes(events)
+        if routes:
+            k = sum(r[0] for r in routes)
+            parts = [f"{c} between {pair}" + (f" ({', '.join(names[:3])}{' and others' if len(names) > 3 else ''})" if names else "")
+                     for c, pair, names in routes[:4]]
+            more = sum(r[0] for r in routes[4:])
+            items.append((5, f"• {k} routine platform trip{'s' if k != 1 else ''}: " + "; ".join(parts)
+                          + (f"; {more} on other routes" if more else "")))
         if row.get("spm") is not None:  # research units a minute (site/longrun.py): SPM as players say it
-            lines.append(f"• Science: {row['spm']:g} SPM on average (research units a minute)")
+            items.append((3, f"• Science: {row['spm']:g} SPM on average (research units a minute)"))
     fights = sorted([e for e in events if e["kind"] == "fight"], key=lambda e: -e["lost"])
     line = f"• Deaths: {deaths}" if deaths else "• No deaths"
     if fights:
         line += f"; the biggest biter attack cost {fights[0]['lost']} buildings"
-    lines.append(line)
+    dw = [e["weight"] for e in events if e["kind"] in ("death", "fight")]
+    items.append((max(dw) if dw else 2, line))
+    lines += [text for _, text in sorted(items, key=lambda r: -r[0])]
     if moments:
         lines += ["", "From chat"]
         for m in moments[:3]:
@@ -712,7 +930,12 @@ def build(run, runs_dir, listing=None, utc_offset=-8, frame=None):
     prev_rockets = row["rockets"] - row["rockets_new"] if row else 0
     team = agent_names(d)
     names = {k: a["name"] for k, a in team.items()}
-    events = score_events(sc, n == 1, prev_rockets)
+    chron = chronicle_rows(d / "chronicle.jsonl")
+    told = any(r.get("kind") in ("platform_arrived", "platform_left", "platform_created") for r in chron)
+    events = score_events(sc, n == 1, prev_rockets, platforms=not told,
+                          research=not any(r.get("kind") == "research" for r in chron))
+    if chron:
+        events += chronicle_events(chron, start, end, run_history(d), planets=sc[0]["planets"] if sc else ())
     fights, deaths, biggest = fight_events(d, start)
     events += fights
     events += segment_events(d, start)
