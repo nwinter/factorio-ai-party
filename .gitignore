@@ -25,3 +25,5 @@ runs/*/tokens.json
 # swap (tools/agy_memguard.py is the backstop). runs/ is never committed; .wrangler/ is the site worker's local state.
 runs/
 .wrangler/
+# tools/operator_updates.py's lock beside the updates file (d24 batch159)
+site/content/*.lock
