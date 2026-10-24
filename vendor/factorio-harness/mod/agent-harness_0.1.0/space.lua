@@ -1388,6 +1388,13 @@ return function(api)
   -- {stop, station, game_state, met (true, false, or nil: some not read), conditions [{text, holds, join}], line}, or nil
   -- when it is not stopped at its current stop's station. The conditions are joined as the game joins them (and binds
   -- before or).
+  -- (d24 batch139 PK1, Sol #2115) a paused platform's state note: it goes nowhere; stopped at a planet, its hub sends
+  -- pods down there all the same (AB6's copy at Fulgora; Sol's watch 283 at Nauvis: 2000 landed)
+  function M.paused_note(pl)
+    local here=not try(function() return pl.space_connection end) and try(function() return pl.space_location.name end)
+    return 'state paused: the platform goes nowhere until unpaused (paused: false)'..(here and try(function() return game.planets[here] end)
+      and '; stopped at '..here..', its hub sends pods down there all the same (by its sections for '..here..' and the landing pads\' asks)' or '')
+  end
   function M.waiting_now(pl)
     local st=platform_states[pl.state]
     if st~='waiting_at_station' and st~='no_schedule' then return nil end
@@ -2014,7 +2021,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),schedule=schedule_text(pl),recheck=rc,
         sent_to=string.format('from stop %d (%s) to stop %d (%s): go to station called (it was %s)%s',cur,name(cur),nxt,name(nxt),where,
           n==1 and '; its schedule has one stop, so the next stop is the same one' or ''),
-        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or M.waiting_note(pl,state)}
+        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state)}
     end
     -- (d19 batch48 1, Sol 17:29: `current: 4` alone left Kestrel IV at Aquilo, no effect, no error) current alone: the
     -- GUI's go to station on that record, the records and their waits kept; current on the stop it is at or already
@@ -2044,7 +2051,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),recheck=rc,
         sent_to=string.format('from stop %d (%s) to stop %d (%s): go to station called (it was %s), the records and their waits kept',cur,name(cur),new,name(new),
           before=='waiting_at_station' and 'waiting at '..tostring(here) or tostring(before)),
-        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or M.waiting_note(pl,state)}
+        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state)}
     end
     -- stop: N, wait: [...] (d17 batch31 B8, Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer
     -- >= 24000 she set current 2, since current = the stop it waits at had read no_schedule, and it left at once with
@@ -2274,7 +2281,7 @@ return function(api)
       or state=='no_schedule' and 'state no_schedule: '..(pl.schedule and #(pl.schedule.records or {})>0 and 'the game reads no_schedule with stops set; it has not left' or 'the platform follows no schedule now and goes nowhere')
         ..(sent and ' (go to station '..sent.index..' was called)' or '')..(current_note and '; '..current_note or '')
       or state=='no_path' and 'state no_path: the platform has no way from where it is to its next stop and goes nowhere'
-      or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)'
+      or state=='paused' and M.paused_note(pl)
       or nil
     -- (B9) a game fluid_count wait on a platform, as world n showed it
     local fluid_note

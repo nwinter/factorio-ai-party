@@ -308,6 +308,15 @@ do
   platform.get_schedule,platform.state,_G.stays=nil,7,nil
   platform.paused=true
   eq(space.platform_schedule(p,{platform='alpha'}).state_note,'state paused: the platform goes nowhere until unpaused (paused: false)')
+  -- (d24 batch139 PK1, Sol #2115) stopped at a planet while paused: its hub sends pods down there all the same
+  local loc,conn=platform.space_location,platform.space_connection
+  platform.space_location,platform.space_connection={name='nauvis'},nil
+  game={tick=0,planets={nauvis={name='nauvis'}}}
+  eq(space.paused_note(platform),'state paused: the platform goes nowhere until unpaused (paused: false); stopped at nauvis, its hub sends pods down there all the same (by its sections for nauvis and the landing pads\' asks)')
+  platform.space_location,platform.space_connection=nil,{name='nauvis-gleba'}
+  eq(space.paused_note(platform),'state paused: the platform goes nowhere until unpaused (paused: false)')
+  platform.space_location,platform.space_connection=loc,conn
+  game=nil
   platform.paused=false
 end
 -- (d17 batch23 A0b: 8 of 8 edits with the current stop on the station the platform waits at read no_schedule; Astra
