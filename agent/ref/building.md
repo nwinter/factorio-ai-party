@@ -3,7 +3,8 @@
   reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8,
   12); `recipe` sets an assembler's recipe; a machine the game placed facing north without its recipe's fluid ports
   is turned the way asked once the recipe is set (`direction_note`; place_ghosts: `directions_turned`). `"all": true` builds every entry it can and lists the rest in `failed` (a batch of mining drills does so unless `all: false`, and `left` names each spot left with what blocked it)
-  with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. A railgun
+  with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. A refused
+  placement names what the game's collision test meets in the footprint (flying robots over it are left out). A railgun
   entry (build, place_ghosts, their dry runs) adds `line_of_fire`: the entities of ours its shots would cross from
   there by the prototypes' arc and line (ghosts apart: hit once built). Errors name the
   blocker (tree, rock, the character, water); trees and rocks go with `place_ghosts` + `construct`, or `mine`.
@@ -250,7 +251,7 @@
   over 256 KB); a paste refuses it.
   Example: `./fh call blueprint_save --args '{"name":"Asterion-whole","platform":"Asterion","description":"..."}'`
 - `blueprint_capture {area, surface? | platform?}`: captures an area into the clipboard; `surface` or `platform` as
-  `blueprint_save`.
+  `blueprint_save`. A `slot` is 1..64 letters, digits, `_` and `-`; the refusal names the character that broke it.
   Example: `./fh call blueprint_capture --args '{"area":{"left_top":{"x":30,"y":0},"right_bottom":{"x":60,"y":20}}}'`
 - `blueprint_list {name?, limit?, from?}`: the library's entries by name, 64 a page (author, size, counts, last used,
   `size_kb` of its string); `name` gives one in full. `library_size`: entries and KB of strings of its 256 and 8 MB.

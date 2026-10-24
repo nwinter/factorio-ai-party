@@ -362,6 +362,10 @@
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too. A minimum payload heavier
   than a rocket lifts (1000 kg) is refused here, in `requests` and in `platform_bom`, naming the most that fits.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
+- `platform` given to an action that takes the platform under another name runs as that (`corrected` shows it):
+  min_payload `platforms`, a queue action's `lane: "platform:NAME"`, supply and fuel_budget `surface` (the platform's
+  surface), stock `surface`. freight_audit, pods, delivery_watch and build refuse it, naming what takes a platform; a
+  refused `surface` that is a platform's name names `platform`.
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
   hub_full?, surface?}`: launches the silo's rocket to `platform` in orbit of this planet. A cargo the platform's hub has
   no room for (the slots it takes after topping up part stacks, against the hub's free slots, asteroid chunks named)

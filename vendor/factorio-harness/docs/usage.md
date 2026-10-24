@@ -13511,3 +13511,42 @@ Fixed besides gates:
   add "N laser turrets: ...; K kills, D damage dealt"; the start line names them. The railguns, ammo turrets and every
   other field are unchanged; a watch begun before the deploy has no laser list and adds none at its minute's refind.
 - Test: tests/d24_batch151.lua (fails on main: no laser turrets in the start line).
+## d24 batch154 (eng/d20-batch154): the batch149 review's bugs 3, 4, 7 and improvements 4-6
+- Bug 3, build blockers (Sonnet 14:44Z: "placement blocked by logistic-robot ..., logistic-robot ..., boompuff"): a
+  refused placement lists what in its footprint the game's collision test meets: an entity whose prototype's collision
+  mask shares a layer with the placed one's (a ghost and a character as before; a mask that cannot be read counts).
+  Flying robots, corpses and smoke share none with a building and are left out. The find takes 48 entities (16 before).
+- Bug 4 and improvement 5, one form for quality (argforms.lua, read once in check_args, and in argshapes.lua for record
+  lists): `item: "name@quality"` is item and quality in the actions that take quality (build, clear_cliffs, collect,
+  equipment, feed, stock, transfer, use_item, wait_until) and in the record entries that take it (build `builds`,
+  requests `set`, drop `items`, load_silo and silo_stage `items`). The 23 other actions that take `item` (belt_route,
+  bottleneck, build_path, deliver, delivery_watch, dependency, equip, freight_audit, lesson_add, lesson_edit, lessons,
+  pickup, platform_production, platform_rearm, pole_route, rates, repair, reservations, scan, shipment, supply, trace,
+  where_is; checks' item is a board number) refuse it: "item iron-plate@uncommon: where_is takes no quality (no quality
+  argument, and no name@quality): item is the name alone, iron-plate". A quality that is none, and an item@quality with a
+  different quality argument, are refused. transfer says the engine's "Unknown item name: X" as "item X: no item named X"
+  (a fluid said so); its other errors are as they were.
+- Bug 7 and improvement 6, refusals that name the rule:
+  - blueprint slots (capture, save, import, place): `slot "Sol test slot": a blueprint slot is 1..64 letters, digits, _
+    and - (no spaces); this one: " " at character 4`.
+  - inspect {name} (and every call resolving a position with name) where name left out what stands there: "entity not
+    found at (x,y): no rocket-silo there; name=rocket-silo left out what stands there: small-electric-pole (x,y)
+    unit_number N; without name (or with its own name) that is the target" (the start kept: mine {name} falls back to a
+    tile of that name).
+  - a refusal "no surface X" where X is a platform's name (or any refusal naming surface, from an action that takes
+    platform: observe {surface: "Asterion"} read "observe with surface needs position there"): "X is a platform (its
+    surface: platform-N): ACTION takes it as platform=\"X\"", or, for an action without platform, "surface=
+    \"platform-N\" names its surface" (dispatch's refusal text, M.surface_hint).
+  - ids dropped by retention: delivery_watch {id} (the last 64 dropped or cleared kept: item, setter, when it ended, when
+    dropped or cleared and by whom; the keep rule: 10 minutes after it ends, or past its deadline while late; clear at
+    once), board, board_update, board_review and links (the last 128 pruned: when, kind, status, title, last update;
+    the keep rule: 300 items, done and dropped first, then notes, then the oldest, plans never), reminders and every
+    reminder action by id (the last 64 removed: name, owner, by whom, when; kept until its owner or the operator removes
+    it). An id past the last one issued: "none set (posted) with that number (the last is #N)".
+- Improvement 4, platform where an action takes it under another argument (aliases.lua, the reply's corrected):
+  min_payload `platforms`, any queue action taking `lane` and not `platform` `lane: "platform:NAME"`, supply and
+  fuel_budget `surface` (the platform's surface name), stock `surface` (the platform's name). A platform that is none
+  stays as given and is refused: "unknown argument platform for supply: supply takes no platform argument; it takes the
+  platform as surface (...): no platform of ours is named X". freight_audit, pods, delivery_watch and build refuse it
+  with what reads a platform there. tells: `after` is `since`; `unread`, `seq` and `from` are refused naming since.
+- Test: tests/d24_batch154.lua (each part fails on main).
