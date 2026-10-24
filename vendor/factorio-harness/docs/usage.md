@@ -13511,3 +13511,23 @@ Fixed besides gates:
   add "N laser turrets: ...; K kills, D damage dealt"; the start line names them. The railguns, ammo turrets and every
   other field are unchanged; a watch begun before the deploy has no laser list and adds none at its minute's refind.
 - Test: tests/d24_batch151.lua (fails on main: no laser turrets in the start line).
+## d24 batch155 PY2 (eng/d20-batch155): each locomotive's fuel in train reads (viewer Aurora site:4709)
+- Aurora: "Train 46 stalled with front fuel 0, rear 147. Could summaries show each locomotive's stored and burning
+  fuel, flagging an unfuelled driving end during automatic service?"
+- trains.lua `locomotive_fuel`: per locomotive, as its window shows it: its carriage number from the train's front, the
+  way it faces (the train's front_movers or back_movers), its fuel slots with their energy (count times the item's
+  fuel_value), and the burner's current fuel with the energy left (remaining_burning_fuel). A locomotive pulls only the
+  way it faces. The way the train drives: its speed's sign, else its path (LuaRailPath.is_front); a train at a stop
+  with no path yet has none.
+- Train read: `fuel` lines ("(183,-196) carriage 1, faces the train's front (the way it drives): no fuel; nothing
+  burning"), `driving` ("toward its front (its path starts from its front)"), `fuel_flag` (automatic, and a locomotive
+  facing the way it drives has no fuel stored and nothing burning: "automatic, driving toward its front: no fuel in the
+  locomotive facing that way at carriage 1; 0 of 1 facing that way have fuel"). `why` for a train on its path standing
+  still names those locomotives when the others have fuel ("stands still: no fuel in the locomotive facing the way it
+  drives (toward its front: carriage 1)"); with none fuelled anywhere it stays "stands still: no fuel in its locomotives".
+- `train {all}`: each row's `fuel` ["1 faces front: no fuel", "3 faces back: solid-fuel 147, burning 7.9 MJ left"] and
+  `fuel_flag`; the line adds "locomotives [...]" (and the flag) before the cargo.
+- Carriages are matched by unit number: each read of train.carriages gives new LuaEntity objects, so a table keyed by
+  the entity never matches (the first copy run numbered every locomotive 0).
+- Test: tests/d24_batch155.lua (fails on main: the old fuel line "(68,219): no fuel"); tests/rails.lua takes the new
+  fuel lines.

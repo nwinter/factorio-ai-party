@@ -216,13 +216,17 @@
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
 - `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}` or
   `{all: true, surface?}` (every train of ours there in one read: id, state, the schedule's current stop, front,
-  speed, cargo and fluids summed; at most 100): on a stop, its
+  speed, each locomotive's fuel, cargo and fluids summed; at most 100): on a stop, its
   `station` and `limit`; on a locomotive, its `schedule` and `automatic`; `train {position}` reads a train's state and
   why it waits. A train in `no_path` reads `rail_break` (`path_to: "STOP"` for any stop): the rails followed from the
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
   ghosts. `stops: true` lists every train stop of ours on a surface: name, position, rail, limit and the trains
   heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
-  read gives its `id` and `front` (name, position, surface). `wagons` (a train read; inspect of a cargo wagon:
+  read gives its `id` and `front` (name, position, surface). `fuel`: each locomotive by its carriage number from the
+  front and the way it faces, its fuel slots (with their MJ) and what burns now with the MJ left; a locomotive pulls only
+  the way it faces. `driving`: toward its front or back (moving, or the path the engine found; none at a stop before it
+  leaves). `fuel_flag` (and in `train {all}` lines): automatic, and a locomotive facing the way it drives has no fuel
+  stored and nothing burning. `wagons` (a train read; inspect of a cargo wagon:
   `wagon_slots`): each cargo wagon's slots used per item with the count, free slots, slot filters and the red-X limit,
   and `full: nothing else loads into it` when no slot is free. `wagon_slots: {wagon?, filters?, bar?}` sets a cargo
   wagon's slot filters and red-X bar as its GUI (in reach or by remote view): `wagon` its carriage number from the

@@ -12,7 +12,7 @@ return function(api)
   local ROLLING = {locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
   local TRAIN_NAMES
   M.schema = {
-    train = {all='true: every train of ours on the surface (surface= another) in one read, no stop read first: lines and trains [{id, state, stop (the schedule\'s current stop), current, stops, front, speed_kmh, cargo (items and fluids summed), manual}]; at most 100',stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
+    train = {all='true: every train of ours on the surface (surface= another) in one read, no stop read first: lines and trains [{id, state, stop (the schedule\'s current stop), current, stops, front, speed_kmh, fuel (each locomotive), fuel_flag, cargo (items and fluids summed), manual}]; at most 100',stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
       surface='a surface name (default yours): with stops, its stops; with position, the train or stop there, by remote view (ours, in a chunk our force sees now)',
       position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
       train_id='a train of ours by its id instead of position, wherever it is and moving or not (train {stops: true} and every train read give id): as the game\'s trains list opens it',
@@ -22,7 +22,7 @@ return function(api)
       automatic='train: true runs the schedule, false is manual mode',
       wagon_slots='train: a cargo wagon\'s slot filters and red-X bar, as its GUI: {wagon? (its carriage number from the front, 1..; default the wagon at position), filters? {"N": item name, {name, quality} or false, ...} (the slots named; the others kept), bar? (usable slots 0..40, or false for none)}; a filter on a slot holding another item is refused, naming it; {} or {wagon} reads them. The reply\'s wagon_slots: wagon, carriage, set, slot_filters ["N item"], bar, line (as the wagons lines)',
       path_to='train: a stop name: whether the rails lead there from the train as it drives, and where not (rail_break); a train in no_path gets it for the stop it heads for unasked',
-      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: id, front {name, position, surface}, schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive); rail_break {to, line, train_side, stop_side, gap_tiles, ghosts, signals} (no_path, or path_to): the rails followed from the train (its front, and its back with a locomotive facing back) through every connection: whole (and when the engine still finds no path, the signals on that way), reaching the stop only facing the other way, or broken: the end of the rails from the train and of those into the stop nearest each other, the tiles between and the rail ghosts there'},
+      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: id, front {name, position, surface}, schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive: carriage number, the way it faces, fuel slots with MJ, what burns and the MJ left), driving (toward its front or back: moving, or its path\'s start), fuel_flag (automatic, and a locomotive facing the way it drives has no fuel); rail_break {to, line, train_side, stop_side, gap_tiles, ghosts, signals} (no_path, or path_to): the rails followed from the train (its front, and its back with a locomotive facing back) through every connection: whole (and when the engine still finds no path, the signals on that way), reaching the stop only facing the other way, or broken: the end of the rails from the train and of those into the stop nearest each other, the tiles between and the rail ghosts there'},
   }
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   -- A schedule entry's wait conditions as the GUI lists them.
@@ -84,6 +84,79 @@ return function(api)
       end
     end)
     return list
+  end
+  -- (d24 batch155 PY2, viewer Aurora site:4709: "Train 46 stalled with front fuel 0, rear 147") each locomotive's fuel as
+  -- its window shows it: the fuel slots (with their energy) and what burns now with the energy left in it; its carriage
+  -- number from the train's front and the way it faces. A locomotive pulls only the way it faces, so the way the train
+  -- drives (its speed, else the path the engine found: from its front or its back) names the locomotives that pull it.
+  -- flag: in automatic mode, a locomotive facing the way it drives with no fuel stored and nothing burning.
+  local FUEL_J = {}
+  local function fuel_j(name)
+    local v = FUEL_J[name]
+    if v == nil then v = false; pcall(function() v = prototypes.item[name].fuel_value end); FUEL_J[name] = v end
+    return v or 0
+  end
+  local function mj(j) local v = math.floor(j / 1e5 + 0.5); return string.format(v % 10 == 0 and '%d MJ' or '%.1f MJ', v % 10 == 0 and math.floor(v / 10) or v / 10) end
+  function M.locomotive_fuel(train)
+    local speed, drive, how = train.speed or 0, nil, nil
+    if speed > 0 then drive, how = 'front', 'moving'
+    elseif speed < 0 then drive, how = 'back', 'moving'
+    else
+      pcall(function()
+        local path = train.path
+        if path and path.valid then drive = path.is_front and 'front' or 'back'; how = 'its path starts from its ' .. drive end
+      end)
+    end
+    -- by unit number: each read of a carriage gives a new LuaEntity, so the objects never match as table keys
+    local index = {}
+    for i, c in ipairs(train.carriages or {}) do index[c.unit_number or c] = i end
+    local rows = {}
+    for _, face in ipairs({'front', 'back'}) do
+      for _, l in ipairs(train.locomotives[face .. '_movers'] or {}) do
+        local r = {carriage=index[l.unit_number or l] or 0, faces=face, drives=drive == face}
+        local parts, stored = {}, 0
+        local inv = l.get_fuel_inventory()
+        for _, it in ipairs(inv and inv.get_contents() or {}) do
+          local q = it.quality; if q and type(q) ~= 'string' then q = q.name end
+          parts[#parts+1] = it.name .. ((q and q ~= 'normal') and '@' .. q or '') .. ' ' .. it.count
+          stored = stored + fuel_j(it.name) * it.count
+        end
+        local b, left, burning = l.burner, 0, nil
+        if b then
+          left = b.remaining_burning_fuel or 0
+          pcall(function()
+            local cb = b.currently_burning
+            local n = cb and (cb.name or cb)
+            burning = n and (type(n) == 'string' and n or n.name)
+          end)
+        end
+        r.empty = #parts == 0 and left <= 0
+        r.line = string.format('%s carriage %d, faces the train\'s %s%s: %s; %s', at(l.position), r.carriage, face, r.drives and ' (the way it drives)' or '',
+          #parts > 0 and table.concat(parts, ', ') .. (stored > 0 and ' (' .. mj(stored) .. ')' or '') or 'no fuel',
+          left > 0 and 'burning ' .. (burning or 'fuel') .. ', ' .. mj(left) .. ' left' or 'nothing burning')
+        r.short = string.format('%d faces %s: %s%s', r.carriage, face, #parts > 0 and table.concat(parts, ', ') or 'no fuel', left > 0 and ', burning ' .. mj(left) .. ' left' or '')
+        rows[#rows+1] = r
+      end
+    end
+    table.sort(rows, function(x, y) return x.carriage < y.carriage end)
+    local out = {rows=rows, drive=drive, fuelled=0, drivers=0, drivers_fuelled=0}
+    local empty = {}
+    for _, r in ipairs(rows) do
+      if not r.empty then out.fuelled = out.fuelled + 1 end
+      if r.drives then
+        out.drivers = out.drivers + 1
+        if r.empty then empty[#empty+1] = tostring(r.carriage) else out.drivers_fuelled = out.drivers_fuelled + 1 end
+      end
+    end
+    if drive then out.driving = 'toward its ' .. drive .. ' (' .. how .. ')' end
+    if #empty > 0 then
+      out.empty_text = (#empty == 1 and 'carriage ' or 'carriages ') .. table.concat(empty, ', ')
+      if not train.manual_mode then
+        out.flag = string.format('automatic, driving toward its %s: no fuel in the locomotive%s facing that way at %s; %d of %d facing that way %s fuel',
+          drive, #empty == 1 and '' or 's', out.empty_text, out.drivers_fuelled, out.drivers, out.drivers_fuelled == 1 and 'has' or 'have')
+      end
+    end
+    return out
   end
   -- What a train is doing and why it waits, as the locomotive GUI and the
   -- map show it.
@@ -155,27 +228,26 @@ return function(api)
     elseif state == 'arrive_station' then
       why = 'braking for ' .. (out.heading_to and out.heading_to.stop or (current and current.station) or 'its stop')
     end
-    -- Carriages, cargo and fuel, as the train's GUI lists them.
-    local burning = false
+    -- Carriages, cargo and fuel, as the train's GUI lists them; each locomotive's fuel as its window shows it.
+    local lf
     pcall(function()
       local locos = (train.locomotives.front_movers and #train.locomotives.front_movers or 0) + (train.locomotives.back_movers and #train.locomotives.back_movers or 0)
       out.carriages = string.format('%d locomotive%s, %d wagon%s', locos, locos == 1 and '' or 's', #train.carriages - locos, #train.carriages - locos == 1 and '' or 's')
-      local fuel = {}
-      for _, group in pairs({train.locomotives.front_movers or {}, train.locomotives.back_movers or {}}) do
-        for _, l in ipairs(group) do
-          local inv = l.get_fuel_inventory()
-          local parts = {}
-          for _, it in ipairs(inv and inv.get_contents() or {}) do parts[#parts+1] = it.name .. ' ' .. it.count end
-          local b = l.burner
-          if #parts > 0 or (b and b.remaining_burning_fuel > 0) then burning = true end
-          fuel[#fuel+1] = at(l.position) .. ': ' .. (#parts > 0 and table.concat(parts, ', ') or (b and b.remaining_burning_fuel > 0 and 'burning its last fuel' or 'no fuel'))
-        end
-      end
-      out.fuel = fuel
     end)
-    -- A train on its way that stands still with no fuel anywhere.
-    if not why and (state == 'on_the_path' or state == 'arrive_signal' or state == 'arrive_station') and out.speed_kmh == 0 and not burning and out.fuel then
-      why = 'stands still: no fuel in its locomotives'
+    pcall(function()
+      lf = M.locomotive_fuel(train)
+      local fuel = {}
+      for i, r in ipairs(lf.rows) do fuel[i] = r.line end
+      out.fuel = fuel
+      out.driving = lf.driving
+      out.fuel_flag = lf.flag
+    end)
+    -- A train on its way that stands still with no fuel anywhere, or none in the locomotives facing the way it drives.
+    if not why and (state == 'on_the_path' or state == 'arrive_signal' or state == 'arrive_station') and out.speed_kmh == 0 and lf then
+      if lf.fuelled == 0 then why = 'stands still: no fuel in its locomotives'
+      elseif lf.drivers > 0 and lf.drivers_fuelled == 0 then
+        why = string.format('stands still: no fuel in the locomotive%s facing the way it drives (toward its %s: %s)', lf.drivers == 1 and '' or 's', lf.drive, lf.empty_text)
+      end
     end
     out.why = why
     pcall(function()
@@ -373,9 +445,18 @@ return function(api)
       local row = {id=t.id, state=state, stop=stop, current=sch and sch.current or nil, stops=sch and sch.records and #sch.records or 0,
         front=front and front.valid and front.position or nil, speed_kmh=math.floor(math.abs(t.speed) * 216 + 0.5), cargo=#cargo > 0 and table.concat(cargo, ' ') or 'empty',
         manual=t.manual_mode or nil}
+      local loco = ''
+      pcall(function()
+        local lf = M.locomotive_fuel(t)
+        local short = {}
+        for j, r in ipairs(lf.rows) do short[j] = r.short end
+        if #short > 0 then row.fuel = short; loco = '; locomotives [' .. table.concat(short, ' | ') .. ']' end
+        row.fuel_flag = lf.flag
+        if lf.flag then loco = loco .. ' (' .. lf.flag .. ')' end
+      end)
       rows[#rows+1] = row
-      lines[#lines+1] = string.format('train %d %s%s: %s%s, %d km/h; %s', t.id, row.front and at(row.front) or '', t.manual_mode and ' (manual)' or '', state,
-        stop and string.format(', stop %d of %d: %s', row.current, row.stops, stop) or ', no schedule', row.speed_kmh, row.cargo)
+      lines[#lines+1] = string.format('train %d %s%s: %s%s, %d km/h%s; %s', t.id, row.front and at(row.front) or '', t.manual_mode and ' (manual)' or '', state,
+        stop and string.format(', stop %d of %d: %s', row.current, row.stops, stop) or ', no schedule', row.speed_kmh, loco, row.cargo)
     end
     return {surface=surface.name, count=#trains, trains=rows, lines=lines, more=#trains > MAX_TRAINS and #trains - MAX_TRAINS or nil}
   end
