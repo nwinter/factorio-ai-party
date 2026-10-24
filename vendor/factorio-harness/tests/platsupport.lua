@@ -41,6 +41,7 @@ local surface={
   end}
 local pl={name='Sol',surface=surface,force='us',hub=hub}
 local PP=require('platplan'){platform=function() return pl end,position=function(v) return v end}
+PP.SLICE=math.huge  -- (d24 batch166) each plan in its call; tests/d24_batch166.lua reads one as a job
 -- every entity: the hub (on built floor), the assembler's 9 tiles, the pair's 2 ends and 2 span tiles, the chest, two
 -- link tiles (y 2 and 3 in one column) joining x 0..6, y 4..6 to the hub's floor and two joining the chest to the assembler
 local r=PP.read({},{platform='Sol',support=true})

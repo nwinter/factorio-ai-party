@@ -156,7 +156,7 @@
   per collector is inferred: a chunk seen near the reach of a collector whose filters take it and gone at the next
   read (every 10 ticks) with its drift's path within 1 tile of that reach; not counted: `hit_hull` (gone on a platform
   tile) and `gone_elsewhere`; `inferred_minus_caught`, also `by_type`; the same read gives `tally` (so far, or done).
-- `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
+- `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?, phases?, phases_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
   take seconds) and gives its number; `floor_check: N` reads it: running, or done with `would_build` (the planned tiles
@@ -181,6 +181,14 @@
   not chosen that stand on a tile that would go. The chosen are what stands on the floor: never a rocket or other
   projectile, laser beam, cargo pod or robot passing; `add_for` (beside `place_ghosts_entries`) and `for_entities` name
   the entity (name, unit number, position) each planned tile is for, and how (footprint, tunnel, link). Read only.
+  Support is read as a job across ticks (about 2 ms a tick): while it runs the reply is `support_job` (job, step of
+  steps); the same call reads it, and the plan comes once (`read`: in this call, or the job and its ticks); the same
+  call after that starts a new job; `page` reads the last plan.
+  `phases: [{cancel?, remove?, fill?, name?}, ...]` (1..16; tiles as `{x,y}`, an area, `"x0..x1,y0..y1"` or `"x,y"`):
+  each phase applied in order to a model of the floor (its tiles, marks and tile ghosts now) and played to stability
+  by the hub's rules; per phase `went`, `built`, `waiting` and `unbuilt` (`"(x,y): why"`), and floor cut off (no longer
+  joined to the hub by sides, what stands on it); `end` (areas taken up and added) and `rollback` (areas to fill back and take
+  up, played back: `restores`, or coordinates only). Read only; a large plan goes on across ticks (`phases_check: N`).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
   (`solar-panel@epic`; a ghost is built only from items of its quality, so the hub's normal stock never covers a quality
@@ -533,6 +541,9 @@
   pack's research units, and made and used a minute. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
+  An item that places a vehicle (spidertron, car, tank, locomotive, wagons): `total` is what is stored (as items);
+  `scope_line` and `placed` give our vehicles of it placed, on every surface (where, unit_number, the read that reads one).
+  `stock` and `supply` say both the same way.
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
   and so do tell, chat, `chat_ack`, say, operator, the board, `flight_watch {id}` or `{}`, research, platform calls,

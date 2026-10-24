@@ -3806,7 +3806,26 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   nearest first (`nest (105,2) 2 spawners, 1 worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches
   it`, or `reaches it (last there 5m ago)`); pollution reaches a nest while one of its chunks had pollution in the last
   15 game minutes, the same memory `status` enemies and the reached-nest news use (one reading at the cloud's edge
-  flickers); `artillery`; `more` sums areas past the limit.
+  flickers); `artillery`; `more` sums areas past the limit. `confirmed_nests` counts every confirmed nest on the surface
+  (d24 batch163, Luna #2222: on world n every charted Nauvis nest was over 256 tiles from our buildings, so `nests` was
+  missing from the reply: `11 confirmed nests on nauvis (0 alive, 11 unknown, 0 destroyed); pollution reaches 2, ...`).
+- `fh call defense --args '{"nests":true}'` (read; `surface`, `limit` default and max 40; no area scan): every
+  confirmed nest on the surface from the nest book (threat.lua), nearest the base centre first: spawners and worms of
+  the enemy force on our charted chunks (what the map draws), grouped within 64 tiles. Each has `position`, `spawners`,
+  `worms`, `from_centre`, `bearing`, `status` (`alive`: a member in a chunk in view now; `destroyed`: every member seen
+  gone from its chunk in view; `unknown`: not in view since `seen`, the last tick it was), `members_gone`,
+  `pollution_now` (the most on its members' chunks, the map's pollution layer), `pollution_last` (the last tick
+  pollution was there, as reads and the chart sweep found it), `pollution_reaches` (that within 15 game minutes) and a
+  `line` (`nest (128,-991) 3 spawners, 4 worms, 999 tiles N of base centre: unknown (not in view since charted);
+  pollution 0.3 on its chunks now: reaches it`); `count`, `alive`, `unknown`, `destroyed`, `reached`, `book_tick` (the
+  last full pass), `sweep` (a pass running). The book is made in the background on each surface the chart sweep covers:
+  a pass over the generated chunks every 5 game minutes, a band of 32 chunks of one row a step, spread over a game
+  minute (on world n, d24: a band 0.19 ms; the private copy's whole pass 122 ms over 3,600 ticks, 0.034 ms a tick while
+  it runs; a read 2.5 ms there for 11 nests of 88 members, about 0.6 ms of game reads on world n); a nest seen
+  destroyed is dropped an hour later. The operator read `clouds` takes its `reached` nests from it (viewer Aurora d24
+  13:16): each nest pollution was on that is not seen destroyed, with `tick` and `ago_s` (since pollution was last
+  there), `reaches`, `status`, `seen`, `seen_ago_s`; the site's map fades those the cloud has left and dashes the
+  unknown ones, and its hover gives both ages in game time.
 - `fh call turrets [--args '{"surface":"nauvis"}' | '{"area":{"left_top":{"x":-120,"y":-10},"right_bottom":{"x":-90,"y":10}}}']`
   (read; `limit` fronts, default 8, max 40; cached 10 s; Opus, 10:50): every turret of ours there (1024 at most), grouped
   by front (turrets within 24 tiles of each other), fronts with hand-fed or low turrets first, and in each front the
@@ -13814,3 +13833,125 @@ Fixed besides gates:
     of thruster@legendary*2. Pod 35664002 was received by the pad (-8,-22) at tick 57799952: #334 and #335 read landed
     2, received 2 in 1 pod, by_platform Asterion=2, by_quality legendary=2, state received; #336 read received 0, no
     landed stage, no arrival, state open. In the hub get_item_count("thruster") read 5 with 2 legendary in it.
+- d24 batch166 QI1 (operator 13:56: `platform_plan {platform: "Asterion", support: true}` held world n 388 ms in one
+  tick, 8271 entities chosen, 0 tiles planned; Sol called it repeatedly): support is a job across ticks.
+  - Where the time went (a copy of world n's shift70 save, Asterion, main's runtime 4da9bbeb): choosing 19 ms (the
+    whole-surface find 8.5), the floor and tile ghost reads 30, footprints 45, tunnels 5, the links search 74, holes 81,
+    the play 19, the rest of the reply 80. With 491 tile ghosts and 29 entity ghosts off the floor (a scenario made on the
+    copy) the same call took 1.2-1.7 s; `{names: ["thruster"]}` 0.27-0.52 s, `{positions}` 0.73-0.79 s, `{area}`
+    1.1-1.6 s: every form plans over the whole platform.
+  - A Lua table that grows its hash part rehashes at once: on the copy one insert cost 6 ms at 16384 keys, 11 at
+    32768, 23 at 65536, 49 at 131072; an array growing in order 0.01 ms. The job keeps its tile sets as arrays over the
+    box of what it read (cell, keep, seen), filled a slice at a time.
+  - The job (platplan.lua): steps floor, choose, grid, foot, tunnels, links, holes, play, remove, strands, each resumable;
+    at most SLICE (2000) units a call or tick, one job a tick (the oldest), kept in storage (`platplan_jobs`, at most
+    4, a peer joining mid-job loads it). The surface is read a chunk at a time (an entity is taken in the chunk its
+    position is in). A call starts a job and runs its first slice (a small platform's plan is the reply at once,
+    `read: "in this call"`); while it runs the reply is `support_job` and the same call reads it; the plan comes once
+    (`read: "as job N across ticks A..B (n ticks)"`); an unread plan older than 5 min is dropped; page reads the last
+    plan; a job of another runtime version (JOB_V) is dropped. The play reads tiles through the job's arrays first
+    (tilecheck.lua's cache.grid), a tile read after.
+  - On the copy (game advanced 60 ticks between reads, the hub's foundation supply stopped so the state held): every
+    platform's `support: true` and Asterion's names, area, positions and page forms gave main's reply field for field
+    (8 of 8 with the state held; differences only where the hub built or lost tile ghosts during a job). Asterion
+    `support: true` with the scenario: 308 ticks at 3000 units, about 480 at 2000; a job start 4-6 ms, a running read
+    3 ms (with the reply's other parts).
+  - Slice times on the copy (log line per tick, 2000-3000 units): median 1.8-2.6 ms, p95 4.5-5.1 ms; bursts of
+    consecutive 35-110 ms slices when the Mac was loaded (the plain floor reads among them at 20-30x their usual time).
+  - Not changed here: the first reply after the game advanced 60 ticks costs 75-122 ms on the copy for any read (a
+    platform_plan ready read too, with no job running); the reply's own parts.
+  - Test: tests/d24_batch166.lua (fails on main: no job); tests/platsupport.lua and tests/d24_batch162.lua set
+    `PP.SLICE=math.huge` to plan in one call.
+## d24 batch165 QH1 (eng/d20-batch165): platform_plan {phases}, an ordered floor plan played read only (Sol #2223)
+- Sol: Asterion's narrow hull 2210 took failed drafts: each floor check saw the marks of the moment, not the floor the
+  steps before would leave. What worked (Astra, runs/shift69/team-tools/astra-shift69-narrow-report.md): the live
+  marks cancelled, the left 4 support tiles (x -50, y 123..126) and a solid right fill (x 45..53, y 118..137), then
+  the left wing and the right columns 53, 52, 51, 50 one at a time.
+- floorphases.lua: `phases: [{cancel?, remove?, fill?, name?}]` (1..16), tiles as {x,y}, an area, "x0..x1,y0..y1"
+  (inclusive tiles) or "x,y". A model of the floor: its tiles (read as reached), its deconstruction marks and
+  foundation tile ghosts within 8 tiles of the phases' tiles, the hub's foundation and room. Each phase: cancel (marks
+  and ghosts dropped), remove (floor marked; a ghost dropped), fill (a ghost on empty space; a marked tile kept), then
+  the hub's rules (tilecheck.lua) played until nothing changes: every mark, then every ghost, in the order given, then
+  each one beside a tile that changed. A marked tile goes with one run of empty space beside it, nothing standing on
+  it, room in the hub; a ghost is built with foundation among its 8 neighbours, at most one run beside it, out of
+  thruster exhaust, within 200 tiles north of the hub, while the hub holds foundation (a build takes one, a removal
+  gives one back). The run count is tilecheck's runs (a test checks all 256 rings).
+- Per phase: went, built, marks_waiting, ghosts_unbuilt, waiting and unbuilt ("(x,y): why", 8 each), cut (floor no
+  longer joined to the hub's tile by sides, followed 256 tiles; what stands on it), settled, line. After: end
+  (removed, added, as areas "x0..x1,y0..y1"), rollback (fill back the removed tiles, then take up the added, played
+  the same way from the end: restores and order_checked, else "coordinates only"; its areas are phases input).
+- Cost (copy of world n, _autosave9; the read's Lua costs about the same on world n: an 8x8 phase 2.6 ms there, 3.0
+  ms on the copy). A rule check or tile read about 10-20 us; a whole-platform search on Asterion 2.5-3 ms; a number in
+  a reply about 28 us in helpers.table_to_json (strings next to none, so lists and areas are strings). So the read is a
+  job of steps charged in units (a rule check or tile read 1; a list entry walked 0.1-0.2; 4 tiles followed for a cut 1;
+  a search the area it looks at / 250): 150 units in the call, then 120 a tick (floorphases.tick; the oldest running
+  plan first; 4 kept, phases_check reads them). Areas stay areas until a phase walks them. Measured each tick and call
+  (930 ticks of 14 plans, 2 rounds of Sol's five sequences and two 8192-tile plans): the call's own work 0.7-3.2 ms
+  (the whole dispatch 4-5 ms); a tick p50 0.6 ms, at most 2.5 ms outside one stretch where every call on the copy ran
+  4-5x slower (start calls 19-20 ms instead of 4-5; ticks up to 14.6 ms and one 61 ms); Sol's nine-phase sequence 27
+  ticks, about 1.1 ms a tick. Reading a done plan 3.6-4.7 ms. floorphases.tick idle 0.006 ms a tick (profile_ticks 60 s;
+  main has none). Bounded: 8192 tiles and 40000 rule checks a plan.
+- The support read (platform_plan support: true) took 275 ms on the copy and 388 ms on world n (operator, 13:56); phases
+  reads none of its entities (its own model and tilecheck's rules), so batch166's bound of support does not touch it.
+- Test: tests/d24_batch165.lua (main has no phases: platform_plan ignores it).
+
+## d24 batch164
+
+- QG1 (viewer Aurora 13:15: "Could you check vehicle-item stock/where_is wording for stored vs placed scope, link
+  placed-vehicle lookup, and cover zero stored Spidertrons with two placed in a regression?"): `where_is`, `stock` and
+  `supply` count items in inventories (chests, trunks, belts, hands); a placed spidertron, car, tank, locomotive or wagon
+  is an entity, and for one of those items they read 0 or "none on nauvis" with the vehicles standing in the world.
+  For an item that places a vehicle each now gives `scope_line` and `placed` beside its count:
+  - `spidertron: 0 stored (as items, in inventories on nauvis), 3 placed (as vehicles: spidertron entities, not items):
+    gleba (74,20) #23117830, nauvis (-160,-540) #27069154, nauvis (-136,-436) #23036938; vehicle {position} (or
+    remote: true, vehicle: its unit_number) reads its route; inspect {position} reads it in sight`.
+  - `placed` {entity, type, count (LuaForce.get_entity_count, every surface), by_surface, places (the first 8: surface,
+    position, unit_number), more, not_listed (a count past what the vehicle list gives), read_with, line}. The read
+    named: a spidertron `vehicle {position}` (route) and `inspect`; a car or tank `inspect {position}` (in sight); rolling
+    stock `train {all, surface}`.
+  - where_is: `scope_line` leads `kinds_line`; the note with none stored reads "none stored as items on this surface; 3
+    placed as vehicles (placed)". stock (`stock {item}` and each `items` row): the scope line leads `summary` (or
+    `line`); `total` stays what is stored. supply: it leads `where` (and so compact's `where:` line), cached with the
+    read for 10 s.
+  - Other items: no new field, replies as before. `shortages` and `rates` give no stock count of an item (machines short
+    of an ingredient, requester chests' unmet asks, machines' rates), so they are unchanged; a requester asking for a
+    spidertron lacks items, which is what it reads.
+- Positions come from `game.get_vehicles{force}` (2.0.77; cars, tanks, spidertrons and rolling stock, every surface).
+  World n 13:28 (saved first, then reads only, one at a time): get_entity_count for the 7 vehicle names 0.57 ms
+  (spidertron 3, tank 7, locomotive 10, cargo-wagon 8, car, fluid and artillery wagons 0); get_vehicles 28 vehicles in
+  0.036 ms; spidertron items in our logistic networks, characters and vehicle trunks: 0 (0.11 ms). where_is itself was
+  not called on world n (it reads every holder of the surface).
+- Test: tests/d24_batch164.lua (fails on main: where_is spidertron with none stored and two placed gives no `placed`).
+
+## d24 batch168
+
+- QK1 (operator 14:35; viewer Aurora 14:29: "The same Gemini #2035 handoff repeated four times in 3 minutes. Could these
+  share backoff and name Gemini as owner, with a clear cover request?" and "Could routine idle repeats follow actionable
+  changes or overdue checkpoints? Honor bounded watches, keep capped fallback checks for unexplained stalls, and
+  preserve urgent alerts."), tools/idle_nudge.py:
+  - shift70 13:52-14:32: 22 "gemini does not answer" handoffs, one a minute through each of Gemini's pace rests
+    (resting.json reason pace, 5 and 10 min), and one for Grok (out of quota). Two causes: a rest of any kind sent a
+    handoff whatever the reason the agent was not nudged ("active" while it rested), and the once-only mark was cleared
+    on every poll where the agent's last nudge tell had been delivered.
+  - A short pace rest (reason pace, at most 30 min) is the agent's own loop pacing its quota: no nudge and no handoff
+    during it, its time is not standing, and it is a sign of life as a request of its own is (never "not answering").
+  - A handoff is a cover request, once per episode: an episode begins when the agent rests (quota, or a pace rest over
+    30 min) or does not answer, and ends when it makes a request of its own. A new episode's handoff waits every_min
+    doubled for each handoff already sent for that agent, at most 4 h. Text: "Operator (automatic, facts only): cover
+    request. gemini owns #2035, #523 and does not answer (out of quota until 15:59). Asked of you until gemini makes a
+    request of its own: cover #2035 and what waits on it; board_update {id: 523, cover: true} for its claim #523 (you
+    hear its alerts with gemini). Waiting on it: 2 requests or tells to gemini unanswered (...); 1 board item of
+    gemini's (#2035 ...)." The open line's "none (...)" is no item (main read it as one).
+  - Idle repeats: the first nudge of an idle stretch (standing since its last work) goes as before; a later one goes on
+    an actionable change since the last (a new request or tell to it among the harness's unanswered items, which never
+    count the operator's tells; a new mention; a watch newly late, stalled, invalid or with its final unread), at most
+    every every_min, else as a fallback at every_min doubled for each nudge of the stretch (40, 80, 160 min, at most
+    4 h). nudges.jsonl rows carry `repeat` {n, why}. The not-answering back-off applies as before.
+  - A sleep or wait the agent set itself with a known end (idle_report sleep_left_s, action_until_s) holds the nudge
+    until it ends, when it began less than idle_min after its last work; back-to-back waits are standing, as in shift07.
+  - A running bounded watch (measuring), standing orders and the harness's own alerts and tells are unchanged.
+- Test: tools/test_idle_nudge_shift70.py replays 13:47-14:32 from tools/idle_nudge_shift70.json (Gemini's and Grok's
+  journals, Gemini's agy-pace rests, Grok's quota rest, the leads' requests, what each logged handoff named): main's
+  idle_nudge.py gives the 23 notices recorded in nudges.jsonl at the same seconds, this one 1 (Grok's, at 14:30).
+  `--module PATH` replays another idle_nudge.py. It fails on main. tools/test_idle_nudge.py and
+  tools/test_idle_nudge_answer.py take the repeat rule and the cover text.

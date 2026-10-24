@@ -12,6 +12,9 @@
 5. A cloud shot is no base map for mapframes.py and the hosts (onair.map None, onair.cloud set); the camera row
    carries map_view (position, surface, the zoom sent) for the overlay.
 6. site/push_live.py passes the clouds to the site (colour, cells, reached nests), the most polluted CLOUD_CELLS.
+7. (d24 batch163, viewer Aurora) each reached nest carries the nest book's state: game seconds since the cloud was last
+   there, whether it reaches it now, alive or unknown, seconds since last in view; to the site, and the overlay's key
+   counts the ones it has left.
 """
 import os, sys
 
@@ -265,8 +268,29 @@ def overlay():
     print("overlay: ok")
 
 
+def nest_state():
+    rows = [{"surface": "nauvis", "pollutant": {"name": "pollution"}, "cells": [[0, 0, 3]], "tick": 100, "reached": [
+        {"tick": 50, "ago_s": 40, "position": {"x": 10, "y": 20}, "spawners": 2, "worms": 1, "status": "alive", "reaches": True,
+         "seen": 90, "seen_ago_s": 0},
+        {"tick": 10, "ago_s": 1500, "position": {"x": 300, "y": 20}, "spawners": 1, "worms": 0, "status": "unknown", "reaches": False}]}]
+    c = clouds.normalise(rows)["nauvis"]
+    assert c["reached"][0] == {"x": 10, "y": 20, "tick": 50, "spawners": 2, "ago_s": 40, "reaches": True, "status": "alive", "worms": 1,
+                               "seen_ago_s": 0}, c["reached"][0]
+    assert c["reached"][1] == {"x": 300, "y": 20, "tick": 10, "spawners": 1, "ago_s": 1500, "reaches": False, "status": "unknown",
+                               "worms": 0}, c["reached"][1]
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "site"))
+    import push_live
+    out = push_live.public_clouds([c])[0]["reached"]
+    assert out == [{"x": 10, "y": 20, "ago_s": 40, "reaches": True, "status": "alive", "seen_ago_s": 0},
+                   {"x": 300, "y": 20, "ago_s": 1500, "reaches": False, "status": "unknown"}], out
+    # a read without the book's state (the news before its first pass): where only
+    assert push_live.public_nest({"x": 1, "y": 2, "tick": 5, "spawners": 1}) == {"x": 1, "y": 2}
+    print("nest state: ok")
+
+
 if __name__ == "__main__":
     normalise()
+    nest_state()
     site()
     overlay()
     framing()
