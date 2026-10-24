@@ -12905,3 +12905,22 @@ On the copy (world n's 21:33 save, Asterion flying to the shattered planet, 99 t
 ms a tick before and 0.121 ms after with the cap at 3000 (712 asteroids in 93 s, none past it), and 0.095 against
 0.106 ms with the cap at 100 (745 untracked); the find, the projection and the event handlers did not change.
 Regression: tests/d23_batch133.lua, failing on the old asteroidwatch.lua.
+
+## d23 batch134 PF1: a delivery watch with no `from` counts pods from any platform (Sol #2096)
+
+Sol's watch #254 (1 processing unit to Gleba's landing pad (54,8), no `from`) took Kestrel IVa as its carrier: the
+first platform of ours holding processing units whose schedule stops at Gleba. Kestrel IVa was paused at Nauvis.
+Solstice brought 365 down to the pad; the watch read reached (the pad held 356, 0 at the start) with `received 0 of 1
+in 0 pods`, because it followed only the carrier's pods.
+
+Now, down, with no `from`:
+
+- the watch follows the pods of every platform of ours sent down at the consumer's planet with the item (and the
+  guessed carrier's at any stop, as before), and counts those its consumer receives; `received.by_platform` gives the
+  count from each platform, the received line names them (`(from Solstice 365)`), and such a pod sets the landed
+  stage, naming its platform;
+- `carrier` is still the guess, with `carrier_guessed: true` and `carrier_note` saying how it was guessed and that
+  its stages and blockers are that platform's.
+
+With `from` given, only that platform's pods count, as before. Each row now also has `stock {held, at_start, reached,
+line}`: the stock test, apart from `received` (the pods with the item received here).
