@@ -754,7 +754,7 @@ return function(api)
     if a.platform ~= nil then
       for _, pl in pairs(p.force.platforms) do
         if pl.valid and pl.name == a.platform and pl.hub and pl.hub.valid then
-          hub_free = try(function() return pl.hub.get_inventory(defines.inventory.hub_main).count_empty_stacks() end)
+          hub_free = try(function() return pl.hub.get_inventory(defines.inventory.hub_main).count_empty_stacks(true, false) end)
           -- (d17 batch22 A4) the list and what is aboard, against the hub's room
           local all = {}
           for _, r in ipairs(contents(inv)) do all[#all+1] = r end

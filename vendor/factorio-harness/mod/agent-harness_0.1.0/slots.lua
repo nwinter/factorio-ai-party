@@ -28,7 +28,7 @@ return function()
     if not inv then return nil end
     local size = try(function() return #inv end)
     if not size or size == 0 then return nil end
-    local empty = try(function() return inv.count_empty_stacks() end)
+    local empty = try(function() return inv.count_empty_stacks(true, false) end)
     if empty == nil or empty > 0 then return nil end
     if item and try(function() return inv.can_insert({name=item, count=1}) end) ~= false then return nil end
     local order, by = tally(inv, size)

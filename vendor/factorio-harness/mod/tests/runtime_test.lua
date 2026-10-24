@@ -4390,7 +4390,9 @@ end)()
     local slots=inv(...)
     slots.can_insert=function() return true end
     slots.get_contents=function() local out={}; for _,s in ipairs(slots) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
-    slots.count_empty_stacks=function() local n=0; for _,s in ipairs(slots) do if not s.valid_for_read then n=n+1 end end; return n end
+    -- (include_bar false: only the slots under the bar, as LuaInventory counts them)
+    slots.count_empty_stacks=function(_,include_bar) local n=0; local last=include_bar==false and slots.get_bar and slots.get_bar()-1 or #slots
+      for i,s in ipairs(slots) do if i<=last and not s.valid_for_read then n=n+1 end end; return n end
     local e={valid=true,name=name,type=type_,position={x=x,y=0},force=p.force,slots=slots,get_fluid_contents=function() return {} end}
     e.get_inventory=function(i) if i==defines.inventory[id] then return slots end end
     return e
@@ -4419,7 +4421,7 @@ end)()
   -- inspect: what a chest, trunk or wagon holds in one line; a requester's asks with what it holds of each.
   local seen=call('inspect',{position=req.position})
   eq(seen.holds,'iron-plate*40; 1 of 4 slots'); eq(seen.requests,'iron-plate 40/100, coal 0/50')
-  eq(call('inspect',{position=wagon.position}).holds,'stone*7; 1 of 4 slots (limited to 2)')
+  eq(call('inspect',{position=wagon.position}).holds,'stone*7; 1 of 4 slots (limited to 2, 1 free under it)')
   eq(call('inspect',{position=big.position}).holds,'b*9 d*8 f*7 g*5 c*3 e*2 +1 more; 7 of 8 slots')
   local rows=call('inspect',{positions={car.position,req.position}}).entities
   eq(rows[1].holds,'wood*3; 1 of 2 slots'); eq(rows[1].requests,nil); eq(rows[2].requests,'iron-plate 40/100, coal 0/50')

@@ -16,17 +16,22 @@ return function(api)
     for k, v in pairs(defines.entity_status or {}) do if v == s then return k end end
   end
   local function inv_of(e) return try(function() return e.get_inventory(defines.inventory.chest) end) end
-  -- {used, total, free} of a chest's slots; nil when it cannot be read.
+  -- {used, total, free, usable} of a chest's slots; nil when it cannot be read. (d24 batch157, Astra #2205) free: the
+  -- empty slots under its bar (count_empty_stacks(true, false): nothing goes past it); usable: the slots under the bar
+  -- when one is set; used: every slot holding items.
   function M.slots_of(e)
     local inv = inv_of(e)
     local total = inv and try(function() return #inv end)
-    local free = inv and try(function() return inv.count_empty_stacks() end)
+    local free = inv and try(function() return inv.count_empty_stacks(true, false) end)
+    local empty = inv and try(function() return inv.count_empty_stacks() end)
     if not total or not free then return nil end
-    return {used=total - free, total=total, free=free}
+    local bar = try(function() return inv.get_bar() end)
+    return {used=total - (empty or free), total=total, free=free, usable=bar and bar <= total and bar - 1 or nil}
   end
-  -- ", 3/48 slots free" for a supply row.
+  -- ", 3/48 slots free" for a supply row (", 3 of 10 usable slots free (bar; 48 slots)" under a bar).
   function M.free_note(e)
     local s = CHEST[try(function() return e.type end) or ''] and M.slots_of(e)
+    if s and s.usable then return string.format(', %d of %d usable slots free (bar; %d slots)', s.free, s.usable, s.total) end
     return s and string.format(', %d/%d slots free', s.free, s.total) or ''
   end
   -- The machines whose output waits on the chest: inserters dropping into it that wait for space, and mining drills

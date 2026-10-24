@@ -504,7 +504,7 @@ return function(api)
     end
     -- Hub space: free slots now.
     local slots = hub and #hub or 0
-    local free = hub and try(function() return hub.count_empty_stacks() end) or 0
+    local free = hub and try(function() return hub.count_empty_stacks(true, false) end) or 0
     -- Power: what the platform's network makes and draws now (a pole on it, else the surface's own network: PX1,
     -- Asterion has no pole), every quality (PX1), and the solar power at each stop.
     local power
