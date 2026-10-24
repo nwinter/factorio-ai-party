@@ -482,6 +482,45 @@ return function(api)
   -- shows them), per item and fluid made or used: totals since it was built and the rate a minute over the last 1, 10
   -- and 60 minutes, made against used; the most made first.
   local WINDOWS = {{'one_minute', 1, '1m'}, {'ten_minutes', 10, '10m'}, {'one_hour', 60, '1h'}}
+  -- (d24 batch171 QN1, Sol 15:09: Asterion's three explosives chemical plants read 39/min each in inspect, 117 in all,
+  -- against 290 made a minute in the statistics; a cryogenic plant with 8 productivity module 3s, beside two beacons of
+  -- speed module 3s, made explosives too, 207/min at full speed) with item: the crafting machines on the platform whose
+  -- recipe makes it, each at full speed as inspect gives it (craftrate.lua), and their sum. MAKERS_SHOWN listed.
+  local MAKERS_SHOWN = 12
+  local function makers(pl, item)
+    local rows, sum = {}, 0
+    local found = try(function() return pl.surface.find_entities_filtered{type={'assembling-machine', 'furnace'}} end) or {}
+    for _, e in ipairs(found) do
+      -- the recipe's products first (an idle furnace: its last recipe); the rate only for a machine that makes it
+      local recipe = try(function() return e.get_recipe() end)
+      if not recipe then
+        local prev = try(function() return e.previous_recipe end)
+        recipe = prev and prev.name and try(function() return e.force.recipes[type(prev.name) == 'table' and prev.name.name or prev.name] end)
+      end
+      local makes = false
+      for _, pr in ipairs(recipe and try(function() return recipe.products end) or {}) do makes = makes or pr.name == item end
+      local rate = makes and api.craftrate and try(function() return api.craftrate(e) end)
+      for _, pr in ipairs(rate and rate.products or {}) do
+        if pr.name == item then
+          sum = sum + pr.per_min
+          rows[#rows+1] = {entity=e.name, quality=try(function() return e.quality.name end), position={x=e.position.x, y=e.position.y},
+            recipe=rate.recipe, speed=rate.speed, productivity=rate.productivity, per_min=pr.per_min,
+            status=api.status_name and try(function() return api.status_name(e) end) or nil,
+            crafts=try(function() return e.products_finished end)}
+        end
+      end
+    end
+    table.sort(rows, function(x, y) if x.per_min ~= y.per_min then return x.per_min > y.per_min end
+      if x.position.x ~= y.position.x then return x.position.x < y.position.x end return x.position.y < y.position.y end)
+    local words = {}
+    for i, r in ipairs(rows) do
+      if i > MAKERS_SHOWN then words[#words+1] = string.format('+%d more', #rows - MAKERS_SHOWN); break end
+      words[#words+1] = string.format('%s%s (%g,%g) %s %g/min (speed %g, productivity +%d%%%s)', r.entity,
+        r.quality and r.quality ~= 'normal' and '@' .. r.quality or '', r.position.x, r.position.y, r.recipe, r.per_min,
+        r.speed, math.floor(r.productivity * 100 + 0.5), r.status and ', ' .. r.status or '')
+    end
+    return rows, math.floor(sum * 10 + 0.5) / 10, words
+  end
   function M.production(p, a)
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
@@ -530,13 +569,22 @@ return function(api)
       lines[#lines+1] = string.format('%s: made %g/min, used %g/min (last 10 min); last 1 min %g/%g, last hour %g/%g; in all made %d, used %d',
         r.name, r.made_per_min_10m, r.used_per_min_10m, r.made_per_min_1m, r.used_per_min_1m, r.made_per_min_1h, r.used_per_min_1h, r.made, r.used)
     end
+    local out_makers, full
+    if a.item then
+      local words
+      out_makers, full, words = makers(pl, a.item)
+      local made = rows[1] and rows[1].made_per_min_1m
+      lines[#lines+1] = #out_makers == 0 and string.format('makers: no crafting machine on %s has a recipe that makes %s', pl.name, a.item)
+        or string.format('makers: %d crafting machine%s on %s with a recipe that makes %s, %g/min together at full speed%s: %s', #out_makers,
+          #out_makers == 1 and '' or 's', pl.name, a.item, full, made and string.format(' (made %g in the last minute)', made) or '', table.concat(words, '; '))
+    end
     local where = api.where and try(function() return api.where(pl) end)
-    return {platform=pl.name, where=where and where.text or nil, items=rows,
+    return {platform=pl.name, where=where and where.text or nil, items=rows, makers=out_makers, makers_full_per_min=full,
       lines=#lines > 0 and lines or {'nothing made or used on ' .. pl.name .. (a.item and ' of ' .. a.item or '') .. ' in its statistics'},
-      note='the platform\'s own production statistics (its surface), as the production GUI shows them; wait_until {until: produced, platform, item, at_least} waits for what it makes from now'}
+      note='the platform\'s own production statistics (its surface), as the production GUI shows them: made counts what every machine on it made, productivity included; with item, makers lists the crafting machines whose recipe makes it, each at full speed as inspect gives it (inspect\'s rate is one machine alone); wait_until {until: produced, platform, item, at_least} waits for what it makes from now'}
   end
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
-    returns='lines (the most made first), items [{name, kind, made, used (totals; an item\'s over every quality, made_by_quality and used_by_quality when not all normal), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
+    returns='lines (the most made first), items [{name, kind, made, used (totals; an item\'s over every quality, made_by_quality and used_by_quality when not all normal), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; with item, makers [{entity, quality, position, recipe, speed, productivity, per_min (at full speed, as inspect), status, crafts (products_finished)}] and makers_full_per_min, and a makers line; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, quality, asks, holds (at that quality), short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',

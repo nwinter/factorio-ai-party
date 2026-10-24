@@ -208,7 +208,9 @@
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `./shot NAME platform=NAME [at=X,Y]`: a screenshot of a platform by remote view (its hub without `at=`). Its second
   line, as every shot's, says where it was rendered: surface, centre, frame and what of ours stands in it.
-- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
+- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h):
+  what every machine on it made, productivity included. With `item`, `makers`: each crafting machine there whose recipe
+  makes it, at full speed as `inspect` gives it (one machine alone), and their sum.
   `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.

@@ -18645,7 +18645,7 @@ function handlers.platform_delete(p,a) return M.platdelete.handler(p,a) end
 M.minpayload=require('minpayload'){editlog=function() return M.editlog end,made=function(t) return M.made.mark(t) end}
 function handlers.min_payload(p,a) return M.minpayload.handler(p,a) end
 -- A platform's remaining bill of materials (platbom.lua; B3, Sol 22:50).
-M.platbom=require('platbom'){leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
+M.platbom=require('platbom'){craftrate=function(e) return M.craftrate.machine(e) end,status_name=function(e) return M.machine_status(e) end,leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
   state=state,who=function(p) return M.board.who(p) end}
 function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end
