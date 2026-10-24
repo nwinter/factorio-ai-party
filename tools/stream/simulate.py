@@ -56,7 +56,8 @@ def stats(rows, minutes):
     reasons = {}
     for r in cuts:
         why = r["reason"]
-        key = ("attack" if why.startswith("attack") else "challenger" if " beats " in why else "rotate" if why.startswith("rotate") else
+        key = ("bow" if why.startswith("platform bow") else "after the bow" if why.startswith("after the bow") else
+               "attack" if why.startswith("attack") else "challenger" if " beats " in why else "rotate" if why.startswith("rotate") else
                "subject unavailable" if why.endswith("unavailable") else "swap" if "swap" in why else "taken by higher camera" if "taken" in why else why)
         reasons[key] = reasons.get(key, 0) + 1
     out["reasons"] = reasons
@@ -71,6 +72,9 @@ def main():
     ap.add_argument("--set", action="append", default=[], help="director tuning override, e.g. main_dwell=25")
     ap.add_argument("--log", help="report on an existing director log instead of simulating")
     ap.add_argument("--cams", choices=["onecam", "3cam"], default="3cam", help="onecam: onecam.OneCam (serve.py's default)")
+    ap.add_argument("--clients", type=int, choices=[1, 2, 3], help="camera clients (POG_CAMS=1: one camera)")
+    ap.add_argument("--long-flight", action="store_true",
+                    help="a ship flying from the solar system edge (mock.long_flight_step): onecam's bow shots")
     a = ap.parse_args()
     if a.log:
         rows = [json.loads(l) for l in open(a.log)]
@@ -83,6 +87,8 @@ def main():
     for mod in (director, mock, model, onecam):
         mod.time = clock
     run = json.load(open(a.run))
+    if a.long_flight:
+        run["mock_long_flight"] = True
     tuning = dict(run.get("director") or {})
     for kv in a.set:
         k, v = kv.split("=", 1)
@@ -90,8 +96,8 @@ def main():
     log = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False).name
     src = mock.MockSource(run)
     m = model.Model(run)
-    d = (onecam.OneCam if a.cams == "onecam" else director.Director)(run.get("cameras") or [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
-                                                 {"slot": "cam3", "player": 3}],
+    slots = run.get("cameras") or [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2}, {"slot": "cam3", "player": 3}]
+    d = (onecam.OneCam if a.cams == "onecam" else director.Director)(slots[:a.clients] if a.clients else slots,
                           lambda body: {"ok": False, "stub": True}, log, **tuning)
     import contextlib, io
     end = clock.t + a.minutes * 60
@@ -105,7 +111,10 @@ def main():
             cams = d.step(m.snapshot(clock.t, cams), clock.t)
             clock.t += 1.0
     rows = [json.loads(l) for l in open(log)]
-    print(json.dumps({"tuning": {**director.DEFAULTS, **tuning}, "log": log, **stats(rows, a.minutes)}, indent=1))
+    extra = {}
+    if getattr(d, "bows", None) is not None and a.long_flight:  # (QM1) each bow shot: minute, why the round was over
+        extra["bows"] = [[round((t - (end - a.minutes * 60)) / 60, 1), why] for t, _, why in d.bows]
+    print(json.dumps({"tuning": {**director.DEFAULTS, **tuning}, "log": log, **stats(rows, a.minutes), **extra}, indent=1))
 
 
 if __name__ == "__main__":

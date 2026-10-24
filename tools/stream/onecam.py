@@ -75,6 +75,13 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
     maybe_edge, edgedense.py: Aquilo to the edge from 39.7% of the way, back from 8.1%): once per leg, as a platform in
     danger is shown, for `platform_hold`, labelled "Bastion · dense asteroids near the solar system edge"; a danger shot
     takes it over;
+  - a ship flying a leg to or from the solar system edge or the shattered planet (d24 batch170 QM1, viewer Caleb: "show
+    a view of the front of Asterion when it is in flight for a few seconds"; bow_turn): at a story turn, at most once a
+    round (every agent on air in the last `bow_window` had a story since the last one, or `bow_round_max`; at least
+    `bow_gap` apart), its bow for `bow_hold` (8 s): a fixed view, the bow's width across, the hull's north edge
+    `bow_ahead` down the frame, labelled "Asterion · the bow · travelling to Aquilo (21%) · 57 km/s"; then the story
+    goes to the agent the turn was for ("after the bow: luna"). The bow comes from the foundation tiles (live.py
+    add_hulls). One camera or three; a danger or edge shot takes it over;
   - POST /platform holds a whole ship for the operator's requested time (platformcam.py persists it). It overrides
     an agent follow; other urgent events are insets. A followed agent aboard also gets this whole-ship view.
     In flight it widens ahead of the ship for asteroids; held shots refresh when the bounds or flight state change.
@@ -244,6 +251,17 @@ ONECAM = {
     # departure since it was built (model.py's maiden_flight moment, from the chronicle), also with one camera
     "maiden_hold": 105.0,     # on it this long: the departure and the first minute and a half of flight
     "maiden_late": 90.0,      # a maiden moment older than this when the director sees it is not shown
+    # (d24 batch170 QM1, viewer Caleb, site 14:51: "show a view of the front of Asterion when it is in flight for a few
+    # seconds") a ship flying a leg to or from the solar system edge or the shattered planet: its bow (the hull's north
+    # edge from its foundation tiles, live.py add_hulls) on air for bow_hold at a story turn, at most once a round
+    "bow": True,
+    "bow_hold": 8.0,          # seconds on the bow
+    "bow_gap": 300.0,         # at least this long between bow shots ...
+    "bow_round_max": 1200.0,  # ... and a round is over after this long, or sooner once every agent on air in the last
+    "bow_window": 3600.0,     # bow_window has had a story since the last bow shot
+    "bow_first": 120.0,       # the first one not before this long after the start
+    "bow_recent": 120.0,      # not for a ship on air this recently (a visit pans from its bow anyway)
+    "bow_ahead": 0.4,         # the hull's north edge this far down the frame: the space ahead, where asteroids come in
     "work_hold": 25.0,        # an agent's platform action shows the platform this long ...
     "work_max": 90.0,         # ... more while its requests keep coming, up to this
     "work_fresh": 12.0,       # a platform action dispatched within this long is news
@@ -493,6 +511,8 @@ class OneCam(Director):
         self.work_shown = {}   # (agent, platform) -> when its work went on air
         self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
         self.edge_legs = {}    # platform -> {leg: (origin, dest), shown}: an edge leg's dense part (maybe_edge)
+        self.last_bow = None   # (QM1) when the last bow shot went on air
+        self.bows = []         # (t, name, why): bow shots, why the round was over
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
         self.follow = None     # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
@@ -2572,7 +2592,7 @@ class OneCam(Director):
         busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and now < cur.get("hold_until", 0)) or
                     (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0) and
-                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue", "edge"))))
+                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue", "edge", "bow"))))
         if busy:
             return
         def live(n):
@@ -2628,7 +2648,7 @@ class OneCam(Director):
         busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and now < cur.get("hold_until", 0)) or
                     (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0) and
-                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue"))))
+                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue", "bow"))))
         if busy:
             return
         name = sorted(due)[0]
@@ -2646,6 +2666,72 @@ class OneCam(Director):
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} platform edge: {label} "
               f"({self.plat_rows[name]['route'].get('pct')}%)", flush=True)
         self.show_platform(t, scores, now)
+
+    def bow_round(self, scores, now):
+        """(QM1) Why a bow shot may go on air now, or None: not within bow_gap of the last one (bow_first after the
+        start), and the round over: every agent on air in the last bow_window (and still here) had a story since the
+        last bow shot, or bow_round_max has passed."""
+        cfg, last = self.cfg, self.last_bow
+        if last is None:
+            return "the first" if now - self.started >= cfg["bow_first"] else None
+        if now - last < cfg["bow_gap"]:
+            return None
+        if now - last >= cfg["bow_round_max"]:
+            return f"{int(now - last)} s since the last"
+        seen = [n for n in scores if now - self.last_on_air.get(n, -1e9) <= cfg["bow_window"]]
+        if all(self.last_on_air.get(n, -1e9) > last for n in seen):
+            return f"round over ({len(seen)} agents on air since the last)"
+        return None
+
+    def bow_target(self, name, until):
+        """(QM1) A fixed view on a ship's bow: the bow's x extent fitted across (view `bow`: the foundation in the hull's
+        first rows, live.py add_hulls), its north edge bow_ahead down the frame so the space ahead shows; None without
+        a bow read."""
+        row = self.plat_rows.get(name) or {}
+        view, bow = row.get("view") or {}, (row.get("view") or {}).get("bow")
+        if not view.get("surface") or not isinstance(bow, dict) or \
+                not all(isinstance(bow.get(k), (int, float)) for k in ("left", "top", "right")):
+            return None
+        zoom = round(max(0.3, min(1.0, 60.0 * self.onair_frac() / (bow["right"] - bow["left"] + 12))), 2)
+        vh = 34.0 / zoom
+        label = self.platform_label(name)
+        label = f"{name} · the bow" + label[len(name):] if label.startswith(name) else f"{name} · the bow"
+        return {"position": {"x": round((bow["left"] + bow["right"]) / 2, 1),
+                             "y": round(bow["top"] + (0.5 - self.cfg["bow_ahead"]) * vh, 1)},
+                "surface": view["surface"], "zoom": zoom, "exact_zoom": True, "agents": [], "subject": "@platform",
+                "until": until, "platform": {"name": name, "why": "bow", "label": label}}
+
+    def bow_turn(self, want, reason, scores, now):
+        """(d24 batch170 QM1, viewer Caleb, site 14:51-14:52: "show a view of the front of Asterion when it is in flight
+        for a few seconds") At a story turn (direct is about to cut to `want`): a ship flying a long leg (it has a bow
+        read, which live.py takes only on a leg to or from the solar system edge or the shattered planet) gets its bow
+        on air for bow_hold, at most once a round (bow_round), the ship shown longest ago first; then the story goes to
+        `want`. Never over an urgent shot, a battle or a segment (those hold the camera, so no story turn comes), a
+        replay, a trio or a cut being framed. True when the bow went on air."""
+        cfg = self.cfg
+        if not cfg["bow"] or self.plat_busy(now, None):
+            return False
+        ships = sorted(n for n, r in self.plat_rows.items() if self.travelling(r) and ((r.get("view") or {}).get("bow"))
+                       and now - self.plat_shown.get(n, -1e9) >= cfg["bow_recent"])
+        why = ships and self.bow_round(scores, now)
+        if not why:
+            return False
+        name = min(ships, key=lambda n: (self.plat_shown.get(n, -1e9), n))
+        until = now + cfg["ready_s"] + cfg["bow_hold"]
+        t = self.bow_target(name, until)
+        if not t:
+            return False
+        self.last_bow = now
+        self.bows.append((now, name, why))
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} bow: {t['platform']['label']} ({why}; "
+              f"then {want}: {reason})", flush=True)
+        self.show_platform(t, scores, now)
+        self.resume = {"subject": want, "since": until, "after": "bow"}  # the story turn it came in
+        return True
+
+    @staticmethod
+    def resumed_why(r):
+        return f"after the bow: {r['subject']}" if r.get("after") == "bow" else f"back to {r['subject']}"
 
     def maybe_departure(self, scores, now, segment=None):
         """A departure seen (watch_platforms, watch_maiden): a maiden flight or news on air for depart_hold (maiden_hold);
@@ -3014,6 +3100,8 @@ class OneCam(Director):
                     reason = f"{subj} still {int(still)} s; {want} {why}"
                     self.still_block[subj] = now + cfg["still_block"]
             self.keep(cur, by_name, now)
+            if want and self.bow_turn(want, reason, scores, now):
+                return  # the bow first; the story goes to `want` after it
         nxt = self.next_slot()
         lead = want or cand
         if nxt and lead:
@@ -3029,7 +3117,7 @@ class OneCam(Director):
                 self.apply(nxt, shot, f"standby: {lead}" + (f" ({plan_kind(by_name[lead])} bounds)" if fit else ""),
                            scores, now, quiet=True)
         if want and nxt and self.state[nxt["slot"]].get("subject") == want and self.ready(nxt["slot"], now):
-            self.cut(nxt["slot"], reason if not need else f"back to {want}" if resumed else floor_reason if floor_reason
+            self.cut(nxt["slot"], reason if not need else self.resumed_why(resumed) if resumed else floor_reason if floor_reason
                      and self.balance_surface(by_name.get(want)) == due["surface"] else
                      (f"{subj} unavailable" if subj else "initial") + self.surface_note(want, by_name), now)
             self.want[nxt["slot"]] = (self.state[nxt["slot"]]["zoom"], now)
@@ -3042,7 +3130,7 @@ class OneCam(Director):
             shot = {"agents": [want], "follow": want, "zoom": z, "solo_zoom": z, "subject": want}
             if fit:
                 shot.update(exact_zoom=True, plan_fit=fit)
-            why = reason if not need else f"back to {want}" if resumed else floor_reason if floor_reason \
+            why = reason if not need else self.resumed_why(resumed) if resumed else floor_reason if floor_reason \
                 and self.balance_surface(by_name.get(want)) == due["surface"] else \
                 (f"{subj} unavailable" if subj else "initial") + self.surface_note(want, by_name)
             self.retarget(shot, why, scores, now)

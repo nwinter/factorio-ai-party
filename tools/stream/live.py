@@ -575,6 +575,7 @@ class LiveSource:
                     self.platform_views = self.h.platform_views()
                 except Exception as e:
                     errors["platform_views"] = str(e)
+                self.add_hulls(self.platform_views, errors)
         views = getattr(self, "platform_views", {})
 
         def placed(name):
@@ -590,6 +591,32 @@ class LiveSource:
             read = {**placed(row["name"]), **self.platform_detail.get(row["name"], {})}
             rows.append({**row, **read, **({"view": views[row["name"]]} if row["name"] in views else {}), **self.fresh_at(row, read)})
         space["platforms"] = rows
+
+    LONG_LEGS = ("solar-system-edge", "shattered-planet")
+
+    @classmethod
+    def long_leg(cls, view):
+        """(d24 batch170 QM1) The view's `where` puts it on a space connection to or from the solar system edge or the
+        shattered planet ("solar-system-edge->aquilo 1%")."""
+        at = str(((view or {}).get("where") or {}).get("at") or "")
+        ends = at.rsplit(" ", 1)[0].split("->") if "->" in at else []
+        return any(e in cls.LONG_LEGS for e in ends)
+
+    def add_hulls(self, views, errors):
+        """(d24 batch170 QM1, viewer Caleb: the front of Asterion in flight) A platform flying a long leg gets its hull's
+        box and bow from its foundation tiles (Harness.platform_hulls, each read again after HULL_EVERY) in its view:
+        `hull` and `bow` {left, top, right, bottom}, for onecam's bow shot."""
+        names = [n for n, v in (views or {}).items() if self.long_leg(v)]
+        if not names or not hasattr(self.h, "platform_hulls"):
+            return
+        try:
+            hulls = self.h.platform_hulls(names)
+        except Exception as e:
+            errors["platform_hulls"] = str(e)
+            return
+        for n, h in hulls.items():
+            if n in views and h.get("surface") == views[n].get("surface"):
+                views[n]["hull"], views[n]["bow"] = h.get("hull"), h.get("bow")
 
     @staticmethod
     def fresh_at(row, detail):
