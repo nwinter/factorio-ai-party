@@ -16,6 +16,13 @@
 -- the game's data (railgun-turret: buffer_capacity 10MJ, energy_per_shot 10MJ), so below means under its buffer. Its
 -- hits, damage and kills come from on_entity_damaged and on_entity_died with it as cause (as asteroidwatch.lua reads
 -- them); shots that hit are the ticks it hit something (a railgun shot hits everything on its line in one tick).
+-- (d24 batch151 PW1, Astra #2178: Asterion's 20 rare lasers fought and the watch read only its 23 railguns) each
+-- laser turret (an electric turret whose ammo category is laser) its own category: its energy each sample (least, at the
+-- start, now), the samples below one shot's energy, as the railguns' are kept, and its kills and damage dealt over the
+-- watch (LuaEntity.kills and damage_dealt, turret_tally's reads: each sample's less the start's). 2.0.77 gives the
+-- shot's energy as the prototype's attack_parameters.ammo_type.energy_consumption (800 kJ, a buffer of 801 kJ) and no
+-- getter by quality; on a copy of world n a rare laser on Asterion fired from 801 kJ to 256.6 kJ in one tick and
+-- recharged 255.6 kJ a tick (800 kJ a shot, its quality's faster recharge).
 -- Kept in storage (a save keeps it) until cleared; a result read is kept KEEP_READ ticks after its first read. The
 -- setter hears in team.alerts when a watch begins after a departure and when it ends.
 -- (d22 batch109 BS1, Sol #1952: 8 a force kept Cinder's watch out while 18 platforms flew) a force may hold one watch
@@ -35,7 +42,7 @@ return function(api)
   -- a copy of world n a trace cost about 0.06 ms a belt (Asterion's 6743: 79 ms to begin, 27 steps, 113 ms to end), so
   -- each watch's traces stay near 0.5 ms a second
   M.MAX_MIN, M.DEFAULT_MIN, M.EVENTS, M.FEED_TICKS_PER_BELT = 480, 120, 32, 7
-  M.MAX_ACCUMULATORS, M.SHOW_POWERED = 1024, 64
+  M.MAX_ACCUMULATORS, M.SHOW_POWERED, M.MAX_LASERS = 1024, 64, 128
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function secs(t)
@@ -180,6 +187,34 @@ return function(api)
       st.powered[e.unit_number] = true
     end
   end
+  -- (PW1) a laser turret's shot energy by prototype name (prototypes do not change while the game runs): the prototype's
+  -- attack_parameters.ammo_type.energy_consumption; false for an electric turret that is not a laser
+  local SHOT = {}
+  local function shot_of(name)
+    if SHOT[name] == nil then
+      local ap = try(function() return prototypes.entity[name].attack_parameters end)
+      local cats = ap and ap.ammo_categories or {}
+      local laser = false
+      for _, c in ipairs(cats) do if c == 'laser' then laser = true end end
+      local j = laser and try(function() return ap.ammo_type.energy_consumption end)
+      SHOT[name] = laser and type(j) == 'number' and j > 0 and j or false
+    end
+    return SHOT[name]
+  end
+  local function counts_of(e) return e.kills, e.damage_dealt end
+  local function add_laser(w, e, tick)
+    if #w.lasers >= M.MAX_LASERS then w.lasers_capped = true; return end
+    local shot = shot_of(e.name)
+    if not shot then return end
+    local en = try(function() return e.energy end) or 0
+    local ok, k, d = pcall(counts_of, e)
+    k, d = ok and k or 0, ok and d or 0
+    local q = try(function() return e.quality.name end)
+    w.lasers[#w.lasers+1] = {e=e, unit=e.unit_number, name=e.name, quality=q ~= 'normal' and q or nil, position={x=e.position.x, y=e.position.y},
+      shot=shot, buffer=try(function() return e.electric_buffer_size end), emin=en, emin_tick=tick, efirst=en, enow=en,
+      low_samples=0, low_ticks=0, low_runs=0, low_longest=0, low_longest_n=0, k0=k, d0=d, k1=k, d1=d, added=tick ~= w.start and tick or nil}
+    w.by_laser[e.unit_number] = #w.lasers
+  end
   -- (BH1) the platform's accumulators, found at the start and each minute with the turrets
   local function buffer_of(e) return e.electric_buffer_size end
   local function find_accumulators(w, pl)
@@ -205,6 +240,12 @@ return function(api)
   local function find_turrets(w, pl, tick)
     for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
       if e.unit_number and not w.by_unit[e.unit_number] then add_turret(w, e, tick) end
+    end
+    -- (PW1) the laser turrets; a watch begun before them has none (its read as it was)
+    if w.lasers then
+      for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='electric-turret', force=pl.force} end) or {}) do
+        if e.unit_number and not w.by_laser[e.unit_number] then add_laser(w, e, tick) end
+      end
     end
     find_accumulators(w, pl)
     w.acc_n = #w.accs
@@ -247,7 +288,7 @@ return function(api)
     w.state, w.start, w.until_tick = 'watching', tick, tick + w.minutes * 3600
     w.leg = where(pl)
     w.at_start, w.flew = w.leg, flying(pl)
-    w.turrets, w.by_unit = {}, {}
+    w.turrets, w.by_unit, w.lasers, w.by_laser = {}, {}, {}, {}
     find_turrets(w, pl, tick)
     local f = acc_fraction(w)
     w.acc = {first=f, min=f, min_tick=tick, now=f}
@@ -297,6 +338,7 @@ return function(api)
     end
     w.state, w.ended, w.why = 'done', tick, why
     for _, t in ipairs(w.turrets or {}) do t.e = nil end
+    for _, t in ipairs(w.lasers or {}) do t.e = nil end
     w.accs, w.pl = nil, nil
     M.reindex()
     if not w.start then push(w, string.format('flight watch #%d on %s ended before it began (%s)', w.id, w.platform, why)); return end
@@ -430,6 +472,20 @@ return function(api)
           low, math.floor(long / 6 + 0.5) / 10, long, lt.name, at(lt.position), lt.unit, secs(lt.low_long_from - w.start)),
         hits, shots, math.floor(dmg + 0.5), kills)
     end
+    -- (PW1) the laser turrets
+    local ln, llow, lk, ld, llong, llt, shot = 0, 0, 0, 0, 0, nil, nil
+    for _, t in ipairs(w.lasers or {}) do
+      ln, shot = ln + 1, shot or t.shot
+      if t.low_samples > 0 then llow = llow + 1 end
+      lk, ld = lk + (t.k1 - t.k0), ld + (t.d1 - t.d0)
+      if t.low_longest > llong then llong, llt = t.low_longest, t end
+    end
+    if ln > 0 then
+      parts[#parts+1] = string.format('%d laser turrets%s: %s; %d kills, %g damage dealt', ln, w.lasers_capped and ' (capped)' or '',
+        llow == 0 and string.format('none read below a shot\'s energy (%s) in a sample', mj(shot)) or string.format('%d read below a shot\'s energy (%s) in some sample, the longest run %d sample%s (%d ticks), %s %s #%d from +%s',
+          llow, mj(shot), llt.low_longest_n, llt.low_longest_n == 1 and '' or 's', llong, llt.name, at(llt.position), llt.unit, secs(llt.low_long_from - w.start)),
+        lk, math.floor(ld + 0.5))
+    end
     return #parts > 0 and '; ' .. table.concat(parts, '; ') or ''
   end
   -- One sample of a watching watch.
@@ -467,6 +523,23 @@ return function(api)
           elseif t.low_from then t.low_from, t.low_run = nil, nil end
         end
       elseif t.e then t.gone, t.e = tick, nil end
+    end
+    -- (PW1) each laser: its energy against one shot's, and its kills and damage dealt
+    for _, t in ipairs(w.lasers or {}) do
+      local e = t.e
+      if e and e.valid then
+        local en = e.energy
+        t.enow = en
+        if en < t.emin then t.emin, t.emin_tick = en, tick end
+        if en < t.shot then
+          t.low_samples, t.low_ticks = t.low_samples + 1, t.low_ticks + dt
+          if not t.low_from then t.low_from, t.low_run, t.low_n, t.low_runs = tick, 0, 0, t.low_runs + 1 end
+          t.low_run, t.low_n = t.low_run + dt, t.low_n + 1
+          if t.low_run > t.low_longest then t.low_longest, t.low_longest_n, t.low_long_from = t.low_run, t.low_n, t.low_from end
+        elseif t.low_from then t.low_from, t.low_run, t.low_n = nil, nil, nil end
+        local ok, k, d = pcall(counts_of, e)
+        if ok then t.k1, t.d1 = k, d end
+      elseif e then t.gone, t.e = tick, nil end
     end
     local f = acc_fraction(w)
     if f and w.acc then
@@ -596,6 +669,29 @@ return function(api)
           x.hits, x.shots, math.floor(x.damage + 0.5), x.kills)
       end
       if #pw > 0 then r.railguns, r.railgun_lines, r.railguns_more = prow, plines, #pw > M.SHOW_POWERED and #pw - M.SHOW_POWERED or nil end
+      -- (PW1) the laser turrets: the longest run below a shot's energy first, then the least energy
+      local ls = {}
+      for _, x in ipairs(w.lasers or {}) do ls[#ls+1] = x end
+      table.sort(ls, function(a, b)
+        if a.low_longest ~= b.low_longest then return a.low_longest > b.low_longest end
+        if a.emin ~= b.emin then return a.emin < b.emin end
+        return a.unit < b.unit
+      end)
+      local lrow, llines = {}, {}
+      for i = 1, math.min(#ls, M.SHOW_POWERED) do
+        local x = ls[i]
+        local dk, dd = x.k1 - x.k0, math.floor((x.d1 - x.d0) * 10 + 0.5) / 10
+        lrow[#lrow+1] = {unit_number=x.unit, name=x.name, quality=x.quality, position=x.position, shot_energy=x.shot, buffer=x.buffer, least_energy=math.floor(x.emin), least_tick=x.emin_tick,
+          energy_at_start=math.floor(x.efirst), energy_now=math.floor(x.enow), below_samples=x.low_samples, below_ticks=x.low_ticks, below_runs=x.low_runs,
+          longest_below_samples=x.low_longest_n, longest_below_ticks=x.low_longest, longest_below_from_tick=x.low_long_from, below_now=x.low_from and true or nil,
+          kills=dk, damage=dd, kills_start=x.k0, kills_end=x.k1, gone_tick=x.gone, added_tick=x.added}
+        llines[#llines+1] = string.format('%s%s %s #%d: energy least %s (%s of a shot) at +%s, %s at the start, %s now; %s; %d kills, %g damage dealt%s', x.quality and x.quality .. ' ' or '', x.name, at(x.position), x.unit,
+          mj(x.emin), pct(x.emin / x.shot), secs((x.emin_tick or w.start) - w.start), mj(x.efirst), mj(x.enow),
+          x.low_samples == 0 and 'never below a shot\'s energy in a sample' or string.format('below a shot\'s energy in %d sample%s (%d ticks) over %d run%s, the longest %d sample%s (%d ticks) from +%s',
+            x.low_samples, x.low_samples == 1 and '' or 's', x.low_ticks, x.low_runs, x.low_runs == 1 and '' or 's', x.low_longest_n, x.low_longest_n == 1 and '' or 's', x.low_longest, secs((x.low_long_from or w.start) - w.start)),
+          dk, dd, x.gone and string.format('; gone at +%s', secs(x.gone - w.start)) or (x.added and string.format('; built at +%s', secs(x.added - w.start)) or ''))
+      end
+      if #ls > 0 then r.lasers, r.laser_lines, r.lasers_more, r.lasers_capped = lrow, llines, #ls > M.SHOW_POWERED and #ls - M.SHOW_POWERED or nil, w.lasers_capped and M.MAX_LASERS or nil end
     end
     r.line = string.format('flight watch #%d on %s, %s: %s for %s (%d samples, one every %d ticks)%s; %s%s; damage taken %g in %d hit%s%s; %d lost; repair packs used %s (hub %s -> %s); %s',
       w.id, w.platform, w.leg or '?', w.state == 'done' and 'watched' or 'watching', secs(now - w.start), w.samples or 0, M.EVERY,
@@ -622,7 +718,9 @@ return function(api)
     .. 'feed: the platform\'s ammunition trace (maker, hub, chest, preload: only what is on its way now, none: no inserter feeds it), asked at most once a minute (on a platform of over 514 belts once every 7 ticks a belt: 6743 belts, about 13 min), taken once read, and asked again 10 s after the last ask when a turret begins to read empty (feed_empty: the first trace begun after it first read empty, empty or refilled by then); none on a platform with no ammo turret; each watch reads on its own tick of the second; '
     .. 'damage: hits on our entities aboard by other forces; repair packs used: the platform\'s item production statistics, consumed; '
     .. 'accumulators: their energy over their buffers together, each sample; railguns (ammo turrets with an electric buffer): energy each sample, below a shot\'s energy meaning under its full buffer (2.0.77 gives no energy_per_shot; the game\'s data has 10 MJ a shot and a 10 MJ buffer, filled at most 10 MW), so a recharge shorter than a second between two samples can be missed; '
-    .. 'hits, damage and kills from the game\'s damage and death events with the railgun as cause, shots_hit the ticks it hit something (one shot hits all on its line in one tick; a shot that hits nothing is not counted)'
+    .. 'hits, damage and kills from the game\'s damage and death events with the railgun as cause, shots_hit the ticks it hit something (one shot hits all on its line in one tick; a shot that hits nothing is not counted); '
+    .. 'laser turrets (electric turrets of ammo category laser, up to 128): energy each sample, below a shot\'s energy meaning under the prototype\'s energy per shot (attack_parameters.ammo_type.energy_consumption, 800 kJ for laser-turret; 2.0.77 has no getter by quality: a rare laser\'s shot took 800 kJ on a copy of world n, its recharge 255.6 kJ a tick), so a laser that fires and refills between two samples (3 ticks at that rate) reads full; '
+    .. 'kills and damage dealt the turret\'s own counts (its tooltip\'s Kills and Damage dealt, as turret_tally reads them), each sample\'s less the start\'s (a laser gone keeps its change up to its last sample)'
   function M.call(p, a)
     local st = store()
     local who = api.who and api.who(p) or p.name
@@ -699,7 +797,9 @@ return function(api)
     r.replaced = replaced
     local np = 0
     for _, t in ipairs(w.turrets or {}) do if t.buffer then np = np + 1 end end
-    return {watch=r, replaced_watch=replaced_row, replaced_line=replaced_line, line=from == 'now' and string.format('flight watch #%d on %s: watching %d ammo turrets (%d railguns) and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, #w.turrets, np, w.acc_n or 0, minutes)
+    local nl = #(w.lasers or {})
+    return {watch=r, replaced_watch=replaced_row, replaced_line=replaced_line, line=from == 'now' and string.format('flight watch #%d on %s: watching %d ammo turrets (%d railguns)%s and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, #w.turrets, np,
+        nl > 0 and string.format(', %d laser turrets', nl) or '', w.acc_n or 0, minutes)
       or string.format('flight watch #%d on %s: begins at its next departure%s and runs until the arrival after it or %d min', w.id, pl.name, w.seen_stopped and '' or ' (it flies now: the departure after its next stop)', minutes),
       note=M.NOTE}
   end
@@ -741,6 +841,7 @@ return function(api)
     returns='start: watch, line, note, and on a replace replaced_watch (its row: id, state, ended_by, end_tick, replaced_by, line) and replaced_line; {}: watches (the force\'s, each with counts: whether it counts against the limit), lines, limit, counted, counting (the ids that count), limit_line; id: watch {id, platform, setter, state (armed: waiting for the departure, watching, done), from, minutes, set_tick, start_tick, end_tick, until_tick, ended_by, replaced_by, replaced_tick, leg, samples, seconds, '
       .. 'turrets (up to 24: those that read empty, the longest run first, then the lowest on ammo; turrets_more and turrets_more_line count the rest) [{unit_number, name, position, ammo, least, least_tick, at_start, now, empty_samples, empty_ticks, empty_runs, longest_empty_ticks, longest_from_tick, empty_now, gone_tick, added_tick, feed_start, feed_empty (the first trace begun after it first read empty), feed_end: {kind (maker, hub, chest, preload, none), gated, reaches, stop, tick}}], '
       .. 'sample_ticks, accumulators {count, capped, least_fraction, least_tick, at_start, now}, railguns (ammo turrets with an electric buffer, up to 64, the longest run below a shot\'s energy first) [{unit_number, name, position, shot_energy, least_energy, least_tick, energy_at_start, energy_now, below_samples, below_ticks, below_runs, longest_below_ticks, longest_below_from_tick, below_now, hits, shots_hit, damage, kills, gone_tick}], railgun_lines, '
+      .. 'lasers (laser turrets, up to 64, the longest run below a shot\'s energy first) [{unit_number, name, quality, position, shot_energy, buffer, least_energy, least_tick, energy_at_start, energy_now, below_samples, below_ticks, below_runs, longest_below_samples, longest_below_ticks, longest_below_from_tick, below_now, kills, damage, kills_start, kills_end, gone_tick, added_tick}], laser_lines, lasers_more, lasers_capped, '
       .. 'damage {hits, damage, entities (damage by entity name), by (hits by cause)}, lost (up to 8), lost_count, repair_packs_used, hub_repair_packs {start, end}, fuel {start, end: {thruster-fuel, thruster-oxidizer: {held, in_tanks}}}, lines, line, note}. '
       .. 'Sampled once a second, each watch on its own tick; at most 128 ammo turrets a watch (turrets built meanwhile are added within a minute); one watch that counts per platform of the force (armed, watching, or done and not read; a start at the limit is refused, naming them); kept in the save until cleared (read done ones 1 h after the read, replaced ones not read 24 h, at most 16 of those); the setter hears in team.alerts when one begins at a departure and when one ends'}}
   return M
