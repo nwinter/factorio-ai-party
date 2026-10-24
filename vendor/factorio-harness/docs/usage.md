@@ -12998,6 +12998,35 @@ Fixed besides gates:
 - Test: tests/d24_batch136.lua (242 signals: the lists stay cut, picked reads past them; quality; refusals), and
   tests/circuits.lua (inspect through the runtime).
 
+## d24 batch139 PK1 (eng/d20-batch139): a paused carrier docked at the destination (Sol #2115)
+- Delivery watch 284 (calcite to Nauvis, from Petrel) said `Petrel is paused: it goes nowhere until unpaused` while
+  Petrel was stopped at Nauvis. A platform's hub sends pods down at the planet it is stopped at while paused: watch 283
+  saw 2000 land that way, and AB6's 2.0.77 copy measured it at Fulgora (a paused platform sent pods to the pad's
+  requests). So no new measurement was needed.
+- Now `paused` is a blocker only away from the destination's planet: `Petrel is paused at gleba: it goes nowhere until
+  unpaused`, or `... paused in flight: ...`.
+- Stopped at the destination with the item aboard, paused or not, the watch reads what goes down now by batch137's
+  rule (freight.lua hub_keeps_at, hub_gives). `at_destination {sends, held, asked, keep, line}` gives it, and the
+  status line adds it when something goes down:
+  - `Petrel is stopped at nauvis (paused: its hub sends pods down at the planet it is stopped at all the same) with 1980
+    calcite in its hub: its hub sends 1980 down now (no hub section keeps calcite at nauvis: it goes down as far as the
+    pads ask (the landing pad (-12,40) asks 2000, holds 0))`;
+  - with none going down, it is a blocker naming why: `... none of it goes down now (hub section 1 keeps calcite
+    200..inf at nauvis: an infinite max keeps it all)`. The other reasons are a pad holding what it asks, and no
+    section and no pad asking.
+  - A finite max sends all above it, asked or not: `its hub sends 1480 down now (hub section 1 keeps calcite 200..500 at
+    nauvis: all above 500 goes down, asked or not)`.
+- The platform reads' state note for a paused platform (platform_schedule, platforms) adds, stopped at a planet:
+  `; stopped at nauvis, its hub sends pods down there all the same (by its sections for nauvis and the landing pads'
+  asks)`.
+- Checked for the same case:
+  - shipment's ready read and cargo lines, the requests dry run's `sends_down`, and freight's stop lines (`expected
+    down`) all take a stopped platform from freight.where, which paused does not change: they already read a paused,
+    docked platform as stopped.
+  - freight.before_departure (ETAs), space.waiting_now and the waiting lines, rocketload's headed_here and
+    platform_schedule's refusal of a call leaving it paused are about leaving or arriving: paused does stop those.
+  - waits.lua's paused lines are about the agent's queue, not a platform.
+- Test: tests/d24_batch139.lua (fails on main: `Petrel is paused: it goes nowhere until unpaused`), tests/space.lua.
 ## d24 batch138 PJ1 (eng/d20-batch138): queue_submit start:false stages the steps (Sol #2111)
 - Petrel's lane (`platform:Petrel`, revision 452) was empty and not paused. `queue_submit {mode: replace, start: false}`
   queued revision 453, and its first step, `platform_schedule {paused: false}`, ran, then the arrival wait, without

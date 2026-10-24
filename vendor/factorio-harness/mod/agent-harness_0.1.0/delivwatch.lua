@@ -18,7 +18,7 @@
 --   pass's list of silos), launched and in_transit (a rocket with it launched to that platform, its pod on the way),
 --   landed (the hub holds more of it than when the watch was set), reached.
 -- Blockers seen: the pad's network is not the consumer's, or the consumer is in no network; a pod with it landed with no
--- pad; the platform stopped there with it while no landing pad there has room for it (or there is none); the platform paused, or its schedule not stopping at the planet; a requester or buffer chest consumer asking
+-- pad; the platform stopped there with it while no landing pad there has room for it (or there is none); the platform paused away from the planet (stopped there paused, its hub still sends pods down: what goes down now is read), or its schedule not stopping at the planet; a requester or buffer chest consumer asking
 -- none of the item; the consumer gone. The setter hears in team.alerts each blocker once, a blocker gone, the deadline
 -- passed while not reached (the last confirmed stage and the blocker), and the arrival. A watch is kept KEEP ticks
 -- after it ends; at most MAX open a force.
@@ -245,7 +245,36 @@ return function(api)
             elseif not room then block(w, 'pad', string.format('no landing pad of ours on %s has room for %s (cargo-landing-pad %s): the hub sends no pod of it down', w.to.where, w.item, table.concat(names, ', '))) end
           end
         end
-        if pl.paused then block(w, 'paused', string.format('%s is paused: it goes nowhere until unpaused', pl.name)) end
+        -- (d24 batch139 PK1, Sol #2115: watch 284 said Petrel, paused while docked at Nauvis, goes nowhere until
+        -- unpaused; its hub sends pods down while paused, as watch 283 saw 2000 land, and AB6's copy measured at
+        -- Fulgora) paused is a blocker only away from the destination; stopped there, what goes down now is read
+        local here = not try(function() return pl.space_connection end) and try(function() return pl.space_location.name end)
+        w.at_destination = nil
+        if pl.paused and here ~= w.to.where then
+          block(w, 'paused', string.format('%s is paused%s: it goes nowhere until unpaused', pl.name, here and ' at ' .. here or ' in flight'))
+        elseif here == w.to.where and n > 0 and api.freight and api.freight.hub_keeps_at then
+          local F = api.freight
+          local keeps = F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), w.to.where)
+          local asks = pad_asks(force, w.to.where, w.item)
+          local want, parts = 0, {}
+          for _, a in ipairs(asks) do
+            want = want + math.max(0, a.min - a.held)
+            parts[#parts+1] = string.format('the landing pad %s asks %d, holds %d', at(a.pad.position), a.min, a.held)
+          end
+          local go, k = F.hub_gives(keeps, w.item, n, want)
+          local why = k and (k.max == math.huge and F.keep_text(k) .. ': an infinite max keeps it all'
+              or string.format('%s: all above %d goes down, asked or not', F.keep_text(k), k.max))
+            or #asks == 0 and string.format('no hub section keeps %s at %s and no landing pad of ours there asks it: it goes down as far as the pads ask', w.item, w.to.where)
+            or string.format('no hub section keeps %s at %s: it goes down as far as the pads ask (%s)', w.item, w.to.where, table.concat(parts, '; '))
+          local head = string.format('%s is stopped at %s%s with %d %s in its hub', pl.name, w.to.where,
+            pl.paused and ' (paused: its hub sends pods down at the planet it is stopped at all the same)' or '', n, w.item)
+          w.at_destination = {sends=go, held=n, asked=want, keep=k and F.keep_text(k) or nil,
+            line=string.format('%s: its hub sends %d down now (%s)', head, go, why)}
+          if go == 0 then
+            block(w, 'demand ' .. w.to.where, string.format('%s: none of it goes down now (%s)', head, why),
+              'demand ' .. w.to.where .. ' ' .. (k and tostring(k.max) or (#asks == 0 and 'no pad' or 'asked')))
+          end
+        end
         if not stops_at(pl, w.to.where) then block(w, 'route', string.format('%s\'s schedule has no stop at %s', pl.name, w.to.where)) end
         -- (AB6, Aurora 16:02: "Nauvis's obsolete CF500 request diverted K2 cargo intended for Aquilo") a landing pad
         -- asking the item on a planet it stops at before the destination: a blocker while it is stopped there, a risk
@@ -403,7 +432,8 @@ return function(api)
     local dv = {}
     for _, d in ipairs(w.diversions or {}) do dv[#dv+1] = d.text end
     recv_info(w)
-    return string.format('%s; the consumer holds %d (%d at the start); %s%s%s%s', last, w.held or w.base, w.base, received_text(w), #b > 0 and '; blocked: ' .. table.concat(b, '; ') or '',
+    local ad = w.at_destination and w.at_destination.sends > 0 and '; at the destination: ' .. w.at_destination.line or ''
+    return string.format('%s; the consumer holds %d (%d at the start); %s%s%s%s%s', last, w.held or w.base, w.base, received_text(w), ad, #b > 0 and '; blocked: ' .. table.concat(b, '; ') or '',
       #rk > 0 and '; at risk: ' .. table.concat(rk, '; ') or '', #dv > 0 and string.format('; diverted %d: %s', w.diverted or 0, table.concat(dv, '; ')) or '')
   end
   function M.row(w)
@@ -422,7 +452,7 @@ return function(api)
     table.sort(rk)
     local dl = w.deadline - game.tick
     return {id=w.id, item=w.item, count=w.count, to=w.to, from=w.from, direction=w.direction, setter=w.setter, state=w.state, deadline_tick=w.deadline,
-      stages=stages, last_confirmed=w.last, blockers=#b > 0 and b or nil, risks=#rk > 0 and rk or nil,
+      stages=stages, last_confirmed=w.last, blockers=#b > 0 and b or nil, risks=#rk > 0 and rk or nil, at_destination=w.at_destination,
       diversions=w.diversions and #w.diversions > 0 and w.diversions or nil, diverted=w.diverted, arrivals=w.arrivals, held=w.held or w.base, at_start=w.base, carrier=w.carrier,
       carrier_guessed=(w.direction == 'down' and not w.from and w.carrier ~= nil) or nil, carrier_note=w.direction == 'down' and not w.from and w.carrier and string.format('a guess (no from given): the first platform of ours seen holding %s whose schedule stops at %s; its stages and blockers are that platform\'s; received counts the pods from any platform of ours landing here (received.by_platform)',
         w.item, w.to.where) or nil,
@@ -736,6 +766,6 @@ return function(api)
     to='{position {x, y}, surface (a planet; default yours) | platform (a name)}: the consumer, a silo, chest or machine of ours within 2 tiles of position, in a chunk our force has charted',
     deadline_min='minutes from now (up to 1440)', from='optional: the platform that carries it down (only its pods count), or the planet whose silos launch it up; none, down: the pods of any platform of ours sent down at the consumer\'s planet count',
     id='with clear: true, the watch to end; alone, read that watch', clear='true, with id: end it',
-    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, received: the received total reached count, the consumer not seen holding count more than at the start, reached: it was), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), received (the received total reached count), reached (the consumer holds count more than at the start)), last_confirmed, blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), arrivals [{tick, pod, from, platform, stop, rocket {planet, silo, launched}, where, count, spoil {\'0-25%\'=n, ...} (for an item that spoils: the count by how spoiled each stack is), stacks [{count, quality, spoil_percent}], read_tick, dest_count, dest_spoil, text}] (each pod with the item from the carrier\'s hub, or each rocket with it launched to the platform, on the tick it was gone: what it held at its last read, read every tick over its destination, and what the pad, hub or container held of it on that tick, before robots take from it; the last 16), held, at_start (the stock test: held now and at the start), received {count, pods, last_tick, by, from_arrivals} (a running total since the watch was set of the pods the consumer received: a landing pad, the pods it received; a platform\'s consumer, the pods its hub received; a chest, silo or machine on a planet, the pods received by a landing pad in its logistic network on the tick each landed, which robots carry on; only the pods the watch followed: with from, that platform\'s; with none, every platform\'s sent down at the consumer\'s planet; by_platform: the count from each platform; from_arrivals: a watch set before the total was kept, counted from its arrivals), stock {held, at_start, reached, line} (the stock test, apart from received), carrier (from, or with none a guess: carrier_guessed, carrier_note; its stages and blockers are that platform\'s), line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, each pod received (with the received total), a blocker gone, the deadline passed while not reached (with the last confirmed stage, the received total and the blocker) and the end: received (the total, pods, the last pod\'s tick, and the stock test apart) or reached; a watch is kept 10 minutes after it ends'}}
+    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, received: the received total reached count, the consumer not seen holding count more than at the start, reached: it was), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), received (the received total reached count), reached (the consumer holds count more than at the start)), last_confirmed, at_destination (down, the carrier stopped at the planet of the destination with the item, paused or not: {sends (what its hub sends down now by its sections for that planet and the pads\' ask less what they hold), held, asked, keep, line}; sends 0 is a blocker naming why), blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused away from the destination (stopped there paused, its hub sends pods down all the same: at_destination) or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), arrivals [{tick, pod, from, platform, stop, rocket {planet, silo, launched}, where, count, spoil {\'0-25%\'=n, ...} (for an item that spoils: the count by how spoiled each stack is), stacks [{count, quality, spoil_percent}], read_tick, dest_count, dest_spoil, text}] (each pod with the item from the carrier\'s hub, or each rocket with it launched to the platform, on the tick it was gone: what it held at its last read, read every tick over its destination, and what the pad, hub or container held of it on that tick, before robots take from it; the last 16), held, at_start (the stock test: held now and at the start), received {count, pods, last_tick, by, from_arrivals} (a running total since the watch was set of the pods the consumer received: a landing pad, the pods it received; a platform\'s consumer, the pods its hub received; a chest, silo or machine on a planet, the pods received by a landing pad in its logistic network on the tick each landed, which robots carry on; only the pods the watch followed: with from, that platform\'s; with none, every platform\'s sent down at the consumer\'s planet; by_platform: the count from each platform; from_arrivals: a watch set before the total was kept, counted from its arrivals), stock {held, at_start, reached, line} (the stock test, apart from received), carrier (from, or with none a guess: carrier_guessed, carrier_note; its stages and blockers are that platform\'s), line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, each pod received (with the received total), a blocker gone, the deadline passed while not reached (with the last confirmed stage, the received total and the blocker) and the end: received (the total, pods, the last pod\'s tick, and the stock test apart) or reached; a watch is kept 10 minutes after it ends'}}
   return M
 end
