@@ -4,11 +4,11 @@
 
 - `moving-items`, items by hand: `transfer`, `collect`, `feed`, `refuel`, `pickup`, `mine`, `rotate`, `repair`,
   `inventory`, `craft`, `cancel_craft`, `deliver`.
-- `building`, placing, removing (landfill, tiles): `build`, `place_ghosts`, `construct`, `ghosts`,
+- `building`, placing, removing, landfill: `build`, `place_ghosts`, `construct`, `ghosts`/`remove_ghosts`,
   `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
   `belt_route`, `belt_upgrade`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `rebuild`, `blueprint_save`,
   `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`, `blueprint_retire`.
-- `circuits-settings`, wires, settings: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `signal_watch`,
+- `circuits-settings`, wires: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `signal_watch`,
   `configure`, `assembler_batch`, `requests`, `character_settings`.
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
   `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`, `turret_feeds`, `turret_tally`.

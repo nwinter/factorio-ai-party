@@ -13210,6 +13210,61 @@ Fixed besides gates:
   - With string.format made to fail on chosen texts: requests answered ok with `reply_failed: ["sends_down: forced test
     failure"]`, and platform_schedule answered ok with `change_made: ["Meridian-V schedule: 1 nauvis, 2 gleba, current 2
     (was ... current 1)"]`.
+- Tests: tests/d24_batch141.lua (fails on main with Sol's error); tests/d17_batch31.lua's finite-max line now reads the
+  trash wording, with the same counts.
+
+
+## d24 batch144 PP1 (eng/d20-batch144): remove_ghosts, one's own ghosts taken away by remote view (Luna #2137)
+- Luna staged a 24-ghost copy of her green circuit draft on Nauvis in (970,596)-(1004,612), charted ground no
+  construction area covers, and saved it as a library blueprint. `deconstruct {dry_run}` there read would_mark 0, and
+  nothing else took the ghosts back; if robot coverage grew there, robots would build the partial copy.
+- In 2.0 a player in remote view removes ghosts anywhere the map is charted (the deconstruction planner over ghosts).
+  `remove_ghosts {area | positions, surface? | platform?, names?, tiles?, owner?, dry_run?}` (removeghosts.lua; in
+  bots.lua's PLATFORM_ACTIONS and SURFACE_ACTIONS; passive: no walk, no queue stop):
+  - scope: `area` up to 256 tiles a side, or 1..64 `positions` (ghosts whose centre is within 0.5 tiles of each);
+    `names` 1..32 entity or tile names; entity ghosts only, tile ghosts too with `tiles: true`. Built entities and
+    tiles are never taken (the search is by type entity-ghost and tile-ghost).
+  - whose: the harness's placement record (ghostlog.lua: the agent whose place_ghosts, route, paste or blueprint_place
+    put it down), else the game's last user (a player's); by default only the caller's, `owner: "any"` every ghost of
+    ours (`by_owner`), `owner: "sol"` only sol's. A ghost in a chunk our force has not charted stays.
+  - at most 256 a call (the search stops at 4096); the ghost is destroyed with raise_destroy and its record forgotten.
+  - reply: `removed` (dry run `would_remove`), `found`, `by_name`, `ghosts` (the first 64: name, tile, position,
+    owner, placed; `more`), `left` with `left_others` {agent: count}, `left_unknown`, `left_uncharted`,
+    `left_over_cap`, `left_why`, `capped_find`, `line`.
+- ghostlog.lua: tile ghosts placed through place_ghosts `tiles` (and the routes' tile ghosts) now get a record too, in a
+  ring of their own (8192, so a platform's foundation does not push out the entities' records); the key uses the tile
+  name. Each record keeps its surface and a numeric position key, and a per-surface count of records at each position
+  (`pidx`) lets a lookup skip ghosts with no record without turning their position into text (2.0.77 container: 8 us
+  a number, 632 ghosts 10 ms). A counted record carries `x`.
+- (cp2, operator: no step over 10 ms on world n) Records from before the index are counted in slices from the harness
+  tick (`ghostlog.index` part), 512 ring slots a tick, the entities' ring then the tiles' (16384 slots, 32 ticks); a
+  record placed meanwhile is counted when placed and skipped at its slot. Until it is whole a lookup reads the text key,
+  and remove_ghosts refuses: `nothing removed: the ghost placement records are being indexed after a harness update
+  (3072 of 16384 record slots read, 512 a tick, about 0.4 s left); remove_ghosts answers once that is done`.
+- Measured:
+  - world n (tick 55927300, d24 04:46): the search remove_ghosts makes over Luna's staging area, as a
+    /silent-command read: 24 entity ghosts (8 fast-transport-belt, 6 pipe, 4 medium-electric-pole, 2 bulk-inserter,
+    2 fast-inserter, 1 foundry, 1 passive-provider-chest), chunk charted, 0.25 ms. Luna's own `ghosts` reads there
+    say `ghost by luna (place_ghosts, a call)` for each. No save was made for this one read.
+  - headless copy of world n's 04:42 autosave (pog-b144-headless, this branch deployed): sol's call left all 24
+    (`left_others {luna: 24}`); luna's dry run would remove 24; her live call removed 24 (8 fast-transport-belt, 6
+    pipe, 4 medium-electric-pole, 2 bulk-inserter, 2 fast-inserter, 1 foundry, 1 passive-provider-chest), and a read
+    after found no ghost and the area's 22 neutral trees in place. A mixed case on the same ground (luna's 4
+    stone-wall ghosts and 4 concrete tile ghosts, sol's wall ghost, a built wooden chest): luna's default took the 4
+    walls, `tiles: true` the concrete too, `owner: "sol"` sol's wall, `positions` with `names` one wall; the chest
+    stayed. On platform Chalk, 2 script ghosts (no record) stayed under luna's default call (`left_unknown 2`) and went
+    with `owner: "any"`.
+  - cost on the copy (handler alone, mean of 10): Vulcanus's densest 256x256 square (632 ghosts, none recorded,
+    tiles: true) 1.8 ms own, 1.9 ms any, from 25 ms before the position index; Luna's staging area 0.04 ms. Whole
+    dispatches in the emulated container varied 3-25 ms for `clock` alone.
+  - (cp2) the index build on a fresh copy of world n's 05:13 autosave (tick 56016264: 7927 entity records, none with
+    a position key, 0 tile records): after the deploy it was whole 32 ticks later (index sum 7927 = records); each
+    512-slot slice timed alone, 3 runs: worst 3.0 ms (2.6, 3.0, 3.0), median 1.3 ms, 28-32 ms in all; the tiles' ring
+    slices (empty) under 0.1 ms. In the harness tick under profile_ticks: 32 ticks, 27.5 ms in all (0.86 ms a tick).
+    A ring holds at most 8192 records, so no slice reads more than 512 whatever the log's size.
+- Test: tests/d24_batch144.lua (refusals, dry run and live by owner, unknown, uncharted, names, positions, tile ghosts,
+  owner "sol" and "any", the 256 cap, an old log indexed in 32 slices with the refusal meanwhile and a placement
+  during it counted once, the index against the records after removals and after the ring wraps).
 - Tests: tests/d24_batch141.lua (fails on main with Sol's error; its cp2 block, a userdata platform's schedule edit
   recorded and told, fails on main with `the edit log records the stops`); tests/d17_batch31.lua's finite-max line now
   reads the trash wording, with the same counts.

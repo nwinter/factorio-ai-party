@@ -2265,6 +2265,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.delivwatch and M.delivwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.flightwatch and M.flightwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.signalwatch and M.signalwatch.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.removeghosts and M.removeghosts.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
@@ -14424,6 +14425,9 @@ do local function place_tile_ghost(p,tile,pos)
     for _,e in ipairs(marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
     error('tile placement blocked',0)
   end
+  -- (d24 batch144 PP1) who placed it (ghostlog.lua): remove_ghosts {tiles: true} takes one's own by it; a record that
+  -- fails never stops the placement
+  pcall(function() M.ghostlog.placed(M.board.who(p),ghost) end)
   return ghost,marked
 end
 -- The reply's line for trees and rocks marked where tile ghosts go.
@@ -15768,6 +15772,11 @@ M.asteroidwatch=require('asteroidwatch'){state=state,reason=function(v) return M
 M.signalwatch=require('signalwatch'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,
   on_surface=function(p,name) return M.on_surface(p,name) end,parse_signals=function(v,what) return M.circuits.parse_signals(v,what) end}
 function handlers.signal_watch(p,a) return M.signalwatch.handler(p,a) end
+-- remove_ghosts (removeghosts.lua, d24 batch144 PP1, Luna #2137): one's own entity ghosts (tile ghosts with tiles) in an
+-- area or at positions, taken away by remote view as the deconstruction planner takes ghosts.
+M.removeghosts=require('removeghosts'){position=position,charted=charted,who=function(p) return M.board.who(p) end,
+  owner_at=function(...) return M.ghostlog.owner_at(...) end,index_state=function() return M.ghostlog.index_state() end,placed_by=function(g) return M.ghostlog.short(g) end,forget=function(g) return M.ghostlog.forget(g) end}
+function handlers.remove_ghosts(p,a) return M.removeghosts.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
   entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
@@ -17061,6 +17070,8 @@ passive.delivery_watch=true
 passive.flight_watch=true
 -- (d24 batch140 PL1) signal_watch likewise
 passive.signal_watch=true
+-- (d24 batch144 PP1) remove_ghosts acts by remote view, as deconstruct: no walk, no queue stop.
+passive.remove_ghosts=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
@@ -19999,6 +20010,8 @@ function M.tick_body(event)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
   if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks
+  -- (d24 batch144 cp2) a ghost record log from before the position index: 512 ring slots a tick until it is whole
+  if state().ghost_log and not state().ghost_log.pidx_done then pcall(M.timed,'ghostlog.index',M.ghostlog.index_tick,M.ghostlog.INDEX_SLICE) end
   if state().asteroid_watch then pcall(M.timed,'asteroid_watch.tick',M.asteroidwatch.tick,event.tick) end  -- (AR1) asteroid_watch: a read every 15 ticks
   if state().collector_tally then pcall(M.timed,'collector_tally.tick',M.collectreach.tick,event.tick) end  -- (AN2) collector_tally watches: a read every 10 ticks  -- turret_tally watches (turrettally.lua): a read a second
   if state().uptime then pcall(M.timed,'uptime.tick',M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase

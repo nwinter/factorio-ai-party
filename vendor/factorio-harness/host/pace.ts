@@ -117,13 +117,14 @@ export function slowGame(pacer: Pacer): string | undefined {
 
 // Calls that change the world: after a rollback they are gone, so they are listed for the agent to redo.
 const CHANGES = new Set(['build', 'build_path', 'place_ghosts', 'paste', 'blueprint_place', 'craft', 'mine', 'deconstruct',
-  'cancel_deconstruction', 'configure', 'rotate', 'transfer', 'collect', 'feed', 'refuel', 'rearm', 'construct', 'pickup',
+  'cancel_deconstruction', 'remove_ghosts', 'configure', 'rotate', 'transfer', 'collect', 'feed', 'refuel', 'rearm', 'construct', 'pickup',
   'repair', 'launch', 'load_silo', 'drop', 'platform_schedule', 'platform_create', 'wire', 'circuit_set', 'research', 'research_next',
   'queue_submit', 'flush', 'train', 'vehicle', 'board_post', 'board_update', 'board_plan', 'equip', 'insert', 'take',
   'land', 'ride']);   // (walks leave nothing to redo)
 function changes(action: string, args: Record<string, unknown> | undefined): boolean {
   if (action === 'requests') return !!args && (args.set !== undefined || args.clear !== undefined || args.clear_all !== undefined || args.active !== undefined);
   if (action === 'queue_submit' && args?.dry_run === true) return false;   // queues nothing
+  if (action === 'remove_ghosts' && args?.dry_run === true) return false;   // removes nothing
   return CHANGES.has(action);
 }
 function argsText(args: Record<string, unknown> | undefined): string {
