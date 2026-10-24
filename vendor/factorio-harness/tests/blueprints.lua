@@ -709,6 +709,9 @@ do
     after=pg.next_after
   until not after
   eq(#names,101); eq(strs,101,'every string once'); assert(pages>=4,'paged: '..pages)
+  local whole,paged={},L.operator.blueprint_library({limit=256,since=2^30}).entries
+  for _,e in ipairs(L.operator.blueprint_library({since=2^30}).entries) do whole[e.name]=e end
+  for _,e in ipairs(paged) do for k,v in pairs(whole[e.name]) do eq(e[k],v,'a page row is the whole read\'s row: '..k) end end
   for i=2,#names do assert(names[i-1]<names[i],'by name') end
   local big=L.operator.blueprint_library({limit=100})
   eq(big.entries[#big.entries].name,'e96','a page ends before a string past PAGE_BYTES'); eq(big.next_after,'e96')
@@ -778,6 +781,36 @@ do
   eq(lib.entries['u4-old'].retired,nil); eq(L.blueprint_retire(p,{name='u4-old',clear=true}).unchanged,'u4-old is not retired')
   L.blueprint_retire(p,{name='u4-old',reason='r',replaced_by='u4-v3'})
   eq(L.blueprint_save(p,{name='u4-old',area=area}).retired_cleared,'retired by sol: r; replaced by u4-v3'); eq(lib.entries['u4-old'].retired,nil)
+  -- (d24 batch145 PQ1, viewer Foobator) a status mark: current, experimental or obsolete, who set it, when, a note; any
+  -- agent may set it; a save sets it or keeps the replaced entry's; none clears it; nothing sets it by itself.
+  eq(row_of('u4-v3').status,nil,'not marked')
+  local sv=L.blueprint_save(p,{name='q1-ring',area=area,status='experimental',status_note='first try'})
+  eq(sv.status,'experimental'); eq(sv.status_line,'experimental, marked by sol 0m ago: first try')
+  eq(lib.entries['q1-ring'].status.by,'sol'); eq(lib.entries['q1-ring'].status.tick,game.tick)
+  rev=lib.revision
+  local st=L.blueprint_status(luna,{name='q1-ring',status='current'})
+  eq(st.status,'current'); eq(st.line,'current, marked by luna 0m ago'); eq(st.was,'experimental, marked by sol 0m ago: first try')
+  eq(st.last_used,'never'); eq(lib.revision,rev+1,'the operator mirror sees the change')
+  eq(row_of('q1-ring').status,'current')
+  local fq=L.blueprint_list(p,{name='q1-ring'})
+  eq(fq.status,'current'); eq(fq.status_by,'luna'); eq(fq.status_set,'0m ago'); eq(fq.status_note,nil)
+  for _,r in ipairs(L.operator.blueprint_library({}).entries) do if r.name=='q1-ring' then eq(r.status,'current'); eq(r.status_by,'luna'); eq(r.status_tick,game.tick) end end
+  -- saved again without status: the mark stays (status_kept); with status: the new one
+  local again=L.blueprint_save(p,{name='q1-ring',area=area})
+  eq(again.status,'current'); eq(again.status_kept,'current, marked by luna 0m ago')
+  eq(L.blueprint_save(p,{name='q1-ring',area=area,status='obsolete'}).status_line,'obsolete, marked by sol 0m ago')
+  -- renamed: the mark goes with it; none clears it
+  L.blueprint_rename(p,{name='q1-ring',new_name='q1-ring2'})
+  eq(lib.entries['q1-ring2'].status.value,'obsolete')
+  eq(L.blueprint_status(p,{name='q1-ring2',status='none'}).line,'q1-ring2: not marked'); eq(lib.entries['q1-ring2'].status,nil)
+  eq(L.blueprint_status(p,{name='q1-ring2',status='none'}).unchanged,'q1-ring2 has no status mark')
+  -- refusals (nothing saved for a bad status)
+  fails(function() L.blueprint_status(p,{name='q1-ring2',status='old'}) end,'status is current, experimental, obsolete, or none')
+  fails(function() L.blueprint_status(p,{name='q1-ring2',status='none',note='x'}) end,'status none clears the mark and takes no note')
+  fails(function() L.blueprint_status(p,{name='q1-ring2',status='current',note=string.rep('x',201)}) end,'note must be text of 1..200 characters')
+  fails(function() L.blueprint_status(p,{name='nope',status='current'}) end,'no library entry nope')
+  fails(function() L.blueprint_save(p,{name='q1-bad',area=area,status='best'}) end,'status is current')
+  eq(lib.entries['q1-bad'],nil,'a bad status saves nothing')
   _G.capture_world=nil; p.name=nil
 end
 -- blueprint_save and blueprint_capture with platform=NAME (Astra, d15 18:35): the platform handler's view of the

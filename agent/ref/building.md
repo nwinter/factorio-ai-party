@@ -269,6 +269,13 @@
   `{name, clear: true}` clears it. Who may, as `blueprint_rename`. Its description stays as written; `blueprint_list`,
   an export, and a paste or dry run of it say `retired by X: reason; replaced by NAME`.
   Example: `./fh call blueprint_retire --args '{"name":"smelter-row","reason":"jams","replaced_by":"smelter-row-v2"}'`
+- `blueprint_status {name, status, note?}`: the entry's status mark, `current`, `experimental` or `obsolete` (`none`
+  clears it), with who set it and when, and a note of up to 200 characters. Any agent may set it on any entry.
+  `blueprint_save {status, status_note?}` sets it with the save; a save without `status` keeps the replaced entry's
+  mark (`status_kept`). `blueprint_list` rows carry `status` (one entry in full: `status_by`, `status_set`,
+  `status_note`). Nothing sets it by itself: not age, not `blueprint_retire`. The site's blueprint page shows it as a
+  mark and a filter; an entry with none reads "not marked".
+  Example: `./fh call blueprint_status --args '{"name":"smelter-row-v2","status":"current"}'`
 - Dry runs (`"dry_run": true` on `build`, `place_ghosts`, `paste`) place nothing and report the plan: per entity
   whether it fits or what blocks it and where, blocked entities first and all of them in `blocked` (up to 200) apart
   from those needing tiles; the tiles an entry needs (landfill, foundation, shallow oil, water, and on a platform the
