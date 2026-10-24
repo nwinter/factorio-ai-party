@@ -1350,9 +1350,11 @@ return function(api)
       footprint=string.format('%gx%g',e.footprint.w,e.footprint.h),counts=counts_line(e.counts,not full and 4 or nil),
       saved=ago(game.tick-e.saved_tick),last_used=e.last_used and ago(game.tick-e.last_used)..' by '..e.last_user or 'never',
       uses=e.uses or 0,surface=e.surface,anchor=e.anchor~=nil or nil,size_kb=kb(#(e.string or '')),imported=e.imported,
-      retired=retired_line(e)}
+      retired=retired_line(e),status=e.status and e.status.value or nil}
     if full then
       r.description=e.description; r.anchor=e.anchor; r.captured=e.captured
+      -- (d24 batch145 PQ1) the status mark: who set it, when, the note
+      if e.status then r.status_by=e.status.by; r.status_set=ago(game.tick-e.status.tick); r.status_note=e.status.note end
       r.retired_at=e.retired and ago(game.tick-e.retired.tick) or nil
       r.changeable_by_anyone=game.tick-(e.last_used or e.saved_tick)>=STALE
     elseif e.description then r.description=#e.description>60 and e.description:sub(1,57)..'...' or e.description end
@@ -1476,7 +1478,52 @@ return function(api)
     assert(ok,out)
     return out
   end
+  -- (d24 batch145 PQ1, viewer Foobator: "some kind of mark for current/experimental/obsolete") An entry's status mark:
+  -- current, experimental or obsolete, with who set it, when and an optional note. Any agent may set it (the mark names
+  -- who did); nothing sets it by itself (not age, not blueprint_retire). blueprint_save {status} sets it with the save;
+  -- a save without status keeps the replaced entry's mark; blueprint_status sets or clears it on an entry.
+  local STATUSES,MAX_NOTE={current=true,experimental=true,obsolete=true},200
+  local function status_args(status,note,what)
+    assert(type(status)=='string' and (STATUSES[status] or status=='none'),(what or 'status')..' is current, experimental, obsolete, or none (clears the mark)')
+    assert(note==nil or (type(note)=='string' and note:match('%S') and #note<=MAX_NOTE),'note must be text of 1..'..MAX_NOTE..' characters')
+    assert(not (status=='none' and note~=nil),'status none clears the mark and takes no note')
+  end
+  local function status_line(e)
+    local m=e and e.status
+    if not m then return nil end
+    return string.format('%s, marked by %s %s%s',m.value,m.by,ago(game.tick-m.tick),m.note and ': '..m.note or '')
+  end
+  local function set_status(p,e,status,note)
+    if status=='none' then e.status=nil
+    else e.status={value=status,by=api.who(p),tick=game.tick,note=note and (note:gsub('%s+',' ')) or nil} end
+  end
+  local save_entry
   function H.blueprint_save(p,a)
+    if a.status~=nil or a.status_note~=nil then status_args(a.status,a.status_note) end
+    local name=entry_name(a.name)
+    local old=library().entries[name]
+    local out=save_entry(p,a)
+    local e=library().entries[name]
+    if type(out)=='table' and e and e~=old then
+      if a.status~=nil then set_status(p,e,a.status,a.status_note)
+      elseif old and old.status then e.status=old.status; out.status_kept=status_line(e) end
+      out.status=e.status and e.status.value or nil
+      out.status_line=status_line(e)
+    end
+    return out
+  end
+  -- blueprint_status {name, status, note?}: sets or clears (none) an entry's status mark.
+  function H.blueprint_status(p,a)
+    local e=library_entry(a.name)
+    status_args(a.status,a.note)
+    local was=status_line(e)
+    if a.status=='none' and not e.status then return {name=e.name,author=e.author,unchanged=e.name..' has no status mark'} end
+    set_status(p,e,a.status,a.note)
+    local lib=library(); lib.revision=lib.revision+1
+    return {name=e.name,author=e.author,status=e.status and e.status.value or nil,line=status_line(e) or e.name..': not marked',was=was,
+      last_used=e.last_used and ago(game.tick-e.last_used)..' by '..e.last_user or 'never',retired=retired_line(e)}
+  end
+  function save_entry(p,a)
     permission(p,'copy'); permission(p,'select_blueprint_entities')
     local name=entry_name(a.name)
     local plat=api.own_platform and api.own_platform(p)
@@ -1748,9 +1795,21 @@ return function(api)
     local after=args and type(args.after)=='string' and args.after or nil
     local budget=tonumber(args and args.max_bytes) or MAX_READ_BYTES
     local rows,sent,last,held={},0,nil,false
+    -- (d24 batch145 PQ1) a platform surface's platform name now (the site's page shows and searches it)
+    local names={}
+    local function platform_name(sn)
+      if type(sn)~='string' or not sn:find('^platform%-') then return nil end
+      if names[sn]==nil then
+        local ok,n=pcall(function() local su=game.get_surface(sn); return su and su.platform and su.platform.name end)
+        names[sn]=ok and n or false
+      end
+      return names[sn] or nil
+    end
     for _,e in pairs(lib.entries) do
       local r=row(e,true)
+      r.platform_name=platform_name(e.surface)
       r.rev=e.rev; r.saved_tick=e.saved_tick; r.last_used_tick=e.last_used; r.retired_tick=e.retired and e.retired.tick or nil
+      r.status_tick=e.status and e.status.tick or nil
       rows[#rows+1]=r
     end
     table.sort(rows,function(x,y) return x.name<y.name end)

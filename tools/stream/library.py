@@ -12,7 +12,7 @@ import re
 NEWEST = 15
 DESC_MAX = 200
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}")
-KEYS = ("name", "author", "saved_tick", "entities", "footprint", "surface")
+KEYS = ("name", "author", "saved_tick", "entities", "footprint", "surface", "status")  # status: d24 batch145 PQ1
 
 
 class Library:
