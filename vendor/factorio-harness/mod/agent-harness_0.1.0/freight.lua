@@ -623,6 +623,45 @@ return function(api)
     return ask, hold
   end
   M.pads = pads
+  -- (d24 batch137 PI1, Sol #2107: Petrel at Nauvis kept all 1980 calcite under calcite 200..inf from nauvis while the
+  -- pad asked 2000, and shipment said 1776 would go down) What a hub keeps at a stop, as 2.0.77 did on a copy of world n
+  -- (d24, Petrel and Petrel III at Nauvis): only its active sections importing from that planet count (sections
+  -- importing from other planets kept nothing there; a slot always names a planet); their maxes add up (100..300 and
+  -- 200..400 kept 700); an infinite max keeps it all, whatever the pads ask; with a finite max the hub sends down all it
+  -- holds above it, to the pad, whether a pad asks or not (200..500 with no request on the pad: 1000 of 1500 went down);
+  -- an item no such section names goes down as far as the pads ask (their ask less what they hold). secs: the hub's
+  -- logistic sections. Returns {item={max (math.huge: none), parts={'hub section 1 keeps calcite 200..inf at nauvis'}}}.
+  function M.hub_keeps_at(secs, planet)
+    local out = {}
+    for i = 1, secs and secs.sections_count or 0 do
+      local sec = try(function() return secs.get_section(i) end)
+      if sec and sec.active ~= false then
+        for _, f in ipairs(try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local name = type(v) == 'table' and v.name or v
+          if type(name) == 'table' then name = name.name end
+          local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or pget(f.import_from, 'name'))
+          if type(name) == 'string' and from == planet then
+            local k = out[name] or {max=0, parts={}}
+            k.max = k.max + (f.max or math.huge)
+            k.parts[#k.parts+1] = string.format('hub section %d keeps %s %d..%s at %s', i, name, f.min or 0, f.max and tostring(f.max) or 'inf', planet)
+            out[name] = k
+          end
+        end
+      end
+    end
+    return out
+  end
+  -- What the hub gives up of an item it holds (held) at that stop by those rules, the pads wanting want (their ask less
+  -- what they hold): the count, and the keep row ({max, parts}) or nil when no section names it.
+  function M.hub_gives(keep, item, held, want)
+    local k = keep and keep[item]
+    if not k then return math.max(0, math.min(held or 0, want or 0)), nil end
+    if k.max == math.huge then return 0, k end
+    return math.max(0, (held or 0) - k.max), k
+  end
+  -- "hub section 1 keeps calcite 200..inf at nauvis" (and the others naming it)
+  function M.keep_text(k) return k and table.concat(k.parts, '; ') or nil end
   -- (d20 batch132 PD1, Sol #2093: pods of 1000 and 300 processing units came down to Gleba's pad for a section asking
   -- 300; the pad's section 1, set by the circuit network, asked processing-unit 1000..inf when they left the hub and no
   -- more when Sol read it) what the planet's landing pad of ours asked of each item in cargo when a pod left the hub, as
@@ -773,10 +812,13 @@ return function(api)
     if w.stopped then
       seg.kind, seg.at = 'stop', w.at
       local ask, hold = pads(w.at, pl.force)
+      -- (PI1) less what the hub's sections for that planet keep; a finite max sends the rest down asked or not
+      local keep = M.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), w.at)
       local down = {}
       for name, n in pairs(counts) do
         local want = (ask[name] or 0) - (hold[name] or 0)
-        if want > 0 then down[name] = {expected=math.min(n, want), ask=ask[name], hold=hold[name] or 0} end
+        local go, k = M.hub_gives(keep, name, n, want)
+        if go > 0 or (k and want > 0) then down[name] = {expected=go, ask=ask[name] or 0, hold=hold[name] or 0, keep=M.keep_text(k)} end
       end
       seg.down = next(down) and down or nil
       local up = hub_asks(pl, w.at, counts)
@@ -1637,7 +1679,7 @@ return function(api)
         local left, came = math.max(0, a - b - s - k), math.max(0, b - a + s + k)
         local dn, up = seg.down and seg.down[name], seg.up and seg.up[name]
         local bits = {}
-        if dn then bits[#bits+1] = string.format('expected down %d (landing pads ask %d, hold %d)', dn.expected, dn.ask, dn.hold) end
+        if dn then bits[#bits+1] = string.format('expected down %d (landing pads ask %d, hold %d%s)', dn.expected, dn.ask, dn.hold, dn.keep and '; ' .. dn.keep or '') end
         if up then bits[#bits+1] = string.format('expected up %d (the hub asks %d from %s%s)', up.short, up.min, seg.at, up.way and string.format(', %d on the way then', up.way) or '') end
         if left > 0 or dn then bits[#bits+1] = string.format('left the hub %d', left) end
         if came > 0 or up then bits[#bits+1] = string.format('came aboard %d', came) end

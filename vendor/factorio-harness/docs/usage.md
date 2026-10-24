@@ -12925,6 +12925,35 @@ Now, down, with no `from`:
 With `from` given, only that platform's pods count, as before. Each row now also has `stock {held, at_start, reached,
 line}`: the stock test, apart from `received` (the pods with the item received here).
 
+## d24 batch137 PI1: what a platform hub keeps at a stop (Sol #2107)
+
+Sol's Petrel at Nauvis held 1980 calcite with sections calcite 200..inf from nauvis, 0..inf from gleba and 2000..2500
+from vulcanus; the pad asked 2000; nothing went down, while shipment's ready read said 1776 would. Measured on a 2.0.77
+copy of world n (d24, the save of that moment; Petrel and Petrel III at Nauvis, calcite, a manual pad request of 2000):
+
+| Hub calcite sections (active) | Pad asks | Kept | Went down |
+|---|---|---|---|
+| 200..inf from nauvis (+ gleba 0..inf, vulcanus 2000..2500) | 2000 | all 1980 | 0 |
+| 200..200 from nauvis (the same others) | 2000 | 200 | 1780 (1500 to the pad, 286 through the hub's trash) |
+| gleba 0..inf and vulcanus 2000..2500 only | 2000 | what the pad did not ask | what the pad lacked |
+| 200..500 from nauvis | 2000 | 500 | 1480 |
+| 100..300 and 200..400, both from nauvis | 2000 | 700 | 800 |
+| none | 2000 | 0 | all |
+| 200..500 from nauvis | none | 500 | 1000 of 1500, to the pad |
+| none | none | all | 0 |
+
+So at a stop: only active sections importing from that planet count (a slot always names a planet: one set with none
+read vulcanus); their maxes add up; an infinite max keeps it all whatever the pads ask; a finite max sends down all
+above it to the pad there, whether the pad asks or not; an item no such section names goes down as far as the pads ask
+(their ask less what they hold). The minimum plays no part in what goes down.
+
+freight.lua `hub_keeps_at` and `hub_gives` state that rule, and every read that predicts a drop uses it: shipment's
+ready read (`the hub would send down ...`, now with the section that keeps the rest, and `kept aboard: calcite: none
+of 1500 (hub section 4 keeps calcite 200..inf at nauvis; the pads ask 2000, hold 0)`), shipment's cargo conflict
+lines, the platform read's freight stop lines (`expected down`), the requests dry run's `sends_down`, and
+delivery_watch's risks and blockers for the stops before the destination (a finite max there is a risk with no pad
+asking). On the copy, Petrel III with calcite 200..inf from nauvis read kept aboard as above, and with 200..200 read
+`the hub would send down calcite 1300 (... all above 200: hub section 4 keeps calcite 200..200 at nauvis, ...)`.
 ## d24 batch135 PG1: reads on the surface named (Sol #2103)
 
 `gates {surface: nauvis, area}` from Vulcanus read the area on Vulcanus (its foundry at (43.5,55.5)) and said

@@ -436,32 +436,35 @@ do
   game.forces={player=force}; game.planets={aquilo={surface=aquilo},nauvis={surface=nauvis},fulgora={}}
   local receipts={}
   local st={}
+  local FR66=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
   local W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,
     census_typed=function(_,s,t) return s==nauvis and t=='cargo-landing-pad' and {npad} or {} end,
-    freight={where=function() return {} end,receipts_since=function(_,since) local o={} for _,r in ipairs(receipts) do if r.tick>since then o[#o+1]=r end end return o end}}
+    freight={where=function() return {} end,receipts_since=function(_,since) local o={} for _,r in ipairs(receipts) do if r.tick>since then o[#o+1]=r end end return o end,
+      hub_keeps_at=FR66.hub_keeps_at,hub_gives=FR66.hub_gives,keep_text=FR66.keep_text}}
   local sol={name='sol',index=1,force=force,surface=aquilo}
   -- at fulgora with 600 aboard: nauvis's pad asking 500 is a risk at stop 2, before aquilo
   local r=W.call(sol,{item='carbon-fiber',count=600,to={position={x=12.5,y=-30.5},surface='aquilo'},deadline_min=30})
   eq(r.watch.blockers,nil)
-  eq(r.watch.risks[1],'Kestrel II stops at nauvis (stop 2 of its schedule) before aquilo; the landing pad (52,54) there asks 500 carbon-fiber (holds 0): while it is stopped there its hub sends pods of it down to that pad (the hub holds 600 now)')
+  eq(r.watch.risks[1],'Kestrel II stops at nauvis (stop 2 of its schedule) before aquilo; the landing pad (52,54) there asks 500 carbon-fiber (holds 0): while it is stopped there its hub sends 500 of it down to that pad (the hub holds 600 now)')
   local h={}
   local lines=W.lines(sol,h)
   eq(#lines,1); has(lines[1],'delivery watch #1 (600 carbon-fiber to rocket-silo (12.5,-30.5) on aquilo): at risk: Kestrel II stops at nauvis (stop 2 of its schedule)')
-  -- the hub's own request with no max keeps all it holds: no risk; with max 400 it keeps 400, the rest at risk
-  hubsecs[1]={active=true,filters={{value={name='carbon-fiber'},min=10}}}
+  -- the hub's own request for nauvis with no max keeps all it holds there: no risk; with max 400 it keeps 400, the rest
+  -- goes down (d24 batch137 PI1: only sections importing from the stop's planet count)
+  hubsecs[1]={active=true,filters={{value={name='carbon-fiber'},min=10,import_from='nauvis'}}}
   W.tick(1020); local x=st.delivwatch.list[1]
   eq(x.risks and next(x.risks),nil,'kept aboard')
   hubsecs[1].filters[1].max=400
   game.tick=1080; W.tick(1080)
-  has(W.row(x).risks[1],'(the hub holds 600 now; its hub\'s own request keeps 400 of it aboard)')
+  has(W.row(x).risks[1],'its hub sends 200 of it down to that pad (the hub holds 600 now; hub section 1 keeps carbon-fiber 10..400 at nauvis)')
   lines=W.lines(sol,h)
-  eq(#lines,1,'back after it was gone'); has(lines[1],'keeps 400 of it aboard')
+  eq(#lines,1,'back after it was gone'); has(lines[1],'hub section 1 keeps carbon-fiber 10..400 at nauvis')
   game.tick=1140; W.tick(1140); eq(W.lines(sol,h),nil,'the same risk told once')
   hubsecs[1]=nil
   -- stopped at nauvis: a blocker; the pad's count changing tells nothing new
   game.tick=5000; pl.space_location={name='nauvis'}; pl.schedule.current=2
   W.tick(5040)
-  has(W.row(x).blockers[1],'Kestrel II is stopped at nauvis (stop 2 of its schedule) with 600 carbon-fiber in its hub, before aquilo; the landing pad (52,54) there asks 500 carbon-fiber (holds 0): while it is stopped there its hub sends pods of it down to that pad')
+  has(W.row(x).blockers[1],'Kestrel II is stopped at nauvis (stop 2 of its schedule) with 600 carbon-fiber in its hub, before aquilo; the landing pad (52,54) there asks 500 carbon-fiber (holds 0): while it is stopped there its hub sends 500 of it down to that pad')
   eq(W.row(x).risks,nil)
   lines=W.lines(sol,h)
   eq(#lines,1); has(lines[1],'blocked: Kestrel II is stopped at nauvis')
@@ -470,19 +473,21 @@ do
   held.hub, held.pad=100, 500
   game.tick=5100; W.tick(5100)
   lines=W.lines(sol,h)
-  eq(#lines,1)
+  -- (d24 batch137 PI1) the pad holds what it asks: the hub sends no more there, the blocker is gone
+  eq(#lines,2); has(lines[2],'no longer blocked: Kestrel II is stopped at nauvis')
   eq(lines[1],'delivery watch #1 (600 carbon-fiber to rocket-silo (12.5,-30.5) on aquilo): diverted: 500 carbon-fiber received by cargo-landing-pad (52,54) on nauvis, which asks 500 of it (holds 500 now), before aquilo; 500 of it diverted since the watch was set')
   eq(x.diverted,500); eq(x.diversions[1].planet,'nauvis'); eq(x.stages.landed,nil,'not landed at the destination')
   game.tick=5160; W.tick(5160); eq(W.lines(sol,h),nil,'one diversion told once')
   -- it leaves nauvis: the blocker gone; the deadline passes: the status names the diversion
   pl.space_location=nil; pl.space_connection={}; pl.schedule.current=3
   game.tick=5220; W.tick(5220)
-  has(W.lines(sol,h)[1],'delivery watch #1: no longer blocked: Kestrel II is stopped at nauvis')
+  eq(W.lines(sol,h),nil,'(PI1) the blocker went at 5100, when the pad held what it asks')
   game.tick=1000+30*3600+20; W.tick(game.tick)
   has(W.lines(sol,h)[1],'deadline passed, not reached: last confirmed stage departed (Kestrel II left ?')
   has(W.status(x),'; diverted 500: 500 carbon-fiber received by cargo-landing-pad (52,54) on nauvis, which asks 500 of it (holds 500 now), before aquilo')
   -- paused at nauvis, not a stop of its schedule [fulgora, aquilo]: still the pad's draw
   pl.space_connection=nil; pl.space_location={name='nauvis'}; pl.schedule={current=1,records={{station='fulgora'},{station='aquilo'}}}
+  held.pad=0  -- (PI1) robots emptied the pad: it lacks 500 again
   game.tick=game.tick+60; W.tick(game.tick)
   has(W.row(x).blockers[1],'Kestrel II is stopped at nauvis (not a stop of its schedule) with 100 carbon-fiber in its hub, before aquilo')
   game,defines,prototypes=nil,nil,nil

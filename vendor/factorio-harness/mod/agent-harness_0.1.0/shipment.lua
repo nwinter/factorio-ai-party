@@ -371,21 +371,24 @@ return function(api)
       if st and not seen[st] then seen[st] = true; order[#order+1] = {i=idx, planet=st, here=w.stopped and w.at == st} end
     end
     local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
-    -- what the hub keeps at a stop (space.lua KEEP_RULE, batch31 B6): what its requests importing from that planet ask
-    -- (on the copy of world n Swift at Nauvis kept its 501 magazines under 500..2000 from nauvis; Cinder at Nauvis sent all
-    -- 85 foundation down under 50..inf from fulgora); a request from another planet keeps nothing there
-    local reqs = requests(pl)
+    -- what the hub keeps at a stop: freight.lua hub_keeps_at (d24 batch137 PI1; batch31 B6's cases fit it: Swift at
+    -- Nauvis kept its 501 magazines under 500..2000 from nauvis; Cinder at Nauvis sent all 85 foundation down under
+    -- 50..inf from fulgora)
     local asks = {}
     for _, o in ipairs(order) do
       local ask, hold = {}, {}
       if api.pads then local a1, h1 = api.pads(o.planet, pl.force); ask, hold = a1 or {}, h1 or {} end
-      local keep = {}
-      for _, r in pairs(reqs[o.planet] or {}) do keep[r.item] = (keep[r.item] or 0) + r.min end
+      -- (d24 batch137 PI1) what the hub's sections for that planet keep (freight.lua hub_keeps_at): an infinite max
+      -- keeps it all, a finite one sends down all above it
+      local F = api.freight and api.freight()
+      local keeps = F and F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), o.planet) or {}
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
-        if want > 0 and (counts[item] or 0) - (keep[item] or 0) > 0 then
+        local k = keeps[item]
+        local keep = k and math.min(k.max, counts[item] or 0) or 0
+        if want > 0 and (counts[item] or 0) - keep > 0 then
           asks[item] = asks[item] or {}
-          table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0, keep=keep[item] or 0})
+          table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0, keep=keep, keep_text=F and F.keep_text(k)})
         end
       end
     end
@@ -397,7 +400,7 @@ return function(api)
           local take = math.max(0, math.min(left - x.keep, x.want))
           left = left - take
           parts[#parts+1] = string.format('stop %d %s%s: its pads ask %d (hold %d)%s, %d go down there, %d left aboard',
-            x.stop.i, x.stop.planet, x.stop.here and ' (here)' or '', x.ask, x.hold, x.keep > 0 and string.format(', its requests from %s keep %d', x.stop.planet, x.keep) or '', take, left)
+            x.stop.i, x.stop.planet, x.stop.here and ' (here)' or '', x.ask, x.hold, x.keep > 0 and string.format(', its requests from %s keep %d (%s)', x.stop.planet, x.keep, tostring(x.keep_text)) or '', take, left)
         end
         lines[#lines+1] = string.format('cargo conflict on %s: the hub holds %d %s; %s', pl.name, counts[item], item, table.concat(parts, '; '))
       end
@@ -487,9 +490,10 @@ return function(api)
     -- down: the landing pads there
     local pads = pads_of(sil)
     local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
-    -- the hub keeps there what its requests from that planet ask (space.lua KEEP_RULE), by item
-    local keep = {}
-    for _, r in pairs(requests(pl)[planet] or {}) do keep[r.item] = (keep[r.item] or 0) + r.min end
+    -- (d24 batch137 PI1, Sol #2107: "would send 1776" calcite while calcite 200..inf from nauvis kept all 1980) what the
+    -- hub gives up there by its sections for that planet (freight.lua hub_keeps_at, hub_gives)
+    local F = api.freight and api.freight()
+    local keeps = F and F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), planet) or {}
     -- what the pads ask (their active sections' minimums) and hold, as freight's pads reads them
     local ask, hold, invs = {}, {}, {}
     for i, pad in ipairs(pads) do
@@ -516,29 +520,36 @@ return function(api)
         free = free + f
         pl_parts[#pl_parts+1] = string.format('%s %s %d free slots of %d', pad.name, at(pad.position), f, inv and #inv or 0)
       end
-      local down, slots = {}, 0
-      local names = {}
-      for item in pairs(ask) do names[#names+1] = item end
+      local down, slots, kept = {}, 0, {}
+      local names, named = {}, {}
+      for item in pairs(ask) do names[#names+1] = item; named[item] = true end
+      -- a finite max sends down what the hub holds above it, asked or not
+      for item, k in pairs(keeps) do if not named[item] and k.max ~= math.huge and (counts[item] or 0) > k.max then names[#names+1] = item end end
       table.sort(names)
       out.down = {}
       for _, item in ipairs(names) do
-        local want = ask[item] - (hold[item] or 0)
-        local spare = (counts[item] or 0) - (keep[item] or 0)
-        local n = math.min(want, spare)
+        local want = (ask[item] or 0) - (hold[item] or 0)
+        local n, k = 0, nil
+        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, want) else n = math.max(0, math.min(want, counts[item] or 0)) end
+        if n == 0 and k and want > 0 and (counts[item] or 0) > 0 then
+          kept[#kept+1] = string.format('%s: none of %d (%s; the pads ask %d, hold %d)', item, counts[item], F.keep_text(k), ask[item] or 0, hold[item] or 0)
+        end
         if n > 0 then
           local stack = try(function() return prototypes.item[item].stack_size end) or 1
           local take = 0
           for _, inv in ipairs(invs) do if inv then take = take + (try(function() return inv.get_insertable_count(item) end) or 0) end end
           local need = math.ceil(n / stack)
           slots = slots + need
-          down[#down+1] = string.format('%s %d (pads ask %d, hold %d; %d slots; the pads can take %d of it now%s)', item, n, ask[item], hold[item] or 0, need, take,
+          down[#down+1] = string.format('%s %d (pads ask %d, hold %d%s; %d slots; the pads can take %d of it now%s)', item, n, ask[item] or 0, hold[item] or 0,
+            k and string.format('; all above %d: %s, and a finite max sends the rest down asked or not', k.max, F.keep_text(k)) or '', need, take,
             take < n and string.format(', %d short', n - take) or '')
-          out.down[#out.down+1] = {item=item, count=n, slots=need, pads_take=take}
+          out.down[#out.down+1] = {item=item, count=n, slots=need, pads_take=take, keep=k and F.keep_text(k) or nil}
         end
       end
       lines[#lines+1] = string.format('landing pads on %s: %s%s; %s', planet, table.concat(pl_parts, ', '), #pads > PADS and ', ...' or '',
         #down > 0 and string.format('the hub would send down %s: %d slots in all, %d free%s', table.concat(down, ', '), slots, free, slots > free and ' (fewer)' or '')
         or 'the hub holds nothing the pads ask for beyond what its requests from ' .. planet .. ' keep')
+        .. (#kept > 0 and '; kept aboard: ' .. table.concat(kept, '; ') or '')
       out.pad_free_slots = free
     end
     out.lines = lines

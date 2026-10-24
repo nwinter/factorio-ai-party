@@ -18795,7 +18795,7 @@ M.freight=require('freight'){delivered=function(info) if M.reminders then M.remi
 M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
   incoming=function(pl) return M.freight.incoming(pl) end}
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
-M.shipment=require('shipment'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
+M.shipment=require('shipment'){freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
