@@ -10,7 +10,10 @@
    look extended (no new chart read) on a long stop; a ship by platform; an agent line waiting holds a stop its length;
    a refused stop is skipped and the next takes its cut; stop takes back a narration not played and clears the look;
    the hosts are hushed all the while; the log says what aired when.
-5. caster.py: the hush file keeps the hosts quiet (no lines, no reactions, the gap starts again after it).
+5. (CK2) moves: to, zoom, path and lists become camera moves over the stop (times from the cut, "end" and negative
+   counted from the end, holds share the time); a whole ship pans on its own and refuses a move with no spot to start
+   from; a bad move makes the stop invalid; the look carries it (dry-run prints it).
+6. caster.py: the hush file keeps the hosts quiet (no lines, no reactions, the gap starts again after it).
 """
 import json, os, sys, tempfile
 
@@ -297,6 +300,38 @@ def operator_hold_kept():
         assert svc.look_hold and svc.look_hold["by"] == "operator"
 
 
+def moves():
+    spot = {"id": "m", "target": {"surface": "nauvis", "x": 10, "y": 0, "zoom": 0.5}, "narration": "x"}
+    mf = lambda m, n=20.0, **kw: tour.move_for(tour.check_stop(dict(spot, move=m, **kw))[0], n)
+    seg = mf({"to": {"x": 40}, "zoom": 0.9})["segments"]
+    assert seg == [{"pts": [{"x": 10.0, "y": 0.0, "zoom": 0.5}, {"x": 40.0, "y": 0.0, "zoom": 0.9}], "t0": 0.0,
+                    "t1": 20.0, "ease": "inout"}], seg
+    seg = mf({"zoom": 1.2, "from_s": 2, "to_s": -3, "ease": "out"})["segments"][0]
+    assert (seg["t0"], seg["t1"], seg["ease"], seg["pts"][1]) == (2.0, 17.0, "out", {"x": 10.0, "y": 0.0, "zoom": 1.2})
+    assert mf({"to": {"x": 0}, "to_s": "end"}, 33)["segments"][0]["t1"] == 33.0
+    segs = mf([{"zoom": 1.0}, "hold", {"path": [{"x": 30, "y": 10}, {"x": 50, "y": -10, "zoom": 0.6}]}], 30)["segments"]
+    assert [(g["t0"], g["t1"]) for g in segs] == [(0.0, 10.0), (20.0, 30.0)], segs
+    assert segs[1]["pts"] == [{"x": 10.0, "y": 0.0, "zoom": 1.0}, {"x": 30.0, "y": 10.0, "zoom": 1.0},
+                              {"x": 50.0, "y": -10.0, "zoom": 0.6}], "the next move starts where the last ended"
+    assert mf(None) is None and mf("hold") is None
+    ship = {"id": "s", "target": {"platform": "Spindle"}, "narration": "x"}
+    assert tour.move_for(tour.check_stop(ship)[0], 20) == "pan"
+    assert tour.move_for(tour.check_stop(dict(ship, move="hold"))[0], 20) is None
+    path = tour.move_for(tour.check_stop(dict(ship, move={"path": [{"x": 0, "y": -40, "zoom": 1}, {"x": 0, "y": 40}]}))[0], 20)
+    assert path["segments"][0]["pts"][1] == {"x": 0.0, "y": 40.0, "zoom": 1.0}
+    why = [w for _, x, w in tour.checked([dict(spot, move={"zoom": 9}), dict(ship, move={"zoom": 1}),
+                                         dict(spot, id="j", move={"jump": 1}), dict(spot, id="k", move=[{}] * 9)])]
+    assert why == ["move: segment 1 point 2 zoom must be 0.3..3",
+                   "move: a whole ship has no spot to move from: give target x, y or a path",
+                   "move: give to {x, y, zoom}, zoom, or path [...]", "move is one move or a list of 1..8"], why
+    # the look carries it: a spot's move, a ship's pan over the stop
+    t = tour.Tour(None, [], None, None, os.devnull)
+    b = t.look_body(tour.check_stop(dict(spot, move={"zoom": 1}))[0], 1000, 30, 20)
+    assert b["move"]["segments"][0]["t1"] == 20.0 and b["seconds"] == 30
+    b = t.look_body(tour.check_stop(ship)[0], 1000, 30, 25)
+    assert b["move"] == "pan" and b["move_s"] == 25 and b["platform"] == "Spindle"
+
+
 class Args:
     pass
 
@@ -346,7 +381,7 @@ def cli_dry_run():
 
 
 if __name__ == "__main__":
-    for f in (script_checks, timing, prepare_clips, run_tour, agent_gaps, skip_and_stop, operator_hold_kept,
+    for f in (script_checks, timing, prepare_clips, run_tour, agent_gaps, skip_and_stop, operator_hold_kept, moves,
               caster_hush, cli_dry_run):
         f()
         print("ok", f.__name__)

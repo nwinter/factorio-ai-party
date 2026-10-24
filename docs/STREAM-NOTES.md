@@ -1572,6 +1572,26 @@ Nick (17:30): "get the timing really tight between the shot durations and the me
   page (OBS browser source refresh) before the next tour; `tour.py run` refuses a service without /audio/status
   `queued`.
 
+## The tour, version 2: camera moves (2026-10-23, d20 batch128 CK2)
+
+- A stop's `move` (tools/stream/tour-FORMAT.md): `to` (pan and zoom), `zoom`, `path` (points), `"hold"`, or a list,
+  timed in seconds from the cut (default the whole stop), eased (inout, in, out, linear). tour.py turns it into a
+  camera move (tools/stream/camerapath.py: segments of points {x, y, zoom}, t0, t1, ease) over the stop's length.
+- The math, in three places that agree: the time eased, along the path by length (|dx, dy| + 20 |ln z1/z0| a step,
+  so a zoom has length), x and y by a cubic Hermite spline with chordal knots (a straight path at even speed, a
+  bent one without corners), zoom by ln z. camerapath.py (the service, tests), cameras.lua `move` (the game, every
+  tick: the view put exactly there, no easing; it rests at the end), and next the page (CK3's marks).
+  test_camerapath.py and cameras_test.lua check the same five points.
+- POST /look {move}: the look's spot is its first point; every point's frame is chart-checked (one read each). A
+  standby frames the first point without it; the cut sends it (director.apply `move`); the snapshot's look has it
+  with `aired` (the move's start). {platform, move: "pan", move_s}: a tall ship bow to stern (rests of PAN_END_S at
+  each end) as a move; a ship that fits stays still. A camera reply without camera.move (a game whose harness has no
+  `move` yet): the director steps the move itself, aiming 0.8 s ahead every 0.5 s with a glide (cameras.lua speed),
+  so a tour works before the harness install too, less smoothly.
+- Cheap on the game: no reads; one camera command a stop (the fallback: two a second while a move runs).
+- Deploy: cameras.lua is harness Lua: the moves play smoothly after the harness install on world n; until then the
+  fallback. The stream service restart (cp1) covers the rest.
+
 ## Camera crops after a shift change (2026-10-23, d23 batch124b)
 - Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
 - After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene

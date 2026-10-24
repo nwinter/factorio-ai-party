@@ -147,6 +147,85 @@ return function(api)
     end
     st.map_alerts[p.index] = nil
   end
+  -- (d23 batch128 CK2, the stream's tour) A move within a shot: {segments = {{pts = {{x, y, zoom}, ...}, t0, t1, ease}}},
+  -- seconds from the call; every tick the view is put exactly where the move is (no easing), tools/stream/camerapath.py
+  -- has the same math (an eased share of the path's length, |dx, dy| + ZOOM_K |ln z1/z0| a step; x, y by a cubic
+  -- Hermite spline with chordal knots, zoom by ln z), so the page's marks follow it.
+  local ZOOM_K, MOVE_POINTS, MOVE_SECONDS = 20, 16, 600
+  local function ease(f, kind)
+    if f <= 0 then f = 0 elseif f >= 1 then f = 1 end
+    if kind == 'linear' then return f end
+    if kind == 'in' then return 1 - math.cos(math.pi * f / 2) end
+    if kind == 'out' then return math.sin(math.pi * f / 2) end
+    return 0.5 - 0.5 * math.cos(math.pi * f)
+  end
+  local function step_len(a, b)
+    return math.sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2) + ZOOM_K * math.abs(math.log(b.zoom / a.zoom))
+  end
+  local function tangent(pts, steps, i, k)
+    local n = #pts
+    if i == 1 then return steps[1] > 1e-9 and (pts[2][k] - pts[1][k]) / steps[1] or 0 end
+    if i == n then return steps[n - 1] > 1e-9 and (pts[n][k] - pts[n - 1][k]) / steps[n - 1] or 0 end
+    local h = steps[i - 1] + steps[i]
+    return h > 1e-9 and (pts[i + 1][k] - pts[i - 1][k]) / h or 0
+  end
+  local function hermite(a, b, ma, mb, h, u)
+    local u2, u3 = u * u, u * u * u
+    return (2 * u3 - 3 * u2 + 1) * a + (u3 - 2 * u2 + u) * h * ma + (-2 * u3 + 3 * u2) * b + (u3 - u2) * h * mb
+  end
+  local function along(pts, g)
+    local n = #pts
+    if n == 1 or g <= 0 then return pts[1].x, pts[1].y, pts[1].zoom end
+    if g >= 1 then return pts[n].x, pts[n].y, pts[n].zoom end
+    local steps, total = {}, 0
+    for i = 1, n - 1 do steps[i] = step_len(pts[i], pts[i + 1]); total = total + steps[i] end
+    if total <= 1e-9 then return pts[n].x, pts[n].y, pts[n].zoom end
+    local want, i = g * total, 1
+    while i < n - 1 and want > steps[i] do want = want - steps[i]; i = i + 1 end
+    local h = steps[i]
+    local u = h > 1e-9 and want / h or 1
+    local p1, p2 = pts[i], pts[i + 1]
+    local lz = math.log(p1.zoom) + (math.log(p2.zoom) - math.log(p1.zoom)) * u
+    return hermite(p1.x, p2.x, tangent(pts, steps, i, 'x'), tangent(pts, steps, i + 1, 'x'), h, u),
+      hermite(p1.y, p2.y, tangent(pts, steps, i, 'y'), tangent(pts, steps, i + 1, 'y'), h, u), math.exp(lz)
+  end
+  function M.move_at(move, t)
+    local segs = move.segments
+    if t <= segs[1].t0 then return along(segs[1].pts, 0) end
+    local last = segs[1]
+    for _, sg in ipairs(segs) do
+      if t < sg.t1 then
+        if t < sg.t0 then break end
+        local span = sg.t1 - sg.t0
+        return along(sg.pts, ease(span > 0 and (t - sg.t0) / span or 1, sg.ease))
+      end
+      last = sg
+    end
+    return along(last.pts, 1)
+  end
+  local function check_move(m)
+    assert(type(m) == 'table' and type(m.segments) == 'table' and #m.segments >= 1, 'move takes segments: {{pts, t0, t1, ease}, ...}')
+    local n, last = 0, 0
+    local out = {}
+    for i, sg in ipairs(m.segments) do
+      assert(type(sg) == 'table' and type(sg.pts) == 'table' and #sg.pts >= 1, 'move segment ' .. i .. ' takes pts {{x, y, zoom}, ...}')
+      assert(type(sg.t0) == 'number' and type(sg.t1) == 'number' and sg.t0 >= last - 1e-6 and sg.t1 >= sg.t0 and sg.t1 <= MOVE_SECONDS,
+        'move segment ' .. i .. ': t0 <= t1, in order, up to ' .. MOVE_SECONDS .. ' s')
+      local e = sg.ease or 'inout'
+      assert(e == 'inout' or e == 'in' or e == 'out' or e == 'linear', 'move ease is inout, in, out or linear')
+      local pts = {}
+      for k, p in ipairs(sg.pts) do
+        assert(type(p) == 'table' and type(p.x) == 'number' and type(p.y) == 'number' and type(p.zoom) == 'number'
+          and p.zoom >= MIN_ZOOM and p.zoom <= MAX_ZOOM, string.format('move point %d.%d is {x, y, zoom %g..%g}', i, k, MIN_ZOOM, MAX_ZOOM))
+        pts[k] = {x=p.x, y=p.y, zoom=p.zoom}
+      end
+      n = n + #pts
+      out[i] = {pts=pts, t0=sg.t0, t1=sg.t1, ease=e}
+      last = sg.t1
+    end
+    assert(n <= MOVE_POINTS, 'a move has at most ' .. MOVE_POINTS .. ' points')
+    return {segments=out, start=game.tick, ends=game.tick + math.ceil(last * 60)}
+  end
   local function director(index)
     assert(type(index) == 'number' and index == math.floor(index) and index >= 1, 'player must be a player index')
     local p = game.get_player(index)
@@ -203,6 +282,12 @@ return function(api)
       assert(type(args.zoom) == 'number' and args.zoom >= MIN_ZOOM and args.zoom <= MAX_ZOOM, string.format('zoom must be %g..%g', MIN_ZOOM, MAX_ZOOM))
       cam.zoom = args.zoom
     end
+    if args.move ~= nil then
+      assert(cam.position, 'a move is a fixed view: position, not follow')
+      cam.move = check_move(args.move)
+      local x, y, z = M.move_at(cam.move, 0)
+      cam.position, cam.zoom, cam.smooth = {x=x, y=y}, z, false
+    end
     local old = cams[p.index]
     cam.view_zoom = old and old.view_zoom or nil
     -- Spectator once: the director's own character would otherwise stand in
@@ -221,7 +306,7 @@ return function(api)
     local p = game.get_player(index)
     surface = surface or (p and p.valid and p.surface)
     return {player=index, follow=c.follow, position=pos, surface=surface and surface.name or nil, zoom=c.zoom, smooth=c.smooth,
-      map=c.map or nil}
+      map=c.map or nil, move=c.move and {start_tick=c.move.start, end_tick=c.move.ends} or nil}
   end
   function M.list()
     local out = {}
@@ -230,6 +315,15 @@ return function(api)
     return {ok=true, tick=game.tick, cameras=out}
   end
   function M.update(p, cam, now)
+    if cam.move then
+      local mv = cam.move
+      local x, y, z = M.move_at(mv, (game.tick - mv.start) / 60)
+      local surface = cam.surface and game.get_surface(cam.surface) or p.surface
+      if surface ~= p.surface then p.teleport({x=x, y=y}, surface) else p.teleport({x=x, y=y}) end
+      if z ~= cam.view_zoom then cam.view_zoom = z; pcall(function() p.zoom = z end) end
+      if game.tick > mv.ends then cam.position, cam.zoom, cam.move = {x=x, y=y}, z, nil end  -- done: it rests there
+      return
+    end
     local target, surface = cam.position, cam.surface and game.get_surface(cam.surface)
     if cam.follow then target, surface = locate(cam.follow) end
     if not target then return end

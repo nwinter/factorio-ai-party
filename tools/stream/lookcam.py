@@ -15,6 +15,10 @@ as well, that spot on its deck), cut_at (epoch seconds, now..now+30: a standby f
 program cuts to it at that moment; one client moves then; the shot on air until then stays), id (the caller's tag,
 echoed in the snapshot's look). The snapshot's look says `aired`, when the program first showed it. POST /look/extend
 {seconds, id?} moves the current look's end to now + seconds (at most 60) with no chart read (the tour's renewals).
+(CK2) move: a camera move within the shot (camerapath.py: segments of points {x, y, zoom}, seconds from the cut,
+eased), played by the game (cameras.lua `move`) from the cut; the look's spot and zoom are its first point; every
+point's frame is chart-checked (a ship's are not). On a whole ship (platform, no x and y), move "pan" with move_s
+pans a tall ship bow to stern over move_s (the director's own ship pan); a ship that fits the frame stays still.
 
 Only charted ground: before the shot, one read (CHART_LUA, a few dozen is_chunk_charted calls for the frame on air)
 checks that every 32-tile chunk the on-air frame covers is charted by the team; otherwise 409 with the reason (the
@@ -28,6 +32,8 @@ passed. Like those, other urgent events go in the inset, and segments, cues, rot
 platform shots and new replays wait; POST /cloud is refused while a look is on.
 """
 import json, math, os, time
+
+import camerapath
 
 MAX_S = 60.0
 DEFAULT_S = 30.0
@@ -146,6 +152,8 @@ class LookControl:
                 for k in ("cut_at", "id", "platform"):  # (CK1)
                     if data.get(k) is not None:
                         look[k] = number(data[k]) if k == "cut_at" else str(data[k])[:80]
+                if data.get("move") is not None:  # (CK2)
+                    look["move"] = camerapath.check(data["move"])
         except (KeyError, AttributeError, TypeError, ValueError, OverflowError):
             look = None
         self.director.set_look(look, now)
@@ -179,7 +187,15 @@ class LookControl:
             return 400, {"error": "cut_at is epoch seconds, from now to 30 s ahead"}
         secs = max(1.0, min(MAX_S, secs))
         start = max(now, cut_at or now)
-        c = {}
+        c, move = {}, body.get("move")
+        if move is not None and move != "pan":
+            try:
+                move = camerapath.check(move)
+            except ValueError as x:
+                return 400, {"error": f"move: {x}"}
+            p0 = camerapath.start(move)
+            if not ship or body.get("x") is not None or body.get("y") is not None:  # a spot: the move's first point
+                body, zoom = dict(body, x=p0["x"], y=p0["y"]), p0["zoom"]
         if ship and body.get("x") is None and body.get("y") is None:
             # (CK1) a whole ship as the director frames it now (model.platform_shot), held fixed: no chart read
             frame = self.ship_frame(ship)
@@ -188,6 +204,10 @@ class LookControl:
                              list(getattr(self.director, "plat_rows", {}) or {})}
             surface, platform, x, y = frame["surface"], frame["platform"], frame["position"]["x"], frame["position"]["y"]
             zoom = round(max(MIN_ZOOM, min(MAX_ZOOM, zoom if zoom is not None else frame["zoom"])), 2)
+            if move == "pan":
+                move = self.ship_pan(frame, x, zoom, body.get("move_s") or secs)
+            elif move is not None:  # a move on a whole ship starts where the director frames it
+                x, y, zoom = (camerapath.start(move)[k] for k in ("x", "y", "zoom"))
         else:
             try:
                 x, y = number(body.get("x")), number(body.get("y"))
@@ -197,10 +217,18 @@ class LookControl:
             surface, platform = self.surface_of(ship or body["surface"])
             if ship and not platform:
                 return 409, {"error": f"no camera view for a platform named {ship!r}"}
-            refused, c = self.check(surface, x, y, zoom)
-            if refused:
-                print(f"[look] {str(body.get('by') or 'operator')[:40]}: refused ({refused[1]['error']})", flush=True)
-                return refused
+            if move == "pan":
+                move = None  # (a pan is a whole ship's)
+            frames = [(x, y, zoom)] + ([(p["x"], p["y"], p["zoom"]) for p in camerapath.points(move)[1:]]
+                                       if move and not platform else [])
+            for k, (fx, fy, fz) in enumerate(frames):
+                refused, ck = self.check(surface, fx, fy, fz)
+                if refused:
+                    if k:
+                        refused = (refused[0], dict(refused[1], error=f"move point {k + 1}: {refused[1]['error']}"))
+                    print(f"[look] {str(body.get('by') or 'operator')[:40]}: refused ({refused[1]['error']})", flush=True)
+                    return refused
+                c = c or ck
         data = {"surface": surface, "position": {"x": round(x, 1), "y": round(y, 1)}, "zoom": zoom,
                 "until": round(start + secs, 1), "label": str(body.get("label") or "").strip()[:80] or None,
                 "by": str(body.get("by") or "operator")[:40]}
@@ -210,6 +238,8 @@ class LookControl:
             data["id"] = str(body["id"])[:80]
         if platform:
             data["platform"] = platform
+        if isinstance(move, dict):
+            data["move"] = move
         self.write(data)
         self.apply(data, now)
         print(f"[look] {data['by']}: ({round(x)}, {round(y)}) on {surface} at zoom {zoom:g} for {int(secs)} s"
@@ -228,6 +258,17 @@ class LookControl:
             return None
         return {"surface": t["surface"], "position": dict(t["position"]), "zoom": t["zoom"], "platform": pname,
                 "pan": t.get("pan")}
+
+    def ship_pan(self, frame, x, zoom, seconds):
+        """A tall ship's pan bow to stern as a move (the director's ship pan: PAN_END_S at each end), or None."""
+        pan = frame.get("pan")
+        if not pan:
+            return None
+        rest = getattr(self.director, "PAN_END_S", 3.0)
+        seconds = max(2 * rest + 4, float(seconds))
+        return camerapath.check({"segments": [{"pts": [{"x": x, "y": pan["y0"], "zoom": zoom},
+                                                        {"x": x, "y": pan["y1"], "zoom": zoom}],
+                                               "t0": rest, "t1": seconds - rest, "ease": "inout"}]})
 
     def extend(self, body, now=None):
         """POST /look/extend {seconds, id?}: the current look ends at now + seconds (at most 60); no chart read."""

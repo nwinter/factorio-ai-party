@@ -26,16 +26,42 @@ shot each, with one narrator reading each stop's narration. Check a script with
 | `min_seconds` | no | the stop lasts at least this long (a beat to look at something after the narration) |
 | `hold_s` | no | seconds added after the narration's tail (0 to 30) |
 | `seconds` | no | the length of a stop **without** narration (default 8). Not used when there is a narration |
+| `move` | no | the camera moving within the stop: pan, zoom, a path (below) |
 
 ### target
 
 - A planet spot: `{"surface": "nauvis", "x": 208, "y": 158, "zoom": 0.6}`. `surface` is nauvis, vulcanus, gleba,
   fulgora or aquilo. `x` and `y` are map tiles, the centre of the shot. `zoom` is 0.3 to 3 (default 0.75; higher is
-  closer; 0.3 shows about 200 tiles across, 1.0 about 60). The whole frame must be on ground the team has charted:
+  closer; the camera column shows about 40 tiles across at 1.0 and 130 at 0.3). The whole frame must be on ground the team has charted:
   the service checks it and an uncharted stop is skipped. A closer zoom frames less ground.
 - A ship: `{"platform": "Asterion"}`: the whole ship, framed as the director frames it. A ship that is not ours
   now is skipped (dry-run marks it). `{"platform": "Asterion", "x": 0, "y": -20, "zoom": 1.2}` is a spot on its deck
   (platform tiles, the hub at about 0, 0).
+
+## move: the camera within a stop
+
+Without `move` a planet spot is a still shot, and a whole ship pans slowly bow to stern when it is taller than the
+frame. A `move` moves the camera smoothly over the stop, eased at both ends, played by the game every tick.
+
+| form | what it does |
+|---|---|
+| `{"to": {"x": 240, "y": 160, "zoom": 0.8}}` | pan (and zoom) from the target to that spot; a missing x, y or zoom keeps the target's |
+| `{"zoom": 1.2}` | zoom in (or out) in place |
+| `{"path": [{"x": 220, "y": 150}, {"x": 260, "y": 120, "zoom": 0.6}]}` | through those points in a smooth curve, from the target (a point without zoom keeps the last one's) |
+| `"hold"` | a still shot (a ship: no pan) |
+| `[{"zoom": 1.0}, "hold", {"to": {"x": 300}}]` | one after another, each from where the last ended; without times they share the stop evenly |
+
+Each move may say when, in seconds from the cut: `"from_s": 2` (default the start, or where the last ended),
+`"to_s": 30` (default the stop's end; `"end"`, or a negative number counted back from the end: `-3` is 3 s before
+it), and `"ease"`: `"inout"` (default: starts and stops gently), `"in"`, `"out"` or `"linear"`. The stop's length
+comes from its narration, so `"to_s": "end"` and the defaults follow the clip.
+
+- Zoom stays within 0.3 to 3; at most 16 points in a stop's moves.
+- Every point of a planet move must be charted ground (the frame there is checked like the target); a refusal
+  names the point ("move point 2: ..."), and the stop is skipped.
+- On a ship, give a path (its first point is the start, in platform tiles), or a deck spot in the target
+  (`{"platform": "Asterion", "x": 0, "y": -40, "zoom": 1}`) with `to` or `zoom`.
+- `dry-run` prints each move with its times.
 
 ## Timing
 

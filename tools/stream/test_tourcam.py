@@ -6,7 +6,11 @@ Offline: python3 tools/stream/test_tourcam.py
    director for it), the shot on air keeps its label until then; one client moves only then; look.aired says when.
 2. POST /look {platform}: a whole ship as the director frames it, no chart read; an unknown ship is 409.
 3. POST /look/extend: the look's end moves, no chart read; another id is refused; cut_at out of range is 400.
-4. AudioHub: a clip with `at` is kept until its moment; /audio/status lists the queue; the page's start report sets
+4. (CK2) A look with a move: its spot is the move's first point; every point's frame is chart-checked (a refusal names
+   the point); a standby frames the first point without the move, the cut sends it (cameras.lua plays it); a game
+   whose camera reply has no move gets the director's steps (glides every MOVE_STEP s); a tall ship's "pan" is a move
+   bow to stern, a short ship's none.
+5. AudioHub: a clip with `at` is kept until its moment; /audio/status lists the queue; the page's start report sets
    `started` (started_at); /audio/cancel takes a clip back (a control event for the page) and off the queue.
 """
 import os, sys
@@ -123,8 +127,71 @@ def audio_queue():
     assert hub.status()["queued"] == [], "cancelled clips and control events are not queued"
 
 
+MOVE = {"segments": [{"pts": [{"x": 0, "y": 0, "zoom": 0.5}, {"x": 60, "y": 0, "zoom": 0.8}], "t0": 1, "t1": 9}]}
+
+
+def moves():
+    sent = []
+    reply = {"camera": {"move": {"start_tick": 1, "end_tick": 2}}}
+    d, _ = world(map_every=0, platform_every=0)
+    d.sender = lambda b: sent.append(b) or {"ok": True, "result": dict(reply, ok=True)}
+    a = team()
+    for t in range(1000, 1003):
+        d.step(snap(a), t)
+    ch = Chart()
+    lc = LookControl(d, None, ch)
+    code, r = lc.request({"surface": "nauvis", "x": 999, "y": 999, "zoom": 2, "move": MOVE, "cut_at": 1006,
+                          "id": "m"}, 1003)
+    assert code == 200 and r["position"] == {"x": 0.0, "y": 0.0} and r["zoom"] == 0.5 and r["move"]["segments"], r
+    assert len(ch.reads) == 2 and ch.reads[1][1:3] == (60.0, 0.0), "each point's frame is read"
+    d.step(snap(a), 1003)
+    assert sent[-1]["position"] == {"x": 0.0, "y": 0.0} and "move" not in sent[-1], "the standby frames the start"
+    for t in range(1004, 1006):
+        d.step(snap(a), t)
+    n = len(sent)
+    d.step(snap(a), 1006)
+    assert len(sent) == n + 1 and sent[-1]["move"] == r["move"] and sent[-1]["smooth"] is False, sent[n:]
+    assert d.look_info(1006)["move"] == r["move"] and d.look_info(1006)["aired"] == 1006
+    for t in range(1007, 1012):
+        d.step(snap(a), t)
+    assert len(sent) == n + 1 and d.next_wake(1012) is None, "the game plays it: no more commands"
+    # an uncharted point
+    blind = Chart(charted={("nauvis", cx, cy) for cx in range(-3, 3) for cy in range(-3, 3)})
+    code, r2 = LookControl(d, None, blind).request({"surface": "nauvis", "x": 0, "y": 0, "move": {"segments": [
+        {"pts": [{"x": 0, "y": 0, "zoom": 1}, {"x": 900, "y": 0, "zoom": 1}], "t0": 0, "t1": 5}]}}, 1012)
+    assert code == 409 and r2["error"].startswith("move point 2: "), r2
+    assert lc.request({"surface": "nauvis", "x": 0, "y": 0, "move": {"segments": []}}, 1012)[0] == 400
+    # an older cameras.lua (no camera.move in its reply): the director steps the move itself
+    sent1 = []
+    d1 = OneCam([{"slot": "main", "player": 3}], lambda b: sent1.append(b) or {"ok": True}, None)
+    d1.step(snap(a), 1000)
+    LookControl(d1, None, Chart()).request({"surface": "nauvis", "x": 0, "y": 0, "move": MOVE, "cut_at": 1001}, 1000)
+    d1.step(snap(a), 1001)
+    assert sent1[-1].get("move") and d1.next_wake(1001.1) == d1.MOVE_STEP
+    xs = []
+    for k in range(1, 20):
+        t = 1001 + k * 0.5
+        d1.step(snap(a), t)
+        xs.append(sent1[-1]["position"]["x"])
+        assert "move" not in sent1[-1] and sent1[-1].get("speed"), sent1[-1]
+    assert xs == sorted(xs) and 0 < xs[2] < 5 and abs(xs[-1] - 60) < 1e-6, xs
+    # a tall ship pans bow to stern; a short one is still
+    tall = dict(plat("Long", view={"surface": "platform-9", "hub": {"x": 0, "y": 0},
+                                   "bounds": {"left": -14, "top": -150, "right": 14, "bottom": 150}}))
+    d2, _ = world(map_every=0, platform_every=0)
+    for t in range(1000, 1003):
+        d2.step(snap(a, [tall, plat("Starling")]), t)
+    lc2 = LookControl(d2, None, Chart())
+    code, r = lc2.request({"platform": "Long", "move": "pan", "move_s": 40, "seconds": 50}, 1003)
+    seg = r["move"]["segments"][0]
+    assert code == 200 and seg["pts"][0]["y"] < seg["pts"][1]["y"] and seg["t0"] == 3.0 and seg["t1"] == 37.0, r
+    assert r["position"]["y"] == seg["pts"][0]["y"], "the look starts at the bow"
+    code, r = lc2.request({"platform": "Starling", "move": "pan", "move_s": 40}, 1003)
+    assert code == 200 and "move" not in r
+
+
 if __name__ == "__main__":
-    for f in (cut_at, ship_look, extend, audio_queue):
+    for f in (cut_at, ship_look, extend, moves, audio_queue):
         f()
         print("ok", f.__name__)
     print("test_tourcam: all ok")

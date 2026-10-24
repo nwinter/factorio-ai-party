@@ -625,6 +625,9 @@ class OneCam(Director):
         lk = self.look_hold  # (CK1) a look's cut at its moment
         if lk and lk.get("cut_at") and lk.get("aired") is None and lk["cut_at"] > now - 1:
             soon = min(soon if soon is not None else 1e9, max(0.005, lk["cut_at"] - now))
+        t = self.state.get(self.onair) or {}  # (CK2) a move the director steps itself
+        if t.get("subject") == "@look" and t.get("move") and t.get("move_ok") is False:
+            soon = min(soon if soon is not None else 1e9, self.MOVE_STEP)
         return soon
 
     # -- alerts -----------------------------------------------------------------------------------------------
@@ -1276,7 +1279,7 @@ class OneCam(Director):
         and aired (when the program first showed it) when set; or None."""
         lk = self.looking(now)
         return {k: lk[k] for k in ("surface", "position", "zoom", "until", "label", "by")} | \
-            {k: lk[k] for k in ("cut_at", "id", "platform", "aired") if lk.get(k) is not None} | \
+            {k: lk[k] for k in ("cut_at", "id", "platform", "aired", "move") if lk.get(k) is not None} | \
             {"remaining_s": int(lk["until"] - now)} if lk else None
 
     def look_label(self, lk):
@@ -1293,6 +1296,7 @@ class OneCam(Director):
             return None
         return {"agents": [], "subject": "@look", "position": dict(lk["position"]), "surface": lk["surface"],
                 "zoom": lk["zoom"], "exact_zoom": True, "until": lk["until"], "cut_at": lk.get("cut_at"),
+                "move": lk.get("move"),
                 "look": {"label": self.look_label(lk), "by": lk["by"], "surface": lk["surface"],
                          "position": dict(lk["position"]), **({"id": lk["id"]} if lk.get("id") else {})}}
 
@@ -1304,7 +1308,43 @@ class OneCam(Director):
 
     @staticmethod
     def same_look(a, b):
-        return bool(a and b) and all(a.get(k) == b.get(k) for k in ("position", "surface", "zoom"))
+        """The same shot: a spot, surface and zoom; a moving one by its surface and move (its position moves)."""
+        if not (a and b):
+            return False
+        if a.get("move") or b.get("move"):
+            return a.get("surface") == b.get("surface") and a.get("move") == b.get("move")
+        return all(a.get(k) == b.get(k) for k in ("position", "surface", "zoom"))
+
+    # (d23 batch128 CK2) a look's move goes to the game at the cut (cameras.lua plays it every tick); a standby frames
+    # its first point without it. A game whose cameras.lua has no move (its reply has no camera.move): the director
+    # steps it, aiming MOVE_LEAD s ahead every MOVE_STEP s with a glide that gets there then.
+    MOVE_LEAD = 0.8
+    MOVE_STEP = 0.5
+
+    def start_move(self, slot, shot, now):
+        t = self.state.get(slot["slot"])
+        if not shot.get("move") or not t:
+            return
+        self.apply(slot, dict(t, move=shot["move"], jump=True, moved=now), "reframe", {}, now, quiet=True)
+        t = self.state.get(slot["slot"])
+        t["moved"] = now
+
+    def step_move(self, now):
+        """The fallback: a look's move on air in a game that does not play it (move_ok False)."""
+        import math
+        import camerapath
+        t = self.state.get(self.onair)
+        if not t or t.get("subject") != "@look" or not t.get("move") or t.get("move_ok") is not False:
+            return
+        since = t.get("moved", now)
+        x, y, z = camerapath.at(t["move"], now - since + self.MOVE_LEAD)
+        here = t.get("position") or {}
+        d = math.hypot(x - here.get("x", x), y - here.get("y", y))
+        target = {k: v for k, v in t.items() if k not in ("jump", "move")}
+        target.update(position={"x": round(x, 2), "y": round(y, 2)}, zoom=round(z, 3), glide=round(max(0.5, d / self.MOVE_LEAD), 2))
+        self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
+        nt = self.state.get(self.onair)
+        nt.update(move=t["move"], moved=since, move_ok=False)
 
     def look_direct(self, shot, scores, now):
         """Hold the spot on air: frame it on a standby and cut once it is there (one client: retarget it on air).
@@ -1321,6 +1361,7 @@ class OneCam(Director):
                 return
             cur.update(look=shot["look"], until=shot["until"])  # a new label or time for the same spot
             self.look_aired(now)
+            self.step_move(now)
             return
         if cur and cur.get("subject") in scores:
             self.resume = {"subject": cur["subject"], "since": self.onair_since}
@@ -1329,15 +1370,24 @@ class OneCam(Director):
         if not self.same_look(t, shot):
             if early and slot["slot"] == self.onair:
                 return
-            self.frame_on(slot, shot, f"standby: look {shot['look']['label']}", scores, now)
-            if slot["slot"] == self.onair:
+            onair = slot["slot"] == self.onair
+            self.frame_on(slot, shot if onair else dict(shot, move=None), f"standby: look {shot['look']['label']}",
+                          scores, now)
+            if not onair:
+                self.state[slot["slot"]]["move"] = shot.get("move")  # (sent at the cut)
+                self.state[slot["slot"]]["move_pending"] = bool(shot.get("move"))
+            if onair:
                 self.onair_since = now
                 self.look_aired(now)
+                if shot.get("move"):
+                    self.state[slot["slot"]]["moved"] = now
             return
         t.update(look=shot["look"], until=shot["until"])
         if slot["slot"] != self.onair and self.ready(slot["slot"], now) and not early:
             self.cut(slot["slot"], f"look: {shot['look']['label']}", now)
             self.look_aired(now)
+            if t.pop("move_pending", None):
+                self.start_move(slot, shot, now)
 
     # -- key battles -------------------------------------------------------------------------------------------
     def fight_spot(self, f, by_name):

@@ -110,9 +110,70 @@ def check_stop(stop):
     except ValueError as x:
         return None, f"target, seconds, min_seconds or hold_s: {x}"
     return {"id": sid, "target": target, "seconds": max(0.0, secs) if secs is not None else None,
+            "move": stop.get("move"),  # (CK2) checked by move_for in checked()
             "min_seconds": max(0.0, least), "hold_s": max(0.0, min(30.0, hold)),
             "caption": " ".join(str(stop.get("caption") or "").split())[:80],
             "narration": " ".join(str(stop.get("narration") or "").split())}, None
+
+
+def move_for(stop, length):
+    """(CK2) The stop's move as camerapath segments over a stop of `length` s (seconds from the cut), None for a still
+    shot, or "pan" (a whole ship with no move: the director's bow-to-stern pan). ValueError says what is wrong."""
+    import camerapath
+    raw, t = stop.get("move"), stop["target"]
+    if raw in (None, "hold"):
+        return "pan" if raw is None and "platform" in t and "x" not in t else None
+    moves = raw if isinstance(raw, list) else [raw]
+    if not moves or len(moves) > 8:
+        raise ValueError("move is one move or a list of 1..8")
+    here = {"x": t["x"], "y": t["y"], "zoom": t.get("zoom", 0.75)} if "x" in t else None
+
+    def when(v, what, default):
+        if v is None:
+            return default
+        if v == "end":
+            return length
+        v = camerapath.number(v, what)
+        return length + v if v < 0 else v
+    free = [m for m in moves if m == "hold" or (isinstance(m, dict) and m.get("from_s") is None and m.get("to_s") is None)]
+    share = length / len(moves) if len(free) == len(moves) else None
+    segs, last_end = [], 0.0
+    for i, m in enumerate(moves):
+        what = f"move {i + 1}" if len(moves) > 1 else "move"
+        if m == "hold":
+            last_end = share * (i + 1) if share else last_end
+            continue
+        if not isinstance(m, dict):
+            raise ValueError(f"{what}: an object with to, zoom or path (or \"hold\")")
+        if "path" in m:
+            if not isinstance(m["path"], list) or not m["path"]:
+                raise ValueError(f"{what}: path is a list of points {{x, y, zoom}}")
+            pts = ([here] if here else []) + m["path"]
+        elif "to" in m or "zoom" in m:
+            if not here:
+                raise ValueError(f"{what}: a whole ship has no spot to move from: give target x, y or a path")
+            to = dict(here, **(m.get("to") or {}))
+            if "zoom" in m:
+                to["zoom"] = m["zoom"]
+            pts = [here, to]
+        else:
+            raise ValueError(f"{what}: give to {{x, y, zoom}}, zoom, or path [...]")
+        full, prev = [], None
+        for k, p in enumerate(pts):  # a point without zoom keeps the last one's
+            if not isinstance(p, dict):
+                raise ValueError(f"{what} point {k + 1}: an object {{x, y, zoom}}")
+            q = dict(p)
+            if q.get("zoom") is None:
+                q["zoom"] = (prev or {}).get("zoom", 0.75)
+            full.append(q)
+            prev = q
+        t0 = when(m.get("from_s"), f"{what} from_s", share * i if share else last_end)
+        t1 = when(m.get("to_s"), f"{what} to_s", share * (i + 1) if share else length)
+        segs.append({"pts": full, "t0": t0, "t1": t1, "ease": m.get("ease", "inout")})
+        here, last_end = dict(full[-1]), t1
+    if not segs:
+        return None
+    return camerapath.check({"segments": segs})
 
 
 def checked(stops):
@@ -122,6 +183,11 @@ def checked(stops):
         s, why = check_stop(raw)
         if s and s["id"] in seen:
             s, why = None, f"id {s['id']!r} repeated"
+        if s:
+            try:
+                move_for(s, 60.0)
+            except ValueError as x:
+                s, why = None, str(x) if str(x).startswith("move") else f"move: {x}"
         if s:
             seen.add(s["id"])
         out.append((i, s, why))
@@ -285,6 +351,13 @@ def timeline(rows, manifest, out, lead=LEAD_S, tail=TAIL_S):
     return plan, bad
 
 
+def move_text(mv):
+    """ "0.0-15.6 s (60, 40) z0.5 -> (90, 40) z0.8 inout; ..." """
+    return "; ".join(f"{g['t0']:.1f}-{g['t1']:.1f} s " + " -> ".join(f"({p['x']:g}, {p['y']:g}) z{p['zoom']:g}"
+                                                                    for p in g["pts"]) + f" {g['ease']}"
+                     for g in mv["segments"])
+
+
 def clock(sec):
     return f"{int(sec // 60):2d}:{int(sec % 60):02d}"
 
@@ -304,6 +377,9 @@ def print_timeline(rows, manifest, out, platforms=None, lead=LEAD_S, tail=TAIL_S
             ignored.append(s["id"])
         clip = "-" if clip_s is None else f"{clip_s:5.1f}" + ("~" if est else "s")
         print(f"{clock(t)}  {length:5.1f}  {clip:>6}  {s['id']} / {target_text(s['target'])} / {s['caption']}{note}")
+        mv = move_for(s, length)
+        if isinstance(mv, dict):
+            print(f"{'':22}move: {move_text(mv)}")
         t += length
     for i, why in bad:
         print(f"  skip  stop {i + 1}: {why}")
@@ -405,10 +481,15 @@ class Tour:
             self.stopped = True
         return self.stopped
 
-    def look_body(self, s, cut_at, seconds):
+    def look_body(self, s, cut_at, seconds, length=None):
         t = s["target"]
         body = {"seconds": max(1.0, min(LOOK_MAX_S, seconds)), "label": s["caption"] or None, "by": "tour",
                 "cut_at": round(cut_at, 3), "id": s["id"]}
+        mv = move_for(s, length if length is not None else seconds)
+        if mv == "pan":
+            body.update(move="pan", move_s=round(length if length is not None else seconds, 2))
+        elif mv:
+            body["move"] = mv
         if "platform" in t:
             body["platform"] = t["platform"]
         else:
@@ -530,7 +611,7 @@ class Tour:
                 narr_at = cut + self.lead if clip else None
                 self.hush(left + 120)
                 ask = cut - self.drift
-                code, r = self.svc.call("POST", "/look", self.look_body(s, ask, end - cut + LOOK_SPARE_S))
+                code, r = self.svc.call("POST", "/look", self.look_body(s, ask, end - cut + LOOK_SPARE_S, length))
                 if code != 200:
                     why = (r or {}).get("error") or f"HTTP {code}"
                     log(f"[tour] skip {s['id']}: {target_text(s['target'])} refused ({why})")
