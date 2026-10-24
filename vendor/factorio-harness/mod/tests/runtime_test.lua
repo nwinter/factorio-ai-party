@@ -2940,6 +2940,9 @@ table.remove(world); table.remove(world)
 fails(function() call('observe',{scope='rates'}) end,'area or positions')
 fails(function() call('observe',{scope='bottleneck',area={left_top={x=0,y=0},right_bottom={x=500,y=1}}}) end,'at most 192x192')
 fails(function() call('observe',{scope='rates',per='hour',area={left_top={x=0,y=0},right_bottom={x=1,y=1}}}) end,'per must be')
+-- (d24 batch135 PG1) bottleneck {item} reads the chain on the whole surface: area and positions are refused, not ignored
+fails(function() call('bottleneck',{item='iron-plate',area={left_top={x=0,y=0},right_bottom={x=10,y=10}}}) end,'area and positions go without item')
+fails(function() call('bottleneck',{item='iron-plate',surface='nauvis',positions={{x=1,y=1}}}) end,'area and positions go without item')
 -- construct defaults to the last paste and reports missing items in status.
 fails(function() call('construct',{}) end,'no earlier paste')
 storage.agent_harness.last_paste={[1]={left=40,top=0,right=41,bottom=1}}

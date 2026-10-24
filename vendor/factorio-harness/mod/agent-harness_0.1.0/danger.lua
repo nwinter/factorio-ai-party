@@ -73,6 +73,8 @@ return function(api)
     local r = a.radius == nil and 64 or a.radius
     assert(type(r) == 'number' and r >= 8 and r <= MAX_R, 'radius is 8..128 tiles')
     local s = a.surface and api.surface(p, a.surface) or p.surface
+    -- (d24 batch135 PG1) no position on another surface: where the character stands is on its own surface, not that one
+    assert(a.position ~= nil or not (c0 and c0.valid) or c0.surface == s, 'danger with surface needs position there (your character stands on another surface)')
     local f = p.force
     local c = p.character
     local here = c and c.valid and c.surface == s and {x=c.position.x, y=c.position.y} or nil

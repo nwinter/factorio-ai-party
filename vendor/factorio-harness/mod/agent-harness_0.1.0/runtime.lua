@@ -4099,7 +4099,11 @@ function handlers.bottleneck(p,a)
       return M.chain.read(p,a,surface)
     end
   end
-  if a.item~=nil then return M.supply.bottleneck_item(p,a) end
+  -- (d24 batch135 PG1) an item's chain is the surface's: area and positions are refused there, not ignored
+  if a.item~=nil then
+    assert(a.area==nil and a.positions==nil,'bottleneck {item} reads the item\'s chain on the whole surface: area and positions go without item')
+    return M.supply.bottleneck_item(p,a)
+  end
   assert(a.surface==nil,'surface goes with item')
   assert(a.per_min==nil,'per_min goes with item: bottleneck {item, per_min}')
   return rates.bottleneck(p,a)
