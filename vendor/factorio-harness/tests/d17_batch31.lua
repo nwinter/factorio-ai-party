@@ -373,7 +373,7 @@ do
   -- the magazines from nauvis: a lower min there keeps less at Nauvis, the rest goes down
   -- (PI1) 300..300 there: all above 300 goes down
   r=space.requests(p,{platform='Cinder',set={{item='firearm-magazine',min=300,max=300}},dry_run=true})
-  eq(r.sends_down[1],'firearm-magazine: the hub holds 501; its requests would keep 300 at nauvis (kept 501 at nauvis): 201 down to nauvis (here) (its landing pads ask 1461, hold 0; its requests from nauvis keep 300); 300 stay aboard')
+  eq(r.sends_down[1],'firearm-magazine: the hub holds 501; its requests would keep 300 at nauvis (kept 501 at nauvis): 201 over its max 300 go to the hub\'s trash now and down to nauvis (here), asked or not; 300 stay aboard')
   r=space.requests(p,{platform='Cinder',set={{item='firearm-magazine',min=300}},dry_run=true})
   eq(r.sends_down,nil,'a min alone keeps the slot\'s max 2000: what is kept does not change')
   -- C3: from false on a slot from fulgora: dropped, and the game sets nauvis
