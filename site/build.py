@@ -1985,6 +1985,10 @@ def main():
         write("updates/index.html", page("Operator updates", body, "/updates/",
                                          "Changes viewers and agents asked for, and whether each is planned, in progress, live or verified.",
                                          extra_head=head, path="/updates/"))
+        # (d24 batch159 QB1) what the open page rechecks every few minutes (static/updates.js)
+        full = op_updates.updates_json(data, asks, replies, esc, built=built)
+        write("updates/updates.json", json.dumps(full, ensure_ascii=False))
+        write("updates/stamp.json", json.dumps(op_updates.stamp_json(full)))
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
     how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve

@@ -118,8 +118,8 @@ def page(asks, replies):
         "notices": [{"t": "2026-10-22 20:18", "kind": "deploy", "text": "Runtime deployed."},
                     {"t": "2026-10-22 23:40", "kind": "outage", "text": "Operator offline."}]}
     body, _ = updates.build_page(data, asks, replies, esc)
-    order = [body.index(x) for x in ('class="upd-counts"', '<h2 id="open">', '<h3 id="in-progress">', '<h3 id="planned">',
-                                      '<h3 id="live">', '<h2 id="verified">', 'id="u-new-verified"', 'id="u-old-verified"',
+    order = [body.index(x) for x in ('class="upd-counts"', '<h2 id="open">', '<h3 id="in-progress"', '<h3 id="planned"',
+                                      '<h3 id="live"', '<h2 id="verified"', 'id="u-new-verified"', 'id="u-old-verified"',
                                       '<h2 id="notices">')]
     assert order == sorted(order), order
     assert ">planned: 1</a>" in body and ">in progress: 1</a>" in body and ">live: 1</a>" in body and ">verified: 2</a>" in body
@@ -200,7 +200,7 @@ def tool():
         assert run("set", "scan-labels", "--status", "deployed").returncode != 0
         assert run("set", "nope", "--status", "live", "--at", "2026-10-23 12:00").returncode != 0
         assert Path(f).read_text() == before
-        assert Path(f).read_text().count("\n") == 8, Path(f).read_text()  # one row a line
+        assert Path(f).read_text().count("\n") == 9, Path(f).read_text()  # one row a line, and notices_checked
         # a status past planned needs work: refused without it when the row has none
         assert run("add", "nobatch", "--title", "x", "--by", "Aurora", "--status", "live").returncode != 0
         assert Path(f).read_text() == before
