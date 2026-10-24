@@ -92,6 +92,8 @@ return function()
     local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     return inv and try(function() return inv.get_insertable_count(item) end)
   end
+  -- (d24 batch165) for floorphases.lua: what stands on a tile, a tile's product, the hub's room for an item
+  M.standing, M.product, M.room = standing, product, room
   -- The marked tiles on a surface, or in an area: {x, y} each, at most MARKS (more: the count).
   function M.marked(s, area)
     local f = {type='deconstructible-tile-proxy', limit=MARKS + 1}
