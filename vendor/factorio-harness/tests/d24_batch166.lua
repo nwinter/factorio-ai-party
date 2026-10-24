@@ -1,7 +1,8 @@
 -- d24 batch166 QI1 (operator 13:56: platform_plan {platform: "Asterion", support: true} held world n 388 ms in one tick,
 -- 8271 entities chosen; Sol called it repeatedly): support is a job across ticks, at most SLICE units of work a call or
 -- tick. Read a slice at a time, the plan is the one read in one go; the reply says how it was read; a running job
--- answers with its step; the plan comes once, page reads it again; a job of another runtime is dropped.
+-- answers with its step; the plan comes once, page reads it again; a job of another runtime is dropped. The same for
+-- floor, salvage and the plain read (d24 batch166 cp2).
 -- Run from the harness root: lua tests/d24_batch166.lua
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) if a~=b then error((m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b),2) end end
@@ -32,6 +33,15 @@ for x=20,26 do for y=20,26 do if x==20 or x==26 or y==20 or y==26 then ents[#ent
 ents[#ents+1]=ghost('underground-belt','underground-belt',-12.5,2.5,1,1,4,{belt_to_ground_type='input'})
 ents[#ents+1]=ghost('underground-belt','underground-belt',-9.5,2.5,1,1,4,{belt_to_ground_type='output'})
 ents[#ents+1]=ghost('small-lamp','lamp',45.5,10.5,1,1)
+-- belts on the floor: a 2x2 loop, a pair head on, a side-load (the plain read's audit); one a ghost
+local function belt(x,y,dir,isghost)
+  n=n+1
+  local e=isghost and ghost('transport-belt','transport-belt',x+0.5,y+0.5,1,1,dir) or {valid=true,name='transport-belt',type='transport-belt',position={x=x+0.5,y=y+0.5},direction=dir,bounding_box=box(x+0.5,y+0.5,1,1),unit_number=n,prototype={selectable_in_game=true}}
+  ents[#ents+1]=e
+end
+belt(10,-4,4); belt(11,-4,8); belt(11,-3,12,true); belt(10,-3,0)
+belt(15,-4,4); belt(16,-4,12)
+belt(19,-2,4); belt(20,-2,4); belt(20,-3,8)
 local function inside(e,a)
   local b=e.bounding_box
   return b.right_bottom.x>a[1][1] and b.left_top.x<a[2][1] and b.right_bottom.y>a[1][2] and b.left_top.y<a[2][2]
@@ -57,7 +67,8 @@ local surface={valid=true,
     finds=finds+1
     local list
     if f.type=='tile-ghost' then list=tile_ghosts
-    elseif f.type=='entity-ghost' then list={} for _,e in ipairs(ents) do if e.type=='entity-ghost' then list[#list+1]=e end end
+    elseif f.type=='entity-ghost' then list={} for _,e in ipairs(ents) do if e.type=='entity-ghost' and (not f.ghost_type or e.ghost_type=='transport-belt') then list[#list+1]=e end end
+    elseif type(f.type)=='table' and f.type[1]=='transport-belt' then list={} for _,e in ipairs(ents) do if e.type=='transport-belt' then list[#list+1]=e end end
     elseif f.type then return {}
     else list=ents end
     local out={}
@@ -129,6 +140,41 @@ assert(not ok and tostring(err):find('nothing of ours at (500,500)',1,true),tost
 for _,j in pairs(store.platplan_jobs.list) do j.v=0 end
 PP.tick()
 eq(next(store.platplan_jobs.list),nil,'jobs of another runtime dropped')
+-- floor, salvage and the plain read: read a slice at a time, each is the read in one go
+local function sliced(args)
+  PP.SLICE=math.huge
+  local whole=PP.read({},args)
+  eq(whole.read,'in this call')
+  PP.SLICE=40
+  local got=PP.read({},args)
+  local job
+  for key,v in pairs(got) do if key:find('_job$') then job=v end end
+  assert(job,'before: no job for '..tostring(next(args,'platform')))
+  local t=0
+  repeat
+    game.tick=game.tick+1; t=t+1; PP.tick(); got=PP.read({},args)
+    local running=false
+    for key in pairs(got) do if key:find('_job$') then running=true end end
+    assert(t<20000,'the job ends')
+  until not running
+  has(got.read,'as job ')
+  local function clean(r)
+    local out={}
+    for key,v in pairs(r) do if key~='read' and key~='line' and key~='lines' then out[key]=v end end
+    out.line=r.line and r.line:gsub('; read .*$','')
+    if r.lines then out.lines={} for _,x in ipairs(r.lines) do if not x:find('^read ') then out.lines[#out.lines+1]=x end end end
+    return out
+  end
+  same(clean(whole),clean(got))
+  return whole,t
+end
+local fl=sliced({platform='Asterion',floor=true})
+assert(fl.floor_needed>0 and fl.by.links>0 and fl.by.holes>0,'the floor plan needs links and a hole')
+local sv=sliced({platform='Asterion',salvage=40})
+assert(sv.salvage>0,'tiles to take up')
+local pr=sliced({platform='Asterion'})
+eq(#pr.loops,1); eq(pr.loops[1].belts,4); eq(pr.loops[1].ghosts,1); eq(#pr.head_on,1); eq(#pr.side_loads,1)
+assert(#pr.islands>=1,'the tile ghosts and the lamp\'s tile are islands')
 -- names: a ghost not chosen standing on a tile that would go is a strand
 PP.SLICE=math.huge
 local nm=PP.read({},{platform='Asterion',support={names={'stone-wall'}}})
