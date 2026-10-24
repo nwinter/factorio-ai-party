@@ -56,20 +56,48 @@ needs Google permissions that have not been granted yet (see "Permissions" below
 ## Chapters and description
 
 YouTube's rules are that the first chapter is at 0:00, there are at least three, and each is at least 10 s long. The
-tool keeps chapters 90 s apart, picks at most 24, heaviest first, and fills in with hour marks if there are fewer
-than three. Candidates, by weight:
-- planets reached and platforms arriving or leaving
-- the first rocket, then later rockets
-- platforms built
-- milestone technologies: the rocket silo and space science weigh most, early ones such as automation weigh least
-- fights in which one loss alert reached 10 buildings, placed at that alert
-- each agent's first death
-- the hosts' spotlight, overview and production segments
-- up to three viewer questions that an agent answered by name within three minutes
+tool keeps chapters 90 s apart and picks at most 24:
+1. Milestones (weight 85 or more), heaviest first. Two milestones too close for two chapters share one title.
+2. Big moments (60 to 84), heaviest first.
+3. The rest (30 to 59), spread over the whole recording. Each pick is the heaviest after its weight is scaled down by
+   how near it is to a chapter already placed (full weight from total / 24 away).
+4. A stretch of more than 45 minutes with no chapter gets its heaviest moment of weight 20 to 29, else an hour mark.
+   Hour marks also fill in when there are fewer than three chapters.
 
-Research, rockets and platforms come from the score log, which is written every 2 minutes. Their chapters sit at the
-middle of the interval in which they first appear. The description gives:
-- the shift's research, rockets, platforms, science per minute, deaths and its biggest fight
+Weights, heaviest first. "First" and "before" mean in the run: the earlier shifts' chronicles along the world's
+resumed-from chain, plus the planets the shift's first score lists.
+- 100: the first arrival at the solar system edge, the Space Age victory ("Asterion reaches the solar system edge: the
+  Space Age victory"). 99: the first arrival at the Shattered Planet. 96: the first platform to reach a planet.
+- 95: landing on a planet. 92: the first rocket. 91: a platform lost. 90: a platform built, and a departure for the
+  edge or the Shattered Planet that no platform made before.
+- Milestone technologies (45 to 80): the rocket silo and space science weigh most, early ones such as automation least.
+- 66 and 64: a platform setting out for the Shattered Planet again, or reaching the edge again. 60: setting out for the
+  edge again. Only the first of the shift for each platform and place; later ones are routine.
+- 55 to 85: a fight in which one loss alert reached 10 buildings, placed at that alert.
+- 50: each thousandth rocket. 48: a platform's first visit to a place (it never arrived, left or was built there
+  before; only once an earlier shift has a chronicle).
+- 45 and 38: an agent's first death; 42: up to three viewer questions that an agent answered by name within three
+  minutes. 36: another new technology; 26: a repeating technology's next level.
+- 35, 30 and 20: the hosts' spotlight, overview and production, and recap segments. 33: the agents' chronicle entries.
+  34: a platform taken down.
+- Under 10: routine trips (every other arrival and departure) and other rockets. They are never chapters, and the
+  description sums the trips by route.
+
+Shifts from 15 on have a chronicle.jsonl, which gives platforms, trips and research at their exact times. Before that,
+research, rockets and platforms come from the score log, written every 2 minutes, and their chapters sit at the
+middle of the interval in which they first appear. A repeating technology keeps its name from level to level, so
+only the chronicle sees its next level.
+
+The title is the heaviest moment, plus a second one when it weighs 60 or more, is about another platform or kind, and
+both fit. "What happened" lists, heaviest first:
+- the notable moments;
+- the new technologies, with what research finished;
+- the rockets;
+- the routine trips summed by route ("352 routine platform trips: 166 between Gleba and Nauvis (Cinder, Meridian-V,
+  Swiftlet and others); ...");
+- science per minute, deaths and the biggest fight.
+
+The description then gives:
 - the three viewer Q&As
 - the team, and the hosts
 - the chapters
