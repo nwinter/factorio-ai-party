@@ -8,6 +8,9 @@ joined): python3 tools/test_obs_rehook.py
 2. A camera off stays off; it is cropped when it already has a size, and left as it is when it has none.
 3. A source with no size within the wait: crop not set, said so; the wait is one budget for the whole call.
 4. A camera not in the scene is named; the others go on.
+5. (d24 batch136 PH2) cams (read only): each camera's hole by its bounds, its crop and the crop that hole takes; the
+   inset is uncropped by design (cam3 read crop 0 there at about 21:07). stream_scene leaves the crop of a capture
+   with no source size as it is.
 """
 import os, sys, types
 from types import SimpleNamespace as NS
@@ -106,6 +109,27 @@ def main():
     # 4. a camera missing from the scene
     c, out, _ = run({"stream cam1": {"on": True, "size": (2880, 1620)}, "stream cam3": {"on": True, "size": (2880, 1620)}})
     assert "stream cam2: not in stream (KeyError)" in out and out.count("crop 492/492") == 2, out
+
+    # 5. cams: main 492/492 ok, the inset at 0 ok, main at 0 off, not hooked said so; nothing written
+    HOLE.update(boundsWidth=1208.0, boundsHeight=1032.0)
+    c = Fake({"stream cam1": {"on": True, "size": (2880, 1620), "crop": (492, 492, 0, 0)},
+              "stream cam2": {"on": True, "size": (2880, 1620)},
+              "stream cam3": {"on": True, "size": (2880, 1620)}})
+    inset = c.get_scene_item_transform
+
+    def tf(scene, item):
+        r = inset(scene, item)
+        if c._name(item) == "stream cam3":
+            r.scene_item_transform.update(boundsWidth=408.0, boundsHeight=230.0)
+        return r
+    c.get_scene_item_transform = tf
+    out = obs.cams_check(c)
+    assert out == ("stream cam1: on, main, crop 492/492 0/0, source 2880x1620: ok | "
+                   "stream cam2: on, main, crop 0/0 0/0, source 2880x1620: CROP OFF (that hole takes 492/492 0/0) | "
+                   "stream cam3: on, inset, crop 0/0 0/0, source 2880x1620: ok"), out
+    assert not any(x[0] == "transform" for x in c.calls), c.calls
+    c = Fake({"stream cam1": {"on": False, "size": None}})
+    assert obs.cams_check(c, n=1) == "stream cam1: off, main, crop 0/0 0/0, no source size (not hooked)", obs.cams_check(c, n=1)
 
     print("obs rehook-cams: ok (each camera cropped to its hole once its source has a size; off ones left off; "
           "a source with no size said so; one wait for the call)")

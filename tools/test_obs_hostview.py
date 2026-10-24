@@ -54,7 +54,9 @@ class Fake:
 
     def set_scene_item_transform(self, scene, item, t): self.transforms.setdefault(item, {}).update(t)
 
-    def get_scene_item_transform(self, scene, item): return NS(scene_item_transform={"sourceWidth": 1920, "sourceHeight": 1080})
+    def get_scene_item_transform(self, scene, item):
+        w, h = getattr(self, "sizes", {}).get(item, (1920, 1080))
+        return NS(scene_item_transform={"sourceWidth": w, "sourceHeight": h})
 
     def set_scene_item_index(self, scene, item, idx):
         self.calls.append(("index", item)); lst = self.scenes[scene]; lst.remove(item); lst.insert(idx, item)
@@ -86,6 +88,14 @@ def main():
     assert not any(c for c in f.calls if c[0] == "settings" and c[1] != "stream host"), f.calls  # nothing else set
     obs.host_view_source(f, layout=LAYOUT)
     assert f.scenes["stream"].count("stream host") == 1
+    # (d24 batch136 PH2) a capture not hooked yet (0 x 0, its client still starting): its crop is left as it is
+    f = Fake()
+    obs.stream_scene(f, "http://127.0.0.1:8787/", layout=os.path.join(HERE, "stream", "static", "layout.json"))
+    f.transforms["stream cam3"]["cropLeft"] = 492
+    f.sizes = {"stream cam3": (0, 0), "stream host": (0, 0)}
+    obs.stream_scene(f, "http://127.0.0.1:8787/", layout=os.path.join(HERE, "stream", "static", "layout.json"))
+    assert f.transforms["stream cam3"]["cropLeft"] == 492 and f.transforms["stream cam3"]["boundsWidth"] == 1208, f.transforms["stream cam3"]
+    assert f.transforms["stream cam1"]["cropLeft"] == 328
     print("obs host view: ok (factorio-nick.exe only, off, on-air hole and crop, above the cameras, one-off adds it alone)")
 
 
