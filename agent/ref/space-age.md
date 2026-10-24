@@ -156,7 +156,7 @@
   per collector is inferred: a chunk seen near the reach of a collector whose filters take it and gone at the next
   read (every 10 ticks) with its drift's path within 1 tile of that reach; not counted: `hit_hull` (gone on a platform
   tile) and `gone_elsewhere`; `inferred_minus_caught`, also `by_type`; the same read gives `tally` (so far, or done).
-- `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
+- `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?, phases?, phases_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
   take seconds) and gives its number; `floor_check: N` reads it: running, or done with `would_build` (the planned tiles
@@ -181,6 +181,11 @@
   not chosen that stand on a tile that would go. The chosen are what stands on the floor: never a rocket or other
   projectile, laser beam, cargo pod or robot passing; `add_for` (beside `place_ghosts_entries`) and `for_entities` name
   the entity (name, unit number, position) each planned tile is for, and how (footprint, tunnel, link). Read only.
+  `phases: [{cancel?, remove?, fill?, name?}, ...]` (1..16; tiles as `{x,y}`, an area, `"x0..x1,y0..y1"` or `"x,y"`):
+  each phase applied in order to a model of the floor (its tiles, marks and tile ghosts now) and played to stability
+  by the hub's rules; per phase `went`, `built`, `waiting` and `unbuilt` (`"(x,y): why"`), `cut` (floor no longer joined
+  to the hub by sides, what stands on it); `end` (areas taken up and added) and `rollback` (areas to fill back and take
+  up, played back: `restores`, or coordinates only). Read only; a large plan goes on across ticks (`phases_check: N`).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
   (`solar-panel@epic`; a ghost is built only from items of its quality, so the hub's normal stock never covers a quality
