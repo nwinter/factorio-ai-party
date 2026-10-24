@@ -46,6 +46,153 @@ return function(api)
     return a.left_top.x < b.right_bottom.x-0.01 and b.left_top.x < a.right_bottom.x-0.01
       and a.left_top.y < b.right_bottom.y-0.01 and b.left_top.y < a.right_bottom.y-0.01
   end
+  -- The empty tiles new foundation would enclose on a platform: seeds the new tiles ({x, y}), filled[key] the tiles
+  -- that are or will be foundation (new, tile ghosts), surface_tile(x, y) a tile's {layers}, ghost_unread(x, y) a tile
+  -- ghost there not in filled. The game builds no foundation that leaves a hole of empty space (tilecheck.lua); a
+  -- region followed past HOLE_LIMIT tiles counts as open space. Returns the regions to fill (lists of {x, y}), the
+  -- enclosed tiles left out, and whether the flood stopped at its budget. Shared by the dry run and place_ghosts' live
+  -- call (d20 batch122, Astra #2087: the dry run counted 15 holes, the live call laid only the tiles under its ghosts).
+  function M.enclosed(seeds, filled, surface_tile, ghost_unread)
+    local function empty(x, y)
+      local t = surface_tile(x, y)
+      return t.layers.empty_space == true and not t.layers.out_of_map
+    end
+    -- Each flood keeps its id on the tiles it reached: a flood that meets
+    -- one that ended in open space is open too (its frontier was never
+    -- followed, so the region only looks closed from here).
+    local seen, budget, open_ids, fid, unchecked = {}, FLOOD_BUDGET, {}, 0, false
+    -- (d17 batch22 A1, Sol: a bridge's dry run listed both void regions, hundreds of tiles for one gap) the hub builds
+    -- a tile once its empty side neighbours form one run: beside a new tile, every enclosed region must be filled when
+    -- open space is beside it too, else all but the largest (that one may stay empty). A region no new tile needs
+    -- filled is left out (holes_other).
+    local regions, seed_fids = {}, {}
+    for si, seed in ipairs(seeds) do
+      seed_fids[si] = {}
+      for _, d in ipairs(DIRS) do
+        local sx, sy = seed[1]+d[1], seed[2]+d[2]
+        local sk = key(sx, sy)
+        if seen[sk] then seed_fids[si][seen[sk]] = true end
+        if not seen[sk] and not filled[sk] and empty(sx, sy) and not ghost_unread(sx, sy) then
+          fid = fid + 1
+          seen[sk] = fid
+          local q, i, open = {{sx, sy}}, 1, false
+          while q[i] do
+            if #q > HOLE_LIMIT then open = true; break end
+            budget = budget - 1
+            if budget < 0 then open = true; unchecked = true; break end
+            local c = q[i]; i = i + 1
+            for _, d2 in ipairs(DIRS) do
+              local nx, ny = c[1]+d2[1], c[2]+d2[2]
+              local nk = key(nx, ny)
+              if not filled[nk] then
+                local sid = seen[nk]
+                if sid then
+                  if sid ~= fid and open_ids[sid] then open = true end
+                else
+                  local t = surface_tile(nx, ny)
+                  if t.layers.out_of_map then open = true
+                  elseif t.layers.empty_space and not ghost_unread(nx, ny) then seen[nk] = fid; q[#q+1] = {nx, ny} end
+                end
+              end
+            end
+            if open then break end
+          end
+          if open then open_ids[fid] = true
+          else regions[fid] = q end
+          seed_fids[si][fid] = true
+        end
+      end
+    end
+    -- (d23 batch120 CC3, Astra #2019: Asterion's route crossed an empty corridor twice; each tile looked at alone saw
+    -- one enclosed region beside it, so the 65 tiles between the crossings were left out, and the floor check found the
+    -- last column of each crossing never built) the regions the new tiles join are grouped: two regions beside new
+    -- tiles that touch by a side were one empty space before and the hub never splits empty space, so of each group
+    -- all enclosed regions are filled when open space is among them, else all but the largest.
+    local parent = {}
+    local function find(a) while parent[a] and parent[a] ~= a do a = parent[a] end return a end
+    local function union(a, b) a, b = find(a), find(b); if a ~= b then parent[b] = a end end
+    local seed_at = {}
+    for si, seed in ipairs(seeds) do seed_at[key(seed[1], seed[2])] = si end
+    for si, seed in ipairs(seeds) do
+      for fid in pairs(seed_fids[si]) do union(-si, fid) end
+      for _, d in ipairs(DIRS) do
+        local sj = seed_at[key(seed[1]+d[1], seed[2]+d[2])]
+        if sj then union(-si, -sj) end
+      end
+    end
+    local open_group, largest = {}, {}
+    for fid in pairs(open_ids) do open_group[find(fid)] = true end
+    for fid, q in pairs(regions) do
+      local g = find(fid)
+      if not largest[g] or #q > #regions[largest[g]] then largest[g] = fid end
+    end
+    local required = {}
+    for fid in pairs(regions) do
+      local g = find(fid)
+      if open_group[g] or largest[g] ~= fid then required[fid] = true end
+    end
+    local fill, other = {}, 0
+    for fid, q in pairs(regions) do
+      if required[fid] then fill[#fill+1] = q else other = other + #q end
+    end
+    return fill, other, unchecked
+  end
+  -- The enclosed tiles place_ghosts' live call fills after laying tile ghosts at cells ({x, y} each) on platform
+  -- surface s: M.enclosed on the surface as it is now, its tile ghosts counting as foundation. Returns the cells to
+  -- fill ({x, y}), the enclosed tiles left out, and whether the flood stopped at its budget.
+  function M.live_holes(s, force, cells)
+    local cache, kinds, gen, filled, seeds = {}, {}, {}, {}, {}
+    local UNGENERATED = {layers={}}
+    local function surface_tile(x, y)
+      local k = key(x, y)
+      local c = cache[k]
+      if c == nil then
+        local cx, cy = math.floor(x / 32), math.floor(y / 32)
+        local ck = key(cx, cy)
+        if gen[ck] == nil then gen[ck] = try(function() return s.is_chunk_generated({cx, cy}) end) ~= false end
+        local ok, t = pcall(s.get_tile, x, y)
+        if not (ok and t and t.valid ~= false) or (not gen[ck] and t.name == 'out-of-map') then c = UNGENERATED
+        else
+          c = kinds[t.name]
+          if not c then
+            c = {layers=try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}}
+            kinds[t.name] = c
+          end
+        end
+        cache[k] = c
+      end
+      return c
+    end
+    local x0, y0, x1, y1
+    for _, c in ipairs(cells) do
+      filled[key(c[1], c[2])] = true; seeds[#seeds+1] = c
+      x0, y0 = math.min(x0 or c[1], c[1]), math.min(y0 or c[2], c[2])
+      x1, y1 = math.max(x1 or c[1], c[1]), math.max(y1 or c[2], c[2])
+    end
+    if not x0 then return {}, 0, false end
+    local m = 40
+    local list = s.find_entities_filtered{area={{x0-m, y0-m}, {x1+1+m, y1+1+m}}, type='tile-ghost', force=force, limit=4096}
+    local read_all = #list < 4096
+    for _, g in pairs(list) do
+      if g.valid then filled[key(math.floor(g.position.x), math.floor(g.position.y))] = true end
+    end
+    local looked = {}
+    local function ghost_unread(x, y)
+      if read_all and x >= x0-m and x <= x1+m and y >= y0-m and y <= y1+m then return false end
+      local k = key(x, y)
+      if looked[k] == nil then
+        looked[k] = (try(function()
+          return s.count_entities_filtered{area={{x+0.1, y+0.1}, {x+0.9, y+0.9}}, type='tile-ghost', force=force, limit=1}
+        end) or 0) > 0
+      end
+      return looked[k]
+    end
+    local fill, other, unchecked = M.enclosed(seeds, filled, surface_tile, ghost_unread)
+    local out = {}
+    for _, q in ipairs(fill) do for _, c in ipairs(q) do out[#out+1] = c end end
+    table.sort(out, function(a, b) if a[2] ~= b[2] then return a[2] < b[2] end return a[1] < b[1] end)
+    return out, other, unchecked
+  end
   -- Where the engine puts an entity asked for at pos: odd sizes on tile
   -- centres, even ones on tile corners (rails keep their own grid).
   function M.snap(proto, pos, dir)
@@ -1383,105 +1530,25 @@ return function(api)
       if rec.status == 'blocked' or (rec.status == 'needs_tiles' and rec.engine == false) then counts.refused_now = (counts.refused_now or 0) + 1 end
     end
 
-    -- On a platform: the empty tiles new foundation would enclose. The game
-    -- builds no foundation that leaves a hole of empty space (tilecheck.lua);
-    -- a region followed past HOLE_LIMIT tiles counts as open space. Tile
-    -- ghosts already ordered count as foundation.
+    -- On a platform: the empty tiles new foundation would enclose (M.enclosed).
+    -- Tile ghosts already ordered count as foundation.
     local holes, unchecked, holes_other, hole_regions = 0, false, nil, nil
     if on_platform then
       local filled, seeds = {}, {}
       for k, t in pairs(planned) do filled[k] = true; seeds[#seeds+1] = {t.x, t.y} end
       for k in pairs(pending) do filled[k] = true end
       for _, n in ipairs(need_list) do filled[key(n.x, n.y)] = true; seeds[#seeds+1] = {n.x, n.y} end
-      local function empty(x, y)
-        local t = surface_tile(x, y)
-        return t.layers.empty_space == true and not t.layers.out_of_map
-      end
-      -- Each flood keeps its id on the tiles it reached: a flood that meets
-      -- one that ended in open space is open too (its frontier was never
-      -- followed, so the region only looks closed from here).
-      local seen, budget, open_ids, fid = {}, FLOOD_BUDGET, {}, 0
       local foundation_item
       for _, n in ipairs(need_list) do foundation_item = foundation_item or n.item end
       foundation_item = foundation_item or 'space-platform-foundation'
-      -- (d17 batch22 A1, Sol: a bridge's dry run listed both void regions, hundreds of tiles for one gap) the hub builds
-      -- a tile once its empty side neighbours form one run: beside a new tile, every enclosed region must be filled when
-      -- open space is beside it too, else all but the largest (that one may stay empty). A region no new tile needs
-      -- filled is left out (holes_other).
-      local regions, seed_fids = {}, {}
-      for si, seed in ipairs(seeds) do
-        seed_fids[si] = {}
-        for _, d in ipairs(DIRS) do
-          local sx, sy = seed[1]+d[1], seed[2]+d[2]
-          local sk = key(sx, sy)
-          if seen[sk] then seed_fids[si][seen[sk]] = true end
-          if not seen[sk] and not filled[sk] and empty(sx, sy) and not ghost_unread(sx, sy) then
-            fid = fid + 1
-            seen[sk] = fid
-            local q, i, open = {{sx, sy}}, 1, false
-            while q[i] do
-              if #q > HOLE_LIMIT then open = true; break end
-              budget = budget - 1
-              if budget < 0 then open = true; unchecked = true; break end
-              local c = q[i]; i = i + 1
-              for _, d2 in ipairs(DIRS) do
-                local nx, ny = c[1]+d2[1], c[2]+d2[2]
-                local nk = key(nx, ny)
-                if not filled[nk] then
-                  local sid = seen[nk]
-                  if sid then
-                    if sid ~= fid and open_ids[sid] then open = true end
-                  else
-                    local t = surface_tile(nx, ny)
-                    if t.layers.out_of_map then open = true
-                    elseif t.layers.empty_space and not ghost_unread(nx, ny) then seen[nk] = fid; q[#q+1] = {nx, ny} end
-                  end
-                end
-              end
-              if open then break end
-            end
-            if open then open_ids[fid] = true
-            else regions[fid] = q end
-            seed_fids[si][fid] = true
-          end
-        end
-      end
-      -- (d23 batch120 CC3, Astra #2019: Asterion's route crossed an empty corridor twice; each tile looked at alone saw
-      -- one enclosed region beside it, so the 65 tiles between the crossings were left out, and the floor check found the
-      -- last column of each crossing never built) the regions the new tiles join are grouped: two regions beside new
-      -- tiles that touch by a side were one empty space before and the hub never splits empty space, so of each group
-      -- all enclosed regions are filled when open space is among them, else all but the largest.
-      local parent = {}
-      local function find(a) while parent[a] and parent[a] ~= a do a = parent[a] end return a end
-      local function union(a, b) a, b = find(a), find(b); if a ~= b then parent[b] = a end end
-      local seed_at = {}
-      for si, seed in ipairs(seeds) do seed_at[key(seed[1], seed[2])] = si end
-      for si, seed in ipairs(seeds) do
-        for fid in pairs(seed_fids[si]) do union(-si, fid) end
-        for _, d in ipairs(DIRS) do
-          local sj = seed_at[key(seed[1]+d[1], seed[2]+d[2])]
-          if sj then union(-si, -sj) end
-        end
-      end
-      local open_group, largest = {}, {}
-      for fid in pairs(open_ids) do open_group[find(fid)] = true end
-      for fid, q in pairs(regions) do
-        local g = find(fid)
-        if not largest[g] or #q > #regions[largest[g]] then largest[g] = fid end
-      end
-      local required = {}
-      for fid in pairs(regions) do
-        local g = find(fid)
-        if open_group[g] or largest[g] ~= fid then required[fid] = true end
-      end
-      local other, filled_regions = 0, {}
-      for fid, q in pairs(regions) do
-        if required[fid] then
-          for _, c in ipairs(q) do need(c[1], c[2], foundation_item, 'hole'); holes = holes + 1 end
-          local x0, y0, x1, y1 = q[1][1], q[1][2], q[1][1], q[1][2]
-          for _, c in ipairs(q) do x0, y0, x1, y1 = math.min(x0, c[1]), math.min(y0, c[2]), math.max(x1, c[1]), math.max(y1, c[2]) end
-          filled_regions[#filled_regions+1] = {n=#q, x0=x0, y0=y0, x1=x1, y1=y1}
-        else other = other + #q end
+      local fill, other
+      fill, other, unchecked = M.enclosed(seeds, filled, surface_tile, ghost_unread)
+      local filled_regions = {}
+      for _, q in ipairs(fill) do
+        for _, c in ipairs(q) do need(c[1], c[2], foundation_item, 'hole'); holes = holes + 1 end
+        local x0, y0, x1, y1 = q[1][1], q[1][2], q[1][1], q[1][2]
+        for _, c in ipairs(q) do x0, y0, x1, y1 = math.min(x0, c[1]), math.min(y0, c[2]), math.max(x1, c[1]), math.max(y1, c[2]) end
+        filled_regions[#filled_regions+1] = {n=#q, x0=x0, y0=y0, x1=x1, y1=y1}
       end
       holes_other = other > 0 and other or nil
       -- the regions filled, largest first: their size and box
