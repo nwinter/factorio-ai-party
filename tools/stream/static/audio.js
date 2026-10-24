@@ -6,7 +6,12 @@
 // clip still waiting when it expires is dropped, never played late. In OBS, enable "Control audio via OBS" on the
 // browser source so OBS mixes this (and ducks game audio under it: tools/obs.py stream-audio).
 // URL knobs: ?mute (no audio), ?caster=0.9, ?agent=1.0 (gains), ?fade=0.25 (seconds to fade out an interrupted
-// clip), ?captions=0 (hide captions). A desktop browser needs one click before audio starts (autoplay policy).
+// clip), ?captions=0 (hide captions), ?duck=0.2 (a clip's gain under a timed one). A desktop browser needs one click
+// before audio starts (autoplay policy).
+// (d23 batch128 CK1, the tour) A clip with `at` (epoch seconds, the service's clock) is loaded when it arrives and
+// started at that moment on the audio clock, outside the queue. Until it has played, no queued clip starts that would
+// still be playing at `at` (its duration, else 20 s, and GUARD); one that still plays then (a wrong length) is ducked
+// under it. A `cancel` event takes a timed or queued clip back. The start report says when it started (started_at).
 (() => {
   const params = new URLSearchParams(location.search);
   if (params.has("mute")) return;
@@ -67,6 +72,12 @@
 
   const queue = [];
   let current = null;       // {clip, rank, src, gain, cut}
+  const DUCK = num("duck", 0.2), GUARD = 0.4;
+  const timed = new Map();  // id -> {clip, src, done, playing}: clips with `at`
+  let skew = 0;             // the service's clock minus this page's (0 on one machine; set when they differ by > 1 s)
+  const svcNow = () => Date.now() / 1000 + skew;
+  const nextAt = () => { let m = Infinity; for (const x of timed.values()) if (!x.done && x.clip.at < m) m = x.clip.at; return m; };
+  const narrating = () => { for (const x of timed.values()) if (x.playing) return true; return false; };
   let lastExchange = null;  // the exchange of the last host line, to keep Rook and Vale together
 
   // extra: {played, duration} in seconds as this page measured them (the audio clock), so the service can tell a clip
@@ -110,7 +121,78 @@
     setTimeout(() => { try { c.src.stop(); } catch (err) { /* already ended */ } }, FADE * 1000 + 30);
   }
 
+  function cancel(id) {
+    const x = timed.get(id);
+    if (x && !x.done) {
+      x.done = true;
+      if (x.src) { try { x.src.stop(); } catch (err) { /* not started */ } }
+      if (!x.playing) report(id, "skip");
+    }
+    const i = queue.findIndex((c) => c.id === id);
+    if (i >= 0) { queue.splice(i, 1); report(id, "skip"); }
+  }
+
+  async function schedule(clip) {
+    const x = { clip, done: false, playing: false };
+    timed.set(clip.id, x);
+    let cap = null, t0 = null, length = null, state = null;  // null: nothing to report (cancelled before it started)
+    try {
+      const c = audioCtx();
+      if (c.state === "suspended") { await c.resume().catch(() => {}); if (c.state === "suspended") unlockButton(); }
+      const data = await fetch(clip.url, { cache: "no-store" }).then((r) => r.arrayBuffer());
+      const buf = await c.decodeAudioData(data);
+      let wait = clip.at - svcNow();
+      if (x.done) return;
+      if (wait < -2) { x.done = true; state = "skip"; return; }  // the page came too late for it: never played late
+      const g = c.createGain();
+      g.gain.value = VOL.caster;
+      g.connect(c.destination);
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      src.connect(g);
+      x.src = src;
+      length = buf.duration;
+      wait = Math.max(0, clip.at - svcNow());
+      const when = c.currentTime + wait;
+      const ended = new Promise((done) => { src.onended = done; });
+      src.start(when);  // sample-exact on the audio clock
+      await new Promise((go) => setTimeout(go, Math.max(0, wait * 1000 - 30)));
+      if (x.done) return;
+      x.playing = true;
+      t0 = when;
+      // a queued clip still playing (its length was wrong) goes under the timed one
+      if (current && current.gain && !current.cut) {
+        const gg = current.gain.gain, t = c.currentTime;
+        gg.cancelScheduledValues(t); gg.setValueAtTime(gg.value, t); gg.linearRampToValueAtTime(gg.value * DUCK, t + 0.25);
+      }
+      cap = caption(clip);
+      report(clip.id, "start", { duration: Math.round(length * 100) / 100,
+        started_at: Math.round((svcNow() + (when - c.currentTime)) * 1000) / 1000 });
+      await ended;
+      state = x.done ? "cut" : "end";
+    } catch (err) {
+      console.error("timed clip failed", clip.id, err);
+      state = "error";
+    } finally {
+      const extra = t0 != null && ctx ? { played: Math.round((ctx.currentTime - t0) * 100) / 100,
+        duration: length != null ? Math.round(length * 100) / 100 : undefined } : undefined;
+      if (state) report(clip.id, state, extra);
+      if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
+      x.done = true; x.playing = false;
+      setTimeout(() => timed.delete(clip.id), 60000);
+      setTimeout(playNext, 300);
+    }
+  }
+
+  // a queued clip may start now when no timed clip plays and it ends before the next one (its length, else 20 s)
+  const fits = (clip, length) => !narrating() &&
+    svcNow() + (length != null ? length : (clip.duration || 20)) + GUARD <= nextAt();
+
   function arrive(clip) {
+    if (clip.cancel) { cancel(clip.cancel); return; }
+    const d = typeof clip.t === "number" ? clip.t - Date.now() / 1000 : 0;
+    if (Math.abs(d) > 1) skew = d; else if (typeof clip.t === "number") skew = 0;
+    if (typeof clip.at === "number") { schedule(clip); return; }
     queue.push(clip);
     // No clip cuts another off (viewer craigNZ830, shift01 17:23: "when two voice chats are being read, dont have the
     // second one cut the first one out. add them too a list to play in order"): a clip that matters more goes to the
@@ -132,7 +214,7 @@
   }
 
   function caption(clip) {
-    if (!CAPTIONS) return null;
+    if (!CAPTIONS || clip.caption === false) return null;  // (CK4) the tour's own captions show it
     const cap = document.createElement("div");
     cap.className = "cap " + clip.channel;
     // portraits: hosts from casters.js (eng/art), agents from their profile avatar (avatar.js); none without them
@@ -181,10 +263,16 @@
     return cap;
   }
 
+  let retry = null;
   async function playNext() {
     if (current) return;
     const clip = pick();
     if (!clip) return;
+    if (!fits(clip)) {  // a timed clip plays or comes before this one would end: it waits (or expires)
+      queue.push(clip);
+      if (!retry) retry = setTimeout(() => { retry = null; playNext(); }, 500);
+      return;
+    }
     const cur = current = { clip, rank: rankOf(clip), cut: false };
     let cap = null, state = "end", t0 = null, length = null;
     try {
@@ -194,6 +282,7 @@
       const buf = await c.decodeAudioData(data);
       if (cur.cut) { state = "cut"; return; }          // something that matters more arrived while it loaded
       if (expired(clip)) { state = "skip"; return; }   // never late
+      if (!fits(clip, buf.duration)) { queue.push(clip); state = null; return; }  // (CK1) back in the queue
       const g = c.createGain();
       g.gain.value = VOL[clip.channel === "agent" || clip.channel === "operator" ? "agent" : "caster"];
       g.connect(c.destination);
@@ -215,10 +304,10 @@
     } finally {
       const extra = t0 != null && ctx ? { played: Math.round((ctx.currentTime - t0) * 100) / 100,
         duration: length != null ? Math.round(length * 100) / 100 : undefined } : undefined;
-      report(clip.id, state, extra);
+      if (state) report(clip.id, state, extra);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
       current = null;
-      setTimeout(playNext, cur.cut ? 60 : 300);
+      setTimeout(playNext, cur.cut ? 60 : state ? 300 : 500);
     }
   }
 

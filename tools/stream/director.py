@@ -443,6 +443,8 @@ class Director:
             body["smooth"] = False  # cameras.lua teleports at once (and sets the zoom) instead of easing over
         elif target is not None and target.get("glide") and "position" in target:
             body["speed"] = target["glide"]  # (d20 batch50 A2) a detail pan: cameras.lua moves at most this many tiles/s
+        if target is not None and target.get("move") and "position" in target:
+            body["move"] = target["move"]  # (d23 batch128 CK2) cameras.lua plays it from now, every tick
         if target is not None and target.get("exact_zoom"):
             # a zoom that fits (a fight, a platform): sent as computed
             body["zoom"] = round(min(self.cfg["max_zoom"], target["zoom"]), 2)
@@ -459,6 +461,9 @@ class Director:
         if target is not None:
             target["sent"] = now
             target["game_zoom"] = body.get("zoom")  # frame_of: what the client shows
+            if body.get("move"):  # the game plays it (its camera says move), else the director steps it
+                r = result.get("result", result) if isinstance(result, dict) else {}
+                target["move_ok"] = bool(isinstance(r, dict) and (r.get("camera") or {}).get("move"))
         if reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
             self.last_cut = now
         self.state[name] = target

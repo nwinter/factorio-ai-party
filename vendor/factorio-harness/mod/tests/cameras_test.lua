@@ -160,4 +160,27 @@ do
   cams2.set{player=2,follow='luna',zoom=1,smooth=false}
   eq(c2.position.y,7)
 end
+-- d23 batch128 CK2 (the stream's tour): a move within a shot, seconds from the call; every tick the view is exactly
+-- where the move is (the same points as tools/stream/camerapath.py, test_camerapath.py); then it rests at the end.
+do
+  local near=function(a,b) assertions=assertions+1; assert(math.abs(a-b)<1e-5,tostring(a)..' ~= '..tostring(b)) end
+  local move={segments={{pts={{x=0,y=0,zoom=0.5},{x=40,y=10,zoom=0.8},{x=60,y=-20,zoom=0.8}},t0=1,t1=11,ease='inout'},
+    {pts={{x=60,y=-20,zoom=0.8},{x=60,y=-20,zoom=1.6}},t0=12,t1=16,ease='out'}}}
+  game.tick=1000
+  local r=cams2.set{player=2,position={x=0,y=0},zoom=0.5,move=move}
+  eq(r.camera.move.start_tick,1000); eq(r.camera.move.end_tick,1960)
+  near(c2.position.x,0); near(c2.position.y,0)
+  local want={[3.5]={10.262814,3.528639,0.562535},[6]={34.765184,10.847659,0.747669},[9]={55.609527,-12.231978,0.8},
+    [13]={60,-20,1.043012},[16]={60,-20,1.6}}
+  for _,t in ipairs({3.5,6,9,13,16}) do
+    game.tick=1000+t*60; cams2.tick()
+    near(c2.position.x,want[t][1]); near(c2.position.y,want[t][2]); near(c2.zoom,want[t][3])
+  end
+  game.tick=1961; cams2.tick()
+  eq(cams2.describe(2).move,nil); near(cams2.describe(2).position.x,60); near(cams2.describe(2).zoom,1.6)
+  game.tick=1970; cams2.tick(); near(c2.position.x,60) -- it rests at the end
+  assert(not pcall(cams2.set,{player=2,position={x=0,y=0},move={segments={{pts={{x=0,y=0,zoom=9}},t0=0,t1=1}}}}),'zoom 9 accepted')
+  assert(not pcall(cams2.set,{player=2,position={x=0,y=0},move={segments={{pts={{x=0,y=0,zoom=1}},t0=5,t1=1}}}}),'t1 < t0 accepted')
+  assert(not pcall(cams2.set,{player=2,follow='luna',move=move}),'a move on a follow accepted')
+end
 print('cameras ok ('..assertions..' assertions)')

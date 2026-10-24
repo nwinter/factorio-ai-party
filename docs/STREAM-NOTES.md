@@ -1539,6 +1539,115 @@ Nick (d23 10:28): a narrated camera tour, scripted ahead. tools/stream/tour.py p
   skipped with why).
 - Tests: tools/stream/test_tour.py.
 
+## The tour, version 2: timing (2026-10-23, d20 batch128 CK1)
+
+Nick (17:30): "get the timing really tight between the shot durations and the measured voice line durations".
+- What the 16:30 run did (tools/stream/logs/tour-20261023-163005.jsonl against the director log
+  director-20261023-162515.jsonl): on planet stops the narration started 1.9 to 3.0 s *before* the program cut. From
+  stop 2 on, the tour's on-air check matched any look (the previous stop's was still on air) and posted the clip at
+  once, while the director framed the new look on a standby and cut 2.3 to 3.7 s after the POST (ready_s 1.5 s plus
+  the 1 s tick). Ship stops checked the name: their narration started 0.6 to 0.8 s after the cut. Every stop then
+  held about 20 s after its clip (the script's 60 s against clips of 33 to 47 s). Two narrations started 14 s late,
+  behind agent lines already playing (Luna 19 s, Sol).
+- Now a narrated stop is cut, LEAD_S 0.8 s, the clip's measured length, TAIL_S 1.5 s (`hold_s`, `min_seconds` in
+  the script; `seconds` only for a stop without narration). One timeline on the clock: each stop goes to the service
+  PREROLL_S 4 s ahead:
+  - POST /look with `cut_at` (lookcam.py): a standby frames it at once, the program cuts at that moment (onecam
+    `look_direct`; `next_wake` wakes the director for it); one client moves then. `id` tags it; the snapshot's
+    look says `aired`. `{platform: NAME}` is a whole ship as the director frames it (no chart read), so ships and
+    spots are one kind of hold. POST /look/extend renews it with no chart read.
+  - POST /audio with `at` = cut + 0.8 (serve.py AudioHub, static/audio.js): the page loads the clip on arrival and
+    starts it at that moment on its audio clock; until then no queued clip starts that would still play at `at`
+    (one that does is ducked, `?duck=`); the start report carries `started_at`. /audio/status lists `queued`;
+    POST /audio/cancel takes a clip back.
+  - The drift (look.aired against the cut asked) is smoothed and the next cuts are asked that much sooner.
+  - An agent's line waiting in the queue near a stop's end (and not expiring before the narration ends) holds the
+    stop for its length; `--no-agent-gaps` turns that off (agent lines expire after 20 s in the queue).
+- Measured on `serve.py --mock` (three cameras) with the real audio.js in node: the program cut 3 to 5 ms after the
+  moment, the narration 0.800 s after the cut (the page's clock: 0 to 1 ms). On air the OBS z-order thread (cuts.py,
+  0.1 s poll) adds up to 0.1 s to the cut.
+- Script format for writers: tools/stream/tour-FORMAT.md. Tests: test_tour.py, test_tourcam.py, test_touraudio.py
+  (tour_audio_selftest.mjs in node).
+- Deploy: serve.py, lookcam.py, onecam.py and audio.js changed: restart the stream service and reload the overlay
+  page (OBS browser source refresh) before the next tour; `tour.py run` refuses a service without /audio/status
+  `queued`.
+
+## The tour, version 2: camera moves (2026-10-23, d20 batch128 CK2)
+
+- A stop's `move` (tools/stream/tour-FORMAT.md): `to` (pan and zoom), `zoom`, `path` (points), `"hold"`, or a list,
+  timed in seconds from the cut (default the whole stop), eased (inout, in, out, linear). tour.py turns it into a
+  camera move (tools/stream/camerapath.py: segments of points {x, y, zoom}, t0, t1, ease) over the stop's length.
+- The math, in three places that agree: the time eased, along the path by length (|dx, dy| + 20 |ln z1/z0| a step,
+  so a zoom has length), x and y by a cubic Hermite spline with chordal knots (a straight path at even speed, a
+  bent one without corners), zoom by ln z. camerapath.py (the service, tests), cameras.lua `move` (the game, every
+  tick: the view put exactly there, no easing; it rests at the end), and next the page (CK3's marks).
+  test_camerapath.py and cameras_test.lua check the same five points.
+- POST /look {move}: the look's spot is its first point; every point's frame is chart-checked (one read each). A
+  standby frames the first point without it; the cut sends it (director.apply `move`); the snapshot's look has it
+  with `aired` (the move's start). {platform, move: "pan", move_s}: a tall ship bow to stern (rests of PAN_END_S at
+  each end) as a move; a ship that fits stays still. A camera reply without camera.move (a game whose harness has no
+  `move` yet): the director steps the move itself, aiming 0.8 s ahead every 0.5 s with a glide (cameras.lua speed),
+  so a tour works before the harness install too, less smoothly.
+- Cheap on the game: no reads; one camera command a stop (the fallback: two a second while a move runs).
+- Deploy: cameras.lua is harness Lua: the moves play smoothly after the harness install on world n; until then the
+  fallback. The stream service restart (cp1) covers the rest.
+
+## The tour, version 2: marks on the shot (2026-10-23, d20 batch128 CK3)
+
+- A stop's `marks` (tools/stream/tour-FORMAT.md): arrow, circle, box, label at map positions, with text, colour and
+  times from the cut. tourlay.py checks them; tour.py posts each stop's entry (POST /tour/overlay {id, cut, until,
+  length, view, marks}) with the look, its view the look reply's (spot, zoom, move; a ship's the director's frame);
+  serve.py keeps at most 3 entries (each gone at its until; DELETE /tour/overlay at the tour's end) and puts them in
+  the snapshot as `tour`.
+- The page: static/tourlay.js (index.html, portrait.html; ?tourlay=0 off) draws the entry on now as SVG in
+  #cam-main over the capture's whole box, from the cut (the look's `aired` when the look on air has its id), every
+  animation frame. World to screen: a tile is 32 * zoom * (hole height / 1080) px (a hole wider than 16:9: width /
+  1920; the clients keep a 1080-line view, mapframes.py), about the hole's centre at the camera's position, which
+  during a move is camerapath.py's math in JS (tourlay_selftest.mjs checks the same five points as Python and Lua).
+  Text is kept inside the hole. Seen on `serve.py --mock` (overlay_shot.sh): ring, arrow, box and label on their
+  tiles at zoom 0.8.
+- dry-run lists each stop's marks and finds a mark out of the frame while it shows (the move sampled every 2 s).
+- Tests: test_tourlay.py (marks, the store, off the frame, HTTP, the page's geometry in node), test_tour.py
+  `overlays`. Deploy: the stream service restart and page refresh (cp1) cover it.
+
+## The tour, version 2: subtitles (2026-10-23, d20 batch128 CK4)
+
+- The narration as timed captions in the camera hole. tools/stream/subtitles.py times them from the text and the
+  clip alone: pieces at punctuation weighed by syllables, the clip's pauses from ffmpeg silencedetect (-35 dB, 0.18
+  s), each piece boundary on the nearest pause in order (within 1.2 s), else its estimate; captions of at most 84
+  characters, a sentence's end (16+ characters) closing one. On the el-brian clips the narrator pauses 0.25-0.45 s
+  at every comma and full stop; a writer's 39 s clip (nauvis-launch) came out as ten captions, each ending on a
+  pause.
+- `prepare` keeps them in the manifest (subs, subs_v; a kept clip gets them with no TTS call); `run` times older
+  manifests' on the spot (ffmpeg, ~0.1 s a clip). The overlay entry carries subs with subs_at, the narration's
+  moment, so they run on the same clock as the page's audio; the narrator clip goes with `caption: false` (audio.js
+  leaves its caption box out; the stop's caption is still the look's label in the bar). static/tourlay.js shows the
+  one on now in a band above the bar (`"top"`: under the hole's top edge, for old clips). `subtitles: false` per stop,
+  `run --no-subtitles` for the tour: the caption box comes back.
+- Tests: test_subtitles.py (pieces, timing, pauses on an ffmpeg-made clip), test_tourlay.py (captions in the store,
+  captionAt in node), test_tour.py (prepare keeps them; run posts them; off). Seen on the mock (overlay_shot.sh).
+
+## The tour, version 2: old clips (2026-10-23, d20 batch128 CK5)
+
+- A stop's `clip` (tools/stream/tour-FORMAT.md): a clip library id (batch129: R2 <id>.mp4, H.264, already the
+  camera hole's 1208 x 1032; <id>.json with seconds and caption) or an .mp4 url, start_s, seconds, caption.
+  tour.py resolves each in dry-run and run (the .json and a HEAD on the .mp4; r2.dev answers Python's own
+  User-Agent with 403, so it sends `pog-tour/2`); a stop whose clip is not there is skipped. The stop lasts at least
+  the clip's play time + 0.5 s. With no target there is no look: the last stop's look is extended behind the clip.
+- The page: tourlay.js loads a muted <video> per entry with a clip as the entry arrives (a stop ahead), shows it over
+  the whole hole (z 2: marks 3, captions 4), plays it from start_s at the cut, keeps it within 0.35 s of the clock
+  and holds its last frame to the stop's end; an ARCHIVE badge (caption, title) at the top left; captions go on top
+  for a clip stop (the clips carry the old speech bubbles low).
+- Sound: the clip plays muted. Its sound is the old hosts' voices (batch129: "the clip's audio has the old hosts'
+  voices on it") and that hour's game, which would talk over the narrator and the hush; the stream's live game
+  sound goes on as the bed, ducked under the voices by OBS as always (tools/obs.py stream-audio). Ducking it further
+  for a clip was not needed: the bed is the same as on every other stop.
+- Checked: a dry-run against the live library (s01-death-006: 22 s, "from shift 1, Oct 12", Opus died; a missing id
+  named with the clipmaker command); in Chromium the video, badge and top caption are put in the hole (a frame of
+  the video itself was not caught: the headless runs end before it loads); both local Chromes report H.264
+  ("probably"). OBS's browser source (CEF, on the stream machine) was not tried.
+- Tests: test_tour.py `old_clips`, test_tourlay.py (clips in the store), tourlay_selftest.mjs (clipAt).
+
 ## Camera crops after a shift change (2026-10-23, d23 batch124b)
 - Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
 - After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene

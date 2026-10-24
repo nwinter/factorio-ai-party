@@ -7,9 +7,9 @@ narration in one narrator voice, aired through the stream service. Stdlib only (
   python3 tools/stream/tour.py run SCRIPT [--from ID]                       # on air
   python3 tools/stream/tour.py stop                                         # end a running tour (another terminal)
 
-SCRIPT: JSON, a list of stops (or {"stops": [...]}), each {id, target, seconds, caption, narration, facts}; target is
-{surface, x, y, zoom} (a planet spot: POST /look, chart-checked by the service) or {platform: NAME} (a ship: POST
-/platform). facts are for the operator and never aired.
+SCRIPT: JSON, a list of stops (or {"stops": [...]}); the fields are in tools/stream/tour-FORMAT.md. Each stop is a
+shot (target: {surface, x, y, zoom} a planet spot, or {platform: NAME} a ship) with a caption and a narration in
+one narrator voice; facts are for the operator and never aired.
 
 prepare renders each narration with voices.TTS (the caster's TTS path; keys in ~/.config/pog/, never printed) into
 SCRIPT_DIR/tour-clips/ with manifest.json ({voice, provider, clips: {id: {file, hash, duration}}}). A clip whose
@@ -17,22 +17,30 @@ narration and voice are unchanged is kept, so editing one stop re-renders one cl
 first of --voice whose provider renders every clip (a provider that fails mid-way hands the whole tour to the next).
 The default narrator is a voice no host and no agent speaks in (checked against the stream state when it is up).
 
-run: a stop lasts max(its seconds, its clip + 2 s), timed from the narration's start on the page (or from the shot
-when no page reports). For each stop the camera goes to the target (a /look is renewed before its 60 s limit; a
-/platform is asked for the stop's length), the caption is the shot's label and the narration's caption line, and the
-clip goes to POST /audio as channel "narrator", rank "urgent" (the page plays one clip at a time and an urgent clip
-goes next, so an agent's aloud line waits for the narrator and never talks over it). The hosts stay quiet for the
-whole tour: run writes caster.py's hush file (logs/hosts-hush.json; caster.py --hush-file) and removes it at the end.
-The director's own cuts wait while a look or platform hold is on (lookcam.py). A stop whose target is invalid or
-refused (unknown platform, uncharted ground) is skipped with a log line. stop (or Ctrl-C) ends the tour: the holds the
-tour set are cleared and the hush lifted. Every stop is logged to tools/stream/logs/tour-<start>.jsonl with what aired
-when (epoch and local time), for the archive and clips.
+Timing (d23 batch128 CK1, Nick 17:30: "get the timing really tight between the shot durations and the measured voice
+line durations"): a narrated stop lasts LEAD_S + its clip's measured length + TAIL_S (+ hold_s; at least
+min_seconds); a stop without narration lasts its seconds. The run is one timeline on the clock: each stop is sent to
+the service PREROLL_S ahead, its look with cut_at (a standby frames it then and the program cuts at that moment) and
+its narration with at = the cut + LEAD_S (the page loads it then and starts it on its audio clock). The look's
+`aired` (when the program showed it) against the cut asked for is the drift; later cuts are asked that much sooner.
+When an agent's voiced line waits in the page's queue near a stop's end, the stop is held for its length (it plays
+over the shot after the narration; --no-agent-gaps: no gap, the lines wait for the tour's end or expire).
+
+The hosts stay quiet for the whole tour: run writes caster.py's hush file (logs/hosts-hush.json; caster.py
+--hush-file) and removes it at the end. The director's own cuts wait while the look is on (lookcam.py). A stop whose
+target is refused (unknown platform, uncharted ground) is skipped with a log line and the next takes its time. stop
+(or Ctrl-C) ends the tour: the tour's look is cleared, a narration not played yet is taken back and the hush lifted.
+Every stop is logged to tools/stream/logs/tour-<start>.jsonl with what aired when (epoch and local time; the cut
+asked and aired, the narration planned and started), for the archive and clips.
 """
 import argparse, base64, hashlib, json, os, signal, sys, time, urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
+import tourlay  # noqa: E402
+import subtitles  # noqa: E402
+SUBS_V = 1  # subtitles.py's captions as kept in the manifest; another version is computed again
 
 LOG_DIR = os.path.join(HERE, "logs")
 HUSH_FILE = os.path.join(LOG_DIR, "hosts-hush.json")  # caster.py HUSH_FILE
@@ -44,12 +52,24 @@ FEED = "http://127.0.0.1:8788"
 VOICES = ["el-brian", "oa-fable"]
 DIRECTION = ("A thoughtful documentary narrator looking back over a long story: measured, warm and unhurried, with a "
              "point of view; natural pauses between sentences; never a sportscaster.")
-TAIL_S = 2.0  # a stop lasts at least its clip and this
+LEAD_S = 0.8  # the cut, then this long before the narration starts
+TAIL_S = 1.5  # after the narration ends, this long before the next cut
+MIN_STOP_S = 3.0  # no stop is shorter (a standby needs ~1.5 s to frame the next shot)
+SILENT_S = 8.0  # a stop with no narration and no seconds
 WORDS_PER_S = 2.5  # the timeline's estimate for a stop without a prepared clip (150 words a minute)
+PREROLL_S = 4.0  # each stop goes to the service this long before its cut (the standby frames it, the page loads it)
+MIN_PREROLL_S = 2.0  # a stop running late is still sent at least this long ahead
 LOOK_MAX_S = 60.0  # lookcam.MAX_S
-LOOK_RENEW_S = 20.0  # renew a look this long before it ends
-SETTLE_S = 8.0  # wait at most this long for the shot to be on air before the narration
-START_WAIT_S = 30.0  # wait at most this long for the page to start the narration clip
+LOOK_RENEW_S = 20.0  # extend a look this long before it ends
+LOOK_SPARE_S = 15.0  # a look runs this long past its stop's planned end (the next stop's look replaces it)
+AIRED_WAIT_S = 3.0  # after the cut, wait at most this long for the snapshot's look.aired
+START_WAIT_S = 5.0  # after the narration's moment, wait at most this long for the page's start report
+DRIFT_MAX_S = 2.0  # a measured cut drift beyond this is not used
+AGENT_GAP_MAX_S = 25.0  # the longest agent line a stop is held for
+# (CK5) the archive's clip library (batch129, tools/archive/clipmaker.py): <id>.mp4 (H.264, the camera hole's
+# 1208 x 1032, 1:1) and <id>.json {seconds, caption, title, ...}, public on R2
+CLIP_BASE = "https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev/clips/"
+CLIP_END_S = 0.5  # a clip stop lasts at least its play time and this
 
 
 def log(*a):
@@ -80,10 +100,15 @@ def check_stop(stop):
     if not sid:
         return None, "no id"
     t = stop.get("target")
-    if not isinstance(t, dict):
+    clip, why = check_clip(stop["clip"]) if stop.get("clip") is not None else (None, None)
+    if why:
+        return None, f"clip: {why}"
+    if not isinstance(t, dict) and not (t is None and clip):
         return None, "no target"
     try:
-        if t.get("platform"):
+        if t is None:  # (CK5) an old clip with no target: the camera stays where it was, behind the clip
+            target = None
+        elif t.get("platform"):
             target = {"platform": str(t["platform"]).strip()}
         else:
             if not str(t.get("surface") or "").strip():
@@ -91,12 +116,82 @@ def check_stop(stop):
             target = {"surface": str(t["surface"]).strip(), "x": number(t.get("x")), "y": number(t.get("y"))}
             if t.get("zoom") is not None:
                 target["zoom"] = number(t["zoom"])
-        secs = number(stop.get("seconds") if stop.get("seconds") is not None else 0)
+        secs = number(stop.get("seconds")) if stop.get("seconds") is not None else None
+        least = number(stop.get("min_seconds")) if stop.get("min_seconds") is not None else 0.0
+        hold = number(stop.get("hold_s")) if stop.get("hold_s") is not None else 0.0
     except ValueError as x:
-        return None, f"target or seconds: {x}"
-    return {"id": sid, "target": target, "seconds": max(0.0, secs),
+        return None, f"target, seconds, min_seconds or hold_s: {x}"
+    return {"id": sid, "target": target, "seconds": max(0.0, secs) if secs is not None else None,
+            "move": stop.get("move"),  # (CK2) checked by move_for in checked()
+            "subtitles": stop.get("subtitles", True),  # (CK4) true, false or "top"
+            "clip": clip,  # (CK5) an old clip played in the camera hole
+            "min_seconds": max(0.0, least), "hold_s": max(0.0, min(30.0, hold)),
             "caption": " ".join(str(stop.get("caption") or "").split())[:80],
             "narration": " ".join(str(stop.get("narration") or "").split())}, None
+
+
+def move_for(stop, length):
+    """(CK2) The stop's move as camerapath segments over a stop of `length` s (seconds from the cut), None for a still
+    shot, or "pan" (a whole ship with no move: the director's bow-to-stern pan). ValueError says what is wrong."""
+    import camerapath
+    raw, t = stop.get("move"), stop["target"]
+    if t is None:
+        if raw not in (None, "hold"):
+            raise ValueError("move: a clip stop with no target has no camera to move")
+        return None
+    if raw in (None, "hold"):
+        return "pan" if raw is None and "platform" in t and "x" not in t else None
+    moves = raw if isinstance(raw, list) else [raw]
+    if not moves or len(moves) > 8:
+        raise ValueError("move is one move or a list of 1..8")
+    here = {"x": t["x"], "y": t["y"], "zoom": t.get("zoom", 0.75)} if "x" in t else None
+
+    def when(v, what, default):
+        if v is None:
+            return default
+        if v == "end":
+            return length
+        v = camerapath.number(v, what)
+        return length + v if v < 0 else v
+    free = [m for m in moves if m == "hold" or (isinstance(m, dict) and m.get("from_s") is None and m.get("to_s") is None)]
+    share = length / len(moves) if len(free) == len(moves) else None
+    segs, last_end = [], 0.0
+    for i, m in enumerate(moves):
+        what = f"move {i + 1}" if len(moves) > 1 else "move"
+        if m == "hold":
+            last_end = share * (i + 1) if share else last_end
+            continue
+        if not isinstance(m, dict):
+            raise ValueError(f"{what}: an object with to, zoom or path (or \"hold\")")
+        if "path" in m:
+            if not isinstance(m["path"], list) or not m["path"]:
+                raise ValueError(f"{what}: path is a list of points {{x, y, zoom}}")
+            pts = ([here] if here else []) + m["path"]
+        elif "to" in m or "zoom" in m:
+            if not here:
+                raise ValueError(f"{what}: a whole ship has no spot to move from: give target x, y or a path")
+            to = dict(here, **(m.get("to") or {}))
+            if "zoom" in m:
+                to["zoom"] = m["zoom"]
+            pts = [here, to]
+        else:
+            raise ValueError(f"{what}: give to {{x, y, zoom}}, zoom, or path [...]")
+        full, prev = [], None
+        for k, p in enumerate(pts):  # a point without zoom keeps the last one's
+            if not isinstance(p, dict):
+                raise ValueError(f"{what} point {k + 1}: an object {{x, y, zoom}}")
+            q = dict(p)
+            if q.get("zoom") is None:
+                q["zoom"] = (prev or {}).get("zoom", 0.75)
+            full.append(q)
+            prev = q
+        t0 = when(m.get("from_s"), f"{what} from_s", share * i if share else last_end)
+        t1 = when(m.get("to_s"), f"{what} to_s", share * (i + 1) if share else length)
+        segs.append({"pts": full, "t0": t0, "t1": t1, "ease": m.get("ease", "inout")})
+        here, last_end = dict(full[-1]), t1
+    if not segs:
+        return None
+    return camerapath.check({"segments": segs})
 
 
 def checked(stops):
@@ -106,6 +201,16 @@ def checked(stops):
         s, why = check_stop(raw)
         if s and s["id"] in seen:
             s, why = None, f"id {s['id']!r} repeated"
+        if s and s["subtitles"] not in (True, False, "top", "bottom"):
+            s, why = None, "subtitles is true, false, \"top\" or \"bottom\""
+        if s:
+            try:
+                move_for(s, 60.0)
+                s["marks"] = tourlay.check_marks(raw.get("marks") if isinstance(raw, dict) else None)
+                if s["marks"] and s.get("clip"):
+                    raise ValueError("marks: a clip stop shows the clip, not the map (no marks)")
+            except ValueError as x:
+                s, why = None, str(x) if str(x).startswith(("move", "mark")) else f"move: {x}"
         if s:
             seen.add(s["id"])
         out.append((i, s, why))
@@ -122,15 +227,95 @@ def from_index(rows, start):
     raise SystemExit(f"no stop with id {start!r} (ids: {', '.join(s['id'] for _, s, _ in rows if s)})")
 
 
+def check_clip(c):
+    """(CK5) A stop's clip {id | url, caption?, start_s?, seconds?} -> (clip, None) or (None, why)."""
+    import re
+    if not isinstance(c, dict) or bool(c.get("id")) == bool(c.get("url")):
+        return None, "give id (the clip library's) or url"
+    out = {}
+    if c.get("id"):
+        if not re.fullmatch(r"[\w.-]{1,120}", str(c["id"])):
+            return None, f"id {c['id']!r} is not a clip library id (letters, digits, - _ .)"
+        out["id"] = str(c["id"])
+    else:
+        u = str(c["url"])
+        if not re.match(r"https?://", u) or not u.split("?")[0].endswith((".mp4", ".m3u8")):
+            return None, "url is an http(s) link to an .mp4 (or .m3u8)"
+        out["url"] = u
+    try:
+        out["start_s"] = max(0.0, number(c.get("start_s", 0)))
+        if c.get("seconds") is not None:
+            out["seconds"] = number(c["seconds"])
+            if out["seconds"] <= 0:
+                return None, "seconds must be over 0"
+    except ValueError as x:
+        return None, f"start_s or seconds: {x}"
+    if c.get("caption") is not None:
+        out["caption"] = " ".join(str(c["caption"]).split())[:60]
+    return out, None
+
+
+def resolve_clip(c, base=CLIP_BASE, timeout=8, opener=None):
+    """(CK5) A checked clip -> {url, start_s, play, caption, title}: a library id's .mp4 and its .json (seconds,
+    caption); the file must answer (HEAD 200). ValueError says why not."""
+    opener = opener or urllib.request.urlopen
+    ua = {"User-Agent": "pog-tour/2 (tools/stream/tour.py)"}  # r2.dev refuses Python's own (403)
+    meta = {}
+    if c.get("id"):
+        url = base.rstrip("/") + "/" + c["id"] + ".mp4"
+        try:
+            with opener(urllib.request.Request(base.rstrip("/") + "/" + c["id"] + ".json", headers=ua),
+                        timeout=timeout) as r:
+                meta = json.loads(r.read())
+        except (urllib.error.URLError, OSError, ValueError) as x:
+            raise ValueError(f"{c['id']} is not in the clip library ({type(x).__name__}: {str(x)[:80]}); "
+                             f"tools/archive/clipmaker.py {c['id']} makes it")
+    else:
+        url = c["url"]
+    try:
+        with opener(urllib.request.Request(url, method="HEAD", headers=ua), timeout=timeout) as r:
+            if r.status != 200:
+                raise ValueError(f"{url}: HTTP {r.status}")
+    except (urllib.error.URLError, OSError) as x:
+        raise ValueError(f"{url} does not answer ({type(x).__name__}: {str(x)[:80]})")
+    start = float(c.get("start_s") or 0)
+    total = c.get("seconds") or meta.get("seconds")
+    if not total:
+        raise ValueError("seconds unknown: give the clip's seconds")
+    play = c["seconds"] if c.get("seconds") else max(0.5, float(total) - start)
+    caption = c.get("caption") or meta.get("caption") or "an earlier moment"
+    return {"url": url, "start_s": start, "play": round(float(play), 2), "caption": caption,
+            "title": meta.get("title")}
+
+
+def resolve_all(rows, base=CLIP_BASE, opener=None):
+    """{stop id: resolved clip} and {stop id: why not} for the stops with a clip."""
+    videos, bad = {}, {}
+    for _, s, _ in rows:
+        if s and s.get("clip"):
+            try:
+                videos[s["id"]] = resolve_clip(s["clip"], base, opener=opener)
+            except ValueError as x:
+                bad[s["id"]] = str(x)
+    return videos, bad
+
+
 def target_text(t):
+    if t is None:
+        return "an old clip (the camera stays)"
     if "platform" in t:
         return f"ship {t['platform']}"
     return f"{t['surface']} ({round(t['x'])}, {round(t['y'])})" + (f" zoom {t['zoom']:g}" if "zoom" in t else "")
 
 
-def stop_length(stop, clip_s):
-    """max(seconds, clip + TAIL_S); clip_s None: no clip (a silent stop is just its seconds)."""
-    return max(stop["seconds"], (clip_s + TAIL_S) if clip_s else 0.0)
+def stop_length(stop, clip_s, lead=LEAD_S, tail=TAIL_S, video=None):
+    """A narrated stop: lead + clip + tail + hold_s, at least min_seconds (its seconds are not used). clip_s None, no
+    narration: its seconds (SILENT_S without). Never under MIN_STOP_S. (CK5) An old clip's stop: at least its play
+    time + CLIP_END_S (a narration longer than the clip holds its last frame)."""
+    least = max(MIN_STOP_S, stop["min_seconds"], (video["play"] + CLIP_END_S) if video else 0.0)
+    if clip_s:
+        return max(least, lead + clip_s + tail + stop["hold_s"])
+    return max(least, stop["seconds"] if stop["seconds"] is not None else (0.0 if video else SILENT_S))
 
 
 # ---- clips -------------------------------------------------------------------------------------------------------
@@ -187,6 +372,8 @@ def render_all(rows, out, voice, tts, manifest, speak=None):
         prev = old.get(s["id"])
         if prev and prev.get("hash") == h and os.path.exists(path):
             clips[s["id"]] = prev
+            if prev.get("subs_v") != SUBS_V:  # (CK4) a clip made before its captions: timed now, nothing rendered
+                prev.update(subs=subtitles.for_clip(path, s["narration"], prev["duration"]), subs_v=SUBS_V)
             continue
         try:
             if speak:
@@ -203,6 +390,7 @@ def render_all(rows, out, voice, tts, manifest, speak=None):
         os.replace(path + ".tmp", path)
         clips[s["id"]] = {"file": name, "hash": h, "duration": round(float(dur or V.duration(audio)), 2),
                           "chars": len(s["narration"]), "provider": prov}
+        clips[s["id"]].update(subs=subtitles.for_clip(path, s["narration"], clips[s["id"]]["duration"]), subs_v=SUBS_V)
         log(f"[prepare] {s['id']}: {clips[s['id']]['duration']:.1f} s ({len(s['narration'].split())} words, {prov})")
     return clips, None
 
@@ -252,8 +440,9 @@ def prepare(a):
 
 
 # ---- the timeline ------------------------------------------------------------------------------------------------
-def timeline(rows, manifest, out):
-    """[(stop, seconds, clip seconds or None, estimated)] for the valid stops, and the invalid ones [(index, why)]."""
+def timeline(rows, manifest, out, lead=LEAD_S, tail=TAIL_S, videos=None):
+    """[(stop, seconds, clip seconds or None, estimated)] for the valid stops, and the invalid ones [(index, why)].
+    videos: {stop id: resolved old clip} (resolve_all); a clip stop not in it is planned at its narration alone."""
     plan, bad = [], []
     for i, s, why in rows:
         if not s:
@@ -262,31 +451,77 @@ def timeline(rows, manifest, out):
         c = clip_for(manifest, out, s)
         est = c is None and bool(s["narration"])
         clip_s = c["duration"] if c else (len(s["narration"].split()) / WORDS_PER_S if s["narration"] else None)
-        plan.append((s, stop_length(s, clip_s), clip_s, est))
+        plan.append((s, stop_length(s, clip_s, lead, tail, (videos or {}).get(s["id"])), clip_s, est))
     return plan, bad
+
+
+def view_frac():
+    """The share of a client's width the on-air hole shows (cuts.view_frac of static/layout.json's main hole)."""
+    try:
+        with open(os.path.join(HERE, "static", "layout.json")) as f:
+            _, _, w, h = json.load(f)["cams"]["main"]
+        return round(min(1.0, (w / h) / (1920 / 1080)), 3)
+    except (OSError, ValueError, KeyError, TypeError):
+        return 1.0
+
+
+def move_text(mv):
+    """ "0.0-15.6 s (60, 40) z0.5 -> (90, 40) z0.8 inout; ..." """
+    return "; ".join(f"{g['t0']:.1f}-{g['t1']:.1f} s " + " -> ".join(f"({p['x']:g}, {p['y']:g}) z{p['zoom']:g}"
+                                                                    for p in g["pts"]) + f" {g['ease']}"
+                     for g in mv["segments"])
 
 
 def clock(sec):
     return f"{int(sec // 60):2d}:{int(sec % 60):02d}"
 
 
-def print_timeline(rows, manifest, out, platforms=None):
-    plan, bad = timeline(rows, manifest, out)
+def print_timeline(rows, manifest, out, platforms=None, lead=LEAD_S, tail=TAIL_S, videos=None, vbad=None):
+    plan, bad = timeline(rows, manifest, out, lead, tail, videos)
     t = 0.0
+    print(f"each narrated stop: cut, {lead:g} s, the clip, {tail:g} s (+ hold_s), then the next cut")
     print(f"{'start':>6}  {'len':>5}  {'clip':>6}  id / target / caption")
+    ignored = []
     for s, length, clip_s, est in plan:
         note = ""
-        if "platform" in s["target"] and platforms is not None and \
+        if s["target"] and "platform" in s["target"] and platforms is not None and \
                 s["target"]["platform"].casefold() not in {p.casefold() for p in platforms}:
             note = "   [no such platform now: run would skip it]"
+        if (vbad or {}).get(s["id"]):
+            note += f"   [clip not available: {vbad[s['id']]}; run would skip it]"
+        if clip_s and s["seconds"] is not None and abs(s["seconds"] - length) >= 1:
+            ignored.append(s["id"])
         clip = "-" if clip_s is None else f"{clip_s:5.1f}" + ("~" if est else "s")
-        print(f"{clock(t)}  {length:5.0f}  {clip:>6}  {s['id']} / {target_text(s['target'])} / {s['caption']}{note}")
+        print(f"{clock(t)}  {length:5.1f}  {clip:>6}  {s['id']} / {target_text(s['target'])} / {s['caption']}{note}")
+        v = (videos or {}).get(s["id"])
+        if v:
+            print(f"{'':22}clip: {v['play']:.1f} s from {v['start_s']:g} s, '{v['caption']}'"
+                  + (f" ({v['title']})" if v.get("title") else "") + f" {v['url']}")
+        mv = move_for(s, length)
+        if isinstance(mv, dict):
+            print(f"{'':22}move: {move_text(mv)}")
+        if s.get("marks"):
+            off = []
+            if s["target"] and "x" in s["target"]:  # (a whole ship's frame is the director's: not known here)
+                view = {"position": {"x": s["target"]["x"], "y": s["target"]["y"]},
+                        "zoom": s["target"].get("zoom", 0.75)}
+                if isinstance(mv, dict):
+                    view["move"] = mv
+                off = tourlay.offscreen(view, s["marks"], length, view_frac())
+            print(f"{'':22}marks: " + ", ".join(f"{m['type']}" + (f" '{m['text']}'" if m.get("text") else "")
+                                                for m in s["marks"])
+                  + "".join(f"   [mark {i + 1} out of the frame at {t:g} s]" for i, t in off))
         t += length
     for i, why in bad:
         print(f"  skip  stop {i + 1}: {why}")
+    if ignored:
+        print(f"  note  seconds not used for {len(ignored)} narrated stop{'s' if len(ignored) != 1 else ''} "
+              f"({', '.join(ignored[:6])}{', ...' if len(ignored) > 6 else ''}): the clip sets the length; "
+              "min_seconds holds a stop longer")
     ests = sum(1 for p in plan if p[3])
     print(f"total {clock(t).strip()} ({len(plan)} stops" + (f", {len(bad)} invalid" if bad else "")
-          + (f"; {ests} clip lengths estimated at {WORDS_PER_S:g} words/s: run prepare" if ests else "") + ")")
+          + (f"; {ests} clip lengths estimated at {WORDS_PER_S:g} words/s: run prepare" if ests else "")
+          + "; agent lines waiting at a stop's end add their length)")
     return t
 
 
@@ -297,7 +532,8 @@ def dry_run(a):
     if m:
         print(f"clips: {m.get('voice')} ({m.get('provider')}), made {m.get('made')}")
     plats = platforms(a.feed)
-    print_timeline(rows, m, out, plats)
+    videos, vbad = resolve_all(rows, a.clip_base)
+    print_timeline(rows, m, out, plats, a.lead, a.tail, videos, vbad)
     return 0
 
 
@@ -343,12 +579,18 @@ def platforms(feed):
 
 class Tour:
     def __init__(self, svc, rows, manifest, out, log_path, hush_file=HUSH_FILE, stop_file=STOP_FILE,
-                 clock=time.time, sleep=time.sleep):
+                 clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True, subtitles=True,
+                 videos=None):
         self.svc, self.rows, self.manifest, self.out = svc, rows, manifest, out
         self.log_path, self.hush_file, self.stop_file = log_path, hush_file, stop_file
         self.now, self.sleep = clock, sleep
-        self.held = None  # "look" or "platform": the hold this tour set last
+        self.lead, self.tail, self.agent_gaps, self.subtitles = lead, tail, agent_gaps, subtitles
+        self.videos = videos or {}  # (CK5) {stop id: resolved old clip}
         self.stopped = False
+        self.drift = 0.0  # aired - cut_at asked, smoothed: later cuts are asked this much sooner
+        self.cur = None  # the stop holding the camera: {id, look_until, need_until}
+        self.scheduled = []  # narration clip ids sent with at (taken back at a stop)
+        self.pending = None  # the last stop's log row, written when the next cut (or the end) is known
 
     def record(self, **kw):
         t = self.now()
@@ -373,126 +615,160 @@ class Tour:
             self.stopped = True
         return self.stopped
 
-    def look(self, s, seconds):
+    def look_body(self, s, cut_at, seconds, length=None):
         t = s["target"]
-        body = {"surface": t["surface"], "x": t["x"], "y": t["y"], "seconds": max(1.0, min(LOOK_MAX_S, seconds)),
-                "label": s["caption"] or None, "by": "tour"}
-        if "zoom" in t:
-            body["zoom"] = t["zoom"]
-        return self.svc.call("POST", "/look", body)
-
-    def shoot(self, s, length):
-        """Point the camera on air at the stop's target. -> (ok, reply)."""
-        if "platform" in s["target"]:
-            code, r = self.svc.call("POST", "/platform", {"name": s["target"]["platform"], "seconds": length + 30,
-                                                          "label": s["caption"] or None, "by": "tour"})
-            kind = "platform"
+        body = {"seconds": max(1.0, min(LOOK_MAX_S, seconds)), "label": s["caption"] or None, "by": "tour",
+                "cut_at": round(cut_at, 3), "id": s["id"]}
+        mv = move_for(s, length if length is not None else seconds)
+        if mv == "pan":
+            body.update(move="pan", move_s=round(length if length is not None else seconds, 2))
+        elif mv:
+            body["move"] = mv
+        if "platform" in t:
+            body["platform"] = t["platform"]
         else:
-            code, r = self.look(s, length + 10)
-            kind = "look"
-        if code != 200:
-            return False, dict(r if isinstance(r, dict) else {}, code=code)
-        if self.held and self.held != kind:  # the previous stop's hold of the other kind goes (a look outranks a
-            self.release(self.held)          # platform hold, which would come back when the look ends)
-        self.held = kind
-        return True, r
+            body.update(surface=t["surface"], x=t["x"], y=t["y"])
+        if t.get("zoom") is not None:
+            body["zoom"] = t["zoom"]
+        return body
 
-    def release(self, kind):
-        """Clear a hold of `kind` when it is still the tour's (an operator's own later hold stays)."""
-        try:
-            st = self.svc.state()
-        except Exception:
-            st = {}
-        cur = st.get("look" if kind == "look" else "platform_hold") or {}
-        if cur and cur.get("by") != "tour":
+    def keep_look(self):
+        """Extend the look on air (no chart read) when it would end before its stop does."""
+        c = self.cur
+        if not c or c["look_until"] >= c["need_until"] - 1 or c["look_until"] - self.now() > LOOK_RENEW_S:
             return
-        self.svc.call("DELETE", "/" + kind)
+        secs = min(LOOK_MAX_S, c["need_until"] - self.now())
+        code, r = self.svc.call("POST", "/look/extend", {"seconds": secs, "id": c["id"]})
+        if code == 200:
+            c["look_until"] = float(r.get("until") or self.now() + secs)
+        else:
+            log(f"[tour] {c['id']}: extending the look failed (HTTP {code}: {r.get('error')})")
+            c["look_until"] = c["need_until"]  # once: the next stop's look comes anyway
 
-    def on_air(self, s):
-        """Wait (at most SETTLE_S) for the shot to be the program; -> seconds waited, or None when not seen."""
-        t0 = self.now()
-        while self.now() - t0 < SETTLE_S:
-            try:
-                o = (self.svc.state().get("onair") or {})
-            except Exception:
-                o = {}
-            if "platform" in s["target"]:
-                if ((o.get("platform") or {}).get("name") or "").casefold() == s["target"]["platform"].casefold():
-                    return self.now() - t0
-            elif o.get("look"):
-                return self.now() - t0
-            self.sleep(0.5)
-        return None
+    def wait_until(self, t):
+        """Sleep to time t (the look kept on); False when the tour was stopped."""
+        while self.now() < t:
+            if self.want_stop():
+                return False
+            self.keep_look()
+            self.sleep(min(0.5, max(0.01, t - self.now())))
+        return not self.want_stop()
 
-    def narrate(self, s, clip):
+    def overlay(self, s, look, cut, end, length, clip=None, narr_at=None):
+        """(CK3) The stop's marks, (CK4) captions and (CK5) clip for the page, with the view the look reply gave.
+        -> whether the page has captions for it (the narrator's own caption box is left out then)."""
+        body = self.overlay_body(s, look, cut, end, length, clip, narr_at)
+        if not body:
+            return False
+        code, r = self.svc.call("POST", "/tour/overlay", body)
+        if code != 200:
+            log(f"[tour] {s['id']}: the overlay was refused (HTTP {code}: {(r or {}).get('error')})")
+            return False
+        return bool(body.get("subs"))
+
+    def captions(self, s, clip):
+        """(CK4) The clip's captions [{t0, t1, text}] (the manifest's, or timed now for an older one); [] when off."""
+        if not clip or not self.subtitles or s.get("subtitles") is False:
+            return []
+        if clip.get("subs_v") != SUBS_V:
+            clip["subs"], clip["subs_v"] = subtitles.for_clip(clip["path"], s["narration"], clip["duration"]), SUBS_V
+        return clip.get("subs") or []
+
+    def overlay_body(self, s, look, cut, end, length, clip=None, narr_at=None):
+        subs = self.captions(s, clip)
+        video = self.videos.get(s["id"])
+        if not s.get("marks") and not subs and not video:
+            return None
+        t = s["target"] or {}
+        view = {"surface": look.get("surface") or t.get("surface") or "",
+                "position": look.get("position") or {"x": t.get("x", 0), "y": t.get("y", 0)},
+                "zoom": look.get("zoom") or t.get("zoom") or 0.75}
+        if isinstance(look.get("move"), dict):
+            view["move"] = look["move"]
+        body = {"id": s["id"], "cut": round(cut, 3), "until": round(end + LOOK_SPARE_S, 3), "length": round(length, 3),
+                "view": view, "marks": s.get("marks") or []}
+        if subs:
+            # an old clip has its own speech bubbles low in the frame: its captions go on top unless asked otherwise
+            top = s.get("subtitles") == "top" or (video and s.get("subtitles") is True)
+            body.update(subs=subs, subs_at=round(narr_at, 3), subs_pos="top" if top else "bottom")
+        if video:
+            body["clip"] = video
+        return body
+
+    def narrate(self, s, clip, at, caption=True):
         with open(clip["path"], "rb") as f:
             audio = f.read()
         meta = {"channel": "narrator", "speaker": "Narrator", "text": s["caption"] or "", "rank": "urgent",
-                "duration": clip["duration"], "expires_in": 300, "tour": s["id"], "voice": self.manifest.get("voice"),
-                "audio_b64": base64.b64encode(audio).decode(), "ctype": "audio/mpeg"}
+                "caption": caption,  # (CK4) false: the page shows the narration's own captions instead
+                "duration": clip["duration"], "at": round(at, 3), "expires_in": 30, "tour": s["id"],
+                "voice": self.manifest.get("voice"), "audio_b64": base64.b64encode(audio).decode(),
+                "ctype": "audio/mpeg"}
         code, r = self.svc.call("POST", "/audio", meta)
-        return r.get("id") if code == 200 else None
-
-    def started(self, cid):
-        """Wait (at most START_WAIT_S) for the page to start the clip; -> the time it started, or None."""
-        t0 = self.now()
-        while self.now() - t0 < START_WAIT_S and not self.want_stop():
-            try:
-                if any(p.get("id") == cid for p in self.svc.audio_status().get("playing") or []):
-                    return self.now()
-            except Exception:
-                pass
-            self.sleep(0.25)
+        if code == 200 and r.get("id"):
+            self.scheduled.append(r["id"])
+            return r["id"]
         return None
 
-    def air(self, s, remaining_s):
-        """One stop on air. -> True when it aired, False when skipped."""
-        clip = clip_for(self.manifest, self.out, s)
-        length = stop_length(s, clip["duration"] if clip else None)
-        self.hush(remaining_s + 120)
-        t0 = self.now()
-        ok, r = self.shoot(s, length)
-        if not ok:
-            why = r.get("error") or f"HTTP {r.get('code')}"
-            log(f"[tour] skip {s['id']}: {target_text(s['target'])} refused ({why})")
-            self.record(event="skipped", id=s["id"], target=s["target"], reason=why)
-            return False
-        settle = self.on_air(s)
-        t_air = self.now()
-        log(f"[tour] {s['id']}: {target_text(s['target'])} on air" + ("" if settle is not None else " (not seen on the "
-            "program yet)") + f"; {length:.0f} s: {s['caption']}")
-        cid = self.narrate(s, clip) if clip else None
-        if clip and not cid:
-            log(f"[tour] {s['id']}: the service refused the narration clip")
-        t_narr = self.started(cid) if cid else None
-        if cid and t_narr is None and not self.stopped:
-            log(f"[tour] {s['id']}: no page started the narration within {START_WAIT_S:g} s (is the overlay page "
-                "listening?); timing from the post")
-        base = t_narr if t_narr is not None else t_air
-        end = max(t_air + s["seconds"], base + (clip["duration"] + TAIL_S if clip else 0))
-        look_until = t0 + min(LOOK_MAX_S, length + 10)
-        while self.now() < end and not self.want_stop():
-            # renew only a look that would end before the stop (each POST /look is one chart read on the game)
-            if self.held == "look" and look_until < end and look_until - self.now() < LOOK_RENEW_S:
-                secs = min(LOOK_MAX_S, end - self.now() + 10)
-                code, _ = self.look(s, secs)
-                if code == 200:
-                    look_until = self.now() + secs
-                else:
-                    log(f"[tour] {s['id']}: renewing the look failed (HTTP {code})")
-            self.sleep(min(1.0, max(0.05, end - self.now())))
-        self.record(event="aired", id=s["id"], target=s["target"], caption=s["caption"], started=round(t0, 2),
-                    on_air=round(t_air, 2), narration_start=round(t_narr, 2) if t_narr else None,
-                    clip_s=clip["duration"] if clip else None, ended=round(self.now(), 2),
-                    seconds=round(self.now() - t0, 1), cut_short=self.stopped)
-        return True
+    def aired(self, sid, until):
+        """The snapshot's look.aired for stop sid (the program cut to it), waiting to `until`; None when not seen."""
+        while True:
+            try:
+                lk = self.svc.state().get("look") or {}
+            except Exception:
+                lk = {}
+            if lk.get("id") == sid and lk.get("aired"):
+                return float(lk["aired"])
+            if self.now() >= until or self.want_stop():
+                return None
+            self.keep_look()
+            self.sleep(0.2)
+
+    def started(self, cid, until):
+        """The page's start of clip cid (started_at, on the service's clock), waiting to `until`; None when not seen."""
+        while True:
+            try:
+                st = self.svc.audio_status()
+            except Exception:
+                st = {}
+            p = next((p for p in st.get("playing") or [] if p.get("id") == cid), None)
+            if p:
+                return float(p.get("started") or self.now())
+            if self.now() >= until or self.want_stop():
+                return None
+            self.keep_look()
+            self.sleep(0.2)
+
+    def agent_gap(self, narr_end):
+        """The length of an agent's (or the operator's) voiced line waiting in the queue that will not have expired
+        when the narration ends, at most AGENT_GAP_MAX_S; 0 when none."""
+        if not self.agent_gaps:
+            return 0.0, None
+        try:
+            q = self.svc.audio_status().get("queued") or []
+        except Exception:
+            return 0.0, None
+        for c in q:
+            if c.get("channel") in ("narrator", "control") or c.get("at") is not None or not c.get("duration"):
+                continue
+            if self.now() + float(c.get("expires_in") or 0) < narr_end + 0.5:
+                continue
+            return min(AGENT_GAP_MAX_S, float(c["duration"])), c.get("speaker")
+        return 0.0, None
+
+    def flush(self, ended):
+        if self.pending:
+            row, self.pending = self.pending, None
+            row.update(ended=round(ended, 2), seconds=round(ended - row["cut"], 1), cut_short=self.stopped)
+            self.record(**row)
 
     def run(self, rows):
-        plan, _ = timeline(rows, self.manifest, self.out)
-        left = sum(p[1] for p in plan)
+        plan, _ = timeline(rows, self.manifest, self.out, self.lead, self.tail, self.videos)
+        lengths = {p[0]["id"]: p[1] for p in plan}
+        left = sum(lengths.values())
         self.record(event="start", stops=[s["id"] for s, *_ in plan], planned_s=round(left),
-                    voice=(self.manifest or {}).get("voice"))
+                    voice=(self.manifest or {}).get("voice"), lead_s=self.lead, tail_s=self.tail)
         aired = skipped = 0
+        T = self.now() + PREROLL_S  # the next cut
         try:
             for i, s, why in rows:
                 if self.want_stop():
@@ -502,20 +778,109 @@ class Tour:
                     self.record(event="skipped", index=i, reason=why)
                     skipped += 1
                     continue
-                length = next(p[1] for p in plan if p[0]["id"] == s["id"])
-                if self.air(s, left):
-                    aired += 1
-                else:
+                clip = clip_for(self.manifest, self.out, s)
+                length = lengths[s["id"]]
+                video = self.videos.get(s["id"])
+                if s.get("clip") and not video:
+                    log(f"[tour] skip {s['id']}: its clip is not available")
+                    self.record(event="skipped", id=s["id"], target=s["target"], reason="clip not available")
                     skipped += 1
+                    left -= length
+                    continue
+                if not self.wait_until(T - PREROLL_S):
+                    break
+                T = max(T, self.now() + MIN_PREROLL_S)
+                cut, end = T, T + length
+                narr_at = cut + self.lead if clip else None
+                self.hush(left + 120)
+                ask = cut - self.drift
+                if s["target"] is None:  # (CK5) an old clip only: the camera stays on the last shot, behind it
+                    code, r = 200, {}
+                    if self.cur:
+                        self.cur["need_until"] = end + LOOK_SPARE_S
+                else:
+                    code, r = self.svc.call("POST", "/look", self.look_body(s, ask, end - cut + LOOK_SPARE_S, length))
+                if code != 200:
+                    why = (r or {}).get("error") or f"HTTP {code}"
+                    log(f"[tour] skip {s['id']}: {target_text(s['target'])} refused ({why})")
+                    self.record(event="skipped", id=s["id"], target=s["target"], reason=why)
+                    skipped += 1
+                    left -= length
+                    continue  # the next stop takes this cut
+                subbed = self.overlay(s, r, cut, end, length, clip, narr_at)
+                cid = self.narrate(s, clip, narr_at, caption=not subbed) if clip else None
+                if clip and not cid:
+                    log(f"[tour] {s['id']}: the service refused the narration clip")
+                if not self.wait_until(cut):
+                    break
+                self.flush(cut)
+                if s["target"] is not None:
+                    self.cur = {"id": s["id"], "look_until": float(r.get("until") or end + LOOK_SPARE_S),
+                                "need_until": end + LOOK_SPARE_S}
+                t_air = self.aired(s["id"], cut + AIRED_WAIT_S) if s["target"] is not None else None
+                if t_air is not None and abs(t_air - ask) <= DRIFT_MAX_S:
+                    self.drift = round(0.5 * self.drift + 0.5 * (t_air - ask), 3)
+                t_narr = self.started(cid, narr_at + START_WAIT_S) if cid else None
+                log(f"[tour] {s['id']}: {target_text(s['target'])} cut " +
+                    (f"{t_air - cut:+.2f} s" if t_air is not None else "not seen") +
+                    (f", narration {t_narr - cut:+.2f} s" if t_narr is not None else ", narration not seen" if cid else "")
+                    + f"; {length:.1f} s: {s['caption']}")
+                if cid and t_narr is None and not self.stopped:
+                    log(f"[tour] {s['id']}: no page started the narration (is the overlay page listening?)")
+                gap, who = 0.0, None
+                if not self.wait_until(end - PREROLL_S):
+                    self.pending = self.row(s, cut, ask, t_air, narr_at, t_narr, clip, gap, who)
+                    break
+                if clip and i < len(rows) - 1:
+                    gap, who = self.agent_gap(narr_at + clip["duration"])
+                    if gap:
+                        log(f"[tour] {s['id']}: held {gap:.1f} s for {who}'s line waiting in the queue")
+                        end += gap
+                        self.cur["need_until"] = end + LOOK_SPARE_S
+                self.pending = self.row(s, cut, ask, t_air, narr_at, t_narr, clip, gap, who)
+                aired += 1
                 left -= length
+                T = end
+            else:
+                self.wait_until(T)
         finally:
+            self.flush(self.now())
             self.finish()
-            self.record(event="end", aired=aired, skipped=skipped, stopped=self.stopped)
+            self.record(event="end", aired=aired, skipped=skipped, stopped=self.stopped, drift_s=self.drift)
             log(f"[tour] {'stopped' if self.stopped else 'done'}: {aired} stops aired, {skipped} skipped; log "
                 f"{self.log_path}")
         return aired, skipped
 
+    def row(self, s, cut, ask, t_air, narr_at, t_narr, clip, gap, who):
+        return {"event": "aired", "id": s["id"], "target": s["target"], "caption": s["caption"], "cut": round(cut, 3),
+                "cut_asked": round(ask, 3), "on_air": round(t_air, 3) if t_air is not None else None,
+                "narration_at": round(narr_at, 3) if narr_at else None,
+                "narration_start": round(t_narr, 3) if t_narr is not None else None,
+                "clip_s": clip["duration"] if clip else None, "agent_gap_s": gap or None, "agent_gap_for": who,
+                **({"old_clip": self.videos[s["id"]]} if s["id"] in self.videos else {})}
+
+    def release(self, kind):
+        """Clear a hold of `kind` when it is still the tour's (an operator's own later hold stays)."""
+        try:
+            st = self.svc.state()
+        except Exception:
+            st = {}
+        cur = st.get("look" if kind == "look" else "platform_hold") or {}
+        if not cur or cur.get("by") != "tour":
+            return
+        self.svc.call("DELETE", "/" + kind)
+
     def finish(self):
+        for cid in self.scheduled:  # a narration not played yet (or playing, at a stop) is taken back
+            try:
+                self.svc.call("POST", "/audio/cancel", {"id": cid}, timeout=3)
+            except Exception:
+                pass
+        self.scheduled = []
+        try:
+            self.svc.call("DELETE", "/tour/overlay", timeout=3)
+        except Exception:
+            pass
         for kind in ("look", "platform"):
             try:
                 self.release(kind)
@@ -540,6 +905,9 @@ def run(a):
         return 1
     if not st.get("listeners"):
         log("[tour] no overlay page is listening for audio: the narration would not play; starting anyway")
+    if "queued" not in st:
+        log("[tour] the stream service is older than the tour (no /audio/status queued): restart it first")
+        return 1
     try:
         with open(RUN_FILE) as f:
             other = json.load(f)
@@ -556,7 +924,11 @@ def run(a):
     log_path = os.path.join(LOG_DIR, time.strftime("tour-%Y%m%d-%H%M%S.jsonl"))
     with open(RUN_FILE, "w") as f:
         json.dump({"pid": os.getpid(), "script": os.path.abspath(a.script), "started": time.time(), "log": log_path}, f)
-    tour = Tour(svc, rows, m, out, log_path)
+    videos, vbad = resolve_all(rows, a.clip_base)
+    for sid, why in vbad.items():
+        log(f"[tour] {sid}: {why}; it will be skipped")
+    tour = Tour(svc, rows, m, out, log_path, lead=a.lead, tail=a.tail, agent_gaps=a.agent_gaps, subtitles=a.subtitles,
+                videos=videos)
     signal.signal(signal.SIGTERM, lambda *_: setattr(tour, "stopped", True))
     log(f"[tour] {len([r for r in rows if r[1]])} stops in {m.get('voice')}; log {log_path}")
     try:
@@ -608,6 +980,14 @@ def parser():
             p.add_argument("--out", help="clip directory (default: SCRIPT_DIR/tour-clips)")
         if name in ("dry-run", "run"):
             p.add_argument("--from", dest="start", metavar="ID", help="start at this stop (resume)")
+            p.add_argument("--lead", type=float, default=LEAD_S, help="seconds from the cut to the narration")
+            p.add_argument("--clip-base", default=CLIP_BASE, help="the clip library (a stop's clip id: BASE/ID.mp4, .json)")
+            p.add_argument("--tail", type=float, default=TAIL_S, help="seconds from the narration's end to the next cut")
+        if name == "run":
+            p.add_argument("--no-agent-gaps", dest="agent_gaps", action="store_false",
+                           help="never hold a stop for an agent's line waiting in the queue")
+            p.add_argument("--no-subtitles", dest="subtitles", action="store_false",
+                           help="no narration captions on the camera (the narrator's caption box instead)")
         if name == "prepare":
             p.add_argument("--voice", default=",".join(VOICES),
                            help="narrator voices in order of preference (voices.CATALOG ids); the first that renders "

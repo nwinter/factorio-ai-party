@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
 from analyst_board import AnalystBoard  # noqa: E402
+from tourlay import TourOverlay  # noqa: E402
 from director import Director  # noqa: E402
 from onecam import OneCam, onair_doing, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
@@ -76,6 +77,12 @@ class AudioHub:
     POST /audio {channel: caster|agent, speaker, text, audio_b64, ctype, duration, expires_in, ...} stores a clip and
     announces it on /audio-events. The page reports playback with POST /audio/played {id, state: start|end}, which
     caster.py reads from /audio/status to avoid talking over a clip that is still playing.
+
+    (d23 batch128 CK1, the tour) A clip with `at` (epoch seconds) is loaded by the page at once and started at that
+    moment on its audio clock; until then no clip of a lower rank starts that would still play at `at` (one that does
+    is ducked under it). The page's start report carries `started_at`, the moment it started, which /audio/status and
+    the log keep. /audio/status lists `queued`: clips posted, not started or ended yet and not expired. POST
+    /audio/cancel {id} takes a clip back before it plays (the page drops it).
     """
 
     MAX_CLIPS = 120
@@ -93,6 +100,7 @@ class AudioHub:
         self.order = []
         self.seq = 0
         self.playing = {}  # id -> {meta, started}
+        self.done = set()  # ids started, ended, skipped or cancelled (not queued any more)
         self.listeners = 0
         self.last_report = None
         self.log_path = log_path
@@ -184,12 +192,25 @@ class AudioHub:
             cid = f"{int(time.time())}-{self.seq}"
             meta = dict(meta, id=cid, url=f"/audio/clip/{cid}", t=time.time())
             meta["expires"] = meta["t"] + float(meta.pop("expires_in", 30))
+            if isinstance(meta.get("at"), (int, float)):  # a scheduled clip: never expires before its moment
+                meta["expires"] = max(meta["expires"], float(meta["at"]) + 5)
             self.clips[cid] = (audio, ctype, meta)
             self.order.append(cid)
             while len(self.order) > self.MAX_CLIPS:
-                self.clips.pop(self.order.pop(0), None)
+                gone = self.order.pop(0)
+                self.clips.pop(gone, None)
+                self.done.discard(gone)
             self.cond.notify_all()
             return meta
+
+    def cancel(self, cid):
+        """POST /audio/cancel {id}: a clip not started yet is taken back; the page drops it (a `cancel` event)."""
+        with self.cond:
+            if cid not in self.clips or cid in self.done:
+                return False
+            self.done.add(cid)
+        self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
+        return True
 
     def wait(self, seq, timeout):
         with self.cond:
@@ -212,12 +233,20 @@ class AudioHub:
                     self._end(k, v, "reload", now)
                     self.playing.pop(k)
             elif cid in self.clips and st == "start":
-                self.playing[cid] = {"started": now, **self.clips[cid][2], "audio_s": num("duration")}
+                at = num("started_at")  # (CK1) the moment the page started it, on the service's clock
+                self.playing[cid] = {"started": at if at and abs(at - now) < 30 else now, **self.clips[cid][2],
+                                     "audio_s": num("duration")}
+                self.done.add(cid)
+                if at:
+                    self._log({"t": round(now, 2), "id": cid, "state": "start", "started_at": round(at, 3),
+                               "channel": self.clips[cid][2].get("channel"), "at": self.clips[cid][2].get("at")})
             elif st in ("end", "error", "cut"):  # cut: a line that mattered more faded this one out
+                self.done.add(cid)
                 v = self.playing.pop(cid, None)
                 if v:
                     self._end(cid, v, st, now, num("played"), num("duration"))
             elif st == "skip":  # expired in the page's queue: never played
+                self.done.add(cid)
                 self.playing.pop(cid, None)
                 meta = self.clips.get(cid, (None, None, {}))[2]
                 row = {"t": round(now, 2), "id": cid, "ended": True, "state": "skip", "channel": meta.get("channel"),
@@ -235,10 +264,15 @@ class AudioHub:
         now = time.time()
         with self.cond:
             playing = [{"id": k, "channel": v.get("channel"), "speaker": v.get("speaker"),
+                        "started": round(v["started"], 3),
                         "ends_in": round(max(0.0, v["started"] + float(v.get("duration") or 0) - now), 2)}
                        for k, v in self.playing.items() if now - v["started"] <= float(v.get("duration") or 20) + 5]
-            out = {"listeners": self.listeners, "playing": playing, "last_report": self.last_report,
-                   "clips": len(self.order)}
+            queued = [{"id": c, "channel": m.get("channel"), "speaker": m.get("speaker"), "duration": m.get("duration"),
+                       "at": m.get("at"), "expires_in": round(m["expires"] - now, 1)}
+                      for c in self.order if c in self.clips and c not in self.done
+                      for m in [self.clips[c][2]] if m.get("channel") != "control" and m["expires"] > now]
+            out = {"listeners": self.listeners, "playing": playing, "queued": queued,
+                   "last_report": self.last_report, "clips": len(self.order)}
         out["voice"] = self.early(now)
         return out
 
@@ -262,8 +296,9 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None, board_all=None):
+                 platform=None, look=None, show=None, host=None, board_all=None, tour=None):
     audio = audio or AudioHub()
+    tour = tour or TourOverlay()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
 
@@ -347,6 +382,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             if path == "/audio/played":
                 audio.played(body)
                 return self.send(200, b"{}", "application/json")
+            if path == "/audio/cancel":  # (CK1) the tour takes back a narration it scheduled
+                ok = audio.cancel(str(body.get("id") or ""))
+                return self.send(200 if ok else 404, json.dumps({"cancelled": ok}).encode(), "application/json")
             if path == "/analyst":  # tools/stream/analyst.py posts each cycle
                 return self.send(200, json.dumps(analyst.post(body)).encode(), "application/json")
             if path == "/analyst/used":
@@ -367,6 +405,14 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 if not platform:
                     return self.send(409, b'{"error": "platform needs the onecam director"}', "application/json")
                 code, reply = platform.request(body)
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/tour/overlay":  # (CK3) what the tour shows over the camera (tourlay.py; static/tourlay.js)
+                code, reply = tour.post(body, time.time())
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/look/extend":  # (CK1) the current look's end moved, no chart read (the tour's renewals)
+                if not look:
+                    return self.send(409, b'{"error": "look needs the onecam director"}', "application/json")
+                code, reply = look.extend(body)
                 return self.send(code, json.dumps(reply).encode(), "application/json")
             if path == "/look":  # the operator points the camera on air at a charted spot (lookcam.py)
                 if not look:
@@ -391,6 +437,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/hostview" and host:
                 code, reply = host.request({"on": False})
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if self.path.split("?", 1)[0] == "/tour/overlay":
+                code, reply = tour.clear()
                 return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/look" and look:
                 code, reply = look.clear()
@@ -635,6 +684,7 @@ def main():
     lib = library.Library(os.path.join(os.path.dirname(os.path.abspath(a.run)), "blueprints", "index.json")) \
         if a.run and not a.mock else None
     analyst = AnalystBoard()
+    tour = TourOverlay()  # (CK3) the tour's overlay entries (tourlay.py)
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
     audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
@@ -788,6 +838,7 @@ def main():
                     # (d17 batch35 D4) what each agent does and which places its claims hold, for routing by content
                     feed.relay.set_team(router.Team.from_snapshot(snap, list(model.board["items"].values())))
                 snap["analyst"] = analyst.public(now)
+                snap["tour"] = tour.public(now)  # (CK3) the tour's marks, captions and clip over the camera
                 snap["poll"] = polls.step(now) if polls else None
                 snap["library"] = lib.public() if lib else None
                 if highlights:
@@ -821,7 +872,7 @@ def main():
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
                                                                     show=show, host=host,
-                                                                    board_all=board_all))
+                                                                    board_all=board_all, tour=tour))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")
