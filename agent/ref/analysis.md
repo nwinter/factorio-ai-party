@@ -49,7 +49,10 @@
   waits on (slots used/total, what fills them, the machines waiting); `chests` rows give free slots. A fluid
   (`lubricant`) gives its stock and flow, makers and users. `made_by_spoiling` (an item others spoil into:
   copper-bacteria into copper-ore): how many are held and spoil within 5 min; the production statistics do not count
-  spoiling. `as_of` says whether a total is live or reused, and its age. `near` with `radius` (up to 512, default 64)
+  spoiling. For an item that spoils, `flow` says spoiling counts in neither made nor used (used counts ingredients and
+  fuel burned), and a whole-surface read gives `uncounted`: against the last one 1-60 min before, made, used, held
+  then and now, and what left uncounted (spoiled, or carried off the surface; Gleba's nutrients: about 570 a minute).
+  `where` counts fuel slots and stacks on the ground too. `as_of` says whether a total is live or reused, and its age. `near` with `radius` (up to 512, default 64)
   limits it to that area; `compact: true`: lines only (flow, where, makers, the stopped makers and users by position,
   the chests holding most), about a fifth of the full reply; `all_stopped: true`: every maker and user not working,
   grouped by cluster with every position. Example: `./fh call supply --args '{"item":"advanced-circuit","near":{"x":0,"y":0},"radius":64}'`
@@ -197,7 +200,7 @@
   observe scope.
 - `fuel_budget {surface?, boilers?}`: each fuel made and used per minute, and each group of fuel users (boilers,
   furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its
-  own fuel lasts, fewest first. Reactors one by one: temperature, the fuel burning and what is left of it, fuel slots,
+  own fuel lasts, fewest first; a fuel that spoils says what the statistics leave out. Reactors one by one: temperature, the fuel burning and what is left of it, fuel slots,
   the feeding inserters' circuit condition and stock, minutes left from heat, burning fuel and feed. `boilers: true`: each boiler group's burn against the fuel in reach and the drills
   supplying it, with the hours left, and each boiler under 5 fuel with its feeding inserters (burner fuel, no power,
   not connected; one taking from a belt: that belt line's length, its head and why it stops there, and its gaps, so a
@@ -373,7 +376,9 @@
   (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
-  or ok each; feasible, sustained and the first unsatisfied. Example: `./fh call dependency --args '{"item":"rocket-fuel","surface":"nauvis"}'`
+  or ok each; feasible, sustained and the first unsatisfied. An item that spoils counts what supply measured leaving
+  uncounted in the last 30 min (else says it is not counted); the crafts run count the makers' productivity bonus and
+  a returned catalyst (pentapod-egg). Example: `./fh call dependency --args '{"item":"rocket-fuel","surface":"nauvis"}'`
 - The operator's factory digest arrives by `tell` at the deadline minus 2 hours: what changed since the last digest
   (blockers per planet, lessons whose check is not met, items blocked, requests nobody owns), each to the owner of
   the claim or item it concerns, the rest to the team. On operator request the full census: remembered machine and

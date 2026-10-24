@@ -15,6 +15,10 @@
 return function(api)
   local M = {}
   M.SAMPLE, M.STALL, M.MOVED, M.AHEAD, M.MAX_TARGETS = 60, 600, 0.5, 24, 16
+  -- (d22 batch122 CE2) a stalled spidertron's body sways where its legs stand: on a copy of world n's 08:53 save,
+  -- Opus's at a lake's edge read speed 0 and moved 1.2 tiles between two samples, and "moves again" was said 4 s after
+  -- its stall. Stalled, it moves again only past WOBBLE tiles from where it stood or that much nearer its target.
+  M.WOBBLE = 3
   local function store()
     local s = api.state()
     s.spiderroute = s.spiderroute or {spiders={}, events={}, eseq=0}
@@ -161,7 +165,8 @@ return function(api)
         local pos = e.position
         local near = dist(pos, r[1])
         local target_moved = math.abs(r[1].x - t.target.x) + math.abs(r[1].y - t.target.y) > 0.01
-        if dist(pos, t.pos) >= M.MOVED or near < t.near - M.MOVED or target_moved then
+        local step = t.stalled and M.WOBBLE or M.MOVED
+        if dist(pos, t.pos) >= step or near < t.near - step or target_moved then
           if t.stalled then event(string.format('spidertron #%d moves again: at %s toward %s', unit, at(pos), at(r[1])), t.by, unit) end
           t.pos, t.near, t.moved, t.stalled, t.target = {x=pos.x, y=pos.y}, near, game.tick, nil, {x=r[1].x, y=r[1].y}
         elseif not t.stalled and game.tick - t.moved >= M.STALL then

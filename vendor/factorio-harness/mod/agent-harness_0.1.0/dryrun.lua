@@ -1208,6 +1208,23 @@ return function(api)
               same = nil
             end
           end
+          -- (d20 batch122, Astra #2064: a fast-splitter over a fast belt read placeable, then the call refused it) ours of
+          -- its fast-replace group standing there: the game's ghost check takes it (a player's fast replace), the real
+          -- call's create_entity does not; refused as the call refuses it, unless the call skips the entry as built
+          local replaced = {}
+          -- A normal or forced paste puts none there either (on the copy: 0 ghosts; superforced marked the belt and
+          -- placed the splitter ghost, which marks_own says).
+          if (kind == 'ghosts' or kind == 'paste' and not marks_own) and api.ghost_replaces then
+            replaced = try(function() return api.ghost_replaces(p, proto, rec.pos, rec.dir) end) or {}
+            if #replaced > 0 and kind == 'ghosts' and api.same_standing and try(function() return api.same_standing(p, e) end) == 'built' then replaced = {} end
+            if #replaced > 0 and kind == 'paste' and same and same.type ~= 'entity-ghost' and #replaced == 1 and replaced[1] == same then replaced = {} end
+            if #replaced > 0 then
+              if same and same.type ~= 'entity-ghost' then same = nil end
+              local text = try(function() return api.ghost_replaces_text(proto, rec.pos, rec.dir, replaced) end)
+              reasons[#reasons+1] = 'blocked'..(text or ' by one of its fast-replace group')
+                ..(kind == 'paste' and '; a superforced paste marks it for deconstruction and places the ghost' or '')
+            end
+          end
           -- Tiles count whatever the engine says now: on a platform it takes
           -- an entity ghost over empty space, which nothing builds until
           -- foundation is there.
@@ -1226,7 +1243,7 @@ return function(api)
             else reasons[#reasons+1] = 'the game refuses it here; ramp footprint contains '..ramp_text end
           elseif engine == true and not same then
             if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
-          elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
+          elseif #blockers > 0 and #replaced == 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           if broken then reasons[#reasons+1] = broken end
           if engine ~= true and api.one_pad then
             local pad = try(function() return api.one_pad(s, force, proto, rec.pos) end)

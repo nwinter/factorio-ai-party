@@ -61,7 +61,7 @@ return function(api)
   M.schema = {
     tell = {to='a teammate name or display name, several (array or "luna,sol"), or "team" for everyone',
       text='1..500 bytes, one line (fh tell sends a longer one as numbered parts cut at sentence ends, all delivered together; in a queue step or plan a longer one is cut to 500 and the reply says so)',
-      reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a tell to the asker does too)',
+      reply_to='optional seq (or array): the chat line or tell this answers; it closes exactly those as unanswered (without it, a tell to the asker closes theirs only while it is their one open request to you; left_open says when it left several)',
       fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
       wake='true (fh tell --wake): also ends a recipient\'s wait that this tell would not end: a direct wait_ticks, wait_until or sleep that ignores messages (wake_on_messages: false, fh --wait-through-tells) or takes them only from others (wake_from), and an fh --wait that goes on through tells; every time (woken counts your wake tells to each in the last 10 minutes)',
       returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; resting "gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler check (review in 3 min)" for each recipient its loop rests between turns; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
@@ -77,7 +77,8 @@ return function(api)
     local names, team = recipients(a.to, me)
     local s = store()
     s.seq = s.seq + 1
-    local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text, fyi=a.fyi or nil, wake=a.wake or nil}
+    local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text, fyi=a.fyi or nil, wake=a.wake or nil,
+      reply_to=a.reply_to}
     -- (d17 batch14 B1) reply_to: the chat line or tell this answers (owed.lua)
     if a.reply_to ~= nil and api.on_reply then pcall(api.on_reply, p.index, a.reply_to) end
     s.log[#s.log+1] = t
@@ -129,7 +130,9 @@ return function(api)
       if type(w) ~= 'table' or #w == 0 or game.tick - w[#w] > M.WAKE_EVERY then s.wakes[k] = nil end
     end
     local not_woken = {}
-    return {seq=t.seq, to=team and 'team' or names, cut=cut, away=#away > 0 and table.concat(away, '; ') or nil,
+    -- (d22 batch122 CE1) without reply_to: the recipients (team: those it names) whose several open requests it left open
+    local left = a.reply_to == nil and api.owed_left and api.owed_left(p.index, names, team and text or nil) or nil
+    return {seq=t.seq, to=team and 'team' or names, cut=cut, left_open=left, away=#away > 0 and table.concat(away, '; ') or nil,
       ignoring=#ignoring > 0 and table.concat(ignoring, '; ') or nil, resting=#resting > 0 and table.concat(resting, '; ') or nil, woken=#woken > 0 and woken or nil, not_woken=#not_woken > 0 and not_woken or nil,
       note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat'}
   end
