@@ -568,6 +568,8 @@ return function(api)
   -- Steps toward an absolute goal restart cleanly; relative ones (walk N
   -- ticks) would repeat what already happened, so they are not requeued; a
   -- wait_ticks is requeued with its end tick (below).
+  -- (PT1) steps that move items: never dropped when interrupted (pause_inner)
+  local MOVE_STEPS={transfer=true,feed=true,deliver=true,pickup=true}
   local RESTARTABLE={move_to=true,construct=true,build_path=true,mine=true,repair=true,kite=true,wait_until=true,rearm=true,refuel=true,collect=true,recover=true}
   -- (d17 batch35 A5, Muse 14:16: rocket launches stalled 5+ minutes after a failed direct call paused the queue, until a
   -- queue_status read showed it) The job and step a failed direct call would pause now, or nil when nothing runs.
@@ -606,11 +608,12 @@ return function(api)
   end
   -- why: what paused it (a direct call that drives the character, stop, a retreat, a death, a deploy ...).
   -- failed: the action of a failed direct call that paused it (job: the job and step it paused, read before the pause)
-  function M.pause(index,why,failed,job)
+  -- id (d24 batch148 PT1): the failed call's request id, named in the pause record
+  function M.pause(index,why,failed,job,id)
     local q=queue(index)
     job=job or (failed and not q.paused and job_text(q)) or nil
     M.pause_inner(index,why)
-    if failed and job then q.paused_why={tick=game.tick,line=string.format('your %s call failed while your queue ran (%s)',failed,job),failed_call=failed,job=job} end
+    if failed and job then q.paused_why={tick=game.tick,line=string.format('your %s call%s failed while your queue ran (%s)',failed,id and ' (request '..tostring(id)..')' or '',job),failed_call=failed,job=job,request=id} end
   end
   function M.pause_inner(index,why)
     local q=queue(index)
@@ -667,12 +670,27 @@ return function(api)
         again=true; ends=step.until_tick
         resumed=string.format('keeps its end tick %d (%d ticks left)',ends,math.max(0,ends-game.tick))
       end
+      -- (d24 batch148 PT1, Astra #2159: job-36694, a courier of 199 tungsten-plate walking to its pick, was interrupted and
+      -- not run again, and a later step changed the recipe without it) an item move is never skipped: one that had moved
+      -- nothing goes back at the head as it was; one that had moved some with no remainder known holds the lane, named
+      local hold
+      if not again and MOVE_STEPS[step.action] then
+        local tl=step.tour_left
+        local moved=tl and math.max(tl.got or 0,tl.taken or 0) or 0
+        if moved==0 then
+          again=true; resumed='requeued as it was: it had moved nothing (an item move is not skipped)'
+        else
+          hold=string.format('held: %s %s was interrupted after moving %d; the rest of it is not known, so it is not run again; queue_resume runs the plan\'s next step',
+            step.id,step.action,moved)
+        end
+      end
       -- (d22 batch112 BV1, Astra #1962: job-36447's build read interrupted with 4 tiles unplaced and nothing said why) what
       -- paused it, and for a build not requeued the entries its action had left
       local left=not again and step.action=='build' and api.left_undone and api.left_undone(index) or nil
       record(q,step,false,{reason='interrupted',paused_by=why or (q.paused_why and q.paused_why.line),requeued=again or nil,resumed_from=resumed,
-        left_undone=left,not_requeued=not again and (left and string.format('not run again: %d entr%s left unbuilt (%s)',left.count,left.count==1 and 'y' or 'ies',left.line) or 'not run again') or nil})
+        left_undone=left,not_requeued=not again and (hold or left and string.format('not run again: %d entr%s left unbuilt (%s)',left.count,left.count==1 and 'y' or 'ies',left.line) or 'not run again') or nil})
       q.current=nil
+      if hold then q.held={tick=game.tick,step=step.id}; q.paused_why={tick=game.tick,line=hold} end
       -- A walk through via points goes on from the first one it had not reached (runtime: via_done).
       if again and step.via_done and type(args)=='table' and type(args.via)=='table' then
         local rest,left={},{}

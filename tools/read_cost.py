@@ -62,7 +62,7 @@ def reads(bot="sol", platform="Aegis"):
         return lambda: timed_dispatch({"action": action, "args": args or {}, "operator": True})
 
     def agent(action, args=None):
-        return lambda: timed_dispatch({"action": action, "args": dict(args or {}, peek=True), "bot": bot})
+        return lambda: timed_dispatch({"action": action, "args": dict(args or {}, peek=True), "bot": bot, "reader": "read_cost"})
 
     def items(lua, names):
         return lua.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in names) + "}")

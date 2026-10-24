@@ -13324,6 +13324,57 @@ Fixed besides gates:
 - Tests: tests/d24_batch146.lua (fails on main: `before: reached`). tests/d21_batch66.lua, d22_batch107.lua and
   d23_batch134.lua: their from-watches now end by receipt (d23_batch134's last case was this fault: 150 of 400
   received from Kestrel IVa, read `reached` on stock 515).
+## d24 batch148 PT1 (eng/d20-batch148): a queue paused by another process's read made as the agent (Astra #2159)
+- Cause, found on a copy of world n's shift68 save (05:40, tick 56315793):
+  - Astra's body lane was interrupted about every 1000 ticks with "a call of yours failed while your queue ran": job
+    36694 (her courier of 199 tungsten-plate, interrupted at 56290477, "not run again") and job 36706 at 56293249,
+    56294266, 56295334 and 56296376.
+  - Her journal has no call at those ticks, except 56294733 (her own direct transfer). Her failed-call record
+    (selfview) has none that minute.
+  - With the copy running and nothing outside calling, her pause record did not change over 7000 ticks.
+  - Each read the other processes make as her was sent on the copy with a queue running. Only `board_focus {peek:
+    true}` interrupted it: board_focus was neither passive, a read nor a talk call, so dispatch_request's direct-call
+    pause took her character.
+  - The stream service reads board_focus as its reader, the team file's first bot (astra), each overlay pass.
+  - The pause text was stop_player's for a failure ("a call of yours failed"), though nothing failed.
+- Who dispatches under an agent's name:
+  - the stream service (tools/stream/harness.py: profiles, chat, describe, board_events, board_focus,
+    board_progress, platforms, reminders, board, status per agent, as the first bot);
+  - the analyst (tools/analyst/game.py, `--bot` the first bot: describe, chat, board, status, profiles, power);
+  - chat-log.py (`fh call chat --bot` the first bot);
+  - fh_broker's status probe;
+  - read_cost.py;
+  - broker-probe.sh;
+  - the live_check tools (their own test bots).
+  - idle_nudge, the viewers relay, harness-requests and orders_kill dispatch as operator. Standing orders run in the
+    agent's own queue while it is free.
+- Changed:
+  - Runtime:
+    - board_focus is passive (a read or a focus set moves no character).
+    - A request with `reader` (the reading process's name) takes reads only. One that could drive the character is
+      refused (`reader stream: move_to acts as the agent ...`). It never pauses the queue or stops the character,
+      failed or not, and is not counted as the agent's call (selfview, hauling, the failed-call record).
+  - Tools: the stream service (`reader: "stream"`), the analyst (`"analyst"`), fh_broker's probe (`"broker"`) and
+    read_cost (`"read_cost"`) send it; an older runtime ignores it. chat-log.py goes through `fh call` and reads chat,
+    which is passive.
+  - A pause names its call: the direct-call pause `paused by your direct move_to call (request ID), which drives your
+    character`; a failed call `your move_to call (request ID) failed while your queue ran (...)` (M.last_failed,
+    recorded by M.dispatch for a player's failed call).
+  - scheduler.pause_inner: an interrupted transfer, feed, deliver or pickup step is never dropped. One that had moved
+    nothing goes back to the head as it was (`requeued as it was: it had moved nothing`). One that had moved some with
+    no remainder known (no tour stops left to go on from) holds the lane (`q.held`, so a direct call's end does not
+    resume it), named in paused_why and the step's not_requeued: `held: job-N transfer was interrupted after moving N;
+    the rest of it is not known, so it is not run again; queue_resume runs the plan's next step`.
+- On the copy, before (world n's runtime): board_focus {peek: true} as astra interrupted her running wait_ticks with
+  "a call of yours failed while your queue ran".
+- After (this runtime):
+  - board_focus as reader stream, and as astra herself, left the queue running. A reader's failed observe left it
+    running, and a reader's move_to was refused and left it running.
+  - Her own direct move_to paused it with `paused by your direct move_to call (request b148-3c96d6d849), which drives
+    your character`.
+  - Her courier with job 36694's arguments (to an empty chest), interrupted mid-walk by a direct move_to, went back to
+    the head: `requeued as it was: it had moved nothing (an item move is not skipped)`.
+- Tests: tests/d24_batch148.lua (fails on main: `before: paused by a call of yours failed`).
 
 
 ## d24 batch145 PQ1 (eng/d20-batch145): blueprint status marks; the site's blueprint page gets search, kinds, filters, sorting (viewer Foobator)
