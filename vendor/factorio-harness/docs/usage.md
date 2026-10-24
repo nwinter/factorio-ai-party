@@ -13103,3 +13103,26 @@ Fixed besides gates:
   its cargo lines and conflicts, and the requests' `sends_down`.
 - agent/ref/circuits-settings.md no longer says there is no such setting; agent/ref/space-age.md documents it.
 - Test: tests/d24_batch142.lua (PN1).
+## d24 batch142 PN2 (eng/d20-batch142): a ghost dry run applies the live call's sight rule to settings (Astra #2134)
+- Astra's dry run at Nauvis (970,622) passed 17 settings; the live call placed 31 ghosts and refused all 17, and `fh`
+  exited 0. On Vulcanus (shift67 11:36) the live reply read `settings: 0 set, 24 refused: entry 1 configure: target is
+  outside local visible area ...; entry 1 circuit: target: (250.5,240.5) on vulcanus is out of reach and not in a
+  visible chunk ...`.
+- The live call sets ghost settings by remote view (configure_target, circuits' target, requests, wire), which takes
+  our own platform or a chunk our force sees now on the call's surface. The dry run checked the settings' arguments on
+  a stand-in ghost and never the sight.
+- Now the dry run (place_ghosts `dry_run: true`, and the `dry_run` action's `settings_check`) applies that rule per
+  entry and to each wire's other end first (runtime.lua `M.settings_seen`, entryset.lua `dry`). A setting there is
+  refused with `(970.5,622.5) on nauvis is in chunk (30,19), which our force does not see now (no radar coverage or
+  character there): the live call refuses settings there`. `settings_unseen` counts them, and the verdict fails:
+  `fails: 2 settings refused (2 in chunks our force does not see now); ...`.
+- A live call that places ghosts and has settings refused: `settings_refused` (the count), `summary: "2 ghosts placed;
+  2 of 2 settings refused"` and `verdict: "partial: ...: <the first refusal> (and 1 more: settings_line, settings)"`.
+  `fh` exits 1 on a live reply whose verdict starts `partial:` (host/cli.ts exitCode).
+- On the private copy of world n's save (chunk (30,19) charted, not visible), as Astra: the dry run of an assembler
+  with a circuit enable and a pole wired to it failed as above (36 ms with the dry run's other checks); the live call
+  placed both ghosts and gave `partial: 2 ghosts placed; 2 of 2 settings refused: entry 1 circuit: target: (970.5,622.5)
+  on nauvis is out of reach and not in a visible chunk ...` (16.5 ms); the ghosts were removed after. The same dry run
+  at (40.5,40.5), a chunk the copy sees, read `settings (dry run): 2 would be set`.
+- Tests: tests/d24_batch142.lua (PN2), mod/tests/runtime_test.lua (live verdict, dry run sight), tests/d17batch18.test.ts
+  (exit 1).

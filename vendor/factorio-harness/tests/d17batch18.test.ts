@@ -52,3 +52,9 @@ test('A3: a place_ghosts dry run that fails exits 1; one that passes exits 0', a
     await cli(port, ['call', 'place_ghosts', '--args', '{"dry_run":true,"entities":[]}']);
   });
 });
+
+test('d24 batch142 PN2: a live place_ghosts whose settings were refused (verdict partial) exits 1', async () => {
+  await engine(() => ({ok:true, result:{placed:31, settings_refused:17, verdict:'partial: 31 ghosts placed; 17 of 17 settings refused: entry 1 configure: ...'}}), async port => {
+    await assert.rejects(cli(port, ['call', 'place_ghosts', '--args', '{"entities":[]}']), (e: any) => e.code === 1 && /17 of 17 settings refused/.test(e.stdout));
+  });
+});

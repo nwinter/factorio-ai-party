@@ -92,3 +92,21 @@ do
   has(padline,'; stop 1 (nauvis) has unloading off')
 end
 print('d24_batch142 PN1 unloading: ok')
+
+-- PN2 (Astra #2134, Luna too: a dry run passed 17 settings at Nauvis (970,622); the live call placed 31 ghosts and
+-- refused all 17, the chunk not visible): the dry run applies the live call's sight rule to each entry and to each
+-- wire's other end, and counts those refusals apart (unseen).
+do
+  local dried=0
+  local E=dofile('mod/agent-harness_0.1.0/entryset.lua'){check=function() end,position=function(v) return v end,reason=tostring,
+    dry=function() dried=dried+1 end,
+    seen=function(_,ctx,pos) eq(ctx.surface,'nauvis'); return pos.x<960 or string.format('(%g,%g) on nauvis is in chunk (%d,%d), which our force does not see now',pos.x,pos.y,math.floor(pos.x/32),math.floor(pos.y/32)) end}
+  local entries={{name='assembling-machine-2',position={x=970.5,y=622.5},configure={recipe='iron-gear-wheel'},circuit={enable='iron-plate < 10'}},
+    {name='medium-electric-pole',position={x=950.5,y=620.5},wires={{to={x=972.5,y=620.5},color='red'},{to={x=952.5,y=620.5},color='green'}}}}
+  local rows,line,n,unseen=E.dry({},entries,{surface='nauvis'})
+  eq(n,3); eq(unseen,3); eq(dried,1,'only the wire whose ends are seen is checked further')
+  has(rows[1].configure,'(970.5,622.5) on nauvis is in chunk (30,19)'); has(rows[1].circuit,'which our force does not see now')
+  has(rows[2].wires[1],'red to (972.5,620.5): (972.5,620.5) on nauvis is in chunk (30,19)'); eq(rows[2].wires[2],'green to (952.5,620.5): ok')
+  has(line,'settings (dry run): 1 would be set, 3 refused (3 in chunks our force does not see now): entry 1 configure:')
+end
+print('d24_batch142 PN2 settings sight: ok')
