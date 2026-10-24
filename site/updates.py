@@ -16,6 +16,7 @@ chat has moved on. For build.py:
   the verified ones, newest first, then the notices.
 """
 import datetime
+import hashlib
 import json
 from pathlib import Path
 
@@ -74,8 +75,14 @@ def load(path):
     for n in data.get("notices") or []:
         if when(n.get("t")) is None or not n.get("text") or n.get("kind") not in NOTICE_KINDS:
             raise ValueError(f"operator notice {n!r}: needs t (YYYY-MM-DD HH:MM), a kind in {NOTICE_KINDS} and text")
+        if (n.get("recovered") is not None and when(n["recovered"]) is None) or (
+                n.get("affected") is not None and not (isinstance(n["affected"], str) and n["affected"].strip())):
+            raise ValueError(f"operator notice {n!r}: recovered is YYYY-MM-DD HH:MM (or null while it lasts), affected a text")
         notices.append(n)
-    return {"updates": rows, "notices": notices}
+    checked = data.get("notices_checked")
+    if checked is not None and when(checked) is None:
+        raise ValueError(f"notices_checked {checked!r}: YYYY-MM-DD HH:MM")
+    return {"updates": rows, "notices": notices, "notices_checked": checked}
 
 
 def problems(data):
@@ -163,6 +170,38 @@ def _latest(u, asks):
     return max(dates) if dates else datetime.datetime.min
 
 
+def stage(u, asks=None):
+    """When it reached its current status (the order within a status group, newest first); its newest date without one."""
+    return when((u.get("dates") or {}).get(u["status"])) or _latest(u, asks or {})
+
+
+def acknowledged(u):
+    """When the operator first put it on the list: its earliest status date (None when it has none)."""
+    dates = [when((u.get("dates") or {}).get(k)) for k in STATUSES]
+    dates = [d for d in dates if d]
+    return min(dates) if dates else None
+
+
+def deployed(u):
+    """When it went live (None before it did)."""
+    return when((u.get("dates") or {}).get("live"))
+
+
+def _key(d):
+    """A datetime as a number the page's script sorts by (YYYYMMDDHHMM; 0 for none)."""
+    return int(d.strftime("%Y%m%d%H%M")) if d and d not in (datetime.datetime.min, datetime.datetime.max) else 0
+
+
+def _search(u, asks):
+    """The words the page's search box matches: title, id, status, area, batch, who asked and their refs, the notes and
+    the asking messages."""
+    bits = [u.get("title"), u.get("id"), u.get("status"), u.get("area"), u.get("work"), u.get("note")]
+    for r in u.get("requested_by") or []:
+        bits += [r.get("name"), r.get("ref"), (asks.get(r.get("ref")) or {}).get("text")]
+    bits += [h.get("note") for h in u.get("history") or []]
+    return " ".join(" ".join(str(b).split()) for b in bits if b).lower()
+
+
 def _row(u, asks, replies, esc):
     st = u["status"]
     who = []
@@ -218,7 +257,10 @@ def _row(u, asks, replies, esc):
         note += (f'<details class="upd-history"><summary>{"Earlier notes" if len(hist) > 1 else "Earlier note"} ({len(hist)})</summary>'
                  f'<ul>{items}</ul></details>')
     anchor = esc(u["id"])
-    return (f'<li class="upd" id="u-{anchor}"><div class="upd-head"><span class="fx-chip {CHIP[st]} upd-status">{esc(st)}</span>'
+    attrs = (f' data-status="{esc(st)}" data-area="{esc(u.get("area") or "")}" data-stage="{_key(stage(u, asks))}"'
+             f' data-ack="{_key(acknowledged(u))}" data-live="{_key(deployed(u))}" data-asked="{_key(_asked(u, asks))}"'
+             f' data-q="{esc(_search(u, asks))}"')
+    return (f'<li class="upd" id="u-{anchor}"{attrs}><div class="upd-head"><span class="fx-chip {CHIP[st]} upd-status">{esc(st)}</span>'
             f'{area} <a class="upd-title" href="#u-{anchor}">{esc(u["title"])}</a></div>'
             + (f'<p class="small upd-meta">{meta}</p>' if meta else "")
             + (f'<p class="small muted upd-dates">{timeline}</p>' if timeline else "")
@@ -233,47 +275,144 @@ def newest(data):
     return max(times) if times else None
 
 
+SORTS = (("stage", "Stage date"), ("ack", "Acknowledged"), ("live", "Deployed"), ("asked", "Asked"))
+CADENCE = ("This page is rebuilt every hour and whenever the operator refreshes the site. While it is open it checks for "
+           "new updates every 3 minutes and when you come back to it, and adds them in place.")
+
+
+def rows_html(data, asks, replies, esc):
+    """{id: (status, the row's li)}: the rows as the page and updates.json give them, each with a sig (a hash of its
+    li) that the page compares to see a row changed."""
+    out = {}
+    for u in data["updates"]:
+        li = _row(u, asks, replies, esc)
+        sig = hashlib.sha1(li.encode()).hexdigest()[:12]
+        out[u["id"]] = (u["status"], li.replace('<li class="upd" ', f'<li class="upd" data-sig="{sig}" ', 1), sig)
+    return out
+
+
+def _counts(rows, esc):
+    counts = {s: sum(1 for u in rows if u["status"] == s) for s in STATUSES}
+    # a status with rows links to its section; one with none is a plain chip (its section is not rendered: site/check.py
+    # failed the 09:18 refresh on a broken #planned once every planned row had moved on)
+    return " ".join(f'<a class="fx-chip {CHIP[s]} upd-count" href="#{s.replace(" ", "-")}">{esc(s)}: {counts[s]}</a>' if counts[s]
+                    else f'<span class="fx-chip {CHIP[s]} upd-count">{esc(s)}: 0</span>' for s in STATUSES)
+
+
+def _updated(data, built):
+    stamp = newest(data)
+    return ("Status data last changed " + _day(stamp) if stamp else "No status dates yet") + \
+        (f"; this page built {_day(built)}" if built else "") + "."
+
+
+def _checked(data):
+    """When the operator's checks last looked at the notices (tools/operator_updates.py checked, notice, recover)."""
+    c = when(data.get("notices_checked"))
+    return (f"Status notices checked through {_day(c)}." if c else "Status notices have no check time yet.")
+
+
+def _notices(data, esc):
+    out = []
+    for n in sorted(data["notices"], key=lambda n: when(n["t"]), reverse=True):
+        aff = f' <span class="fx-chip fx-chip--grey upd-affected">{esc(n["affected"])}</span>' if n.get("affected") else ""
+        rec = ""
+        if "recovered" in n:
+            r = when(n["recovered"]) if n["recovered"] else None
+            if r:
+                mins = int((r - when(n["t"])).total_seconds() // 60)
+                rec = (f' <span class="muted upd-recovered">Recovered {esc(_day(r))}'
+                       + (f" ({mins // 60} h {mins % 60:02d} min later)" if mins >= 60 else f" ({mins} min later)" if mins > 0 else "")
+                       + ".</span>")
+            else:
+                rec = ' <span class="upd-flag upd-recovered">Not recovered yet.</span>'
+        out.append(f'<li><span class="muted">{esc(_day(when(n["t"])))}</span> <span class="fx-chip fx-chip--grey upd-kind">'
+                   f'{esc(n["kind"])}</span>{aff} {esc(n["text"])}{rec}</li>')
+    return f'<ul class="upd-notices" id="upd-notices">{"".join(out)}</ul>' if out else '<p class="muted" id="upd-notices">None.</p>'
+
+
+def _tools(rows, esc):
+    """The search box, status and area filters and the sort; hidden until the page's script runs (without it every row
+    shows, newest first in its group)."""
+    st = "".join(f'<option value="{esc(s)}">{esc(s.capitalize())} ({sum(1 for u in rows if u["status"] == s)})</option>' for s in STATUSES)
+    ar = "".join(f'<option value="{a}">{a.capitalize()} ({sum(1 for u in rows if u.get("area") == a)})</option>' for a in AREAS)
+    so = "".join(f'<option value="{k}">{label} (newest first)</option>' for k, label in SORTS)
+    return ('<form id="upd-tools" class="upd-tools" role="search" hidden onsubmit="return false">'
+            '<label class="upd-search">Search<input type="search" id="upd-q" placeholder="title, note, batch, who asked" autocomplete="off" '
+            'aria-describedby="upd-shown"></label>'
+            f'<label>Status<select id="upd-status"><option value="">Any status</option>{st}</select></label>'
+            f'<label>Area<select id="upd-area"><option value="">Any area</option>{ar}</select></label>'
+            f'<label>Sort<select id="upd-sort">{so}</select></label></form>'
+            '<p id="upd-shown" class="upd-shown muted small" aria-live="polite" hidden></p>')
+
+
 def build_page(data, asks, replies, esc, built=None):
     """(body, extra_head) of /updates/. built: when the site was built (Pacific, naive), said with the data's newest
     time under the heading (d23 batch124b, viewer Aurora 10:13: "Could deploys be overwriting newer status data?
     Please ... add a last-updated time": the 09:59 hourly refresh built from the committed file while the operator's
-    newer edits sat in a patch, 09:44-10:18)."""
+    newer edits sat in a patch, 09:44-10:18).
+    (d24 batch159 QB1, viewer Aurora 11:27-11:28) each status group newest first by the date it reached that status;
+    search, status and area filters and sorts by stage date, acknowledged, deployed or asked (static/updates.js; the URL
+    keeps the view); the notices with what they affected and when it recovered, and when they were last checked apart
+    from the build; the publish cadence; the page polls stamp.json and fetches updates.json when it changed (updates_json(),
+    stamp_json()) while open."""
     rows = data["updates"]
-    stamp = newest(data)
-    updated = ("Status data last changed " + _day(stamp) if stamp else "No status dates yet") + \
-        (f"; this page built {_day(built)}" if built else "") + "."
-    counts = {s: sum(1 for u in rows if u["status"] == s) for s in STATUSES}
-    # a status with rows links to its section; one with none is a plain chip (its section is not rendered: site/check.py
-    # failed the 09:18 refresh on a broken #planned once every planned row had moved on)
-    chips = " ".join(f'<a class="fx-chip {CHIP[s]} upd-count" href="#{s.replace(" ", "-")}">{esc(s)}: {counts[s]}</a>' if counts[s]
-                     else f'<span class="fx-chip {CHIP[s]} upd-count">{esc(s)}: 0</span>' for s in STATUSES)
+    lis = rows_html(data, asks, replies, esc)
     legend = "".join(f'<li><span class="fx-chip {CHIP[s]} upd-status">{esc(s)}</span> {esc(WHAT[s])}</li>' for s in STATUSES)
-    open_parts = []
-    for s in OPEN_ORDER:
-        group = sorted((u for u in rows if u["status"] == s), key=lambda u: _first(u, asks))
-        if group:
-            open_parts.append(f'<h3 id="{s.replace(" ", "-")}">{esc(s.capitalize())} ({len(group)})</h3><ul class="upd-list">'
-                              + "".join(_row(u, asks, replies, esc) for u in group) + "</ul>")
-    done = sorted((u for u in rows if u["status"] == "verified"), key=lambda u: _latest(u, asks), reverse=True)
-    done_html = ('<ul class="upd-list">' + "".join(_row(u, asks, replies, esc) for u in done) + "</ul>") if done else '<p class="muted">None yet.</p>'
-    notices = sorted(data["notices"], key=lambda n: when(n["t"]), reverse=True)
-    notice_rows = "".join(f'<li><span class="muted">{esc(_day(when(n["t"])))}</span> <span class="fx-chip fx-chip--grey upd-kind">'
-                          f'{esc(n["kind"])}</span> {esc(n["text"])}</li>' for n in notices)
-    notices_html = f'<ul class="upd-notices">{notice_rows}</ul>' if notices else '<p class="muted">None.</p>'
-    open_html = "".join(open_parts) or '<p class="muted">Nothing open.</p>'
+
+    def group(s):
+        """(heading, list, count) of one status: newest first by the date it reached that status. A status with no rows
+        keeps its list and a hidden heading without an id (new rows can come in; no link points at it)."""
+        g = sorted((u for u in rows if u["status"] == s), key=lambda u: (stage(u, asks), u["id"]), reverse=True)
+        head = (f'<h3 id="{s.replace(" ", "-")}" data-group-head="{esc(s)}">' if g else f'<h3 data-group-head="{esc(s)}" hidden>')
+        head += f'{esc(s.capitalize())} (<span class="upd-n">{len(g)}</span>)</h3>'
+        return head, f'<ul class="upd-list" data-group="{esc(s)}">' + "".join(lis[u["id"]][1] for u in g) + "</ul>", len(g)
+    open_parts = [group(s) for s in OPEN_ORDER]
+    open_html = "".join(h + ul for h, ul, _ in open_parts)
+    _, done_ul, n_done = group("verified")
+    none_open = f'<p class="muted" id="upd-none-open"{" hidden" if any(n for _, _, n in open_parts) else ""}>Nothing open.</p>'
     body = f"""
 <h1>Operator updates</h1>
 <p class="lede">Changes to the harness, the stream and this site that viewers and agents asked for, and where each one
-stands. Unresolved ones stay at the top until they are verified. Times are Pacific.</p>
-<p class="muted small upd-updated">{esc(updated)}</p>
-<p class="upd-counts">{chips}</p>
+stands. Unresolved ones stay at the top until they are verified; each group lists the newest first, by the date it
+reached its status. Times are Pacific.</p>
+<p class="muted small upd-updated" id="upd-updated">{esc(_updated(data, built))}</p>
+<p class="muted small upd-cadence">{esc(CADENCE)} <span id="upd-live-note" aria-live="polite"></span></p>
+<p class="upd-counts" id="upd-counts">{_counts(rows, esc)}</p>
 <ul class="upd-legend small">{legend}</ul>
+{_tools(rows, esc)}
+<div id="upd-root" data-built="{esc(built.strftime(FMT) if built else '')}" data-stamp="{data_stamp(data, asks, replies, esc)}">
 <h2 id="open">Not verified yet</h2>
-{open_html}
-<h2 id="verified">Verified ({len(done)})</h2>
-{done_html}
+{open_html}{none_open}
+<h2 id="verified" data-group-head="verified">Verified (<span class="upd-n">{n_done}</span>)</h2>
+{done_ul}<p class="muted" id="upd-none-verified"{" hidden" if n_done else ""}>None yet.</p>
+</div>
 <h2 id="notices">Status notices</h2>
 <p class="muted small">Deploys, restarts, rests and outages, kept apart from the change announcements above.</p>
-{notices_html}
+<p class="small upd-checked" id="upd-checked">{esc(_checked(data))}</p>
+{_notices(data, esc)}
 """
-    return body, ""
+    return body, '<script src="/static/updates.js" defer></script>'
+
+
+def data_stamp(data, asks, replies, esc):
+    """A hash of what the page shows apart from its build time: the page polls /updates/stamp.json (a few dozen bytes)
+    and fetches updates.json only when this changed."""
+    lis = rows_html(data, asks, replies, esc)
+    text = json.dumps([sorted((k, v[2]) for k, v in lis.items()), _notices(data, esc), _checked(data), str(newest(data))])
+    return hashlib.sha1(text.encode()).hexdigest()[:16]
+
+
+def updates_json(data, asks, replies, esc, built=None):
+    """/updates/updates.json, published with the page: what the page's script needs to add new rows in place (each row's
+    status, sig and li), the counts, the two time lines and the notices; and its stamp (stamp_json(): what the page
+    polls)."""
+    lis = rows_html(data, asks, replies, esc)
+    return {"stamp": data_stamp(data, asks, replies, esc), "built": built.strftime(FMT) if built else "",
+            "updated": _updated(data, built), "checked": _checked(data),
+            "counts": _counts(data["updates"], esc), "notices": _notices(data, esc),
+            "rows": [{"id": uid, "status": st, "sig": sig, "html": li} for uid, (st, li, sig) in lis.items()]}
+
+
+def stamp_json(full):
+    """/updates/stamp.json: the stamp and the build time of updates.json (full)."""
+    return {"stamp": full["stamp"], "built": full["built"]}
