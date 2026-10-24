@@ -5,12 +5,15 @@
     bplibrary.py --world W --run-dir runs/RUN watch [--interval 60]
     bplibrary.py --world W show                                     the entries as the operator read gives them
 
-The library lives in the save (storage), so it goes on with the world from shift to shift. Each pass is an operator
-read, `blueprint_library {since}`: storage only, no entity scan, so it stays well under the 20 ms a command on world n
-may take. It returns every entry's facts and the blueprint string of each entry changed since the revision the run
-dir last saw, about 1 MB of strings a read (the JSON of 7.6 MB took 21.8 ms on the private copy): while the reply
-names `strings_after`, the pass reads on with `{since, after}`. Files in RUN/blueprints/: NAME.txt (the entry's blueprint string), index.json (every entry's facts, the
-library revision and the game tick), .mirror.json (the revision this copy holds). A .txt whose entry is gone from the
+The library lives in the save (storage), so it goes on with the world from shift to shift. Each pass is operator
+reads, `blueprint_library`: storage only, no entity scan. On world n no command may take over 10 ms. Every entry's facts
+in one read were 15.3 ms there (158 entries, 133 KB, tick 56169756), so a pass first reads the revision alone
+(`{probe: true}`), and only when it moved since the last pass (or a file is missing here) reads the facts in pages of
+PAGE entries by name (`{since, limit, after}`; next_after names a page's last entry while more follow), with the blueprint string of
+each entry changed since the revision the run dir last saw, 400 KB of strings a page at most (the JSON of 7.6 MB of
+strings took 21.8 ms on the private copy, 416 KB 1.0 ms). A page read while the revision moves ends the pass unwritten;
+the next pass reads again. Files in RUN/blueprints/: NAME.txt (the entry's blueprint string), index.json (every
+entry's facts, the library revision and the game tick; written once, after the last page), .mirror.json (the revision this copy holds). A .txt whose entry is gone from the
 library moves to deleted/. A new run dir (a resumed shift) starts at no revision and so gets every string.
 """
 import argparse
@@ -43,8 +46,44 @@ class Game:
         return reply.get("result", {})
 
 
-def mirror(read, run_dir, out=sys.stdout):
-    """One pass: read the library (read(since) -> the operator reply) into RUN/blueprints/. Returns what changed."""
+PAGE = 24  # entries a page: pages of 32 were 2.5-4.9 ms on world n (d24 06:41, 158 entries), so 24 keeps under about 4 ms
+
+
+def fetch(read, since, page=PAGE):
+    """Every entry's facts, and the strings changed since `since`, page by page ({since, limit, after}). Returns the
+    first page's reply with all entries, or None when the library's revision moved between pages (the next pass reads
+    again). An older runtime answers the first page with the whole library (strings_after pages its strings)."""
+    lib = read({"since": since, "limit": page})
+    entries, reads = list(lib.get("entries") or []), 1
+    if "next_after" not in lib and "strings_after" in lib:
+        # (d20 batch59 U2) the older read: strings_after names the last entry whose string came.
+        after = lib.get("strings_after")
+        while isinstance(after, str) and reads < 1000:
+            more = read({"since": since, "after": after})
+            reads += 1
+            got = {e.get("name"): e["string"] for e in more.get("entries") or [] if isinstance(e, dict) and isinstance(e.get("string"), str)}
+            for e in entries:
+                if isinstance(e, dict) and e.get("name") in got:
+                    e["string"] = got[e["name"]]
+            nxt = more.get("strings_after")
+            after = nxt if isinstance(nxt, str) and nxt > after else None
+        return dict(lib, entries=entries, reads=reads)
+    after = lib.get("next_after")
+    while isinstance(after, str) and reads < 1000:
+        more = read({"since": since, "limit": page, "after": after})
+        reads += 1
+        if more.get("revision") != lib.get("revision"):
+            return None
+        entries += more.get("entries") or []
+        nxt = more.get("next_after")
+        after = nxt if isinstance(nxt, str) and nxt > after else None
+    return dict(lib, entries=entries, reads=reads)
+
+
+def mirror(read, run_dir, out=sys.stdout, page=PAGE):
+    """One pass: read the library (read(args) -> the operator reply) into RUN/blueprints/. Returns what changed.
+    (d24 batch147 PS1) a pass first reads the revision alone ({probe: true}); the facts and strings follow only when it
+    moved since the last pass or a file is missing here."""
     folder = os.path.join(run_dir, "blueprints")
     os.makedirs(folder, exist_ok=True)
     state_path = os.path.join(folder, ".mirror.json")
@@ -53,19 +92,25 @@ def mirror(read, run_dir, out=sys.stdout):
     except (OSError, ValueError):
         state = {}
     since = state.get("revision", -1)
-    lib = read(since)
+    probe = read({"probe": True, "since": since})
+    if "entries" in probe:  # an older runtime: the whole read
+        lib = fetch(lambda args: probe if args.get("limit") and "after" not in args else read(args), since, page)
+        lib["reads"] -= 1  # the probe was its first read
+    else:
+        try:
+            held = [e.get("name") for e in json.load(open(os.path.join(folder, "index.json"))).get("entries") or []]
+        except (OSError, ValueError, AttributeError):
+            held = None
+        complete = held is not None and all(os.path.exists(os.path.join(folder, f"{n}.txt")) for n in held if NAME.fullmatch(str(n)))
+        if since != -1 and complete and probe.get("revision") == state.get("seen"):
+            return {"written": [], "moved": [], "entries": probe.get("count"), "revision": probe.get("revision"), "reads": 1}
+        if not complete:
+            since = -1
+        lib = fetch(read, since, page)
+        if lib is None:
+            print(f"{time.strftime('%H:%M:%S')} the library changed during the read; the next pass reads it again", file=out, flush=True)
+            return {"written": [], "moved": [], "entries": None, "revision": None, "reads": None, "retry": True}
     entries = [e for e in lib.get("entries") or [] if isinstance(e, dict) and NAME.fullmatch(str(e.get("name", "")))]
-    # (d20 batch59 U2) the strings come about 1 MB a read: strings_after names the last entry whose string came.
-    after, reads = lib.get("strings_after"), 1
-    while isinstance(after, str) and reads < 1000:
-        more = read(since, after)
-        reads += 1
-        got = {e.get("name"): e["string"] for e in more.get("entries") or [] if isinstance(e, dict) and isinstance(e.get("string"), str)}
-        for e in entries:
-            if e["name"] in got:
-                e["string"] = got[e["name"]]
-        nxt = more.get("strings_after")
-        after = nxt if isinstance(nxt, str) and nxt > after else None
     names = {e["name"] for e in entries}
     written, moved, missing = [], [], False
     for e in entries:
@@ -95,7 +140,7 @@ def mirror(read, run_dir, out=sys.stdout):
         print(f"{time.strftime('%H:%M:%S')} {name}.txt written", file=out, flush=True)
     for name in moved:
         print(f"{time.strftime('%H:%M:%S')} {name}.txt moved to deleted/", file=out, flush=True)
-    return {"written": written, "moved": moved, "entries": len(entries), "revision": lib.get("revision")}
+    return {"written": written, "moved": moved, "entries": len(entries), "revision": lib.get("revision"), "reads": 1 + lib.get("reads", 1)}
 
 
 def main(argv=None):
@@ -107,12 +152,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     game = Game(a.world)
     if a.command == "show":
-        lib = game.operator("blueprint_library", {"since": 1 << 30})
-        print(json.dumps(lib, indent=1))
+        lib = fetch(lambda args: game.operator("blueprint_library", args), 1 << 30)
+        print(json.dumps(lib, indent=1) if lib else "the library changed during the read; run it again")
         return 0
     if not a.run_dir:
         ap.error(f"{a.command} needs --run-dir")
-    read = lambda since, after=None: game.operator("blueprint_library", dict({"since": since}, **({"after": after} if after else {})))  # noqa: E731
+    read = lambda args: game.operator("blueprint_library", args)  # noqa: E731
     while True:
         try:
             mirror(read, a.run_dir)

@@ -694,6 +694,32 @@ do
   end
   eq(got,101,'every string once'); assert(rounds>=2,'paged')
   eq(strings(L.operator.blueprint_library({since=lib.revision})),0)
+  -- (d24 batch147 PS1) the probe: the revision, tick and count alone; pages of limit entries by name after `after`,
+  -- the strings changed since `since` (PAGE_BYTES at most, at least one), next_after while more follow.
+  local pr=L.operator.blueprint_library({probe=true})
+  eq(pr.revision,lib.revision); eq(pr.entries,nil); eq(pr.count,101); eq(pr.tick,game.tick)
+  local names,pages,strs,after={},0,0,nil
+  repeat
+    local pg=L.operator.blueprint_library({limit=30,after=after})
+    pages=pages+1; eq(pg.revision,lib.revision); assert(#pg.entries<=30,'limit')
+    for _,e in ipairs(pg.entries) do
+      assert(not after or e.name>after,'after'); names[#names+1]=e.name; if e.string then strs=strs+1 end
+      assert(e.rev and e.saved_tick and e.author,'facts')
+    end
+    after=pg.next_after
+  until not after
+  eq(#names,101); eq(strs,101,'every string once'); assert(pages>=4,'paged: '..pages)
+  local whole,paged={},L.operator.blueprint_library({limit=256,since=2^30}).entries
+  for _,e in ipairs(L.operator.blueprint_library({since=2^30}).entries) do whole[e.name]=e end
+  for _,e in ipairs(paged) do for k,v in pairs(whole[e.name]) do eq(e[k],v,'a page row is the whole read\'s row: '..k) end end
+  for i=2,#names do assert(names[i-1]<names[i],'by name') end
+  local big=L.operator.blueprint_library({limit=100})
+  eq(big.entries[#big.entries].name,'e96','a page ends before a string past PAGE_BYTES'); eq(big.next_after,'e96')
+  local alone=L.operator.blueprint_library({limit=100,after='e96'})
+  eq(#alone.entries,1,'a string past PAGE_BYTES goes alone'); eq(alone.entries[1].name,'e97'); eq(#alone.entries[1].string,600000)
+  local none=L.operator.blueprint_library({limit=256,since=lib.revision})
+  eq(#none.entries,101); eq(none.next_after,nil); eq(strings(none),0)
+  fails(function() L.operator.blueprint_library({limit=0}) end,'limit')
   for i=11,99 do lib.entries['e'..i]=nil end
   -- Export and import (a player exports a string and imports it): the entry's facts in the reply, back into the
   -- library under the importer's name; the author rules of blueprint_save.
