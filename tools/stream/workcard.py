@@ -40,6 +40,7 @@ REPEAT_SKIP = {"sleep", "sleep_check", "status", "chat", "describe", "profiles",
                "help", "whoami", "pending", "chat_ack", "reminder_ack", "conflicts"}
 KIND_WORDS = {"uptime": ("uptime",), "turret_tally": ("turret", "tally"), "belt_flow": ("belt", "flow"),
               "collector_tally": ("collector", "tally"), "asteroid_watch": ("asteroid", "watch"),
+              "signal_watch": ("signal", "watch"),
               # (d22 batch99 BI5) the flight watches the agent set (status work: kind flight_watch, scope its platform)
               "flight_watch": ("flight", "watch")}
 STOP_WORDS = {"with", "from", "into", "onto", "then", "that", "this", "wait", "ticks", "until", "step", "steps", "more"}

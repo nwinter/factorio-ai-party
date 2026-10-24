@@ -274,7 +274,7 @@ return function(api)
     end
     return {agents=out, tick=game.tick, idle='standing: no action and no running queue; a wait or sleep is standing; '
       .. 'a game action that changed something, a move to a new spot or 20 s of work in 2 minutes ends it; '
-      .. 'a bounded watch running (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) is measuring, not standing, until its end tick'}
+      .. 'a bounded watch running (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch) is measuring, not standing, until its end tick'}
   end
   return M
 end
