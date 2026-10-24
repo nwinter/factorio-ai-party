@@ -1343,4 +1343,48 @@ do
   for _, c in ipairs(holes) do ghosts[#ghosts+1] = {name='tile-ghost', type='tile-ghost', ghost_name='space-platform-foundation', position={x=c[1]+0.5, y=c[2]+0.5}} end
   eq(#dryrun.live_holes(world(deck, ghosts, {platform={hub=hub}}), force, cells), 0)
 end
+-- d20 batch122 (Astra #2089, 19:36: two laser turrets whose tiles met the floor only at a corner: tiles.not_connected
+-- said the 8 tiles stay unbuilt while the verdict read ok; on a copy of world n the hub built all 8 in about 1200 ticks)
+-- a new tile joins the floor by a side or a corner, as the hub's rules play it; a tile joined by neither fails the
+-- verdict, whether or not the rules were played over it.
+do
+  local function deck(x, y) return (x >= -5 and x <= 5 and y >= -5 and y <= 5) and 'space-platform-foundation' or 'empty-space' end
+  local hub = {name='space-platform-hub', type='space-platform-hub', position={x=0, y=0}, valid=true}
+  local pp = {surface=world(deck, {}, {platform={hub=hub}}), force=force, position={x=0, y=0}}
+  pp.surface.platform.hub.get_inventory = function() return {get_item_count=function() return 0 end} end
+  local function square(x0, y0)
+    local list = {}
+    for x = x0, x0+1 do for y = y0, y0+1 do list[#list+1] = {name='space-platform-foundation', position={x=x+0.5, y=y+0.5}} end end
+    return list
+  end
+  -- by a corner: (6,6) meets (5,5)
+  local corner = dryrun.check(pp, {kind='ghosts', entities={}, tiles=square(6, 6)})
+  eq(corner.tiles.not_connected, nil, 'before: 4 new foundation tiles touch no existing foundation'); eq(corner.tiles.unbuilt_count, nil)
+  -- one tile apart: neither
+  local apart = dryrun.check(pp, {kind='ghosts', entities={}, tiles=square(7, 7)})
+  eq(apart.tiles.not_connected_count, 4); has(apart.tiles.not_connected, '4 new foundation tiles touch no existing foundation by a side or a corner')
+  eq(apart.tiles.unbuilt_count, 4)
+  -- the verdict (runtime.lua M.dry_verdict, read from the source as above)
+  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  local R = {}
+  local env = setmetatable({M=R}, {__index=_G})
+  local from = src:find('\nfunction M%.dry_verdict%(out,a%)')
+  local at, chunk = from, nil
+  while from and not chunk do
+    local e = src:find('\nend', at + 1, true)
+    if not e then break end
+    chunk = load(src:sub(from + 1, e + 3), 'dry_verdict', 't', env)
+    at = e
+  end
+  chunk()
+  eq(R.dry_verdict({dry_run=true, tiles=corner.tiles}, {dry_run=true}).verdict, 'ok: every entry places and every setting is taken')
+  local v = R.dry_verdict({dry_run=true, tiles=apart.tiles}, {dry_run=true})
+  eq(v.dry_run_ok, false); has(v.verdict, 'fails: 4 foundation tiles the hub never builds (')
+  -- not played over (too large for one tick): the tiles apart fail it still, and an undecided floor is said
+  v = R.dry_verdict({dry_run=true, tiles={not_connected_count=3, unchecked_count=900, check_id=7}}, {dry_run=true})
+  eq(v.dry_run_ok, false)
+  eq(v.verdict, 'fails: 3 foundation tiles the hub never builds: no foundation by a side or a corner, even through the other new tiles (tiles.not_connected)')
+  v = R.dry_verdict({dry_run=true, tiles={unchecked_count=900, check_id=7}}, {dry_run=true})
+  eq(v.dry_run_ok, true); eq(v.verdict, 'ok: every entry places and every setting is taken; the floor (900 tiles) is not checked yet: floor check #7 decides it (tiles.check)')
+end
 print('dryrun: ok')

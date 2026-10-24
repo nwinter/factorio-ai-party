@@ -12824,3 +12824,24 @@ its input to its own output, and a wire to a built belt read ok. scan and inspec
 legendary and the hub as normal. Regressions: tests/dryrun.lua (live_holes against the dry run's count),
 mod/tests/runtime_test.lua (the wire rows in the check_inserters block, platform_holes, quality in scan, inspect area rows
 and compact lines), each failing on the old files.
+
+## d22 batch122: a new tile joined to the floor by a corner (Astra #2089, 19:36)
+
+Astra's dry run of two laser turrets on Asterion (tick 54117906, at (-23,-48) and (23,-48)) read `dry_run_ok` while
+`tiles.not_connected` said their 8 foundation tiles touch no existing foundation and stay unbuilt. Each turret's tiles
+met the floor only at a corner. The two checks disagreed: `not_connected` followed sides only, while the hub's rules
+played over the plan (`tiles.unbuilt`) build a tile with foundation among the 8 round it. On a 2.0.77 copy of world n
+(its 18:24 save) the live call laid the 8 tile ghosts and the hub built all 8 within about 1200 ticks, so the play and
+the verdict were right and `not_connected` was not.
+
+Now `not_connected` follows sides and corners, and counts its tiles in `not_connected_count`. A tile it names fails the
+verdict (`N foundation tiles the hub never builds: no foundation by a side or a corner, even through the other new tiles
+(tiles.not_connected)`) when the play did not already count it in `unbuilt_count`, as when the floor is too large for
+one tick and is checked across ticks. The summary says it too. An ok verdict over a floor not checked yet now says so:
+`ok: ...; the floor (N tiles) is not checked yet: floor check #K decides it (tiles.check)`.
+
+On the copy with this branch: a laser turret at (-27,-48), whose tiles meet the floor only at (-26,-47), read ok and the
+hub built its 4 tiles; one at (-27,-52), a tile away from any foundation, read `fails: 4 foundation tiles the hub never
+builds ((-27.5,-52.5): no foundation among the 8 tiles round it)`, and its 4 tile ghosts were still unbuilt about 4770
+ticks after the live call. Regression: tests/dryrun.lua (the #2089 block: corner contact, a square one tile apart, and
+the verdict over a floor not played), failing on the old dryrun.lua and runtime.lua.
