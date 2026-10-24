@@ -53,6 +53,30 @@ needs Google permissions that have not been granted yet (see "Permissions" below
      since it holds the session URL).
    - **Afterwards:** commit `site/content/videos.json` and run `tools/site-refresh.sh`.
 
+## The whole run, private (tools/archive_upload.py, batch169)
+
+    python3 tools/archive_upload.py --inventory       # each shift's recordings, minutes covered, gaps
+    python3 tools/archive_upload.py --dry-run         # each shift's plan, size and time; nothing copied or sent
+    python3 tools/archive_upload.py --shifts 2,4      # upload those; --shifts 1-69 --limit 10; again to resume
+
+- **Recordings:** the masters on the Extreme SSD (`pog-recordings/` public-run, C-pog-recordings,
+  C-pog-recordings-moved, D-pog-recordings) and the box's `D:\pog\recordings` and `C:\pog\recordings` (one ssh with
+  ffprobe there). The SSD's copy of a name comes first. Replay_ clips, empty files and a file still being written (no
+  duration) are left out. Durations are kept in `/Volumes/Extreme SSD/pog-videos/durations.json`.
+- **Plan:** shift_video's window and segments. One file with no cut goes up as it is. A box file is first copied by
+  scp to `/Volumes/Extreme SSD/pog-videos/tmp/`, and its size is checked. Several files, or a cut, are joined there
+  without re-encoding (the concat demuxer, `-c copy`, shift_video's inpoint/outpoint), after a check that their
+  streams match. The join's duration is checked against the plan.
+- **Upload:** shift_video builds `runs/RUN/video/` from the same recording list, then yt_upload goes up with
+  `--privacy private --no-playlist --max-mbps 200 --videos-json ~/code/pog-operator/video-work/videos-private.json`.
+  A shift whose id is in that manifest or in `runs/RUN/video/upload.json` is skipped. Once the id is in, what the tool
+  wrote to tmp for the shift is removed. The masters are only read.
+- **d24 inventory:** shifts 1-69 all have recordings, from 73 masters on the SSD and 8 files on the box. Most start
+  about 3 minutes into the shift's window (OBS starts after start-team's helpers). The longer gaps are shift59's last
+  1h38 and 32 minutes of shift18. 9 shifts need a join (2, 5, 13, 14, 18, 19, 24, 29, 31). All 22 files of those joins
+  are HEVC 1920x1080 at 30 fps with AAC 48 kHz stereo. The dry run gave 68 uploads, 1,043 GB, about 12 hours at
+  200 Mbit/s, and 68 of the 100 uploads a day.
+
 ## Chapters and description
 
 YouTube's rules are that the first chapter is at 0:00, there are at least three, and each is at least 10 s long. The
