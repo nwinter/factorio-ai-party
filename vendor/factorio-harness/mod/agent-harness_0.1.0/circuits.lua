@@ -318,9 +318,44 @@ return function(api)
     local side = side_of(e, id)
     return side and color .. '_' .. side or color
   end
+  -- (d24 batch136 PH1, Sol #2104: a decider's red network 1258 carried 242 signals; inspect listed 30 and circuit_audit
+  -- 24, so signal-R could not be read, nor its absence told from the cut) signals named: 1..MAX_PICKED names as
+  -- conditions take them ("signal-R", "calcite", "iron-plate@rare", "recipe:NAME", {type, name, quality}), each read on
+  -- a network by the game's own count (get_signal: 0 when absent, as the network's hover shows), whatever the cap.
+  M.MAX_PICKED = 32
+  function M.parse_signals(v, what)
+    what = what or 'signals'
+    if type(v) == 'string' then
+      local list = {}
+      for part in v:gmatch('[^|,]+') do local t = part:match('^%s*(.-)%s*$'); if t ~= '' then list[#list+1] = t end end
+      v = list
+    end
+    if type(v) == 'table' and (v.name or v.type) then v = {v} end
+    if type(v) ~= 'table' or #v < 1 or #v > M.MAX_PICKED then
+      error(string.format('%s: 1..%d signal names (a list, or one string with | or ,)', what, M.MAX_PICKED), 0)
+    end
+    local out, seen = {}, {}
+    for i, x in ipairs(v) do
+      local id = signal(x, string.format('%s[%d]', what, i))
+      local text = signal_text(id) or id.name
+      if not seen[text] then seen[text] = true; out[#out+1] = {id=id, text=text} end
+    end
+    return out
+  end
+  -- [{name, count}] of each signal picked on a LuaCircuitNetwork, in the order asked.
+  function M.picked_counts(net, picks)
+    local rows = {}
+    for i, pk in ipairs(picks) do rows[i] = {name=pk.text, count=try(function() return net.get_signal(pk.id) end) or 0} end
+    return rows
+  end
+  function M.picked_text(rows)
+    local parts = {}
+    for i, r in ipairs(rows) do parts[i] = r.name .. ' ' .. r.count end
+    return table.concat(parts, ', ')
+  end
   -- wires {red, green, copper (or red_input, ... copper_left)}: each far end;
-  -- networks {key: {id, signals, more}}: the signals on each circuit network now.
-  local function wires_of(e)
+  -- networks {key: {id, signals, more, picked}}: the signals on each circuit network now (picked: the signals named).
+  local function wires_of(e, picks)
     local list = try(function() return e.get_wire_connectors(false) end)
     if type(list) ~= 'table' then return nil, nil end
     local wires, nets = {}, {}
@@ -333,7 +368,7 @@ return function(api)
           local net = try(function() return e.get_circuit_network(id) end)
           if net then
             local rows2, more = signal_rows(try(function() return net.signals end))
-            nets[key] = {id=try(function() return net.network_id end), signals=rows2, more=more}
+            nets[key] = {id=try(function() return net.network_id end), signals=rows2, more=more, picked=picks and M.picked_counts(net, picks) or nil}
           end
         end
       end
@@ -839,12 +874,20 @@ return function(api)
     if props_of(cb, kind_of(cb)).on_off then on_off(cb, out) end
     return out
   end
-  function M.read(e, cb)
+  function M.read(e, cb, picks)
     if cb == nil then cb = try(function() return e.get_control_behavior() end) end
-    local wires, nets = wires_of(e)
+    local wires, nets = wires_of(e, picks)
     local description = M.description(e)
     if not cb and not wires then return description and {description=description} or nil end
     local out = {wires=wires, networks=nets, description=description}
+    if picks then
+      -- one line: each network the entity's red and green wires join, by colour and side, with the signals named
+      local keys, parts = {}, {}
+      for k in pairs(nets or {}) do keys[#keys+1] = k end
+      table.sort(keys)
+      for _, k in ipairs(keys) do parts[#parts+1] = string.format('%s #%s: %s', k, tostring(nets[k].id), M.picked_text(nets[k].picked)) end
+      out.signals_picked = #parts > 0 and table.concat(parts, '; ') or 'no red or green network: nothing to read'
+    end
     if not cb then out.settings_note = 'no circuit settings changed from the game defaults'; return out end
     local kind = kind_of(cb)
     local props = props_of(cb, kind)

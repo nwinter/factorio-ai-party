@@ -12924,3 +12924,21 @@ Now, down, with no `from`:
 
 With `from` given, only that platform's pods count, as before. Each row now also has `stock {held, at_start, reached,
 line}`: the stock test, apart from `received` (the pods with the item received here).
+
+## d24 batch136 PH1 (eng/d20-batch136): signals named on inspect and circuit_audit (Sol #2104)
+- Sol and Luna needed signal-R on red network 1258 at the native quota decider (51.5,48) on nauvis. The network carried
+  242 signals. inspect lists 30 a network (`more` past them) and circuit_audit 24 (`signals_total`), so R was not in
+  either list, and its absence could not be told from the cut.
+- `signals`: 1..32 names, as conditions write them: items, fluids and virtual signals, `name@quality`, `recipe:NAME`
+  and the other typed forms, or `{type, name, quality}`. Give a list, or one string with `|` or `,`. A name the game
+  doesn't have is refused. Each name is read with the network's own get_signal: the count the game holds, 0 when
+  absent, whatever the cap.
+  - `inspect {position | positions, signals}`: each red and green network the entity's wires join, by colour and side
+    (`red_input`, `green_output`, `red`, ...), adds `picked [{name, count}]` in the order asked. `circuit.signals_picked`
+    gives one line, e.g. `red_input #1258: signal-R 3, calcite 0`. Compact and area reads are unchanged.
+  - `circuit_audit {area | positions, signals}`: each network row adds `picked`, and its line adds `named: ...`.
+    circuit_audit reads, as before, the networks on an entity's red and green circuit connectors (a combinator's input
+    side). `signals` with `platform` alone is refused.
+  - `signals`, `more`, `signals_total` and the lines' `(+N more)` are unchanged.
+- Test: tests/d24_batch136.lua (242 signals: the lists stay cut, picked reads past them; quality; refusals), and
+  tests/circuits.lua (inspect through the runtime).
