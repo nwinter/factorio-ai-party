@@ -337,6 +337,8 @@ def main():
     ap.add_argument("--video-dir", help="default runs/RUN/video")
     ap.add_argument("--privacy", default="public", choices=["public", "unlisted", "private"])
     ap.add_argument("--playlist", default=PLAYLIST)
+    ap.add_argument("--no-playlist", action="store_true",
+                    help="add the video to no playlist (a private test: the playlist is created public when missing)")
     ap.add_argument("--videos-json", default=str(REPO / "site" / "content" / "videos.json"))
     ap.add_argument("--no-thumb", action="store_true")
     ap.add_argument("--max-mbps", type=float, help="cap the upload's average rate (during a live stream)")
@@ -379,7 +381,7 @@ def main():
     if not a.no_thumb and thumb.exists() and not state.get("thumbnail_set"):
         thumbnail(api, vid, thumb)
         state["thumbnail_set"] = not a.dry_run
-    if not state.get("playlist_item"):
+    if not a.no_playlist and not state.get("playlist_item"):
         pid = playlist_id(api, a.playlist)
         r = api.call("POST", f"{API}/playlistItems?part=snippet",
                      body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": vid}}},
