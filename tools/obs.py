@@ -11,6 +11,7 @@
   tools/.venv/bin/python tools/obs.py scene NAME                                   # switch the program scene
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
   tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients), then cropped
+  tools/.venv/bin/python tools/obs.py cams                # read only: each camera's hole, crop and the crop it takes
   tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
   tools/.venv/bin/python tools/obs.py audio-test --url URL [--game-url URL]        # scratch scene, same mix
   tools/.venv/bin/python tools/obs.py meter --seconds 20 [--inputs a,b]           # peak dBFS per input per second
@@ -103,7 +104,8 @@ def host_capture(c, scene, layout=LAYOUT):
     sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
     from cuts import crop_for
     src = c.get_scene_item_transform(scene, item).scene_item_transform
-    c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
+    if src.get("sourceWidth") and src.get("sourceHeight"):  # not running yet (0 x 0): the crop left as it is
+        c.set_scene_item_transform(scene, item, crop_for(src["sourceWidth"], src["sourceHeight"], w, h))
     return item
 
 
@@ -138,11 +140,14 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
             "capture_cursor": False, "allow_transparency": False})
         x, y, w, h = cams["main" if onecam else slot]
         place(c, scene, item, x, y, w, h)
-        # cropped to the hole's shape (none for a 16:9 hole, which also clears a crop left by the other layout)
+        # cropped to the hole's shape (none for a 16:9 hole, which also clears a crop left by the other layout).
+        # (d24 batch136 PH2) a capture not hooked yet reads 0 x 0: its crop is left as it is (crop_for gave none and the
+        # main hole showed it letterboxed); rehook-cams crops it once its client has joined
         sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
         from cuts import crop_for
         src = c.get_scene_item_transform(scene, item).scene_item_transform
-        c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
+        if src.get("sourceWidth") and src.get("sourceHeight"):
+            c.set_scene_item_transform(scene, item, crop_for(src["sourceWidth"], src["sourceHeight"], w, h))
         order.append(item)
     order.append(host_capture(c, scene, lay))  # Nick's own client, off until host view (above the cameras)
     ov = scene_input(c, scene, "stream overlay", "browser_source", {
@@ -216,6 +221,40 @@ def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
         c.set_scene_item_transform(scene, item, crop)
         out[k] += (f"; crop {now[0]}/{now[1]} {now[2]}/{now[3]} (source {sw:g}x{sh:g} into {bw:g}x{bh:g}"
                    + (", unchanged)" if now == was_crop else f", was {was_crop[0]}/{was_crop[1]} {was_crop[2]}/{was_crop[3]})"))
+    return " | ".join(out)
+
+
+def cams_check(c, scene="stream", n=3, layout=LAYOUT):
+    """Read only (d24 batch136 PH2: cam3 read crop 0 at about 21:07 while it was the inset, which is uncropped by
+    design): each "stream camN" with its hole (by its bounds: layout.json's main or inset, layout-3cam.json's trio
+    tiles), source size, crop, and the crop crop_for gives that size in that hole: ok, CROP OFF, or no source size."""
+    sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
+    from cuts import crop_for, TRIO
+    holes = {}
+    for path, prefix in ((layout, ""), (TRIO, "trio ")):
+        lay = json.load(open(path)) if isinstance(path, str) else path
+        for k, (_, _, w, h) in lay["cams"].items():
+            holes.setdefault((float(w), float(h)), prefix + k)
+    out = []
+    for i in range(1, n + 1):
+        name = f"stream cam{i}"
+        try:
+            item = c.get_scene_item_id(scene, name).scene_item_id
+        except Exception as e:  # noqa: BLE001
+            out.append(f"{name}: not in {scene} ({type(e).__name__})")
+            continue
+        on = c.get_scene_item_enabled(scene, item).scene_item_enabled
+        t = c.get_scene_item_transform(scene, item).scene_item_transform
+        sw, sh, bw, bh = (t.get(k) or 0 for k in ("sourceWidth", "sourceHeight", "boundsWidth", "boundsHeight"))
+        hole = holes.get((float(bw), float(bh)), f"bounds {bw:g}x{bh:g}")
+        crop = tuple(t.get(f"crop{side}", 0) for side in ("Left", "Right", "Top", "Bottom"))
+        text = f"{name}: {'on' if on else 'off'}, {hole}, crop {crop[0]}/{crop[1]} {crop[2]}/{crop[3]}"
+        if not (sw and sh):
+            out.append(text + ", no source size (not hooked)")
+            continue
+        want = crop_for(sw, sh, bw, bh)
+        want = tuple(want[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
+        out.append(text + f", source {sw:g}x{sh:g}: " + ("ok" if want == crop else f"CROP OFF (that hole takes {want[0]}/{want[1]} {want[2]}/{want[3]})"))
     return " | ".join(out)
 
 
@@ -302,7 +341,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
-                                    "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams",
+                                    "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams", "cams",
                                     "host-view-source"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
@@ -324,6 +363,8 @@ def main():
         print("audio inputs", stream_audio(c))
     elif a.cmd == "rehook-cams":
         print(rehook_cams(c))
+    elif a.cmd == "cams":
+        print(cams_check(c))
     elif a.cmd == "host-view-source":
         print(host_view_source(c, layout=a.layout))
     elif a.cmd == "audio-test":
