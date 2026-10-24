@@ -6,6 +6,9 @@ without a way to open them. Active/overdue filters would make the full list easi
 the whole list within the reminders' share (over it, jobs past the first 12 go, finished ones first, total kept); the
 panel shows the first 12 and "Show all N", opens to every job with All / Active / Overdue and their counts, filters,
 says how many were not sent, and keeps the reader's choice across a refresh.
+d24 batch150 PV1 (viewer Aurora 07:31: "Reminder 42 says "no result given" in the collapsed view, but both recipients
+have results in the full board"): results left out for size say so (the same as the last result, or left out), the job
+says how many recipients gave one and the first (shortened, said); "no result given" only where none was given.
 """
 import json, os, shutil, subprocess, sys
 
@@ -164,9 +167,52 @@ process.stdout.write(JSON.stringify(out));
     assert r.returncode == 0 and "rem-latest" not in r.stdout, r.stdout
 
 
+def pv1_tests():
+    """(d24 batch150 PV1) reminder 42 on world n at 07:55: astra and sol done, sol's result the job's last result."""
+    r42 = lambda i: job(i, name="Reconsider plan against changed world", owner="astra", agent="astra", states="astra done; sol done",  # noqa: E731
+                        last_result="step 3: Sol owns red qualification " + "s" * 360, result_by="sol", latest=[
+                            {"name": "astra", "agent": "astra", "state": "done", "acked_ago_s": 780, "result": "step 3: Continue2150 " + "a" * 360},
+                            {"name": "sol", "agent": "sol", "state": "done", "acked_ago_s": 478, "result": "step 3: Sol owns red qualification " + "s" * 360},
+                            {"name": "luna", "agent": "luna", "state": "acknowledged", "acked_ago_s": 120}])
+    pr = push_live.public_reminders({"jobs": [r42(i) for i in range(30)], "total": 30})
+    j = pr["jobs"][0]
+    assert [x.get("result_omitted") for x in j["latest"]] == ["size", "same", None] and all(x.get("result") is None for x in j["latest"]), j["latest"]
+    assert j["results_given"] == 2 and j["result_first"]["name"] == "astra" and j["result_first"]["shortened"], j.get("result_first")
+    assert len(j["result_first"]["text"]) == 100 and j["result_first"]["text"].startswith("step 3: Continue2150 "), j["result_first"]
+    # a first result that is the job's last result is not sent twice
+    k = push_live.latest_without_results(dict(r42(0), latest=r42(0)["latest"][1:]), True)
+    assert k["result_first"] == {"name": "sol", "agent": "sol", "same": True} and k["results_given"] == 1, k
+    # the stream cuts a recipient's result to 240 characters: the author's cut start still counts as the last result
+    whole = "step 3: Sol owns red qualification " + "s" * 400
+    c = dict(r42(0), last_result=whole, latest=[{"name": "sol", "agent": "sol", "state": "done", "acked_ago_s": 478, "result": whole[:237] + "..."},
+                                                 {"name": "astra", "agent": "astra", "state": "done", "acked_ago_s": 780, "result": whole[:237] + "..."}])
+    c = push_live.latest_without_results(c, True)
+    assert [x.get("result_omitted") for x in c["latest"]] == ["same", None] and c["latest"][1]["result"], c["latest"]  # astra did not write it
+    # nothing left out: the job as it came
+    assert push_live.latest_without_results(job(1, latest=[{"name": "luna", "acked_ago_s": 60}]), False) == job(1, latest=[{"name": "luna", "acked_ago_s": 60}])
+    # the full board document: the same marks
+    doc = push_live.public_board_all({"items": [], "claims": [], "projects": [], "reminders": [r42(i) for i in range(30)]}, limit=8000)
+    assert doc["reminders"][0]["results_given"] == 2 and doc["reminders"][0]["latest"][0]["result_omitted"], doc["reminders"][0]
+    if not shutil.which("node"):
+        print("reminders all: PV1 live.js part skipped (no node)")
+        return
+    code = open(os.path.join(HERE, "static", "live.js")).read()
+    fn = code[code.index("  var openLong = {};"):code.index("  function projectsHtml(board, byName, card, withNext) {")]
+    js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [j, k], "total": 2}) + ", team));"
+    r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
+    out = r.stdout
+    assert r.returncode == 0, r.stderr
+    assert "2 of 3 recipients gave a result; the first, Astra's, shortened: step 3: Continue2150 aaa" in out, out
+    assert "Astra: acknowledged 13 min ago, result left out of this view for size" in out, out
+    assert "Sol: acknowledged 8 min ago, result: the same as the last result above" in out, out
+    assert "luna: acknowledged 2 min ago, no result given" in out and out.count("no result given") == 2, out  # luna in each job, and only she
+    assert "1 of 2 recipients gave a result; the first, Sol's, is the last result above" in out, out
+
+
 def main():
     payload_tests()
     page_tests()
+    pv1_tests()
     print("reminders all: ok (the whole list within the reminders' share; the first 12, Show all with All / Active / "
           "Overdue and their counts, the ones not sent, the choice kept)")
 

@@ -1195,20 +1195,35 @@
   }
   // (d20 batch70 AF2, viewer Aurora: "show each recipient's latest result") each recipient's latest: acknowledged when,
   // with what (by the backup for them), or waiting how long with the runs missed; and the backup, named.
+  // (d24 batch150 PV1, viewer Aurora 07:31: "Reminder 42 says "no result given" in the collapsed view, but both
+  // recipients have results in the full board") push_live leaves results out for size (result_omitted: same, the job's
+  // last result above; size): the row says which, and the job how many recipients gave one and the first.
+  function remOmitted(x) {
+    return x.result_omitted === 'same' ? ', result: the same as the last result above' : x.result_omitted ? ', result left out of this view for size' : '';
+  }
+  function remResultsHtml(j, byName, n) {
+    var f = j.result_first;
+    if (!j.results_given) return '';
+    var head = j.results_given + ' of ' + n + ' recipient' + (n === 1 ? '' : 's') + ' gave a result';
+    if (!f) return '<span class="lt-short">' + esc(head) + '</span>';
+    var who = (byName[f.agent] || byName[f.name] || {}).display_name || f.name;
+    if (f.same) return '<span class="lt-short">' + esc(head + '; the first, ' + who + '\'s, is the last result above') + '</span>';
+    return '<span class="lt-short">' + esc(head + '; the first, ' + who + '\'s' + (f.shortened ? ', shortened' : '') + ': ' + f.text) + '</span>';
+  }
   function remLatestHtml(j, byName) {
     var rows = Array.isArray(j.latest) ? j.latest : [];
-    var out = rows.map(function (x) {
+    var out = remResultsHtml(j, byName, rows.length) + rows.map(function (x) {
       var who = (byName[x.agent] || byName[x.name] || {}).display_name || x.name;
       var by = x.by ? ' by ' + ((byName[x.by] || {}).display_name || x.by) + ' for them' : '';
       if (x.waiting_s != null) {
         var head = who + ': waiting ' + ago(x.waiting_s).replace(/ ago$/, '') + (x.missed ? ', ' + x.missed + ' run' + (x.missed === 1 ? '' : 's') + ' missed' : '') +
           (x.backup_told ? ', backup told' : '') + (x.acked_ago_s != null ? '; last acknowledged ' + ago(x.acked_ago_s) + by : '; never acknowledged');
-        return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, head + ':') : '<span class="lt-short">' + esc(head) + '</span>';
+        return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, head + ':') : '<span class="lt-short">' + esc(head + remOmitted(x)) + '</span>';
       }
       if (x.acked_ago_s == null) return '<span class="lt-short">' + esc(who + ': ' + (x.state || 'scheduled') + ', never acknowledged') + '</span>';
       var open = /^(open|deferred)/.test(x.state || '') ? ' (' + x.state + ')' : '';
       var line = who + ': acknowledged ' + ago(x.acked_ago_s) + by + open;
-      return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, line + ':') : '<span class="lt-short">' + esc(line + ', no result given') + '</span>';
+      return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, line + ':') : '<span class="lt-short">' + esc(line + (remOmitted(x) || ', no result given')) + '</span>';
     }).join('');
     var backup = j.backup ? '<span class="fx-muted small">Backup: ' + esc((byName[j.backup] || {}).display_name || j.backup) + '</span>' : '';
     return out || backup ? '<div class="rem-latest">' + backup + out + '</div>' : '';
