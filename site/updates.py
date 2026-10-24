@@ -5,11 +5,12 @@ visible, and separate automatic status notices from change announcements.").
 
 The data is site/content/operator-updates.json (tools/operator_updates.py adds rows and moves them on, or edit it by
 hand): each change with who asked (a site message id, site:NNNN, or a board item, #NNNN), its status, when it reached
-each status, and a note; and the notices (deploys, restarts, rests, outages) apart from the changes. At build time the
+each status, its batch (work), and a note with its earlier notes kept as dated history; and the notices (deploys, restarts, rests, outages) apart from the changes. At build time the
 asking message's text and the operator's replies come from the run folders (runs/*/operator-inbox.jsonl by id,
 runs/*/operator-replies.jsonl by `to`), through the site's redaction and filters, so the page keeps them after the
 chat has moved on. For build.py:
 - load(): the rows, checked (a bad row stops the build with its id);
+- problems(): rows to look at, which the build prints and builds anyway (a status past planned with no work);
 - messages(): the asks and the replies the rows name;
 - build_page(): the /updates/ page: the counts, then everything not yet verified (in progress, planned, live), then
   the verified ones, newest first, then the notices.
@@ -44,7 +45,8 @@ def when(text):
 
 def load(path):
     """{updates, notices} from the JSON; a row without an id, a title or a known status, a repeated id, a status or date
-    key outside STATUSES, or a date not written YYYY-MM-DD HH:MM raises ValueError naming it."""
+    key outside STATUSES, or a date not written YYYY-MM-DD HH:MM raises ValueError naming it; so do note_at, note_status
+    and history entries ({until, note, status, from}) written otherwise."""
     data = json.loads(Path(path).read_text())
     seen, rows = set(), []
     for u in data.get("updates") or []:
@@ -60,6 +62,13 @@ def load(path):
                 raise ValueError(f"operator update {uid}: date {k!r} {v!r} (keys {DATE_KEYS}, YYYY-MM-DD HH:MM)")
         if u.get("area") and u["area"] not in AREAS:
             raise ValueError(f"operator update {uid}: area {u['area']!r} not in {AREAS}")
+        if (u.get("note_at") is not None and when(u["note_at"]) is None) or u.get("note_status", "planned") not in STATUSES:
+            raise ValueError(f"operator update {uid}: note_at {u.get('note_at')!r} (YYYY-MM-DD HH:MM) or note_status {u.get('note_status')!r} (one of {STATUSES})")
+        hist = u.get("history")
+        if hist is not None and (not isinstance(hist, list) or not all(
+                isinstance(h, dict) and isinstance(h.get("note"), str) and h["note"] and when(h.get("until"))
+                and h.get("status", "planned") in STATUSES and (h.get("from") is None or when(h["from"])) for h in hist)):
+            raise ValueError(f"operator update {uid}: history is a list of {{until: YYYY-MM-DD HH:MM, note, status, from}}")
         rows.append(u)
     notices = []
     for n in data.get("notices") or []:
@@ -67,6 +76,13 @@ def load(path):
             raise ValueError(f"operator notice {n!r}: needs t (YYYY-MM-DD HH:MM), a kind in {NOTICE_KINDS} and text")
         notices.append(n)
     return {"updates": rows, "notices": notices}
+
+
+def problems(data):
+    """Rows to look at, one line each; the build prints them and builds anyway (d23, viewer Aurora 18:46: three live rows
+    still read "not yet given to an engineer", with no batch): a status past planned with no work."""
+    return [f"operator update {u['id']}: {u['status']} with no work (batch)" for u in data["updates"]
+            if u["status"] != "planned" and not u.get("work")]
 
 
 def refs(rows):
@@ -184,13 +200,29 @@ def _row(u, asks, replies, esc):
         label = label[:1].upper() + label[1:]
         msgs = f'<details class="upd-msgs"><summary>{esc(label)}</summary>' + "".join(quotes) + "".join(said) + "</details>"
     area = f' <span class="fx-chip fx-chip--grey upd-area">{esc(u["area"])}</span>' if u.get("area") else ""
-    meta = ("Asked by " + ", ".join(who) if who else "") + (" · " if who and u.get("work") else "") + esc(u.get("work") or "")
+    work = esc(u["work"]) if u.get("work") else '<span class="upd-flag">no batch recorded</span>' if st != "planned" else ""
+    meta = ("Asked by " + ", ".join(who) if who else "") + (" · " if who and work else "") + work
+    # (d23, viewer Aurora 18:46: "Could superseded queue notes become dated history, so each card's current status and
+    # note agree?") the current note says when it was written, and under which status when that is not the current one;
+    # the notes it replaced are folded under it, newest first
+    note = ""
+    if u.get("note"):
+        ns, na = u.get("note_status"), when(u.get("note_at"))
+        lead = (f'<span class="muted">Note from when it was {esc(ns)}{", " + esc(_day(na)) if na else ""}:</span> ' if ns and ns != st else "")
+        tail = f' <span class="muted">({esc(_day(na))})</span>' if na and not lead else ""
+        note = f'<p class="small upd-note">{lead}{esc(u["note"])}{tail}</p>'
+    hist = list(reversed(u.get("history") or []))
+    if hist:
+        items = "".join(f'<li><span class="muted">{esc(_day(when(h.get("from"))) + " to " if h.get("from") else "until ")}{esc(_day(when(h["until"])))}'
+                        f'{", while " + esc(h["status"]) if h.get("status") else ""}:</span> {esc(h["note"])}</li>' for h in hist)
+        note += (f'<details class="upd-history"><summary>{"Earlier notes" if len(hist) > 1 else "Earlier note"} ({len(hist)})</summary>'
+                 f'<ul>{items}</ul></details>')
     anchor = esc(u["id"])
     return (f'<li class="upd" id="u-{anchor}"><div class="upd-head"><span class="fx-chip {CHIP[st]} upd-status">{esc(st)}</span>'
             f'{area} <a class="upd-title" href="#u-{anchor}">{esc(u["title"])}</a></div>'
             + (f'<p class="small upd-meta">{meta}</p>' if meta else "")
             + (f'<p class="small muted upd-dates">{timeline}</p>' if timeline else "")
-            + (f'<p class="small upd-note">{esc(u["note"])}</p>' if u.get("note") else "")
+            + note
             + msgs + "</li>")
 
 
