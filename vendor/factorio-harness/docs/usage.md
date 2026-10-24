@@ -12531,3 +12531,34 @@ on, and the `dry_run` action takes its args' `dry_run` true, false or left out (
 copy, Astra's belt and filtered inserter with `check_inserters` and `dry_run: false` placed 2 with the inserter's row ok;
 `dry_run: true` checked them and placed nothing. Regression: mod/tests/runtime_test.lua (the check_inserters block),
 failing on the old runtime.lua with Astra's error.
+
+## d22 batch122: wire sides in the dry run, enclosed foundation laid live, quality in inspect and scan (Astra #2087, 18:18)
+
+Astra's collector line on Asterion: the place_ghosts dry run at tick 53751814 read `dry_run_ok` with two green wires
+from a fast belt given `from_side: "output"`, and counted 32 foundation tiles, 17 under the ghosts and 15 holes. The live
+call at 53827409 refused both wires (`from_side applies to combinators only (and power switches for copper)`) and laid
+only the 17 under its ghosts; two ghosts stayed unbuilt until the 15 holes were placed by hand at 53828751.
+
+Wires. The dry run now checks each entry wire's two ends by the live wire's own rules (circuits.lua `wire_end_id`, which
+`wire` itself now calls): the entry, and at `to` an entry of the same call whose footprint holds it, else what stands
+there. Each wire gets a row in `settings_check` (`green to (x,y): ok`, or the live call's refusal), counts in
+`settings_refused`, and a refused one fails the verdict. A combinator's sides, a power switch's `left`/`right` for copper,
+a pole's single copper connector and an entity with no circuit connection are judged as the live call judges them.
+
+Foundation. The live call collects every tile ghost it lays on a platform (under its ghosts and its own tile entries) and
+runs the dry run's hole flood from them (dryrun.lua `enclosed`, now shared; `live_holes` reads the surface as it stands,
+tile ghosts counting as foundation). The enclosed tiles get tile ghosts too, counted in `tiles_laid`, with `holes_laid`,
+`holes_note` and `holes_failed` (a refused one, with why). The largest region the new tiles part may still stay empty,
+as the dry run says (`holes_other`).
+
+Quality. scan rows and inspect area rows carry `quality` when it is not normal (a ghost's: what it builds); compact lines
+put it before the name (`legendary thruster (-8,213.5): working; ...`); a full inspect always has `quality`, normal too.
+
+On a 2.0.77 copy of world n (its 17:22 save, this branch deployed): a ring of 12 fast belts on empty space at x -51..-47,
+y -48..-46 against the top edge enclosed 3 tiles. The dry run read 15 foundation, 3 of them holes, and failed on a
+belt wire with `from_side`. The live call laid all 15 (`holes_laid: 3`), refused the wire with the same words, and the
+hub built the 15 tiles and the 12 belts within 650 ticks with no ghost left. A decider's output wired to a planned belt,
+its input to its own output, and a wire to a built belt read ok. scan and inspect read Asterion's two thrusters as
+legendary and the hub as normal. Regressions: tests/dryrun.lua (live_holes against the dry run's count),
+mod/tests/runtime_test.lua (the wire rows in the check_inserters block, platform_holes, quality in scan, inspect area rows
+and compact lines), each failing on the old files.

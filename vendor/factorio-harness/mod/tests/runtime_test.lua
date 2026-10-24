@@ -3505,7 +3505,11 @@ end)()
   -- scan there: centred on a place there.
   standing[1]={valid=true,name='transport-belt',type='transport-belt',position={x=5.5,y=5.5},direction=4,force=p.force,surface=vulcanus}
   local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
-  eq(sc.entities[1].name,'transport-belt')
+  eq(sc.entities[1].name,'transport-belt'); eq(sc.entities[1].quality,nil)
+  -- (d20 batch122, Astra #2087) a row's quality when not normal
+  standing[1].quality={name='legendary'}
+  eq(call('scan',{surface='vulcanus',position={x=5,y=5},radius=4}).entities[1].quality,'legendary')
+  standing[1].quality=nil
   -- requester_rate there (batch27 A1, Sol: from Aquilo a Nauvis chest read "entity not found"): the chest on that planet.
   do
     defines.logistic_member_index=defines.logistic_member_index or {logistic_container=1}
@@ -4493,6 +4497,20 @@ end)()
   end
   local okn,errn=pcall(call,'dry_run',{action='place_ghosts',args={dry_run='no',entities={{name='inserter',position={x=6.5,y=0.5}}}}})
   assert(not okn and tostring(errn):find('dry_run must be true or false',1,true),tostring(errn))
+  -- (d20 batch122, Astra #2087: a dry run read dry_run_ok with from_side on a belt's two wires; the live call refused
+  -- both, "from_side applies to combinators only") each wire's ends by the live wire's rules: the entry, and an entry of
+  -- the call or what stands at to
+  defines.wire_connector_id=defines.wire_connector_id or {}
+  defines.wire_connector_id.circuit_green=defines.wire_connector_id.circuit_green or 2
+  local wired={{name='inserter',position={x=6.5,y=0.5},wires={{to={x=6.5,y=-0.5},color='green',from_side='output'},
+    {to={x=6.5,y=1.5},color='green',to_side='input'},{to={x=6.5,y=1.5},color='green'}}}}
+  local rw=call('place_ghosts',{dry_run=true,entities=wired})
+  eq(#made,0); eq(rw.settings_refused,2); assert(rw.verdict:find('^fails'),rw.verdict)
+  eq(rw.settings_check[1].wires[1],'green to (6.5,-0.5): from_side applies to combinators only (and power switches for copper)')
+  eq(rw.settings_check[1].wires[2],'green to (6.5,1.5): to_side applies to combinators only (and power switches for copper)')
+  eq(rw.settings_check[1].wires[3],'green to (6.5,1.5): ok')
+  local ra=call('dry_run',{action='place_ghosts',args={entities=wired}})
+  eq(ra.settings_refused,2); eq(ra.settings_check[1].wires[3],'green to (6.5,1.5): ok')
   local r=call('place_ghosts',{entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
   eq(r.placed,2); eq(#r.inserters_without_target,1); eq(r.inserters_without_target[1].position.x,2.5)
   eq(r.inserters_without_target[1].missing,'no pickup target, no drop target'); eq(r.inserters_without_target[1].drop,'none: the ground at (2.5,1.5)')
@@ -4765,6 +4783,14 @@ end)()
   -- One position: one line.
   short=call('inspect',{position=a.position,compact=true})
   eq(short.count,1); eq(short.lines[1],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  -- (d20 batch122, Astra #2087: legendary engines proved by a blueprint export) quality: area rows and compact lines
+  -- when not normal, a full read always
+  c.quality={name='legendary'}; a.quality={name='normal'}
+  eq(call('inspect',{position=c.position,compact=true}).lines[1],'legendary assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  r=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}})
+  eq(r.entities[3].quality,'legendary'); eq(r.entities[2].quality,nil)
+  eq(runtime.quality_name(c),'legendary'); eq(runtime.quality_name(a),nil); eq(runtime.quality_name({}),nil)
+  c.quality=nil; a.quality=nil
   -- (d17 batch20 B1, Luna) what spoils in it and its circuit condition with the value on its wires now.
   do
     local stacks={{valid_for_read=true,name='bioflux',count=30,spoil_tick=game.tick+7200,spoil_percent=0.4},
@@ -6042,5 +6068,52 @@ end
   assert(r.straight_line:find('nothing on the straight line (20 tiles)',1,true),r.straight_line)
   call('stop',{})
   s.count_tiles_filtered,s.find_tiles_filtered,s.count_entities_filtered=ct,ft,ce
+end)()
+;(function()
+  -- (d20 batch122, Astra #2087: a dry run counted 32 foundation incl 15 holes, the live call laid the 17 under its ghosts
+  -- and two ghosts stayed unbuilt until the 15 were placed by hand) the empty tiles a call's tile ghosts enclose on a
+  -- platform are laid as tile ghosts too, by the dry run's rule: a ring east of the deck holds 9.
+  local saved=prototypes.tile['space-platform-foundation']
+  prototypes.tile['space-platform-foundation']={name='space-platform-foundation',collision_mask={layers={ground_tile=true}},
+    items_to_place_this={{name='space-platform-foundation',count=1}}}
+  local force={name='player'}
+  local ghosts={}
+  local s={platform={force=force}}
+  local floor={layers={ground_tile=true}}
+  local space={layers={empty_space=true}}
+  s.get_tile=function(x,y)
+    if x>=-5 and x<=5 and y>=-5 and y<=5 then return {valid=true,name='space-platform-foundation',prototype={collision_mask=floor}} end
+    return {valid=true,name='empty-space',prototype={collision_mask=space}}
+  end
+  s.is_chunk_generated=function() return true end
+  local function in_area(g,a)
+    local lt,rb=a[1] or a.left_top,a[2] or a.right_bottom
+    local x0,y0,x1,y1=lt.x or lt[1],lt.y or lt[2],rb.x or rb[1],rb.y or rb[2]
+    return g.position.x>x0 and g.position.x<x1 and g.position.y>y0 and g.position.y<y1
+  end
+  s.find_entities_filtered=function(f)
+    local out={}
+    if f.type=='tile-ghost' then for _,g in ipairs(ghosts) do if g.valid and in_area(g,f.area) then out[#out+1]=g end end end
+    return out
+  end
+  s.count_entities_filtered=function(f) return #s.find_entities_filtered(f) end
+  s.can_place_entity=function() return true end
+  s.create_entity=function(a)
+    local g={valid=true,type='tile-ghost',name='tile-ghost',ghost_name=a.inner_name,position={x=a.position.x,y=a.position.y}}
+    ghosts[#ghosts+1]=g
+    return g
+  end
+  local q={surface=s,force=force}
+  local laid={}
+  for x=6,10 do for y=-2,2 do if not (x>=7 and x<=9 and y>=-1 and y<=1) then laid[#laid+1]=s.create_entity{inner_name='space-platform-foundation',position={x=x+0.5,y=y+0.5}} end end end
+  local h=runtime.platform_holes(q,laid,{})
+  eq(h.laid,9); eq(h.item,'space-platform-foundation'); eq(h.failed,nil); eq(#ghosts,16+9)
+  eq(h.note,'9 empty tiles enclosed by the new foundation: 9 space-platform-foundation tile ghosts laid there too (the hub builds no foundation that leaves a hole of empty space)')
+  eq(ghosts[17].position.x,7.5); eq(ghosts[17].position.y,-0.5); eq(ghosts[25].position.x,9.5); eq(ghosts[25].position.y,1.5)
+  -- laid, nothing more is enclosed; off a platform nothing is looked at
+  eq(runtime.platform_holes(q,laid,{}),nil)
+  s.platform=nil
+  eq(runtime.platform_holes(q,laid,{}),nil)
+  prototypes.tile['space-platform-foundation']=saved
 end)()
 print('runtime: '..assertions..' assertions passed')

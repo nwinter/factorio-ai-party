@@ -1566,14 +1566,15 @@ return function(api)
   -- wire -----------------------------------------------------------------------
   local CIRCUIT = {red={input='combinator_input_red', output='combinator_output_red', plain='circuit_red'},
     green={input='combinator_input_green', output='combinator_output_green', plain='circuit_green'}}
-  -- The connector of entity e for a wire color (nil: copper) and side.
-  local function connector(e, key, color, side, default_side)
+  -- The connector id of a wire end for a wire color (nil: copper) and side, by the end's name, type, prototype and
+  -- quality: the live wire's rules, which a dry run checks on planned entries too (d20 batch122, Astra #2087: a dry run
+  -- took from_side on a belt, the live call refused it).
+  function M.wire_end_id(key, name, t, pr, quality, color, side, default_side)
     local W = defines.wire_connector_id
-    local t = etype(e)
     local id
     if color then
-      local d = try(function() return proto_of(e).get_max_circuit_wire_distance(e.quality) end)
-      if d == 0 then error(string.format('%s: %s takes no %s circuit wire (it has no circuit connection)', key, e.name, color), 0) end
+      local d = try(function() return pr.get_max_circuit_wire_distance(quality) end)
+      if d == 0 then error(string.format('%s: %s takes no %s circuit wire (it has no circuit connection)', key, name, color), 0) end
       if COMBINATOR[t] then
         local s = side or default_side
         if s ~= 'input' and s ~= 'output' then error(key .. '_side is input or output', 0) end
@@ -1589,8 +1590,13 @@ return function(api)
       if side ~= 'left' and side ~= 'right' then error(key .. '_side is left or right on a power switch', 0) end
       id = side == 'left' and W.power_switch_left_copper or W.power_switch_right_copper
     else
-      error(string.format('%s: %s takes no copper wire (poles and power switches do; with color red or green, a circuit wire)', key, e.name), 0)
+      error(string.format('%s: %s takes no copper wire (poles and power switches do; with color red or green, a circuit wire)', key, name), 0)
     end
+    return id
+  end
+  -- The connector of entity e for a wire color (nil: copper) and side.
+  local function connector(e, key, color, side, default_side)
+    local id = M.wire_end_id(key, e.name, etype(e), proto_of(e), e.quality, color, side, default_side)
     local ok, c = pcall(e.get_wire_connector, id, true)
     if not (ok and c) then error(string.format('%s: %s takes no %s%s', key, e.name, color and color .. ' circuit wire' or 'copper wire', side and ' on its ' .. side .. ' side' or ''), 0) end
     return c
