@@ -20,6 +20,7 @@
 -- the landing pad it was sent to, or landed as a cargo pod container where none was; gone before leaving the
 -- platform: said so. A stop then says how many pods went down with what, what each pad received, and the pods still
 -- in flight (their unit numbers and cargo).
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
@@ -794,6 +795,7 @@ return function(api)
   -- (BT1: every ammunition's two counts read through a new closure and a new method object, about 5 KB a platform a
   -- second) the platform's item statistics and their get_input_count and get_output_count, kept with its hub (plat)
   -- while valid; read anew without a hub.
+  local EMPTY_Q = {}
   local function ammo_stats(pl)
     local c = plat(pl)
     local s = c and c.stats
@@ -809,13 +811,41 @@ return function(api)
     local ok, v = pcall(fn, name)
     return ok and v or 0
   end
+  -- (d24 batch152 PX1) a count by name is normal quality's only: the qualities other than normal each ammunition was
+  -- ever counted at on the platform are looked for every 600 ticks (a count only grows), kept with its hub, and read
+  -- with normal's each time, summed
+  local QPAIR = {}
+  local function qpair(name, q)
+    local k = name .. '|' .. q
+    local t = QPAIR[k]
+    if not t then t = {name=name, quality=q}; QPAIR[k] = t end
+    return t
+  end
+  local function ammo_quals(pl, s)
+    local c = plat(pl)
+    local qa = c and c.ammo_q
+    if qa and qa.tick > game.tick - 600 then return qa.by end
+    local by = {}
+    for _, name in ipairs(ammo_names()) do
+      for _, q in ipairs(qflow.qualities()) do
+        if q ~= 'normal' then
+          local id = qpair(name, q)
+          if count_of(s.made, id) > 0 or count_of(s.used, id) > 0 then by[name] = by[name] or {}; by[name][#by[name]+1] = id end
+        end
+      end
+    end
+    if c then c.ammo_q = {tick=game.tick, by=by} end
+    return by
+  end
   local function ammo_counts(pl)
     local s = ammo_stats(pl)
     if not s then return nil end
     local out = {}
+    local quals = ammo_quals(pl, s)
     for _, name in ipairs(ammo_names()) do
       local made = count_of(s.made, name)
       local used = count_of(s.used, name)
+      for _, id in ipairs(quals[name] or EMPTY_Q) do made, used = made + count_of(s.made, id), used + count_of(s.used, id) end
       if made > 0 or used > 0 then out[name] = {made=made, used=used} end
     end
     return out
@@ -1860,7 +1890,7 @@ return function(api)
     -- The last 1 and 5 minutes too (Astra, shift17 10:50: parked over Aquilo the line kept the finished flight's average;
     -- "leg average obscures whether orbit is sustainable"): the game's own counts for the platform surface.
     local function flow(name, category, precision)
-      return stats and precision and try(function() return stats.get_flow_count{name=name, category=category, precision_index=precision, count=true} end) or 0
+      return stats and precision and try(function() return qflow.flow(stats, name, category, precision, true) end) or 0
     end
     local P = defines.flow_precision_index or {}
     local l = flying and M.leg(pl)

@@ -9,6 +9,7 @@
 --   a minute) spoiled.
 -- A whole-surface count (supply without an area) is kept per force, surface and item; the next one 1 to 60 minutes
 -- later gives made, used, the stock then and now, and what left uncounted: then + made - used - now.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   M.MIN_TICKS, M.MAX_TICKS, M.KEEP, M.QUOTE_TICKS = 3600, 216000, 64, 108000
@@ -26,11 +27,11 @@ return function(api)
     return s.spoilflow
   end
   local function key(force, surface, item) return force.name .. '|' .. surface.index .. '|' .. item end
-  -- The statistics' running totals (normal quality): made, used.
+  -- The statistics' running totals over every quality (d24 batch152 PX1; normal quality only before): made, used.
   function M.totals(force, surface, item)
     local st = try(function() return force.get_item_production_statistics(surface) end)
     if not st then return 0, 0 end
-    return try(function() return st.get_input_count(item) end) or 0, try(function() return st.get_output_count(item) end) or 0
+    return try(function() return qflow.count(st, item, 'input') end) or 0, try(function() return qflow.count(st, item, 'output') end) or 0
   end
   M.NOTE = 'the production statistics leave spoiling out: made counts crafts (a productivity bonus\'s extra among them), used counts ingredients and fuel burned'
   -- A whole-surface count of a spoilable item now (stock: every place counted): kept, and against the one kept 1 to 60
@@ -40,6 +41,7 @@ return function(api)
     local made, used = M.totals(force, surface, item)
     local b, k = book(), key(force, surface, item)
     local prev = b[k]
+    if prev and not prev.q then b[k], prev = nil, nil end   -- (PX1) a count kept before every quality was summed
     local dt = prev and game.tick - prev.tick
     local out = {}
     if prev and dt >= M.MIN_TICKS and dt <= M.MAX_TICKS then
@@ -61,7 +63,7 @@ return function(api)
         for kk, r in pairs(b) do n = n + 1; if not oldest or r.tick < oldest then oldest, ok = r.tick, kk end end
         if n >= M.KEEP and ok then b[ok] = nil end
       end
-      b[k] = {tick=game.tick, made=made, used=used, stock=stock, last=last}
+      b[k] = {tick=game.tick, made=made, used=used, stock=stock, last=last, q=true}
     end
     return out
   end

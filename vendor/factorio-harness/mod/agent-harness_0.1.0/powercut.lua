@@ -11,6 +11,7 @@
 -- network at all. A pole whose network made no power in the 5 s before is not checked. A cut nobody could act on (every part powered, or none holding a machine, and no machine left
 -- alone) is no alert. One line per cut, told once to every agent in team.alerts (with whether it has joined again
 -- since), and in status alerts.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local CHECK, TRACE, STEP, KEEP, FIRST, MAX_JOBS, MAX_CUTS, LINES, DEAD = 330, 600, 100, 36000, 18000, 16, 32, 3, 1800
@@ -39,8 +40,8 @@ return function(api)
     local stats = pole.valid and try(function() return pole.electric_network_statistics end)
     if not stats then return 0, {} end
     local total, by = 0, {}
-    for name in pairs(try(function() return stats.output_counts end) or {}) do
-      local v = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
+    for name, all in pairs(try(function() return stats.output_counts end) or {}) do
+      local v = try(function() return qflow.flow(stats, name, 'output', defines.flow_precision_index.five_seconds, nil, all) end)
       local kw = (v or 0) * 60 / 1000
       if kw >= 0.5 then by[name] = kw; total = total + kw end
     end

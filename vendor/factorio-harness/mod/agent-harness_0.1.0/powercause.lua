@@ -5,6 +5,7 @@
 -- its energy a tile moved, plus its energy a tick), so what the flying ones draw in all, their trips (a sample: the
 -- tiles from each robot through its orders, and where they go: requesters, storage, providers), and the requesters
 -- with the most on its way. Read only; bounded: 16 networks, 400 robots sampled, 2000 requester points, 400 cells.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local NETS, SAMPLE, POINTS, CELLS, TOP = 16, 400, 2000, 400, 8
@@ -30,13 +31,16 @@ return function(api)
     end
     return out
   end
+  -- (d24 batch152 PX1) each name over every quality, a row for each quality with any (quality: nil for normal)
   local function flows(stats, category, counts)
     local by, total = {}, 0
-    for name in pairs(counts or {}) do
-      local v = try(function() return stats.get_flow_count{name=name, category=category, precision_index=defines.flow_precision_index.five_seconds} end)
-      if v and v > 0 then
-        local kw = v * 60 / 1000
-        by[#by+1] = {name=name, kw=kw}; total = total + kw
+    for name, all in pairs(counts or {}) do
+      local ok, t, qs = pcall(qflow.flow_by, stats, name, category, defines.flow_precision_index.five_seconds, nil, all)
+      for _, r in ipairs(ok and (qs or {{quality='normal', n=t}}) or {}) do
+        if r.n > 0 then
+          local kw = r.n * 60 / 1000
+          by[#by+1] = {name=name, quality=r.quality ~= 'normal' and r.quality or nil, kw=kw}; total = total + kw
+        end
       end
     end
     table.sort(by, function(x, y) return x.kw > y.kw end)
@@ -165,8 +169,8 @@ return function(api)
       local parts, top = {}, {}
       for j, u in ipairs(n.use) do
         if j <= TOP then
-          parts[#parts+1] = string.format('%s %s (%d%%)', u.name, mw(u.kw), math.floor(u.kw / math.max(n.total, 1e-9) * 100 + 0.5))
-          top[#top+1] = {name=u.name, kw=math.floor(u.kw + 0.5), share=math.floor(u.kw / math.max(n.total, 1e-9) * 100 + 0.5)}
+          parts[#parts+1] = string.format('%s%s %s (%d%%)', u.name, u.quality and ' (' .. u.quality .. ')' or '', mw(u.kw), math.floor(u.kw / math.max(n.total, 1e-9) * 100 + 0.5))
+          top[#top+1] = {name=u.name, quality=u.quality, kw=math.floor(u.kw + 0.5), share=math.floor(u.kw / math.max(n.total, 1e-9) * 100 + 0.5)}
         end
         if u.name == 'roboport' then roboports = true end
       end

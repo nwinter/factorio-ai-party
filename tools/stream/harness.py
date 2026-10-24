@@ -83,20 +83,33 @@ rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, re
 # every surface (Space Age planets and platforms). The ten-hour precision's samples are two minutes each (sample 1 the
 # newest), so a bucket is one read; only surfaces where the item was ever made are read (d16 perf: the one-hour form,
 # ten samples a bucket on all 9 surfaces for 38 items, was about 118 ms in one tick every 30 s on world n, 342
-# item-surface pairs at 0.35 ms; 141 of them had ever made anything).
+# item-surface pairs at 0.35 ms; 141 of them had ever made anything). (d24 batch152 PX1) A read by name counts normal
+# quality only, {name, quality} that quality, and input_counts and output_counts every quality's total: each quality
+# the item was ever counted at on a surface is read and summed; one other than normal only with any in the last hour
+# (one read; 106 item-surface-quality pairs had a count on a copy of world n, d24 08:50, and reading each one's 30
+# buckets took the read from 40 to 46 ms). (No Lua comments: one_line joins the lines.)
 FLOW_LUA = r"""
 local f = game.forces.player
 local out = {}
+local QS = {"normal"}
+for name, q in pairs(prototypes.quality) do if name ~= "normal" and not q.hidden then QS[#QS+1] = name end end
 for _, s in pairs(game.surfaces) do
   local st = f.get_item_production_statistics(s)
+  local totals = st.input_counts
   for _, n in ipairs(ITEMS) do
-    if prototypes.item[n] and st.get_input_count(n) > 0 then
-      local series = out[n] or {}
-      for b = 30, 1, -1 do
-        local c = st.get_flow_count{name = n, category = "input", precision_index = defines.flow_precision_index.ten_hours, sample_index = b, count = true}
-        series[31 - b] = (series[31 - b] or 0) + c
+    local all = totals[n]
+    local normal = all and all > 0 and prototypes.item[n] and st.get_input_count(n) or 0
+    for _, q in ipairs(all and all > 0 and QS or {}) do
+      local id = q == "normal" and n or {name = n, quality = q}
+      if (q == "normal" and normal > 0) or (q ~= "normal" and all > normal and prototypes.item[n] and st.get_input_count(id) > 0
+          and st.get_flow_count{name = id, category = "input", precision_index = defines.flow_precision_index.one_hour, count = true} > 0) then
+        local series = out[n] or {}
+        for b = 30, 1, -1 do
+          local c = st.get_flow_count{name = id, category = "input", precision_index = defines.flow_precision_index.ten_hours, sample_index = b, count = true}
+          series[31 - b] = (series[31 - b] or 0) + c
+        end
+        out[n] = series
       end
-      out[n] = series
     end
   end
 end
@@ -105,20 +118,29 @@ rcon.print(helpers.table_to_json(out))
 
 # Science packs the labs used, as FLOW_LUA's 30 two-minute buckets over the last hour, oldest first (the production
 # statistics' consumption side: labs are what consume science packs), read the same way. Only surfaces where a pack
-# was ever consumed are read.
+# was ever consumed are read. Both sum every quality the item was ever counted at there (d24 batch152 PX1).
 USED_FLOW_LUA = r"""
 local f = game.forces.player
 local out = {}
+local QS = {"normal"}
+for name, q in pairs(prototypes.quality) do if name ~= "normal" and not q.hidden then QS[#QS+1] = name end end
 for _, s in pairs(game.surfaces) do
   local st = f.get_item_production_statistics(s)
+  local totals = st.output_counts
   for _, n in ipairs(ITEMS) do
-    if prototypes.item[n] and st.get_output_count(n) > 0 then
-      local series = out[n] or {}
-      for b = 30, 1, -1 do
-        local c = st.get_flow_count{name = n, category = "output", precision_index = defines.flow_precision_index.ten_hours, sample_index = b, count = true}
-        series[31 - b] = (series[31 - b] or 0) + c
+    local all = totals[n]
+    local normal = all and all > 0 and prototypes.item[n] and st.get_output_count(n) or 0
+    for _, q in ipairs(all and all > 0 and QS or {}) do
+      local id = q == "normal" and n or {name = n, quality = q}
+      if (q == "normal" and normal > 0) or (q ~= "normal" and all > normal and prototypes.item[n] and st.get_output_count(id) > 0
+          and st.get_flow_count{name = id, category = "output", precision_index = defines.flow_precision_index.one_hour, count = true} > 0) then
+        local series = out[n] or {}
+        for b = 30, 1, -1 do
+          local c = st.get_flow_count{name = id, category = "output", precision_index = defines.flow_precision_index.ten_hours, sample_index = b, count = true}
+          series[31 - b] = (series[31 - b] or 0) + c
+        end
+        out[n] = series
       end
-      out[n] = series
     end
   end
 end

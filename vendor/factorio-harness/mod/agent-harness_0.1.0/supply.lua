@@ -12,6 +12,7 @@
 -- makers. science reads its packs through the same scan (labs as the users).
 -- Bounded: 2048 crafters, 1024 labs, 5000 chests, 10000 belts, 8192
 -- inserters, 4096 robots (counted says when a scan stopped).
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX_MACHINES, MAX_LABS, MAX_CHESTS, MAX_BELTS, MAX_INSERTERS, MAX_ROBOTS, MAX_FOUND = 2048, 1024, 5000, 10000, 8192, 4096, 40000
@@ -1328,8 +1329,10 @@ return function(api)
     local items = try(function() return force.get_item_production_statistics(surface) end)
     local fluids = try(function() return force.get_fluid_production_statistics(surface) end)
     local function per_min(name, category)
-      local stats = prototypes.fluid and prototypes.fluid[name] and fluids or items
+      local fluid = prototypes.fluid and prototypes.fluid[name]
+      local stats = fluid and fluids or items
       local n = stats and try(function()
+        if not fluid then return qflow.flow(stats, name, category, defines.flow_precision_index.ten_minutes, true) end
         return stats.get_flow_count{name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true}
       end)
       return n and math.floor(n / 10 + 0.5) or 0
@@ -1732,7 +1735,12 @@ return function(api)
       end
     end
     local stats = try(function() return fluid and force.get_fluid_production_statistics(surface) or force.get_item_production_statistics(surface) end)
-    local function per(cat) return stats and (try(function() return stats.get_flow_count{name=item, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0) / 10 or 0 end
+    local function per(cat)
+      return stats and (try(function()
+        if not fluid then return qflow.flow(stats, item, cat, defines.flow_precision_index.ten_minutes, true) end
+        return stats.get_flow_count{name=item, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true}
+      end) or 0) / 10 or 0
+    end
     local lines = {string.format('%s on %s: used %d/min, made %d/min (last 10 min); %d group%s of machines take %d/min at full speed:', item, surface.name,
       math.floor(per('output') + 0.5), math.floor(per('input') + 0.5), #groups, #groups == 1 and '' or 's', math.floor(total + 0.5))}
     local rows = {}
@@ -2147,7 +2155,7 @@ return function(api)
     local t = scan.items[item]
     local stats = try(function() return force.get_item_production_statistics(surface) end)
     local function flow(category)
-      local n = stats and try(function() return stats.get_flow_count{name=item, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
+      local n = stats and try(function() return qflow.flow(stats, item, category, defines.flow_precision_index.ten_minutes, true) end)
       return n and math.floor(n + 0.5) or 0
     end
     -- (d20 batch122 CE2) the whole surface: stacks on the ground as the ground watch last binned them

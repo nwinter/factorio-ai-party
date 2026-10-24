@@ -1,4 +1,5 @@
 -- Run with lua tests/d22_batch98.lua. d22 batch98 BH1 (Astra #1900): flight_watch reads, each sample, the platform's
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- accumulators together and each railgun's energy (least, at the start, now, runs below a shot's energy: its full
 -- buffer), and counts each railgun's hits, shots that hit (ticks), damage and kills from the damage and death events.
 local function eq(a,b,m) if a~=b then error((m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b),2) end end

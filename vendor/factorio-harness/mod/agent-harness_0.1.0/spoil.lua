@@ -17,6 +17,7 @@
 -- platform hub, read SLICE entities a tick. A place whose first stack hatches
 -- in under 5 minutes is told to the agents on that surface and to whoever
 -- built it, once, and again under 1 minute.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   M.WARN_TICKS, M.LAST_TICKS = 5 * 3600, 3600
@@ -354,7 +355,7 @@ return function(api)
     for _, s in pairs(game.surfaces) do
       local stats = try(function() return force.get_item_production_statistics(s) end)
       for _, name in ipairs(names) do
-        if stats and ((try(function() return stats.get_input_count(name) end) or 0) > 0 or (try(function() return stats.get_output_count(name) end) or 0) > 0) then
+        if stats and ((try(function() return qflow.count(stats, name, 'input') end) or 0) > 0 or (try(function() return qflow.count(stats, name, 'output') end) or 0) > 0) then
           out[#out+1] = s; break
         end
       end
@@ -375,7 +376,7 @@ return function(api)
     for _, s in pairs(game.surfaces) do
       local stats = try(function() return force.get_item_production_statistics(s) end)
       for _, name in ipairs(names) do
-        if stats and ((try(function() return stats.get_input_count(name) end) or 0) > 0 or (try(function() return stats.get_output_count(name) end) or 0) > 0) then live[name] = true end
+        if stats and ((try(function() return qflow.count(stats, name, 'input') end) or 0) > 0 or (try(function() return qflow.count(stats, name, 'output') end) or 0) > 0) then live[name] = true end
       end
     end
     for _, p in ipairs(w.places or {}) do live[p.item:match('^[^@]+')] = true end

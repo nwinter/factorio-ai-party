@@ -8,6 +8,7 @@
 -- batch19 A3, Astra: Swiftlet's 34 efficiency and 2 speed modules were in no BOM line). Items construction robots
 -- there carry (taken from the hub for a ghost not built yet) are said, and taken off what is still to send. Read only.
 -- Every count is by item and quality (d21 batch66 AB1): a ghost is built only from items of its own quality.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -501,10 +502,21 @@ return function(api)
       for name in pairs(stats and stats.output_counts or {}) do names[name] = true end
       for name in pairs(names) do
         if a.item == nil or a.item == name then
-          local r = {name=name, kind=kind, made=math.floor(stats.get_input_count(name) + 0.5), used=math.floor(stats.get_output_count(name) + 0.5)}
+          -- (PX1) an item over every quality, the qualities named (made_by_quality, used_by_quality); a fluid by name
+          local item = kind == 'item'
+          local r
+          if item then
+            local m, mb = qflow.count_by(stats, name, 'input')
+            local u, ub = qflow.count_by(stats, name, 'output')
+            r = {name=name, kind=kind, made=math.floor(m + 0.5), used=math.floor(u + 0.5), made_by_quality=qflow.label(mb), used_by_quality=qflow.label(ub)}
+          else r = {name=name, kind=kind, made=math.floor(stats.get_input_count(name) + 0.5), used=math.floor(stats.get_output_count(name) + 0.5)} end
+          local function flow(cat, pi)
+            if item then return qflow.flow(stats, name, cat, pi, true) end
+            return stats.get_flow_count{name=name, category=cat, precision_index=pi, count=true}
+          end
           for _, w in ipairs(WINDOWS) do
-            local made = try(function() return stats.get_flow_count{name=name, category='input', precision_index=defines.flow_precision_index[w[1]], count=true} end) or 0
-            local used = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index[w[1]], count=true} end) or 0
+            local made = try(function() return flow('input', defines.flow_precision_index[w[1]]) end) or 0
+            local used = try(function() return flow('output', defines.flow_precision_index[w[1]]) end) or 0
             r['made_per_min_' .. w[3]] = math.floor(made / w[2] * 10 + 0.5) / 10
             r['used_per_min_' .. w[3]] = math.floor(used / w[2] * 10 + 0.5) / 10
           end
@@ -524,7 +536,7 @@ return function(api)
       note='the platform\'s own production statistics (its surface), as the production GUI shows them; wait_until {until: produced, platform, item, at_least} waits for what it makes from now'}
   end
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
-    returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
+    returns='lines (the most made first), items [{name, kind, made, used (totals; an item\'s over every quality, made_by_quality and used_by_quality when not all normal), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, quality, asks, holds (at that quality), short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',

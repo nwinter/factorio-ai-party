@@ -20,6 +20,8 @@
 -- average, J per tick as handlers.power reads it): the game's own windows are
 -- 5 s, 1 min and 10 min.
 local snapfail = require('snapfail')
+-- (d24 batch152 PX1) statistics read at every quality
+local qflow = require('qflow')
 return function(api)
   local M = {}
   local SAMPLE, WATCH_TICKS, WINDOW = 300, 1800, 18000
@@ -187,9 +189,7 @@ return function(api)
     return g and global_stats(game.get_surface(g.surface)) or nil
   end
   M.stats_of = function(id) return stats_of(store(), id) end
-  -- (BT1) a sample reads each network's get_flow_count once (a method read makes a function) and asks it with one
-  -- filter table, its fields set for each name.
-  local FLOW_Q = {name='', category='output', precision_index=0}
+  -- (BT1) a sample asks get_flow_count with one filter table, its fields set for each name (qflow.lua keeps it).
   local function sample(n)
     local ids = {}
     for id in pairs(n.map) do ids[#ids+1] = id end
@@ -200,11 +200,10 @@ return function(api)
         local by, kw = {}, 0
         local accs, acc = acc_names(), 0
         local fpi = tget(defines, 'flow_precision_index')
-        local flow = fpi and tget(stats, 'get_flow_count')   -- (no precision indexes: every read fails, as before)
-        FLOW_Q.precision_index = fpi and fpi.five_seconds
-        for name in pairs(tget(stats, 'output_counts') or EMPTY) do
-          FLOW_Q.name, FLOW_Q.category = name, 'output'
-          local v = tfn(flow, FLOW_Q)
+        local P5 = fpi and fpi.five_seconds   -- (no precision indexes: every read fails, as before)
+        -- (PX1) each name over every quality; a name only ever counted at normal is read once (its output_counts total)
+        for name, all in pairs(tget(stats, 'output_counts') or EMPTY) do
+          local v = P5 and tfn(qflow.flow, stats, name, 'output', P5, nil, all)
           if v and v > 0 then
             by[name] = v * 60 / 1000; kw = kw + by[name]
             if accs[name] then acc = acc + by[name] end
@@ -212,8 +211,7 @@ return function(api)
         end
         -- (accumulators are counted as producers while they discharge and as consumers while they charge)
         for name in pairs(accs) do
-          FLOW_Q.name, FLOW_Q.category = name, 'input'
-          local v = tfn(flow, FLOW_Q)
+          local v = P5 and tfn(qflow.flow, stats, name, 'input', P5)
           if v and v > 0 then acc = acc - v * 60 / 1000 end
         end
         local list = n.samples[id] or {}
@@ -389,10 +387,9 @@ return function(api)
       local now = {}
       for _, s in ipairs(surfaces()) do
         local st = tcall(f, 'get_entity_build_count_statistics', s)
-        -- (BT1) its get_input_count read once for every name (a method read makes a function)
-        local input_count = st and tget(st, 'get_input_count')
+        -- (PX1) each name built at every quality (a rare fusion generator counts under its pair only)
         for _, name in ipairs(st and gen_names() or EMPTY) do
-          local c = tfn(input_count, name) or 0
+          local c = tfn(qflow.count, st, name, 'input') or 0
           if c > 0 then
             local k = s.index .. ':' .. name
             now[k] = c
@@ -1496,13 +1493,11 @@ return function(api)
     end
     local used = {}
     local stats = tcall(f, 'get_item_production_statistics', surface)
-    -- (BT1: an item's type kept by name, not a prototype read for every item the surface used; get_flow_count read once)
-    local flow
-    for name in pairs(stats and tget(stats, 'output_counts') or EMPTY) do
+    -- (BT1: an item's type kept by name, not a prototype read for every item the surface used)
+    for name, all in pairs(stats and tget(stats, 'output_counts') or EMPTY) do
       if item_type(name) == 'ammo' then
-        flow = flow or tget(stats, 'get_flow_count')
         local fpi = tget(defines, 'flow_precision_index')
-        local v = fpi and tfn(flow, {name=name, category='output', precision_index=fpi.one_hour, count=true})
+        local v = fpi and tfn(qflow.flow, stats, name, 'output', fpi.one_hour, true, all)
         if v and v >= 1 then used[name] = v end
       end
     end
@@ -1871,8 +1866,8 @@ return function(api)
     local stats = stats_of(n, id)
     if not stats then return nil end
     local kw = 0
-    for name in pairs(try(function() return stats.output_counts end) or {}) do
-      local f = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
+    for name, all in pairs(try(function() return stats.output_counts end) or {}) do
+      local f = try(function() return qflow.flow(stats, name, 'output', defines.flow_precision_index.five_seconds, nil, all) end)
       if f and f > 0 then kw = kw + f * 60 / 1000 end
     end
     return kw
@@ -2688,21 +2683,32 @@ return function(api)
     local stats = global_stats(surface)
     if not stats then return nil end
     local P = defines.flow_precision_index.five_seconds
+    -- (PX1) each name over every quality, a row for each quality with any (quality: nil for normal)
+    local found = {}
     local function total(category, counts)
       local kw, by = 0, {}
-      for name in pairs(counts or {}) do
-        local v = try(function() return stats.get_flow_count{name=name, category=category, precision_index=P} end)
-        if v and v > 0 then kw = kw + v * 60 / 1000; by[#by+1] = {name=name, kw=math.floor(v * 60 / 1000 + 0.5)} end
+      for name, all in pairs(counts or {}) do
+        local okf, t, qs = pcall(qflow.flow_by, stats, name, category, P, nil, all)
+        for _, r in ipairs(okf and (qs or {{quality='normal', n=t}}) or {}) do
+          if r.n > 0 then
+            kw = kw + r.n * 60 / 1000
+            by[#by+1] = {name=name, quality=r.quality ~= 'normal' and r.quality or nil, kw=math.floor(r.n * 60 / 1000 + 0.5)}
+            if r.quality ~= 'normal' then found[r.quality] = true end
+          end
+        end
       end
-      table.sort(by, function(a, b) return a.kw > b.kw or (a.kw == b.kw and a.name < b.name) end)
+      table.sort(by, function(a, b) return a.kw > b.kw or (a.kw == b.kw and (a.name < b.name or (a.name == b.name and (a.quality or '') < (b.quality or '')))) end)
       return kw, by
     end
     local draw, consumers = total('input', try(function() return stats.input_counts end))
     local made, producers = total('output', try(function() return stats.output_counts end))
+    local qualities = {}
+    for _, q in ipairs(qflow.qualities()) do if found[q] then qualities[#qualities+1] = q end end
     local sun = M.solar(surface)
     local out = {tick=game.tick, solar={count=0, kw=0}, generators={count=0, kw=0}, accumulators={count=0, j=0, buf=0}, machines={count=0, low_power=0, no_power=0},
       poles=0, pole_networks={}}
     local fill, filled, lfill = 0, 0, 0
+    local turrets, short = {count=0, low_power=0, no_power=0, bar=0}, 0
     local st = defines.entity_status
     local seen_pole, on, list = {}, {}, {}
     for _, e in ipairs(try(function() return surface.find_entities_filtered{force=f, limit=MAX_SCAN} end) or {}) do
@@ -2735,11 +2741,17 @@ return function(api)
             if e.type ~= 'electric-energy-interface' then out.generators.count = out.generators.count + 1; out.generators.kw = out.generators.kw + max_output(e) * 60 / 1000 end
           else
             local buf = try(function() return e.electric_buffer_size end) or 0
-            if buf > 0 then
+            if buf > 0 and e.type == 'electric-turret' then
+              -- (PX1) a laser turret refills its buffer after shots at its input limit and reads low_power meanwhile
+              local t = turrets
+              t.count, t.bar = t.count + 1, t.bar + math.min(1, (e.energy or 0) / buf)
+              if e.status == st.low_power then t.low_power = t.low_power + 1 elseif e.status == st.no_power then t.no_power = t.no_power + 1 end
+            elseif buf > 0 then
               local m = out.machines
               m.count = m.count + 1
               local bar = math.min(1, (e.energy or 0) / buf)
               if e.status == st.low_power then m.low_power, lfill = m.low_power + 1, lfill + bar elseif e.status == st.no_power then m.no_power = m.no_power + 1 end
+              if e.type ~= 'roboport' and (e.status == st.low_power or e.status == st.no_power) then short = short + 1 end
               fill, filled = fill + bar, filled + 1
             end
           end
@@ -2755,20 +2767,39 @@ return function(api)
     if a.count > 0 then out.accumulators = {count=a.count, mj=math.floor(a.j / 1e5 + 0.5) / 10, max_mj=math.floor(a.buf / 1e5 + 0.5) / 10, pct=a.buf > 0 and math.floor(100 * a.j / a.buf + 0.5) or 0}
     else out.accumulators = nil end
     if out.generators.count == 0 then out.generators = nil end
+    local sa
     out.satisfaction = {machines=out.machines.count, low_power=out.machines.low_power, no_power=out.machines.no_power,
       power_bars_pct=filled > 0 and math.floor(100 * fill / filled + 0.5) or nil,
       low_power_bars_pct=out.machines.low_power > 0 and math.floor(100 * lfill / out.machines.low_power + 0.5) or nil}
+    sa = out.satisfaction
     out.machines = nil
+    -- (PX1) electric turrets apart: on low power while no other machine (roboports aside) is on low or no power, they
+    -- are recharging after shots; with any, the network is short of supply
+    if turrets.count > 0 then
+      local t = turrets
+      sa.turrets = {count=t.count, low_power=t.low_power, no_power=t.no_power, power_bars_pct=math.floor(100 * t.bar / t.count + 0.5)}
+      if t.low_power > 0 then
+        if short == 0 and sa.machines > 0 then sa.turrets.recharging = t.low_power
+        elseif short > 0 then sa.turrets.network_short = t.low_power end
+      end
+    end
+    out.qualities = #qualities > 0 and qualities or nil
     local parts = {string.format('%s electric #%s, the platform\'s own network (every machine, panel and accumulator of ours on it; no pole needed), at tick %d',
       try(function() return surface.platform.name end) or surface.name, tostring(id or '?'), game.tick)}
-    parts[#parts+1] = string.format('draw %s now, production %s (the last 5 s)', mw(out.draw_kw), mw(out.production_kw))
+    parts[#parts+1] = string.format('draw %s now, production %s (the last 5 s, every quality%s)', mw(out.draw_kw), mw(out.production_kw),
+      out.qualities and ': rows of ' .. table.concat(out.qualities, ', ') .. ' apart' or '')
     parts[#parts+1] = string.format('capacity %s: %d solar panel%s giving up to %s at %s%s', mw(out.capacity_kw), out.solar.count, out.solar.count == 1 and '' or 's', mw(out.solar.kw), sun.text,
       out.generators and string.format(', %d generator%s rated %s', out.generators.count, out.generators.count == 1 and '' or 's', mw(out.generators.kw)) or '')
     if out.accumulators then parts[#parts+1] = string.format('accumulators %d at %d%% (%.1f of %.1f MJ)', out.accumulators.count, out.accumulators.pct, out.accumulators.mj, out.accumulators.max_mj) end
-    local sa = out.satisfaction
     parts[#parts+1] = string.format('machines %d: %d low power, %d no power%s', sa.machines, sa.low_power, sa.no_power,
       sa.power_bars_pct and string.format('; their power bars %d%% full on average%s', sa.power_bars_pct,
         sa.low_power_bars_pct and string.format(', those on low power %d%%', sa.low_power_bars_pct) or '') or '')
+    local t = sa.turrets
+    if t then
+      parts[#parts+1] = string.format('electric turrets %d: %d low power, %d no power, their buffers %d%% full on average%s', t.count, t.low_power, t.no_power, t.power_bars_pct,
+        t.recharging and string.format(' (the %d on low power recharging after shots: no other machine on low or no power)', t.recharging)
+        or t.network_short and string.format(' (the network short: %d other machine%s on low or no power)', short, short == 1 and '' or 's') or '')
+    end
     if out.poles > 0 then
       local carry = {}
       for _, pid in ipairs(out.pole_networks) do if not on[pid] then carry[#carry+1] = '#' .. pid end end
@@ -2794,8 +2825,9 @@ return function(api)
     elseif e.type == 'accumulator' then
       out.stored_mj = math.floor((try(function() return e.energy end) or 0) / 1e5 + 0.5) / 10
       out.capacity_mj = math.floor((try(function() return e.electric_buffer_size end) or 0) / 1e5 + 0.5) / 10
-      out.charge_kw = src and try(function() return kw(src.input_flow_limit) end) or nil
-      out.discharge_kw = src and try(function() return kw(src.output_flow_limit) end) or nil
+      -- (PX1: 2.0.77's source prototype has no input_flow_limit field, so these were never given) at its quality
+      out.charge_kw = src and try(function() return kw(src.get_input_flow_limit(q)) end) or nil
+      out.discharge_kw = src and try(function() return kw(src.get_output_flow_limit(q)) end) or nil
       category = 'output'
     elseif e.type == 'generator' or e.type == 'burner-generator' or e.type == 'fusion-generator' then
       out.max_kw = kw(max_output(e))
@@ -2809,6 +2841,15 @@ return function(api)
       end
       local drain = try(function() return src.drain end)
       if drain and drain > 0 then out.drain_kw = kw(drain) end
+      -- (PX1) an electric turret's buffer: spent on shots, refilled at its input limit (low_power meanwhile)
+      if e.type == 'electric-turret' then
+        local buf = try(function() return e.electric_buffer_size end) or 0
+        if buf > 0 then
+          local j = try(function() return e.energy end) or 0
+          out.buffer_kj, out.buffer_max_kj, out.buffer_pct = math.floor(j / 1000 + 0.5), math.floor(buf / 1000 + 0.5), math.floor(100 * j / buf + 0.5)
+          out.input_limit_kw = try(function() return kw(src.get_input_flow_limit(q)) end)
+        end
+      end
       category = 'input'
     else return nil end
     local id = try(function() return e.electric_network_id end)
@@ -2825,11 +2866,28 @@ return function(api)
       end
     end
     local stats = gstats or pole and try(function() return pole.electric_network_statistics end)
-    local v = stats and try(function() return stats.get_flow_count{name=e.name, category=category, precision_index=defines.flow_precision_index.five_seconds} end)
+    -- (PX1, Astra #2182: inspect on a rare laser turret read all laser-turret drawing 0 kW) the game counts power by
+    -- prototype and quality: its own quality's, then the name's over every quality
+    local qn = q and try(function() return q.name end) or 'normal'
+    local P5 = defines.flow_precision_index.five_seconds
+    local okv, v, by = false, nil, nil
+    if stats then okv, v, by = pcall(qflow.flow_by, stats, e.name, category, P5) end
+    if not okv then v, by = nil, nil end
+    local mine
+    if v then
+      mine = v
+      if by then mine = 0; for _, r in ipairs(by) do if r.quality == qn then mine = r.n end end
+      elseif qn ~= 'normal' then mine = 0 end
+    end
     if v then
       out.now_kw_all_of_name = kw(v)
-      out.now = string.format('all %s on electric network #%d%s %s %s now (5 s average); the game counts power by prototype, not per entity',
-        e.name, id, gstats and ' (the platform\'s own network)' or '', category == 'output' and 'make' or 'draw', mw(v * 60 / 1000))
+      out.now_kw_its_quality = kw(mine)
+      out.quality = qn ~= 'normal' and qn or nil
+      out.now_by_quality = by and qflow.label(by, function(n) return mw(n * 60 / 1000) end) or nil
+      local verb = category == 'output' and 'make' or 'draw'
+      out.now = string.format('all %s%s on electric network #%d%s %s %s now (5 s average)%s; the game counts power by prototype and quality, not per entity',
+        qn ~= 'normal' and qn .. ' ' or '', e.name, id, gstats and ' (the platform\'s own network)' or '', verb, mw(mine * 60 / 1000),
+        by and (#by > 1 or by[1].quality ~= qn) and string.format('; %s of every quality %s %s (%s)', e.name, verb, mw(v * 60 / 1000), out.now_by_quality) or '')
     elseif not pole then
       out.now = string.format('electric network #%d: no pole of ours in it within 64 tiles, and the game gives a network\'s statistics through its poles', id)
     else out.now = string.format('electric network #%d: its pole gave no statistics', id) end

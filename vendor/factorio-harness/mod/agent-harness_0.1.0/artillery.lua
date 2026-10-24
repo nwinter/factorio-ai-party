@@ -6,6 +6,7 @@
 -- artillery piece with the enemy spawners and worms in its range (charted chunks), nearest first. The range is the
 -- cannon's (artillery-wagon-cannon: 224, minimum 32 on 2.0.77) times 1 + the force's artillery range bonus. On world n
 -- a search over one turret's range took 1.4 ms (111 spawners and worms), so the read takes at most 8 pieces.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local TYPES = {'artillery-turret', 'artillery-wagon'}
@@ -127,7 +128,7 @@ return function(api)
   function M.shells_used(surface, force)
     local st = try(function() return force.get_item_production_statistics(surface) end)
     local P = defines.flow_precision_index or {}
-    local function used(pi) return st and pi and math.floor((try(function() return st.get_flow_count{name='artillery-shell', category='output', precision_index=pi, count=true} end) or 0) + 0.5) or 0 end
+    local function used(pi) return st and pi and math.floor((try(function() return qflow.flow(st, 'artillery-shell', 'output', pi, true) end) or 0) + 0.5) or 0 end
     local m1, m10 = used(P.one_minute), used(P.ten_minutes)
     return string.format('artillery shells used on %s: %d in the last minute, %d in the last 10 minutes (the production statistics: a shot counts even when an inserter refills the piece)', surface.name, m1, m10), m1, m10
   end

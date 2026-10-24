@@ -7,6 +7,7 @@
 --   pole of the network that has power, when a copper wire reaches (after the construct step: a rebuilt pole may join
 --   on its own, and the wire step then says already).
 -- dry_run: the read and the plan, nothing queued. A step that fails is skipped (on_fail skip), so the rest still runs.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX_WIRES, MAX_POLES = 8, 400
@@ -83,8 +84,8 @@ return function(api)
       if powered[id] == nil then
         local stats = try(function() return e.electric_network_statistics end)
         local made = 0
-        for name in pairs(stats and try(function() return stats.output_counts end) or {}) do
-          made = made + (try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end) or 0)
+        for name, all in pairs(stats and try(function() return stats.output_counts end) or {}) do
+          made = made + (try(function() return qflow.flow(stats, name, 'output', defines.flow_precision_index.five_seconds, nil, all) end) or 0)
         end
         powered[id] = made > 0
       end

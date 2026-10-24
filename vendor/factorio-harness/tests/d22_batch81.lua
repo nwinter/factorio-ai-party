@@ -1,4 +1,5 @@
 -- Run from the harness root: lua tests/d22_batch81.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- d22 batch81 AQ1 (Sol #1852): the collector tally credits a chunk only to a collector whose filters take it, does not
 -- count a chunk whose drift takes it out of the reach, names the count inferred (gone_in_reach) and sets it beside the
 -- platform's exact count from the production statistics.

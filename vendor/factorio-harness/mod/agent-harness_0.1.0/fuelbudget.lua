@@ -8,6 +8,7 @@
 -- use (with its consumption bonus) over the fuel's value and the burner's effectivity, for each one working now; an
 -- ingredient user's crafting speed over the recipe's time, times the amount. Fuel on its way (feeding chests, belts,
 -- inserter hands) is not counted. At most MAX entities are read a call; the read is kept 10 seconds.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX, KEEP = 2048, 600
@@ -207,7 +208,7 @@ return function(api)
     local flows = {}
     for _, item in ipairs(items) do
       local function flow(cat)
-        local n = stats and try(function() return stats.get_flow_count{name=item, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
+        local n = stats and try(function() return qflow.flow(stats, item, cat, defines.flow_precision_index.ten_minutes, true) end)
         return n and n / 10 or 0
       end
       local made, used = flow('input'), flow('output')

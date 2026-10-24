@@ -14,6 +14,7 @@
 -- makers' states (input short, output full, no power, off by a condition, or all working with full speed below the
 -- ask). Measured numbers only. On world n (06:50, 243 machines listed): 5 links, 38 makers read, 0.8 ms (READ 32).
 -- At most LINKS links and DEPTH levels; read only.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local LINKS, DEPTH, READ = 16, 8, 24
@@ -122,8 +123,10 @@ return function(api)
     local items = try(function() return force.get_item_production_statistics(surface) end)
     local fluids = try(function() return force.get_fluid_production_statistics(surface) end)
     local function per_min(name, category)
-      local stats = is_fluid(name) and fluids or items
+      local fluid = is_fluid(name)
+      local stats = fluid and fluids or items
       local n = stats and try(function()
+        if not fluid then return qflow.flow(stats, name, category, defines.flow_precision_index.ten_minutes, true) end
         return stats.get_flow_count{name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true}
       end)
       return n and math.floor(n / 10 + 0.5) or 0

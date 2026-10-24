@@ -14,6 +14,7 @@
 --   are made at now, so its stock is counted once; what other machines aboard use of it at the rates now (its measured
 --   use less the products') is taken off first.
 -- binds: which limit sets what is made over a time: the stock (none made aboard), the make rate, or an ingredient.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -80,7 +81,7 @@ return function(api)
       if fluid then fstats = fstats or try(function() return pl.force.get_fluid_production_statistics(pl.surface) end) or false
       else istats = istats or try(function() return pl.force.get_item_production_statistics(pl.surface) end) or false end
       local st = fluid and fstats or istats
-      return st and P.ten_minutes and (try(function() return st.get_flow_count{name=name, category=cat, precision_index=P.ten_minutes, count=true} end) or 0) / 10 or 0
+      return st and P.ten_minutes and (try(function() return fluid and st.get_flow_count{name=name, category=cat, precision_index=P.ten_minutes, count=true} or qflow.flow(st, name, cat, P.ten_minutes, true) end) or 0) / 10 or 0
     end
     local fluid_stock = o.fluid_stock or function(names)
       local out = {}

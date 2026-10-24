@@ -13426,6 +13426,71 @@ Fixed besides gates:
 - Tests: tests/blueprints.lua (status block: fails on main at the first status check), site/test_blueprints.py
   (marks, kinds, places, search text, controls; the filter script in a stub DOM under node: waits for
   DOMContentLoaded, the URL's view on load, search words, status filter, the three sorts, the count, the URL).
+
+## d24 batch152 PX1 (eng/d20-batch152): power, inspect and the statistics reads leave out quality (Astra #2182)
+- Cause: in 2.0.77 a LuaFlowStatistics read by name (`get_flow_count{name=...}`, `get_input_count(name)`,
+  `get_output_count(name)`) counts normal quality only; `name={name=, quality=}` counts that quality (a `quality=`
+  field beside the name is ignored), and `input_counts`/`output_counts` give each name's total over every quality.
+  Measured on a copy of world n's 07:36 autosave (tick 56717928), Asterion (20 rare laser turrets, 1 rare and 4
+  normal fusion generators, 2 uncommon asteroid collectors):
+  - electric: laser-turret by name 0, as the rare pair 96000 J a tick (5.76 MW); input_counts' laser-turret equal to
+    the rare total; fusion-generator's output_counts the normal plus the rare total;
+  - item statistics: 21 items on Nauvis, 8 on Vulcanus, 30 on Fulgora and 1 on Gleba with counts at other qualities;
+  - build statistics: fusion-generator 4 by name, 1 rare; laser-turret 0 by name, 20 rare;
+  - kill statistics: platform-18's 6 lost solar panels epic (0 by name);
+  - fluid statistics take a name only (a pair fails: "amount is missing"); pollution statistics too ("Invalid
+    EntityID"); they stay plain;
+  - a read is 0.4-5 us, a pair the same with its argument table kept.
+- Changed:
+  - mod/qflow.lua: a name's flow (`flow`, `flow_by`) or count (`count`, `count_by`) over every visible quality, with
+    `by` (each quality with any, by level); given the name's input_counts/output_counts total, a name only ever
+    counted at normal is read once.
+  - power: consumers and producers a row per name and quality (`quality` when not normal), totals over every quality,
+    `qualities`; the generator rows' `network_output_kw` is that name and quality's; the draw line names
+    `laser-turret (rare)`. platform_power the same (`qualities`, the line says every quality); by_cause rows too.
+  - inspect's electricity: `now_kw_its_quality` (its own quality), `now_kw_all_of_name` and `now_by_quality` (every
+    quality); an electric turret's `buffer_kj`, `buffer_max_kj`, `buffer_pct`, `input_limit_kw`; an accumulator's
+    `charge_kw`/`discharge_kw` from `get_input_flow_limit(quality)`/`get_output_flow_limit(quality)` (2.0.77's source
+    prototype has no `input_flow_limit` field, so they were never given).
+  - A low_power laser turret told apart (on the copy one read low_power at 64% of its buffer while all 366 other
+    machines had full power bars and the accumulators were full; in a short network every machine gets the same
+    share): power's `unpowered` row has `cause` (recharging after shots when every other machine of its network in
+    the area, turrets, roboports, generators, panels and accumulators aside, is supplied; the network short when any
+    is on low or no power), with `turrets_recharging`/`turrets_short` per network; platform_power's
+    `satisfaction.turrets` {count, low_power, no_power, power_bars_pct, recharging, network_short}, turrets no longer
+    counted among its machines.
+  - Every other item, electric and build statistics read in the mod sums every quality: networks (5 s samples, draw
+    now, turret ammo used, generators built), endurance (and its power line reads the surface's own network when the
+    platform has no pole), powercut, powercause, outpost, lightning, rates (`statistics` says every quality, by
+    quality when not all normal), the rocket-part rate, farm_flow, ammomodel, artillery, chain, collectreach,
+    dependency, conditions (platform made), freightpath, freight (leg rates; ammunition counts: the qualities each
+    ammunition was counted at looked for every 600 ticks), flightwatch (repair packs), fuelhours, fuelbudget, labs,
+    launchneed, packaudit, platbom (`made_by_quality`, `used_by_quality`), research, space, spoilflow, spoil, stores,
+    supply, survey, uptime (pack counts). Fluid reads stay by name.
+  - A count kept before the deploy (spoilflow's book, a flight watch's repair packs, an uptime watch's pack counts, a
+    wait_until platform base) is taken again, not compared with one that summed every quality.
+  - tools/analyst/game.py: item flows and losses (kill statistics) over the qualities each name has a count at;
+    tools/stream/harness.py: the sparklines (FLOW_LUA, USED_FLOW_LUA) sum each quality the item was counted at, one
+    other than normal only with any in the last hour. The stream's power card counts machine statuses (no turrets,
+    no statistics).
+- Checked on the copy (Asterion, 5 s after running 6 s):
+  - before (the save's runtime): consumers 15 rows, no laser-turret, consumption 7380 kW; production 9035 kW with
+    fusion-generator 8731 kW (normal only); inspect on the rare laser at (-36,-34): "all laser-turret ... draw 0 kW".
+  - after: consumers `laser-turret (rare)` 1760 kW and `asteroid-collector (uncommon)` 28 kW, consumption 9140 kW;
+    producers fusion-generator 6312 kW and rare 2525 kW, production 9140 kW; qualities uncommon, rare; inspect: "all
+    rare laser-turret ... draw 1.8 MW now", buffer 801 of 801 kJ; capacity (rated, 280.3 MW) apart from production.
+  - a laser on low power while firing: `cause` "recharging after shots: ... the 183 other machines of electric
+    #20579 in the area are supplied"; platform_power "electric turrets 20: 1 low power ... (the 1 on low power
+    recharging after shots: no other machine on low or no power)".
+  - profile_ticks 60 s: networks.tick 0.267 ms a tick on main, 0.216 with this branch; freight.tick 2.33 ms and 1.94 ms
+    a call (once a second).
+  - the tools through their own clients, paused, same tick: the analyst's concrete made in the hour 23138 (main)
+    and 23346; the stream's iron-plate sparkline 326071 and 326406. In-game time: the stream's flows read 40-42 ms
+    (main) and 44-49 ms (71 of 106 item-surface-quality pairs with a count made some in the last hour), used_flows
+    11 ms both; the analyst snapshot about 3-5 ms more than main's (11-20 ms on this copy).
+- Tests: tests/d24_batch152.lua (fails on main: `before: no laser-turret row`); tests d21_batch71, platformpower,
+  d15_batch5_g3 take the new texts (platformpower's accumulator mock has the flow limit methods); nine tests that
+  load modules by path set package.path (the modules require qflow).
 ## d24 batch151 PW1 (eng/d20-batch151): flight_watch counts laser turrets as their own category (Astra #2178)
 - Astra: Asterion's 20 rare lasers had 25 kills and 4211 damage by turret_tally, and flight watch 1190 read only its 23
   railguns.

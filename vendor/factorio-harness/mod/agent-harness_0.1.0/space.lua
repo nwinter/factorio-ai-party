@@ -2,6 +2,7 @@
 -- slots (character, chests, landing pads, platform hubs), the space platform
 -- list (create, schedule, pause), and the rocket silo launch button. Platforms
 -- are always shown in remote view, so none of this needs the character there.
+local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M={}
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
@@ -1109,8 +1110,8 @@ return function(api)
       if stats then
         for _,c in ipairs({{'output','consumed_10min'},{'input','produced_10min'}}) do
           local list={}
-          for name in pairs(try(function() return c[1]=='output' and stats.output_counts or stats.input_counts end) or {}) do
-            local n=try(function() return stats.get_flow_count{name=name,category=c[1],precision_index=defines.flow_precision_index.ten_minutes,count=true} end)
+          for name,all in pairs(try(function() return c[1]=='output' and stats.output_counts or stats.input_counts end) or {}) do
+            local n=try(function() return qflow.flow(stats,name,c[1],defines.flow_precision_index.ten_minutes,true,all) end)
             if n and n>=0.5 then list[#list+1]={name=name,n=math.floor(n+0.5)} end
           end
           table.sort(list,function(x,y) if x.n~=y.n then return x.n>y.n end return x.name<y.name end)
