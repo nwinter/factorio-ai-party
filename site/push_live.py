@@ -136,6 +136,17 @@ CLOUD_KEYS = ("surface", "label", "pollutant", "chunks", "max", "total", "age_s"
 CLOUD_CELLS = 6000  # cells across all surfaces (about 14 bytes each; the state is at most 256 KB), most polluted kept
 
 
+def public_nest(n):
+    """A nest the cloud reached: where, and (d24 batch163, viewer Aurora 13:16) the game seconds since pollution was last
+    there, whether it reaches it now, its status (alive, unknown) and game seconds since last in view, when the read has
+    them."""
+    out = {"x": n.get("x"), "y": n.get("y")}
+    for k in ("ago_s", "reaches", "status", "seen_ago_s"):
+        if n.get(k) is not None:
+            out[k] = n[k]
+    return out
+
+
 def public_clouds(rows):
     """The map's pollution and spore layer (tools/stream/clouds.py): per surface its label, colour, the chunks
     [[cx, cy, amount]] and the nests it reached; past CLOUD_CELLS cells in all, the least polluted are left out."""
@@ -148,7 +159,7 @@ def public_clouds(rows):
         cells = [c for j, c in enumerate(r["cells"]) if (i, j) in keep]
         out.append(dict({k: r[k] for k in CLOUD_KEYS if r.get(k) is not None}, cells=cells,
                         color={k: col[k] for k in "rgba" if isinstance(col.get(k), (int, float))},
-                        reached=[{"x": n.get("x"), "y": n.get("y")} for n in r.get("reached") or []][:20]))
+                        reached=[public_nest(n) for n in r.get("reached") or []][:20]))
     return out
 
 

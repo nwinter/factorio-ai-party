@@ -667,11 +667,19 @@
         if (x[0] * 32 + 32 < v.cx - hw || x[0] * 32 > v.cx + hw || x[1] * 32 + 32 < v.cy - hh || x[1] * 32 > v.cy + hh) return;
         sc.cloud.cells.push({ x: px(x[0] * 32), y: py(x[1] * 32), s: 32 * k, a: +(ca * (0.3 + 0.7 * Math.log(1 + x[2]) / lmax)).toFixed(3) });
       });
+      // (d24 batch163, viewer Aurora: "Public points have no age, so retained old hits can look like current nests") each
+      // carries the game time since the cloud was last there, whether it reaches it now, and alive or unknown (not in view
+      // since); destroyed nests are not sent. One the cloud has left is drawn faded, an unknown one dashed.
+      var late = d.cloud.age_s || 0;
       (d.cloud.reached || []).forEach(function (n) {
         if (!ok(n) || !inView(n)) return;
-        var m = { x: px(n.x), y: py(n.y) };
+        var m = { x: px(n.x), y: py(n.y), old: n.reaches === false, unknown: n.status === 'unknown' };
         sc.cloud.reached.push(m);
-        sc.hits.push({ x: m.x, y: m.y, r: 8, text: 'Enemy nest the ' + (d.cloud.pollutant === 'spores' ? 'spores' : 'pollution') + ' reached' });
+        var t = 'Enemy nest the ' + (d.cloud.pollutant === 'spores' ? 'spores' : 'pollution') + ' reached';
+        if (n.ago_s != null) t += n.reaches ? ' (there ' + ago(n.ago_s + late) + ')' : ' (last there ' + ago(n.ago_s + late) + ', not now)';
+        if (n.status === 'alive') t += ' · alive, in view';
+        else if (n.status === 'unknown') t += ' · ' + (n.seen_ago_s != null ? 'unknown, last in view ' + ago(n.seen_ago_s + late) : 'unknown, not in view since charted');
+        sc.hits.push({ x: m.x, y: m.y, r: 8, text: t + (n.ago_s != null ? ' (game time)' : '') });
       });
     }
     if (on.buildings && d.base) {
@@ -894,8 +902,12 @@
       var thin = sc.chart && sc.chart.length ? 0.4 : 1;
       sc.cloud.cells.forEach(function (c) { ctx.fillStyle = 'rgba(' + sc.cloud.rgb + ', ' + (c.a * thin).toFixed(3) + ')'; ctx.fillRect(c.x, c.y, c.s + 0.5, c.s + 0.5); });
       sc.cloud.reached.forEach(function (n) {
+        ctx.globalAlpha = n.old ? 0.5 : 1;
+        if (n.unknown && ctx.setLineDash) ctx.setLineDash([3, 3]);
         ctx.strokeStyle = '#000'; ctx.lineWidth = 3; circle(ctx, n.x, n.y, 6); ctx.stroke();
         ctx.strokeStyle = '#ff5a44'; ctx.lineWidth = 1.8; circle(ctx, n.x, n.y, 6); ctx.stroke();
+        if (n.unknown && ctx.setLineDash) ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
       });
     }
     if (!chartOn) paintBase(ctx, sc, W, H);
@@ -1349,7 +1361,7 @@
       h += '<li><i class="mv-cloud" style="background: linear-gradient(90deg, rgba(' + rgb + ', .2), rgba(' + rgb + ', .6))"></i>' +
         esc((d.cloud.pollutant === 'spores' ? 'Spores' : 'Pollution') + ' per chunk, up to ' + d.cloud.max +
           (this.data.clouds_held != null ? ', read ' + agoText((d.cloud.age_s || 0) + this.data.clouds_held) + ' ago (kept until a newer one arrives)' : '')) + '</li>';
-      if ((d.cloud.reached || []).length) h += '<li><i class="mv-reached"></i>Nests it reached</li>';
+      if ((d.cloud.reached || []).length) h += '<li><i class="mv-reached"></i>Nests it reached (faded: not now; dashed: not in view since)</li>';
     }
     if (d.turrets.length && on.coverage) h += '<li' + (d.turretsCapped ? ' class="mv-incomplete"' : '') + '><i class="mv-range"></i>Turret range' +
       (d.turretNote ? ' (' + esc(d.turretNote) + ')' : '') + '</li>';

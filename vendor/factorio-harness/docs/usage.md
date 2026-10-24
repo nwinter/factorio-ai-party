@@ -3806,7 +3806,26 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   nearest first (`nest (105,2) 2 spawners, 1 worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches
   it`, or `reaches it (last there 5m ago)`); pollution reaches a nest while one of its chunks had pollution in the last
   15 game minutes, the same memory `status` enemies and the reached-nest news use (one reading at the cloud's edge
-  flickers); `artillery`; `more` sums areas past the limit.
+  flickers); `artillery`; `more` sums areas past the limit. `confirmed_nests` counts every confirmed nest on the surface
+  (d24 batch163, Luna #2222: on world n every charted Nauvis nest was over 256 tiles from our buildings, so `nests` was
+  missing from the reply: `11 confirmed nests on nauvis (0 alive, 11 unknown, 0 destroyed); pollution reaches 2, ...`).
+- `fh call defense --args '{"nests":true}'` (read; `surface`, `limit` default and max 40; no area scan): every
+  confirmed nest on the surface from the nest book (threat.lua), nearest the base centre first: spawners and worms of
+  the enemy force on our charted chunks (what the map draws), grouped within 64 tiles. Each has `position`, `spawners`,
+  `worms`, `from_centre`, `bearing`, `status` (`alive`: a member in a chunk in view now; `destroyed`: every member seen
+  gone from its chunk in view; `unknown`: not in view since `seen`, the last tick it was), `members_gone`,
+  `pollution_now` (the most on its members' chunks, the map's pollution layer), `pollution_last` (the last tick
+  pollution was there, as reads and the chart sweep found it), `pollution_reaches` (that within 15 game minutes) and a
+  `line` (`nest (128,-991) 3 spawners, 4 worms, 999 tiles N of base centre: unknown (not in view since charted);
+  pollution 0.3 on its chunks now: reaches it`); `count`, `alive`, `unknown`, `destroyed`, `reached`, `book_tick` (the
+  last full pass), `sweep` (a pass running). The book is made in the background on each surface the chart sweep covers:
+  a pass over the generated chunks every 5 game minutes, a band of 32 chunks of one row a step, spread over a game
+  minute (on world n, d24: a band 0.19 ms; the private copy's whole pass 122 ms over 3,600 ticks, 0.034 ms a tick while
+  it runs; a read 2.5 ms there for 11 nests of 88 members, about 0.6 ms of game reads on world n); a nest seen
+  destroyed is dropped an hour later. The operator read `clouds` takes its `reached` nests from it (viewer Aurora d24
+  13:16): each nest pollution was on that is not seen destroyed, with `tick` and `ago_s` (since pollution was last
+  there), `reaches`, `status`, `seen`, `seen_ago_s`; the site's map fades those the cloud has left and dashes the
+  unknown ones, and its hover gives both ages in game time.
 - `fh call turrets [--args '{"surface":"nauvis"}' | '{"area":{"left_top":{"x":-120,"y":-10},"right_bottom":{"x":-90,"y":10}}}']`
   (read; `limit` fronts, default 8, max 40; cached 10 s; Opus, 10:50): every turret of ours there (1024 at most), grouped
   by front (turrets within 24 tiles of each other), fronts with hand-fed or low turrets first, and in each front the
@@ -13808,3 +13827,31 @@ Fixed besides gates:
     platform_plan ready read too, with no job running); the reply's own parts.
   - Test: tests/d24_batch166.lua (fails on main: no job); tests/platsupport.lua and tests/d24_batch162.lua set
     `PP.SLICE=math.huge` to plan in one call.
+
+## d24 batch164
+
+- QG1 (viewer Aurora 13:15: "Could you check vehicle-item stock/where_is wording for stored vs placed scope, link
+  placed-vehicle lookup, and cover zero stored Spidertrons with two placed in a regression?"): `where_is`, `stock` and
+  `supply` count items in inventories (chests, trunks, belts, hands); a placed spidertron, car, tank, locomotive or wagon
+  is an entity, and for one of those items they read 0 or "none on nauvis" with the vehicles standing in the world.
+  For an item that places a vehicle each now gives `scope_line` and `placed` beside its count:
+  - `spidertron: 0 stored (as items, in inventories on nauvis), 3 placed (as vehicles: spidertron entities, not items):
+    gleba (74,20) #23117830, nauvis (-160,-540) #27069154, nauvis (-136,-436) #23036938; vehicle {position} (or
+    remote: true, vehicle: its unit_number) reads its route; inspect {position} reads it in sight`.
+  - `placed` {entity, type, count (LuaForce.get_entity_count, every surface), by_surface, places (the first 8: surface,
+    position, unit_number), more, not_listed (a count past what the vehicle list gives), read_with, line}. The read
+    named: a spidertron `vehicle {position}` (route) and `inspect`; a car or tank `inspect {position}` (in sight); rolling
+    stock `train {all, surface}`.
+  - where_is: `scope_line` leads `kinds_line`; the note with none stored reads "none stored as items on this surface; 3
+    placed as vehicles (placed)". stock (`stock {item}` and each `items` row): the scope line leads `summary` (or
+    `line`); `total` stays what is stored. supply: it leads `where` (and so compact's `where:` line), cached with the
+    read for 10 s.
+  - Other items: no new field, replies as before. `shortages` and `rates` give no stock count of an item (machines short
+    of an ingredient, requester chests' unmet asks, machines' rates), so they are unchanged; a requester asking for a
+    spidertron lacks items, which is what it reads.
+- Positions come from `game.get_vehicles{force}` (2.0.77; cars, tanks, spidertrons and rolling stock, every surface).
+  World n 13:28 (saved first, then reads only, one at a time): get_entity_count for the 7 vehicle names 0.57 ms
+  (spidertron 3, tank 7, locomotive 10, cargo-wagon 8, car, fluid and artillery wagons 0); get_vehicles 28 vehicles in
+  0.036 ms; spidertron items in our logistic networks, characters and vehicle trunks: 0 (0.11 ms). where_is itself was
+  not called on world n (it reads every holder of the surface).
+- Test: tests/d24_batch164.lua (fails on main: where_is spidertron with none stored and two placed gives no `placed`).
