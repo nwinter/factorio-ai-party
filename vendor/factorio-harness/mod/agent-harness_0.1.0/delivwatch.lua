@@ -261,8 +261,11 @@ return function(api)
             want = want + math.max(0, a.min - a.held)
             parts[#parts+1] = string.format('the landing pad %s asks %d, holds %d', at(a.pad.position), a.min, a.held)
           end
-          local go, k = F.hub_gives(keeps, w.item, n, want)
-          local why = k and (k.max == math.huge and F.keep_text(k) .. ': an infinite max keeps it all'
+          -- (d24 batch142 PN1) its stop there with unloading off: the pads take nothing, a finite max still sends down
+          local off, off_line = F.no_unload and F.no_unload(pl, w.to.where)
+          local go, k = F.hub_gives(keeps, w.item, n, want, off)
+          local why = off and (k and k.max ~= math.huge and string.format('%s; %s: all above %d goes down', off_line, F.keep_text(k), k.max) or off_line)
+            or k and (k.max == math.huge and F.keep_text(k) .. ': an infinite max keeps it all'
               or string.format('%s: all above %d goes down, asked or not', F.keep_text(k), k.max))
             or #asks == 0 and string.format('no hub section keeps %s at %s and no landing pad of ours there asks it: it goes down as far as the pads ask', w.item, w.to.where)
             or string.format('no hub section keeps %s at %s: it goes down as far as the pads ask (%s)', w.item, w.to.where, table.concat(parts, '; '))
@@ -272,7 +275,7 @@ return function(api)
             line=string.format('%s: its hub sends %d down now (%s)', head, go, why)}
           if go == 0 then
             block(w, 'demand ' .. w.to.where, string.format('%s: none of it goes down now (%s)', head, why),
-              'demand ' .. w.to.where .. ' ' .. (k and tostring(k.max) or (#asks == 0 and 'no pad' or 'asked')))
+              'demand ' .. w.to.where .. ' ' .. (off and 'unloading off' or k and tostring(k.max) or (#asks == 0 and 'no pad' or 'asked')))
           end
         end
         if not stops_at(pl, w.to.where) then block(w, 'route', string.format('%s\'s schedule has no stop at %s', pl.name, w.to.where)) end
@@ -288,6 +291,7 @@ return function(api)
           for _, stop in ipairs(stops_before(pl, w.to.where)) do
             local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
             local keeps = F.hub_keeps_at(secs_, stop.station)
+            local off = F.no_unload and F.no_unload(pl, stop.station, stop.index or 0)
             local asks = pad_asks(force, stop.station, w.item)
             local k = keeps[w.item]
             if #asks == 0 and k and k.max ~= math.huge and n > k.max then
@@ -297,7 +301,7 @@ return function(api)
               if stop.now then block(w, key, text, key .. ' ' .. k.max) else risk(w, key, text, key .. ' ' .. k.max) end
             end
             for _, a in ipairs(asks) do
-              local go = F.hub_gives(keeps, w.item, n, a.min - a.held)
+              local go = F.hub_gives(keeps, w.item, n, a.min - a.held, off)
               if go > 0 then
                 local key = 'demand ' .. stop.station .. ' ' .. at(a.pad.position)
                 local kept = k and '; ' .. F.keep_text(k) or ''

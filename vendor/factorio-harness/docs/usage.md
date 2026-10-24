@@ -13073,3 +13073,33 @@ Fixed besides gates:
   bounded watches are: status {brief, work} rows, the idle check, the sleep line. No walk, no queue stop.
 - Test: tests/d24_batch140.lua (refusals, sides, one get_signal per signal a sample and none between, a wire cut and a
   network change, where the platform was at the min, the status row, the end and the entity gone).
+## d24 batch142 PN1 (eng/d20-batch142): a platform stop's unloading setting (Sol #2135, Luna #2136)
+- 2.0.77 has it: each schedule record reads `allows_unloading` (true unless set), `LuaSchedule.set_allow_unloading(
+  {schedule_index = N}, bool)` sets it in place (an integer index is refused), and both `platform.schedule = {...}` and
+  `add_record` take the field. It is the schedule window's per-stop allow unloading checkbox. No platform in world n's
+  save of d24 03:27 had it off.
+- What it does, measured on a copy of that save with Petrel II waiting at Nauvis:
+  - off, with the Nauvis pad asking carbon 50 and then 400, none of the hub's 179 carbon went down (another platform's
+    pod brought the pad 50); on again, 83 went down within 20 s;
+  - off, a hub section transport-belt 0..10 from nauvis sent 39 of the hub's 49 belts down to the pad, and 0..4 then 6
+    more: all above a finite max still goes down, a pad asking or not;
+  - off, `drop` (the hub's scripted cargo pod) still sent its pod, and it landed in the pad (drop 1910).
+- `platform_schedule`:
+  - a stops entry takes `unloading: true|false`. One without it keeps what the schedule's first stop at that station
+    had before the call, else on. The reply's `unloading` lists each stop with it off, and whether it was kept from
+    before; `unloading_rule` says what off does.
+  - `{platform, stop: N, unloading}` sets that stop's in place, alone or with `wait`. The records, their waits, the
+    current stop and the state are kept: `edited: "stop 1 (nauvis): unloading off (was on); its waits, the records and
+    the current stop kept"`. `unloading` without `stop` is refused.
+  - the record-by-record rebuild (`rebuilt`) carries it; argshapes names `unloading` for `allows_unloading`,
+    `allow_unloading` and `unload`.
+- Reads: `schedule` marks the stop `nauvis [unloading off]`; `stops` lines (platforms, platform_gate, shipment's gate)
+  say `1 nauvis (waiting here; unloading off: the landing pads take nothing from the hub here, all above a finite max
+  still goes down): ...`; the edit log's stop text ends `; unloading off`, so a change is recorded and told like a
+  wait edit.
+- Drop forecasts (freight.lua `no_unload`, and `hub_gives(keep, item, held, want, off)` with the pads' want taken as 0):
+  freight's stop segments (`expected down`, the line marked at arrival), delivery_watch (at the destination and at the
+  stops before it), shipment's ready read (`no_unload`, `kept aboard: carbon: none of 179 (unloading off; ...)`) and
+  its cargo lines and conflicts, and the requests' `sends_down`.
+- agent/ref/circuits-settings.md no longer says there is no such setting; agent/ref/space-age.md documents it.
+- Test: tests/d24_batch142.lua (PN1).
