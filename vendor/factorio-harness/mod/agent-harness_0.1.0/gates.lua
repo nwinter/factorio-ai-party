@@ -137,13 +137,18 @@ return function(api)
   function M.read(p, a)
     reach_cache, budget = {}, CHEST_BUDGET
     local list, as_of, s = {}, nil, p.surface
+    -- (d24 batch135 PG1, Sol #2103: gates {surface: nauvis, area} from Vulcanus read Vulcanus's foundry) the surface
+    -- named, for the area as for the census's list
+    if a.surface ~= nil then
+      s = type(a.surface) == 'string' and game.get_surface(a.surface)
+      assert(s, 'no surface ' .. tostring(a.surface))
+    end
     if a.area ~= nil then
       local lt, rb = api.position(a.area.left_top), api.position(a.area.right_bottom)
       assert(rb.x > lt.x and rb.y > lt.y and rb.x - lt.x <= 128 and rb.y - lt.y <= 128, 'area is {left_top, right_bottom}, at most 128x128')
       local found = s.find_entities_filtered{area={lt, rb}, force=p.force, type=TYPES, limit=4096}
       for _, e in ipairs(found) do if try(function() return e.get_control_behavior() end) then list[#list+1] = e end end
     else
-      if a.surface ~= nil then s = game.get_surface(a.surface); assert(s, 'no surface ' .. tostring(a.surface)) end
       list, as_of = api.gated(p.force, s)
     end
     -- PAGE entities a call (page: N for the next), in reading order
@@ -178,7 +183,7 @@ return function(api)
       line=string.format('%d gates on %s: %d cannot be met, %d not met now, %d met', #rows, s.name, never, unmet, #rows - never - unmet)}
   end
   M.schema = {gates={surface='optional surface name (default yours): every gate the census\'s last pass found there (entities with a control behavior, up to 1024), each read now',
-    area='optional {left_top, right_bottom} up to 128x128: the gates there, read now', page='optional: 128 entities a call in reading order (pages, next)',
+    area='optional {left_top, right_bottom} up to 128x128: the gates there (on surface, default yours), read now', page='optional: 128 entities a call in reading order (pages, next)',
     returns='gates, cannot_be_met, not_met, met (counts); lines: one an entity with a circuit or logistic condition: the condition as its GUI shows it, what it reads now (a circuit signal on its wires; the logistic network\'s count), true or false now, it is off by it; a logistic condition false now adds where the count sits (the count: storage, passive and active providers, buffers as the network\'s supply counts give them; what robots have reserved for pickup at its provider points and what its requester chests hold, neither in the count; the first 1024 points each); "CANNOT BE MET:" first for a logistic condition item > N, >= N or = N above what the network can hold (its count and what its storage and provider chests could still take of the item; up to 256 chests a network and item, 512 a call: a look cut short says what it saw, unflagged), or one with no logistic network over it; then the ones not met now; more; as_of, source; line. Read only'}}
   return M
 end

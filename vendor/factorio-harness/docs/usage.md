@@ -12954,3 +12954,29 @@ lines, the platform read's freight stop lines (`expected down`), the requests dr
 delivery_watch's risks and blockers for the stops before the destination (a finite max there is a risk with no pad
 asking). On the copy, Petrel III with calcite 200..inf from nauvis read kept aboard as above, and with 200..200 read
 `the hub would send down calcite 1300 (... all above 200: hub section 4 keeps calcite 200..200 at nauvis, ...)`.
+## d24 batch135 PG1: reads on the surface named (Sol #2103)
+
+`gates {surface: nauvis, area}` from Vulcanus read the area on Vulcanus (its foundry at (43.5,55.5)) and said
+`surface: vulcanus`: the area branch read the character's surface, and only the census branch read `surface`. Now the
+surface is read first and both branches use it; `surface` in the reply is the one read; an unknown name is refused.
+
+Checked for the same fault, every read whose arguments take `surface`:
+
+- run by remote view on the surface named (bots.lua SURFACE_ACTIONS; the character stands elsewhere): the wrapper
+  hands them that surface; with no place there, map, grid, observe, scan, requests, nearest, paste, blueprint_place,
+  cargo, power and screenshot are refused, as before;
+- reading `surface` themselves, each reading it on every branch: agriculture, alerts_digest, artillery, belt_flow,
+  belt_gaps, boilers, bottleneck, circuit_audit, construction_robots, damage_log, demolishers, dependency,
+  drill_sites, eggs, fuel_budget, game_alerts, ghosts, labs, logistics_audit, losses, networks, pipe_gaps,
+  platform_bom, pods, rearm (refuses another surface), requester_rate, reservations, robot_losses, science,
+  shipment, shortages, stock, supply, train, turret_tally, turrets, uptime, use_item (refuses another surface),
+  wait_until, where_is; board_post, board_review, board_update, lesson_add, lesson_edit, lessons, reminder_add and
+  reminder_edit keep `surface` as a label, read nowhere.
+
+Fixed besides gates:
+
+- `danger {surface}` with no position, the character on another surface: it read the character's coordinates on the
+  surface named; now refused (`danger with surface needs position there`). On the character's own surface it reads
+  where the character stands, as before.
+- `bottleneck {item, area | positions}`: the item's chain is read on the whole surface, and area and positions were
+  ignored; now refused (`area and positions go without item`).
