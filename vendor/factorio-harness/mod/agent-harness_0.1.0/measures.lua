@@ -152,6 +152,8 @@ return function(api)
       state ~= 'invalid' and d.gone > 0 and string.format(', %d of %d gone or out of sight', d.gone, d.units) or '',
       r.latest and r.latest.line and string.format('; latest%s: %s', r.latest.s_ago and string.format(' %d s ago', r.latest.s_ago) or '', r.latest.line) or '')
       .. (job.reason and string.format('; your reason: %s', job.reason) or '')
+      .. (job.mixed and '; ' .. job.mixed.line or '')
+    r.mixed = job.mixed and job.mixed.line or nil  -- (d23 batch123 CF2) an edit inside it split its window (mixed.lua)
     return r
   end
   -- The agent's watches, running ones first then by start; those that ended over KEEP ticks ago are left out, read or
@@ -200,7 +202,7 @@ return function(api)
     for _, r in ipairs(M.list(index, tick)) do
       if r.state ~= 'done' or not r.final_read then
         out[#out+1] = {id=r.id, kind=r.kind, scope=r.scope, state=r.state, start_tick=r.start_tick, end_tick=r.end_tick,
-          latest=r.latest and r.latest.line and {tick=r.latest.tick, line=r.latest.line} or nil, reason=r.reason, line=r.line}
+          latest=r.latest and r.latest.line and {tick=r.latest.tick, line=r.latest.line} or nil, reason=r.reason, line=r.line, mixed=r.mixed}
       end
     end
     return #out > 0 and out or nil

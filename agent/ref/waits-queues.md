@@ -49,7 +49,12 @@
   `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
   every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
   "fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000},{"until":"fluid_count","platform":"Swift",
-  "fluid":"thruster-oxidizer","at_least":12000}]}`; also `no_enemy_structures`, `no_enemies`, `units_clear`, `turrets_idle`, `ammo_below`,
+  "fluid":"thruster-oxidizer","at_least":12000}]}`; `any` (`conditions`: 1..8 plain conditions, met when one holds;
+  every one is read each check and validated on submit and dry run; the remote and platform lanes take it when they
+  take each; `saw` names the first that holds as `#N` with its saw, then the others', and `matched` {index, until,
+  saw} is in `last` and the step's history), e.g. `{"until":"any","conditions":[{"until":"platform_progress",
+  "platform":"Asterion","at_least":0.002},{"until":"item_count","platform":"Asterion","item":
+  "promethium-asteroid-chunk","at_least":25}]}`; also `no_enemy_structures`, `no_enemies`, `units_clear`, `turrets_idle`, `ammo_below`,
   `fuel_below`, `health_below`, `health_above`, `damaged`, `ghosts_waiting` (`./fh help wait_until`). `until` also
   takes the `--until` words (`"item_count yumako>=40"`), and `ticks` or `timeout_ticks` for `timeout` (1..54000 ticks,
   default 3600; with `--wait` it comes from `--wait-timeout`: `600000` is 10 minutes, 15 at most); hitting it fails

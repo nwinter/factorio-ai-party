@@ -4,6 +4,7 @@
 -- Nothing here runs per tick: hints are computed when an agent's reply is
 -- built, bounded by the board size and the chat/event logs.
 local namematch = require('namematch')
+local staletext = require('staletext')
 return function(api)
   local M = {handlers={}}
   local MAX_ITEMS, MAX_EVENTS, MAX_NOTES, MAX_PLANS, MAX_HARNESS_OPEN, MAX_PLAN_BYTES = 300, 1000, 10, 50, 10, 65536
@@ -935,6 +936,33 @@ return function(api)
         changes[#changes+1] = a.status
       end
     end
+    -- (d23 batch123 CF1) what this update takes away, for the focus and plan lines that name it (progress.lua on_update)
+    local removed, ST = {}, staletext
+    local function took(c) c.id = item.id; if #c.words > 0 or (c.ids and #c.ids > 0) then removed[#removed+1] = c end end
+    if pj.edit and pj.edit.text ~= pj.edit.step.text then
+      took{what=string.format('step %d of #%d edited by %s', pj.edit.step.n, item.id, by), was=pj.edit.step.text,
+        words=ST.removed(pj.edit.step.text, pj.edit.text), step=pj.edit.step.n}
+    end
+    for _, s in ipairs(pj.remove or {}) do
+      took{what=string.format('step %d of #%d removed by %s', s.n, item.id, by), was=s.text, words=ST.list(ST.words(s.text)), step=s.n, gone=true}
+    end
+    local function unlinked(id, what)
+      local o = store().items[id]
+      took{what=what, was=o and o.title, words=o and ST.list(ST.words(o.title)) or {}, ids={id}}
+    end
+    if links then
+      local keep = {}
+      for _, id in ipairs(links) do keep[id] = true end
+      for _, id in ipairs(item.blocked_by or {}) do
+        if not keep[id] then unlinked(id, string.format('#%d taken out of the blocked_by of #%d by %s', id, item.id, by)) end
+      end
+    end
+    if parent ~= nil and item.parent and parent ~= item.parent then
+      unlinked(item.parent, string.format('#%d no longer the parent of #%d (%s)', item.parent, item.id, by))
+    end
+    if edit.title and edit.title ~= item.title then
+      took{what=string.format('title of #%d changed by %s', item.id, by), was=item.title, words=ST.removed(item.title, edit.title)}
+    end
     -- A project's own changes, each an event with what changed and the progress.
     local done_changes, gone = {}, {}
     local function changed(change, what) done_changes[#done_changes+1] = {change=change, text=clip(what, NOTE)} end
@@ -1042,8 +1070,10 @@ return function(api)
     for _, c in ipairs(done_changes) do event(by, item, c.change, c.text); changes[#changes+1] = c.change end
     if text and #changes == #done_changes then event(by, item, 'note', text) end
     -- (d20 batch57 S2) a focus on it that this ends (progress.lua on_update): cleared, with the ready work
-    local fc = api.on_update and api.on_update(by, item) or nil
-    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil, focus_cleared=fc and fc.focus_cleared, ready=fc and fc.ready}
+    -- (d23 batch123 CF1) and the focus and plan lines naming what it took away: marked stale
+    local fc = api.on_update and api.on_update(by, item, removed) or nil
+    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil, focus_cleared=fc and fc.focus_cleared, ready=fc and fc.ready,
+      stale=fc and fc.stale}
   end
 
   -- About how many bytes a value takes as JSON (brief listings stay near 3 KB).
@@ -1147,8 +1177,10 @@ return function(api)
     if not i then return nil end
     local lines, rows = {}, {}
     for _, l in ipairs(i.lines) do
-      lines[#lines+1] = l.agent .. ': ' .. l.text .. (l.by ~= l.agent and ' (set by ' .. l.by .. ')' or '')
-      rows[#rows+1] = {agent=l.agent, text=l.text, by=l.by, tick=l.tick}
+      -- (d23 batch123 CF1) a line naming what a board change took away since it was set: marked stale
+      local st = l.stale and staletext.text(l.stale, ago(game.tick - l.stale.tick)) or nil
+      lines[#lines+1] = l.agent .. ': ' .. l.text .. (l.by ~= l.agent and ' (set by ' .. l.by .. ')' or '') .. (st and ' [' .. st .. ']' or '')
+      rows[#rows+1] = {agent=l.agent, text=l.text, by=l.by, tick=l.tick, stale=st, stale_tick=l.stale and l.stale.tick}
     end
     return {id=i.id, goals=i.goals, doing=#lines > 0 and lines or nil,
       edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil,
@@ -1161,7 +1193,9 @@ return function(api)
     local projects = M.project_lines(name)
     if not i and not projects then return nil end
     local mine
-    for _, l in ipairs(i and i.lines or {}) do if l.agent == name then mine = l.text end end
+    for _, l in ipairs(i and i.lines or {}) do
+      if l.agent == name then mine = l.text .. (l.stale and ' [' .. staletext.text(l.stale, ago(game.tick - l.stale.tick)) .. ']' or '') end
+    end
     return {goals=i and i.goals, mine=mine, projects=projects}
   end
   -- The look-ahead block (lookahead.lua): agent `name`'s plan line with the tick it was set, the goals, and the
@@ -1393,7 +1427,7 @@ return function(api)
       edit_step='project: {n, text}: change step n\'s text in place (its adder, its owner or a lead); the earlier text is kept in the step\'s history (last 8)',
       title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
-      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
+      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster; stale: the focus and team-plan lines naming what an edited or removed step, a link taken out or a title edit took away, marked stale where they show until set again, each one\'s agent told once'},
     board_review = {ownership='optional true: who covers each system, per surface (surface= one): each electric network\'s machines (assemblers and furnaces, from the census pass), each logistic network, each platform, with the open claims covering it (how many of its sampled machines or roboports lie in each claim\'s area; a platform: a claim on it or titled with its name), overlaps, an open claim with no area on that surface (planet-wide) when no area covers it, else none; each claim\'s owner, their last activity there and the last inspection of the area (a read there, by whom); then each listed owner\'s blocked board items with the latest note: surfaces [{surface, systems [{kind, id, name, size, claims, owner_line, line}]}], lines, blocked',surface='with ownership: one surface',id='optional: one item (a project) and the items under it; default every active item',
       returns='flags [{id, kind, line, platforms?}]: gone_platform (a title or open step naming a platform of ours no longer there; whole names, longest first, so "Kestrel II" is never the gone "Kestrel"; platforms [{name, index | gone, indexes}] every name matched there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
     lesson_add = {rule='1..160 characters: the rule or symptom, short', cause='optional root cause (240)', fix='optional fix (240)',
@@ -2399,6 +2433,11 @@ return function(api)
     -- The owner's 10-minute line on each owned board item (progress.lua; d17 batch15 C3).
     if api.progress_lines then
       local ok, list = pcall(api.progress_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
+    -- (d23 batch123 CF2) a watch of this agent's split by an edit inside what it measures (mixed.lua)
+    if api.mixed_lines then
+      local ok, list = pcall(api.mixed_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
     -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).

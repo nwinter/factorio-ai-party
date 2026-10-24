@@ -1061,7 +1061,8 @@
     (p.blocked_by || []).forEach(function (b) {
       rows.push('Blocked by #' + b.id + (b.title ? ' ' + b.title : '') + (b.status ? ' (' + b.status + (b.owner ? ', ' + who(b.owner) : ', no owner') + ')' : ''));
     });
-    (p.focus || []).forEach(function (f) { if (f.blocker) rows.push(who(f.agent) + '\'s focus blocker: ' + f.blocker); });
+    // (d23 batch123 CF1) a focus naming what a board change took away: the runtime's stale mark beside it
+    (p.focus || []).forEach(function (f) { if (f.blocker) rows.push(who(f.agent) + '\'s focus blocker: ' + f.blocker + (f.stale ? ' (' + f.stale + ')' : '')); });
     if (p.note && p.note.text) {
       var when = p.note.tick != null && lastState ? gameAgo(lastState, p.note.tick) : '';
       rows.push((p.status === 'blocked' ? 'Marked blocked; newest note' : 'Newest note') + (p.note.by ? ' by ' + who(p.note.by) : '') + (when ? ', ' + when : '') + ': ' + p.note.text);

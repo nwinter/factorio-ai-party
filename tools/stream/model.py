@@ -1820,7 +1820,7 @@ class Model:
         items = self.board.get("items") or {}
         focus = [f for f in (self.board.get("focus") or {}).values() if isinstance(f, dict) and f.get("id") == it.get("id")]
         if focus:
-            out["focus"] = [{k: f.get(k) for k in ("agent", "step", "blocker") if f.get(k)} for f in focus]
+            out["focus"] = [{k: f.get(k) for k in ("agent", "step", "blocker", "stale") if f.get(k)} for f in focus]
         live = ("open", "claimed", "doing", "blocked")
         by = []
         for bid in it.get("blocked_by") or []:
@@ -1902,12 +1902,16 @@ class Model:
         doing = []
         for line in p.get("doing") or []:
             name, _, text = str(line).partition(": ")
+            # (d23 batch123 CF1) the runtime's stale mark rides at the end of the line; the rows carry it apart
+            text = re.sub(r" \[marked stale .*\]$", "", text)
             row = {"agent": self._who(name), "name": name, "text": clean_text(re.sub(r" \(set by [^)]*\)$", "", text))}
             t = ticks.get(name)
             if t:
                 row["tick"] = t.get("tick")
                 if t.get("by") and t.get("by") != name:
                     row["by"] = t.get("by")
+                if t.get("stale"):
+                    row["stale"] = clean_text(t["stale"])
             doing.append(row)
         out = {"goals": clean_text(p.get("goals") or ""), "doing": doing, "edited": p.get("edited")}
         if p.get("goals_tick") is not None:
@@ -2671,7 +2675,14 @@ class Model:
                 out["plan_line_label"] = "plan line, " + (f"set {fmt_age(age)} ago" if age is not None else "age unknown")
         if row:
             texts.append(("plan line", row.get("tick"), row["text"]))
-        out["stale"] = workcard.stale(texts, work, self.tick) or None
+        # (d23 batch123 CF1) the runtime's marks: a focus or plan line naming what a board change took away
+        marks = []
+        f = (self.board.get("focus") or {}).get(ag.name) if job.get("job_from") == "focus" else None
+        if f and f.get("stale"):
+            marks.append(workcard.short("focus " + clean_text(f["stale"]), workcard.LINE))
+        if row and row.get("stale"):
+            marks.append(workcard.short("plan line " + row["stale"], workcard.LINE))
+        out["stale"] = marks + workcard.stale(texts, work, self.tick) or None
         return out
 
     def snapshot(self, now, cameras=None):
