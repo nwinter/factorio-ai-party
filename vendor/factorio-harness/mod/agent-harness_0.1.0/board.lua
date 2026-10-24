@@ -4,9 +4,11 @@
 -- Nothing here runs per tick: hints are computed when an agent's reply is
 -- built, bounded by the board size and the chat/event logs.
 local namematch = require('namematch')
+local staletext = require('staletext')
 return function(api)
   local M = {handlers={}}
   local MAX_ITEMS, MAX_EVENTS, MAX_NOTES, MAX_PLANS, MAX_HARNESS_OPEN, MAX_PLAN_BYTES = 300, 1000, 10, 50, 10, 65536
+  local MAX_COVERS = 4   -- (d22 batch113 BW1) teammates covering one claim
   local TITLE, NOTE, LONG = 120, 200, 1000
   local UNOWNED_AGE, REMIND_EVERY, FIRST_ALERTS = 7200, 3600, 3600
   local MAX_BOARD_LINES, MAX_ALERT_LINES, REPEAT_ATTACK = 5, 8, 7200
@@ -601,6 +603,13 @@ return function(api)
     for k = 1, math.min(max or 5, #rows) do out[k] = rows[k].text end
     return #out > 0 and out or nil
   end
+  -- (BW1) a claim's coverers: names, and when each began
+  local function covers_view(i)
+    if not i.covers then return nil end
+    local out = {}
+    for _, c in ipairs(i.covers) do out[#out+1] = {name=c.name, since=ago(game.tick - (c.tick or game.tick)) .. ' ago'} end
+    return out
+  end
   local function view(i, full, where)
     if i.kind == 'project' then return project_view(i, full) end
     local notes = i.notes
@@ -609,7 +618,7 @@ return function(api)
     return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, owner_away=i.kind == 'claim' and where and where(i.owner) or nil,
       -- An open claim: when its owner last worked on it, stale (stock sweeps include it), who it allows.
       owner_active=claim and ago(game.tick - api.claims.activity(i)) .. ' ago' or nil, stale=claim and api.claims.stale(i) or nil,
-      allow=i.kind == 'claim' and i.allow or nil,
+      allow=i.kind == 'claim' and i.allow or nil, covers=i.kind == 'claim' and covers_view(i) or nil,
       requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent, supersedes=i.supersedes, superseded_by=i.superseded_by,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
@@ -742,7 +751,7 @@ return function(api)
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     local project = item.kind == 'project'
     local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
-      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil or a.evidence ~= nil
+      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil or a.evidence ~= nil or a.cover ~= nil
     local evidence = a.evidence ~= nil and Ev().check(a.evidence, by) or nil
     assert((a.blocked_by == nil and a.parent == nil and a.supersedes == nil) or LINK_KINDS[item.kind], 'blocked_by, parent and supersedes are for a task, request or project')
     local links = a.blocked_by ~= nil and links_arg(a.blocked_by, item.id) or nil
@@ -753,7 +762,7 @@ return function(api)
         .. (k == 'done' and '; status "done" finishes an item' or ''))
       given = given or a[k] ~= nil
     end
-    assert(given, 'give status, owner, note, evidence, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
+    assert(given, 'give status, owner, note, evidence, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ' or cover'))
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
@@ -787,6 +796,15 @@ return function(api)
       assert(item.kind == 'claim', 'allow is for a claim: the agents (names or \"everyone\") its labels name as allowed, whose own stock sweeps include its chests while it is fresh')
       assert(boss, string.format('only the owner (%s) can change who claim #%d allows', tostring(item.owner), item.id))
       allow = allow_arg(a.allow)
+    end
+    -- (d22 batch113 BW1) cover: the caller covers a teammate's claim (hears its alerts with its owner) or stops
+    if a.cover ~= nil then
+      assert(type(a.cover) == 'boolean', 'cover is true (you cover this claim: you hear its alerts with its owner) or false (you stop)')
+      assert(item.kind == 'claim' and ACTIVE[item.status], string.format('cover is for an active claim (#%d is a %s, %s)', item.id, item.kind, tostring(item.status)))
+      assert(by ~= OPERATOR, 'cover marks the agent who calls it')
+      assert(by ~= item.owner, string.format('#%d is your own claim: cover is for a teammate\'s', item.id))
+      assert(not a.cover or api.claims.covers(item, by) or #(item.covers or {}) < MAX_COVERS,
+        string.format('#%d has %d coverers already (at most %d)', item.id, #(item.covers or {}), MAX_COVERS))
     end
     local surface
     if a.surface ~= nil then
@@ -893,8 +911,22 @@ return function(api)
       changes[#changes+1] = 'surface'
       text = text or ('on ' .. surface)
     end
-    -- The claim's owner working on it keeps it fresh (claims.lua).
-    if item.kind == 'claim' and by == item.owner then api.claims.touch(item) end
+    if a.cover ~= nil and a.cover ~= api.claims.covers(item, by) then
+      if a.cover then
+        item.covers = item.covers or {}
+        item.covers[#item.covers+1] = {name=by, tick=game.tick}
+      else
+        local keep = {}
+        for _, c in ipairs(item.covers or {}) do if c.name ~= by then keep[#keep+1] = c end end
+        item.covers = #keep > 0 and keep or nil
+      end
+      changes[#changes+1] = a.cover and 'covered' or 'uncovered'
+      local rest = item.owner and api.rest_label and api.rest_label(item.owner)
+      text = text or (a.cover and string.format('%s covers it: hears its alerts with %s%s', by, tostring(item.owner), rest and ' (' .. rest .. ')' or '')
+        or by .. ' no longer covers it')
+    end
+    -- The claim's owner (or a coverer: BW1) working on it keeps it fresh (claims.lua).
+    if item.kind == 'claim' and (by == item.owner or api.claims.covers(item, by)) then api.claims.touch(item) end
     if a.status ~= nil then
       assert(boss, string.format('only the owner (%s) or requester (%s) can change the status of #%d; add a note instead',
         tostring(item.owner or 'none'), tostring(item.requested_by), item.id))
@@ -903,6 +935,33 @@ return function(api)
         if a.status ~= 'open' and not item.owner then item.owner = by end
         changes[#changes+1] = a.status
       end
+    end
+    -- (d23 batch123 CF1) what this update takes away, for the focus and plan lines that name it (progress.lua on_update)
+    local removed, ST = {}, staletext
+    local function took(c) c.id = item.id; if #c.words > 0 or (c.ids and #c.ids > 0) then removed[#removed+1] = c end end
+    if pj.edit and pj.edit.text ~= pj.edit.step.text then
+      took{what=string.format('step %d of #%d edited by %s', pj.edit.step.n, item.id, by), was=pj.edit.step.text,
+        words=ST.removed(pj.edit.step.text, pj.edit.text), step=pj.edit.step.n}
+    end
+    for _, s in ipairs(pj.remove or {}) do
+      took{what=string.format('step %d of #%d removed by %s', s.n, item.id, by), was=s.text, words=ST.list(ST.words(s.text)), step=s.n, gone=true}
+    end
+    local function unlinked(id, what)
+      local o = store().items[id]
+      took{what=what, was=o and o.title, words=o and ST.list(ST.words(o.title)) or {}, ids={id}}
+    end
+    if links then
+      local keep = {}
+      for _, id in ipairs(links) do keep[id] = true end
+      for _, id in ipairs(item.blocked_by or {}) do
+        if not keep[id] then unlinked(id, string.format('#%d taken out of the blocked_by of #%d by %s', id, item.id, by)) end
+      end
+    end
+    if parent ~= nil and item.parent and parent ~= item.parent then
+      unlinked(item.parent, string.format('#%d no longer the parent of #%d (%s)', item.parent, item.id, by))
+    end
+    if edit.title and edit.title ~= item.title then
+      took{what=string.format('title of #%d changed by %s', item.id, by), was=item.title, words=ST.removed(item.title, edit.title)}
     end
     -- A project's own changes, each an event with what changed and the progress.
     local done_changes, gone = {}, {}
@@ -1011,8 +1070,10 @@ return function(api)
     for _, c in ipairs(done_changes) do event(by, item, c.change, c.text); changes[#changes+1] = c.change end
     if text and #changes == #done_changes then event(by, item, 'note', text) end
     -- (d20 batch57 S2) a focus on it that this ends (progress.lua on_update): cleared, with the ready work
-    local fc = api.on_update and api.on_update(by, item) or nil
-    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil, focus_cleared=fc and fc.focus_cleared, ready=fc and fc.ready}
+    -- (d23 batch123 CF1) and the focus and plan lines naming what it took away: marked stale
+    local fc = api.on_update and api.on_update(by, item, removed) or nil
+    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil, focus_cleared=fc and fc.focus_cleared, ready=fc and fc.ready,
+      stale=fc and fc.stale}
   end
 
   -- About how many bytes a value takes as JSON (brief listings stay near 3 KB).
@@ -1116,8 +1177,10 @@ return function(api)
     if not i then return nil end
     local lines, rows = {}, {}
     for _, l in ipairs(i.lines) do
-      lines[#lines+1] = l.agent .. ': ' .. l.text .. (l.by ~= l.agent and ' (set by ' .. l.by .. ')' or '')
-      rows[#rows+1] = {agent=l.agent, text=l.text, by=l.by, tick=l.tick}
+      -- (d23 batch123 CF1) a line naming what a board change took away since it was set: marked stale
+      local st = l.stale and staletext.text(l.stale, ago(game.tick - l.stale.tick)) or nil
+      lines[#lines+1] = l.agent .. ': ' .. l.text .. (l.by ~= l.agent and ' (set by ' .. l.by .. ')' or '') .. (st and ' [' .. st .. ']' or '')
+      rows[#rows+1] = {agent=l.agent, text=l.text, by=l.by, tick=l.tick, stale=st, stale_tick=l.stale and l.stale.tick}
     end
     return {id=i.id, goals=i.goals, doing=#lines > 0 and lines or nil,
       edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil,
@@ -1130,7 +1193,9 @@ return function(api)
     local projects = M.project_lines(name)
     if not i and not projects then return nil end
     local mine
-    for _, l in ipairs(i and i.lines or {}) do if l.agent == name then mine = l.text end end
+    for _, l in ipairs(i and i.lines or {}) do
+      if l.agent == name then mine = l.text .. (l.stale and ' [' .. staletext.text(l.stale, ago(game.tick - l.stale.tick)) .. ']' or '') end
+    end
     return {goals=i and i.goals, mine=mine, projects=projects}
   end
   -- The look-ahead block (lookahead.lua): agent `name`'s plan line with the tick it was set, the goals, and the
@@ -1350,6 +1415,7 @@ return function(api)
       evidence='as board_post evidence, anyone may add (the newest 5 kept)',
       allow='claim owner only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (names or "everyone"; [] or "" clears it)',
       surface='claim owner only: the surface its area is on',
+      cover='claim: true marks you as covering a teammate\'s claim: you hear its alerts (and wakes for losses in it) with its owner until you set false; your requests in its area and updates on it keep it open as its owner\'s do (at most 4 coverers)',
       step='project: add steps, a text or an array of texts or {text, owner?, parallel?} (anyone)', done='project: mark steps done by number, a number or an array (anyone; done_by is you)',
       undone='project: mark steps not done (anyone)', remove_step='project: remove steps by number (the agent who added one, or the owner)',
       goal='project: replace the goal ("" clears it)', handoff='project: replace the handoff text, 1..1000 characters ("" clears it)',
@@ -1361,7 +1427,7 @@ return function(api)
       edit_step='project: {n, text}: change step n\'s text in place (its adder, its owner or a lead); the earlier text is kept in the step\'s history (last 8)',
       title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
-      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
+      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster; stale: the focus and team-plan lines naming what an edited or removed step, a link taken out or a title edit took away, marked stale where they show until set again, each one\'s agent told once'},
     board_review = {ownership='optional true: who covers each system, per surface (surface= one): each electric network\'s machines (assemblers and furnaces, from the census pass), each logistic network, each platform, with the open claims covering it (how many of its sampled machines or roboports lie in each claim\'s area; a platform: a claim on it or titled with its name), overlaps, an open claim with no area on that surface (planet-wide) when no area covers it, else none; each claim\'s owner, their last activity there and the last inspection of the area (a read there, by whom); then each listed owner\'s blocked board items with the latest note: surfaces [{surface, systems [{kind, id, name, size, claims, owner_line, line}]}], lines, blocked',surface='with ownership: one surface',id='optional: one item (a project) and the items under it; default every active item',
       returns='flags [{id, kind, line, platforms?}]: gone_platform (a title or open step naming a platform of ours no longer there; whole names, longest first, so "Kestrel II" is never the gone "Kestrel"; platforms [{name, index | gone, indexes}] every name matched there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
     lesson_add = {rule='1..160 characters: the rule or symptom, short', cause='optional root cause (240)', fix='optional fix (240)',
@@ -1387,7 +1453,7 @@ return function(api)
       note='optional description', delete='true removes the saved plan', returns='name, steps, bytes'},
     plan_run = {name='saved plan name', mode='append|replace pending (default append)', start='default true', returns='as queue_submit'},
     plans = {name='optional: show one plan in full', returns='your saved plans (at most 50): name, steps, note, runs'},
-    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), last_request_tick (supervisors: wake idle mentioned agents)'},
+    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), tells (pending: not yet shown in a team block), unacked_tells and unacked_oldest_tick (shown in a team block, not yet marked read by chat_ack, reply_to or a tells read; the newest 8), last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
   -- Lessons (viewer Foobator's idea; the design Sol's and Astra's, 10:51-10:52): short rules someone tested, kept as
@@ -2145,8 +2211,13 @@ return function(api)
         end
       end
       local clock = s.clocks and s.clocks[a.index]
+      -- (d23 batch121 CD1, viewer Aurora site:4406) tells a team block already showed and no chat_ack, reply_to or tells
+      -- read has marked read (box.unread, the newest UNREAD_MAX), apart from the pending ones above (not yet delivered)
+      local unacked, oldest = 0, nil
+      for _, t in ipairs(box and box.unread or {}) do unacked = unacked + 1; oldest = math.min(oldest or t.tick, t.tick) end
       out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list - fyi + (box and box.dropped or 0), at_mentions=direct,
         tells=tells > 0 and tells or nil, fyi=fyi > 0 and fyi or nil, unread_board=M.unread_board(a),
+        unacked_tells=unacked > 0 and unacked or nil, unacked_oldest_tick=oldest,
         oldest_tick=first and first.tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
         last_request_tick=clock and math.max(clock.call_tick, clock.seen_tick or 0) or nil}
     end
@@ -2362,6 +2433,11 @@ return function(api)
     -- The owner's 10-minute line on each owned board item (progress.lua; d17 batch15 C3).
     if api.progress_lines then
       local ok, list = pcall(api.progress_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
+    -- (d23 batch123 CF2) a watch of this agent's split by an edit inside what it measures (mixed.lua)
+    if api.mixed_lines then
+      local ok, list = pcall(api.mixed_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
     -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).

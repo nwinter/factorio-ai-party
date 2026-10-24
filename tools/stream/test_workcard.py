@@ -159,6 +159,17 @@ def model():
                                            "run": {"kind": "submit", "tick": TICK - 6 * MIN, "steps": 3}}}}, None, None, TICK)
     assert wc.stale([("focus", TICK - 25 * MIN, "#1700 Smelter output")], q, TICK) == []
     assert wc.stale([("focus", TICK - 25 * MIN, "#1700 Copper output")], q, TICK) == ["focus set 25 min ago, before its queue run began 6 min ago"]
+    # (d23 batch123 CF1) the runtime's marks on a focus and a plan line naming what a board change took away
+    mark = 'marked stale 2s ago: step 3 of #1052 edited by astra (was: "Verify ... mash site"); this text names mash, site'
+    m2 = Model({"agents": {"luna": {}}})
+    m2.ingest({"tick": TICK, "agents": [{"name": "luna"}], "board": {"items": [], "plan": {"goals": "g", "doing": [
+        "luna: #1052 hold until a mash site [" + mark + "]"], "lines": [{"agent": "luna", "tick": TICK - MIN, "text": "#1052 hold until a mash site", "stale": mark}]},
+        "focus": [{"agent": "luna", "id": 1052, "title": "AG", "tick": TICK - MIN, "blocker": "no mash site", "stale": mark}]}}, NOW)
+    m2.tick = TICK
+    lu = m2.snapshot(NOW)["agents"][0]
+    assert lu["stale"] == ["focus " + mark, "plan line " + mark], lu["stale"]
+    assert m2.plan_snapshot()["doing"][0]["text"] == "#1052 hold until a mash site" and m2.plan_snapshot()["doing"][0]["stale"] == mark
+    assert m2.project_state({"id": 1052})["focus"][0]["stale"] == mark
     m.ingest({"agents": [{"name": "sonnet", "repeats": []}]}, NOW + 200)
     s = {a["name"]: a for a in m.snapshot(NOW + 200)["agents"]}["sonnet"]
     assert s["work"] is None and s["stale"] is None

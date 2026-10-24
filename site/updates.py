@@ -194,9 +194,22 @@ def _row(u, asks, replies, esc):
             + msgs + "</li>")
 
 
-def build_page(data, asks, replies, esc):
-    """(body, extra_head) of /updates/."""
+def newest(data):
+    """The newest time the data holds: a status date of any row, or a notice's (None when it has none)."""
+    times = [when(v) for u in data["updates"] for v in (u.get("dates") or {}).values()] + [when(n["t"]) for n in data["notices"]]
+    times = [t for t in times if t]
+    return max(times) if times else None
+
+
+def build_page(data, asks, replies, esc, built=None):
+    """(body, extra_head) of /updates/. built: when the site was built (Pacific, naive), said with the data's newest
+    time under the heading (d23 batch124b, viewer Aurora 10:13: "Could deploys be overwriting newer status data?
+    Please ... add a last-updated time": the 09:59 hourly refresh built from the committed file while the operator's
+    newer edits sat in a patch, 09:44-10:18)."""
     rows = data["updates"]
+    stamp = newest(data)
+    updated = ("Status data last changed " + _day(stamp) if stamp else "No status dates yet") + \
+        (f"; this page built {_day(built)}" if built else "") + "."
     counts = {s: sum(1 for u in rows if u["status"] == s) for s in STATUSES}
     # a status with rows links to its section; one with none is a plain chip (its section is not rendered: site/check.py
     # failed the 09:18 refresh on a broken #planned once every planned row had moved on)
@@ -220,6 +233,7 @@ def build_page(data, asks, replies, esc):
 <h1>Operator updates</h1>
 <p class="lede">Changes to the harness, the stream and this site that viewers and agents asked for, and where each one
 stands. Unresolved ones stay at the top until they are verified. Times are Pacific.</p>
+<p class="muted small upd-updated">{esc(updated)}</p>
 <p class="upd-counts">{chips}</p>
 <ul class="upd-legend small">{legend}</ul>
 <h2 id="open">Not verified yet</h2>

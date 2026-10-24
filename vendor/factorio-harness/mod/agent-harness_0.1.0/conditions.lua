@@ -467,7 +467,11 @@ return function(api)
         estimate and {value=total,scope='fluid:'..on..':'..c.fluid..(c.platform and '' or ':'..#list)} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
-    -- together, as a circuit wait condition reads it.
+    -- together, as a circuit wait condition reads it. A hub with no red or green wire reads every signal as 0, as the
+    -- game's own circuit wait conditions read it (d22 batch118 CA1, Astra: "no signal to read" held a below guard
+    -- unmet; measured on a copy of world n: a platform schedule's circuit condition rocket < 4850 on an unwired hub
+    -- was met at once and the platform left, rocket > -1 too; on a wired hub with no rocket signal, rocket < 4850 met,
+    -- rocket > 4850 not): below N (over 0) is met, at_least N (over 0) is never met while it has none.
     circuit_signal=function(p,c,estimate)
       local pl=M.platform_named(p,c.platform)
       local hub=pl.hub
@@ -482,9 +486,10 @@ return function(api)
           if okv and v then n=n+v end
         end
       end
-      local met=#wires>0 and (c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
+      local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
       return met,#wires>0 and string.format('%s %d on %s\'s hub (%s)',c.signal,n,c.platform,table.concat(wires,' and '))
-        or string.format('%s\'s hub has no red or green wire: no signal to read',c.platform),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
+        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',
+          c.platform,c.signal,met and 'met' or 'never met while it has none'),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
     end,
     -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
     -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
@@ -944,7 +949,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|platform_ammo_below|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|platform_ammo_below|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -966,6 +971,23 @@ return function(api)
       saws[i]=(met and 'met: ' or 'not yet: ')..tostring(saw)
     end
     return all,table.concat(saws,'; ')
+  end
+  -- (d23 batch127 CJ1, Sol #2076: Asterion's probe waits for outward progress or promethium in the hub, one lane, its
+  -- guards on) Any member holds: {until=any, conditions=[...]} met when one is; each member is read every check (their
+  -- baselines start together); saw names the first that holds (#N) with its own saw, then the others'; the record keeps
+  -- matched {index, until, saw}.
+  checks['any']=function(p,c,estimate,record)
+    local first,saws=nil,{}
+    for i,m in ipairs(c.conditions) do
+      local met,saw=checks[m['until']](p,m,nil,record)
+      if met and not first then first={index=i,['until']=m['until'],saw=tostring(saw)} end
+      saws[i]=string.format('#%d %s: %s%s',i,m['until'],met and 'met: ' or 'not yet: ',tostring(saw))
+    end
+    if record then record.matched=first end
+    if not first then return false,'none yet: '..table.concat(saws,'; ') end
+    local rest={}
+    for i,t in ipairs(saws) do if i~=first.index then rest[#rest+1]=t end end
+    return true,saws[first.index]..(#rest>0 and ' (others: '..table.concat(rest,'; ')..')' or '')
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
@@ -997,11 +1019,14 @@ return function(api)
     if c.platform~=nil then
       assert(PLATFORM_KINDS[c['until']],'platform applies to '..PLATFORM_LIST..'; '..tostring(c['until'])..' reads no platform')
     end
-    if c['until']=='all' then
-      assert(type(c.conditions)=='table' and #c.conditions>=1 and #c.conditions<=8,'until=all takes conditions: 1..8 wait_until conditions, met when every one holds')
-      for _,m in ipairs(c.conditions) do
-        assert(type(m)=='table' and m['until']~='all' and m['until']~='any','until=all takes plain conditions')
-        M.validate(m)
+    if c['until']=='all' or c['until']=='any' then
+      local kind=c['until']
+      assert(type(c.conditions)=='table' and #c.conditions>=1 and #c.conditions<=8,'until='..kind..' takes conditions: 1..8 wait_until conditions, met when '..(kind=='all' and 'every one holds' or 'one of them holds'))
+      for i,m in ipairs(c.conditions) do
+        assert(type(m)=='table' and m['until']~='all' and m['until']~='any','until='..kind..' takes plain conditions')
+        -- (CJ1) a member's refusal names it
+        local ok,err=pcall(M.validate,m)
+        if not ok then error(kind..' conditions['..i..'] ('..tostring(m['until'])..'): '..tostring(err):gsub('^[^:]*:%d+: ',''),0) end
       end
       return c
     end
@@ -1172,6 +1197,39 @@ return function(api)
         kind=='platform_left' and 'platform_left since_tick is a game tick up to now' or 'platform_arrived takes no since_tick')
     end
     return c
+  end
+  -- A guard that can never be met as things stand (d22 batch118 CA1, Astra: a guard on an unwired hub held unmet with
+  -- nothing said): circuit_signal at_least N (over 0) on a hub with no red or green wire (every signal reads 0 there),
+  -- alone or in all (any: every member so). The refusal's text, or nil.
+  function M.guard_refusal(p,c)
+    if type(c)~='table' then return nil end
+    local kind=M.ALIASES[c['until']] or c['until']
+    if kind=='all' then
+      for _,m in ipairs(type(c.conditions)=='table' and c.conditions or {}) do
+        local why=M.guard_refusal(p,m)
+        if why then return why end
+      end
+      return nil
+    end
+    -- (CJ1) any: never met only when no member can be
+    if kind=='any' then
+      local whys={}
+      for _,m in ipairs(type(c.conditions)=='table' and c.conditions or {}) do
+        local why=M.guard_refusal(p,m)
+        if not why then return nil end
+        whys[#whys+1]=why
+      end
+      return #whys>0 and 'any: no member can be met: '..table.concat(whys,'; ') or nil
+    end
+    if kind~='circuit_signal' or c.at_least==nil or c.at_least<=0 then return nil end
+    local ok,hub=pcall(function() return M.platform_named(p,c.platform).hub end)
+    if not (ok and hub and hub.valid) then return nil end
+    for _,w in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+      local okn,net=pcall(function() return hub.get_circuit_network(w) end)
+      if okn and net then return nil end
+    end
+    return string.format('circuit_signal %s at_least %d on %s: its hub has no red or green wire, so %s reads 0 there (as the game\'s own circuit conditions read an unwired hub) and at_least %d is never met while it has none',
+      c.signal,c.at_least,c.platform,c.signal,c.at_least)
   end
   function M.check(p,c,estimate,record)
     if M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end

@@ -56,6 +56,7 @@ import chartpub  # noqa: E402  (site/chartpub.py: /live/chart/, the chart the st
 import blueprints as bp_pages  # noqa: E402  (site/blueprints.py: /blueprints/, the team's blueprint library)
 import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, from site/content/how/)
 import updates as op_updates  # noqa: E402  (site/updates.py: /updates/, the operator's changes and their status)
+import legal  # noqa: E402  (site/legal.py: /privacy/ and /terms/, d23, for the YouTube uploader's OAuth verification)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -596,7 +597,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <footer class="site-footer">
   <div class="wrap">
     <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
-    Built from the project's run logs. <a href="/how/">How it was made</a>. <a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
+    Built from the project's run logs. <a href="/how/">How it was made</a>. <a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub</a>. <a href="/privacy/">Privacy</a>. <a href="/terms/">Terms</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -1955,6 +1956,11 @@ def main():
         write("search/index.html", page("Search", body, "/search/", "Search the agents, shifts, events and chat.",
                                         extra_head=head, path="/search/"))
     write("about/index.html", build_about(runs, all_worlds))
+    _title = CONFIG.get("site_title", "Factorio AI Party")  # the privacy policy and terms (site/legal.py, d23)
+    write("privacy/index.html", page("Privacy policy", legal.privacy_body(esc(_title)), "/privacy/",
+                                     "What the Factorio AI Party site collects (very little) and how it is used.", path="/privacy/"))
+    write("terms/index.html", page("Terms of service", legal.terms_body(esc(_title)), "/terms/",
+                                   "The terms for using the Factorio AI Party site, chat and stream.", path="/terms/"))
     if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
         write("experiments/index.html", build_experiments(runs, all_worlds))
         write("runs/index.html", build_runs_index(runs, all_worlds))
@@ -1972,7 +1978,8 @@ def main():
         data = op_updates.load(UPDATES)
         hidden = moderation.load(args.runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")
         asks, replies = op_updates.messages(args.runs_dir, op_updates.refs(data["updates"]), clean, keep_line, hidden)
-        body, head = op_updates.build_page(data, asks, replies, esc)
+        built = datetime.datetime.now(op_updates.PACIFIC).replace(tzinfo=None)
+        body, head = op_updates.build_page(data, asks, replies, esc, built=built)
         write("updates/index.html", page("Operator updates", body, "/updates/",
                                          "Changes viewers and agents asked for, and whether each is planned, in progress, live or verified.",
                                          extra_head=head, path="/updates/"))

@@ -154,6 +154,7 @@ return function(api)
       line = head .. (hit_n > 0 and string.format(' %d of ours: %s', hit_n, hit_text) or ' none of ours built')
         .. (ghost_n > 0 and string.format('; %d ghosts of ours there, hit once built: %s', ghost_n, ghost_text) or '')
     end
+    if #found >= FIND then line = line .. string.format(' (cut: the first %d entities near its arc read, more there not read)', FIND) end
     local rows = {}
     for _, nm in ipairs(hits) do rows[#rows+1] = {name=nm, count=#by[nm], positions=by[nm]} end
     return {line=line, hit=hit_n, ghosts=ghost_n > 0 and ghost_n or nil, entities=rows, cut=#found >= FIND or nil}

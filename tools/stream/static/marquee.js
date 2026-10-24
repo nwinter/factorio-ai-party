@@ -1,5 +1,5 @@
 // Single-line text that does not fit its box (agent cards' job and action lines, camera labels, the research card):
-// the start shows most of the time; now and then the line pans smoothly to its end, holds, and pans back (Nick, d22
+// the start shows most of the time; now and then the line pans smoothly to its end, holds, and cuts back to its start (Nick, d22
 // 22:13: wrapped status lines are useless when nobody can scroll or hover). Shared by index.html and portrait.html,
 // loaded before overlay.js; the timing and the turns are tested under node (tools/stream/test_marquee.py).
 //
@@ -13,40 +13,48 @@
 (function (root) {
   "use strict";
   const HOLD_START_S = 12;  // the least rest at the start between pans (longer for a long line: see timeline)
-  const HOLD_END_S = 2.5;   // the end, before panning back
+  const HOLD_END_S = 2.5;   // the end, before the cut back
   const SPEED_EM = 3.5;     // reading pan in font sizes a second: 49 px/s at 14 px, 84 px/s at portrait's 24 px
-  const BACK_X = 4;         // the way back runs this much faster, between BACK_MIN_S and BACK_MAX_S
-  const BACK_MIN_S = 1, BACK_MAX_S = 3;
+  // (d23 batch124 CG3, Nick 10:00: "the rewind back to the beginning animation is a little excessive. Maybe we should
+  // just instantly cut back to the beginning") no pan back: a CUT_S fade out at the end, a jump to the start, a CUT_S
+  // fade in there (a bare jump would flash the whole line in one frame)
+  const CUT_S = 0.2;
   const MAX_MOVING = 2;     // lines away from their start at once, page-wide
   const GAP_S = 4;          // between two pans' starts
   const MIN_OVER_PX = 2;    // overflow under this stays still (rounding)
   const FADE_EM = 1.5;      // the soft fade at the clipped right edge; the pan goes this much past the last letter
 
   // One pan of a line overPx wider than its box at fontPx: null when it fits, else the seconds of each phase, the
-  // rest it needs before (rest), and the keyframes of the pan (x in px, offset 0..1 of `away`).
+  // rest it needs before (rest), and the keyframes (x in px, o the opacity, offset 0..1 of `away`): the pan, the hold,
+  // the fade out, the jump back (two keyframes at one offset), the fade in at the start.
   function timeline(overPx, fontPx) {
     if (!(overPx >= MIN_OVER_PX)) return null;
     const font = fontPx > 0 ? fontPx : 14;
     const dist = Math.ceil(overPx + FADE_EM * font);
     const pan = dist / (SPEED_EM * font);
-    const back = Math.min(BACK_MAX_S, Math.max(BACK_MIN_S, pan / BACK_X));
-    const away = pan + HOLD_END_S + back;
+    const away = pan + HOLD_END_S + 2 * CUT_S;
     const rest = Math.max(HOLD_START_S, away); // a long line rests at its start at least as long as it is away
+    const cut = (pan + HOLD_END_S + CUT_S) / away;
     const frames = [
-      { offset: 0, x: 0 },
-      { offset: pan / away, x: -dist },
-      { offset: (pan + HOLD_END_S) / away, x: -dist },
-      { offset: 1, x: 0 },
+      { offset: 0, x: 0, o: 1 },
+      { offset: pan / away, x: -dist, o: 1 },
+      { offset: (pan + HOLD_END_S) / away, x: -dist, o: 1 },
+      { offset: cut, x: -dist, o: 0 },
+      { offset: cut, x: 0, o: 0 },
+      { offset: 1, x: 0, o: 1 },
     ];
-    return { dist, pan, holdEnd: HOLD_END_S, back, away, rest, frames };
+    return { dist, pan, holdEnd: HOLD_END_S, cut: CUT_S, away, rest, frames };
   }
 
-  // Where the text sits t seconds into a pan, linear between keyframes (for tests; the page eases both moves).
+  // Where the text sits t seconds into a pan, linear between keyframes (for tests; the page eases the pan).
   function offsetAt(tl, t) {
     if (!tl || t <= 0 || t >= tl.away) return 0;
     const f = t / tl.away, k = tl.frames;
     for (let i = 1; i < k.length; i++) {
-      if (f <= k[i].offset) return k[i - 1].x + (k[i].x - k[i - 1].x) * (f - k[i - 1].offset) / (k[i].offset - k[i - 1].offset);
+      if (f < k[i].offset || (f === k[i].offset && i === k.length - 1)) {
+        const span = k[i].offset - k[i - 1].offset;
+        return span > 0 ? k[i - 1].x + (k[i].x - k[i - 1].x) * (f - k[i - 1].offset) / span : k[i].x;
+      }
     }
     return 0;
   }
@@ -146,7 +154,7 @@
     if (typeof outer._mq.animate !== "function") return;
     const ease = "cubic-bezier(0.45, 0, 0.55, 1)";
     const anim = outer._mq.animate(tl.frames.map((k, i) => ({ offset: k.offset, transform: "translateX(" + k.x + "px)",
-      easing: i === 0 || i === 2 ? ease : "linear" })), { duration: tl.away * 1000 });
+      opacity: k.o, easing: i === 0 ? ease : "linear" })), { duration: tl.away * 1000 });
     st.anim = anim;
     anim.onfinish = () => { if (st.anim === anim) { st.anim = null; st.restSince = clock(); } };
   }
@@ -168,7 +176,7 @@
   }
 
   const api = { timeline, offsetAt, resetKey, pick, make, set, refresh, measure, tick,
-    HOLD_START_S, HOLD_END_S, SPEED_EM, MAX_MOVING, GAP_S, FADE_EM };
+    HOLD_START_S, HOLD_END_S, SPEED_EM, MAX_MOVING, GAP_S, FADE_EM, CUT_S };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.pogMarquee = api;
 })(typeof window !== "undefined" ? window : this);

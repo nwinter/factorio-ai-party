@@ -128,7 +128,7 @@ do
     find_tiles_filtered=function() return {} end}
   game.tick=6000
   local D=dofile('mod/agent-harness_0.1.0/platdefense.lua'){platform=function() return {name='Wayfarer',surface=s,force='f'} end,
-    fireline={of=function(e) return {line='railgun-turret (-0.5,-21.5) facing south: its shots cross 3 transport-belt',hit={}} end},
+    fireline={arc=function(n) return n=='railgun-turret' and {arc=0.2} or nil end,of=function(e) return {line='railgun-turret (-0.5,-21.5) facing south: its shots cross 3 transport-belt',hit=3} end},
     own_losses=function(name) eq(name,'Wayfarer'); return {{name='railgun-turret',x=-0.5,y=-21.5,n=20,loss=2413,last_tick=5400},{name='railgun-turret',x=9.5,y=-21.5,n=7,loss=2413,last_tick=5400}} end}
   local r=D.read({},{platform='Wayfarer'})
   local own,fire

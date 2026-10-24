@@ -27,7 +27,8 @@
   focus lines, a teammate's with `agent`. A focused project step not done across 2 checks reads so here and in
   board_progress. Its item marked done or dropped (or its focused step done) clears it: that board_update's reply has
   `focus_cleared` and `ready` (open unowned tasks and requests, free steps of unblocked projects open to you, those the
-  team plan names first, at most 5), and `status` says no focus is set until one is. Example:
+  team plan names first, at most 5), and `status` says no focus is set until one is. A step edit or removal, a link
+  taken out or a title edit marks a focus or plan line naming what it took away stale until set again. Example:
   `./fh call board_focus --args '{"id":12,"step":3,"verify":"item_count iron-plate>=400 at 10,39"}'`
 - `checks {add | run | remove | id | item | all}`: checks kept with their last observed result. `add: {name,
   condition | blueprint, item?, area? | position+radius?, stale_after_s?}` adds one and runs it: a wait_until condition
@@ -106,6 +107,10 @@
   in the labels, and `stock` sweeps include it; after 2 hours the harness closes it. Its owner gets one `your claims:`
   line for those that went stale or closed, at most every 3 minutes. An `"allow":["muse"]` (or `"everyone"`) on a
   claim shows in its labels.
+- Covering a teammate's claim: `./fh board update --args '{"id":N,"cover":true}'` (`false` stops). You then hear its
+  alerts with its owner (and a sleep wakes for losses in it), until you stop. Your requests in its area keep it fresh,
+  as the owner's do, and you count as allowed. The claim shows `covers`. A teammate resting (`resting until ...` in
+  `teammates`) shows which alert groups go to it and who else hears them; `game_alerts` `to` names rests and covers.
 - Board reads and edits: `./fh board` takes `{"status":"done"}` (finished items), `{"status":"active"}` or
   `{"mine":true}`. `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's
   title and what it asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the

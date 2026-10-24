@@ -1376,6 +1376,10 @@ fh board events --since 40
   reply that succeeded whole (Muse, shift12: an OPERATOR line ahead of the JSON on every data call).
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
+  `unread` counts every chat line after your last chat read, to anyone, of the newest 200 the log keeps (`of_newest:
+  200` when the oldest kept is unread too: older lines are gone uncounted); `to_you` counts those naming you (each
+  also reached you as a mention in a team block). Only a chat read marks chat lines read: `chat_ack` closes unanswered
+  lines and marks tells read (d23 batch121 CD1, viewer Aurora: Opus's 158 were the team's lines since his last read).
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
@@ -4252,11 +4256,17 @@ Items on the ground:
   centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
   {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
   `from_machine` and `from_building` as `to_player`, for every entity kind.
-- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
-  more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
-  (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, count, slots, items: [{name, count,
+  stacks, slots, box}], more_items}`), by item, instead of one row per stack; rows for them come only when the call
+  filters for them (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+  (d23 batch121 CD3, viewer Aurora: 11,793 entities read as full stacks made a 120-chest estimate for 8) `stacks` counts
+  entities on the ground (each one item stack, often of 1 item), `count` the items they hold, `slots` the storage slots
+  those items fill at each item's stack size. The status lines below and `deconstruct {items_on_ground}` (`items_total`,
+  `storage_slots_needed`, `storage_free_slots`: empty slots in the covering networks' storage chests with no filter or
+  a filter on one of those items, up to 256 chests read; `counts`, one line) label the three apart.
 - `status` `alerts.ground_items`: a cargo landing pad that is full while item stacks lie within 40 tiles of it
-  (position, slots, stacks, the items), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
+  (position, slots, then `entities N (each an item stack on the ground); items N: the items; storage slots they fill
+  N`), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
   (box, stacks, items; the largest 3). Item counts come from up to 5000 stacks per place (the line says so when
   there are more). One pass per force every 30 s, run on demand; a place new to you, or grown by half since you
   were told, is also in the reply's `team.alerts` once.
@@ -4933,9 +4943,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `sleep` also ends early with `woke: board` (and `board: <line>`) when a board line about the sleeper's own items
   arrives (any of the `board` lines above except new unowned requests and the 2-minute nudge).
 - `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions` (tells
-  included), `at_mentions` (@name/@everyone, and tells), `tells`, `unread_board` (board lines about their items not yet
-  in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent that was
-  mentioned. It does not consume anything.
+  included), `at_mentions` (@name/@everyone, and tells), `tells` (pending: not yet shown in a team block),
+  `unacked_tells` and `unacked_oldest_tick` (shown in a team block and not yet marked read by `chat_ack`, `reply_to` or
+  a `tells` read; the newest 8 kept; fyi and operator tells are never owed one), `unread_board` (board lines about their
+  items not yet in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent
+  that was mentioned. It does not consume anything.
 - `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
   The operator answers with notes and a `server: harness vN: ...` chat line.
 - Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
@@ -5018,7 +5030,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
   they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
-  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
+  `unread_chat` (with `unread_chat_to_you`, those naming it, and `unread_chat_kept` 200 when the count reached the
+  log's oldest line), `unread_mentions` (tells included), `unread_tells` (pending delivery), `unacked_tells` and
+  `unacked_oldest_s` (delivered in a team block, not acknowledged), `unread_board`, `last_request_s`, `stand_ended
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
   messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
   game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,
@@ -6820,6 +6834,21 @@ fh watch    # deploy on every change
   (turrets, belts on their ways, sources, the hub when an inserter takes from it toward one) against stranded (on
   belts no turret's way reaches, by group and area; hub stock no inserter takes toward a turret).
   - `platform_defense` adds `feed` and its lines (low or stopped turrets; `feed: true` all).
+  - (d23 batch124b, Sol #2042: Asterion's 120 turrets read as 64 rows) the `turrets` and `feed.turrets` rows come 64
+    a page: `page` 2, 3, ... (`turrets_page {page, pages, per_page, total, turrets, from, to, next, filter}`;
+    `feed.turrets_total`); `names` (1..16 prototype names) and `positions` (1..64 {x, y}, a turret within 1 tile) pick
+    the rows (either); a page past the last is refused with how many there are. The lines and summaries read every
+    turret; the feed rows on a page are its turrets' (by position).
+  - (d23 batch124b, Sol #2071: 16 lines of fire returned of Asterion's 23 railguns) `railguns_only: true` keeps, of
+    the turrets picked, those whose shots are a line. The lines of fire of the picked turrets whose shots are a line
+    come 16 a page: `line_page` 2, 3, ... (`lines_page {page, pages, per_page, total, returned, from, to, next, filter,
+    clear, hitting, hit, cut, unread}`; `lines_of_fire [{name, position, facing, engages, line, hit, ghosts, cut,
+    entities, destroyed_ours, unread}]`). A turret row whose line is on another line page carries `line_page`.
+    Every reply has two count lines, `turret rows: page 1 of 2, turrets 1-64 of the 120 picked (120 turrets read); 56
+    more on page 2..2` and `lines of fire: line_page 1 of 2, turrets 1-16 of the 23 picked whose shots are a line: 15
+    hit none of ours (every entity near the arc read), 1 hit 2 of ours; 7 more on line_page 2..2`; `clear` counts no line
+    whose find was cut. `turrets_page` adds `returned`, and `capped` when the
+    find reached its 256. A line of fire whose find reached fireline.lua's 2048 entities ends `(cut: ...)`.
   - `platform_endurance` projects only reachable ammunition: a row says `N more aboard can reach no turret
     (stranded: ...), not counted`, and `ammo_feed` gives both totals. preflight with a platform adds `ammo_feed`.
   - A team alert: `platform Kestrel: 11 turrets in (-14,-14)-(6.5,24.5) can reach under 20 rounds and nothing more
@@ -7144,6 +7173,18 @@ fh watch    # deploy on every change
   team's or one teammate's lines. At each 10-minute check of that item, a focused project step not done (or a text
   step with no progress seen) counts; across 2 checks the focus line and board_progress say "the focused step shows no
   completion across 2 checks"; done clears it. Nothing is assigned.
+  - Stale marks (d23 batch123 CF1, viewer Aurora 09:44: Luna's focus on #1052 still named the approved mash site
+    after Astra rewrote step 8 at 16:10). A board_update that edits or removes a project step, takes an item out of
+    blocked_by, changes the parent or edits the title takes words away (staletext.lua: runs of 4 or more letters, the
+    common ones left out; an edited text's words the new text lacks; a link's title words and its #N). A focus that
+    names at least 2 of them (all of them when fewer), or #N of a link taken out, or a removed focused step by number,
+    is marked stale. A team-plan line is marked on the same rule. The focus is read when it is on the item or its text
+    names #id. A plan line is read when it names #id, or its agent owns or focuses the item. The mark shows on the
+    focus line ("marked stale 2s ago: step 3 of #1052 edited by astra (was: "..."); this text names mash, site"), the
+    focus rows (`stale`, `stale_tick`) and the plan's lines and rows. The update's reply lists the marks (`stale`).
+    Each marked agent who did not make the change hears it once in their alerts. A new board_focus or board_plan
+    {doing} ends the mark. The stream's cards show it beside the job; the project panel shows it beside a focus
+    blocker. Words the new text keeps leave no mark.
 
 ## d17 backlog (the board's open harness requests, operator 06:10 and 10:05)
 - #820 (Opus 105h09): his recover ended "collected" at (255.4,-175.3), standing on the rails at its stop. A locomotive
@@ -8222,8 +8263,8 @@ fh watch    # deploy on every change
     - Ghosts take no damage. They are named apart, as hit once built.
     - Any turret whose shots are a line and whose turn_range is under a full turn is read the same way.
   - Where it shows:
-    - `platform_defense` lines `line of fire: ...` for each such turret (up to 16), with what it engages, and
-      `line_of_fire` and `hits` on its turret row.
+    - `platform_defense` lines `line of fire: ...` for each such turret (16 a line page since d23 batch124b, #2071),
+      with what it engages, `lines_of_fire` rows, and `line_of_fire` and `hits` on its turret row.
     - `configure {priority_targets | ignore_unprioritised}` on one: `line_of_fire`.
     - `build` (item) and `place_ghosts` (name) entries of one, their dry runs too: `line_of_fire`, a line for each
       such entry (up to 8), from the entry's position and direction.
@@ -8814,6 +8855,14 @@ fh watch    # deploy on every change
   for carbon-fiber >= 250: the hub holds 0, 250 short; fulgora holds 100 (100 in its logistic networks, 0 outside them)
   and made 0 a minute over the last 10 min: not met at this rate` (world n, Kestrel II). The rate is the planet's
   making, not what reaches the hub. 0.01-2.5 ms a platform on world n.
+  (d23 batch121 CD2, viewer Aurora: Anvil docked 2 h at Vulcanus on copper-plate >= 5000 while its hub asked for
+  copper from Nauvis only) Where the item can come from at that stop follows (`sources:`): the hub's import requests
+  for it (active sections; only a request from that planet brings it up there), what was made aboard over the last 10
+  minutes (the platform surface's production statistics) and the crafting machines aboard set to a recipe that makes
+  it (up to 200 read), and with a request from that planet the other platforms that stop there holding it. With none,
+  the line says `no known source at vulcanus: the hub asks for it from nauvis only, not from vulcanus, nothing aboard
+  made it over the last 10 min and no machine aboard is set to make it (...)`; a request from the planet that holds
+  none, made none, with no platform bringing it and nothing aboard says `no known source` too. A fact: the wait stays.
 - A hub too full for its payload (B3, Grok: Spindle's hub filled with ore twice and the science rocket could not board,
   seen only in the silo line's hub_full): every 10 s one platform waiting at a stop, in turn (hubfull.lua); each silo
   of ours on that planet (census list) whose request row for it reads hub_full is told once per wait, as a line that
@@ -12288,6 +12337,30 @@ the watch's arrivals show the pad holding 1000, 1976, 2448, ... 5602 on each pod
 - Headless copy, after a deploy: watch #75 read `received` (10000, 10 pods, by the pad, from its arrivals) within a
   second, with the line above. Cost: nothing new per tick; at a landing, a chest/silo/machine consumer adds two
   logistic network lookups (1.3 µs each on the copy).
+
+## d22 batch112 BV1 (eng/d20-batch112): queue_edit and the active step (Astra #1962)
+
+Astra (shift60 journal): at ticks 49440819-49440892 she edited pending jobs 36448-36454 by id while job-36447 (a walking
+build of 64 ice-platform tiles, on_fail skip, started 49433476) ran. At tick 49441482 the queue history recorded
+job-36447 `{reason: interrupted}` with 4 tiles unplaced ((-136.5,-394.5), (-147.5,-394.5), (-158.5,-394.5),
+(-202.5,-394.5)), and job-36465 (her edit of 36448) started on the same tick.
+
+- What the journal shows: no request of Astra's between ticks 49441468 and 49441530 (her calls then were sleep_check
+  peeks of a 50 s sleep begun at 49441280), and no harness update notice (the operator's last deploy was 21:03, ticks
+  before). The queue was not left paused: the next step started on that tick.
+- In the runtime, `{reason: interrupted}` alone is what the queue's pause records for an active step (scheduler.lua
+  pause_inner; a build is not run again). queue_edit does not touch the active step (by id, by index, or a move).
+- Headless copy of world n's 20:24 autosave (tick 49429614, Astra's queue at job-36438 with 36447 pending), replayed
+  three times from tick 49433940: with no edit, with her seven queue_edit calls (from the journal) at the same point of
+  the build, and with those plus her sleep and its sleep_check polls: job-36447 ended `done` each time (tick 49441924).
+  What paused the queue at 49441482 on world n is not reproduced.
+- Now (scheduler.lua, runtime.lua; runtime deploy needed):
+  - queue_edit's reply has `active_step`, read after the edit: "job-36447 build: still the active step, its action
+    running; this edit changed pending steps only" (or that it is no longer the active step, or none was active);
+  - a step the queue's pause interrupts is recorded with `paused_by` (what paused it: a direct call that drives the
+    character, stop, a failed call, a death, a harness update ...) and, for a build not run again, `left_undone`
+    {count, positions} and `not_requeued` ("not run again: 4 entries left unbuilt (ice-platform (-136.5,-394.5), ...)").
+
 ## d22 batch117 BZ1 (eng/d20-batch117): platform_ammo_below, a platform's whole ammunition reserve (Astra #1970)
 
 A full-edge abort must keep the return leg's ammunition. `item_count` with `platform` reads the hub alone and
@@ -12399,6 +12472,115 @@ sources on their networks (an arithmetic combinator's +10000, two readers on one
 - Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
   `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.
 
+## d23 batch123 CF2 (eng/d20-batch123): a watch split by an edit inside what it measures (mixed.lua)
+
+Viewer Aurora (site:4494): "Could measurement watches flag module or feed edits during a test and mark the sample as
+mixed? Preserve the before/after data and notify its owner to start a clean window." In shift63, Sonnet's module swaps
+on Gleba breeders invalidated Luna's samples three times, and she reset each window by hand.
+
+- What counts as an edit, for the bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch,
+  and flight_watch while it watches):
+  - Something done to a measured entity: built, mined, destroyed, configured, rotated or wired, or items moved in or
+    out by a call or a ctrl-click.
+  - A feeder of one built, removed or configured: an inserter or drill whose drop or pickup point is on it, a loader
+    touching it, or a beacon whose supply area reaches it.
+  - For belt_flow: a belt, splitter, loader or inserter within a tile of the sampled line's box.
+  - On a watched platform: any turret, collector, thruster, beacon, inserter, loader or belt.
+- Where edits are seen:
+  - The harness's builds and mines, and the configure, rotate, transfer, feed, refuel, rearm and wire calls of any
+    agent.
+  - The events control.lua forwards: on_built_entity, the mined events, on_entity_died, on_player_fast_transferred,
+    and on_gui_opened/closed when the recipe or modules differ between them.
+  - Not seen: construction robots' and platforms' own builds (no event of them is forwarded).
+  - A second edit of the same entity in the same tick counts once.
+- What happens at the first edit and each one after:
+  - The watch's read up to the edit is kept: `mixed.parts` holds from_tick, to_tick, line, and up to 64 lines.
+  - The watch starts again from the edit tick with its first arguments, to the same end tick. A flight watch's counts
+    begin again, to its arrival or limit.
+  - The watch ends at the edit instead, its final being that part, in three cases: an entity it measures was mined or
+    destroyed, the new start is refused, or fewer seconds are left than a new watch takes.
+- Where it shows:
+  - `mixed.edits` gives each edit's tick, what was done, by whom, on which entity, and how it touches the watch.
+  - The watch's read (`uptime {}`, `turret_tally {}`, belt_flow, platform_supply's tally, platform_defense) has
+    `mixed`. The watch row (status work, idle, sleep) adds the line.
+  - The owner hears it once in team alerts.
+- The copy of world n (10:10 save): Grok's uptime on biochambers (54.5,58.5) and (52.5,48.5) ran 12 s. Then Grok's
+  configure of 4 speed-module-2 into (54.5,58.5) split it. The read kept the 12 s part, with 9 completions over the two
+  machines, and the new window ran from the configure's tick.
+- Costs on the copy (emulated amd64, no tick work):
+  - An index rebuild after a watch starts or splits: 0.76 ms.
+  - The running-watch check with stored watches: 0.13 ms.
+  - An edit of ours that touches no watch: 0.29 ms; with no watch stored: 0.004 ms.
+  - A death of another force's entity is dropped at the force check.
+
+## d23 batch123 CF3 (eng/d20-batch123): supply left without an active delivery path (freightpath.lua)
+
+Viewer Aurora (site:4495): "Could disabling a freight request or retiring a route flag any essential supply left without
+an active delivery path, naming the missing link and owner? Please test the bioflux case."
+
+- A delivery path of an item to a planet has two ends:
+  - A platform whose hub requests the item (an active section, minimum above 0) from an import planet its schedule
+    stops at.
+  - A planet the schedule also stops at, whose landing pad requests the item.
+- The calls checked: `requests` on a hub or landing pad that changes slots or sections, `platform_schedule`, and
+  `platform_delete` (a platform scheduled for deletion has no paths). Each reads the paths before and after.
+- Which items are read:
+  - A hub's or platform's call: the items its hub asks now.
+  - A pad's call: the items the pad asks now.
+  - Only the hubs that ask one of them have their schedule and sections read (the game's compiled hub requests carry no
+    import planet).
+- Each item and planet that had a path and has none is a `supply_left` line. It names the paths it had and the link
+  each lost (the pad's request, the hub's request, a stop, the platform deleted). It also gives who set that link last
+  before the call (`editlog.owner`: the newest edit of that section or the schedule before this tick, or "no earlier
+  editor recorded"), the planet's use in the last 10 minutes, and its pad's stock. That editor, when someone else, gets
+  one tell; `supply_left_told` names them.
+- The bioflux case on the copy (10:10 save). Cinder and Meridian-V request bioflux from Gleba (40 each) and stop at
+  Nauvis. Nauvis's pad section 6 asks bioflux 20; it was off in the save, so it was turned on first. Then:
+  - Astra turned off section 6: "bioflux to nauvis: no active delivery path left; it had Cinder from gleba, Meridian-V
+    from gleba; nauvis's landing pad no longer requests bioflux (set last by opus at tick 52085722); nauvis used 10 in
+    the last 10 minutes; nauvis holds 0 in its landing pad". Opus was told. Tick 52085722 is Opus's clear of the pad's
+    bioflux at 16:58.
+  - With the pad back on, turning off Meridian-V's section 23 left Cinder's path: no line. Then turning off Cinder's
+    section 1 gave "... it had Cinder from gleba; Cinder's hub no longer requests bioflux from gleba (set last by sol
+    at tick 49459484) ..." (Sol told).
+  - Cinder's schedule cut to Gleba alone gave "Cinder's schedule no longer stops at nauvis (no earlier editor
+    recorded)".
+- Costs on the copy:
+  - A pad call (the pad asks 40 items, 15 hubs read): 3.8 ms a read, two reads a call, plus 0.15 ms for the paths and
+    their difference.
+  - A Meridian-V call (2 items): 1.1 ms a read.
+  - The whole pad call, the request edit included: 15-17 ms.
+  - Reading every hub's sections (before the narrowing) took 6.5 ms; the pads come from the census.
+
+## d23 batch123 CF4 (eng/d20-batch123): one scan call's work bounded
+
+Operator 10:25. In the world n profile of 10:17-10:18, `observe {scope: scan}` ran 22 calls at 96 ms each on average.
+The worst game second was 670 ms, from 4 scans, and the 3 worst seconds of the minute were all scans. They were Sol's,
+17:17:53-17:17:58Z: Asterion in 16-tile bands (area 112x16; belts, splitters, ammo turrets, inserters and assemblers;
+fields inventory; limit 1024).
+
+On a copy of world n (10:10 save), the y=32 band held 697 candidates (669 belts). Finding them took 0.5-0.8 ms. Its
+call took 166 ms with no fields and 346-519 ms with inventory. Three costs, each fixed with the facts per row unchanged
+(the inventory band's reply is the same 74,433 bytes before and after):
+
+- `fields: inventory` asked all 29 inventory names of each entity through a refused pcall. A belt failed every one,
+  then read its lanes. It now asks only the inventories its type takes, in the same order (`M.scan_inventories`,
+  memoised by type). The band went from 346-519 ms to 103 ms.
+- With `platform=` the caller is a remote-view stand-in, and each `p.surface` or `p.force` read went through it. The
+  candidate loop (known, hidden_own) read them several times for each of the 697. They are now read once a call. The
+  band at `limit: 1` went from 70 ms to 21 ms.
+- The sorts read each row's position and name about 20 times. They are now read once a row, and each row's type and
+  force once.
+- Encoding the reply took about 39 ms of the band's 100 ms. Rows now come 256 a call (`M.SCAN_PAGE`) in reading order:
+  `page`, `pages`, `rows` ("257..512 of 697") and, before the last, `more {rows, next {page}, line}`; `page: N` with the
+  same arguments lists the next. A scan keeping 256 rows or fewer reads as before.
+
+Sol's 18 band calls on the copy, every page, same load (host load average 12-14):
+- Main's runtime: 18 calls, 3.78 s in all, 97-353 ms a call (210 ms on average).
+- This branch: 38 calls (pages), 1.39 s in all, 36 ms a call on average, 25-56 ms for a full 256-row page, with one
+  129-220 ms outlier band in a run under load.
+- The copy reads about 2.2 times world n's cost for these calls (210 against 96 ms on average), so a full page should
+  be near 20-25 ms on world n.
 ## d22 batch122 CE1 (eng/d20-batch122): a reply closes only what it answers, for teammates too
 
 Viewer Aurora (08:48): "can an unrelated reply to someone clear their other unanswered requests?" It could, for
@@ -12498,6 +12680,86 @@ Regression: tests/d22_batch122b.lua.
     1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
     Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
 
+
+## d22 batch118 CA1 (eng/d20-batch118): circuit_signal on an unwired hub reads 0, as the game does
+
+Astra (shift62 seq 916): "Asterion hub unwired; wait_until circuit_signal rocket below4850 not met, saw no red or green
+wire: no signal to read", so a reserve guard on it could never fire. The game's rule, measured on a copy of world n:
+a platform schedule's circuit wait condition reads an unwired hub's signals as 0. Asterion (hub unwired, 10 rockets
+aboard, paused at Aquilo), given the stop condition `rocket < 4850` and unpaused, left at once (on_the_path to its next
+stop). Crucible (hub unwired, no rockets), each run from a paused stop: `rocket < 4850` met (twice), `rocket > -1` met;
+its hub wired to an empty constant combinator: `rocket < 4850` met, `rocket > 4850` not met (still waiting after 300
+ticks). The first run on Crucible, from its unscheduled state, stayed waiting 368 ticks and is not explained.
+
+- `circuit_signal` with no red or green wire on the hub now reads the signal as 0: `below N` (over 0) is met, `at_least
+  N` (over 0) is not; saw: "Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit
+  conditions read an unwired hub (met)" or "(never met while it has none)".
+- A guard whose `when` can never be met as things stand (circuit_signal `at_least` over 0 on an unwired hub, alone or
+  inside `all`) is refused at queue_submit, in a dry run and in queue_edit guards, in every lane, naming why. A `below`
+  guard there is met at its first check.
+
+### d22 batch113 BW1: a teammate covering a resting owner's claim
+
+Viewer Aurora (21:31): "Could factory digests follow temporary ownership? Sonnet is covering Gleba, but its alerts went
+to Grok on quota rest while Sonnet got Vulcanus updates." Grok's account hit its weekly limit at 20:04. Grok rests until
+Sat 16:00 (rests.lua; batch108), and Astra arranged at 20:06 for Sonnet to cover Gleba.
+
+- What happened (runs/shift60; the board and alerts on a copy of world n's autosave from about 21:24):
+  - Grok's last request was at 20:03:59. It has received nothing since: alerts to it wait unseen.
+  - Grok's claim #1130 "Gleba science, breeder, cultivator" covers (-16,8)-(36,56) on Gleba. The 6 alert groups
+    there went to grok alone:
+    - 31 logistic containers that lost their source;
+    - 3 machines held off by their conditions;
+    - a catalyst gone;
+    - deliveries waiting;
+    - a full output chest;
+    - a full requester.
+  - 7 more Gleba groups went to grok as the nearest agent: its character stands on Gleba nearer than Sonnet's.
+  - The claim was 81 min without Grok's activity, so it closes at 2 h (about 22:04). Its groups then go by builder
+    or nearness, which is Grok again.
+  - The 21:28 factory digest sent its Gleba blockers to grok, since #1130 is the only claim on Gleba
+    (tools/factory_digest.py `owners`).
+  - Sonnet (20:06-21:36): 129 distinct alert lines.
+    - 47 name Gleba: 35 platform arrivals and departures, heating towers, eggs, coverage. Some Gleba groups outside
+      #1130 came as the nearest agent then.
+    - None came from inside #1130.
+    - Sonnet holds #1961 (a request on Gleba calcite) and no claim on Gleba.
+- What routes by claim owner:
+  - pushalerts `owners` (team alerts, game_alerts' `to`, sleep levels): claims over a group's centre or a boiler's
+    feed chest, else builders, else the nearest agent; ammo_low by builders and agents within 64 tiles.
+  - urgent.lua `my_claim`: losses in a fresh claim of yours wake a sleep, as do outposts' drills.
+  - tools/factory_digest.py `owners`: claims holding a fact's positions, else every claim on the surface, else the
+    holders of items that name it.
+  - The board's own claim news goes to the owner.
+  - alertdigest.lua and platdigest.lua do not route by owner.
+- What the board had: a claim stays with its poster (board_update refuses `owner` on a claim). `allow` names agents whose
+  stock sweeps include it, the owner's call only. Nothing let a teammate hear a claim's alerts.
+- The change: one argument of an existing action, `board_update {id, cover: true|false}`:
+  - Who: any agent but the owner and the operator, on an active claim; at most 4 coverers.
+  - The claim keeps `covers` [{name, since}], shown on the board and in its label ("covered by sonnet").
+  - A note says "sonnet covers it: hears its alerts with grok (resting until Sat 16:00 (quota))", or "sonnet no longer
+    covers it".
+  - A coverer hears the claim's alert groups with its owner (pushalerts `owners`: why `covers`). Its line ends
+    "(claim #1130 by grok, resting until Sat 16:00 (quota); you cover it)".
+  - A coverer's sleep wakes for losses in it: "buildings destroyed in claim #6 "iron" by opus, which you cover".
+  - The factory digest sends the claim's facts to its coverers too (the board read's `covers`).
+  - A coverer counts as allowed (stock sweeps), and its requests in the area and its updates on the claim keep the
+    claim fresh, as the owner's do. So a covered claim does not close while the coverer works there.
+  - For as long as it is set, not only while the owner rests. The owner keeps hearing everything, so a cover takes
+    nothing away. A rest ends by itself at the owner's first request or its tick, which says nothing of whether the
+    owner is back on that area. The agents set and clear the cover; the harness never picks a coverer.
+- Where the team reads an alert routed to a resting owner:
+  - The teammates line (status): "Grok (resting until Sat 16:00 (quota); 13 alert groups go to it (claim #1130 6,
+    nearest 7), heard by no one else)". Once Sonnet covers it: "...; also heard by sonnet (covers) 6; 7 by no one
+    else". Read from the last scan, kept a second.
+  - game_alerts `to`: "grok (claim; resting until Sat 16:00 (quota))", "grok (nearest; resting until ...)",
+    "sonnet (covers claim #1130 by grok)".
+  - The factory digest's team part: "to agents resting: grok (resting until Sat 16:00 (quota)): N facts went to it;
+    sonnet got M" (or "to no one else"). Read from runs/RUN/AGENT/resting.json, as tools/stream/pacing.py reads it.
+- Not changed: the nearest-agent rule still names a resting agent (7 of Gleba's groups at 21:24). The teammates line
+  and game_alerts now say so; choosing someone else there would pick for the agents.
+- On the copy (copy of the 21:24 save, paused): status by astra takes 11.1-11.4 ms on the branch against 11.2-12.0 on
+  main, warm. game_alerts on Gleba (18.3 KB) takes 12.7 ms.
 ## d22 batch122: place_ghosts over one of its fast-replace group (Astra #2064, 14:32)
 
 Astra's dry run of a fast-splitter at (23,-38.5) on Asterion read `6 placeable (of 6)` over the fast belt at
