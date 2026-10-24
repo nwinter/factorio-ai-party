@@ -7,7 +7,8 @@
 - `building`, placing, removing (landfill, tiles): `build`, `place_ghosts`, `construct`, `ghosts`,
   `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
   `belt_route`, `belt_upgrade`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `rebuild`, `blueprint_save`,
-  `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`, `blueprint_retire`.
+  `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`, `blueprint_retire`,
+  `blueprint_status`.
 - `circuits-settings`, wires, settings: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `signal_watch`,
   `configure`, `assembler_batch`, `requests`, `character_settings`.
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
@@ -26,7 +27,7 @@
   `boilers`, `tells`.
 - `stream-people`, viewers: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
   `operator`, `poll`, `players`, `vote`, `votes`, `restore`.
-- `space-age`, rockets, platforms, planets, remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
+- `space-age`, rockets, platforms, planets, spoilage, Gleba: `platforms`, `platform NAME`,
   `platform_arrived`/`platform_left` waits, `platform_create`, `platform_schedule`, `platform_rename`, `platform_delete`,
   `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
   `platform_rearm`, `platform_digest`, `platform_tiles`, `platform_lanes`, `platform_gate`, `demolishers`, `shipment`,
