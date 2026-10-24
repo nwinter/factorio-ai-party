@@ -13688,6 +13688,28 @@ Fixed besides gates:
   platform as surface (...): no platform of ours is named X". freight_audit, pods, delivery_watch and build refuse it
   with what reads a platform there. tells: `after` is `since`; `unread`, `seq` and `from` are refused naming since.
 - Test: tests/d24_batch154.lua (each part fails on main).
+## d24 batch162 QE1 (eng/d20-batch162): platform_plan support plans floor only for what stands on it (Sol #2213)
+- Sol's reads (runs/shift69/sol/tools/asterion-narrow-support.json, asterion-support-fresh266h12.json): support true on
+  Asterion in flight, no tile ghosts, chose 8228 then 8230 entities and planned 11 tiles at x 29.5 (footprint 1, links
+  10) then 8 at x 18.5 (footprint 1, links 7), where nothing of ours stood; asterion-UG-support-only.json (474 chosen by
+  names) planned none.
+- The cause: support took every entity of our force on the surface (find_entities_filtered{force}). On a platform
+  firing, rockets in flight (type projectile) and laser beams (type beam) are entities of our force: on a copy of world
+  n (_autosave9, Asterion flying aquilo to solar-system-edge) 20 reads a second apart found 0 to 5 rockets and beams
+  at a time, around y -36 to -67 (the floor's north edge is near y -45).
+- platplan.lua M.stands(e): an entity that stands on the floor: an entity ghost, or a built entity not of a passing type
+  (projectile, artillery-projectile, beam, cargo-pod, stream, fire, sticker, explosion, smoke, particle source,
+  highlight box, speech bubble, robots, characters, corpses, items on the ground, item request proxies, tile ghosts,
+  asteroids, resources, tile proxies) and selectable in game (read once a name). support's chooser (true, area,
+  positions) and salvage's kept tiles use it; asteroids and chunks are neutral and never in our force's read.
+- Each planned tile names the entity it is for: add_for (beside place_ghosts_entries: {position, kind (foot, tunnel,
+  link, hole), entity {name, unit_number, position}}), for_entities (by entity: tiles, foot, tunnel, link; 16 at most),
+  and the line ("the empty tiles are for (add_for, for_entities): ghost iron-chest #35254924 (12.5,-52.5): 9 (footprint
+  1, link 8)"). A link's entity is that of the kept group it joins; a tunnel's, the entrance.
+- On the copy, 20 reads of support true a second apart: the save's runtime planned floor in 17 (5 to 119 tiles: footprint
+  1 to 99, links 0 to 31; chosen 8227 to 8232); the branch in none (chosen 8226 every read). A chest ghost put 7 tiles
+  north of the floor (copy only, removed after): add 9, all named for it.
+- Test: tests/d24_batch162.lua (fails on main: the rocket and the beam chosen, 9 tiles planned for them).
 ## d24 batch160 QC1 (eng/d20-batch160): a railgun refilling after shots is a turret, not a short network (Astra #2208)
 - Astra's samples (runs/shift69/astra/tools/shift69/power-transients.jsonl, 4 reads 57319341-57340769 on Asterion):
   accumulators 160 at 100% (800 of 800 MJ), draw equal to production each time, and the one machine on low power a
