@@ -13779,3 +13779,38 @@ Fixed besides gates:
     (out of quota until Sun 17:00). Waiting on it: 1 request or tell to you unanswered (tell from haiku ...)", only
     when something waits on it (unanswered requests and tells, its board items, claims #N); none: logged.
   - Tests: tools/test_idle_nudge_answer.py; tools/test_idle_nudge.py takes the new order.
+
+## d24 batch167
+
+- QJ1 (Sol #2224: watch 331, thruster from Kestrel IVb to Aquilo's pad (-8,-22), read stage landed 2 while received
+  0, pods 0, arrivals empty; the pod held 2 legendary thrusters): in 2.0.77 get_item_count(name) counts normal quality
+  only. The watch decided whether to follow a pod with it (the legendary pod was never followed: no arrival, no
+  receipt), while its landed stage came from freight's receipts, whose cargo is by name with every quality together.
+  - `delivery_watch` takes `quality` (and item `name@quality`, batch154's argforms, now that its schema has quality).
+    With none it counts every quality; the row's `counts` says which ("legendary quality only", "every quality (no
+    quality given)"), and the row line ends with it.
+  - One rule for every count: the consumer's (`at_start`, `held`, the stock test), the hub's (loaded, at_destination,
+    the carrier guess), a silo's rocket, a pod's cargo (whether it is followed), the pads' asks and holds (a request
+    counts when its quality matches), a requester's ask, can_insert, the received total, by_platform, arrivals.
+  - The landed stage and received come from the same followed pods. Down, a pod the watch followed that is received by
+    a landing pad on the destination's planet lands the stage ("2 thruster received by cargo-landing-pad (-8,-22) on
+    aquilo", with ": not counted as received (not ...)" when that pad is not the consumer's), or one landed with no pad
+    (and the no-pad blocker); up, a rocket's pod received by the hub. freight's receipts are read only for diversions
+    (pods received or landed on another planet), by the watch's quality. Before, a receipt alone, or up the hub
+    holding more than at the start, landed it.
+  - Each arrival has `by_quality` {quality=count} for every stack of the pod and `counted_quality`; `stacks` lists
+    every stack with its quality; its text names the qualities when the watch has one or the pod holds any but normal
+    ("2 thruster (legendary 2; it does not spoil; ...)"; "N of other qualities not counted").
+  - freight.lua: pods from a hub and rockets to a platform keep `cargo_q` (by name@quality) beside `cargo` from the
+    same get_contents read, and receipts and incoming rows carry it; a followed pod's `pad_asked` hold counted the
+    pad's normal quality only (get_item_count(name)) against cargo of every quality: now a count per quality, summed
+    (on a copy of world n, Nauvis's pad with 20 kinds: get_contents 0.58 ms, the 5 counts 6.6 us).
+  - The other freight reads checked: `shipment` (by name, says "of any quality"), `pods` (landed.lua: get_contents by
+    name, every quality together), pods in flight (pods.lua: by name@quality), `drops` (its item's quality, normal by
+    default), freight's stop and receipt lines (by name, every quality together): none counts normal only.
+  - Existing watches (set before the deploy) have no quality: they count every quality from then on.
+  - On a copy of world n's autosave (tick 57798773): Asterion stopped at Aquilo with 5 normal thrusters, 2 legendary
+    put in its hub; watches as sol with no quality (#334), quality legendary (#335) and thruster@normal (#336); `drop`
+    of thruster@legendary*2. Pod 35664002 was received by the pad (-8,-22) at tick 57799952: #334 and #335 read landed
+    2, received 2 in 1 pod, by_platform Asterion=2, by_quality legendary=2, state received; #336 read received 0, no
+    landed stage, no arrival, state open. In the hub get_item_count("thruster") read 5 with 2 legendary in it.

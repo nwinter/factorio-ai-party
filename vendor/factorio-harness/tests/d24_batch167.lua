@@ -129,4 +129,17 @@ do
   eq(t.item,'thruster'); eq(t.quality,'legendary')
 end
 print('d24_batch167 QJ1 delivery_watch: item name@quality: ok')
+
+-- freight's pad_asked (shipment's "when it left the hub the pad asked"): what the pad held counts every quality
+do
+  package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+  local held={stack('thruster',13,'normal'),stack('thruster',2,'legendary')}
+  local p2=ud{valid=true,position={x=-8,y=-22},get_inventory=function() return inv(held) end,
+    get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='thruster',quality='legendary'},min=4}}} end} end}
+  game.planets.aquilo={surface={name='aquilo',find_entities_filtered=function(f) eq(f.type,'cargo-landing-pad'); return {p2} end}}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
+  local a=F.pad_asked('aquilo',force,{thruster=2})
+  eq(a.items.thruster.hold,15,'13 normal and 2 legendary held'); eq(a.items.thruster.ask,4)
+end
+print('d24_batch167 QJ1 freight pad_asked: held at every quality: ok')
 game,defines,prototypes=nil,nil,nil
