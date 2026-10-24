@@ -662,7 +662,7 @@ local function finish(index, outcome)
       local ok,met,saw=pcall(function() return M.waiteta.check(M.lookup(index),action.condition,action) end)
       if ok then action.saw=saw; met_now=met and true or false end
     end
-    last.condition=action.condition['until']; last.saw=action.saw; last.error=action.error
+    last.condition=action.condition['until']; last.saw=action.saw; last.matched=action.matched; last.error=action.error
     -- (d18 batch39 A2) ended by anything but its condition: whether it holds now, and a platform's place and last launch
     if outcome~='met' then
       local c=action.condition
@@ -937,11 +937,11 @@ local function finish(index, outcome)
     -- (what it waited for: the rocket, the platform in orbit, or both: B2)
     local c=action.condition or {}
     local parts={}
-    for _,m in ipairs(c['until']=='all' and c.conditions or {c}) do
+    for _,m in ipairs((c['until']=='all' or c['until']=='any') and c.conditions or {c}) do
       if m['until']=='platform_arrived' then parts[#parts+1]=string.format('%s was in orbit of %s',tostring(m.platform),tostring(m.location))
       else parts[#parts+1]='it was ready' end
     end
-    s.last[index].launch_error=string.format('the wait for the rocket ended %s%s before %s: nothing launched',outcome,action.told and ' ('..action.told..')' or '',table.concat(parts,' and '))
+    s.last[index].launch_error=string.format('the wait for the rocket ended %s%s before %s: nothing launched',outcome,action.told and ' ('..action.told..')' or '',table.concat(parts,c['until']=='any' and ' or ' or ' and '))
   end
   -- a courier with personal_logistics: "pause": the requests back on (D3)
   if action and action.personal_paused then

@@ -18,10 +18,10 @@ return function(api)
   local function cond_text(c)
     if type(c) ~= 'table' then return '' end
     local u = c['until']
-    if u == 'all' then
+    if u == 'all' or u == 'any' then
       local parts = {}
       for _, m in ipairs(c.conditions or {}) do parts[#parts+1] = cond_text(m) end
-      return 'all of (' .. table.concat(parts, '; ') .. ')'
+      return u .. ' of (' .. table.concat(parts, '; ') .. ')'
     end
     local bits = {tostring(u)}
     if c.item then bits[#bits+1] = c.item end
