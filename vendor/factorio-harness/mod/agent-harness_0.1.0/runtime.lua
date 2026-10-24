@@ -16251,6 +16251,10 @@ function M.dry_verdict(out,a)
   if ahead>0 then parts[#parts+1]=string.format('%d foundation tile%s refused in front of asteroid collectors (tiles.collector_clearance)',ahead,ahead==1 and '' or 's') end
   local tiles=type(out.tiles)=='table' and out.tiles.unbuilt_count or 0
   if tiles>0 then parts[#parts+1]=string.format('%d foundation tile%s the hub never builds (%s)',tiles,tiles==1 and '' or 's',out.tiles.unbuilt and out.tiles.unbuilt[1] or '') end
+  -- (d20 batch122, Astra #2089) new foundation joined to the floor by no side or corner: never built, whether or not the
+  -- hub's rules were played over it (a floor too large for one tick is played across ticks)
+  local apart=type(out.tiles)=='table' and out.tiles.not_connected_count or 0
+  if apart>0 and tiles==0 then parts[#parts+1]=string.format('%d foundation tile%s the hub never builds: no foundation by a side or a corner, even through the other new tiles (tiles.not_connected)',apart,apart==1 and '' or 's') end
   local loose=type(out.inserters_without_target)=='number' and out.inserters_without_target or #(type(out.inserters_without_target)=='table' and out.inserters_without_target or {})
   if loose>0 then
     local first
@@ -16261,6 +16265,10 @@ function M.dry_verdict(out,a)
   end
   out.dry_run_ok=#parts==0
   out.verdict=#parts==0 and 'ok: every entry places and every setting is taken' or 'fails: '..table.concat(parts,', ')..(out.settings_line and '; '..out.settings_line or '')
+  -- a floor the hub's rules have not decided yet: ok says so
+  if #parts==0 and type(out.tiles)=='table' and out.tiles.unchecked_count then
+    out.verdict=out.verdict..string.format('; the floor (%d tiles) is not checked yet: %s',out.tiles.unchecked_count,out.tiles.check_id and 'floor check #'..out.tiles.check_id..' decides it (tiles.check)' or 'tiles.check')
+  end
   return out
 end
 -- (d20 batch65 AA8) what stands at a spot (built or a ghost of that name, ours) with a red or green wire on it

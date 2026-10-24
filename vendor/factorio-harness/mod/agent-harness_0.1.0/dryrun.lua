@@ -18,6 +18,7 @@ return function(api)
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
   local DIRS = {{1,0},{-1,0},{0,1},{0,-1}}
+  local DIRS8 = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}}
   local NAMES = {[0]='north', 'northnortheast', 'northeast', 'eastnortheast', 'east', 'eastsoutheast', 'southeast', 'southsoutheast',
     'south', 'southsouthwest', 'southwest', 'westsouthwest', 'west', 'westnorthwest', 'northwest', 'northnorthwest'}
   local RAILS = {['straight-rail']=true, ['half-diagonal-rail']=true, ['curved-rail-a']=true, ['curved-rail-b']=true,
@@ -1594,13 +1595,16 @@ return function(api)
       end
       if unchecked then t.unchecked = 'the hole check stopped at its budget; some enclosed tiles may be missing' end
       if on_platform then
+        -- (d20 batch122, Astra #2089: two laser turrets whose tiles met the floor only at a corner read "these stay
+        -- unbuilt" while the verdict said ok; on a copy of world n the hub built all 8) a new tile joins the floor by a
+        -- side or a corner, as the hub builds a tile with foundation among the 8 round it (tilecheck.lua)
         local new, reached, queue = {}, {}, {}
         for k, c in pairs(planned) do new[k] = {c.x, c.y} end
         for k, c in pairs(pending) do new[k] = new[k] or {c.x, c.y, pending=true} end
         for _, n in ipairs(need_list) do new[key(n.x, n.y)] = {n.x, n.y} end
         for k, c0 in pairs(new) do
           local x, y = c0[1], c0[2]
-          for _, d in ipairs(DIRS) do
+          for _, d in ipairs(DIRS8) do
             local nk = key(x+d[1], y+d[2])
             if not new[nk] then
               local tt = surface_tile(x+d[1], y+d[2])
@@ -1611,7 +1615,7 @@ return function(api)
         local i = 1
         while queue[i] do
           local c = queue[i]; i = i + 1
-          for _, d in ipairs(DIRS) do
+          for _, d in ipairs(DIRS8) do
             local nk = key(c[1]+d[1], c[2]+d[2])
             if new[nk] and not reached[nk] then reached[nk] = true; queue[#queue+1] = {c[1]+d[1], c[2]+d[2]} end
           end
@@ -1622,8 +1626,9 @@ return function(api)
           table.sort(loose, function(a, b) if a[2] ~= b[2] then return a[2] < b[2] end return a[1] < b[1] end)
           local shown = {}
           for j = 1, math.min(6, #loose) do shown[j] = tile_text(loose[j][1], loose[j][2]) end
-          t.not_connected = string.format('%d new foundation tile%s no existing foundation, even through the other new tiles: %s%s (the foundation must stay one connected area; %s unbuilt)',
+          t.not_connected = string.format('%d new foundation tile%s no existing foundation by a side or a corner, even through the other new tiles: %s%s (the hub builds a tile only with foundation among the 8 round it; %s unbuilt)',
             #loose, #loose == 1 and ' touches' or 's touch', table.concat(shown, ' '), #loose > 6 and ' ...' or '', #loose == 1 and 'it stays' or 'these stay')
+          t.not_connected_count = #loose
         end
         -- in front of an asteroid collector (A5, Astra 01:50): each planned tile its collection area keeps empty space
         -- (d20 batch76 AL2, Sol #1752: Spindle's dry run said ok with 12 such tiles; the live call left them empty space and
@@ -2795,6 +2800,8 @@ return function(api)
     local ft = out.tiles
     if out.summary and ft and ft.unbuilt_count then
       out.summary = out.summary .. string.format('; %d foundation tile%s never built by the hub\'s rules (tiles.unbuilt)', ft.unbuilt_count, ft.unbuilt_count == 1 and '' or 's')
+    elseif out.summary and ft and ft.not_connected_count then
+      out.summary = out.summary .. string.format('; %d foundation tile%s never built: no foundation by a side or a corner (tiles.not_connected)', ft.not_connected_count, ft.not_connected_count == 1 and '' or 's')
     elseif out.summary and ft and ft.unchecked_count then
       out.summary = out.summary .. (ft.check_id and string.format('; the floor is not checked yet: floor check #%d decides whether the hub builds all %d tiles (tiles.check)', ft.check_id, ft.unchecked_count)
         or string.format('; the floor is not checked (%d tiles)', ft.unchecked_count))
