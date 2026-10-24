@@ -69,8 +69,8 @@ do
   has(rk.line,'the ingredients aboard make at most 2 more now (iron-plate 4 aboard, 2 a craft; iron-plate made 20/min aboard), and about 3.1 more a minute at the rates its ingredients are made aboard now')
   -- made 6/min while the ceiling allows (10 explosives and 3 more a minute bind after about 3 min): 399 - 7t, gone at 57 min
   eq(rk.lasts_min,56.9)
-  has(r.lines[3],'asteroid chunks collected: metallic-asteroid-chunk 12/min')
-  eq(r.chunks_collected[1],'metallic-asteroid-chunk 12/min')
+  has(r.lines[3],'asteroid chunks made (production statistics: the collectors\' catch and the crushers\' returns): metallic-asteroid-chunk 12/min')
+  eq(r.chunks_made[1],'metallic-asteroid-chunk 12/min')
   prototypes,defines=nil,nil
 end
 print('d16_batch6 A1 endurance stock by place: ok')

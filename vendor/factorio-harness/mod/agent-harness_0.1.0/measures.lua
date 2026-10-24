@@ -102,18 +102,20 @@ return function(api)
   end
   -- (d22 batch78 AN2) a platform's collectors: collectreach.lua
   function DESCRIBE.collector_tally(job)
-    local n, gone, seen = 0, 0, 0
+    local n, gone, seen, caught = 0, 0, 0, 0
     for _, c in ipairs(job.collectors or {}) do
       n = n + 1
       if c.gone then gone = gone + 1 end
       seen = seen + (c.taken or 0)
+      caught = caught + (c.caught or 0)
     end
     if not job.collectors and job.result then
-      n, seen = #(job.result.collectors or {}), job.result.gone_in_reach_total or 0
+      n, seen, caught = #(job.result.collectors or {}), job.result.gone_in_reach_total or 0, job.result.caught or 0
       for _, c in ipairs(job.result.collectors or {}) do if c.gone_s then gone = gone + 1 end end
     end
+    -- (d24 batch143 PO1) caught: what arrived in the collectors' outputs (collectreach.lua)
     return {units=n, gone=gone, scope=string.format('%d collector%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
-      sample=string.format('%d chunks gone inside a reach (inferred)', seen), empty=n == 0}
+      sample=string.format('%d chunks caught; %d gone inside a reach (inferred)', caught, seen), empty=n == 0}
   end
   -- (d22 batch82 AR1) a platform's asteroids and turrets: asteroidwatch.lua
   function DESCRIBE.asteroid_watch(job)

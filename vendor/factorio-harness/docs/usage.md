@@ -13073,6 +13073,46 @@ Fixed besides gates:
   bounded watches are: status {brief, work} rows, the idle check, the sleep line. No walk, no queue stop.
 - Test: tests/d24_batch140.lua (refusals, sides, one get_signal per signal a sample and none between, a wire cut and a
   network change, where the platform was at the min, the status row, the end and the entity gone).
+## d24 batch143 PO1 (eng/d20-batch143): the collector tally counts what the collectors caught (Sol #2133)
+- Sol's collector_tally on Limestone reported 7 metallic as "collected" in 86 s. Its collectors take only oxide and
+  carbonic, and its carbonic reprocessing crusher made 22 crafts. The platform's production statistics count every
+  chunk made on the platform. Reprocessing returns carbonic 0.4, metallic 0.2 and oxide 0.2 a craft, and advanced
+  crushing returns its chunk 0.05.
+- 2.0.77 has no catch counter, checked on a copy of world n's 03:27 save. No collector or platform attribute answers:
+  products_finished, collected and the like read missing, and the platform has none either. No event names a collected
+  chunk: the space-platform events are built/mined/changed_state only. The arm inventory reads nil.
+- caught: each collector's output count by chunk type, and the hands of the inserters taking from it (pickup_target the
+  collector, found within 4 tiles, rechecked every 600 ticks; a new one's hand is no pickup). A chunk arrived is the
+  output's rise plus the chunks its inserters picked up since the last read (a hand empty at one read and holding at
+  the next). Chunks stack to 1, so a pickup is one chunk. Reads come every read_every ticks: under half the shortest
+  half turn of those inserters, at most 10 (normal fast inserters at 0.04 turns a tick: every 6). An output that falls
+  with no pickup is `taken_otherwise` (robots, a hand), not caught.
+- Measured on the copy, Asterion (17 collectors, 14 crushers, in flight):
+  - A level-script ground truth read every tick: over 16,359 ticks the platform made 336 carbonic, 273 metallic and
+    707 oxide. The collectors' outputs received 229, 186 and 508, and the crushers' outputs 106, 88 and 197. Made
+    equalled the two together within 9 a type at every read (the counts' timing), so a third of what was made there
+    was the crushers' returns. Reads every 6 ticks gave the same catch as every tick.
+  - The watch on this runtime over 4467 ticks: caught 56 carbonic, 36 metallic and 174 oxide, the same as the ground
+    truth. Made was 366, 100 more than caught; the crushers put out 101.
+- Cost, with profile_ticks over 60 s of the watch on Asterion: collector_tally.tick took a median 0.161 ms a tick on
+  main's runtime and 0.190 ms on this one (17 collectors, 17 inserters). That is about 0.17 ms per catch read every
+  6 ticks. The work per read is one output count per collector (its per-type counts only when it changed or an
+  inserter picked up) and one hand per inserter, for one platform per watch and one watch per agent.
+- platform_supply {collection: true}: `collected` is now `made`, said as the production statistics, every chunk made
+  on the platform with the crushers' returns among them. The line reads `made on Limestone (production statistics:
+  every chunk made on the platform, the crushers' returns among them; what its collectors caught: seconds starts a
+  collector_tally watch)`.
+- The tally: caught, caught_by_type and read_every; per collector caught, caught_by_type, inserters and
+  taken_otherwise. Then made, made_by_type and made_minus_caught (the crushers' returns and the counts' timing).
+  gone_in_reach stays as before, marked inferred; inferred_minus_caught compares it with caught. by_type gives
+  {name, made, caught, made_minus_caught, inferred, inferred_minus_caught}. The old collected, collected_by_type and
+  inferred_minus_collected are gone. The watch's line in status work reads `N chunks caught; M gone inside a reach
+  (inferred)`.
+- The same label elsewhere: platform_endurance's line `asteroid chunks collected` is now `asteroid chunks made
+  (production statistics: the collectors' catch and the crushers' returns)`, and chunks_collected is now chunks_made.
+  platform_digest's chunk line reads `made (collectors' catch and crushers' returns): ...`.
+- Tests: tests/d24_batch143.lua (fails on main: `not called collected`); tests/d22_batch78.lua, d22_batch81.lua,
+  d16_batch6.lua and platdigest.lua use the new names.
 ## d24 batch141 PM1 (eng/d20-batch141): requests failed after its change; a reply that fails after a change (Sol #2125)
 - Sol's `requests {platform: "Meridian-V", section: 23, set: [{item: "bioflux", min: 20, max: 30, from: "gleba",
   min_payload: 10}]}` (tick 55693611) set the slot, then answered `bad argument #5 of 9 to 'format' (number expected,

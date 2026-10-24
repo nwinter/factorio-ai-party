@@ -15,7 +15,7 @@ local D=require('platdigest'){platform=function(_,name) eq(name,'Kestrel II'); r
       'crusher (6,4) carbonic-asteroid-crushing: working; in carbonic-asteroid-chunk*1, out carbon*3','1 fuel and oxidizer maker','chemical-plant (9,4) thruster-fuel: working; in carbon*2, out empty; fluids water 100',
       '2 thrusters: no thruster tank under half','8 guns, 1 empty; the hub holds firearm-magazine*55','ghosts: no entity ghosts'},
     chunks={'metallic-asteroid-chunk: 5 collectors; goes to the hub (over 101 belt tiles)'}} end,
-  platform_endurance=function() return {fuel_outlook='Kestrel II: stopped at aquilo: the thrusters burn only in flight; thruster-fuel 4000 held, made 120/min, used 0/min; thruster-oxidizer 3800 held, made 110/min, used 0/min',hub_slots='101 of 139 free',chunks_collected={'carbonic-asteroid-chunk 6.2/min','metallic-asteroid-chunk 6.5/min'},
+  platform_endurance=function() return {fuel_outlook='Kestrel II: stopped at aquilo: the thrusters burn only in flight; thruster-fuel 4000 held, made 120/min, used 0/min; thruster-oxidizer 3800 held, made 110/min, used 0/min',hub_slots='101 of 139 free',chunks_made={'carbonic-asteroid-chunk 6.2/min','metallic-asteroid-chunk 6.5/min'},
     resources={{name='firearm-magazine',line='firearm-magazine: 1293 now (turrets 941, belts 419, hands 5); made 2.3/min, used 18.2/min'},
       {name='repair-pack',line='repair-pack: 133 now (hub 133)'},{name='thruster-fuel',line='thruster-fuel: 12000 now; runs out in 40 min at the flight rate'}},
     solar='18 solar panels: 1080 kW at full sun; 24 machines on low power, 0 on no power now',low_power=24,no_power=0} end,
@@ -29,7 +29,7 @@ local r=D.read({},{platform='Kestrel II'})
 eq(r.lines[1],'stopped or blocked (4): crusher (3,4) metallic-asteroid-crushing: full_output; in metallic-asteroid-chunk*1, out iron-ore*50 | gun-turret (-16,-32) empty: fast-inserter (-15.5,-30.5) from fast-transport-belt (-15.5,-29.5) | collector (19.5,-38.5): no turret reaches its front | east side: 12 edge tiles no turret reaches')
 eq(r.route,'state on_the_path; leg fulgora->aquilo, 12000 km left, arrives in about 6.5 min; next stop aquilo; speed 33.3 km/s')
 eq(r.hub,'hub slots 101 of 139 free; asteroid chunks take 9 of 139 slots (metallic 5, carbonic 4)')
-eq(r.chunks[1],'collected: carbonic-asteroid-chunk 6.2/min, metallic-asteroid-chunk 6.5/min'); eq(#r.chunks,2)
+eq(r.chunks[1],'made (collectors\' catch and crushers\' returns): carbonic-asteroid-chunk 6.2/min, metallic-asteroid-chunk 6.5/min'); eq(#r.chunks,2)
 eq(#r.crushers,3); eq(r.crushers[1],'2 crushers'); eq(#r.makers,2); has(r.makers[2],'chemical-plant (9,4) thruster-fuel: working')
 eq(r.thrusters,'2 thrusters: no thruster tank under half')
 eq(#r.tanks,1); has(r.tanks[1],'runs out in 40 min'); eq(#r.ammo,1); has(r.ammo[1],'used 18.2/min')

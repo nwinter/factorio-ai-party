@@ -56,21 +56,21 @@ do
   game.tick=1010; C.tick(1010)
   local t=C.tally(p,pl)
   eq(t.gone_in_reach_total,1); eq(t.collectors[1].gone_in_reach,1); eq(t.collectors[1].gone_in_reach_by_type,'1 oxide-asteroid-chunk')
-  eq(t.collectors[1].filters[1],'oxide-asteroid-chunk'); eq(t.collected,1); eq(t.inferred_minus_collected,0)
+  eq(t.collectors[1].filters[1],'oxide-asteroid-chunk'); eq(t.made,1); eq(t.caught,0); eq(t.inferred_minus_caught,1)
   eq(t.taken_seen,nil,'the old name is gone'); eq(t.collectors[1].taken,nil)
   eq(t.hit_hull,1); eq(t.gone_elsewhere,1)
   has(t.line,'; not counted: 1 gone on a hull tile (struck the hull), 1 gone away from every reach')
-  has(t.line,'1 chunks collected (production statistics, exact, the platform\'s: 1 oxide-asteroid-chunk); inferred: 1 gone at a collector\'s reach whose filters take them (equal to the collected count)')
+  has(t.line,'made 1 on the platform (production statistics, every chunk made there, the crushers\' returns among them: 1 oxide-asteroid-chunk), 1 more than caught; inferred: 1 gone at a collector\'s reach whose filters take them (1 more than the caught count')
   -- the platform collects 2 more metallic (another collector's, say) and nothing is seen: the difference by type
   produced['metallic-asteroid-chunk']=2
   chunks[1].position={x=14.5,y=-27}  -- where its drift puts it
   game.tick=1020; C.tick(1020)
   t=C.tally(p,pl)
-  eq(t.inferred_minus_collected,-2)
-  has(t.line,'(2 fewer than the collected count; by type metallic-asteroid-chunk -2)')
+  eq(t.made_minus_caught,3)
+  has(t.line,'(1 more than the caught count; by type oxide-asteroid-chunk +1)')
   local m
   for _,x in ipairs(t.by_type) do if x.name=='metallic-asteroid-chunk' then m=x end end
-  eq(m.inferred,0); eq(m.collected,2); eq(m.difference,-2)
+  eq(m.inferred,0); eq(m.made,2); eq(m.caught,0); eq(m.made_minus_caught,2)
   has(t.note,'inferred, not a catch count')
   -- the filter set to metallic while the watch runs: read at each sample, a metallic in reach then gone is credited
   col.get_filter=function(i) return i==1 and {name='metallic-asteroid-chunk'} or nil end
