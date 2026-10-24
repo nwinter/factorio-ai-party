@@ -368,6 +368,11 @@ return function(api)
 
   function M.handlers.defense(p,a)
     a=a or {}
+    -- (d24 batch163, Luna #2222) every confirmed nest on the surface, from the nest book (threat.lua), with no area scan
+    if a.nests then
+      assert(api.nest_read,'the nest book is not wired')
+      return api.nest_read(p,math.max(1,math.min(40,math.floor(tonumber(a.limit) or 40))))
+    end
     local limit=math.max(1,math.min(40,math.floor(tonumber(a.limit) or MAX_AREAS)))
     return cached(p,'defense',limit,function()
       local areas,nests,artillery,turret_count=scan(p)
@@ -386,7 +391,8 @@ return function(api)
       end
       return {areas=out,areas_without_turrets=uncovered[1] and uncovered or nil,
         more=rest.areas>0 and string.format('+%d smaller areas with %d buildings (%d with no turret in range): limit raises the count',rest.areas,rest.buildings,rest.no_turret) or nil,
-        nests=nests[1] and nests or nil,turrets=turret_count,artillery=artillery[1] and artillery or nil}
+        nests=nests[1] and nests or nil,confirmed_nests=api.nest_read and api.nest_read(p,0).line..' (nests: true lists each)' or nil,
+        turrets=turret_count,artillery=artillery[1] and artillery or nil}
     end)
   end
   M.schema.defense={surface='optional planet, surface or platform name (default yours): our defended areas and their turrets on that surface there by remote view (d20 batch62 X4)',limit='optional: areas listed in full (default '..MAX_AREAS..', max 40)',
@@ -398,7 +404,12 @@ return function(api)
     ..'flamethrower turret; ammo counts gun rounds, flamer oil is apart (dry: empty, low: under 25%). areas_without_turrets: area numbers; '
     ..'nests [{line, position, spawners, worms, distance, bearing, nearest_building, area, pollution_reaches, pollution_now, pollution_last}]: charted '
     ..'spawner groups within '..NEST_RANGE..' tiles of our buildings, nearest first; pollution reaches a nest while one of its chunks had pollution '
-    ..'in the last 15 minutes (the same memory as status enemies and the reached-nest news); artillery; more'}
+    ..'in the last 15 minutes (the same memory as status enemies and the reached-nest news); confirmed_nests: a line counting every '
+    ..'confirmed nest on the surface; artillery; more',
+    nests='optional true: only every confirmed nest on the surface (spawners and worms on our charted chunks; limit, default and max 40, '
+    ..'nearest the base centre first): nests [{line, position, spawners, worms, from_centre, bearing, status (alive: in view now; destroyed: '
+    ..'seen gone; unknown: not in view since seen), seen, gone_tick, members_gone, pollution_now (on its chunks), pollution_reaches, '
+    ..'pollution_last (last tick pollution was there)}], count, alive, unknown, destroyed, reached, book_tick, sweep, line'}
 
   -- The `turrets` read (Opus, 10:50): every turret's ammo (a flamer's oil with
   -- its buffer, a laser's energy) and health, and what feeds it on its own: an

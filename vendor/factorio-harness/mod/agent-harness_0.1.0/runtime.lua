@@ -14497,7 +14497,8 @@ function M.farm_flow(p,surface,item)
   return ok and math.floor(n+0.5) or nil
 end
 -- Nest pollution from threat.lua's memory (one reading at the cloud's edge flickers), shared with status.
-M.defense=require('defense'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end}
+M.defense=require('defense'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
+  nest_read=function(p,limit) return threat.nest_read(p,limit) end}
 handlers.defense=M.defense.handlers.defense
 handlers.flamers=M.defense.handlers.flamers
 handlers.turrets=M.defense.handlers.turrets
@@ -20683,7 +20684,7 @@ M.profile=require('profile')()
   for _,part in ipairs{{survey,'sample','survey.sample'},{survey,'summary','survey.summary'},{threat,'summary','threat.summary'},{pipes,'overlong','pipes.overlong'},{M.ground,'alerts','ground.alerts'},{threat,'alerts','threat.alerts'},{M.where,'team','where.team'},{M.belt,'note','belt.note'},{M.orders,'brief','orders.brief'},{M.pushalerts,'lines','pushalerts.lines'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.pushalerts,'claim_lines','pushalerts.claim_lines'},{M.networks,'alert_groups','networks.alert_groups'},{M.networks,'lines','networks.lines'},{M.platalerts,'lines','platalerts.lines'},{M.drops,'lines','drops.lines'},{M.research,'lines','research.lines'},{threat,'watch','threat.watch'},{M.selfview,'review_due','selfview.review_due'},{M.selfview,'retro','selfview.retro'},{M.selfview,'request','selfview.request'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},{M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},{M.carry,'carry','carry.carry'},{M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}} do parts[#parts+1]=part end
-  for _,part in ipairs{{M.beltgaps,'read','beltgaps.read'},{M.beltgaps,'tick','beltgaps.tick'},{M.drill_sites,'read','drill_sites.read'},{M.readmemory,'read','readmemory.read'},{M.pushalerts,'tick','pushalerts.tick'},{survey,'tick','survey.tick'},{threat,'tick','threat.tick'}} do parts[#parts+1]=part end
+  for _,part in ipairs{{M.beltgaps,'read','beltgaps.read'},{M.beltgaps,'tick','beltgaps.tick'},{M.drill_sites,'read','drill_sites.read'},{M.readmemory,'read','readmemory.read'},{M.pushalerts,'tick','pushalerts.tick'},{survey,'tick','survey.tick'},{threat,'tick','threat.tick'},{threat,'nest_step','threat.nest_step'},{threat,'nest_read','threat.nest_read'},{threat,'nest_groups','threat.nest_groups'},{threat,'sweep_step','threat.sweep_step'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'},{M.networks,'view_tick','networks.view_tick'},{M.powercut,'tick','powercut.tick'},{M.burnerfuel,'tick','burnerfuel.tick'}} do parts[#parts+1]=part end
   -- Inside the tick, so its unprofiled share has names (operator 18:12: tick totals 300 ms over their parts at 17:53);
   -- the background jobs' steps are parts by kind through M.timed.

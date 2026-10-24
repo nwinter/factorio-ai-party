@@ -5,7 +5,8 @@ The harness's chart sweep (threat.lua, about once a game minute on each surface 
 chunk's pollution, or spores on Gleba; the operator read `clouds` hands them over and live.py reads it every minute.
 
 - normalise(rows): one row per surface with a cloud: {surface, label ("Spores on Gleba"), pollutant, color (the game's
-  map colour, rgba 0..255 / 0..1), cells [[cx, cy, amount]] (32-tile chunks), chunks, max, total, tick, reached}.
+  map colour, rgba 0..255 / 0..1), cells [[cx, cy, amount]] (32-tile chunks), chunks, max, total, tick, reached [{x, y,
+  tick, spawners, and from the nest book ago_s, reaches, status, worms, seen_ago_s}]: destroyed nests are left out).
 - shot(cloud): where a map camera (cameras.lua `map`, the chart) frames the cloud and how far it zooms out, for the
   hole the program shows it in (mapcam.py's client and crop).
 - onecam.py's cloud shot: the operator calls it (serve.py POST /cloud), and the director picks it on its own once in a
@@ -21,6 +22,9 @@ from mapcam import CLIENT
 COLORS = {"pollution": {"r": 0.549, "g": 0.0, "b": 0.0, "a": 0.584}, "spores": {"r": 0.549, "g": 0.549, "b": 0.0, "a": 0.584}}
 NAMES = {"pollution": "Pollution", "spores": "Spores"}
 CHUNK = 32
+# (d24 batch163, viewer Aurora 13:16) a reached nest's state from the harness's nest book: the game seconds since
+# pollution was last there, whether it reaches it now, alive / unknown, worms, game seconds since last in view
+REACHED_KEYS = ("ago_s", "reaches", "status", "worms", "seen_ago_s")
 
 
 def planet(surface):
@@ -62,8 +66,9 @@ def normalise(rows):
             "color": color(pol), "cells": [[int(c[0]), int(c[1]), round(float(c[2]), 1)] for c in cells],
             "chunks": len(cells), "max": round(max(c[2] for c in cells), 1),
             "total": round(sum(c[2] for c in cells)), "tick": r.get("tick"),
-            "reached": [{"x": n["position"].get("x"), "y": n["position"].get("y"), "tick": n.get("tick"),
-                         "spawners": n.get("spawners")} for n in reached],
+            "reached": [dict({"x": n["position"].get("x"), "y": n["position"].get("y"), "tick": n.get("tick"),
+                              "spawners": n.get("spawners")},
+                             **{k: n[k] for k in REACHED_KEYS if n.get(k) is not None}) for n in reached],
         }
     return out
 

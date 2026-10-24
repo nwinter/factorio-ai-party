@@ -3806,7 +3806,26 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   nearest first (`nest (105,2) 2 spawners, 1 worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches
   it`, or `reaches it (last there 5m ago)`); pollution reaches a nest while one of its chunks had pollution in the last
   15 game minutes, the same memory `status` enemies and the reached-nest news use (one reading at the cloud's edge
-  flickers); `artillery`; `more` sums areas past the limit.
+  flickers); `artillery`; `more` sums areas past the limit. `confirmed_nests` counts every confirmed nest on the surface
+  (d24 batch163, Luna #2222: on world n every charted Nauvis nest was over 256 tiles from our buildings, so `nests` was
+  missing from the reply: `11 confirmed nests on nauvis (0 alive, 11 unknown, 0 destroyed); pollution reaches 2, ...`).
+- `fh call defense --args '{"nests":true}'` (read; `surface`, `limit` default and max 40; no area scan): every
+  confirmed nest on the surface from the nest book (threat.lua), nearest the base centre first: spawners and worms of
+  the enemy force on our charted chunks (what the map draws), grouped within 64 tiles. Each has `position`, `spawners`,
+  `worms`, `from_centre`, `bearing`, `status` (`alive`: a member in a chunk in view now; `destroyed`: every member seen
+  gone from its chunk in view; `unknown`: not in view since `seen`, the last tick it was), `members_gone`,
+  `pollution_now` (the most on its members' chunks, the map's pollution layer), `pollution_last` (the last tick
+  pollution was there, as reads and the chart sweep found it), `pollution_reaches` (that within 15 game minutes) and a
+  `line` (`nest (128,-991) 3 spawners, 4 worms, 999 tiles N of base centre: unknown (not in view since charted);
+  pollution 0.3 on its chunks now: reaches it`); `count`, `alive`, `unknown`, `destroyed`, `reached`, `book_tick` (the
+  last full pass), `sweep` (a pass running). The book is made in the background on each surface the chart sweep covers:
+  a pass over the generated chunks every 5 game minutes, a band of 32 chunks of one row a step, spread over a game
+  minute (on world n, d24: a band 0.19 ms; the private copy's whole pass 122 ms over 3,600 ticks, 0.034 ms a tick while
+  it runs; a read 2.5 ms there for 11 nests of 88 members, about 0.6 ms of game reads on world n); a nest seen
+  destroyed is dropped an hour later. The operator read `clouds` takes its `reached` nests from it (viewer Aurora d24
+  13:16): each nest pollution was on that is not seen destroyed, with `tick` and `ago_s` (since pollution was last
+  there), `reaches`, `status`, `seen`, `seen_ago_s`; the site's map fades those the cloud has left and dashes the
+  unknown ones, and its hover gives both ages in game time.
 - `fh call turrets [--args '{"surface":"nauvis"}' | '{"area":{"left_top":{"x":-120,"y":-10},"right_bottom":{"x":-90,"y":10}}}']`
   (read; `limit` fronts, default 8, max 40; cached 10 s; Opus, 10:50): every turret of ours there (1024 at most), grouped
   by front (turrets within 24 tiles of each other), fronts with hand-fed or low turrets first, and in each front the
