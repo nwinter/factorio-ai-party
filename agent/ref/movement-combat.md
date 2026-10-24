@@ -189,7 +189,9 @@
   backs off once when stuck, pushes through units
   (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does; it keeps
   its turning room clear of our buildings and brakes before any of ours (`last.spared`); with no room near the target
-  it stops on open ground short of it (`last.stopped_short`). `"dry_run":true` previews the path and names ours it
+  it stops on open ground short of it (`last.stopped_short`). `arrived`: stopped within 3 tiles of the target (or at
+  that open ground); `last.distance_left` says how far, and `last.path_extended` a path the engine ended short that it
+  drove on from. `"dry_run":true` previews the path and names ours it
   would touch (`last.preview`); `"combat":true` keeps the guns on auto for the drive (`last.shots`, `last.kills`).
   `remote: true, vehicle: N` drives one of our cars or tanks in radar coverage by remote view while your character
   stays put (its guns do not fire that way), or with `go_to` sends a spidertron; `auto_target_without_gunner` and

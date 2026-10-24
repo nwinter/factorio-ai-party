@@ -644,6 +644,13 @@ local function finish(index, outcome)
     last.preview=action.preview
     last.reverse=action.reverse
     if outcome=='timed_out' and last.position then last.why=string.format('time ran out at (%.1f,%.1f), %.1f tiles from the target',last.position.x,last.position.y,distance(last.position,action.target)) end
+    -- (d24 batch158, harness review bug 5) how far it stopped from the target, and the rule arrived follows
+    if last.position and action.target then
+      last.distance_left=math.floor(distance(last.position,action.target)*10+0.5)/10
+      last.arrive_rule=nav and nav.short_of and 'arrived at the end of the path to open ground near the target (stopped_short)'
+        or 'arrived: stopped within 3 tiles of the target'
+      if nav and nav.extended then last.path_extended=string.format('the engine\'s path ended %.1f tiles from the target (its goal radius); driven on straight to it',nav.extended) end
+    end
   end
   if action and action.kind=='feed' then
     local last=s.last[index]
