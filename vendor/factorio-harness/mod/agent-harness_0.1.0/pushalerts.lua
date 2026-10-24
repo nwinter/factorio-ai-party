@@ -922,6 +922,10 @@ return function(api)
         local status = e.status
         local kind = st[status]
         local detail, feeders
+        -- (d24 batch160 QC1, Astra #2208) a turret firing from a buffer (laser, railgun, tesla) reads low_power while it
+        -- refills after shots: no low_power group of its own (power tells refilling from a short network)
+        if kind == 'low_power' and (etype == 'electric-turret' or etype == 'ammo-turret' or etype == 'fluid-turret')
+          and (get(e, 'electric_buffer_size') or 0) > 0 then kind = nil end
         if kind == 'no_power' then
           if not get(e, 'electric_network_id') then kind = 'unconnected'
           elseif api.network_cursor or api.network_groups then kind = nil end

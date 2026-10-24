@@ -198,9 +198,11 @@
   `surface` (a planet or platform name) reads that surface's networks by remote view, round a `position` or `area`
   there (needed there; `by_cause` reads all of them); the reply's `surface` names the one read. `power` is also an
   observe scope. Draw and production (also `platform_power` and `by_cause`) sum every quality, a row per name and
-  quality (`quality` when not normal), `qualities` naming those found. A `low_power` electric turret in `unpowered`
-  has `cause`: recharging after shots (every other machine of its network in the area supplied) or the network short;
-  `platform_power.satisfaction.turrets` counts electric turrets apart from machines (`recharging`, `network_short`).
+  quality (`quality` when not normal), `qualities` naming those found. A `low_power` turret firing from a buffer
+  (laser, railgun, tesla) in `unpowered` has `cause`: the network short when another machine of it in the area is on
+  low or no power, or its accumulators there are empty while it draws all it produces (`turrets_short_by` machines or
+  accumulators); else recharging after shots. `platform_power.satisfaction.turrets` counts these turrets apart from
+  machines (`recharging`, `network_short`, `short_by`); inspect gives a railgun's buffer as a laser's.
   `inspect`'s `electricity` gives the draw of its own quality (`now_kw_its_quality`), of the name at every quality
   (`now_kw_all_of_name`, `now_by_quality`) and an electric turret's buffer (`buffer_kj`, `buffer_pct`, `input_limit_kw`).
 - `fuel_budget {surface?, boilers?}`: each fuel made and used per minute, and each group of fuel users (boilers,
