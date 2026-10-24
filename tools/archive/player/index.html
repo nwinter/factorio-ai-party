@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shift Archive Player</title>
+<!-- batch126 CI4: a local prototype of report-D's player. Reads ?src= (an HLS master playlist), ?data= (sample.json from
+     tools/archive/hls.py) and ?vtt= (captions); defaults are the files beside it in sample/. No game reads. -->
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --ink: #1d2230; --muted: #5d6578; --line: #d9dde5; --lane: #eceef3;
+  --danger: #d6453d; --progress: #2f9e6a; --viewer: #3a7bd5; --shot: #9aa3b5; --replay: #e0533f; --play: #111;
+  --accent: #e07b39;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12141a; --panel: #1b1e27; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303c; --lane: #232733;
+    --danger: #ef5b52; --progress: #43c088; --viewer: #5d9bf0; --shot: #6c7487; --replay: #f06a55; --play: #fff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12141a; --panel: #1b1e27; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303c; --lane: #232733;
+  --danger: #ef5b52; --progress: #43c088; --viewer: #5d9bf0; --shot: #6c7487; --replay: #f06a55; --play: #fff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; padding: 12px 16px 8px; }
+header h1 { font-size: 17px; margin: 0; }
+header .clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; padding: 0 16px 16px; }
+.stage { min-width: 0; }
+video { width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; border-radius: 6px; }
+aside { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.card h2 { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+.onair { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.chip { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.why { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; text-align: right; }
+.asof { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.speak { font-size: 13px; min-height: 2.8em; }
+.speak b { font-weight: 600; }
+.chat { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; max-height: 260px; overflow: hidden; }
+.chat li { border-left: 3px solid var(--line); padding-left: 7px; }
+.chat li.viewer { border-left-color: var(--viewer); }
+.chat .who { font-weight: 600; }
+.chat .ago { color: var(--muted); font-size: 11px; margin-left: 4px; }
+.scrub { margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px 10px; }
+.scrub-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.scrub-top .btns { display: flex; gap: 6px; }
+button { font: inherit; font-size: 12px; background: var(--lane); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.lanes { position: relative; cursor: pointer; user-select: none; }
+.lane { display: grid; grid-template-columns: 72px 1fr; align-items: center; height: 22px; margin-bottom: 3px; }
+.lane .name { font-size: 11px; color: var(--muted); }
+.lane .track { position: relative; height: 100%; background: var(--lane); border-radius: 3px; overflow: hidden; }
+.band { position: absolute; top: 0; bottom: 0; }
+.band.shot { background: repeating-linear-gradient(45deg, var(--shot), var(--shot) 3px, transparent 3px, transparent 6px); opacity: .8; }
+.band.replay { background: var(--replay); }
+.mark { position: absolute; top: 3px; bottom: 3px; width: 4px; margin-left: -2px; border-radius: 2px; }
+.mark.big { top: 1px; bottom: 1px; width: 6px; margin-left: -3px; }
+.tick { position: absolute; top: 5px; bottom: 5px; width: 2px; margin-left: -1px; opacity: .8; }
+.voice { position: absolute; top: 6px; bottom: 6px; border-radius: 2px; opacity: .85; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--play); margin-left: 71px; pointer-events: none; }
+.tip { position: absolute; z-index: 5; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 7px; font-size: 12px; pointer-events: none; max-width: 300px; display: none; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; background: var(--c); }
+.err { color: var(--danger); padding: 16px; }
+@media (max-width: 860px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+  .lane { grid-template-columns: 54px 1fr; }
+  .playhead { margin-left: 53px; }
+  .chat { max-height: 180px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Shift archive</h1>
+  <span class="clock" id="clock">–</span>
+</header>
+<main>
+  <section class="stage">
+    <video id="video" controls playsinline preload="metadata" crossorigin="anonymous"></video>
+    <div class="scrub">
+      <div class="scrub-top">
+        <span class="clock" id="span">–</span>
+        <span class="btns"><button id="prev" title="previous event (k)">◀ event</button><button id="next" title="next event (j)">event ▶</button></span>
+      </div>
+      <div class="lanes" id="lanes"></div>
+      <div class="legend">
+        <span style="--c: var(--danger)">danger</span><span style="--c: var(--progress)">progress</span>
+        <span style="--c: var(--viewer)">viewers</span><span style="--c: var(--shot)">shot</span><span style="--c: var(--replay)">replay</span>
+      </div>
+    </div>
+  </section>
+  <aside>
+    <div class="card"><h2>On air</h2><div class="onair" id="onair">–</div><div class="why" id="onair-why"></div></div>
+    <div class="card"><h2>Speaking</h2><div class="speak" id="speak">–</div></div>
+    <div class="card"><h2>Stats</h2><dl class="stats" id="stats"></dl><div class="asof" id="asof"></div></div>
+    <div class="card"><h2>Chat</h2><ul class="chat" id="chat"></ul></div>
+  </aside>
+</main>
+<div class="tip" id="tip"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+<script>
+"use strict";
+// Agent colours: close to the overlay's cards (the overlay derives them at runtime).
+const COLORS = { astra: "#4aa3ff", sol: "#f2c94c", luna: "#b07cff", opus: "#ff8c42", sonnet: "#5b8def",
+  haiku: "#3cc6b5", grok: "#d9a441", gemini: "#6fa8ff", muse: "#4cd06a" };
+const SHOTS = { "@platform": "Platform shot", "@attack": "Attack shot", "@incoming": "Incoming attack",
+  "@segment": "Host segment", "@map": "Base map", "@replay": "Replay", "@fallback": "Planet view (the platform was lost)" };
+const DANGER = new Set(["battle", "loss", "death", "platform_lost"]);
+const PROGRESS = new Set(["research", "rocket", "arrival", "platform_created", "platform_deleted", "maiden", "segment"]);
+const q = new URLSearchParams(location.search);
+const SRC = q.get("src") || "sample/master.m3u8";
+const DATA = q.get("data") || "sample/sample.json";
+const VTT = q.get("vtt") || "sample/captions.vtt";
+const $ = (id) => document.getElementById(id);
+const video = $("video");
+let D = null, span = 1, events = [];
+
+const fmtWall = (t) => new Date(t * 1000).toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+const fmtRel = (s) => { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const pct = (t) => `${Math.max(0, Math.min(100, (t - D.t0) / span * 100))}%`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const nameOf = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const colorOf = (who) => COLORS[(who || "").toLowerCase().split(" ")[0]] || "var(--shot)";
+const now = () => D.t0 + (video.currentTime || 0);
+
+function lane(name, build) {
+  const row = document.createElement("div");
+  row.className = "lane";
+  row.innerHTML = `<span class="name">${name}</span><div class="track"></div>`;
+  build(row.querySelector(".track"));
+  $("lanes").appendChild(row);
+}
+
+function el(cls, style, tip) {
+  const d = document.createElement("div");
+  d.className = cls;
+  Object.assign(d.style, style);
+  if (tip) d.dataset.tip = tip;
+  return d;
+}
+
+function buildLanes() {
+  lane("On air", (tr) => {
+    for (const [a, b, slot, subj, reason] of D.onair) {
+      const agent = !subj.startsWith("@");
+      const cls = "band" + (subj === "@replay" ? " replay" : agent ? "" : " shot");
+      const st = { left: pct(Math.max(a, D.t0)), width: `${(Math.min(b, D.t1) - Math.max(a, D.t0)) / span * 100}%` };
+      if (agent) st.background = colorOf(subj);
+      tr.appendChild(el(cls, st, `${fmtWall(a)} ${agent ? nameOf(subj) : SHOTS[subj] || subj}: ${reason}`));
+    }
+  });
+  const marks = (kinds, color) => (tr) => {
+    for (const e of events.filter((e) => kinds.has(e.kind))) {
+      const big = ["death", "platform_lost", "maiden"].includes(e.kind) || (e.score || 0) >= 3;
+      tr.appendChild(el("mark" + (big ? " big" : ""), { left: pct(e.t), background: color }, `${fmtWall(e.t)} ${e.title}`));
+    }
+  };
+  lane("Danger", marks(DANGER, "var(--danger)"));
+  lane("Progress", marks(PROGRESS, "var(--progress)"));
+  lane("Viewers", (tr) => {
+    for (const c of D.chat.filter((c) => c.kind === "viewer" && c.t >= D.t0))
+      tr.appendChild(el("tick", { left: pct(c.t), background: "var(--viewer)" }, `${fmtWall(c.t)} ${c.who}: ${c.text.slice(0, 120)}`));
+    marks(new Set(["viewer_answer"]), "var(--viewer)")(tr);
+  });
+  lane("Agents", (tr) => {
+    for (const c of D.chat.filter((c) => c.kind === "agent" && c.t >= D.t0))
+      tr.appendChild(el("tick", { left: pct(c.t), background: colorOf(c.who) }, `${fmtWall(c.t)} ${nameOf(c.who)}: ${c.text.slice(0, 120)}`));
+  });
+  lane("Voices", (tr) => {
+    for (const l of D.lines) {
+      const bg = l.channel === "agent" ? colorOf(l.agent || l.who) : "var(--muted)";
+      tr.appendChild(el("voice", { left: pct(Math.max(l.t, D.t0)), width: `${Math.max(0.3, l.dur / span * 100)}%`, background: bg },
+        `${fmtWall(l.t)} ${l.who}: ${(l.text || "").slice(0, 140)}`));
+    }
+  });
+  const ph = el("playhead", { left: "0%" });
+  ph.id = "playhead";
+  $("lanes").appendChild(ph);
+}
+
+function at(rows, t) { let r = null; for (const x of rows) { if (x[0] <= t) r = x; else break; } return r; }
+
+function render() {
+  const t = now();
+  $("clock").textContent = `${fmtWall(t)} PDT · ${fmtRel(t - D.t0)} into the sample`;
+  const track = document.querySelector(".lane .track");
+  if (track) {
+    const off = track.offsetLeft;
+    $("playhead").style.left = `calc(${(t - D.t0) / span} * (100% - ${off}px))`;
+  }
+  const on = D.onair.find((r) => r[0] <= t && t < r[1]);
+  if (on) {
+    const [, , slot, subj, reason, cam] = on;
+    const agent = !subj.startsWith("@");
+    $("onair").innerHTML = `<span class="chip" style="background:${agent ? colorOf(subj) : subj === "@replay" ? "var(--replay)" : "var(--shot)"}"></span>${esc(agent ? nameOf(subj) : SHOTS[subj] || subj.slice(1))}`;
+    $("onair-why").textContent = `${reason}${cam ? ` · ${cam[0]} (${Math.round(cam[1])}, ${Math.round(cam[2])})` : ""}`;
+  } else { $("onair").textContent = "–"; $("onair-why").textContent = ""; }
+  const sp = D.lines.find((l) => l.t <= t && t < l.t + l.dur);
+  $("speak").innerHTML = sp ? `<b>${esc(sp.who)}</b> ${esc(sp.text)}` : `<span class="why">nobody</span>`;
+  const row = at(D.stats, t);
+  if (row) {
+    const r = Object.fromEntries(D.stats_cols.map((k, i) => [k, row[i]]));
+    const items = [["Game time", r.game_time], ["Rockets", r.rockets.toLocaleString()], ["Technologies", r.research],
+      ["Researching", r.researching || "–"], ["Science/min", r.spm ?? "–"], ["Packs made/min", r.packs_per_min ?? "–"],
+      ["Platforms", r.platforms], ["Deaths this shift", r.deaths]];
+    $("stats").innerHTML = items.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
+    $("asof").textContent = `as of ${fmtWall(r.t)} (score rows every 2 minutes)`;
+  }
+  const lines = D.chat.filter((c) => c.t <= t).slice(-6).reverse();
+  $("chat").innerHTML = lines.map((c) => `<li class="${c.kind}"><span class="who" style="color:${c.kind === "agent" ? colorOf(c.who) : "var(--viewer)"}">${esc(c.kind === "agent" ? nameOf(c.who) : c.who)}</span><span class="ago">${fmtRel(t - c.t)} ago</span><div>${esc(c.text.length > 220 ? c.text.slice(0, 219) + "…" : c.text)}</div></li>`).join("");
+}
+
+function seekWall(t) { video.currentTime = Math.max(0, Math.min(span, t - D.t0)); render(); }
+function jump(dir) {
+  const t = now();
+  const list = dir > 0 ? events.filter((e) => e.t > t + 1) : events.filter((e) => e.t < t - 3).reverse();
+  if (list.length) seekWall(list[0].t - 3);
+}
+
+function wire() {
+  const lanes = $("lanes"), tip = $("tip");
+  lanes.addEventListener("click", (ev) => {
+    const track = lanes.querySelector(".track").getBoundingClientRect();
+    const f = (ev.clientX - track.left) / track.width;
+    if (f >= 0 && f <= 1) seekWall(D.t0 + f * span);
+  });
+  lanes.addEventListener("mousemove", (ev) => {
+    const hit = ev.target.closest("[data-tip]");
+    if (!hit) { tip.style.display = "none"; return; }
+    tip.textContent = hit.dataset.tip;
+    tip.style.display = "block";
+    tip.style.left = `${Math.min(ev.pageX + 12, document.documentElement.clientWidth - 316)}px`;
+    tip.style.top = `${ev.pageY + 14}px`;
+  });
+  lanes.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  $("prev").onclick = () => jump(-1);
+  $("next").onclick = () => jump(1);
+  document.addEventListener("keydown", (e) => { if (e.key === "j") jump(1); if (e.key === "k") jump(-1); });
+  video.addEventListener("timeupdate", render);
+  video.addEventListener("seeked", render);
+  setInterval(() => { if (!video.paused) render(); }, 250);
+}
+
+function attach() {
+  const track = document.createElement("track");
+  Object.assign(track, { kind: "captions", label: "Hosts and agents", srclang: "en", src: VTT, default: true });
+  video.appendChild(track);
+  if (video.canPlayType("application/vnd.apple.mpegurl")) video.src = SRC;
+  else if (window.Hls && Hls.isSupported()) { const h = new Hls({ capLevelToPlayerSize: true }); h.loadSource(SRC); h.attachMedia(video); }
+  else $("span").textContent = "This browser cannot play HLS.";
+  const t = parseFloat(q.get("t"));
+  if (!isNaN(t)) video.addEventListener("loadedmetadata", () => seekWall(t), { once: true });
+}
+
+fetch(DATA).then((r) => r.json()).then((d) => {
+  D = d;
+  span = d.t1 - d.t0;
+  events = d.events.slice().sort((a, b) => a.t - b.t);
+  $("title").textContent = `Shift ${d.shift.number} · ${new Date(d.t0 * 1000).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric" })}`;
+  $("span").textContent = `${fmtWall(d.t0)} to ${fmtWall(d.t1)} PDT · ${events.length} events · ${d.lines.length} voiced lines`;
+  buildLanes();
+  wire();
+  attach();
+  render();
+}).catch((e) => { document.body.insertAdjacentHTML("afterbegin", `<p class="err">Could not load ${esc(DATA)}: ${esc(e)}</p>`); });
+</script>
+</body>
+</html>

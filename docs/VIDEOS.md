@@ -129,3 +129,36 @@ on two director lines counts once.
 - the uploader's dry run, and its refusal of a shift still on
 
 `python3 site/test_longrun.py` covers the video embeds, shift pages and the new death and loss counts.
+
+# The video archive (tools/archive/, batch126: a first working test)
+
+A per-shift index keyed on wall-clock UTC seconds, captions from the voiced lines, ranked candidate clips, and an HLS
+sample with a player page (report-D's plan). All local and read-only on the masters (`/Volumes/Extreme SSD/
+pog-recordings`, never moved or renamed); the R2 bucket `pog-archive` holds web renditions only.
+
+    python3 tools/archive/archive.py shift48 --out DIR --recordings "/Volumes/Extreme SSD/pog-recordings/D-pog-recordings" \
+        --runs-dir ~/code/player-of-games/runs --logs-dir ~/code/player-of-games/tools/stream/logs [--cut 3]
+
+writes DIR/shift48-index.json, DIR/calibration.json, a captions file per recording and DIR/clips/ (candidates.json,
+review.md, the cut MP4s). Its parts, each a CLI of its own:
+
+- `archive_index.py`: the index. `t` is epoch seconds everywhere; tick is an attribute mapped through the score rows
+  (`clock`). Recordings come from the drive (names are the box's PST clock), gaps are spans of the shift with no file,
+  on-air intervals from the director's ON AIR lines (replays override them; a camera on a platform that is lost falls
+  back), events from the chronicle, the director's lines and the viewer answers, voiced lines from audio-played.jsonl
+  joined to the caster jsonl, chat from chat.jsonl and the viewers logs (site/moderation.py's deletions applied).
+- `calibrate.py`: the offset between the Mac's log clock and a recording, by sliding the logged speech over the
+  recording's loudness in six 8-minute windows (about 7 s a recording). shift48: +8.6 s in all six windows, drift
+  0.06 s an hour; caption onsets then land a median 0.3 s before the speech.
+- `captions.py`: WebVTT with speaker voice tags, for a whole recording or a window (a clip, a sample).
+- `clips.py`: the ranked candidates and `--cut N` (H.264 MP4, +faststart, at nice 19).
+- `hls.py`: an HLS sample (1080p CRF 23 capped at 6 Mbit/s and 540p at 1.2 Mbit/s, fMP4 4 s segments, keyframes
+  every 2 s) and the sample.json its player reads. One encode at a time, nice 19.
+- `player/index.html`: the prototype player (hls.js; lanes for on air, danger, progress, viewers, agents and voices;
+  a side panel with the on-air subject, who is speaking, the stats as of that second and the last chat lines).
+  `?src=`, `?data=`, `?vtt=` point it at any copy; `?t=EPOCH` seeks.
+- `r2_put.py`: uploads a folder under a key prefix with content types and cache rules; `r2-cors.json` is the
+  bucket's CORS. Bucket layout: `SHIFT/hls/...` (a whole shift), `SHIFT/sample-HHMM/...` (a test sample),
+  `SHIFT/clips/CLIP-ID.{mp4,vtt}`, `SHIFT/captions.vtt`, `SHIFT/index.json`, `player/index.html`.
+
+`python3 tools/test_video_archive.py` runs it all on a made-up shift (no ffmpeg, no clock).
