@@ -16,11 +16,16 @@ return function(api)
   local function st()
     local s = api.state()
     local L = s.ghost_log
-    if not L then L = {map={}, ring={}, next=1, total=0, since=game.tick}; s.ghost_log = L end
+    if not L then L = {map={}, ring={}, next=1, total=0, since=game.tick, pidx={}, pidx_done=true}; s.ghost_log = L end
+    -- (d24 batch144 PP1) tile ghosts in a ring of their own, so a platform's foundation does not push out the entities'
+    if not L.tmap then L.tmap, L.tring, L.tnext, L.tsince = {}, {}, 1, game.tick end
+    -- (d24 batch144 cp2) a record log from before the position index: the index is built in slices (M.index_tick)
+    if not L.pidx then L.pidx, L.pidx_slot, L.pidx_done = {}, 1, nil end
     return L
   end
+  local function is_tile(e) return e.type == 'tile-ghost' end
   local function key_of(e)
-    local name = e.type == 'entity-ghost' and e.ghost_name or e.name
+    local name = (e.type == 'entity-ghost' or e.type == 'tile-ghost') and e.ghost_name or e.name
     local pos = e.position
     return e.surface.name .. '|' .. name .. '|' .. pos.x .. ',' .. pos.y
   end
@@ -39,16 +44,71 @@ return function(api)
     return v.action .. ', a call'
   end
   M.via_text = via_text
-  local function put(k, rec)
+  -- (d24 batch144 PP1) A numeric key for a position (x and y on the half-tile grid; no text: turning a number into text
+  -- took about 8 us in the 2.0.77 container, 632 ghosts 10 ms) and, per surface, how many records stand at each (pidx):
+  -- a ghost with none there has no record, read without building its text key. A record counted there carries x.
+  -- (cp2) Records from before the index are counted in slices, ring slot by ring slot (entities' ring, then tiles'):
+  -- a record placed meanwhile is counted when placed and skipped when its slot is reached.
+  local OFF, MUL = 4194304, 8388608
+  local function nkey(x, y) return (x * 2 + OFF) * MUL + (y * 2 + OFF) end
+  local function count(L, r)
+    if r.n and not r.x then local t = L.pidx[r.s] or {}; L.pidx[r.s] = t; t[r.n] = (t[r.n] or 0) + 1; r.x = true end
+  end
+  local function unindex(L, r)
+    if not (r and r.x) then return end
+    local t = L.pidx[r.s]
+    if t and t[r.n] then t[r.n] = t[r.n] > 1 and t[r.n] - 1 or nil end
+    r.x = nil
+  end
+  M.INDEX_SLICE = 512
+  -- Up to n ring slots counted into the index; returns how many were read (0 once it is done).
+  function M.index_tick(n)
     local L = st()
-    local slot = L.next
-    local old = L.ring[slot]
-    if old and L.map[old] and L.map[old].i == slot then L.map[old] = nil end
+    if L.pidx_done then return 0 end
+    local slot, read = L.pidx_slot or 1, 0
+    while read < n and slot <= 2 * MAX do
+      local tile = slot > MAX
+      local i = tile and slot - MAX or slot
+      local k = (tile and L.tring or L.ring)[i]
+      local r = k and (tile and L.tmap or L.map)[k]
+      if r and r.i == i and not r.x then
+        if not r.n then
+          local sn, x, y = k:match('^(.-)|.-|(.-),(.-)$')
+          x, y = tonumber(x), tonumber(y)
+          if sn and x and y then r.s, r.n = sn, nkey(x, y) end
+        end
+        count(L, r)
+      end
+      slot, read = slot + 1, read + 1
+    end
+    L.pidx_slot = slot
+    if slot > 2 * MAX then L.pidx_done = true end
+    return read
+  end
+  -- nil once the index is whole, else {read, of}: ring slots read of all.
+  function M.index_state()
+    local L = st()
+    if L.pidx_done then return nil end
+    return {read=(L.pidx_slot or 1) - 1, of=2 * MAX, slice=M.INDEX_SLICE}
+  end
+  local function put(k, rec, tile)
+    local L = st()
+    local map, ring = L.map, L.ring
+    if tile then map, ring = L.tmap, L.tring end
+    local slot = tile and L.tnext or L.next
+    local old = ring[slot]
+    if old and map[old] and map[old].i == slot then unindex(L, map[old]); map[old] = nil end
+    if map[k] then unindex(L, map[k]) end
+    count(L, rec)
     rec.i = slot
-    L.ring[slot] = k
-    L.map[k] = rec
-    L.next = slot % MAX + 1
+    ring[slot] = k
+    map[k] = rec
+    if tile then L.tnext = slot % MAX + 1 else L.next = slot % MAX + 1 end
     L.total = L.total + 1
+  end
+  local function rec_of(e)
+    local L = st()
+    return (is_tile(e) and L.tmap or L.map)[key_of(e)]
   end
   -- A ghost an agent placed (who: its name), or with hand=true an entity it built by hand. A hand build of a ghost
   -- (revived) keeps the ghost's record and adds who built it.
@@ -60,12 +120,17 @@ return function(api)
       local r = st().map[k]
       if r then r.b = who; r.bt = game.tick; return end
     end
-    put(k, {a=who, t=game.tick, v=via, h=hand or nil})
+    local pos = e.position
+    put(k, {a=who, t=game.tick, v=via, h=hand or nil, s=e.surface.name, n=nkey(pos.x, pos.y)}, is_tile(e))
   end
   function M.forget(e)
     if not (e and e.valid) then return end
     local k = try(function() return key_of(e) end)
-    if k then st().map[k] = nil end
+    if k then
+      local L = st()
+      local map = is_tile(e) and L.tmap or L.map
+      unindex(L, map[k]); map[k] = nil
+    end
   end
   local function user_name(e) local u = e.last_user; return u and u.name end
   local function last_user(e) local ok, v = pcall(user_name, e); if ok then return v end end
@@ -73,8 +138,8 @@ return function(api)
   function M.read(e)
     if not (e and e.valid) then return nil end
     local L = st()
-    local ghost = e.type == 'entity-ghost'
-    local r = L.map[key_of(e)]
+    local ghost = e.type == 'entity-ghost' or is_tile(e)
+    local r = rec_of(e)
     local lu = last_user(e)
     local out = {last_user=lu}
     local parts = {}
@@ -103,13 +168,32 @@ return function(api)
   -- One short text for a row (nil when the record has none and the game no last user).
   function M.short(e)
     if not (e and e.valid) then return nil end
-    local r = st().map[key_of(e)]
+    local r = rec_of(e)
     local lu = last_user(e)
     if not r then return lu and 'last user ' .. lu or nil end
     local t = string.format('%s%s %s ago%s', r.h and 'built by ' or 'ghost by ', r.a, ago(game.tick - r.t), r.v and ' (' .. r.v .. ')' or '')
     if r.b then t = t .. ', built by hand by ' .. r.b end
     if lu then t = t .. '; last user ' .. lu end
     return t
+  end
+  -- (d24 batch144 PP1) Who placed a ghost: the agent of the harness's record, else the game's last user; nil when
+  -- neither knows. The second value says which: 'record' or 'last_user'.
+  function M.owner(e)
+    if not (e and e.valid) then return nil end
+    local r = rec_of(e)
+    if r then return r.a, 'record' end
+    local lu = last_user(e)
+    if lu then return lu, 'last_user' end
+  end
+  -- The same from what the caller read already (a surface's ghosts in one pass: about half the reads).
+  function M.owner_at(surface_name, name, pos, tile, e)
+    local L = st()
+    local t = L.pidx[surface_name]
+    local r
+    if not L.pidx_done or (t and t[nkey(pos.x, pos.y)]) then r = (tile and L.tmap or L.map)[surface_name .. '|' .. name .. '|' .. pos.x .. ',' .. pos.y] end
+    if r then return r.a, 'record' end
+    local lu = last_user(e)
+    if lu then return lu, 'last_user' end
   end
   function M.stats()
     local L = st()

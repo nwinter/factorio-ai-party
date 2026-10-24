@@ -22,7 +22,8 @@ from workcard import RepeatFeed
 # carry platform=NAME (vendor/factorio-harness runtime.lua on_platform), else at the given positions on the body's
 # surface (ghosts, paste and deconstruction need no walking).
 REMOTE = {"place_ghosts": "building", "paste": "pasting a blueprint", "blueprint_place": "pasting a blueprint",
-          "deconstruct": "deconstructing", "cancel_deconstruction": "cancelling deconstruction"}
+          "deconstruct": "deconstructing", "cancel_deconstruction": "cancelling deconstruction",
+          "remove_ghosts": "removing ghosts"}
 # Platform actions that count only with platform=NAME (else they act where the body is): views and settings through
 # remote view (runtime.lua on_platform), a rocket launched to the platform, cargo dropped from its hub, its schedule
 # and hub requests (space.lua).
