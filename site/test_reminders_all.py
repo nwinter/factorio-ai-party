@@ -182,6 +182,12 @@ def pv1_tests():
     # a first result that is the job's last result is not sent twice
     k = push_live.latest_without_results(dict(r42(0), latest=r42(0)["latest"][1:]), True)
     assert k["result_first"] == {"name": "sol", "agent": "sol", "same": True} and k["results_given"] == 1, k
+    # the stream cuts a recipient's result to 240 characters: the author's cut start still counts as the last result
+    whole = "step 3: Sol owns red qualification " + "s" * 400
+    c = dict(r42(0), last_result=whole, latest=[{"name": "sol", "agent": "sol", "state": "done", "acked_ago_s": 478, "result": whole[:237] + "..."},
+                                                 {"name": "astra", "agent": "astra", "state": "done", "acked_ago_s": 780, "result": whole[:237] + "..."}])
+    c = push_live.latest_without_results(c, True)
+    assert [x.get("result_omitted") for x in c["latest"]] == ["same", None] and c["latest"][1]["result"], c["latest"]  # astra did not write it
     # nothing left out: the job as it came
     assert push_live.latest_without_results(job(1, latest=[{"name": "luna", "acked_ago_s": 60}]), False) == job(1, latest=[{"name": "luna", "acked_ago_s": 60}])
     # the full board document: the same marks
