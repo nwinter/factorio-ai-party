@@ -61,6 +61,13 @@ return function(api)
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret', 'artillery-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d24 batch160 QC1, Astra #2208: a railgun refilling after shots read as another machine on low power) a turret that
+  -- spends an electric buffer on shots (laser, tesla, railgun): an electric, ammo or fluid turret with an electric
+  -- buffer. It reads low_power while it refills at its input limit; such turrets are counted apart from machines.
+  local SHOT_TYPES = {['electric-turret']=true, ['ammo-turret']=true, ['fluid-turret']=true}
+  function M.shot_turret(e)
+    return SHOT_TYPES[e.type] == true and (try(function() return e.electric_buffer_size end) or 0) > 0
+  end
   -- Reads with no closure made (d22 batch110 BT1: on a copy of world n the background view and pole map made 1.5 MB of
   -- garbage a second, much of it a `try(function() return x.k end)` closure per entity read): o[k], o[k](...), #x and
   -- fn(...), each nil when the read or call fails, as try gives. EMPTY is never written.
@@ -728,7 +735,9 @@ return function(api)
       local st = defines.entity_status or EMPTY
       net.machines = net.machines + 1
       local status = e.status
-      if status == st.low_power then net.low = net.low + 1 elseif status == st.no_power then
+      -- (QC1) a turret firing from a buffer on low power: counted apart (refilling after shots, or short: power tells)
+      if status == st.low_power and e.type == 'electric-turret' then net.turrets_low = (net.turrets_low or 0) + 1
+      elseif status == st.low_power then net.low = net.low + 1 elseif status == st.no_power then
         net.none = net.none + 1
         local g = net.powerless
         g.names[e.name] = (g.names[e.name] or 0) + 1
@@ -901,7 +910,8 @@ return function(api)
           n.acc_refs = n.acc_refs or {}
           n.acc_refs[net.id] = net.accs
         end
-        parts[#parts+1] = string.format('machines %d: %d low power, %d no power', net.machines, net.low, net.none)
+        parts[#parts+1] = string.format('machines %d: %d low power, %d no power%s', net.machines, net.low, net.none,
+          net.turrets_low and string.format('; %d electric turret%s on low power apart (refilling after shots or short of supply: power tells which)', net.turrets_low, net.turrets_low == 1 and '' or 's') or '')
         if #net.boilers > 0 then
           parts[#parts+1] = string.format('boilers %d: their own fuel %s at this draw%s%s', #net.boilers,
             net.fuel_min and string.format('%d min', math.floor(net.fuel_min)) or 'n/a (no draw)',
@@ -2741,8 +2751,9 @@ return function(api)
             if e.type ~= 'electric-energy-interface' then out.generators.count = out.generators.count + 1; out.generators.kw = out.generators.kw + max_output(e) * 60 / 1000 end
           else
             local buf = try(function() return e.electric_buffer_size end) or 0
-            if buf > 0 and e.type == 'electric-turret' then
-              -- (PX1) a laser turret refills its buffer after shots at its input limit and reads low_power meanwhile
+            if buf > 0 and SHOT_TYPES[e.type] then
+              -- (PX1) a laser turret refills its buffer after shots at its input limit and reads low_power meanwhile;
+              -- (QC1) a railgun and a tesla turret too
               local t = turrets
               t.count, t.bar = t.count + 1, t.bar + math.min(1, (e.energy or 0) / buf)
               if e.status == st.low_power then t.low_power = t.low_power + 1 elseif e.status == st.no_power then t.no_power = t.no_power + 1 end
@@ -2773,14 +2784,18 @@ return function(api)
       low_power_bars_pct=out.machines.low_power > 0 and math.floor(100 * lfill / out.machines.low_power + 0.5) or nil}
     sa = out.satisfaction
     out.machines = nil
-    -- (PX1) electric turrets apart: on low power while no other machine (roboports aside) is on low or no power, they
-    -- are recharging after shots; with any, the network is short of supply
+    -- (PX1) turrets firing from a buffer apart (QC1: lasers, railguns, tesla turrets). The network is short only when a
+    -- machine (roboports aside) is on low or no power (short_by machines), or its accumulators are empty (1% or less)
+    -- while it draws all it produces (short_by accumulators); else turrets on low power are recharging after shots,
+    -- when a machine or an accumulator on it says so.
     if turrets.count > 0 then
       local t = turrets
       sa.turrets = {count=t.count, low_power=t.low_power, no_power=t.no_power, power_bars_pct=math.floor(100 * t.bar / t.count + 0.5)}
       if t.low_power > 0 then
-        if short == 0 and sa.machines > 0 then sa.turrets.recharging = t.low_power
-        elseif short > 0 then sa.turrets.network_short = t.low_power end
+        local acc_empty = a.count > 0 and a.buf > 0 and a.j <= 0.01 * a.buf and made > 0 and draw >= 0.99 * made
+        if short > 0 then sa.turrets.network_short, sa.turrets.short_by = t.low_power, 'machines'
+        elseif acc_empty then sa.turrets.network_short, sa.turrets.short_by = t.low_power, 'accumulators'
+        elseif sa.machines > 0 or a.count > 0 then sa.turrets.recharging = t.low_power end
       end
     end
     out.qualities = #qualities > 0 and qualities or nil
@@ -2796,9 +2811,11 @@ return function(api)
         sa.low_power_bars_pct and string.format(', those on low power %d%%', sa.low_power_bars_pct) or '') or '')
     local t = sa.turrets
     if t then
-      parts[#parts+1] = string.format('electric turrets %d: %d low power, %d no power, their buffers %d%% full on average%s', t.count, t.low_power, t.no_power, t.power_bars_pct,
-        t.recharging and string.format(' (the %d on low power recharging after shots: no other machine on low or no power)', t.recharging)
-        or t.network_short and string.format(' (the network short: %d other machine%s on low or no power)', short, short == 1 and '' or 's') or '')
+      parts[#parts+1] = string.format('turrets firing from a buffer (laser, railgun, tesla) %d: %d low power, %d no power, their buffers %d%% full on average%s', t.count, t.low_power, t.no_power, t.power_bars_pct,
+        t.recharging and string.format(' (the %d on low power recharging after shots: no machine on low or no power%s)', t.recharging,
+          a.count > 0 and string.format(', accumulators %d%% full', a.buf > 0 and math.floor(100 * a.j / a.buf + 0.5) or 0) or '')
+        or t.short_by == 'machines' and string.format(' (the network short: %d machine%s on low or no power)', short, short == 1 and '' or 's')
+        or t.short_by == 'accumulators' and string.format(' (the network short: its accumulators empty, %.1f of %.1f MJ, and it draws %s of the %s it produces)', a.j / 1e6, a.buf / 1e6, mw(out.draw_kw), mw(out.production_kw)) or '')
     end
     if out.poles > 0 then
       local carry = {}
@@ -2841,8 +2858,9 @@ return function(api)
       end
       local drain = try(function() return src.drain end)
       if drain and drain > 0 then out.drain_kw = kw(drain) end
-      -- (PX1) an electric turret's buffer: spent on shots, refilled at its input limit (low_power meanwhile)
-      if e.type == 'electric-turret' then
+      -- (PX1) an electric turret's buffer: spent on shots, refilled at its input limit (low_power meanwhile); (QC1) a
+      -- railgun's too (its 10 MJ a shot has no API field: the buffer is read)
+      if M.shot_turret(e) then
         local buf = try(function() return e.electric_buffer_size end) or 0
         if buf > 0 then
           local j = try(function() return e.energy end) or 0

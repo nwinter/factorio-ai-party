@@ -528,15 +528,19 @@ return function(api)
     end
     -- at a stop, the location's solar power in space (the platform surface's own property read 100 at Gleba's 200%)
     local sp = here and try(function() return prototypes.space_location[here].solar_power_in_space end)
-    local low, none = 0, 0
+    local low, none, tlow = 0, 0, 0
     local LOW, NONE = try(function() return defines.entity_status.low_power end), try(function() return defines.entity_status.no_power end)
-    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{force=pl.force, type={'assembling-machine', 'furnace', 'inserter', 'ammo-turret', 'asteroid-collector', 'radar', 'roboport', 'lab', 'beacon'}} end) or {}) do
+    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{force=pl.force, type={'assembling-machine', 'furnace', 'inserter', 'ammo-turret', 'electric-turret', 'asteroid-collector', 'radar', 'roboport', 'lab', 'beacon'}} end) or {}) do
       local stt = try(function() return e.status end)
-      if stt and stt == LOW then low = low + 1 elseif stt and stt == NONE then none = none + 1 end
+      -- (d24 batch160 QC1) a turret firing from a buffer (laser, railgun, tesla) on low power counted apart
+      local shot = (e.type == 'ammo-turret' or e.type == 'electric-turret') and (try(function() return e.electric_buffer_size end) or 0) > 0
+      if stt and stt == LOW and shot then tlow = tlow + 1
+      elseif stt and stt == LOW then low = low + 1 elseif stt and stt == NONE then none = none + 1 end
     end
-    local solar_line = panels > 0 and string.format('%d solar panels: %d kW at full sun%s; %d machines on low power, %d on no power now', panels, math.floor(peak + 0.5),
+    local tlow_text = tlow > 0 and string.format('; %d turret%s firing from a buffer (laser, railgun, tesla) on low power apart (refilling after shots, or short: platform_power tells which)', tlow, tlow == 1 and '' or 's') or ''
+    local solar_line = (panels > 0 and string.format('%d solar panels: %d kW at full sun%s; %d machines on low power, %d on no power now', panels, math.floor(peak + 0.5),
       sp and string.format(', about %d kW at %s\'s %d%% solar power', math.floor(peak * sp / 100 + 0.5), here, math.floor(sp + 0.5)) or ' (flying: the stops\' solar power is on the hub line)', low, none)
-      or string.format('no solar panels; %d machines on low power, %d on no power now', low, none)
+      or string.format('no solar panels; %d machines on low power, %d on no power now', low, none)) .. tlow_text
     local solar = {}
     local seen = {}
     for _, l in ipairs(legs) do
