@@ -10,7 +10,10 @@ inbox (the first copy, redacted, hidden viewers and the owner's lines left out) 
 oldest first; the page puts the counts first, then what is not verified (in progress, planned, live), then the
 verified ones newest first, then the notices on their own; tools/operator_updates.py adds rows, moves them on with
 their dates and adds notices (times given, no clock), and refuses what the build would; build.py writes /updates/ and
-links it in the nav.
+links it in the nav. (d23, viewer Aurora 18:46: "Could superseded queue notes become dated history, so each card's
+current status and note agree?") set --note keeps the note it replaces as dated history, folded under the current
+note; a note written under another status says so; a status past planned needs work: the tool refuses one without it,
+problems() and the page flag one already in the data.
 """
 import html, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
@@ -54,6 +57,12 @@ def refusals():
         {"updates": [{"id": "a", "title": "x", "status": "live", "dates": {"live": "22 Oct 20:18"}}]},
         {"updates": [{"id": "a", "title": "x", "status": "live", "area": "game"}]},
         {"updates": [], "notices": [{"t": "2026-10-22 20:18", "text": "deployed"}]},
+        {"updates": [{"id": "a", "title": "x", "status": "live", "history": [{"note": "old"}]}]},
+        {"updates": [{"id": "a", "title": "x", "status": "live", "history": [{"until": "2026-10-23 18:52", "note": ""}]}]},
+        {"updates": [{"id": "a", "title": "x", "status": "live", "history": [{"until": "2026-10-23 18:52", "note": "o", "status": "done"}]}]},
+        {"updates": [{"id": "a", "title": "x", "status": "live", "history": "old"}]},
+        {"updates": [{"id": "a", "title": "x", "status": "live", "note_at": "18:52"}]},
+        {"updates": [{"id": "a", "title": "x", "status": "live", "note_status": "queued"}]},
     ]
     with tempfile.TemporaryDirectory() as d:
         for i, data in enumerate(bad):
@@ -136,6 +145,32 @@ def page(asks, replies):
         assert not missing, (missing, b)
     b, _ = updates.build_page({"updates": [u for u in data["updates"] if u["status"] != "planned"], "notices": []}, asks, replies, esc)
     assert '<span class="fx-chip fx-chip--grey upd-count">planned: 0</span>' in b and 'id="planned"' not in b, b
+    # past planned with no work: flagged on the page and by problems(), built anyway; planned needs none
+    live = body.split('id="u-live-a"', 1)[1].split("</li>", 1)[0]
+    assert '<span class="upd-flag">no batch recorded</span>' in live, live
+    assert "upd-flag" not in plan and "upd-flag" not in row, (plan, row)
+    assert sorted(updates.problems(data)) == sorted(["operator update old-verified: verified with no work (batch)",
+                                                     "operator update new-verified: verified with no work (batch)",
+                                                     "operator update live-a: live with no work (batch)"]), updates.problems(data)
+    # the current note with its date; one written under another status says which; earlier notes folded, newest first
+    hist = {"updates": [
+        {"id": "scan-labels", "title": "Scans", "status": "live", "work": "batch121", "note": "Counts apart.",
+         "note_at": "2026-10-23 18:52", "note_status": "live",
+         "history": [{"until": "2026-10-23 08:16", "note": "Queued.", "status": "planned"},
+                     {"from": "2026-10-23 08:16", "until": "2026-10-23 18:52", "note": "Received; not yet given to an engineer.", "status": "in progress"}]},
+        {"id": "stale", "title": "Stale", "status": "live", "work": "batch1", "note": "Being worked on.", "note_at": "2026-10-23 09:00", "note_status": "in progress"},
+        {"id": "legacy", "title": "Legacy", "status": "live", "work": "batch2", "note": "Old style."}], "notices": []}
+    b, _ = updates.build_page(hist, {}, {}, esc)
+    r1 = b.split('id="u-scan-labels"', 1)[1].split("</li>\n", 1)[0].split('<li class="upd"', 1)[0]
+    assert '<p class="small upd-note">Counts apart. <span class="muted">(Fri 23 Oct 18:52)</span></p>' in r1, r1
+    assert '<details class="upd-history"><summary>Earlier notes (2)</summary>' in r1, r1
+    assert r1.index("Fri 23 Oct 08:16 to Fri 23 Oct 18:52, while in progress:") < r1.index("until Fri 23 Oct 08:16, while planned:"), r1
+    assert "Received; not yet given to an engineer." in r1 and r1.index("upd-note") < r1.index("upd-history"), r1
+    r2 = b.split('id="u-stale"', 1)[1].split('<li class="upd"', 1)[0]
+    assert '<span class="muted">Note from when it was in progress, Fri 23 Oct 09:00:</span> Being worked on.</p>' in r2, r2
+    r3 = b.split('id="u-legacy"', 1)[1].split('<li class="upd"', 1)[0]
+    assert '<p class="small upd-note">Old style.</p>' in r3 and "upd-history" not in r3, r3
+    assert updates.problems(hist) == []
 
 
 def tool():
@@ -166,6 +201,33 @@ def tool():
         assert run("set", "nope", "--status", "live", "--at", "2026-10-23 12:00").returncode != 0
         assert Path(f).read_text() == before
         assert Path(f).read_text().count("\n") == 8, Path(f).read_text()  # one row a line
+        # a status past planned needs work: refused without it when the row has none
+        assert run("add", "nobatch", "--title", "x", "--by", "Aurora", "--status", "live").returncode != 0
+        assert Path(f).read_text() == before
+        assert run("add", "queued", "--title", "Queued one", "--by", "Aurora", "--note", "Queued, unassigned.",
+                   "--at", "2026-10-23 08:16").returncode == 0
+        r = run("set", "queued", "--status", "in progress", "--at", "2026-10-23 09:00")
+        assert r.returncode != 0 and "in progress needs --work" in r.stderr, r
+        # set --note: the note it replaces goes into history, dated, with its status then
+        r = run("set", "queued", "--status", "in progress", "--work", "batch130 CL1", "--note", "With an engineer.", "--at", "2026-10-23 09:00")
+        assert r.returncode == 0 and r.stdout.strip() == "queued: in progress 2026-10-23 09:00; note set; the one it replaced is in history (1)", r
+        r = run("set", "queued", "--status", "live", "--at", "2026-10-23 12:00")
+        assert r.returncode == 0 and r.stdout.strip() == "queued: live 2026-10-23 12:00; note kept, written while in progress", r
+        r = run("set", "queued", "--note", "Live: scans count slots.", "--at", "2026-10-23 12:05")  # a note alone
+        assert r.returncode == 0, r
+        assert run("set", "queued", "--note", "Live: scans count slots.", "--at", "2026-10-23 12:06").stdout.strip() == "queued: updated"
+        assert run("set", "queued").returncode != 0
+        q = next(u for u in updates.load(f)["updates"] if u["id"] == "queued")
+        assert q["status"] == "live" and q["dates"] == {"planned": "2026-10-23 08:16", "in progress": "2026-10-23 09:00", "live": "2026-10-23 12:00"}, q
+        assert (q["note"], q["note_at"], q["note_status"]) == ("Live: scans count slots.", "2026-10-23 12:05", "live"), q
+        assert q["history"] == [
+            {"until": "2026-10-23 09:00", "note": "Queued, unassigned.", "status": "planned", "from": "2026-10-23 08:16"},
+            {"until": "2026-10-23 12:05", "note": "With an engineer.", "status": "in progress", "from": "2026-10-23 09:00"}], q
+        # a row with no work already: list marks it
+        data = json.loads(Path(f).read_text())
+        data["updates"].append({"id": "old-live", "title": "Old live", "status": "live"})
+        Path(f).write_text(json.dumps(data))
+        assert "old-live" in run("list").stdout and run("list").stdout.count("(no work)") == 1, run("list").stdout
 
 
 def build():
@@ -191,7 +253,8 @@ def main():
     tool()
     build()
     print("operator updates: ok (the JSON checked, asks and replies quoted from the run folders, open before verified "
-          "before notices, the tool's add/set/notice, /updates/ built and in the nav)")
+          "before notices, the tool's add/set/notice, notes kept as dated history, no work flagged or refused, /updates/ built "
+          "and in the nav)")
 
 
 if __name__ == "__main__":
