@@ -27,7 +27,8 @@
   focus lines, a teammate's with `agent`. A focused project step not done across 2 checks reads so here and in
   board_progress. Its item marked done or dropped (or its focused step done) clears it: that board_update's reply has
   `focus_cleared` and `ready` (open unowned tasks and requests, free steps of unblocked projects open to you, those the
-  team plan names first, at most 5), and `status` says no focus is set until one is. Example:
+  team plan names first, at most 5), and `status` says no focus is set until one is. A step edit or removal, a link
+  taken out or a title edit marks a focus or plan line naming what it took away stale until set again. Example:
   `./fh call board_focus --args '{"id":12,"step":3,"verify":"item_count iron-plate>=400 at 10,39"}'`
 - `checks {add | run | remove | id | item | all}`: checks kept with their last observed result. `add: {name,
   condition | blueprint, item?, area? | position+radius?, stale_after_s?}` adds one and runs it: a wait_until condition

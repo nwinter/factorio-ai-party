@@ -7173,6 +7173,18 @@ fh watch    # deploy on every change
   team's or one teammate's lines. At each 10-minute check of that item, a focused project step not done (or a text
   step with no progress seen) counts; across 2 checks the focus line and board_progress say "the focused step shows no
   completion across 2 checks"; done clears it. Nothing is assigned.
+  - Stale marks (d23 batch123 CF1, viewer Aurora 09:44: Luna's focus on #1052 still named the approved mash site
+    after Astra rewrote step 8 at 16:10). A board_update that edits or removes a project step, takes an item out of
+    blocked_by, changes the parent or edits the title takes words away (staletext.lua: runs of 4 or more letters, the
+    common ones left out; an edited text's words the new text lacks; a link's title words and its #N). A focus that
+    names at least 2 of them (all of them when fewer), or #N of a link taken out, or a removed focused step by number,
+    is marked stale. A team-plan line is marked on the same rule. The focus is read when it is on the item or its text
+    names #id. A plan line is read when it names #id, or its agent owns or focuses the item. The mark shows on the
+    focus line ("marked stale 2s ago: step 3 of #1052 edited by astra (was: "..."); this text names mash, site"), the
+    focus rows (`stale`, `stale_tick`) and the plan's lines and rows. The update's reply lists the marks (`stale`).
+    Each marked agent who did not make the change hears it once in their alerts. A new board_focus or board_plan
+    {doing} ends the mark. The stream's cards show it beside the job; the project panel shows it beside a focus
+    blocker. Words the new text keeps leave no mark.
 
 ## d17 backlog (the board's open harness requests, operator 06:10 and 10:05)
 - #820 (Opus 105h09): his recover ended "collected" at (255.4,-175.3), standing on the rails at its stop. A locomotive
@@ -12460,6 +12472,115 @@ sources on their networks (an arithmetic combinator's +10000, two readers on one
 - Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
   `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.
 
+## d23 batch123 CF2 (eng/d20-batch123): a watch split by an edit inside what it measures (mixed.lua)
+
+Viewer Aurora (site:4494): "Could measurement watches flag module or feed edits during a test and mark the sample as
+mixed? Preserve the before/after data and notify its owner to start a clean window." In shift63, Sonnet's module swaps
+on Gleba breeders invalidated Luna's samples three times, and she reset each window by hand.
+
+- What counts as an edit, for the bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch,
+  and flight_watch while it watches):
+  - Something done to a measured entity: built, mined, destroyed, configured, rotated or wired, or items moved in or
+    out by a call or a ctrl-click.
+  - A feeder of one built, removed or configured: an inserter or drill whose drop or pickup point is on it, a loader
+    touching it, or a beacon whose supply area reaches it.
+  - For belt_flow: a belt, splitter, loader or inserter within a tile of the sampled line's box.
+  - On a watched platform: any turret, collector, thruster, beacon, inserter, loader or belt.
+- Where edits are seen:
+  - The harness's builds and mines, and the configure, rotate, transfer, feed, refuel, rearm and wire calls of any
+    agent.
+  - The events control.lua forwards: on_built_entity, the mined events, on_entity_died, on_player_fast_transferred,
+    and on_gui_opened/closed when the recipe or modules differ between them.
+  - Not seen: construction robots' and platforms' own builds (no event of them is forwarded).
+  - A second edit of the same entity in the same tick counts once.
+- What happens at the first edit and each one after:
+  - The watch's read up to the edit is kept: `mixed.parts` holds from_tick, to_tick, line, and up to 64 lines.
+  - The watch starts again from the edit tick with its first arguments, to the same end tick. A flight watch's counts
+    begin again, to its arrival or limit.
+  - The watch ends at the edit instead, its final being that part, in three cases: an entity it measures was mined or
+    destroyed, the new start is refused, or fewer seconds are left than a new watch takes.
+- Where it shows:
+  - `mixed.edits` gives each edit's tick, what was done, by whom, on which entity, and how it touches the watch.
+  - The watch's read (`uptime {}`, `turret_tally {}`, belt_flow, platform_supply's tally, platform_defense) has
+    `mixed`. The watch row (status work, idle, sleep) adds the line.
+  - The owner hears it once in team alerts.
+- The copy of world n (10:10 save): Grok's uptime on biochambers (54.5,58.5) and (52.5,48.5) ran 12 s. Then Grok's
+  configure of 4 speed-module-2 into (54.5,58.5) split it. The read kept the 12 s part, with 9 completions over the two
+  machines, and the new window ran from the configure's tick.
+- Costs on the copy (emulated amd64, no tick work):
+  - An index rebuild after a watch starts or splits: 0.76 ms.
+  - The running-watch check with stored watches: 0.13 ms.
+  - An edit of ours that touches no watch: 0.29 ms; with no watch stored: 0.004 ms.
+  - A death of another force's entity is dropped at the force check.
+
+## d23 batch123 CF3 (eng/d20-batch123): supply left without an active delivery path (freightpath.lua)
+
+Viewer Aurora (site:4495): "Could disabling a freight request or retiring a route flag any essential supply left without
+an active delivery path, naming the missing link and owner? Please test the bioflux case."
+
+- A delivery path of an item to a planet has two ends:
+  - A platform whose hub requests the item (an active section, minimum above 0) from an import planet its schedule
+    stops at.
+  - A planet the schedule also stops at, whose landing pad requests the item.
+- The calls checked: `requests` on a hub or landing pad that changes slots or sections, `platform_schedule`, and
+  `platform_delete` (a platform scheduled for deletion has no paths). Each reads the paths before and after.
+- Which items are read:
+  - A hub's or platform's call: the items its hub asks now.
+  - A pad's call: the items the pad asks now.
+  - Only the hubs that ask one of them have their schedule and sections read (the game's compiled hub requests carry no
+    import planet).
+- Each item and planet that had a path and has none is a `supply_left` line. It names the paths it had and the link
+  each lost (the pad's request, the hub's request, a stop, the platform deleted). It also gives who set that link last
+  before the call (`editlog.owner`: the newest edit of that section or the schedule before this tick, or "no earlier
+  editor recorded"), the planet's use in the last 10 minutes, and its pad's stock. That editor, when someone else, gets
+  one tell; `supply_left_told` names them.
+- The bioflux case on the copy (10:10 save). Cinder and Meridian-V request bioflux from Gleba (40 each) and stop at
+  Nauvis. Nauvis's pad section 6 asks bioflux 20; it was off in the save, so it was turned on first. Then:
+  - Astra turned off section 6: "bioflux to nauvis: no active delivery path left; it had Cinder from gleba, Meridian-V
+    from gleba; nauvis's landing pad no longer requests bioflux (set last by opus at tick 52085722); nauvis used 10 in
+    the last 10 minutes; nauvis holds 0 in its landing pad". Opus was told. Tick 52085722 is Opus's clear of the pad's
+    bioflux at 16:58.
+  - With the pad back on, turning off Meridian-V's section 23 left Cinder's path: no line. Then turning off Cinder's
+    section 1 gave "... it had Cinder from gleba; Cinder's hub no longer requests bioflux from gleba (set last by sol
+    at tick 49459484) ..." (Sol told).
+  - Cinder's schedule cut to Gleba alone gave "Cinder's schedule no longer stops at nauvis (no earlier editor
+    recorded)".
+- Costs on the copy:
+  - A pad call (the pad asks 40 items, 15 hubs read): 3.8 ms a read, two reads a call, plus 0.15 ms for the paths and
+    their difference.
+  - A Meridian-V call (2 items): 1.1 ms a read.
+  - The whole pad call, the request edit included: 15-17 ms.
+  - Reading every hub's sections (before the narrowing) took 6.5 ms; the pads come from the census.
+
+## d23 batch123 CF4 (eng/d20-batch123): one scan call's work bounded
+
+Operator 10:25. In the world n profile of 10:17-10:18, `observe {scope: scan}` ran 22 calls at 96 ms each on average.
+The worst game second was 670 ms, from 4 scans, and the 3 worst seconds of the minute were all scans. They were Sol's,
+17:17:53-17:17:58Z: Asterion in 16-tile bands (area 112x16; belts, splitters, ammo turrets, inserters and assemblers;
+fields inventory; limit 1024).
+
+On a copy of world n (10:10 save), the y=32 band held 697 candidates (669 belts). Finding them took 0.5-0.8 ms. Its
+call took 166 ms with no fields and 346-519 ms with inventory. Three costs, each fixed with the facts per row unchanged
+(the inventory band's reply is the same 74,433 bytes before and after):
+
+- `fields: inventory` asked all 29 inventory names of each entity through a refused pcall. A belt failed every one,
+  then read its lanes. It now asks only the inventories its type takes, in the same order (`M.scan_inventories`,
+  memoised by type). The band went from 346-519 ms to 103 ms.
+- With `platform=` the caller is a remote-view stand-in, and each `p.surface` or `p.force` read went through it. The
+  candidate loop (known, hidden_own) read them several times for each of the 697. They are now read once a call. The
+  band at `limit: 1` went from 70 ms to 21 ms.
+- The sorts read each row's position and name about 20 times. They are now read once a row, and each row's type and
+  force once.
+- Encoding the reply took about 39 ms of the band's 100 ms. Rows now come 256 a call (`M.SCAN_PAGE`) in reading order:
+  `page`, `pages`, `rows` ("257..512 of 697") and, before the last, `more {rows, next {page}, line}`; `page: N` with the
+  same arguments lists the next. A scan keeping 256 rows or fewer reads as before.
+
+Sol's 18 band calls on the copy, every page, same load (host load average 12-14):
+- Main's runtime: 18 calls, 3.78 s in all, 97-353 ms a call (210 ms on average).
+- This branch: 38 calls (pages), 1.39 s in all, 36 ms a call on average, 25-56 ms for a full 256-row page, with one
+  129-220 ms outlier band in a run under load.
+- The copy reads about 2.2 times world n's cost for these calls (210 against 96 ms on average), so a full page should
+  be near 20-25 ms on world n.
 ## d22 batch122 CE1 (eng/d20-batch122): a reply closes only what it answers, for teammates too
 
 Viewer Aurora (08:48): "can an unrelated reply to someone clear their other unanswered requests?" It could, for

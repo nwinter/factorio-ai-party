@@ -78,6 +78,12 @@
   send. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
   `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
   Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
+- Supply left without a path: a `requests` call that changes a hub's or landing pad's slots or sections, a
+  `platform_schedule` call and a `platform_delete` call read the delivery paths of the items involved before and
+  after. A path is a platform whose hub requests the item from an import planet it stops at, and which also stops at a
+  planet whose landing pad requests it. Each item and planet left with none is a `supply_left` line: the paths it had,
+  the link each lost, who set that link last (the edit log), the planet's use in the last 10 minutes, and its pad's
+  stock. That editor, when someone else, is told once (`supply_left_told`).
 - `platform_rename {platform, name}`: renames one, listing the queues, orders, plans and board items still naming the
   old name (`still_named`; none changed).
   Example: `./fh call platform_rename --args '{"platform":"Sunward","name":"Kestrel"}'`
