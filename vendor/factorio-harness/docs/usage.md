@@ -13827,6 +13827,38 @@ Fixed besides gates:
     platform_plan ready read too, with no job running); the reply's own parts.
   - Test: tests/d24_batch166.lua (fails on main: no job); tests/platsupport.lua and tests/d24_batch162.lua set
     `PP.SLICE=math.huge` to plan in one call.
+## d24 batch165 QH1 (eng/d20-batch165): platform_plan {phases}, an ordered floor plan played read only (Sol #2223)
+- Sol: Asterion's narrow hull 2210 took failed drafts: each floor check saw the marks of the moment, not the floor the
+  steps before would leave. What worked (Astra, runs/shift69/team-tools/astra-shift69-narrow-report.md): the live
+  marks cancelled, the left 4 support tiles (x -50, y 123..126) and a solid right fill (x 45..53, y 118..137), then
+  the left wing and the right columns 53, 52, 51, 50 one at a time.
+- floorphases.lua: `phases: [{cancel?, remove?, fill?, name?}]` (1..16), tiles as {x,y}, an area, "x0..x1,y0..y1"
+  (inclusive tiles) or "x,y". A model of the floor: its tiles (read as reached), its deconstruction marks and
+  foundation tile ghosts within 8 tiles of the phases' tiles, the hub's foundation and room. Each phase: cancel (marks
+  and ghosts dropped), remove (floor marked; a ghost dropped), fill (a ghost on empty space; a marked tile kept), then
+  the hub's rules (tilecheck.lua) played until nothing changes: every mark, then every ghost, in the order given, then
+  each one beside a tile that changed. A marked tile goes with one run of empty space beside it, nothing standing on
+  it, room in the hub; a ghost is built with foundation among its 8 neighbours, at most one run beside it, out of
+  thruster exhaust, within 200 tiles north of the hub, while the hub holds foundation (a build takes one, a removal
+  gives one back). The run count is tilecheck's runs (a test checks all 256 rings).
+- Per phase: went, built, marks_waiting, ghosts_unbuilt, waiting and unbuilt ("(x,y): why", 8 each), cut (floor no
+  longer joined to the hub's tile by sides, followed 256 tiles; what stands on it), settled, line. After: end
+  (removed, added, as areas "x0..x1,y0..y1"), rollback (fill back the removed tiles, then take up the added, played
+  the same way from the end: restores and order_checked, else "coordinates only"; its areas are phases input).
+- Cost (copy of world n, _autosave9; the read's Lua costs about the same on world n: an 8x8 phase 2.6 ms there, 3.0
+  ms on the copy). A rule check or tile read about 10-20 us; a whole-platform search on Asterion 2.5-3 ms; a number in
+  a reply about 28 us in helpers.table_to_json (strings next to none, so lists and areas are strings). So the read is a
+  job of steps charged in units (a rule check or tile read 1; a list entry walked 0.1-0.2; 4 tiles followed for a cut 1;
+  a search the area it looks at / 250): 150 units in the call, then 120 a tick (floorphases.tick; the oldest running
+  plan first; 4 kept, phases_check reads them). Areas stay areas until a phase walks them. Measured each tick and call
+  (930 ticks of 14 plans, 2 rounds of Sol's five sequences and two 8192-tile plans): the call's own work 0.7-3.2 ms
+  (the whole dispatch 4-5 ms); a tick p50 0.6 ms, at most 2.5 ms outside one stretch where every call on the copy ran
+  4-5x slower (start calls 19-20 ms instead of 4-5; ticks up to 14.6 ms and one 61 ms); Sol's nine-phase sequence 27
+  ticks, about 1.1 ms a tick. Reading a done plan 3.6-4.7 ms. floorphases.tick idle 0.006 ms a tick (profile_ticks 60 s;
+  main has none). Bounded: 8192 tiles and 40000 rule checks a plan.
+- The support read (platform_plan support: true) took 275 ms on the copy and 388 ms on world n (operator, 13:56); phases
+  reads none of its entities (its own model and tilecheck's rules), so batch166's bound of support does not touch it.
+- Test: tests/d24_batch165.lua (main has no phases: platform_plan ignores it).
 
 ## d24 batch164
 
