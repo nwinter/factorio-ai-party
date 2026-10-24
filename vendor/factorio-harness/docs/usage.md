@@ -3370,7 +3370,7 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
       - passive now (both forms): it leaves the character's action and queue alone, as `blueprint_save` does.
     - The operator read `blueprint_library` pages the strings: about 1 MB a read (`max_bytes`), at least one, and
       `strings_after` names the last entry whose string came. tools/bplibrary.py reads on with `{since, after}` until
-      none is left.
+      none is left. (d24 batch147: tools/bplibrary.py now reads `{probe}` and pages; see that section.)
     - Real engine (the private copy, branch runtime, bot sol):
       - astra's Starling-four-furnace (203 entities, 723 tiles, 6.8 KB) was exported to
         `blueprints/Starling-four-furnace.txt`, then imported as u2-test-copy with the anchor the export gave.
@@ -13268,3 +13268,28 @@ Fixed besides gates:
 - Tests: tests/d24_batch141.lua (fails on main with Sol's error; its cp2 block, a userdata platform's schedule edit
   recorded and told, fails on main with `the edit log records the stops`); tests/d17_batch31.lua's finite-max line now
   reads the trash wording, with the same counts.
+## d24 batch147 PS1 (eng/d20-batch147): the blueprint library mirror's steady pass reads the revision alone
+- tools/bplibrary.py's watch (start-team.sh, every 60 s) read every entry's facts each pass: 15.3 ms on world n
+  (158 entries, 133 KB, tick 56169756), over world n's 10 ms rule.
+- The operator read `blueprint_library` takes two new forms (blueprints.lua):
+  - `{probe: true}`: `{revision, tick, count}` alone. 0.06 ms on world n (06:41, the read's Lua in the harness mod's
+    state), 0.17 ms through dispatch on the private copy.
+  - `{since, limit, after?}`: a page of `limit` entries by name after `after`, each with its facts, and the string of
+    each changed since `since`, 400 KB of strings a page at most (at least one); `next_after` names the page's last entry
+    while more follow.
+  - Without `probe` or `limit`, the read is as before (`strings_after`).
+- A pass reads the probe; when the revision is the one it last saw and every entry in index.json has its NAME.txt here,
+  that is the pass. Otherwise it reads pages of 24 (`PAGE`) from `since` (from -1 when a file is missing), and writes
+  NAME.txt, deleted/ and index.json once, after the last page. A page whose revision differs from the first page's ends
+  the pass unwritten; the next pass reads again. A runtime without the probe answers with its whole read, which the
+  pass still takes.
+- Cost on world n (the page's Lua, one run each, smallest first): pages of 2, 4, 8, 16 entries 0.23, 0.47, 0.79,
+  1.75 ms; pages of 32 2.5-4.9 ms (six pages). The JSON's numbers are most of it (on the copy each number in a reply
+  costs about 0.03 ms). On the copy (4.6x world n's times: the old read 70.8 ms there): a page of 24 11.6 ms, the
+  heaviest strings page (389 KB) 12.4 ms.
+- The change path on the copy: a first pass 10 reads (158 strings); the next 1 read, index.json untouched; an import
+  8 reads, its string alone written; its delete 8 reads, the file to deleted/.
+- tools/stream/library.py reads index.json, never the game. The stream's `library_areas` (live.py, every 60 s) read
+  3.1 ms on world n. tools/read_cost.py lists `blueprint_library_probe`, `blueprint_library_page` and `library_areas`.
+- Tests: tools/test_bplibrary.py (probe, pages, a revision moving between pages, the older runtime); tests/blueprints.lua
+  (probe, pages by name, the strings' budget). Both fail on main.

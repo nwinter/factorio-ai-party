@@ -1742,17 +1742,45 @@ return function(api)
   -- (d20 batch59 U2) the strings go MAX_READ_BYTES a read at most (at least one): the JSON of 7.6 MB of strings took
   -- 21.8 ms on the private copy, 416 KB 1.0 ms. strings_after names the last entry whose string came; the next read
   -- passes it as after.
+  -- (d24 batch147 PS1) every entry's facts in one read was 15.3 ms on world n (158 entries, 133 KB). {probe: true}
+  -- gives the revision, tick and count alone; {limit: N} a page of N entries by name after `after` (facts, and the
+  -- strings changed since `since`, PAGE_BYTES of them at most, at least one): next_after names the page's last entry
+  -- while more follow. Without probe or limit, the read is as before.
   local MAX_READ_BYTES=1000000
+  local PAGE_BYTES=400000
+  local function facts(e)
+    local r=row(e,true)
+    r.rev=e.rev; r.saved_tick=e.saved_tick; r.last_used_tick=e.last_used; r.retired_tick=e.retired and e.retired.tick or nil
+    return r
+  end
   function H.operator.blueprint_library(args)
     local lib,since=library(),tonumber(args and args.since) or -1
     local after=args and type(args.after)=='string' and args.after or nil
+    if args and args.probe then
+      local n=0
+      for _ in pairs(lib.entries) do n=n+1 end
+      return {revision=lib.revision,tick=game.tick,count=n}
+    end
+    if args and args.limit~=nil then
+      local limit=api.integer(args.limit,32,1,MAX_LIBRARY,'limit')
+      local budget=tonumber(args.max_bytes) or PAGE_BYTES
+      local names={}
+      for name in pairs(lib.entries) do if not after or name>after then names[#names+1]=name end end
+      table.sort(names)
+      local rows,sent={},0
+      for i=1,math.min(#names,limit) do
+        local e=lib.entries[names[i]]
+        local changed=(e.rev or 0)>since
+        if changed and sent>0 and sent+#e.string>budget then break end
+        local r=facts(e)
+        if changed then r.string=e.string; sent=sent+#e.string end
+        rows[#rows+1]=r
+      end
+      return {revision=lib.revision,tick=game.tick,entries=rows,next_after=#rows<#names and rows[#rows].name or nil}
+    end
     local budget=tonumber(args and args.max_bytes) or MAX_READ_BYTES
     local rows,sent,last,held={},0,nil,false
-    for _,e in pairs(lib.entries) do
-      local r=row(e,true)
-      r.rev=e.rev; r.saved_tick=e.saved_tick; r.last_used_tick=e.last_used; r.retired_tick=e.retired and e.retired.tick or nil
-      rows[#rows+1]=r
-    end
+    for _,e in pairs(lib.entries) do rows[#rows+1]=facts(e) end
     table.sort(rows,function(x,y) return x.name<y.name end)
     for _,r in ipairs(rows) do
       local e=lib.entries[r.name]
