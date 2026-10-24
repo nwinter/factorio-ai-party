@@ -439,7 +439,16 @@ return function(api)
     -- wait_until on a platform, the research, a silo, or counts at positions / a named hub (no body needed).
     -- (d20 batch62 X3) and any condition with surface or platform: conditions.validate takes those only where the
     -- condition reads that planet or platform, by remote view.
-    if action == 'wait_until' and (BODYLESS_WAITS[args['until']] or args.surface ~= nil or args.platform ~= nil or (args['until'] == 'item_count' and (args.positions ~= nil or args.position ~= nil))) then return end
+    -- (d23 batch127 CJ1) all and any: every member so
+    local function bodyless(c)
+      if type(c) ~= 'table' then return false end
+      if (c['until'] == 'all' or c['until'] == 'any') and type(c.conditions) == 'table' and #c.conditions > 0 then
+        for _, m in ipairs(c.conditions) do if not bodyless(m) then return false end end
+        return true
+      end
+      return BODYLESS_WAITS[c['until']] or c.surface ~= nil or c.platform ~= nil or (c['until'] == 'item_count' and (c.positions ~= nil or c.position ~= nil))
+    end
+    if action == 'wait_until' and bodyless(args) then return end
     error(no_body(b), 0)
   end
   -- A bot's corpse (Opus, shift12 15:20: a corpse recovery call). The game leaves a character-corpse where the
