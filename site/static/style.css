@@ -940,6 +940,11 @@ html { scroll-padding-top: 76px; }
 .upd .fx-chip, .upd-legend .fx-chip, .upd-notices .fx-chip { font-size: .72rem; padding: 0 6px; line-height: 1.5; height: auto; }
 .upd p { margin: 3px 0 0; }
 .upd-msgs { margin-top: 4px; font-size: .9rem; }
+.upd-flag { color: var(--muted); font-style: italic; }
+.upd-history { margin-top: 2px; font-size: .9rem; }
+.upd-history > summary { cursor: pointer; color: var(--muted); }
+.upd-history ul { list-style: none; padding: 0 0 0 10px; margin: 4px 0 0; border-left: 3px solid var(--line-strong); }
+.upd-history li { margin: 2px 0; overflow-wrap: anywhere; }
 .upd-msgs > summary { cursor: pointer; color: var(--muted); }
 .upd-msgs blockquote { margin: 6px 0 0; padding: 4px 10px; border-left: 3px solid var(--line-strong); }
 .upd-msgs blockquote.upd-reply { border-left-color: var(--accent); }
