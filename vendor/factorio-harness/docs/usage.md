@@ -12875,7 +12875,7 @@ On a 2.0.77 copy of world n (its 20:45 save, 12 minutes before Sol's drop) with 
 
 What is new in the reads:
 
-- Each landed receipt (platforms `landed`, and the receipts the delivery watches read) says what the planet's landing
+- Each landed receipt in platforms `landed` says what the planet's landing
   pad asked of the pod's cargo when the pod left the hub, as the pad's window showed it then: each active section
   asking it with min..max and whether the circuit network sets it, what the pad held, what the other pods followed to
   that planet carried of it, and the pad's own on-the-way count. On the copy: `processing-unit*300 received by
