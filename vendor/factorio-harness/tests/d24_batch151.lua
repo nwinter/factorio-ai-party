@@ -1,4 +1,5 @@
 -- Run with lua tests/d24_batch151.lua. d24 batch151 PW1 (Astra #2178: Asterion's 20 rare lasers fought and its flight
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- watch read only the 23 railguns): flight_watch keeps each laser turret apart from the ammo turrets and the railguns:
 -- its energy each sample against one shot's (the prototype's attack_parameters.ammo_type.energy_consumption), the
 -- samples and runs below it, and its kills and damage dealt over the watch (LuaEntity.kills and damage_dealt); a watch
