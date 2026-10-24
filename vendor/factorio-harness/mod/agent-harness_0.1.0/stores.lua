@@ -94,8 +94,70 @@ return function(api)
     end
     return n, carrying, read, capped
   end
+  -- (d24 batch164 QG1, viewer Aurora 13:15: stock and where_is count items in inventories; a spidertron placed is an
+  -- entity, so zero stored with two placed read as none) an item that places a vehicle: our vehicles of that name on
+  -- every surface. count is the engine's (LuaForce.get_entity_count); places from game.get_vehicles (cars, tanks,
+  -- spidertrons and rolling stock; world n 13:30: 28 vehicles in 0.036 ms), the first PLACED_LIST. nil for any other item.
+  local VEHICLE = {car=true, ['spider-vehicle']=true, locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
+  local READ_WITH = {['spider-vehicle']='vehicle {position} (or remote: true, vehicle: its unit_number) reads its route; inspect {position} reads it in sight',
+    car='inspect {position} reads it in sight (32 tiles)'}
+  M.PLACED_LIST = 8
+  function M.placed(force, item)
+    local okp, pr = pcall(function() return prototypes.item[item].place_result end)
+    if not (okp and pr and VEHICLE[pr.type]) then return nil end
+    local name, kind = pr.name, pr.type
+    local okc, count = pcall(function() return force.get_entity_count(name) end)
+    count = okc and type(count) == 'number' and count or 0
+    local found, by_surface = {}, {}
+    local okv, list = false, nil
+    if count > 0 then okv, list = pcall(function() return game.get_vehicles{force=force} end) end
+    for _, e in ipairs(okv and list or {}) do
+      if e.valid and e.name == name then
+        local s = e.surface.name
+        by_surface[s] = (by_surface[s] or 0) + 1
+        found[#found+1] = {surface=s, position={x=math.floor(e.position.x * 10 + 0.5) / 10, y=math.floor(e.position.y * 10 + 0.5) / 10}, unit_number=e.unit_number}
+      end
+    end
+    table.sort(found, function(x, y)
+      if x.surface ~= y.surface then return x.surface < y.surface end
+      if x.position.x ~= y.position.x then return x.position.x < y.position.x end
+      return x.position.y < y.position.y
+    end)
+    local places, bits = {}, {}
+    for i, f in ipairs(found) do
+      if i <= M.PLACED_LIST then
+        places[i] = f
+        bits[i] = string.format('%s (%g,%g)%s', f.surface, f.position.x, f.position.y, f.unit_number and ' #' .. f.unit_number or '')
+      end
+    end
+    local read_with = READ_WITH[kind] or 'train {all, surface} lists its train'
+    local note = count > #found and string.format('%d not listed (%s)', count - #found, okv and 'not among the vehicles the game lists' or 'the vehicle list could not be read') or nil
+    return {entity=name, type=kind, count=count, by_surface=by_surface, places=places, more=#found > M.PLACED_LIST and #found - M.PLACED_LIST or nil,
+      not_listed=note, read_with=read_with,
+      line=string.format('%d placed (as vehicles: %s entities, not items)%s%s%s', count, name,
+        #bits > 0 and ': ' .. table.concat(bits, ', ') or '', #found > M.PLACED_LIST and string.format(' and %d more', #found - M.PLACED_LIST) or '',
+        note and '; ' .. note or '') .. (count > 0 and '; ' .. read_with or '')}
+  end
+  -- The scope line of a vehicle item's read: stored (as items) and placed (as vehicles) side by side; nil for other items.
+  function M.scope_line(force, item, stored, where)
+    local okp, pl = pcall(M.placed, force, item)
+    if not (okp and pl) then return nil end
+    return string.format('%s: %d stored (as items%s), %s', item, stored, where and ', ' .. where or '', pl.line), pl
+  end
+  -- stock's reply for an item (runtime.lua stock_one): a vehicle item's total is what is stored; the scope line leads its
+  -- summary (or line), placed beside it.
+  function M.stock_scope(force, item, out)
+    if type(out) ~= 'table' or type(item) ~= 'string' or type(out.total) ~= 'number' then return out end
+    local ok, line, pl = pcall(M.scope_line, force, item, out.total, 'this read\'s total')
+    if not (ok and line) then return out end
+    out.placed, out.scope_line = pl, line
+    if out.summary then out.summary = line .. '; stored: ' .. out.summary
+    elseif out.line then out.line = line .. '; stored: ' .. out.line
+    else out.summary = line end
+    return out
+  end
   M.CENSUS_PLACES = 120
-  local HOLDER = {pad='landing pads', lab='labs', machine='machines', pod='landed cargo pods', hub='platform hubs', vehicle='vehicles',
+  local HOLDER ={pad='landing pads', lab='labs', machine='machines', pod='landed cargo pods', hub='platform hubs', vehicle='vehicles',
     roboport='roboports', character='characters', ground='on the ground', beacon='beacons', drill='drills'}
   local mode_of = {}
   function M.census_of(p, surface, item, places, ent_of, totals)
@@ -349,7 +411,15 @@ return function(api)
     -- (d18 batch37 D3, Astra) robots' deconstructions of it on that surface: the robot, where it carried it, the ghost it built
     local went = api.deconstructed and api.deconstructed(item, surface.name) or {}
     if #went > 0 then out.deconstructed = went end
-    if total == 0 then out.note = 'none on this surface (surface=NAME looks on another planet or platform)' end
+    -- (QG1) a vehicle item: stored (the counts here, as items) and placed (as vehicles) side by side
+    local scope, pl = M.scope_line(p.force, item, total, 'in inventories on ' .. surface.name)
+    if scope then
+      out.scope, out.placed = 'stored: items in inventories, chests, trunks, belts and hands (total, by_kind, places); placed: vehicles standing in the world, on every surface (placed)', pl
+      out.scope_line = scope
+      if out.kinds_line then out.kinds_line = scope .. '; stored: ' .. out.kinds_line end
+    end
+    if total == 0 then out.note = (pl and pl.count > 0 and string.format('none stored as items on this surface; %d placed as vehicles (placed)', pl.count) or 'none on this surface') ..
+      ' (surface=NAME looks on another planet or platform)' end
     -- (d19 batch45, batch40 B1, Luna: stock read 66 just after a pod while supply said 194 in circulation) census: the
     -- count by holder, each with its spoil spread and, for a science pack, its effective research units (spoil.lua), the
     -- largest CENSUS_PLACES places read for spoil; belts, inserter hands, robots' cargo and pods in the air by count;
@@ -368,7 +438,7 @@ return function(api)
     where_is = {item='item name', limit='1..50 places a page (default 15)', surface='optional surface name (default yours)',
       sort='optional "largest" (default: the most held first) or "nearest"',
       census='optional true: census {rows [{holder (landing pads, provider, storage, requester, buffer and plain chests, labs, machines, characters, belts, inserter hands, robot cargo, in flight ...), count, places, spread (a spoilable item: spoiled share, range, quarters, within 10/30/60 min), research_units (a science pack: effective units now, before lab bonuses)}], lines, research_units, made_per_min, used_per_min (production statistics, last 10 min), tick, spoil_read (how many places were read for spoil: the largest 120)}', page='optional page of places (default 1; pages says how many)',
-      returns='read_from and ground_read_from: what the call took from the census and ground watch passes (every 30 s) and how old they are; deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, beacon, drill, module_slots (what sits in machines\', beacons\', drills\' and labs\' module slots), vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 1024 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); kinds_line (each kind\'s count and places, the most first); places: each chest, lab, machine, beacon, drill, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, in_module_slots, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), the most held first (sort: nearest), limit a page (belts and inserter hands as totals only); more: places past this page; page, pages; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+      returns='scope, scope_line and placed (an item that places a vehicle: spidertron, car, tank, locomotive, wagons): stored (as items, the counts here) and placed (as vehicles: the engine\'s count on every surface, by_surface, places {surface, position, unit_number} the first 8, not_listed, read_with: the read that reads one) side by side; read_from and ground_read_from: what the call took from the census and ground watch passes (every 30 s) and how old they are; deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, beacon, drill, module_slots (what sits in machines\', beacons\', drills\' and labs\' module slots), vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 1024 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); kinds_line (each kind\'s count and places, the most first); places: each chest, lab, machine, beacon, drill, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, in_module_slots, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), the most held first (sort: nearest), limit a page (belts and inserter hands as totals only); more: places past this page; page, pages; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

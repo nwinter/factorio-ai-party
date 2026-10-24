@@ -13779,3 +13779,31 @@ Fixed besides gates:
     (out of quota until Sun 17:00). Waiting on it: 1 request or tell to you unanswered (tell from haiku ...)", only
     when something waits on it (unanswered requests and tells, its board items, claims #N); none: logged.
   - Tests: tools/test_idle_nudge_answer.py; tools/test_idle_nudge.py takes the new order.
+
+## d24 batch164
+
+- QG1 (viewer Aurora 13:15: "Could you check vehicle-item stock/where_is wording for stored vs placed scope, link
+  placed-vehicle lookup, and cover zero stored Spidertrons with two placed in a regression?"): `where_is`, `stock` and
+  `supply` count items in inventories (chests, trunks, belts, hands); a placed spidertron, car, tank, locomotive or wagon
+  is an entity, and for one of those items they read 0 or "none on nauvis" with the vehicles standing in the world.
+  For an item that places a vehicle each now gives `scope_line` and `placed` beside its count:
+  - `spidertron: 0 stored (as items, in inventories on nauvis), 3 placed (as vehicles: spidertron entities, not items):
+    gleba (74,20) #23117830, nauvis (-160,-540) #27069154, nauvis (-136,-436) #23036938; vehicle {position} (or
+    remote: true, vehicle: its unit_number) reads its route; inspect {position} reads it in sight`.
+  - `placed` {entity, type, count (LuaForce.get_entity_count, every surface), by_surface, places (the first 8: surface,
+    position, unit_number), more, not_listed (a count past what the vehicle list gives), read_with, line}. The read
+    named: a spidertron `vehicle {position}` (route) and `inspect`; a car or tank `inspect {position}` (in sight); rolling
+    stock `train {all, surface}`.
+  - where_is: `scope_line` leads `kinds_line`; the note with none stored reads "none stored as items on this surface; 3
+    placed as vehicles (placed)". stock (`stock {item}` and each `items` row): the scope line leads `summary` (or
+    `line`); `total` stays what is stored. supply: it leads `where` (and so compact's `where:` line), cached with the
+    read for 10 s.
+  - Other items: no new field, replies as before. `shortages` and `rates` give no stock count of an item (machines short
+    of an ingredient, requester chests' unmet asks, machines' rates), so they are unchanged; a requester asking for a
+    spidertron lacks items, which is what it reads.
+- Positions come from `game.get_vehicles{force}` (2.0.77; cars, tanks, spidertrons and rolling stock, every surface).
+  World n 13:28 (saved first, then reads only, one at a time): get_entity_count for the 7 vehicle names 0.57 ms
+  (spidertron 3, tank 7, locomotive 10, cargo-wagon 8, car, fluid and artillery wagons 0); get_vehicles 28 vehicles in
+  0.036 ms; spidertron items in our logistic networks, characters and vehicle trunks: 0 (0.11 ms). where_is itself was
+  not called on world n (it reads every holder of the surface).
+- Test: tests/d24_batch164.lua (fails on main: where_is spidertron with none stored and two placed gives no `placed`).
