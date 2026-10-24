@@ -146,3 +146,46 @@ do
   eq(marks2[1],'Meridian-V: bioflux custom minimum payload 25 (was 10)')
 end
 print('d24_batch141 PM1 platform_schedule and min_payload marks: ok')
+
+-- cp2: platform_schedule records a schedule edit in the edit log for a platform that is userdata, as every game object
+-- is in 2.0 (platform_schedule_call's check for a table dropped it, so the game recorded none)
+do
+  game={tick=216000}
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,paused=7},inventory={hub_main=1,hub_trash=2},wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},gleba={},fulgora={}},item={},fluid={},quality={normal={}}}
+  local main={get_item_count=function() return 0 end,get_contents=function() return {} end}
+  local secs=setmetatable({get_section=function() return nil end},{__index=function(_,k) if k=='sections_count' then return 0 end end})
+  local fields={valid=true,name='Meridian-V',index=4,state=4,space_location={name='gleba'},force='player',paused=false,
+    schedule={current=1,records={{station='gleba'},{station='nauvis'}}},
+    hub={valid=true,unit_number=91,type='space-platform-hub',position={x=0,y=0},get_logistic_sections=function() return secs end,get_inventory=function() return main end,
+      get_item_count=function() return 0 end,get_circuit_network=function() return nil end}}
+  local sch=setmetatable({},{__index=function(_,k) if k=='current' then return fields.schedule and fields.schedule.current end end})
+  sch.get_record_count=function() return #fields.schedule.records end
+  sch.go_to_station=function(i) fields.schedule.current=i end
+  fields.get_schedule=function() return sch end
+  -- a userdata platform reading and writing those fields (a file handle with its own metatable)
+  local pl=io.tmpfile()
+  debug.setmetatable(pl,{__index=fields,__newindex=fields})
+  eq(type(pl),'userdata')
+  local force={platforms={pl}}
+  local sol,astra={index=11,name='sol',force=force},{index=12,name='astra',force=force}
+  local st,told={},{}
+  local E=dofile('mod/agent-harness_0.1.0/editlog.lua'){state=function() return st end,deliver=function(i,t) told[#told+1]={i=i,t=t} end,
+    index_of=function(n) return ({sol=11,astra=12})[n] end}
+  local space3=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,editlog=E,
+    integer=function(v,d) return v==nil and d or v end,
+    keep=function() return {set_construction=function(_,on) return on end,construction=function() return nil end} end,
+    circuit_condition=function(c) return c end,
+    freight={where=function() return {stopped=true,at='gleba'} end,pads=function() return {},{} end,leg=function() return nil end}}
+  space3.platform_schedule(sol,{platform='Meridian-V',stops={{station='gleba'},{station='nauvis'},{station='fulgora'}}})
+  local lines=E.lines('plat:Meridian-V')
+  assert(lines,'the edit log records the stops')
+  has(lines[1],'schedule stops: 1 gleba, 2 nauvis -> 1 gleba, 2 nauvis, 3 fulgora, by sol')
+  -- another agent's edit tells sol once
+  game.tick=219600
+  space3.platform_schedule(astra,{platform='Meridian-V',stops={{station='gleba'},{station='nauvis'}}})
+  eq(told[#told].i,11,'sol told')
+  has(E.lines('plat:Meridian-V')[1],'by astra')
+  game,defines,prototypes=nil,nil,nil
+end
+print('d24_batch141 cp2 platform_schedule edit log with a userdata platform: ok')
