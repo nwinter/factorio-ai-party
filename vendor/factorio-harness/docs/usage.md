@@ -13660,3 +13660,31 @@ Fixed besides gates:
   1 to 99, links 0 to 31; chosen 8227 to 8232); the branch in none (chosen 8226 every read). A chest ghost put 7 tiles
   north of the floor (copy only, removed after): add 9, all named for it.
 - Test: tests/d24_batch162.lua (fails on main: the rocket and the beam chosen, 9 tiles planned for them).
+## d24 batch160 QC1 (eng/d20-batch160): a railgun refilling after shots is a turret, not a short network (Astra #2208)
+- Astra's samples (runs/shift69/astra/tools/shift69/power-transients.jsonl, 4 reads 57319341-57340769 on Asterion):
+  accumulators 160 at 100% (800 of 800 MJ), draw equal to production each time, and the one machine on low power a
+  railgun-turret; at 57323077 a laser on low power too read network_short 1 for that railgun.
+- networks.shot_turret(e): a turret that fires from an electric buffer (an electric, ammo or fluid turret with an
+  electric buffer: laser, tesla, railgun). In power, platform_power, inspect, the networks view, game_alerts and
+  platform_endurance it is a turret, never one of the other machines.
+- The short test (power per network in the area; platform_power on the platform's network): short when a machine
+  (roboports aside) is on low or no power (short_by / turrets_short_by machines), or the accumulators are empty (1% or
+  less of their buffer) while the draw is 99% or more of production (accumulators); else the low_power turrets are
+  recharging after shots when a machine or an accumulator on the network says so. Causes and lines say which:
+  "electric #N short of supply: its K accumulators in the area hold 0.0 of X MJ, and it draws D MW of the P MW it
+  produces"; "recharging after shots: ...; the N other machines ... are supplied; its K accumulators ... hold X of Y MJ".
+- platform_power line: "turrets firing from a buffer (laser, railgun, tesla) N: ..." (was "electric turrets N").
+- inspect (networks.entity_power) on a railgun: buffer_kj, buffer_max_kj, buffer_pct and input_limit_kw, as a laser's
+  (its 10 MJ shot has no API field: the buffer is read).
+- networks view line: an electric turret on low power is counted apart ("K electric turrets on low power apart");
+  game_alerts: a buffer turret on low power makes no low_power group (no_power still does); platform_endurance: such
+  turrets on low power apart from the machines (electric turrets read there too).
+- Copy of world n (_autosave6, pogwin 10:33; Asterion flying aquilo to solar-system-edge, 23 railguns, 20 lasers), game
+  paused, one railgun at 4.17 MJ and one laser at 512 kJ (both low_power) after a tick: main's runtime gave the laser
+  "electric #20579 short of supply: 1 of its 178 other machines in the area on low or no power" (the railgun) and
+  platform_power network_short 1, the railgun's row no cause; the branch gave both "recharging after shots ... the 168
+  other machines of electric #20579 in the area are supplied", platform_power recharging 2 (43 turrets), accumulators
+  100%; inspect on the railgun: 4167 of 10000 kJ, 42%, input limit 10000 kW. 40 reads a second apart under main: the
+  railgun alone on low power 5 times (platform_power "machines low 1"), lasers recharging 6.
+- Test: tests/d24_batch160.lua (fails on main: the laser read short for the railgun); tests/d24_batch152.lua takes the
+  new platform_power text.

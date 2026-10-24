@@ -162,11 +162,12 @@ has(pp.line,'draw 6.1 MW now, production 8.4 MW (the last 5 s, every quality: ro
 eq(pp.satisfaction.machines,2,'turrets apart from machines'); eq(pp.satisfaction.low_power,0)
 local t=pp.satisfaction.turrets
 eq(t.count,2); eq(t.low_power,1); eq(t.power_bars_pct,75); eq(t.recharging,1); eq(t.network_short,nil)
-has(pp.line,'electric turrets 2: 1 low power, 0 no power, their buffers 75% full on average (the 1 on low power recharging after shots: no other machine on low or no power)')
+-- (d24 batch160 QC1: turrets firing from a buffer, railguns and tesla turrets too)
+has(pp.line,'turrets firing from a buffer (laser, railgun, tesla) 2: 1 low power, 0 no power, their buffers 75% full on average (the 1 on low power recharging after shots: no machine on low or no power)')
 a1.status=2
 pp=NW.platform_power(plat_surface,{name='player'})
 eq(pp.satisfaction.turrets.network_short,1); eq(pp.satisfaction.turrets.recharging,nil)
-has(pp.line,'(the network short: 1 other machine on low or no power)')
+has(pp.line,'(the network short: 1 machine on low or no power)')
 a1.status=0
 -- inspect on a rare laser: its quality's draw (all of laser-turret here is rare), its buffer and input limit
 local ep=NW.entity_power(l2)
