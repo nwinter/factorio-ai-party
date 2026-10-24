@@ -13350,3 +13350,54 @@ Fixed besides gates:
   - Her courier with job 36694's arguments (to an empty chest), interrupted mid-walk by a direct move_to, went back to
     the head: `requeued as it was: it had moved nothing (an item move is not skipped)`.
 - Tests: tests/d24_batch148.lua (fails on main: `before: paused by a call of yours failed`).
+
+
+## d24 batch145 PQ1 (eng/d20-batch145): blueprint status marks; the site's blueprint page gets search, kinds, filters, sorting (viewer Foobator)
+- Viewer Foobator (site:4615, 05:12): "could we have a search function and maybe categories for blueprints? also some
+  kind of mark for current/experimental/obsolete and whatever else could be useful maybe?"
+- Harness (blueprints.lua): an entry's `status {value, by, tick, note}`.
+  - `blueprint_status {name, status, note?}`: status `current`, `experimental` or `obsolete`, `none` clears it; note
+    1..200 characters (not with none). Any agent may set it on any entry; the mark keeps who and when. Reply: status,
+    line (`experimental, marked by luna 0m ago: note`, or `NAME: not marked`), was, last_used, retired; or unchanged.
+    Bumps the library revision (the operator mirror rewrites index.json).
+  - `blueprint_save {status?, status_note?}`: sets it with the save (a bad status refuses before anything is saved);
+    without status a replaced entry's mark is kept (`status_kept`). A rename keeps it (the same entry).
+  - `blueprint_list` rows: status; one entry in full: status_by, status_set, status_note. The operator read
+    (`blueprint_library`) adds status_tick and, for an entry saved on a platform, `platform_name` (the platform's
+    name now).
+  - Nothing sets a status by itself: not age, not blueprint_retire.
+  - `status` and `note` are doc-only keys in describe (DOC_ONLY); EXTRA_ARGS lets them through for these actions.
+- tools/bplibrary.py copies every entry's facts as the read gives them: status, status_by, status_tick, status_note,
+  platform_name reach runs/RUN/blueprints/index.json with no change there. tools/stream/library.py's live rows carry
+  status.
+- Page (site/blueprints.py):
+  - A search box over name, author, description, entity names, surface (and `platform N`, the platform's name) and the
+    status: every word must match, any case; it filters as you type.
+  - Filters: where saved (each planet, or Space platform), kind, status (current, experimental, obsolete, not marked),
+    each option with its count. A kind is decided by the entry's entities: it holds at least one of the kind's
+    entities (rail, power and heat, defence, science (labs), smelting and casting, mining and pumping, oil and
+    chemistry, assembly and special crafting, platform hull, robots and logistic chests, circuits); the page lists the
+    rules ("How a kind and a status are decided"). An entry can be in several kinds or none.
+  - Sorting: newest saved, most used, name. "Showing N of M blueprints".
+  - The URL keeps the view (?q=&place=&kind=&status=&sort=; history.replaceState, no reload).
+  - Each entry: a status mark beside its name (`not marked` when none), a Status row (who marked it, the game time, the
+    note), Retired when retired, Kinds, and Uses with its last use as before. Saved on adds the platform's name.
+  - Without script every entry shows and the controls stay hidden. Pictures load only when asked, as before.
+  - The page's scripts sit in its head: the filter script and the live-entries script (LIVE_JS) now start at
+    DOMContentLoaded; before, LIVE_JS found no section and never showed entries saved since the build.
+  - Phone width: an entry's facts column may shrink and long text wraps (entity lists ran past the screen at 390 px).
+- Checked:
+  - site/build.py on the real runs (shift 68's copy, 158 entries): 90 pages; screenshots in headless Chromium (the
+    Playwright headless shell): desktop at 1300 px, `?q=turret&place=platform&sort=used` reads "Showing 40 of 158
+    blueprints"; phone at 390 px with `?kind=defence`: 51 of 158, no page-wide scroll after the wrap fix.
+  - world n (tick 56169756): the operator read without strings (as bplibrary.py makes each pass): 158 entries,
+    revision 497, none marked; 15.3 ms, 133 KB.
+  - headless copy of world n's 05:46 autosave: the same read 69-72 ms before the deploy and 71-82 ms after (the
+    container is about 4.7x slower than world n); 1.4 KB more (platform names). luna's blueprint_status on
+    Sol68-GreenPair-Feeds-OFF-DRAFT (experimental with a note), refused for "draft"; sol's blueprint_list of it read
+    status_by luna; a blueprint_save with status current, saved again without status: status_kept; a
+    bplibrary.mirror pass from the copy wrote both marks (with status_by, status_tick, status_note) and 52
+    platform_name values into index.json.
+- Tests: tests/blueprints.lua (status block: fails on main at the first status check), site/test_blueprints.py
+  (marks, kinds, places, search text, controls; the filter script in a stub DOM under node: waits for
+  DOMContentLoaded, the URL's view on load, search words, status filter, the three sorts, the count, the URL).
