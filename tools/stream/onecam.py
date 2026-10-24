@@ -618,10 +618,14 @@ class OneCam(Director):
     def next_wake(self, now):
         """Seconds until the director should step again sooner than serve.py's 1 s tick (a cut timed to land before
         an artillery shell), else None."""
+        soon = None
         if self.pending and self.pending.get("ready_s") is not None:
             t = self.state.get(self.pending["slot"]) or {}
-            return max(0.05, t.get("framed", now) + self.pending["ready_s"] - now)
-        return None
+            soon = max(0.05, t.get("framed", now) + self.pending["ready_s"] - now)
+        lk = self.look_hold  # (CK1) a look's cut at its moment
+        if lk and lk.get("cut_at") and lk.get("aired") is None and lk["cut_at"] > now - 1:
+            soon = min(soon if soon is not None else 1e9, max(0.005, lk["cut_at"] - now))
+        return soon
 
     # -- alerts -----------------------------------------------------------------------------------------------
     def attack_target(self, snapshot, by_name, scores, now):
@@ -1268,9 +1272,11 @@ class OneCam(Director):
         return lk if lk and now < lk["until"] else None
 
     def look_info(self, now):
-        """snapshot["look"]: {surface, position, zoom, until, remaining_s, label, by}, or None."""
+        """snapshot["look"]: {surface, position, zoom, until, remaining_s, label, by}, and (CK1) cut_at, id, platform
+        and aired (when the program first showed it) when set; or None."""
         lk = self.looking(now)
         return {k: lk[k] for k in ("surface", "position", "zoom", "until", "label", "by")} | \
+            {k: lk[k] for k in ("cut_at", "id", "platform", "aired") if lk.get(k) is not None} | \
             {"remaining_s": int(lk["until"] - now)} if lk else None
 
     def look_label(self, lk):
@@ -1286,9 +1292,15 @@ class OneCam(Director):
         if not lk:
             return None
         return {"agents": [], "subject": "@look", "position": dict(lk["position"]), "surface": lk["surface"],
-                "zoom": lk["zoom"], "exact_zoom": True, "until": lk["until"],
+                "zoom": lk["zoom"], "exact_zoom": True, "until": lk["until"], "cut_at": lk.get("cut_at"),
                 "look": {"label": self.look_label(lk), "by": lk["by"], "surface": lk["surface"],
-                         "position": dict(lk["position"])}}
+                         "position": dict(lk["position"]), **({"id": lk["id"]} if lk.get("id") else {})}}
+
+    def look_aired(self, now):
+        """(CK1) The look is on the program now: when it first was, kept with the hold (the snapshot's look.aired)."""
+        lk = self.look_hold
+        if lk is not None and lk.get("aired") is None:
+            lk["aired"] = round(now, 3)
 
     @staticmethod
     def same_look(a, b):
@@ -1300,22 +1312,32 @@ class OneCam(Director):
         if not shot:
             return
         self.pending = None
+        # (d23 batch128 CK1) cut_at: a standby frames the spot now and the program cuts at that moment (one client:
+        # it moves then); until then the shot on air, its label and time stay as they are
+        early = now < (shot.get("cut_at") or 0)
         cur = self.state.get(self.onair)
         if self.same_look(cur, shot):
+            if early:
+                return
             cur.update(look=shot["look"], until=shot["until"])  # a new label or time for the same spot
+            self.look_aired(now)
             return
         if cur and cur.get("subject") in scores:
             self.resume = {"subject": cur["subject"], "since": self.onair_since}
         slot = self.next_slot() or self.slot(self.onair)
         t = self.state.get(slot["slot"])
         if not self.same_look(t, shot):
+            if early and slot["slot"] == self.onair:
+                return
             self.frame_on(slot, shot, f"standby: look {shot['look']['label']}", scores, now)
             if slot["slot"] == self.onair:
                 self.onair_since = now
+                self.look_aired(now)
             return
         t.update(look=shot["look"], until=shot["until"])
-        if slot["slot"] != self.onair and self.ready(slot["slot"], now):
+        if slot["slot"] != self.onair and self.ready(slot["slot"], now) and not early:
             self.cut(slot["slot"], f"look: {shot['look']['label']}", now)
+            self.look_aired(now)
 
     # -- key battles -------------------------------------------------------------------------------------------
     def fight_spot(self, f, by_name):

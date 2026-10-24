@@ -9,6 +9,13 @@ The main camera shows that spot (a fixed view, exact zoom) for `seconds` (at mos
 returns to what it was doing. surface: a surface name (nauvis, vulcanus, platform-3, any case) or one of our
 platforms' names. zoom: 0.3..3 (default 0.75; higher is closer).
 
+(d23 batch128 CK1, the tour) More fields, all optional: platform (one of our ships by name, in place of surface, x
+and y: the director's own framing of the whole ship at the moment of the request, no chart read; with x and y given
+as well, that spot on its deck), cut_at (epoch seconds, now..now+30: a standby frames the spot at once and the
+program cuts to it at that moment; one client moves then; the shot on air until then stays), id (the caller's tag,
+echoed in the snapshot's look). The snapshot's look says `aired`, when the program first showed it. POST /look/extend
+{seconds, id?} moves the current look's end to now + seconds (at most 60) with no chart read (the tour's renewals).
+
 Only charted ground: before the shot, one read (CHART_LUA, a few dozen is_chunk_charted calls for the frame on air)
 checks that every 32-tile chunk the on-air frame covers is charted by the team; otherwise 409 with the reason (the
 spot's own chunk, or how many of the frame's chunks are not charted: a closer zoom frames fewer). An unknown surface
@@ -135,6 +142,10 @@ class LookControl:
                     "zoom": max(MIN_ZOOM, min(MAX_ZOOM, number(data.get("zoom") or DEFAULT_ZOOM))), "until": until,
                     "label": str(data.get("label") or "").strip()[:80] or None,
                     "by": str(data.get("by") or "operator")[:40]} if ok else None
+            if look:
+                for k in ("cut_at", "id", "platform"):  # (CK1)
+                    if data.get(k) is not None:
+                        look[k] = number(data[k]) if k == "cut_at" else str(data[k])[:80]
         except (KeyError, AttributeError, TypeError, ValueError, OverflowError):
             look = None
         self.director.set_look(look, now)
@@ -153,34 +164,93 @@ class LookControl:
         """POST /look -> (http code, reply)."""
         now = time.time() if now is None else now
         if not isinstance(body, dict):
-            return 400, {"error": "expected an object with surface, x, y and optional zoom, seconds, label, by"}
-        if not str(body.get("surface") or "").strip():
-            return 400, {"error": "surface missing (nauvis, vulcanus, platform-3, or a platform's name)"}
+            return 400, {"error": "expected an object with surface, x, y (or platform) and optional zoom, seconds, "
+                                  "label, by, cut_at, id"}
+        ship = str(body.get("platform") or "").strip()
+        if not ship and not str(body.get("surface") or "").strip():
+            return 400, {"error": "surface missing (nauvis, vulcanus, platform-3, or a platform's name), or platform"}
         try:
-            x, y = number(body.get("x")), number(body.get("y"))
-        except (TypeError, ValueError, OverflowError):
-            return 400, {"error": "x and y must be finite numbers (map tiles)"}
-        try:
-            zoom = number(body["zoom"]) if body.get("zoom") is not None else DEFAULT_ZOOM
+            zoom = number(body["zoom"]) if body.get("zoom") is not None else None
             secs = number(body["seconds"]) if body.get("seconds") is not None else DEFAULT_S
+            cut_at = number(body["cut_at"]) if body.get("cut_at") is not None else None
         except (TypeError, ValueError, OverflowError):
-            return 400, {"error": "zoom and seconds must be finite numbers"}
-        zoom = round(max(MIN_ZOOM, min(MAX_ZOOM, zoom)), 2)
+            return 400, {"error": "zoom, seconds and cut_at must be finite numbers"}
+        if cut_at is not None and not now - 1 <= cut_at <= now + 30:
+            return 400, {"error": "cut_at is epoch seconds, from now to 30 s ahead"}
         secs = max(1.0, min(MAX_S, secs))
-        surface, platform = self.surface_of(body["surface"])
-        refused, c = self.check(surface, x, y, zoom)
-        if refused:
-            print(f"[look] {str(body.get('by') or 'operator')[:40]}: refused ({refused[1]['error']})", flush=True)
-            return refused
+        start = max(now, cut_at or now)
+        c = {}
+        if ship and body.get("x") is None and body.get("y") is None:
+            # (CK1) a whole ship as the director frames it now (model.platform_shot), held fixed: no chart read
+            frame = self.ship_frame(ship)
+            if not frame:
+                return 409, {"error": f"no camera view for a platform named {ship!r}", "platforms":
+                             list(getattr(self.director, "plat_rows", {}) or {})}
+            surface, platform, x, y = frame["surface"], frame["platform"], frame["position"]["x"], frame["position"]["y"]
+            zoom = round(max(MIN_ZOOM, min(MAX_ZOOM, zoom if zoom is not None else frame["zoom"])), 2)
+        else:
+            try:
+                x, y = number(body.get("x")), number(body.get("y"))
+            except (TypeError, ValueError, OverflowError):
+                return 400, {"error": "x and y must be finite numbers (map tiles)"}
+            zoom = round(max(MIN_ZOOM, min(MAX_ZOOM, zoom if zoom is not None else DEFAULT_ZOOM)), 2)
+            surface, platform = self.surface_of(ship or body["surface"])
+            if ship and not platform:
+                return 409, {"error": f"no camera view for a platform named {ship!r}"}
+            refused, c = self.check(surface, x, y, zoom)
+            if refused:
+                print(f"[look] {str(body.get('by') or 'operator')[:40]}: refused ({refused[1]['error']})", flush=True)
+                return refused
         data = {"surface": surface, "position": {"x": round(x, 1), "y": round(y, 1)}, "zoom": zoom,
-                "until": round(now + secs, 1), "label": str(body.get("label") or "").strip()[:80] or None,
+                "until": round(start + secs, 1), "label": str(body.get("label") or "").strip()[:80] or None,
                 "by": str(body.get("by") or "operator")[:40]}
+        if cut_at is not None:
+            data["cut_at"] = round(cut_at, 3)
+        if body.get("id") is not None:
+            data["id"] = str(body["id"])[:80]
+        if platform:
+            data["platform"] = platform
         self.write(data)
         self.apply(data, now)
         print(f"[look] {data['by']}: ({round(x)}, {round(y)}) on {surface} at zoom {zoom:g} for {int(secs)} s"
               + (f" ({data['label']})" if data["label"] else ""), flush=True)
         return 200, dict(data, seconds=int(secs), platform=platform, chunks=c.get("chunks"),
-                         visible=bool(c.get("visible")))
+                         visible=bool(c.get("visible")) if c else True)
+
+    def ship_frame(self, name):
+        """{surface, position, zoom, platform} for one of our ships as the director frames it (onecam.platform_target:
+        the whole ship at the zoom that fits; a tall ship's pan starts at its bow), or None."""
+        rows = getattr(self.director, "plat_rows", {}) or {}
+        pname = next((n for n in rows if n.casefold() == name.casefold()), None)
+        target = getattr(self.director, "platform_target", None)
+        t = target(pname, "look", 0) if pname and target else None
+        if not t or not t.get("position") or not t.get("surface"):
+            return None
+        return {"surface": t["surface"], "position": dict(t["position"]), "zoom": t["zoom"], "platform": pname,
+                "pan": t.get("pan")}
+
+    def extend(self, body, now=None):
+        """POST /look/extend {seconds, id?}: the current look ends at now + seconds (at most 60); no chart read."""
+        now = time.time() if now is None else now
+        lk = getattr(self.director, "look_hold", None)
+        if not lk or now >= lk["until"]:
+            return 409, {"error": "no look on"}
+        if isinstance(body, dict) and body.get("id") is not None and str(body["id"]) != str(lk.get("id")):
+            return 409, {"error": f"the look on is {lk.get('id')!r}, not {body['id']!r}"}
+        try:
+            secs = max(1.0, min(MAX_S, number((body or {}).get("seconds", DEFAULT_S))))
+        except (TypeError, ValueError, OverflowError):
+            return 400, {"error": "seconds must be a finite number"}
+        lk["until"] = round(max(now, lk.get("cut_at") or now) + secs, 1)
+        if self.path:
+            try:
+                with open(self.path) as f:
+                    data = json.load(f)
+                data["until"] = lk["until"]
+                self.write(data)
+            except (OSError, ValueError):
+                pass
+        return 200, {"until": lk["until"], "id": lk.get("id")}
 
     def clear(self, now=None):
         """DELETE /look."""
@@ -214,7 +284,7 @@ class LookControl:
             except (OSError, ValueError):
                 pass
         look = self.apply(data, now)
-        if look:  # a hand-written spot gets the same chart check
+        if look and not look.get("platform"):  # a hand-written spot gets the same chart check (a ship's frame: none)
             refused, _ = self.check(look["surface"], look["position"]["x"], look["position"]["y"], look["zoom"])
             if refused:
                 print(f"[look] read {self.path}: refused ({refused[1]['error']})", flush=True)

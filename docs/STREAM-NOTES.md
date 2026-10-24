@@ -1539,6 +1539,39 @@ Nick (d23 10:28): a narrated camera tour, scripted ahead. tools/stream/tour.py p
   skipped with why).
 - Tests: tools/stream/test_tour.py.
 
+## The tour, version 2: timing (2026-10-23, d20 batch128 CK1)
+
+Nick (17:30): "get the timing really tight between the shot durations and the measured voice line durations".
+- What the 16:30 run did (tools/stream/logs/tour-20261023-163005.jsonl against the director log
+  director-20261023-162515.jsonl): on planet stops the narration started 1.9 to 3.0 s *before* the program cut. From
+  stop 2 on, the tour's on-air check matched any look (the previous stop's was still on air) and posted the clip at
+  once, while the director framed the new look on a standby and cut 2.3 to 3.7 s after the POST (ready_s 1.5 s plus
+  the 1 s tick). Ship stops checked the name: their narration started 0.6 to 0.8 s after the cut. Every stop then
+  held about 20 s after its clip (the script's 60 s against clips of 33 to 47 s). Two narrations started 14 s late,
+  behind agent lines already playing (Luna 19 s, Sol).
+- Now a narrated stop is cut, LEAD_S 0.8 s, the clip's measured length, TAIL_S 1.5 s (`hold_s`, `min_seconds` in
+  the script; `seconds` only for a stop without narration). One timeline on the clock: each stop goes to the service
+  PREROLL_S 4 s ahead:
+  - POST /look with `cut_at` (lookcam.py): a standby frames it at once, the program cuts at that moment (onecam
+    `look_direct`; `next_wake` wakes the director for it); one client moves then. `id` tags it; the snapshot's
+    look says `aired`. `{platform: NAME}` is a whole ship as the director frames it (no chart read), so ships and
+    spots are one kind of hold. POST /look/extend renews it with no chart read.
+  - POST /audio with `at` = cut + 0.8 (serve.py AudioHub, static/audio.js): the page loads the clip on arrival and
+    starts it at that moment on its audio clock; until then no queued clip starts that would still play at `at`
+    (one that does is ducked, `?duck=`); the start report carries `started_at`. /audio/status lists `queued`;
+    POST /audio/cancel takes a clip back.
+  - The drift (look.aired against the cut asked) is smoothed and the next cuts are asked that much sooner.
+  - An agent's line waiting in the queue near a stop's end (and not expiring before the narration ends) holds the
+    stop for its length; `--no-agent-gaps` turns that off (agent lines expire after 20 s in the queue).
+- Measured on `serve.py --mock` (three cameras) with the real audio.js in node: the program cut 3 to 5 ms after the
+  moment, the narration 0.800 s after the cut (the page's clock: 0 to 1 ms). On air the OBS z-order thread (cuts.py,
+  0.1 s poll) adds up to 0.1 s to the cut.
+- Script format for writers: tools/stream/tour-FORMAT.md. Tests: test_tour.py, test_tourcam.py, test_touraudio.py
+  (tour_audio_selftest.mjs in node).
+- Deploy: serve.py, lookcam.py, onecam.py and audio.js changed: restart the stream service and reload the overlay
+  page (OBS browser source refresh) before the next tour; `tour.py run` refuses a service without /audio/status
+  `queued`.
+
 ## Camera crops after a shift change (2026-10-23, d23 batch124b)
 - Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
 - After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene
