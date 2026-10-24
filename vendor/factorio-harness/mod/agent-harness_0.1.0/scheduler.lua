@@ -825,8 +825,28 @@ return function(api)
     assert(type(a.resume_after_direct)=='boolean','resume_after_direct must be true or false')
     queue(p.index).resume_after_direct=a.resume_after_direct or nil
   end
+  -- (d24 batch138 PJ1, Sol #2111: Petrel's lane was empty and not paused; queue_submit mode=replace start:false queued
+  -- revision 453 and its platform_schedule and arrival wait ran without queue_resume) start:false stages the steps: the
+  -- lane is paused and held in the same call, as queue_pause holds it, whatever its state was, on every lane and in
+  -- every mode; queue_resume runs them, and direct calls do not resume it. Returns the reply's staged line.
+  local function stage(p,q)
+    local was_paused=q.paused
+    local was=q.current and (q.current.id..' '..q.current.action)
+    if q.current then api.stop(p) end
+    M.pause(p.index,'staged by queue_submit start: false: held until queue_resume; direct calls do not resume it')
+    q.held={tick=game.tick}
+    return string.format('start: false: the lane is paused and held until queue_resume (it was %s%s); %d step%s pending',
+      was_paused and 'paused' or 'not paused',was and '; '..was..' stopped and requeued at the head' or '',#q.pending,#q.pending==1 and '' or 's')
+  end
+  -- The lane's state after a submit: running, paused, or paused and held until queue_resume.
+  local function submitted(q,out,staged)
+    out.state=q.paused and (q.held and 'paused, held until queue_resume' or 'paused') or 'running'
+    out.staged=staged
+    return out
+  end
   function M.handlers.queue_submit(p,a)
     setting(p,a)
+    assert(a.start==nil or type(a.start)=='boolean','start must be true or false')
     -- dry_run (Luna 15:20): the plan checked as a submit checks it, nothing queued, the queue left as it is; the silo
     -- cargo its steps would leave before each launch (rocketload.lua M.simulate).
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
@@ -859,10 +879,11 @@ return function(api)
       q.pending=items
       q.guards=q.guards or {}
       for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=add_guard(q,g) end
-      if a.start~=false then q.paused=false; q.held=nil end
-      q.submission=string.format('pending replaced: %d dropped, %d queued; the active step goes on',dropped,#items)
+      local staged
+      if a.start~=false then q.paused=false; q.held=nil else staged=stage(p,q) end
+      q.submission=string.format('pending replaced: %d dropped, %d queued; %s',dropped,#items,staged and 'staged' or 'the active step goes on')
       q.revision=q.revision+1
-      return with(snapshot(q,RECENT),corrected)
+      return submitted(q,with(snapshot(q,RECENT),corrected),staged)
     end
     local loop=q.loop and (q.name or 'unnamed repeating plan')
     local active=q.current and (q.current.id..' '..q.current.action) or 'between rounds'
@@ -900,9 +921,10 @@ return function(api)
     q.guards=q.guards or {}
     assert(#q.guards+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=add_guard(q,g) end
-    if a.start~=false then q.paused=false; q.held=nil end
+    local staged
+    if a.start~=false then q.paused=false; q.held=nil else staged=stage(p,q) end
     q.revision=q.revision+1
-    return with(snapshot(q,RECENT),corrected)
+    return submitted(q,with(snapshot(q,RECENT),corrected),staged)
   end
   LOOP_WALK={transfer=true,collect=true,feed=true,rearm=true,refuel=true}
   function M.handlers.queue_repeat(p,a)
@@ -1285,7 +1307,7 @@ return function(api)
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps (a wait_ticks resumes after them with its end tick), preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps (a wait_ticks resumes after them with its end tick), preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true; false: staged: the lane is paused and held in the same call (an active step is stopped and requeued at the head, as queue_pause does), whatever its state was, until queue_resume; direct calls do not resume it (staged says what the lane was). Every reply: state running | paused | paused, held until queue_resume',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={active_step='returned: the active step as read after the edit (still the active step, its action running), and that the edit changed pending steps only; a step interrupted while the queue ran reads interrupted in queue_status history with paused_by (what paused it) and, for a build not run again, left_undone {count, positions} and not_requeued',expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)',
