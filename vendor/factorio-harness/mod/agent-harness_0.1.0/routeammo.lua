@@ -518,13 +518,20 @@ return function(api)
     local pad = off[3] - off[1]
     local w = o.width
     local front = w and (w + pad + M.EXTRA) or nil
-    local turrets, fire_of, aim_of = aiming(pl)
+    local turrets, fire_of, aim_of
+    local aimed = M.aimed
+    M.aimed = nil
+    local cache = {}
+    if aimed and aimed.pl == pl.index and aimed.tick == game.tick then
+      turrets, fire_of, aim_of, cache = aimed.turrets, aimed.fire_of, aimed.aim_of, aimed.cache
+    else
+      turrets, fire_of, aim_of = aiming(pl)
+      hits = {}
+    end
     local ammo, seen = {}, {}
     for _, n in ipairs(o.ammo or {}) do if not seen[n] then seen[n] = true; ammo[#ammo+1] = n end end
     for _, t in ipairs(turrets) do for _, c in ipairs(t.held or {}) do if not seen[c.name] then seen[c.name] = true; ammo[#ammo+1] = c.name end end end
     table.sort(ammo)
-    hits = {}
-    local cache = {}
     local rows, lines = {}, {}
     local p0, p1 = o.progress and o.progress[1] or 0, o.progress and o.progress[2] or 1
     for _, l in ipairs(legs) do
@@ -630,6 +637,8 @@ return function(api)
     local cache, lines = {}, {}
     hits = {}  -- (AX1) the force's bonuses as they are now
     local turrets, fire_of, aim_of = aiming(pl)
+    -- (d24 batch187 QAC1) the model read next in the same call takes these turrets and shots, not a second scan
+    M.aimed = {pl=pl.index, tick=game.tick, turrets=turrets, fire_of=fire_of, aim_of=aim_of, cache=cache}
     local seen_kinds, kind_list = {}, {}
     local flown_names = {}
     for _, l in ipairs(fl) do

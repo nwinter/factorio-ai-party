@@ -14168,3 +14168,33 @@ Fixed besides gates:
   finished samples stored and none running; 0.057 ms a tick with three exact samples running (worst second 5.5 ms over
   60 ticks).
 - Test: tests/d24_batch176.lua (fails on main: exact_tile is ignored and the line is read).
+
+## d24 batch187
+
+- QAC1: the plain platform_endurance forecast under 10 ms a call. Where the time went, on a copy of world n's 19:22
+  autosave (timing marks in the read):
+  - Asterion, forecast true: the forecast 17-27 ms (flown legs 1.5, the turret scan 2.8, the legs loop 7.5, targets
+    2.6, damage rows 2.3, and batch183's model scanning the turrets again); the ammunition rows 4.7-8.2; route and legs
+    1.8-3.8; stock places 1.6-4; the machine status scan 1.7-6; fluids, power and the fuel outlook 1-3.6 each.
+  - Encoding the reply: 12-15 ms for Asterion's 422 numbers. helpers.table_to_json costs about 38 us a number (integer
+    or not; 1000 numbers 38-48 ms), a string 0.2 us. 228 of them are forecast_damage, 106 resources.
+- What changed:
+  - The last complete reading of a platform for the same arguments (route, forecast, pessimistic, progress) is kept in
+    storage (plain data: every peer holds the same) and answered for 60 s with `reading` {tick, age_s, fresh,
+    refresh_s, note}. An older or missing one is read in the call; `fresh: true` reads now. At most 12 kept, none over
+    10 minutes old.
+  - A reading asked for within 3 minutes is read again in the background (endurance.refresh, on tick%60 == 17) once
+    45 s old, the oldest first, one a second at most; a caller gone drops it. Each such read costs one tick what one
+    call cost before.
+  - Without `detail: true` the reply leaves out the numeric tables whose figures the lines carry: forecast_damage,
+    forecast_targets, forecast_model legs' asteroids and per_600s by kind, resources' by_place and
+    ingredient_limited (detail_note says so).
+  - batch183's model takes the forecast's turret scan and shots in the same call instead of scanning again.
+- Same figures: with the copy paused, main's reply and this branch's (detail: true, fresh: true) for Swiftlet, Kestrel
+  II and Asterion agree on every field main gives (the branch adds basis, forecast_model and reading).
+- Cost on the copy (profile, one call a game second; the team block apart; encode timed apart):
+  - answered from a reading: read 1.1-2.9 ms, encode 3-6 ms;
+  - a call that reads: Asterion 24-33 ms, Kestrel II 16, Swiftlet 12 (as before);
+  - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
+    (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
+- Test: tests/d24_batch187.lua (fails on main: no handler).
