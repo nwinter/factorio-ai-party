@@ -39,6 +39,8 @@ return function(api)
   -- their tracked asteroids together at most SEGMENT_RECORDS (the newest always kept). A done 120 s watch of 1501 tracked
   -- asteroids on a copy of world n held 12026 tables (726 KB as JSON), so the segments hold at most about one full watch.
   M.SEGMENTS, M.SEGMENT_RECORDS = 3, 3000
+  -- (d25 batch200 QM2) a watch's seconds: the handler's check and a queue step's (runtime.lua step_ranges)
+  M.SECONDS = {10, 1800}
   local FOUNDATION = 'space-platform-foundation'
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -1013,7 +1015,7 @@ return function(api)
       assert(a[k] == nil, k .. ' is for the read (platform_defense {platform, asteroids: true} without seconds)')
     end
     local seconds = a.seconds
-    assert(type(seconds) == 'number' and seconds >= 10 and seconds <= 1800 and seconds == math.floor(seconds), 'seconds: 10..1800')
+    assert(type(seconds) == 'number' and seconds >= M.SECONDS[1] and seconds <= M.SECONDS[2] and seconds == math.floor(seconds), string.format('seconds: %d..%d', M.SECONDS[1], M.SECONDS[2]))
     local reason = api.reason and api.reason(a.reason)
     local q = api.on_platform(p, a.platform)
     local s = q.surface

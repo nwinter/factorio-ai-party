@@ -14409,3 +14409,36 @@ Fixed besides gates:
 - Kept: batch183's design, progress, basis and forecast_model, and the model taking the forecast's turret scan in the
   same call.
 - Test: tests/d24_batch195.lua (replaces tests/d24_batch187.lua; fails on main: a kept reading is answered, 0 reads).
+
+## d25 batch200 (QM1 Astra #2292: an asteroid watch's record through edits; QM2 Astra #2313: queue step ranges)
+
+- QM1. Trial164: a laser destroyed mid-watch made mixed.lua start the asteroid watch again, and the watch before it
+  was kept as mixed.parts {from, to, line}: its summary only (the read has no `lines`).
+  - Now mixed.lua closes the old watch through api.close.asteroid_watch (asteroidwatch.close): done at the edit tick,
+    its full result made, its tracked records and who hit which kept (keep, as a watch done at its end), its turret
+    and walk state dropped. It hangs on the new watch as `segments` (the oldest first), at most SEGMENTS 3 and
+    SEGMENT_RECORDS 3000 tracked asteroids together (the newest always kept; `segments_dropped` counts the rest).
+    Later splits carry them on; a watch the agent starts anew has none.
+  - mixed.parts names the segment (`segment_start`); every read lists `segments` [{segment_start, end_tick, seconds,
+    closed_by, line}]; `segment_start: <tick>` reads one in full (trajectory_page, trajectory_limit, asteroid_names).
+  - Turret rows give `quality`, `range` (the prototype's attack range times the quality's range_multiplier: on a copy
+    of world n an uncommon gun turret hit asteroids 19.5 and 20.5 tiles off and a normal one none past 19),
+    `min_range`, and `turn_range` with `facing` when under a full turn (railgun 0.2).
+  - Size on a copy of world n (06:26 save): a done 120 s watch of 1501 tracked asteroids on Asterion held 12026 tables,
+    726 KB as JSON; a 104 s segment of 202 tracked on Anvil 1843 tables, 124 KB.
+  - Cost on the copy (profile_ticks 150 s, a 300 s watch on Anvil, a gun turret destroyed at 104 s):
+    asteroid_watch.tick 0.031 ms a tick (worst second 7.7 ms); the split, timed as the new part mixed.event, 5.4 ms
+    in that second (0.2-0.8 ms in other seconds) for closing the 202-asteroid watch and starting the next. A segment
+    read 20 ms on the copy (31 KB), the running watch's read 37 ms (43 KB).
+- QM2. dry_run and submit checked a step's argument names and shapes, not its values. On the copy a dry run with a value
+  past the documented range was accepted for about 60 scalar arguments the actions refuse when they run (feed, rearm,
+  refuel, transfer, collect, move_to, mine, load_silo, kite, recover, pickup, shoot, the watches, and reads).
+  - runtime.lua M.step_ranges: {key, low, high, whole?, when?} per action, checked by M.step_range_check for every
+    queue step (api.check_args) at submit and in dry_run; the refusal names the step, the argument, the value and the
+    range. The watches' seconds are their modules' constants (asteroidwatch, uptime, turrettally, beltsample,
+    collectreach SECONDS; signalwatch MIN_S/MAX_S), used by their own checks too. Where an action takes a key with
+    different ranges by mode, the widest is listed (collect ticks 1..72000, transfer count 1..1000000, pickup and mine
+    ticks 1..36000). A value of another type is left to the action.
+  - Checked on the copy for all 90 entries: low and high not refused by the range; past high and below low refused.
+- Tests: tests/d25_batch200.lua (QM1; fails on main: no segments), tests/d25_batch200b.lua (QM2, through queue_submit;
+  fails on main: the step goes on to the platform check).

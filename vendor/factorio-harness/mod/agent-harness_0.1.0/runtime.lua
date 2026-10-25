@@ -8588,6 +8588,62 @@ M.step_checks={
     end
   end,
 }
+-- (d25 batch200 QM2, Astra #2313: a queued platform_defense {asteroids, seconds: 3600} passed queue_submit's dry_run and
+-- the job refused it, 10..1800) The numeric ranges each queueable action checks when it runs, checked for every queue
+-- step at submit and in dry_run: {key, low, high, whole?=true, when?} (when: the arguments the range applies with; the
+-- watches' ranges are their modules' own constants). A value of another type is left to the action (true, text forms).
+-- Where an action takes a key in several modes with different ranges, the widest is listed: a value no mode takes.
+-- On a copy of world n (d25) dry_run took an out-of-range value for every one of these, and each direct call refused it.
+local function watch_range(mod) return function() local m=M[mod]; return m.SECONDS[1],m.SECONDS[2] end end
+local function starts(mod) return function(a) return M[mod].starts(a) end end
+local function retrying(a) return a.retry_when_clear==true end
+M.step_ranges={
+  platform_defense={{'seconds',watch_range('asteroidwatch'),when=function(a) return a.asteroids==true end},
+    {'trajectory_limit',1,100,when=function(a) return a.asteroids==true end}},
+  platform_supply={{'seconds',watch_range('collectreach'),when=function(a) return a.collection==true end}},
+  uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},
+  turret_tally={{'seconds',watch_range('turrettally'),when=starts('turrettally')}},
+  belt_flow={{'seconds',watch_range('beltsample'),when=function(a) return a.position~=nil end}},
+  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.position~=nil or a.seconds~=nil end}},
+  feed={{'count',1,1000},{'fuel_count',1,1000},{'crafts',1,1000},{'radius',1,256},{'ticks',1,36000}},
+  refuel={{'count',1,1000},{'radius',1,256},{'ticks',1,36000}},
+  rearm={{'count',1,1000},{'below',1,1000},{'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
+  transfer={{'count',1,1000000},{'keep',0,100000},{'up_to',1,100000},{'total',1,100000},{'max_fresh',0,100},{'min_spoil',0,100},{'min_spoiled',0,100},
+    {'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
+  collect={{'ticks',1,72000},{'wait_ticks',1,36000},{'keep_taking',1,36000},{'count',1,10000},{'want',1,100000},
+    {'min_fresh',0,100},{'radius',1,256}},
+  move_to={{'ticks',1,36000},{'combat',1,32},{'max_uncovered',0,256},{'tolerance',0.25,10,whole=false},{'reach',0.5,64,whole=false}},
+  mine={{'count',1,2000},{'ticks',1,36000},{'radius',1,32}},
+  load_silo={{'rockets',2,20},{'wait_min',1,60},{'ticks',1,36000}},
+  launch={{'timeout',1,54000}},
+  build={{'retries',0,6},{'retry_ticks',600,54000,when=retrying},{'size',1,4},{'orientation',0,1,whole=false}},
+  shoot={{'ticks',1,600},{'radius',1,36},{'gun_slot',1,3}},
+  kite={{'radius',8,32},{'ticks',1,36000}},
+  recover={{'stop_after',1,5},{'ticks',1,36000},{'group_radius',8,160}},
+  pickup={{'ticks',1,36000},{'radius',1,32},{'count',1,10000},{'min_spoiled',0,100}},
+  train_stop={{'limit',0,1000}},
+  train={{'limit',0,1000},{'wagon_slots',0,40}},
+  cancel_craft={{'index',1,10000}},
+  walk={{'ticks',1,600}},repair={{'ticks',1,36000}},
+  drops={{'limit',1,20}},eggs={{'limit',1,256}},ghosts={{'radius',1,256},{'limit',1,64}},labs={{'radius',1,256}},
+  losses={{'since',1,100800}},nearest_water={{'radius',1,256}},ores={{'limit',1,100}},platform_plan={{'salvage',1,2000}},
+  platform_rearm={{'ammo_below',1,10000}},players={{'minutes',1,240}},robot_losses={{'minutes',1,900}},
+  research_done={{'limit',1,50}},sight={{'radius',16,240}},tells={{'limit',1,100}},turret_feeds={{'count',1,1000}},
+  cargo={{'limit',1,32}},
+}
+function M.step_range_check(action,a)
+  for _,r in ipairs(M.step_ranges[action] or {}) do
+    local v=a[r[1]]
+    if type(v)=='number' and (not r.when or r.when(a)) then
+      local lo,hi=r[2],r[3]
+      if type(lo)=='function' then lo,hi=lo() end
+      local whole=r.whole~=false
+      if v<lo or v>hi or (whole and v~=math.floor(v)) then
+        error(string.format('%s %s is outside %s..%s%s, what %s takes when it runs',r[1],tostring(v),tostring(lo),tostring(hi),whole and ' (a whole number)' or '',action),0)
+      end
+    end
+  end
+end
 M.preflight.configure=function(p,a)
   if a.modules~=nil then M.modules.parse(a.modules) end
   if a.positions~=nil then return end
@@ -16682,7 +16738,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
-  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,

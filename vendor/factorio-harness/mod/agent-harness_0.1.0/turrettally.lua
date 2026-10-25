@@ -126,6 +126,9 @@ return function(api)
       end
     end
   end
+  -- (d25 batch200 QM2) a new watch's seconds: the handler's check and a queue step's (runtime.lua step_ranges)
+  M.SECONDS = {5, 3600}
+  function M.starts(a) return a.positions ~= nil or a.position ~= nil or a.area ~= nil end
   function M.handler(p, a)
     if a.positions == nil and a.position == nil and a.area == nil then
       local job = store()[p.index]
@@ -134,7 +137,7 @@ return function(api)
       return job.result or M.result(job, false)
     end
     local seconds = a.seconds == nil and 120 or a.seconds
-    assert(type(seconds) == 'number' and seconds >= 5 and seconds <= 3600 and seconds == math.floor(seconds), 'seconds: 5..3600 (default 120)')
+    assert(type(seconds) == 'number' and seconds >= M.SECONDS[1] and seconds <= M.SECONDS[2] and seconds == math.floor(seconds), string.format('seconds: %d..%d (default 120)', M.SECONDS[1], M.SECONDS[2]))
     local reason = api.reason and api.reason(a.reason)  -- (d20 batch70 AF1) its own reason to wait (measures.lua)
     local q = a.surface ~= nil and api.on_surface(p, a.surface) or a.platform ~= nil and api.on_platform(p, a.platform) or p
     local list = a.positions or a.position and {a.position} or M.in_area(q, a)
