@@ -15,6 +15,8 @@ tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph 
              POG_RESUME) starts with each agent's tools/ and the run's team-tools/ from the previous shift that had
              them, up the resumed-from chain; files over 5 MB, caches, dotfiles and symlinks stay behind. Each file is
              a clone on APFS (macOS clonefile: no new blocks until one side is written), else a copy (shutil.copy2).
+             A run where the agent did not play adds its files and the carry goes on up the chain (played).
+  notes-from: tools/full_tools.py notes-from PREV_DIR NAME: the run NAME's notes.md comes from (tools/new-run.sh).
 
 Codex and Grok switches live where their clean profiles are written (tools/clean-profile.py, tools/grok-home.py,
 tools/profile-flags.sh); agy and Muse Code already have their subagent and web tools.
@@ -116,6 +118,56 @@ def chain(prev):
     return out
 
 
+# (d24 batch175 QR2, viewer Aurora 17:02: "could shift recovery tests cover interrupted starts and failed saves,
+# including each engineer's notes and unread test results?") A start that dies after its run directory exists (killed,
+# a refused deploy, a resume refusal) leaves a run the next start resumes from, and its workspaces hold what the start
+# copied in: no notes for the agents it had not reached yet, a tools/ cut short mid-copy, no resting.json. A run where
+# an agent made no request and left its notes as they were carried is not that agent's last shift: the carry looks
+# further up the chain for its notes, tools/ and rest.
+NOTES_TOUCHED_S = 60   # notes.md written this long after deadline.txt (tools/new-run.sh writes both) was edited there
+
+
+# as tools/stream/pacing.py, and ground_rules: tools/launch-agent.sh calls describe and ground_rules before the agent starts
+NOT_OWN = ("describe", "profiles", "cameras", "ground_rules")
+
+
+def own_request(path):
+    """True when the journal at path (plain, or .gz as tools/stop-team.sh leaves it) has a request of the agent's own."""
+    import gzip
+    try:
+        with (gzip.open(path, "rb") if path.endswith(".gz") else open(path, "rb")) as f:
+            for raw in f:
+                if b'"event":"request"' not in raw:
+                    continue
+                try:
+                    req = json.loads(raw).get("request") or {}
+                except ValueError:
+                    continue
+                if req.get("action") not in NOT_OWN and (req.get("args") or {}).get("peek") is not True:
+                    return True
+    except (OSError, EOFError):
+        pass
+    return False
+
+
+def played(run_dir, name):
+    """True when `name` made a request of its own in that run (its journal) or edited its notes.md there."""
+    d = os.path.join(run_dir, name)
+    if own_request(os.path.join(d, "journal.jsonl")) or own_request(os.path.join(d, "journal.jsonl.gz")):
+        return True
+    try:
+        return os.path.getmtime(os.path.join(d, "notes.md")) > os.path.getmtime(os.path.join(d, "deadline.txt")) + NOTES_TOUCHED_S
+    except OSError:
+        return False
+
+
+def notes_source(prev, name):
+    """The run up PREV's resumed-from chain whose notes.md `name` starts from: the newest it played in, else the newest
+    that has one (None: a member new to the world)."""
+    have = [r for r in chain(prev) if os.path.isfile(os.path.join(r, name, "notes.md"))]
+    return next((r for r in have if played(r, name)), have[0] if have else None)
+
+
 # (d20 batch84 AT1, Disk Space Scout: runs/ 15.1 GiB, Sol's tools/ 223 MB copied every shift) macOS clonefile(2):
 # the new file shares the source's blocks until either is written. None off macOS or where libSystem lacks it.
 _CLONEFILE = None
@@ -163,9 +215,9 @@ def place_file(src, dst, how):
         how["copied"] = how.get("copied", 0) + 1
 
 
-def copy_tree(src, dst, dry=False, how=None):
-    """Copy src into dst without replacing files dst has, each file a clone where the volume clones (how counts
-    cloned and copied). Returns (copied paths, bytes, skipped {reason: [paths]})."""
+def copy_tree(src, dst, dry=False, how=None, have=()):
+    """Copy src into dst without replacing files dst has (or `have` names: a dry run's earlier copies), each file a clone
+    where the volume clones (how counts cloned and copied). Returns (copied paths, bytes, skipped {reason: [paths]})."""
     how = {} if how is None else how
     copied, size, skipped = [], 0, {}
     for base, dirs, files in os.walk(src):
@@ -190,7 +242,7 @@ def copy_tree(src, dst, dry=False, how=None):
                 skipped.setdefault("not a file", []).append(rel)
             elif os.path.getsize(p) > CARRY_MAX_BYTES:
                 skipped.setdefault("over 5 MB", []).append(f"{rel} ({os.path.getsize(p) / 1048576:.1f} MB)")
-            elif os.path.lexists(os.path.join(dst, rel)):
+            elif os.path.lexists(os.path.join(dst, rel)) or rel in have:
                 skipped.setdefault("already there", []).append(rel)
             else:
                 if not dry:
@@ -203,45 +255,59 @@ def copy_tree(src, dst, dry=False, how=None):
 
 def carry(run, prev, names, dry=False):
     """Copy each agent's tools/ and the shared team-tools/ from the newest run up PREV's resumed-from chain that has the
-    folder (a shift whose agents never launched has none). Returns (start.log lines, copied paths)."""
+    folder (a shift whose agents never launched has none). A run where the agent did not play (played; for team-tools/,
+    no agent) only adds to it: its files first, then those of the next run up the chain, until one it played in (a
+    start killed mid-copy left part of the folder). Returns (start.log lines, copied paths)."""
     runs = chain(prev)
     lines, listing = [], []
 
-    def one(label, rel_src, dst, extra=()):
+    def one(label, rel_src, dst, was_played, extra=lambda r: ()):
+        take = []
         for r in runs:
             if os.path.isdir(os.path.join(r, rel_src)):
-                break
-        else:
+                take.append(r)
+                if was_played(r):
+                    break
+        if not take:
             lines.append(f"carry {label}: none in {', '.join(os.path.basename(r) for r in runs)}")
             return
-        how = {}
-        copied, size, skipped = copy_tree(os.path.join(r, rel_src), dst, dry, how)
-        listing.extend(f"{label}\t{os.path.basename(r)}\t{p}" for p in copied)
-        for e in extra:   # Muse's own mirrored team-tools folder in that run: what the 5 s mirror had not yet shared
-            c, s, k = copy_tree(os.path.join(r, e), dst, dry, how)
+        how, copied, size, skipped = {}, [], 0, {}
+        for r in take:
+            c, s, k = copy_tree(os.path.join(r, rel_src), dst, dry, how, set(copied))
             copied += c
             size += s
-            listing.extend(f"{label}\t{os.path.basename(r)}/{os.path.dirname(e)}\t{p}" for p in c)
+            listing.extend(f"{label}\t{os.path.basename(r)}\t{p}" for p in c)
             for why, ps in k.items():
-                if why != "already there":
+                if why != "already there" or r == take[0]:
                     skipped.setdefault(why, []).extend(ps)
+            for e in extra(r):   # Muse's own mirrored team-tools folder in that run: what the 5 s mirror had not yet shared
+                c, s, k = copy_tree(os.path.join(r, e), dst, dry, how, set(copied))
+                copied += c
+                size += s
+                listing.extend(f"{label}\t{os.path.basename(r)}/{os.path.dirname(e)}\t{p}" for p in c)
+                for why, ps in k.items():
+                    if why != "already there":
+                        skipped.setdefault(why, []).extend(ps)
         skip = "; ".join(f"skipped {len(ps)} {why}: {', '.join(ps[:6])}{' ...' if len(ps) > 6 else ''}"
                          for why, ps in sorted(skipped.items()))
         n = len(copied)
         made = (f" ({how.get('cloned', 0)} cloned, {how.get('copied', 0)} copied)" if n and not dry else "")
-        lines.append(f"carry {label}: {n} file{'' if n == 1 else 's'} ({size / 1048576:.1f} MB) from {os.path.basename(r)}"
+        src = ", ".join(os.path.basename(r) for r in take)
+        if len(take) > 1:
+            src += f" ({', '.join(os.path.basename(r) for r in take[:-1])}: not played there)"
+        lines.append(f"carry {label}: {n} file{'' if n == 1 else 's'} ({size / 1048576:.1f} MB) from {src}"
                      + made + (f"; {skip}" if skip else ""))
 
     for name in names:
-        one(f"{name} tools/", os.path.join(name, "tools"), os.path.join(run, name, "tools"))
-    for r in runs:   # the run that has team-tools/ also holds any mirrored copies
-        if os.path.isdir(os.path.join(r, "team-tools")):
-            mirrors = [os.path.relpath(m, r) for m in sorted(glob.glob(os.path.join(r, "*", "team-tools")))
-                       if os.path.isdir(m) and not os.path.islink(m)]
-            break
-    else:
-        mirrors = []
-    one("team-tools/", "team-tools", os.path.join(run, "team-tools"), mirrors)
+        one(f"{name} tools/", os.path.join(name, "tools"), os.path.join(run, name, "tools"),
+            lambda r, name=name: played(r, name))
+
+    def mirrors(r):   # the run that has team-tools/ also holds any mirrored copies
+        return [os.path.relpath(m, r) for m in sorted(glob.glob(os.path.join(r, "*", "team-tools")))
+                if os.path.isdir(m) and not os.path.islink(m)]
+    one("team-tools/", "team-tools", os.path.join(run, "team-tools"),
+        lambda r: any(played(r, os.path.basename(d)) for d in glob.glob(os.path.join(r, "*")) if os.path.isdir(d)),
+        mirrors)
     return lines, listing
 
 
@@ -458,6 +524,8 @@ if __name__ == "__main__":
             with open(os.path.join(run_dir, "carried-tools.txt"), "a") as f:
                 f.write("".join(l + "\n" for l in files))
         print("\n".join(out))
+    elif cmd == "notes-from":   # notes-from PREV_DIR NAME: the run directory NAME's notes come from (tools/new-run.sh)
+        print(notes_source(sys.argv[2], sys.argv[3]) or "")
     elif cmd == "paragraph":
         print(paragraph(sys.argv[2]), end="")
     else:

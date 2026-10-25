@@ -14103,3 +14103,120 @@ Fixed besides gates:
   0.039/0.046, the read the tick after 0.028/0.060). About 60 pod events in 83 s on that save. A read with 5000
   journeys stored: 2.6 ms for one row with an item filter, 8-12 ms for 32 rows (as sol, peek).
 - Test: tests/d24_batch179.lua (fails on main: no podlog.lua).
+
+## d24 batch174
+
+- QQ1 (Luna #2242: danger counted unseen chunks, map and scan list charted entities; no read named the chunks out of
+  sight or the radar that would cover them): a new read, `sight {surface?, position? + radius? | area}`, sight.lua. A
+  new action rather than a danger or map form: danger's and map's replies stay as they are, and sight has its own cap.
+  - Each chunk the area touches: visible now (force.is_chunk_visible), charted only (is_chunk_charted), uncharted, in
+    chunk coordinates ("x,y"), grouped by source (visible) or by nearest radar and `outside` (the others), and `rows`
+    (runs per chunk row with the source). Up to 256 chunks a call (more is refused, naming the count); radius 16..240
+    tiles (default 128), so a square touches at most 16x16. Remote by surface (as danger: a position or area there
+    when the character stands elsewhere); a read (reads.sight), so it works aboard and moves nobody.
+  - Source of a visible chunk: the nearest working radar whose continuous scan covers it, else the nearest roboport,
+    cargo landing pad or spidertron covering it, else a radar not working. Not visible: the nearest radar and how many
+    chunks outside its scan (0: inside, that radar not working). The census pass's radar, roboport, pad and spidertron
+    lists (one whole-surface find each without them).
+- What gives sight, measured on a copy of world n's 15:47 save (Nauvis, a charted unlit area round chunk (16,-23), each
+  source alone, read after 300 ticks):
+  - radar: with power the square within get_max_distance_of_nearby_sector_revealed (3: 7x7) of its own chunk; without
+    power (status 54) none. On world n the radar at chunk (-5,-18) lights x -8..-2, y -21..-15.
+  - roboport, powered or not: 2 chunks (5x5), the same square at a chunk corner (the range is in chunks round its
+    chunk); cargo-landing-pad 4 (9x9); spidertron 2 (5x5; its chunk_exploration_radius reads 3).
+  - none: a character with no player (the bots' are such), a car or tank (empty; a car with a character driving too), and 37 other
+    types tried alone (every turret kind, foundry, furnace, lab, rocket silo, agricultural tower, drill, beacon,
+    pole, accumulator, solar panel, boiler, steam engine, nuclear and fusion reactors, fusion generator, chests, wall,
+    lamp, train stop, storage tank, lightning rod, heat pipe, pump, inserter, belt, pipe, land mine, combinators, speaker).
+  - no prototype field gives a roboport's or pad's range (radar_range nil; get_radar_range absent).
+  - after its source goes (a roboport destroyed) or stops (a radar's power cut) a chunk stays visible 563-594 ticks; a
+    radar's long-range scan lights single chunks now and then (one at (2,-18) on world n, one at (14,-20) on the copy).
+  - On world n, the lit chunks x -11..-9, y -20..-18 by the outpost at chunk (-9,-18) match its roboport (#11409071).
+- Cost (sight.lua's code run by RCON as a read, census lists from storage): world n, Nauvis, 25 chunks read 1.26-1.32
+  ms and encoded 0.10; 64 chunks read 2.2-8.5 ms (3 runs), encoded 0.4; 256 chunks at the base (76 sources) read 3.96,
+  encoded 1.58 (17.5 KB). On the copy (3-11x slower), inside the runtime: 256 chunks read 3.6-7.1 ms, 1024 read 8.3-9.4
+  and encoded 14-21 ms; hence the cap of 256. Number text by string.format and numeric group keys (tostring and .. on a
+  number cost 8 us each) took the list phase of 1024 chunks from 23-30 ms to 6-8 ms on the copy.
+- Test: tests/d24_batch174.lua (fails on main: no sight.lua). Docs: agent/ref/movement-combat.md and the index (the
+  waits-queues label without "standing" pays for `sight`: the codex core stays 21995 bytes).
+## d24 batch176
+
+- QS1 (Astra #2248: Asterion's explosives line reads stopped at its blocked end (13.5,38.5) while inserters take from
+  it before the end). `belt_flow {position, exact_tile: true, seconds?, platform?}` samples the belt at position only:
+  its two lanes (a splitter: the half position is in, its input lanes 1,2 or 3,4; an underground: the tile's lanes 1,2),
+  no line walked. The default line read is unchanged.
+- 2.0.77's LuaTransportLine has no pass count (owner, line_length, total_segment_length, input_lines, output_lines;
+  contents reads), so lanes are read by item id, every quarter tile at the belt's speed (4 ticks on a fast belt). An
+  item seen on a lane and gone at a later sample left it:
+  - `passed_on`: seen on what the tile feeds (the next belt's lines, an underground entrance's own lines 3,4, a
+    splitter's lines 5..8);
+  - `taken`: gone further from the exit than a sample's travel. A lane's positions count down to its exit (read on
+    the copy: an item at 0.94 has just come on, one at 0.00 goes next);
+  - `not_seen_after`: gone at the exit and not on what it feeds: taken there or here before a sample saw it.
+  Each inserter whose pickup point is on the tile is read each sample: `picked` counts its hand's rises (the game's own
+  read), so items it takes in the tick they arrive count there and not in the lane's `taken`. The reply names the tile
+  (name, type, direction, unit number, half, underground), `feeds`, per lane `rate`, `left`, `passed_on`, `taken`,
+  `not_seen_after`, `entered`, `held`, `held_max`, `state`, and `inserters` [{inserter, picked, rate, items}].
+  - output_lines on a 2.0 belt's line names the segment's owner (13.5,28.5 for the tiles at 24.5 and 25.5), not the
+    next tile, so the next tile is found by belt_neighbours.
+- Verified on a copy of world n's 16:22 autosave (Asterion; the line x 13.5 facing south, full from 24.5 to its end at
+  38.5; railgun-ammo assemblers' inserters pick at 25.5, 31.5 and 37.5, and one at (14.5,33.5) picks at 33.5). Each
+  inserter's pickups were counted every tick by a separate script, over the same 30 s:
+  - (13.5,24.5): 60/min left, 30 items, and the four inserters picked 30 together.
+  - (13.5,31.5): right lane 20/min, 4 taken from mid-lane, 6 passed on; left 36/min passed on; its inserter picked 6
+    by its hand and by the counter. The inserters downstream picked 24, and 24 passed on.
+  - (13.5,37.5), the last one before the end: left lane stopped full; right lane 8/min, 4 taken; its inserter picked 6
+    (the counter 6). The end (13.5,38.5) read stopped full on both lanes, and the line read there (73 tiles) read
+    stopped with the end backed up.
+  - A per-tick trace saw the 25.5 inserter take an item at its tile's 0.81 and 0.31, and one at the exit of (13.5,24.5)
+    in the tick it reached 25.5.
+- Cost on the copy (1000 samples each): a sample 0.020-0.027 ms, 0.033-0.039 ms when items left (the next tile read);
+  start 0.14-0.67 ms; finish 0.07-0.08 ms. profile_ticks 60 s: beltsample.tick (now timed) 0.0057 ms a tick with
+  finished samples stored and none running; 0.057 ms a tick with three exact samples running (worst second 5.5 ms over
+  60 ticks).
+- Test: tests/d24_batch176.lua (fails on main: exact_tile is ignored and the line is read).
+## d24 batch177
+
+- QT1 (viewer Aurora 17:20: "On the site, could recurring reminders show schedule and last-run status separately? #151
+  is enabled every 20m but hidden from Active and labelled done despite its next run."). World n 17:25, one read
+  (`reminders {id: 151}` as a peek, 0.84 ms): #151 enabled true, done true, every 20m00s, next in 17m51s, last fired at
+  tick 58491420, states "sol done".
+  - Why: a one-time job that runs is switched off and marked done; `reminder_edit {every_ticks, enabled: true}` made
+    it repeat and turned it on, and done stayed. The site took done before enabled: "done" in place of the next run,
+    and out of Active (enabled and not done).
+  - reminders.lua: an edit that enables a job clears done, and a job's row gives done only while it is off, so a job
+    saved enabled and done (as #151 is) reads right without an edit.
+  - The site's reminders panel (site/static/live.js): each row gives "Schedule: every 20m00s, next in 18 min" (off; or
+    done for a job that is off and done), and apart from it the recipients' states as the last run's: "Last run 2 min
+    ago: Sol done" (from last_fired_tick and the reading's tick), "Not run yet:" when every state is scheduled. Active:
+    every enabled job. Finished: a job that is off, done or with every recipient done or acknowledged (an enabled job
+    whose last run everyone acknowledged was counted finished). The same in the collapsed view, Show all and the board
+    document's list.
+  - site/push_live.py: trimmed for size, the finished jobs (done and off) go first; an enabled job stays.
+- Tests: tests/d24_batch177.lua (fails on main: an enabled job read done) and site/test_reminders_schedule.py (fails on
+  main: push_live dropped #151 as finished; the row said done). site/test_reminders_all.py: Finished counts 15 where it
+  counted 22 (7 enabled jobs whose last run was acknowledged), and its trimming case's finished jobs are off.
+## d24 batch178 (Sol #2063, #2062, #2052)
+
+- QU1: a queued `wait_ticks` step's `result.completion` is its own: `{kind: "wait_ticks", outcome: "completed", tick,
+  ticks, start_tick, end_tick, waited}`. Before, it was the character's last completion (on the private copy of world n's
+  save: job-2 `wait_ticks` read job-1 `move_to` "arrived"). Any other queued step's completion and outcome come from
+  the character's last completion only when it was written since the step began; a timed step that left none (a
+  refusal, an instant finish) has no completion and the outcome `completed`.
+- QU2: `power {platform, by_cause: true}` reads the platform's own network (networks.platform_grid: the surface's
+  statistics; the network and capacity from its generators, panels and accumulators, found by type), names the platform
+  (`platform`; "no electric network of ours with a draw on platform Asterion (platform-16)" when there is none), and
+  each network row has `made_by` (by name and quality) and, on a platform, `capacity_kw` and `platform_network`. On the
+  copy, Asterion: network 20579, draw 39,409 kW, made 39,409 kW, capacity 280,266 kW, consumers and producers the
+  same as the plain read's `platform_power`. Cost (`profile_ticks` part `powercause.read`, the copy): Swiftlet 0.5-0.7
+  ms, Asterion 2.0-2.2 ms (13.5-15.1 ms with platform_power's scan of all 8,429 entities). World n, the game reads of
+  the new path (typed find and statistics): Chalk 0.19 ms, Swiftlet 0.32 ms, Meridian-V 0.40 ms, Kestrel II 0.69 ms,
+  Asterion 1.51 ms.
+- QU3: `requests` `section` is an index as the sections were before the call, or a logistic group's name (the one
+  section in it; none or several refused, naming them). A `construction_requests` switch in the same call inserts or
+  removes the game's section at 1 and the manual sections keep their order: the section named is found again by its
+  place among them and written (`section_moved`: "section 15 (as the call found it) is section 16 after
+  construction_requests on switched the game's section in: the call wrote section 16"). A write's reply has
+  `section_before` and `section_after` {index, group, active}. On the copy, Asterion: construction_requests false with
+  section 16 active true switched on "Astra2238 production upgrade pickup", now section 15.
+

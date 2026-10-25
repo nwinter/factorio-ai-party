@@ -225,7 +225,7 @@ return function(api)
       next_due_tick=job.enabled and job.next_due or nil, next_due_in_s=job.enabled and math.max(0, math.floor((job.next_due - game.tick) / 60)) or nil,
       last_fired_tick=job.last_fired, last_result=job.last_result, result_by=job.result_by, result_tick=job.result_tick,
       result_age_s=job.result_tick and math.floor((game.tick - job.result_tick) / 60) or nil,
-      board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=job.done or nil, serves=job.serves and Sv().view(job.serves) or nil,
+      board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=(job.done and not job.enabled) or nil, serves=job.serves and Sv().view(job.serves) or nil,
       on=on_text(job), last_trigger=job.last_trigger}
     -- (B2) the evidence given with acknowledgments, newest last
     if job.evidence and #job.evidence > 0 then
@@ -407,6 +407,9 @@ return function(api)
     if a.enabled ~= nil then
       assert(type(a.enabled) == 'boolean', 'enabled must be true or false')
       job.enabled = a.enabled
+      -- (d24 batch177 QT1, viewer Aurora 17:20: #151, a one-time job that ran and was then edited to every 20m and
+      -- enabled, kept done and the site hid it from Active) done belongs to a job that is off
+      if a.enabled then job.done = nil end
       if a.enabled and job.every and job.next_due <= game.tick then job.next_due = next_after(job, game.tick) end
     end
   end
@@ -433,6 +436,7 @@ return function(api)
     for k, v in pairs(a) do if k ~= 'id' then b[k] = v end end
     apply(job, b, false, p)
     if job.due and job.done and job.due > game.tick then job.done = nil; job.enabled = true end
+    if job.enabled then job.done = nil end
     return {edited=job.id, reminder=row(job, api.who(p))}
   end
   function M.handlers.reminder_remove(p, a)

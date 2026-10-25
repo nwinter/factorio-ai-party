@@ -194,7 +194,8 @@
   `radius`, default 96) lists the poles of that network whose loss alone would cut machines off from all generation,
   with how many machines and where (wires leaving the radius count as power). `by_cause: true` ranks each network's
   draw by entity name (last 5 s); when roboports draw, it adds the robots flying, charging and waiting, what the flying
-  ones draw, their trip lengths and the requesters with the most on the way. `platform` reads a platform's networks;
+  ones draw, their trip lengths and the requesters with the most on the way; on a platform it reads the platform's own
+  network (no pole needed), names the platform, and gives `made_by` and `capacity_kw`. `platform` reads a platform's networks;
   `surface` (a planet or platform name) reads that surface's networks by remote view, round a `position` or `area`
   there (needed there; `by_cause` reads all of them); the reply's `surface` names the one read. `power` is also an
   observe scope. Draw and production (also `platform_power` and `by_cause`) sum every quality, a row per name and
@@ -243,6 +244,13 @@
   own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap. The call returns when the sampling ends;
   `belt_flow {}` reads the last result. The sample ends at `until_tick`: `stop` and your actions do not end it (a new
   `belt_flow {position}` replaces it); `./fh wait` waits for it when nothing else runs. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
+  With `exact_tile: true` it samples the belt at position only, no line walked (a splitter: the half position is in, its
+  input lanes). Per lane: `left` (items seen on the lane, then gone; `rate` a minute), `passed_on` (seen next on what the
+  tile feeds), `taken` (gone from mid-lane: taken off this tile), `not_seen_after` (gone at the lane's end and not seen
+  on what it feeds: taken there or here before a sample saw it), `entered`, `held`, `state`. `inserters`: each inserter
+  picking from the tile, with `picked` counted from its hand, items it takes in the tick they arrive included. `tile`
+  names the entity (name, direction, unit number). On Asterion's explosives line, blocked at (13.5,38.5), the tile at
+  (13.5,37.5) read 8/min taken by its inserter while the end and the line read stopped.
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
   ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
   (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a

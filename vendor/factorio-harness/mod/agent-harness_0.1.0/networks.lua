@@ -2689,6 +2689,53 @@ return function(api)
   -- and how its machines are supplied (each machine's power bar is its buffer: full when supplied, the share delivered
   -- a tick when short). Every entity of ours on the platform is read (a platform is small); nil off a platform.
   local PLAT_GEN = {['solar-panel']=true, accumulator=true, generator=true, ['burner-generator']=true, ['fusion-generator']=true, ['electric-energy-interface']=true}
+  -- (d24 batch178 QU2) a platform's own network for power by_cause, without platform_power's scan of every entity
+  -- (Asterion: 8,422 entities, 10 ms on world n): the surface's statistics (what draws and what makes, by name and
+  -- quality, 5 s), the network the platform's generators, panels and accumulators are on (a find by type, 1.4 ms on the
+  -- copy) and their capacity, as platform_power gives it. nil: not a platform, or no network.
+  local GRID_FIND = {force=nil, type={'solar-panel', 'accumulator', 'generator', 'burner-generator', 'fusion-generator', 'electric-energy-interface'}}
+  function M.platform_grid(surface, f)
+    local stats = global_stats(surface)
+    if not stats then return nil end
+    GRID_FIND.force = f
+    local list = try(function() return surface.find_entities_filtered(GRID_FIND) end) or {}
+    local on, sun = {}, nil
+    for _, e in ipairs(list) do
+      local nid = e.valid and try(function() return e.electric_network_id end)
+      if nid then on[nid] = (on[nid] or 0) + 1 end
+    end
+    local id, most = nil, 0
+    for nid, c in pairs(on) do if c > most or (c == most and nid < id) then id, most = nid, c end end
+    if not id then return nil end
+    local cap = 0
+    for _, e in ipairs(list) do
+      if e.valid and e.electric_network_id == id then
+        if e.type == 'solar-panel' then
+          sun = sun or M.solar(surface)
+          cap = cap + (try(function() return e.prototype.get_max_energy_production(e.quality) end) or 0) * 60 / 1000 * sun.percent / 100
+        elseif e.type ~= 'accumulator' and e.type ~= 'electric-energy-interface' then cap = cap + max_output(e) * 60 / 1000 end
+      end
+    end
+    local P = defines.flow_precision_index.five_seconds
+    local function rows(category, counts)
+      local kw, by = 0, {}
+      for name, all in pairs(counts or {}) do
+        local okf, t, qs = pcall(qflow.flow_by, stats, name, category, P, nil, all)
+        for _, r in ipairs(okf and (qs or {{quality='normal', n=t}}) or {}) do
+          if r.n > 0 then
+            kw = kw + r.n * 60 / 1000
+            by[#by+1] = {name=name, quality=r.quality ~= 'normal' and r.quality or nil, kw=math.floor(r.n * 60 / 1000 + 0.5)}
+          end
+        end
+      end
+      table.sort(by, function(a, b) return a.kw > b.kw or (a.kw == b.kw and (a.name < b.name or (a.name == b.name and (a.quality or '') < (b.quality or '')))) end)
+      return kw, by
+    end
+    local draw, consumers = rows('input', try(function() return stats.input_counts end))
+    local made, producers = rows('output', try(function() return stats.output_counts end))
+    return {network=id, draw_kw=math.floor(draw + 0.5), production_kw=math.floor(made + 0.5), consumers=consumers, producers=producers,
+      capacity_kw=math.floor(cap + 0.5), tick=game.tick}
+  end
   function M.platform_power(surface, f)
     local stats = global_stats(surface)
     if not stats then return nil end
