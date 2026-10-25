@@ -14883,3 +14883,42 @@ chunk our force sees.
   refusal; measured below.
 - Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
 
+
+## d25 batch206 (QS: platform_defense, its asteroid watch read and stock, cheaper with the same replies)
+No argument or reply changed: every reply below was compared with main's at the same paused tick on a copy of world n
+(shift75 save) and was the same JSON. What changed is how much each read reads:
+- platform_defense (platdefense.lua):
+  - a turret prototype's attack parameters are read once a name (each turret read them three times a call), a
+    collector's front once a name and facing;
+  - priority lists are read without a closure per call; positions in lines are written by %d (`%g` and `..` cost about
+    2 and 8 us a number in the game's Lua);
+  - the hull's sides: the tiles are held as an array over the hull's box and each tile's neighbours read by index (a
+    table keyed by position rehashed as it grew); a hull whose box is over 4x its tiles + 4096 is read as before. The
+    sides are kept per surface while every foundation tile is where it was (the tiles are found and their positions
+    compared each call) and each turret's unit number, position, reach, arc, priority list and armed state are the
+    same; any change reads them again.
+- the asteroid watch read (asteroidwatch.lua): the class texts made once; a filter's name test once a name; a page's
+  groups ordered by first seen (a record's order in job.asts) with only the ties sorted, a full sort when that order
+  does not hold; a done watch's groups kept per filter; a running watch's records walked once for the summary, the
+  turrets' hits and the page; a turret's label made once a read.
+- stock's `elsewhere` (elsewhere.lua, census.lua): a chest's kind once a name, counts by a plain pcall, the census
+  lists filtered by force_index (e.force == force made a LuaForce an entity).
+- ammorate: a technology prototype's levels once a name. ammofeed: an empty belt by one count. vehicles.rounds_text:
+  counts by %d.
+- Cost, the copy (Rosetta), warm, one call a request as reader operator, handler / JSON of the result (ms):
+  - Lark (8 turrets, 1121 tiles, 168 belts): 12.6 / 4.6 before, 7.5 / 4.9 after;
+  - Asterion (138 turrets, 22,015 tiles): 134.9 / 44.7 before, 56.6 / 44.1 after (the hull checked 26 ms, read 45);
+  - Kestrel II: 34.9 / 16.5 before, 18.3 / 16.6 after;
+  - Asterion's running watch, 2835 tracked: the default read 14.4 / 46.1 before, 8.8 / 45.7 after; a 100-row filtered
+    page 19.5 / 75.7 before, 11.4 / 75.0 after; a done watch (1501 tracked), that page 4.2 / 59.7 before, 2.2 / 60.0;
+  - stock {surface: nauvis, item, quality, position, radius: 3}, elsewhere not yet read for that item (it is kept 60
+    s): 12.4-18.7 ms the whole call before, 9.3-10.4 after; read again within 60 s: 1.8 both.
+- The JSON is control.lua's table_to_json: about 27 us a number on the copy and 3.9 us on world n (batch166); strings
+  cost little. The replies above hold 171 numbers (Lark), 1552 (Asterion), 1600 (the watch's default read), 2582 (a
+  100-row page).
+- Tick: no work added. profile_ticks 60 s each on the copy, main then this branch: ammofeed.step 15.3 and 15.1 ms in
+  all; asteroid_watch.tick 395 and 452 (its find 230 and 262: more asteroids in view as Asterion flew on).
+- Test: tests/d25_batch206.lua (passes on main too: the replies are the same): the hull's sides against a brute force,
+  kept, and read again after a tile moved, a turret emptied or moved; a sparse hull; the watch's page order however
+  its records come, and a done watch's groups per filter; elsewhere's kinds by name; census lists by force index;
+  rounds text.
