@@ -14994,3 +14994,16 @@ No argument or reply changed: every reply below was compared with main's at the 
   kept, and read again after a tile moved, a turret emptied or moved; a sparse hull; the watch's page order however
   its records come, and a done watch's groups per filter; elsewhere's kinds by name; census lists by force index;
   rounds text.
+
+QT4 (Astra #2353): watch 472 at 62422246: Asterion, paused at Aquilo, was blocked "Asterion is paused" while the same
+watch recorded 25 uranium-rounds-magazine launched at 62421858 and the pod in transit.
+- On the copy (world n's save): Kestrel IVb and Meridian-V, both stopped at Nauvis with unmet uranium-rounds-magazine
+  requests from Nauvis, were paused at 62350620. By 62359610 Kestrel IVb had been sent 7 rockets of 25 (4 landed, its
+  hub 1350 -> 1525); Meridian-V none. A paused platform stopped at a planet still receives that planet's rockets.
+- delivery_watch up: paused is a blocker only away from the planet the cargo comes from: with from, not stopped at
+  from ("Asterion is paused at nauvis: it goes nowhere until unpaused; a silo on aquilo launches to it only while it
+  is stopped there", beside the orbit blocker); with no from, paused in flight.
+- Every watch row has `paused`, a fact whether a blocker or not: "Asterion is paused at aquilo" or "... in flight"
+  (down watches too; their blocker rule is batch139's).
+- Test: tests/d25_batch207.lua QT4; it fails on main.
+

@@ -125,3 +125,44 @@ do
   eq(d.turrets,'2 rocket-turrets: 0 empty, 1 low (under 10 rockets: 4)'); eq(d.ammo,'turrets hold 16 rockets, the hub uranium-rounds-magazine 200')
 end
 print('d25_batch207 QT2 platform ammo counts in magazines with the rounds left: ok')
+
+-- QT4 (Astra #2353: watch 472 named Asterion, paused at Aquilo, blocked while it saw 25 uranium magazines launched to
+-- it and the pod in transit): up, paused is a blocker only away from the planet the cargo comes from (with no from:
+-- in flight); paused stays a fact (row.paused).
+do
+  game={tick=1000}
+  defines={inventory={hub_main=1,rocket_silo_rocket=2,cargo_landing_pad_main=3}}
+  prototypes={item={['uranium-rounds-magazine']={}}}
+  local force={name='player',platforms={},is_chunk_charted=function() return true end}
+  local hub={valid=true,type='space-platform-hub',get_inventory=function() return {get_item_count=function() return 0 end} end}
+  local mach={valid=true,name='gun-turret',type='ammo-turret',position={x=3,y=-4},get_item_count=function() return 0 end}
+  local deck={name='platform-9',find_entities_filtered=function() return {mach} end,platform={name='Asterion'}}
+  mach.surface=deck; hub.surface=deck
+  local pl={valid=true,name='Asterion',index=9,hub=hub,surface=deck,paused=true,space_location={name='aquilo'},schedule={records={{station='aquilo'}}}}
+  force.platforms={pl}
+  game.forces={player=force}; game.planets={aquilo={surface={name='aquilo'}},nauvis={surface={name='nauvis'}}}
+  local rows={{cargo={['uranium-rounds-magazine']=25},from='aquilo',tick=999,down=false}}
+  local st={}
+  local W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,
+    freight={where=function() return {} end,receipts_since=function() return {} end,incoming=function() return {rows=rows} end,followed=function() return {down={},up={}} end}}
+  local sol={name='astra',index=1,force=force,surface={name='aquilo'}}
+  local r=W.call(sol,{item='uranium-rounds-magazine',count=25,to={position={x=3,y=-4},platform='Asterion'},deadline_min=10,from='aquilo'})
+  eq(r.watch.direction,'up'); eq(r.watch.blockers,nil,'paused at the planet the cargo comes from: no blocker')
+  eq(r.watch.paused,'Asterion is paused at aquilo')
+  eq(r.watch.stages[1].stage,'launched')
+  -- no from: paused at a planet is no blocker either
+  r=W.call(sol,{item='uranium-rounds-magazine',count=5,to={position={x=3,y=-4},platform='Asterion'},deadline_min=10})
+  eq(r.watch.blockers,nil); eq(r.watch.paused,'Asterion is paused at aquilo')
+  -- paused at another planet: a blocker, with the orbit one
+  rows={}
+  pl.space_location={name='nauvis'}
+  r=W.call(sol,{item='uranium-rounds-magazine',count=7,to={position={x=3,y=-4},platform='Asterion'},deadline_min=10,from='aquilo'})
+  local b=table.concat(r.watch.blockers or {},' | ')
+  has(b,'Asterion is paused at nauvis: it goes nowhere until unpaused; a silo on aquilo launches to it only while it is stopped there')
+  has(b,'Asterion is not stopped at aquilo')
+  -- unpaused: no paused fact
+  pl.paused=false; pl.space_location={name='aquilo'}
+  r=W.call(sol,{item='uranium-rounds-magazine',count=8,to={position={x=3,y=-4},platform='Asterion'},deadline_min=10,from='aquilo'})
+  eq(r.watch.blockers,nil); eq(r.watch.paused,nil)
+end
+print('d25_batch207 QT4 a paused platform at the planet the cargo comes up from is not blocked: ok')
