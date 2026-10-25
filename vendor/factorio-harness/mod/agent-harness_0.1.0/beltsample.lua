@@ -3,8 +3,10 @@
 -- to WALK tiles back and on (undergrounds followed, a splitter as a merge), is cut into sections at each merge (a tile
 -- with another belt feeding it: a side-load, a splitter). The last tile of each section, and the last tile of each
 -- belt merging in, is sampled for seconds: each lane's items by their unique_id, every few ticks (half the ticks an
--- item takes to cross a tile at that belt's speed). An item seen there and gone at a later sample has passed: items a
--- minute is how many passed over the window. A lane holding items that did not move is stopped (full: 4 or more on the
+-- item takes to cross a tile at that belt's speed; d25 batch210 QW1: where an inserter picks from a sampled tile, at
+-- most the ticks between two items on a lane and the inserter's half swing). An item seen there and gone at a later
+-- sample has passed: items a minute is how many passed over the window. Where inserters pick from a sampled tile their
+-- hands are read each sample, and the point's rate is passed on + picked. A lane holding items that did not move is stopped (full: 4 or more on the
 -- tile). At most POINTS tiles; one sample reads 2 lanes a tile. As a player watches the belts. The reply comes when the
 -- sampling ends (the CLI waits; belt_flow {} reads the last one).
 return function(api)
@@ -74,6 +76,60 @@ return function(api)
       charted=function(pos) return try(function() return force.is_chunk_charted(surface, chunk(pos)) end) == true end}
   end
   local function speed(b) return try(function() return b.prototype.belt_speed end) or 0.03125 end
+  -- (d25 batch210 QW1, Sol #2368: a line read at a bulk inserter's pickup tile gave 277/min where it took 746) the
+  -- inserters whose pickup point is on tile (tx,ty), read once, and each one's half swing in ticks (0.5 turn at its
+  -- quality's rotation speed): from its last pickup to its drop the hand holds what it picked for at least that long.
+  -- Read on a copy (2.0.77): items come every 8 ticks a lane on a transport belt, 4 fast, 2 or 3 express, 2 turbo; a
+  -- bulk inserter at a lane's end took items 1-3 ticks after they came on (yellow) or in the tick they came (turbo:
+  -- 202 of 396 never on the tile at any tick), so a lane read misses them at any interval and the hands count them.
+  local function takers_at(surface, tx, ty)
+    local hands, texts = {}, {}
+    for _, i in ipairs(try(function() return surface.find_entities_filtered{area={{tx - 3, ty - 3}, {tx + 4, ty + 4}}, type='inserter'} end) or {}) do
+      local pp = try(function() return i.pickup_position end)
+      if pp and math.floor(pp.x) == tx and math.floor(pp.y) == ty then
+        local rot = try(function() return i.prototype.get_inserter_rotation_speed(i.quality) end) or 0.04
+        texts[#texts+1] = string.format('%s %s #%d', i.name, at(i.position), i.unit_number)
+        hands[#hands+1] = {entity=i, text=texts[#texts], last=0, picked=0, items={}, swing=math.max(1, math.floor(0.5 / rot))}
+      end
+    end
+    return hands, texts
+  end
+  local function read_hands(hands, first)
+    for _, h in ipairs(hands) do
+      local st = h.entity.valid and try(function() return h.entity.held_stack end)
+      local n = st and st.valid_for_read and st.count or 0
+      if n > h.last and not first then h.picked = h.picked + n - h.last; h.items[st.name] = (h.items[st.name] or 0) + n - h.last end
+      h.last = n
+    end
+  end
+  local function lines_of(e, from, to) local t = {}; for k = from, to do t[#t+1] = k end; return {entity=e, lines=t} end
+  -- What a belt's lanes 1,2 feed: a splitter's outputs, an underground entrance's own hidden lines, else the next belt.
+  local function feeds(e)
+    if e.type == 'splitter' then return lines_of(e, 5, 8), 'the splitter\'s outputs' end
+    if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then return lines_of(e, 3, 4), 'its own underground lines' end
+    local out = outputs(e)[1]
+    if out and out.valid and BELT[out.type] then
+      return lines_of(out, 1, try(function() return out.get_max_transport_line_index() end) or 2), string.format('%s %s', out.name, at(out.position))
+    end
+  end
+  -- The tile a point's lanes 1,2 run on: a splitter's left half (facing its way), else the belt's own tile.
+  local function tile_of(e)
+    if e.type == 'splitter' then
+      local d = e.direction
+      return math.floor(e.position.x + 0.5 * (d == 0 and -1 or d == 8 and 1 or 0)), math.floor(e.position.y + 0.5 * (d == 4 and -1 or d == 12 and 1 or 0))
+    end
+    return math.floor(e.position.x), math.floor(e.position.y)
+  end
+  local function find_ids(nxt, ids)
+    local found = {}
+    if not (nxt and nxt.entity.valid) then return found end
+    for _, k in ipairs(nxt.lines) do
+      for _, it in ipairs(try(function() return nxt.entity.get_transport_line(k).get_detailed_contents() end) or {}) do
+        if it.unique_id and ids[it.unique_id] then found[it.unique_id] = true end
+      end
+    end
+    return found
+  end
   -- Points: each section's last tile (sections cut at merges), and each merging belt.
   local function points(path, merges)
     local pts, start = {}, 1
@@ -97,9 +153,14 @@ return function(api)
     local view = viewer(p.force, e.surface)
     local path, merges, stops = M.walk(e, view and view.charted)
     local pts = points(path, merges)
-    local fastest = 0
+    local fastest, swing = 0, math.huge
     for _, pt in ipairs(pts) do
-      fastest = math.max(fastest, speed(pt.entity)); pt.lanes = {{}, {}}; pt.left = {{}, {}}; pt.moved = {false, false}; pt.max = {0, 0}
+      fastest = math.max(fastest, speed(pt.entity)); pt.lanes = {{}, {}}; pt.left = {{}, {}}; pt.moved = {false, false}; pt.max = {0, 0}; pt.entered = {0, 0}
+      -- (d25 batch210 QW1) the inserters picking from the point's tile, and what it feeds (to tell passed on from taken)
+      local tx, ty = tile_of(pt.entity)
+      pt.hands = takers_at(pt.entity.surface, tx, ty)
+      for _, h in ipairs(pt.hands) do swing = math.min(swing, h.swing) end
+      if #pt.hands > 0 then pt.next, pt.next_text = feeds(pt.entity); pt.next_text = pt.next_text or 'nothing: the line ends here'; pt.passed_on = 0 end
       -- (d17 batch35 B2) each point's lane cap (items a minute: speed x 4 items a tile x 3600), and a merge's geometry
       pt.cap = speed(pt.entity) * 4 * 3600
       pt.dir = try(function() return pt.entity.direction end) or 0
@@ -109,7 +170,7 @@ return function(api)
         pt.into_entity = nil
       end
     end
-    local every = math.max(1, math.floor(0.5 / fastest))
+    local every = math.max(1, swing < math.huge and math.min(math.floor(0.25 / fastest), swing) or math.floor(0.5 / fastest))
     local job = {points=pts, start=game.tick, until_tick=game.tick + seconds * 60, every=every, next_tick=game.tick, samples=0,
       path_from=path[1].position, path_to=path[#path].position, tiles=#path, merges=0,
       force=view and p.force.name or nil, surface=view and e.surface.name or nil, surface_name=e.surface.name, walk_stops=#stops > 0 and stops or nil}
@@ -133,7 +194,6 @@ return function(api)
   -- the end and not on the next was taken there, or here at the end, before a sample saw it (an inserter takes an item in
   -- the tick it arrives). The inserters picking from the tile are counted from their hands, the game's own read.
   local DIRN = {[0]='north', [4]='east', [8]='south', [12]='west'}
-  local function lines_of(e, from, to) local t = {}; for k = from, to do t[#t+1] = k end; return {entity=e, lines=t} end
   function M.start_tile(p, e, q, seconds)
     assert(e and e.valid and BELT[e.type], 'belt_flow reads a belt line: position on a belt, underground or splitter tile')
     local view = viewer(p.force, e.surface)
@@ -149,47 +209,22 @@ return function(api)
       local left = (qx - e.position.x) * lx + (qy - e.position.y) * ly > 0
       pt.lines = left and {1, 2} or {3, 4}
       tile.half = left and 'left' or 'right'
-      nxt, nxt_text = lines_of(e, 5, 8), 'the splitter\'s outputs'
-    elseif ug == 'input' then
-      tile.underground = 'entrance'
-      nxt, nxt_text = lines_of(e, 3, 4), 'its own underground lines'
-    else
-      if ug then tile.underground = 'exit' end
-      local out = outputs(e)[1]
-      if out and out.valid and BELT[out.type] then
-        nxt = lines_of(out, 1, try(function() return out.get_max_transport_line_index() end) or 2)
-        nxt_text = string.format('%s %s', out.name, at(out.position))
-      end
-    end
+    elseif ug then tile.underground = ug == 'input' and 'entrance' or 'exit' end
+    nxt, nxt_text = feeds(e)
     pt.next, pt.next_text = nxt, nxt_text or 'nothing: the line ends here'
     -- inserters whose pickup point is on the tile (read once)
     local tx, ty = math.floor(e.type == 'splitter' and (q.x or q[1] or e.position.x) or e.position.x), math.floor(e.type == 'splitter' and (q.y or q[2] or e.position.y) or e.position.y)
-    local takers, hands = {}, {}
-    for _, i in ipairs(try(function() return e.surface.find_entities_filtered{area={{tx - 3, ty - 3}, {tx + 4, ty + 4}}, type='inserter'} end) or {}) do
-      local pp = try(function() return i.pickup_position end)
-      if pp and math.floor(pp.x) == tx and math.floor(pp.y) == ty then
-        takers[#takers+1] = string.format('%s %s #%d', i.name, at(i.position), i.unit_number)
-        hands[#hands+1] = {entity=i, text=takers[#takers], last=0, picked=0, items={}}
-      end
-    end
+    local hands, takers = takers_at(e.surface, tx, ty)
     local sp = speed(e)
     if nxt and nxt.entity ~= e then sp = math.max(sp, speed(nxt.entity)) end
-    local every = math.max(1, math.floor(0.25 / sp))
+    local every = math.floor(0.25 / sp)
+    for _, h in ipairs(hands) do every = math.min(every, h.swing) end
+    every = math.max(1, every)
     pt.step = speed(e) * every + 0.01
     local job = {exact=true, points={pt}, start=game.tick, until_tick=game.tick + seconds * 60, every=every, next_tick=game.tick, samples=0,
       path_from=e.position, path_to=e.position, tiles=1, merges=0, tile=tile, takers=takers, hands=hands,
       force=view and p.force.name or nil, surface=view and e.surface.name or nil, surface_name=e.surface.name}
     return job
-  end
-  local function find_ids(nxt, ids)
-    local found = {}
-    if not (nxt and nxt.entity.valid) then return found end
-    for _, k in ipairs(nxt.lines) do
-      for _, it in ipairs(try(function() return nxt.entity.get_transport_line(k).get_detailed_contents() end) or {}) do
-        if it.unique_id and ids[it.unique_id] then found[it.unique_id] = true end
-      end
-    end
-    return found
   end
   local function sample_tile(job)
     local pt = job.points[1]
@@ -230,12 +265,7 @@ return function(api)
         end
       end
     end
-    for _, h in ipairs(job.hands) do
-      local st = h.entity.valid and try(function() return h.entity.held_stack end)
-      local n = st and st.valid_for_read and st.count or 0
-      if n > h.last and not first then h.picked = h.picked + n - h.last; h.items[st.name] = (h.items[st.name] or 0) + n - h.last end
-      h.last = n
-    end
+    read_hands(job.hands, first)
   end
   -- One sample: each point's lanes by item id; an id seen before and gone now has passed.
   function M.sample(job)
@@ -253,6 +283,9 @@ return function(api)
       if e.valid and view and not view.visible(e.position) then
         pt.unseen = (pt.unseen or 0) + 1
       elseif e.valid then
+        -- (d25 batch210 QW1) entered: new on a lane after the first sample; where inserters pick, an item gone is
+        -- looked for on what the tile feeds (passed on), and the hands are read (a sample begun before this has neither)
+        local first, gone = job.samples == 1, nil
         for k = 1, 2 do
           local now = {}
           local items = try(function() return e.get_transport_line(k).get_detailed_contents() end) or {}
@@ -261,14 +294,19 @@ return function(api)
             if id then
               local was = pt.lanes[k][id]
               if was and math.abs(was.pos - it.position) > 0.001 then pt.moved[k] = true end
+              if not was and not first and pt.entered then pt.entered[k] = pt.entered[k] + 1 end
               now[id] = {pos=it.position, name=it.stack and it.stack.valid_for_read and it.stack.name or '?'}
             end
           end
-          for id, was in pairs(pt.lanes[k]) do if not now[id] then pt.left[k][id] = was.name; pt.moved[k] = true end end
+          for id, was in pairs(pt.lanes[k]) do
+            if not now[id] then pt.left[k][id] = was.name; pt.moved[k] = true; if pt.next then gone = gone or {}; gone[id] = true end end
+          end
           pt.lanes[k] = now
           pt.max[k] = math.max(pt.max[k], #items)
           pt.count = pt.count or {0, 0}; pt.count[k] = #items
         end
+        if gone then for _ in pairs(find_ids(pt.next, gone)) do pt.passed_on = pt.passed_on + 1 end end
+        if pt.hands then read_hands(pt.hands, first) end
       else pt.gone = true end
     end
     -- (d20 batch70 AF1) when it was last read, and whether a point is left to read (measures.lua: the idle count)
@@ -325,6 +363,8 @@ return function(api)
       picked = picked + h.picked
       hands[#hands+1] = {inserter=h.text, picked=h.picked, rate=minutes_text(h.picked), items=by_name(h.items, true)}
     end
+    -- (d25 batch210 QW1) through the tile: passed on + picked where inserters pick from it, else every item that left
+    local through = #hands > 0 and lanes[1].passed_on + lanes[2].passed_on + picked or lanes[1].left + lanes[2].left
     local t = job.tile
     local where = string.format('tile %s %s #%d facing %s%s', at(t.position), t.name, t.unit_number, t.direction,
       t.half and ' (its ' .. t.half .. ' half\'s input lanes)' or t.underground and ' (underground ' .. t.underground .. ')' or '')
@@ -337,22 +377,40 @@ return function(api)
       for i, h in ipairs(hands) do hp[i] = string.format('%s picked %d (%g/min%s)', h.inserter, h.picked, h.rate, h.items and ': ' .. h.items or '') end
       lines[#lines+1] = 'inserters picking from this tile (their hands read each sample): ' .. table.concat(hp, ', ')
     else lines[#lines+1] = 'no inserter picks from this tile' end
+    if #hands > 0 then lines[#lines+1] = string.format('through the tile: %g/min (%d seen next on %s + %d picked)', minutes_text(through), lanes[1].passed_on + lanes[2].passed_on, pt.next_text, picked) end
     pt.entity, pt.next = nil, nil
     for _, h in ipairs(job.hands) do h.entity = nil end
     return {done=true, exact_tile=true, surface=job.surface_name, seconds=math.floor((game.tick - job.start) / 6 + 0.5) / 10, samples=job.samples, every_ticks=job.every,
       tile=t, left=lanes[1], right=lanes[2], rate=lanes[1].rate + lanes[2].rate, feeds=pt.next_text, inserters=hands, picked=picked, picked_rate=minutes_text(picked),
+      through=through, through_rate=minutes_text(through),
       gone=pt.gone and 'the belt was removed while sampling' or nil,
       out_of_sight=pt.unseen and string.format('out of sight for %d of %d samples', pt.unseen, job.samples) or nil, lines=lines,
-      note='this tile only, by item id (2.0.77 has no pass count on a transport line): an item seen on a lane and gone at a later sample left it (rate: items a minute that left); passed_on: seen on what the tile feeds at the next sample; taken: gone from mid-lane, so taken off this tile; not_seen_after: gone at the lane\'s end and not seen on what it feeds (taken there, or here at the end, before a sample saw it); an item that comes onto the tile and is taken in the same tick is never seen on the lane: the inserters\' picked counts (their hands) include it; entered: items that came onto the lane; a lane whose items did not move is stopped (full: 4 or more on the tile)'}
+      note='this tile only, by item id (2.0.77 has no pass count on a transport line): an item seen on a lane and gone at a later sample left it (rate: items a minute that left); passed_on: seen on what the tile feeds at the next sample; taken: gone from mid-lane, so taken off this tile; not_seen_after: gone at the lane\'s end and not seen on what it feeds (taken there, or here at the end, before a sample saw it); entered: items that came onto the lane; a lane whose items did not move is stopped (full: 4 or more on the tile); through: passed_on + picked where inserters pick from the tile, else left; every_ticks: at most the ticks between two items on a lane (8 transport belt, 4 fast, 2 express and turbo) and the half swing of an inserter picking from the tile; ' .. M.MISSES}
   end
   function M.finish(job)
     local minutes = math.max(1, game.tick - job.start) / 3600
     if job.exact then return finish_tile(job, minutes) end
     local rows, lines, by_index = {}, {}, {}
+    local per_min = function(n) return math.floor(n / minutes * 10 + 0.5) / 10 end
     for _, pt in ipairs(job.points) do
       local L, R = lane_text(pt, 1, minutes), lane_text(pt, 2, minutes)
+      if pt.entered then L.entered, R.entered = pt.entered[1], pt.entered[2] end
       local row = {kind=pt.kind, position=pt.entity.valid and pt.entity.position or nil, left=L, right=R, rate=L.rate + R.rate}
       if pt.kind == 'section' then row.from, row.to, row.tiles = pt.from, pt.to, pt.tiles else row.into = pt.into end
+      -- (d25 batch210 QW1) inserters picking from the tile: their hands' count, and the point's rate passed on + picked
+      local takers
+      if pt.hands and #pt.hands > 0 then
+        local hands, picked, hp = {}, 0, {}
+        for i, h in ipairs(pt.hands) do
+          picked = picked + h.picked
+          hands[i] = {inserter=h.text, picked=h.picked, rate=per_min(h.picked), items=by_name(h.items, true)}
+          hp[i] = string.format('%s picked %d (%g/min)', h.text, h.picked, hands[i].rate)
+          h.entity = nil
+        end
+        row.inserters, row.picked, row.passed_on, row.lanes_rate = hands, picked, pt.passed_on, row.rate
+        row.rate = per_min(pt.passed_on + picked)
+        takers = string.format('; %g/min through it: %d seen next on %s + %d picked by the inserters picking from it (%s)', row.rate, pt.passed_on, pt.next_text, picked, table.concat(hp, ', '))
+      end
       if pt.gone then row.gone = 'the belt was removed while sampling' end
       if pt.unseen then
         row.out_of_sight = pt.unseen >= job.samples and 'out of sight (no radar coverage there): not sampled'
@@ -362,8 +420,8 @@ return function(api)
       local where = pt.kind == 'section' and string.format('section %s to %s (%d tiles)', at(pt.from), at(pt.to), pt.tiles)
         or string.format('belt %s merging into %s', at(row.position or pt.into), at(pt.into))
       if pt.unseen and pt.unseen >= job.samples then lines[#lines+1] = where .. ': ' .. row.out_of_sight
-      else lines[#lines+1] = string.format('%s: left lane %s%s; right lane %s%s%s', where, L.state, L.items and ' (' .. L.items .. ')' or '', R.state, R.items and ' (' .. R.items .. ')' or '',
-        row.out_of_sight and ' (' .. row.out_of_sight .. ')' or '') end
+      else lines[#lines+1] = string.format('%s: left lane %s%s; right lane %s%s%s%s', where, L.state, L.items and ' (' .. L.items .. ')' or '', R.state, R.items and ' (' .. R.items .. ')' or '',
+        row.out_of_sight and ' (' .. row.out_of_sight .. ')' or '', takers or '') end
       by_index[pt.index] = by_index[pt.index] or {}
       table.insert(by_index[pt.index], row)
     end
@@ -458,11 +516,11 @@ return function(api)
       end
     end
     if limit then lines[#lines+1] = 'limit: ' .. limit end
-    for _, pt in ipairs(job.points) do pt.entity = nil end
+    for _, pt in ipairs(job.points) do pt.entity, pt.next = nil, nil end
     if job.walk_stops then lines[#lines+1] = 'the line goes on uncharted (' .. table.concat(job.walk_stops, ', ') .. '): not walked' end
     return {done=true, surface=job.surface_name, seconds=math.floor((game.tick - job.start) / 6 + 0.5) / 10, samples=job.samples, every_ticks=job.every, tiles=job.tiles,
       from=job.path_from, to=job.path_to, points=rows, merges=#merges > 0 and merges or nil, lane_mix=#mix > 0 and mix or nil, limit=limit, lines=lines,
-      note='an item counts once it leaves the tile sampled; a lane whose items did not move over the window is stopped (full: 4 or more on the tile)'}
+      note='an item counts once it leaves the tile sampled; a lane whose items did not move over the window is stopped (full: 4 or more on the tile); every_ticks: half the ticks an item takes to cross a tile on the fastest belt sampled (an item that crosses a sampled tile is seen there), and where an inserter picks from a sampled tile at most the ticks between two items on a lane (8 transport belt, 4 fast, 2 express and turbo) and its half swing; ' .. M.MISSES}
   end
   function M.tick(tick)
     local all = api.state().belt_flow
@@ -477,6 +535,11 @@ return function(api)
   end
   -- (d22 batch106 BP1, Luna sent stop to end a sample) a sample is no character action: nothing ends it before until_tick
   -- (stop ends the character's action and combat and pauses the queue; a new sample, belt_flow {position}, replaces it).
+  -- (d25 batch210 QW1) what each count can miss, in every result's note
+  M.MISSES = 'a lane\'s rate (left) misses an item taken off the tile before a sample sees it there (an inserter can take one in the tick it comes on: at the end of a turbo belt, 202 of 396 picks were never on the tile at any tick); '
+    .. 'picked (the hands of the inserters whose pickup point is on the tile, read each sample) counts those, and misses what anything else takes (a character, a loader); '
+    .. 'passed_on (gone from the tile and seen next on what it feeds) misses an item taken there before a sample sees it; entered misses what is taken before a sample sees it; '
+    .. 'a point with inserters picking from it has rate passed_on + picked'
   M.ENDS = 'the sample ends at until_tick: stop and your actions do not end it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs'
   -- (d25 batch200 QM2) a new sample's seconds: the handler's check and a queue step's (runtime.lua step_ranges)
   M.SECONDS = {2, 30}
@@ -513,8 +576,8 @@ return function(api)
   end
   M.schema = {belt_flow = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', position='a belt, underground or splitter tile {x,y}', seconds='optional 2..30 (default 10): how long to sample',
     platform='optional platform name (platform coordinates)',
-    exact_tile='optional true: the belt at position only (no line walked): its two lanes (a splitter: the half position is in, its input lanes; an underground: the tile\'s own lanes), each lane\'s items that left the tile by item id: seen on what the tile feeds after (passed_on), gone from mid-lane (taken), or gone at the lane\'s end and not seen on what it feeds (not_seen_after); entered, held, the rate; and the inserters picking from the tile, counted from their hands. Returns tile {name, type, position, unit_number, direction, half, underground}, left, right {rate, left, passed_on, taken, not_seen_after, taken_items, entered, items, held, held_max, on_tile, state}, rate, feeds, inserters [{inserter, picked, rate, items}], picked, picked_rate, lines',
+    exact_tile='optional true: the belt at position only (no line walked): its two lanes (a splitter: the half position is in, its input lanes; an underground: the tile\'s own lanes), each lane\'s items that left the tile by item id: seen on what the tile feeds after (passed_on), gone from mid-lane (taken), or gone at the lane\'s end and not seen on what it feeds (not_seen_after); entered, held, the rate; and the inserters picking from the tile, counted from their hands. Returns tile {name, type, position, unit_number, direction, half, underground}, left, right {rate, left, passed_on, taken, not_seen_after, taken_items, entered, items, held, held_max, on_tile, state}, rate, feeds, inserters [{inserter, picked, rate, items}], picked, picked_rate, through, through_rate (passed_on + picked where inserters pick from the tile, else left), lines',
     surface='optional planet, surface or platform name (default yours): the belt there by remote view (d20 batch62 X4): the start tile in a chunk our force sees now (radar coverage); the line is walked where the map is charted, and a point out of sight is not sampled (said per point: out_of_sight)',
-    returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile), with what stands on the tile by name), on_tile}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). The sample ends at until_tick: stop and your actions do not end it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs (ends says so). Read only'}}
+    returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, entered, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile), with what stands on the tile by name), on_tile}, rate, and where inserters pick from the tile: inserters [{inserter, picked, rate, items}] (counted from their hands each sample), picked, passed_on (seen next on what it feeds), lanes_rate (left + right), rate then passed_on + picked a minute}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks (half the ticks an item takes to cross a tile; where an inserter picks from a sampled tile at most the ticks between two items and its half swing), note (what each count can miss). The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). The sample ends at until_tick: stop and your actions do not end it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs (ends says so). Read only'}}
   return M
 end
