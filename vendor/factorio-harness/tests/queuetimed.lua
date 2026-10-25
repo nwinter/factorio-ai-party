@@ -56,7 +56,7 @@ local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
 
 -- action -> the kinds of active action its handler starts.
 local TIMED={
-  walk={'walk'},move_to={'move_to'},build_path={'build_path'},construct={'construct'},kite={'kite'},mine={'mine'},
+  walk={'walk'},move_to={'move_to'},build_path={'build_path'},construct={'construct'},kite={'kite'},spider_kite={'spider_kite'},mine={'mine'},
   pickup={'pickup'},repair={'repair'},wait_until={'wait_until'},wait_ticks={'wait_ticks'},
   rearm={'feed','gather'},refuel={'feed','gather'},transfer={'feed','gather'},collect={'gather'},feed={'gather'},
   build={'feed'},load_silo={'feed','gather'},recover={'gather'},

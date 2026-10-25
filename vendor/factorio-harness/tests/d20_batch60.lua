@@ -43,7 +43,7 @@ local function setup()
     item={['firearm-magazine']=ammo('bullet',10,hit(5,'physical')),['rocket']=ammo('rocket',1,{{type='direct',action_delivery={{type='projectile',projectile='rocket'}}}}),
       ['railgun-ammo']=ammo('railgun',1,hit(10000,'physical')),['iron-plate']={type='item'}},
     quality={normal={default_multiplier=1},uncommon={default_multiplier=1.3},legendary={default_multiplier=2.5}}}
-  prototypes.get_entity_filtered=function() local o={} for k,v in pairs(prototypes.entity) do if v.type=='ammo-turret' then o[k]=v end end return o end
+  prototypes.get_entity_filtered=function(f) local o={} for k,v in pairs(prototypes.entity) do if v.type==f[1].type then o[k]=v end end return o end
   prototypes.get_item_filtered=function() local o={} for k,v in pairs(prototypes.item) do if v.type=='ammo' then o[k]=v end end return o end
   local ft={}
   for name,pt in pairs(techs) do ft[name]={prototype=pt,researched=true,level=pt.level} end
@@ -106,7 +106,7 @@ do
   eq(g.turrets,2); eq(g.where,'held'); near(g.cooldown_ticks,2.4); eq(g.shots_per_min,1500); eq(g.rounds_per_shot,1); eq(g.magazine_size,10); near(g.items_per_shot,0.1)
   eq(g.items_per_min,150); eq(g.items_per_min_all,300); near(g.damage_per_shot,28.8); near(g.damage.physical,28.8); eq(g.quality_multiplier,1)
   eq(g.sources.shooting_speed,'weapon-shooting-speed 1-6 (+150%)'); eq(g.sources.damage,'physical-projectile-damage 1-8 (+140%)'); eq(g.sources.turret_attack,'physical-projectile-damage 1-8 (+140%)')
-  eq(g.line,'gun-turret (normal) x2 with firearm-magazine (normal): a shot every 2.4 ticks (6 over 1 +150% shooting speed), 1500 shots/min; 1 round a shot, 10 rounds an item: 150 items/min each, 300/min for the 2; 28.8 physical a shot (5 base x (1 +140% damage) x (1 +140% gun-turret attack)); shooting speed: weapon-shooting-speed 1-6 (+150%); damage: physical-projectile-damage 1-8 (+140%); gun-turret attack: physical-projectile-damage 1-8 (+140%)')
+  eq(g.line,'gun-turret (normal) x2 with firearm-magazine (normal): a shot every 2.4 ticks (6 over 1 +150% shooting speed), 1500 shots/min; 1 round a shot, 10 rounds an item: 150 items/min each, 300/min for the 2; 28.8 physical a shot (5 base x (1 +140% damage) x (1 +140% gun-turret attack)); shooting speed: weapon-shooting-speed 1-6 (+150%); damage: physical-projectile-damage 1-8 (+140%); gun-turret attack: physical-projectile-damage 1-8 (+140%); 720/s at full fire; held: 40 items')
   -- legendary magazines: the damage x 2.5 (the copy: 61.9 a shot on a behemoth worm, 72 less its 10 flat), the rate as before
   local l=by['gun-turret|normal|firearm-magazine|legendary']
   eq(l.turrets,1); near(l.damage_per_shot,72); eq(l.quality_multiplier,2.5); eq(l.shots_per_min,1500)

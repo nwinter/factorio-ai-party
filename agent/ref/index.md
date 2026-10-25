@@ -10,8 +10,8 @@
   `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`, `blueprint_retire`.
 - `circuits-settings`, wires: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `signal_watch`,
   `configure`, `assembler_batch`, `requests`, `character_settings`.
-- `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
-  `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`, `turret_feeds`, `turret_tally`, `sight`.
+- `movement-combat`, foes, vehicles, death: `move_to`, `retreat_guard`, `kite`, `spider_kite`, `recover`,
+  `turrets`, `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`, `turret_feeds`, `turret_tally`, `sight`.
 - `analysis`, factory reads: `progress`, `research`, `research done`, `science`, `supply`,
   `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `belt_flow`,
   `pipe_gaps`, `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`,
