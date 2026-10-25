@@ -40,7 +40,7 @@ def jobs25():
 def payload_tests():
     rem = {"jobs": jobs25(), "total": 25}
     assert push_live.public_reminders(rem) == rem  # 25 small jobs fit whole
-    big = {"jobs": [job(i, last_result="r" * 1000, done=i % 3 == 0) for i in range(40)], "total": 40}
+    big = {"jobs": [job(i, last_result="r" * 1000, done=i % 3 == 0, enabled=i % 3 != 0) for i in range(40)], "total": 40}
     pr = push_live.public_reminders(big)
     n = len(json.dumps(pr, ensure_ascii=False))
     assert n <= push_live.REMINDER_BYTES and pr["total"] == 40, (n, pr["total"])
@@ -116,7 +116,9 @@ process.stdout.write(JSON.stringify(out));
     # opened: every job sent, 20 a page (BI3), the filters with their counts, the ones not sent
     assert li(o["all"]) == 20 and 'aria-expanded="true">Show the first 12</button>' in o["all"], o["all"]
     assert '1–20 of 25' in o["all"] and li(o["page2"]) == 5 and '21–25 of 25' in o["page2"], o["page2"]
-    assert ">Waiting or open (3)<" in o["all"] and ">Finished (22)<" in o["all"], o["all"]
+    # (d24 batch177) finished: off and done, or off with every recipient acknowledged (12 + 3); an enabled job whose
+    # last run every recipient acknowledged is active, not finished (it was 22 with the 7 such on)
+    assert ">Waiting or open (3)<" in o["all"] and ">Finished (15)<" in o["all"], o["all"]
     assert 'data-rem-filter="all" aria-pressed="true">All (25)' in o["all"] and ">Active (10)<" in o["all"] and ">Overdue (3)<" in o["all"], o["all"]
     assert "+2 more not sent (the page's size limit)" in o["all"], o["all"]
     # Active: on and not finished (7 + 3 overdue); Overdue: a recipient overdue, its chip whole

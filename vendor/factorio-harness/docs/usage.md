@@ -14131,3 +14131,24 @@ Fixed besides gates:
   finished samples stored and none running; 0.057 ms a tick with three exact samples running (worst second 5.5 ms over
   60 ticks).
 - Test: tests/d24_batch176.lua (fails on main: exact_tile is ignored and the line is read).
+## d24 batch177
+
+- QT1 (viewer Aurora 17:20: "On the site, could recurring reminders show schedule and last-run status separately? #151
+  is enabled every 20m but hidden from Active and labelled done despite its next run."). World n 17:25, one read
+  (`reminders {id: 151}` as a peek, 0.84 ms): #151 enabled true, done true, every 20m00s, next in 17m51s, last fired at
+  tick 58491420, states "sol done".
+  - Why: a one-time job that runs is switched off and marked done; `reminder_edit {every_ticks, enabled: true}` made
+    it repeat and turned it on, and done stayed. The site took done before enabled: "done" in place of the next run,
+    and out of Active (enabled and not done).
+  - reminders.lua: an edit that enables a job clears done, and a job's row gives done only while it is off, so a job
+    saved enabled and done (as #151 is) reads right without an edit.
+  - The site's reminders panel (site/static/live.js): each row gives "Schedule: every 20m00s, next in 18 min" (off; or
+    done for a job that is off and done), and apart from it the recipients' states as the last run's: "Last run 2 min
+    ago: Sol done" (from last_fired_tick and the reading's tick), "Not run yet:" when every state is scheduled. Active:
+    every enabled job. Finished: a job that is off, done or with every recipient done or acknowledged (an enabled job
+    whose last run everyone acknowledged was counted finished). The same in the collapsed view, Show all and the board
+    document's list.
+  - site/push_live.py: trimmed for size, the finished jobs (done and off) go first; an enabled job stays.
+- Tests: tests/d24_batch177.lua (fails on main: an enabled job read done) and site/test_reminders_schedule.py (fails on
+  main: push_live dropped #151 as finished; the row said done). site/test_reminders_all.py: Finished counts 15 where it
+  counted 22 (7 enabled jobs whose last run was acknowledged), and its trimming case's finished jobs are off.
