@@ -77,7 +77,8 @@
   {"id": "reminders-cost", "title": "Reminder reads under 10 ms on world n", "area": "harness", "requested_by": [], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch190"},
   {"id": "spider-fight", "title": "A bounded fight action for spidertrons", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4818"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch191"},
   {"id": "retention-quality", "title": "A delivery watch's stop retention warning matches quality", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2264"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch192"},
-  {"id": "far-vehicle-remote", "title": "A far vehicle refusal gives the remote call with the unit number", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4837"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch193"}
+  {"id": "far-vehicle-remote", "title": "A far vehicle refusal gives the remote call with the unit number", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4837"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch193"},
+  {"id": "quality-filters", "title": "Inserter and loader filters by quality and comparator", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2270"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch194"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
