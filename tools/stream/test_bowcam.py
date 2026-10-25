@@ -13,6 +13,10 @@ view of the front of Asterion when it is in flight for a few seconds"): python3 
    the first bow_first; not for a docked ship or one without a bow read.
 4. It never takes the camera from a segment or a replay; a danger shot takes the bow over.
 5. One camera (POG_CAMS=1): the one client moves to the bow and back.
+6. (d24 batch188 QAD1, viewer Caleb 19:15: "when showing Asterion's bow can you zoom out enough to see the asteroids in
+   range?") With the guns read: the space ahead covers the turrets' reach ahead of the bow plus 4 tiles, and the frame
+   its width (reach 36 and 40 ahead: zoom 0.34 and 0.30); a reach past what 0.3 shows keeps 0.3; a reach shorter than
+   the bow's own frame keeps the bow's zoom.
 """
 import os, sys
 
@@ -195,6 +199,55 @@ def one_camera():
     assert any(c[2].startswith("after the bow: ") for c in d.cuts), d.cuts
 
 
+def guns(ahead, half=40, side=36):
+    """Turrets on the bow's top row: at x -half and +half with range `side`, and one in the middle reaching `ahead`."""
+    return [{"x": -half, "y": BOW["top"], "range": side}, {"x": half, "y": BOW["top"], "range": side},
+            {"x": 0, "y": BOW["top"], "range": ahead}]
+
+
+def bow_shot(view):
+    """The bow shot sent for a ship with this view, and the world's on-air width share."""
+    d, sent = world(**FAST)
+    rows = run(d, team(), [ship(view=view)], 1000, 400)
+    assert bows(rows), d.bows
+    shot = [b for b in sent if b.get("surface") == "platform-16"][0]
+    return shot, d.onair_frac(), d.cfg["bow_ahead"]
+
+
+def reach_frame():
+    for ahead, zoom in ((36, 0.34), (40, 0.30), (60, 0.30)):
+        shot, frac, bow_ahead = bow_shot(dict(BOW_VIEW, guns=guns(ahead)))
+        assert shot["zoom"] == zoom, (ahead, shot)
+        vh, vw = 34.0 / zoom, 60.0 * frac / zoom
+        top = shot["position"]["y"] - vh / 2
+        assert abs(top - (BOW["top"] - bow_ahead * vh)) < 0.1, (top, shot)  # the bow's edge still bow_ahead down
+        shown = BOW["top"] - top
+        if ahead <= 40:  # the reach and 4 tiles ahead, and across: -76..76 and 4 each side
+            assert shown >= ahead + 4 and vw >= 152 + 8, (ahead, shown, vw)
+            assert shot["position"]["x"] == 0.0, shot
+        else:  # past what 0.3 shows: 0.3 (45 tiles ahead, 200 across), the reach's top out of frame
+            assert abs(shown - bow_ahead * 34.0 / 0.3) < 0.1 and shown < ahead + 4, shown
+    # a reach the bow's own frame covers: its zoom as without guns (60 / (102 + 12)), centred on the bow
+    shot, _, _ = bow_shot(dict(BOW_VIEW, guns=guns(5, half=20, side=10)))
+    assert shot["zoom"] == round(60.0 / 114, 2) and shot["position"]["x"] == 0.0, shot
+    # the mock's Asterion leg (its guns as world n's Asterion at 19:30: x -88.5..88.5, top 32.5 ahead of the bow): on the
+    # live layout's crop (view_frac 0.658) the width wants 0.21, so 0.3: 45.3 tiles ahead, 131.6 across (the reach's
+    # top in, the outer 23 tiles of each side out); full width (the trio's 0.999) fits it at 0.32
+    import types, mock
+    obs = {}
+    mock.MockSource.long_flight_step(types.SimpleNamespace(t0=0), 600, obs)
+    mview = obs["space"]["platforms"][0]["view"]
+    for frac, zoom in ((0.658, 0.3), (1.0, 0.32)):
+        d, sent = world(**dict(FAST, view_frac=frac))
+        rows = run(d, team(), [ship(view=dict(BOW_VIEW, **{k: mview[k] for k in ("bow", "hull", "guns")}))], 1000, 400)
+        shot = [b for b in sent if b.get("surface") == "platform-16"][0]
+        assert shot["zoom"] == zoom and shot["position"]["x"] == 0.0, (frac, shot)
+        assert 0.4 * 34.0 / zoom >= 36.5, zoom  # the reach's top and 4 tiles more in frame
+    # a ship whose reach is off-centre: centred on the bow and the reach together
+    shot, _, _ = bow_shot(dict(BOW_VIEW, guns=[{"x": 60, "y": -50, "range": 30}]))
+    assert shot["position"]["x"] == round((-51 + 90) / 2, 1), shot
+
+
 def main():
     hull_read()
     live_hulls()
@@ -203,6 +256,7 @@ def main():
     no_bow()
     holds()
     one_camera()
+    reach_frame()
     print("test_bowcam: ok")
 
 

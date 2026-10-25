@@ -68,7 +68,7 @@ eq(mc.seen,2); eq(mc.untracked,1); eq(mc.destroyed,0); eq(mc.hit,1); eq(mc.in_vi
 local sm=by['small-metallic-asteroid']
 eq(sm.seen,1); eq(sm.left_view,1); eq(sm.in_view,0)
 eq(by['medium-carbonic-asteroid'].seen+hp.seen+sm.seen,r.asteroids,'every asteroid in by_name')
-has(table.concat(r.by_name_lines,' | '),'huge-promethium-asteroid: 3 seen (2 untracked), 2 destroyed, 0 hit the platform, 0 left the view, 1 still in view')
+has(table.concat(r.by_name_lines,' | '),'huge-promethium-asteroid: 3 seen (2 untracked; 3 in view at the first read, 0 first seen later: 0 fragments, 0 other), 2 destroyed, 0 hit the platform, 0 left the view, 1 still in view')
 has(r.scope,'by_name counts every asteroid seen in view (6); classes, platform_hits, the turrets\' kills by class and trajectories cover the tracked ones (the first 2 seen: 2), untracked: 4')
 has(r.scope,'asteroid chunks are not entities: this watch does not see them')
 has(r.line,'6 asteroids seen in view, 4 of them past the 2 tracked')

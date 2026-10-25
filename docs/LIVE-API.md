@@ -450,7 +450,11 @@ linked by name to her 04:06 line): `python3 tools/opreply.py --to site:3817 "tex
 line written at that minute; `--list [NAME]` prints recent inbox lines with what `--to` takes) writes
 `runs/RUN/operator-replies.jsonl` ({t, to, name, question {text, t, source}, parts}) and then posts "@Aurora Operator:
 ..." to the game chat over RCON, cut at sentence ends into "@Aurora (1/2) Operator: ..." parts over 500 bytes;
-`--sent SEQ ...` links Operator lines already in the game chat; `--dry-run` prints the parts. model.py (and
+`--sent SEQ ...` links Operator lines already in the game chat; `--dry-run` prints the parts. (d24 batch180, viewer
+Aurora site:4789) `--update ID [--title T --area A --work W --status planned|"in progress"]` also adds or moves that
+row of /updates/ in the same call (tools/operator_updates.py upsert): the viewer and the `--to` line as who asked, the
+line's time as asked, the status's date; refused before anything is sent when the row would go backwards, a status
+past planned has no work, or a new row has no title. model.py (and
 longrun.py) read that file: each part answers the named line (`link` reply_to, `answers.id` "site:3817"), at any age and
 after a restart. A reply with no record is matched by the rules above. `part` [k, n] marks one of a split reply's
 parts (the tool's, or an agent's `fh say` parts), shown "part 1 of 2". The page finds a line by `answers.id` first; its

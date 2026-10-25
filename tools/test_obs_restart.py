@@ -93,7 +93,10 @@ def run(tmp, bin_, state, script, *args, **env):
     e.update(STUB_LOG=log, STATE=state, POG_OR_OBS=f"{bin_}/obs", POG_OR_WINPS=f"{bin_}/winps", POG_OR_SLEEP="0",
              POG_OS_OBS=f"{bin_}/obs", POG_OS_VERTICAL=f"{bin_}/vertical", POG_OS_SLEEP="0",
              POG_OS_POLL="0", POG_OS_ACTIVE_WAIT="2",
-             POG_REC_OBS=f"{bin_}/obs", POG_REC_SETTLE="0")
+             POG_REC_OBS=f"{bin_}/obs", POG_REC_SETTLE="0",
+             # (d24 batch186) a test run: the recovery lock in the temp folder, never the live checkout's runs/ (the
+             # gate runs the tests there, and the watchdog's real recovery takes runs/.obs-recover.lock)
+             POG_TEST="1", POG_REC_LOCK=os.path.join(tmp, "obs-recover.lock"))
     e.update(env)
     r = subprocess.run([os.path.join(ROOT, "tools", script), *args], cwd=ROOT, env=e, capture_output=True, text=True,
                        timeout=60)
@@ -186,19 +189,22 @@ def recover():
         c = calls.splitlines()
         i = c.index("winps tools/win/obs-restart.ps1")
         assert c[i + 1:].count("obs stream-start") == 1 and "obs stream-scene" in c[i + 1:] and "vertical status" in c, calls
-        assert not os.path.exists(os.path.join(ROOT, "runs", ".obs-recover.lock"))
+        assert not os.path.exists(os.path.join(tmp, "obs-recover.lock"))
         # still broken after the restart: exit 1
         r, _ = run(tmp, bin_, state, "obs-recover.sh", POG_REC_RESTART="true", POG_REC_STEPS="true")
         put(state, stream=0, broken=1)
         r, _ = run(tmp, bin_, state, "obs-recover.sh", POG_REC_RESTART="true", POG_REC_STEPS="true")
         assert r.returncode == 1 and "FAILED: the stream is still not active" in r.stdout, r.stdout
         # one at a time
-        os.makedirs(os.path.join(ROOT, "runs", ".obs-recover.lock"), exist_ok=True)
+        os.makedirs(os.path.join(tmp, "obs-recover.lock"))
         try:
             r, _ = run(tmp, bin_, state, "obs-recover.sh", POG_REC_RESTART="true", POG_REC_STEPS="true")
             assert r.returncode == 2 and "another obs-recover is running" in r.stdout, r.stdout
         finally:
-            os.rmdir(os.path.join(ROOT, "runs", ".obs-recover.lock"))
+            os.rmdir(os.path.join(tmp, "obs-recover.lock"))
+        # POG_TEST=1 without POG_REC_LOCK: the live lock is refused
+        r, _ = run(tmp, bin_, state, "obs-recover.sh", POG_REC_LOCK="", POG_REC_RESTART="true", POG_REC_STEPS="true")
+        assert r.returncode == 3 and "not taking the live lock" in r.stdout, r.stdout
         r, calls = run(tmp, bin_, state, "obs-recover.sh", "--dry-run")
         assert r.returncode == 0 and "plan:" in r.stdout and "stream-start" not in calls
         print("obs-recover: ok")

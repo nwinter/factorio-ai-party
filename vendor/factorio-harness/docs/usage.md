@@ -14104,6 +14104,73 @@ Fixed besides gates:
   journeys stored: 2.6 ms for one row with an item filter, 8-12 ms for 32 rows (as sol, peek).
 - Test: tests/d24_batch179.lua (fails on main: no podlog.lua).
 
+## d24 batch181
+
+- QX1 (Sol #2013, after batch133's by_name): the asteroid watch (`platform_defense {platform, asteroids: true}`).
+  - Cohorts by name: `in_first_sample` (in view at the watch's first read) and `later`, split into `later_fragments`
+    and `later_other`. How a fragment is told: an asteroid's dying effect (prototype `dying_trigger_effect`) creates
+    its fragments (a big metallic asteroid: 3 medium-metallic at offsets (-1,-0.25), (0,-0.5), (1,-0.25)), with
+    `trigger_created_entity` false, so no on_trigger_created_entity event (none in 2,600 ticks of fighting on the copy,
+    a handler registered there for the test). The watch keeps each asteroid death on the platform's surface (the
+    on_entity_died it already gets) for 30 ticks plus a read, by 8-tile cell, with what it makes; an asteroid first
+    seen later whose name such a death makes, within 3 tiles plus 0.1 a tick since, is a fragment (each death matches
+    as many as its effect makes). The rest: arrivals (new big ones come in at the view's front edge while the platform
+    flies) or a fragment of a death not matched. On the copy, fragments appeared on the death's tick with consecutive
+    unit numbers, 0.2-0.9 tiles from it.
+  - The cap: `capped`, `capped_at_tick`, `capped_at_s`; the line ends "tracked capped at 3000 from +430s: the 1967
+    first seen after that are counted (unique asteroids, each once), not followed". `untracked_unit` defines it:
+    asteroids (unit numbers), each counted once, first seen after the cap.
+  - Rounds by turret: every ammo turret's ammo slot read every 15-60 ticks (`every`: the longest multiple of 15 up to
+    60 over which it fires fewer rounds than a magazine holds, or one shot at most with magazines of 1); rounds are
+    each stack's (count - 1) * magazine_size + the top magazine's ammo left (LuaItemStack.ammo). Each read's change
+    is split into rounds fired and whole items loaded: unique while the most rounds it can fire between two reads
+    (attack_parameters.cooldown with the ammo's cooldown modifier and the force's shooting speed bonus, as
+    ammorate.lua) is under the magazine size. World n's gun turrets: cooldown 6 / (1 + 1.5) = 2.4 ticks, at most 7
+    rounds in 15 ticks under 10: `exact`. Rocket (27.3 ticks) and railgun (97.1) turrets have magazines of 1: a load
+    and a shot between two reads offset each other; with instant ammo (railgun: delivery instant) the turret's hit
+    events in that interval count the shot; a rocket's (delivery projectile) hit lands after its flight, often in a
+    later interval, so that read is `unsure_reads` and counts none; `rounds_used_most` the most it can have fired.
+    Fields: rounds_start, rounds_end, rounds_used, ammo_used (items), ammo_loaded, ammo, reads, every, unsure_reads,
+    exact, rounds_used_most; groups add rounds_used and unsure_reads. Electric and fluid turrets have no rounds.
+  - `platform_consumed`: each ammo item@quality's consumed count (item production statistics of the platform's surface,
+    qflow.count_by at every quality) over the watch, beside the turrets' reads summed (`turrets_used`).
+- On a copy of world n's 16:49 save (shift71.zip), Asterion sent from Aquilo toward the solar system edge (unpaused
+  there), 114 turrets (45 gun, 26 rocket, 23 railgun, 20 laser), a 600 s watch: 4967 asteroids, capped at +430s;
+  small and medium ones first seen later all fragments (small-oxide 1848 of 1848), big ones 237 other and 57
+  fragments; consumed against the turrets' reads: firearm-magazine 700 / 702.1, uranium-rounds-magazine 12 / 11.1,
+  railgun-ammo 59 / 59, rocket 1335 / 1150 (most 2839, 1761 unsure reads); all 25 gun turrets that fired exact.
+- Tick cost (profile_ticks 60 s on that copy, Asterion under way, a watch running), median per second:
+  asteroid_watch.tick 5.22 ms on the save's runtime, 6.47 on the branch (its ammo part 0.39 -> 1.15 ms: every ammo
+  turret read at its own interval, a slot unchanged since the last read costing its count and ammo only; 2.48 ms
+  before that fast path); find 3.7-3.9 ms on both.
+- Tests: tests/d24_batch181.lua (fails on main); d22_batch82 and d23_batch133 take the new fields and line, their
+  turret mocks live as a LuaInventory is (the watch keeps each turret's inventory).
+## d24 batch184
+
+- QAA1 (operator 18:03: `delivery_watch {}` took 24.6 ms on world n as a reader, 6 watches, each line several hundred
+  characters). On a copy of world n's 18:11 save (3 watches, #355-#357) the list took 5.0-5.9 ms as Sol, 15 KB, each
+  row 3.6-4.2 KB encoded; profile_ticks: the reply's encode 4.4 ms a call, the dispatch 3.7 ms (each whole row and its
+  status text). The list now gives each watch in brief: {id, item, quality, counts, count, to {name, position, where},
+  from, state, last_confirmed, last_s, received, held, at_start, blockers (a count), risks (a count), deadline_tick,
+  line} with the line "delivery watch #355: 3000 agricultural-science-pack to cargo-landing-pad (52,54) on nauvis, open;
+  deadline in 21m55s; last confirmed stage landed, 13m38s ago; received 2000 of 3000; no blocker; every quality (no
+  quality given); delivery_watch {id: 355} gives the whole row", and a note saying so. `{id}` gives the whole row as
+  before, `{full: true}` every whole row (the list as it was). On the copy: the list 3.0-4.0 ms, 3.2 KB; full 5.9-7.0
+  ms, 15 KB; a small read as Sol (tells {limit: 1}) 1.9-2.6 ms, the reply's clock and team block. On world n one whole
+  row (`{id: 357}`, a peek) took 0.96 ms, 3.8 KB.
+- QAA2 (operator-todo d24 09:55: the stream service's flows read about 10 ms on world n, every 30 s): on the copy main's
+  FLOW_LUA took 46.7-53.5 ms; per surface about 23 ms in all (fulgora 5.8, nauvis 4.0, vulcanus 4.0, gleba 2.5, aquilo
+  1.0, the platforms 0.06-1.9 each) and table_to_json 34.6 ms for its 5.5 KB (41 items x 30 float counts).
+  - tools/stream/harness.py FLOW_LUA builds its reply as text, each count rounded to a whole number with
+    string.format("%d") (FLOW_JSON), and reads one part of the surfaces (SPLIT): the planets dealt out in turn (nauvis,
+    vulcanus, fulgora, gleba, aquilo to parts 0, 1, 2, 0, 1), a platform by its index mod parts.
+  - tools/stream/live.py reads one of 3 parts a poll, 10 s apart (poll_flows), so each part is read again every 30 s;
+    the panel's flows are the parts' sum (sum_flows), each part at most 30 s old; the labs' use (USED_FLOW_LUA) with
+    part 0, every 30 s as before. After a restart the panel has all the surfaces 20 s later.
+  - On the copy: a part 3.1-6.3 ms, all three in one read 9.9-12.3 ms. On world n, one read at a time: part 1 2.8, 5.7,
+    3.1, 3.3 ms; part 2 5.6 ms; part 0 6.3 ms; all three in one read 12.5 ms (once; over the 10 ms rule, see the report).
+- Tests: tests/d24_batch184.lua (fails on main: the list gave whole rows) and tools/stream/test_flow_parts.py (fails on
+  main: the reply went through table_to_json; FLOW_LUA run in a real Lua with mocked statistics, and live.py's polling).
 ## d24 batch174
 
 - QQ1 (Luna #2242: danger counted unseen chunks, map and scan list charted entities; no read named the chunks out of
@@ -14139,6 +14206,43 @@ Fixed besides gates:
   number cost 8 us each) took the list phase of 1024 chunks from 23-30 ms to 6-8 ms on the copy.
 - Test: tests/d24_batch174.lua (fails on main: no sight.lua). Docs: agent/ref/movement-combat.md and the index (the
   waits-queues label without "standing" pays for `sight`: the codex core stays 21995 bytes).
+
+## d24 batch183
+
+- QZ1 (Sol #2055: a forecast for a hull not built yet; later: phase-bounded, a progress interval per 600 s).
+- What the forecast assumed (now in the reply as `basis`): legs from the route or schedule at the speed read; asteroids
+  as each connection's spawn chance averaged over the leg, a relative weight only; use = the moving ammunition rate of
+  the legs flown in the last 2 hours x this leg's weighted shots over theirs. The hull's width and the speed entered
+  only through that measured rate. pessimistic.speed keeps the use a minute, so a slower leg uses more in all.
+- The spawn rule, read on a copy of world n (2.0.77), with scripted test platforms held on a connection at a set
+  speed and distance:
+  - asteroids spawn on a line 72 tiles ahead of the platform's box (y = top - 72), across x from its left - 48 to its
+    right + 48: utility constants asteroid_spawning_offset {{-48,-72},{48,48}} (Sol's 96x120), readable at runtime
+    (prototypes.utility_constants). Height made no difference (10 against 110);
+  - their number per km flown (15 runs: widths 10..410, speeds 0.25..4 km a tick, nauvis-vulcanus, fulgora-aquilo,
+    gleba-aquilo, aquilo-solar-system-edge, 41..2054 asteroids a run): 0.0100 x (width + 96 + 20) x the summed spawn
+    chance, each kind's linear between the connection's points; the runs within about 6%. The kind mix follows each
+    kind's chance. Per tick it scales with speed (speed 1 to 4: x4.06); stopped on a connection, 1 asteroid in 120 s;
+  - on a schedule more spawn: in 120 s of their own flights Spindle 1.27, Kestrel II 1.57, Anvil 1.64, Asterion 2.53
+    times the rule. Asterion held at one place and speed met 1.8 times it with its schedule and 1.03 times with the
+    schedule removed; a test platform given a schedule 1.19. What sets the factor was not found; the reply gives the
+    range (on_path).
+- platform_endurance changes:
+  - forecast: true adds `basis` and `forecast_model` (per leg: part, km, minutes, asteroids by kind, total, on_path
+    {low, high}, per_600s, shots per ammunition held in the turrets aboard, as the forecast counts shots: fragments,
+    targets);
+  - `design {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same model for that box and speed, read only
+    (nothing built or imported), on the platform's route with its turrets' settings and our bonuses. mass is said and
+    not used. It is a light read: no rates, stock or production;
+  - `progress {from, to}` (with forecast or design) cuts each leg to that part of its connection, the way it is flown;
+    the forecast's own lines and use count that part too.
+- Check on the copy (paused, so both reads saw the same tick): design {width 102, speed = the speed read} on Asterion
+  gave forecast_model's part, km, minutes, asteroids, per_600s and shots on all 3 legs, with and without progress.
+- Cost on the copy (profile, one call a game second; the team block apart):
+  - design: 4.5-7.3 ms (the dispatch 6-9 ms; 114 turrets read on Asterion, 1.6 ms);
+  - forecast: Asterion 30-37 ms, Kestrel II 17-34, Swiftlet 11 (main: 30-50, 20, 12).
+  - The space connections are now looked up once; a design read looked them up several times a leg.
+- Test: tests/d24_batch183.lua (fails on main: design is ignored).
 ## d24 batch176
 
 - QS1 (Astra #2248: Asterion's explosives line reads stopped at its blocked end (13.5,38.5) while inserters take from
@@ -14175,48 +14279,78 @@ Fixed besides gates:
   finished samples stored and none running; 0.057 ms a tick with three exact samples running (worst second 5.5 ms over
   60 ticks).
 - Test: tests/d24_batch176.lua (fails on main: exact_tile is ignored and the line is read).
-## d24 batch177
 
-- QT1 (viewer Aurora 17:20: "On the site, could recurring reminders show schedule and last-run status separately? #151
-  is enabled every 20m but hidden from Active and labelled done despite its next run."). World n 17:25, one read
-  (`reminders {id: 151}` as a peek, 0.84 ms): #151 enabled true, done true, every 20m00s, next in 17m51s, last fired at
-  tick 58491420, states "sol done".
-  - Why: a one-time job that runs is switched off and marked done; `reminder_edit {every_ticks, enabled: true}` made
-    it repeat and turned it on, and done stayed. The site took done before enabled: "done" in place of the next run,
-    and out of Active (enabled and not done).
-  - reminders.lua: an edit that enables a job clears done, and a job's row gives done only while it is off, so a job
-    saved enabled and done (as #151 is) reads right without an edit.
-  - The site's reminders panel (site/static/live.js): each row gives "Schedule: every 20m00s, next in 18 min" (off; or
-    done for a job that is off and done), and apart from it the recipients' states as the last run's: "Last run 2 min
-    ago: Sol done" (from last_fired_tick and the reading's tick), "Not run yet:" when every state is scheduled. Active:
-    every enabled job. Finished: a job that is off, done or with every recipient done or acknowledged (an enabled job
-    whose last run everyone acknowledged was counted finished). The same in the collapsed view, Show all and the board
-    document's list.
-  - site/push_live.py: trimmed for size, the finished jobs (done and off) go first; an enabled job stays.
-- Tests: tests/d24_batch177.lua (fails on main: an enabled job read done) and site/test_reminders_schedule.py (fails on
-  main: push_live dropped #151 as finished; the row said done). site/test_reminders_all.py: Finished counts 15 where it
-  counted 22 (7 enabled jobs whose last run was acknowledged), and its trimming case's finished jobs are off.
-## d24 batch178 (Sol #2063, #2062, #2052)
+## d24 batch187
 
-- QU1: a queued `wait_ticks` step's `result.completion` is its own: `{kind: "wait_ticks", outcome: "completed", tick,
-  ticks, start_tick, end_tick, waited}`. Before, it was the character's last completion (on the private copy of world n's
-  save: job-2 `wait_ticks` read job-1 `move_to` "arrived"). Any other queued step's completion and outcome come from
-  the character's last completion only when it was written since the step began; a timed step that left none (a
-  refusal, an instant finish) has no completion and the outcome `completed`.
-- QU2: `power {platform, by_cause: true}` reads the platform's own network (networks.platform_grid: the surface's
-  statistics; the network and capacity from its generators, panels and accumulators, found by type), names the platform
-  (`platform`; "no electric network of ours with a draw on platform Asterion (platform-16)" when there is none), and
-  each network row has `made_by` (by name and quality) and, on a platform, `capacity_kw` and `platform_network`. On the
-  copy, Asterion: network 20579, draw 39,409 kW, made 39,409 kW, capacity 280,266 kW, consumers and producers the
-  same as the plain read's `platform_power`. Cost (`profile_ticks` part `powercause.read`, the copy): Swiftlet 0.5-0.7
-  ms, Asterion 2.0-2.2 ms (13.5-15.1 ms with platform_power's scan of all 8,429 entities). World n, the game reads of
-  the new path (typed find and statistics): Chalk 0.19 ms, Swiftlet 0.32 ms, Meridian-V 0.40 ms, Kestrel II 0.69 ms,
-  Asterion 1.51 ms.
-- QU3: `requests` `section` is an index as the sections were before the call, or a logistic group's name (the one
-  section in it; none or several refused, naming them). A `construction_requests` switch in the same call inserts or
-  removes the game's section at 1 and the manual sections keep their order: the section named is found again by its
-  place among them and written (`section_moved`: "section 15 (as the call found it) is section 16 after
-  construction_requests on switched the game's section in: the call wrote section 16"). A write's reply has
-  `section_before` and `section_after` {index, group, active}. On the copy, Asterion: construction_requests false with
-  section 16 active true switched on "Astra2238 production upgrade pickup", now section 15.
+## d24 batch182
 
+- QY1 (Astra #2044: "Gleba six breeders uptime ~104 base craft/min, 156 completions/min while supply made ~149/min.
+  Physical recipe 2 out plus 0.5 bonus, 1 seed returned => 260 gross/156 net. Does native production statistics or
+  supply made already subtract ignored seed?"; "recipe-only supply consumers missed egg disposal burners ... Please
+  expose these sinks"). Measured on a private copy of world n's shift70 save (tick 58595022), Gleba over 66 s (3967
+  ticks), a level script counting each egg a heating tower started to burn:
+  - six breeders (biochambers on pentapod-egg, +50%): 163 completions, 109 base crafts (completions, productivity bar
+    and craft progress at both ends), 54 productivity completions. Out 2 x 109 + 1 x 54 = 272; back in 109 (the
+    recipe's 1 egg, ignored_by_stats 1); net 163.
+  - the production statistics: made 163 (the net: the returned egg counts on neither side; a productivity
+    completion's 1 egg counts); used 166 = 138 agricultural science crafts (207 completions at +50%) + 28 eggs the
+    heating tower at (11.5,6.5) burned. Fuel burned counts as used.
+  - a heating tower burns max_energy_usage / effectivity: 666,667 / 2.5 = 266,667 J a tick, read tick by tick at full
+    power: 16 MW, 192 pentapod eggs a minute (5 MJ each). The game keeps no count per burner.
+  - completions count crafts finished (productivity's included), not items: each gives the recipe's products once, a
+    productivity completion the amount past ignored_by_productivity (1 pentapod-egg of 2).
+  - the recipes with ignored_by_stats items (prototypes on the copy): pentapod-egg (egg 1 in, 2 out, 1 each side
+    ignored), fish-breeding (raw-fish 2 in, 3 out, 2 ignored), kovarex-enrichment-process (uranium-235 40/41, 40
+    ignored; uranium-238 5 in, 2 out, 2 ignored), coal-liquefaction (heavy-oil 25 in, 90 out, 25 ignored), the
+    fluid barrels and their emptying (the barrel and the 50 fluid), fluoroketone-cooling (10 hot in, 10 cold out),
+    cryogenic-science-pack and quantum-processor (cold in, hot out: half the cold and all the hot ignored), and every
+    item recycled into itself (1 in, 0.25 out on average, 1 ignored each side).
+- uptime: a machine row and a recipe group of such a recipe carry `returned` [{item, out, in, returned, net,
+  statistics_made, statistics_used, line}], the line added to the row's and the group's line: "pentapod-egg: 254 out
+  (2 a craft, 1 a productivity completion) and 102 in (1 a craft), 102 of them returned (the 1 a craft it takes back
+  in), net 152; the production statistics count 152 made and 0 used of it for these crafts (ignored_by_stats: the
+  returned 1 a craft on neither side, so made is the net)" (a 60 s watch of the six breeders on the copy; the
+  statistics read 152 produced). `left_out` says completions are crafts, not items.
+- supply {item}: `returned` for a maker whose recipe gives or takes the item with ignored_by_stats: "the recipe
+  pentapod-egg on 6 machines (productivity +50%) gives 2 pentapod-egg a craft and 1 a productivity completion, and
+  takes 1 back in a craft; the production statistics count 1 a craft and 1 a productivity completion as made and 0 a
+  craft as used: the 1 it gives back is ignored_by_stats, on neither side, so made counts the net. From made 1515 in
+  the last 10 min: about 101 crafts/min, 252.5/min out, 101/min back in, net 151.5/min" (the rates only when that one
+  recipe makes all of it at one productivity: the machine's plus the recipe's research, capped). `used_by`: the
+  recipes taking it (each craft's ingredient past ignored_by_stats), the burners holding or burning it (heating
+  towers, boilers, burner generators, and machines or vehicles with it in a fuel slot: number, burning now, held,
+  rate at full power), turrets holding it (ammo), and "not counted in used: hatching into enemies (N of those read
+  within 5 min); what is carried off the surface (rockets, cargo pods, vehicles, characters)".
+- Cost: the new supply parts (returned_lines and used_by, 6 makers, 9 users, 1 burner) 0.18 ms a read on the copy;
+  uptime's returned 0.07 ms a row (0.014 ms for a recipe without, then kept per recipe); the fuel pass reads what a
+  burner burns once for each heating tower, boiler or burner generator and each entity holding the fuel (6 heating
+  towers: 0.003-0.007 ms). The same game reads on world n at 18:06 (saved first), one at a time: 1 heating tower and 1
+  breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
+  (unchanged: the scan).
+- Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
+- QAC1: the plain platform_endurance forecast under 10 ms a call. Where the time went, on a copy of world n's 19:22
+  autosave (timing marks in the read):
+  - Asterion, forecast true: the forecast 17-27 ms (flown legs 1.5, the turret scan 2.8, the legs loop 7.5, targets
+    2.6, damage rows 2.3, and batch183's model scanning the turrets again); the ammunition rows 4.7-8.2; route and legs
+    1.8-3.8; stock places 1.6-4; the machine status scan 1.7-6; fluids, power and the fuel outlook 1-3.6 each.
+  - Encoding the reply (control.lua): 12-15 ms on the copy for Asterion's 422 numbers (about 38 us a number there, a
+    string 0.2 us); world n writes a number in about 3.9 us (d24 batch166 cp3), so about 1.7 ms. Not changed.
+- What changed:
+  - The last complete reading of a platform for the same arguments (route, forecast, pessimistic, progress) is kept in
+    storage (plain data: every peer holds the same) and answered for 60 s with `reading` {tick, age_s, fresh,
+    refresh_s, note}. An older or missing one is read in the call; `fresh: true` reads now. At most 12 kept, none over
+    10 minutes old. The reply keeps every field.
+  - A reading asked for within 3 minutes is read again in the background (endurance.refresh, on tick%60 == 17) once
+    45 s old, the oldest first, one a second at most; a caller gone drops it. Each such read costs one tick what one
+    call cost before. It is not split over ticks: the read's working state (closures, the ammunition model) cannot be
+    kept in storage, and state kept outside it would differ on a client that joins later.
+  - batch183's model takes the forecast's turret scan and shots in the same call instead of scanning again.
+- Same figures: with the copy paused, main's reply and this branch's (fresh: true) for Swiftlet, Kestrel II and
+  Asterion agree on every field main gives (the branch adds basis, forecast_model and reading).
+- Cost on the copy (profile, one call a game second; the team block apart; encode timed apart):
+  - answered from a reading: read 1.1-2.9 ms; encode 3-6 ms with the numeric tables left out, 13.8 ms with them (the
+    copy's number cost; about 1.7 ms on world n);
+  - a call that reads: Asterion 24-39 ms, Kestrel II 16, Swiftlet 12 (as before);
+  - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
+    (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
+- Test: tests/d24_batch187.lua (fails on main: no handler).
