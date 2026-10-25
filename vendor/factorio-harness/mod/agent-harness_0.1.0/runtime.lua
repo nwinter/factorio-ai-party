@@ -15953,7 +15953,7 @@ M.turrettally=require('turrettally'){state=state,reason=function(v) return M.mea
 function handlers.turret_tally(p,a) return M.turrettally.handler(p,a) end
 -- asteroid_watch (asteroidwatch.lua, d22 batch82 AR1, Astra #1855): a platform's asteroids, their straight-line paths
 -- against its foundation, and its turrets' fire by those classes, over a window.
-M.asteroidwatch=require('asteroidwatch'){state=state,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform,timed=M.timed}
+M.asteroidwatch=require('asteroidwatch'){state=state,count_by=function(st,n,c) return M.qflow.count_by(st,n,c) end,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform,timed=M.timed}
 -- signal_watch (signalwatch.lua, d24 batch140 PL1, Sol #2116): named signals on one circuit network over a window.
 M.signalwatch=require('signalwatch'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,
   on_surface=function(p,name) return M.on_surface(p,name) end,parse_signals=function(v,what) return M.circuits.parse_signals(v,what) end}

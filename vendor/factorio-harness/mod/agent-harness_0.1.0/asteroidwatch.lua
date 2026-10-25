@@ -13,12 +13,23 @@
 -- - what happened to it, from the game's events: destroyed (on_entity_died; by which turret), hit the platform
 --   (on_entity_damaged on an entity of ours with the asteroid as cause: what it hit), left the view, or still in view;
 -- - each turret of ours on the platform: its hits (damage events), damage and kills on asteroids by their approach and
---   projection, and its ammunition used (its ammo slot read every AMMO ticks, a slice of the turrets each read: the
---   drops summed; a drop and a refill in the same interval offset each other);
+--   projection, and (d24 batch181 QX1) its rounds: every ammo turret's ammo slot read every SAMPLE to AMMO_MAX ticks, its rounds
+--   (count - 1) * magazine_size + the top stack's ammo left; a read's change split into rounds fired and items loaded,
+--   exact while the most rounds the turret can fire between two reads (its cooldown with the force's shooting speed
+--   bonus) is under the magazine size (a gun turret: 7 under 10), else a load and a shot can offset each other (a
+--   rocket or railgun turret: magazines of 1): the turret's hits in that interval show a shot, and a read with
+--   neither told apart is counted unsure;
+-- - the platform's ammunition consumed: the item production statistics' consumed count of each ammo item at every
+--   quality at the start and now (turret shots count as consumed there);
+-- - by name (QX1): the asteroids in view at the first read apart from those first seen later, and of those, the
+--   fragments (first seen within MATCH_R tiles, plus their drift, of where an asteroid whose dying effect creates that
+--   name died in the MATCH_TICKS before: by name, place and time; the game raises no event for them,
+--   trigger_created_entity is false) apart from the rest (come into the view, or a fragment of a death not matched);
 -- - trajectory samples of the first TRACK asteroids (up to POINTS points each, one a second).
 return function(api)
   local M = {}
-  M.SAMPLE, M.AMMO, M.VIEW_MARGIN = 15, 60, 32
+  M.SAMPLE, M.AMMO, M.AMMO_MAX, M.VIEW_MARGIN = 15, 15, 60, 32
+  M.MATCH_TICKS, M.MATCH_R, M.MATCH_DRIFT = 30, 3, 0.1
   -- the projection's lookups (a cell's foundation count, a tile) at most WALK_STEPS an asteroid and WALK_BUDGET a sample;
   -- CELL-tile cells with no foundation (counted once a watch) are crossed without reading their tiles
   M.MAX_ASTEROIDS, M.TRACK, M.POINTS, M.WALK_STEPS, M.WALK_BUDGET, M.CELL = 3000, 24, 16, 1200, 600, 8
@@ -142,11 +153,132 @@ return function(api)
     local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
     return inv and try(function() return inv.get_item_count() end) or nil
   end
+  -- an ammo item's magazine size, kept
+  local MAG = {}
+  local function mag_of(name)
+    local m = MAG[name]
+    if m == nil then m = try(function() return prototypes.item[name].magazine_size end) or 1; MAG[name] = m end
+    return m
+  end
+  -- a turret's rounds by ammo item ("name@quality" -> rounds): each stack (count - 1) * magazine + its ammo left
+  local function rounds_of(e, out, inv)
+    inv = inv or try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
+    if not inv then return nil end
+    for k = 1, #inv do
+      local st = inv[k]
+      if st.valid_for_read then
+        local n = st.name
+        local key = n .. '@' .. (st.quality and st.quality.name or 'normal')
+        out[key] = (out[key] or 0) + (st.count - 1) * mag_of(n) + (st.ammo or 0)
+      end
+    end
+    return out
+  end
+  -- the most rounds a turret fires between two reads ticks apart: shots (its cooldown with the ammo's modifier and the
+  -- force's shooting speed bonus, as ammorate.lua) times rounds a shot
+  local function max_rounds(job, tname, item, ticks)
+    job.rate = job.rate or {}
+    local k = tname .. '|' .. item
+    local r = job.rate[k]
+    if not r then
+      local ap = try(function() return prototypes.entity[tname].attack_parameters end) or {}
+      local ip = prototypes.item[item]
+      local at = ip and (try(function() return ip.get_ammo_type('turret') end) or try(function() return ip.get_ammo_type() end)) or {}
+      local cat = ip and try(function() return ip.ammo_category.name end)
+      local f = try(function() return game.forces[job.force] end)
+      local speed = cat and f and try(function() return f.get_gun_speed_modifier(cat) end) or 0
+      -- instant: its hit lands on the tick it fires (bullets, railgun); a projectile's (rockets) lands later
+      local a1 = type(at.action) == 'table' and (at.action[1] or at.action)
+      local d1 = a1 and type(a1.action_delivery) == 'table' and (a1.action_delivery[1] or a1.action_delivery)
+      r = {cd=(ap.cooldown or 60) * (type(at.cooldown_modifier) == 'number' and at.cooldown_modifier or 1) / (1 + speed),
+        per=(ap.ammo_consumption_modifier or 1) * (type(at.consumption_modifier) == 'number' and at.consumption_modifier or 1),
+        instant=d1 and d1.type == 'instant' or false}
+      job.rate[k] = r
+    end
+    return math.ceil(ticks / r.cd) * r.per, r.instant
+  end
+  -- (QX1) what an asteroid's death creates: its dying effect's create-entity names, how many of each (offsets), kept
+  local KIDS = {}
+  local function kids_of(name)
+    local k = KIDS[name]
+    if k == nil then
+      k = false
+      for _, t in ipairs(try(function() return prototypes.entity[name].dying_trigger_effect end) or {}) do
+        if t.type == 'create-entity' and t.entity_name then
+          k = k or {}
+          k[t.entity_name] = (k[t.entity_name] or 0) + math.max(1, #(t.offsets or {}))
+        end
+      end
+      KIDS[name] = k
+    end
+    return k
+  end
+  M.kids_of = kids_of
+  local function dcell(x, y) return math.floor(x / 8) * 65536 + math.floor(y / 8) end
+  -- a death that makes fragments, kept MATCH_TICKS (plus a sample) by place
+  local function add_death(job, name, pos, tick)
+    local kids = kids_of(name)
+    if not kids then return end
+    job.dg, job.dl = job.dg or {}, job.dl or {}
+    local d = {t=tick, x=pos.x, y=pos.y, left={}}
+    for n, c in pairs(kids) do d.left[n] = c end
+    local c = dcell(pos.x, pos.y)
+    local l = job.dg[c]
+    if not l then l = {}; job.dg[c] = l end
+    l[#l+1] = d
+    job.dl[#job.dl+1] = {c, d}
+  end
+  local function prune_deaths(job, tick)
+    local dl = job.dl
+    if not dl or #dl == 0 then return end
+    local keep, i = tick - M.MATCH_TICKS - M.SAMPLE, 1
+    while dl[i] and dl[i][2].t < keep do i = i + 1 end
+    if i == 1 then return end
+    for k = 1, i - 1 do
+      local c, d = dl[k][1], dl[k][2]
+      local l = job.dg[c]
+      if l then
+        for j = #l, 1, -1 do if l[j] == d then table.remove(l, j) end end
+        if #l == 0 then job.dg[c] = nil end
+      end
+    end
+    local rest = {}
+    for k = i, #dl do rest[#rest+1] = dl[k] end
+    job.dl = rest
+  end
+  -- an asteroid's cohort when first seen: first (in view at the first read), fragment (a death matched), later
+  local function cohort(job, name, pos, tick)
+    if not job.first_sample or tick <= job.first_sample then return 'first' end
+    local dg = job.dg
+    if dg then
+      local cx, cy = math.floor(pos.x / 8), math.floor(pos.y / 8)
+      for ox = -1, 1 do
+        for oy = -1, 1 do
+          for _, d in ipairs(dg[(cx + ox) * 65536 + (cy + oy)] or {}) do
+            local dt = tick - d.t
+            local left = d.left[name]
+            if left and left > 0 and dt >= 0 and dt <= M.MATCH_TICKS + M.SAMPLE then
+              local r = M.MATCH_R + M.MATCH_DRIFT * dt
+              local dx, dy = pos.x - d.x, pos.y - d.y
+              if dx * dx + dy * dy <= r * r then d.left[name] = left - 1; return 'fragment' end
+            end
+          end
+        end
+      end
+    end
+    return 'later'
+  end
+  local function count_cohort(job, name, c)
+    job.coh = job.coh or {}
+    local t = job.coh[name]
+    if not t then t = {first=0, fragment=0, later=0}; job.coh[name] = t end
+    t[c] = t[c] + 1
+  end
 
   -- (d20 batch133 PE1, Sol #2094: no totals by asteroid name; untracked counted every sighting) past MAX_ASTEROIDS an
   -- asteroid is untracked: job.untr[unit] its state (1 seen, 2 hit the platform, 3 destroyed), job.useen[name] counted
   -- once an asteroid, and job.uview[name] those in view at the last sample; returns nil, its state then.
-  local function untracked_of(job, e)
+  local function untracked_of(job, e, tick)
     if not job.untr then job.untr, job.useen, job.uhit, job.udied, job.uview = {}, {}, {}, {}, {} end  -- a watch begun before
     local u = e.unit_number
     local st = job.untr[u]
@@ -155,6 +287,7 @@ return function(api)
       job.untr[u], job.untracked = 1, job.untracked + 1
       local n = e.name
       job.useen[n] = (job.useen[n] or 0) + 1
+      count_cohort(job, n, cohort(job, n, e.position, tick))
     end
     return st
   end
@@ -162,10 +295,14 @@ return function(api)
     local u = e.unit_number
     local r = job.asts[u]
     if r or not u then return r end
-    if job.nast >= M.MAX_ASTEROIDS then return nil, untracked_of(job, e) end
+    if job.nast >= M.MAX_ASTEROIDS then return nil, untracked_of(job, e, tick) end
     local pos = e.position
     r = {n=e.name, s0=tick, p0={x=pos.x, y=pos.y}, p={x=pos.x, y=pos.y}, t=tick}
+    r.c = cohort(job, r.n, pos, tick)
+    count_cohort(job, r.n, r.c)
     job.asts[u], job.nast = r, job.nast + 1
+    -- (QX1) the tick the tracked set reached its cap: asteroids first seen after it are counted, not followed
+    if job.nast == M.MAX_ASTEROIDS then job.cap_tick = tick end
     if job.ntrack < M.TRACK then job.ntrack = job.ntrack + 1; r.traj = {{tick, r1(pos.x), r1(pos.y)}} end
     return r
   end
@@ -188,6 +325,8 @@ return function(api)
     local s = game.get_surface(job.surface)
     if not s then job.gone = tick; return end
     job.samples, job.sampled = job.samples + 1, tick
+    job.first_sample = job.first_sample or tick
+    prune_deaths(job, tick)
     local list = timed('asteroid_watch.find', function() return try(function() return s.find_entities_filtered{area=job.view, type='asteroid'} end) or {} end)
     job.in_view = #list
     local d = {x=0, y=0, n=0}
@@ -221,25 +360,81 @@ return function(api)
         end
       end)
     end
-    -- ammunition: each turret once every AMMO ticks, a slice of them each read (AMMO / SAMPLE slices)
+    -- ammunition: every ammo turret each read (QX1)
     timed('asteroid_watch.ammo', M.ammo, job, tick)
   end
+  -- (QX1) every ammo turret's rounds each read: a change split into rounds fired and items loaded (see the header)
   function M.ammo(job, tick)
-    local slices = math.max(1, math.floor(M.AMMO / M.SAMPLE))
-    local k = job.samples % slices
-    for i = k + 1, #job.tlist, slices do
+    for i = 1, #job.tlist do
       local t = job.turrets[job.tlist[i]]
-      do
-        if t and not t.gone then
-          local e = t.e
-          if e and e.valid then
-            local n = ammo_count(e)
-            if n and t.ammo then
-              if n < t.ammo then t.used = t.used + (t.ammo - n) elseif n > t.ammo then t.loaded = t.loaded + (n - t.ammo) end
+      if t and t.rk and not t.gone and tick - (t.rt or 0) >= (t.every or M.AMMO) then
+        local e = t.e
+        if e and e.valid then
+          -- a slot unchanged since the last read (its count and the top stack's ammo) costs two reads: most turrets most reads
+          local inv = t.inv
+          if not inv then inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end); t.inv = inv end
+          local st = inv and #inv == 1 and inv[1]
+          local same = false
+          if st then
+            if st.valid_for_read then
+              local n, a = st.count, st.ammo
+              same = n == t.c1 and a == t.a1 and not t.shot
+              t.c1, t.a1 = n, a
+            else
+              same = t.c1 == 0 and not t.shot
+              t.c1, t.a1 = 0, 0
             end
-            t.ammo = n or t.ammo
-          else t.gone, t.e = tick, nil end
-        end
+          end
+          local now = (not same) and rounds_of(e, {}, inv)
+          if same then t.rt, t.reads = tick, t.reads + 1 end
+          if now then
+            local ticks = tick - (t.rt or tick)
+            local keys = {}
+            for k in pairs(now) do keys[k] = true end
+            for k in pairs(t.rk) do keys[k] = true end
+            for k in pairs(keys) do
+              local r0, r1 = t.rk[k] or 0, now[k] or 0
+              if r0 ~= r1 or (t.shot and ticks > 0) then
+                local item = k:match('^(.-)@')
+                local m = mag_of(item)
+                local d = r0 - r1
+                -- the fewest rounds fired that leave a whole number of items loaded
+                local c = d
+                if d < 0 then c = d % m; if m - c < 1e-6 then c = 0 end end
+                if c < 1e-6 then c = 0 end
+                local most, instant = max_rounds(job, t.name, item, ticks > 0 and ticks or M.SAMPLE)
+                if c > most + 1e-6 then
+                  -- more than the turret can fire between two reads: the bound does not hold (unsure)
+                  t.unsure = t.unsure + 1
+                elseif c + m <= most + 1e-6 then
+                  -- a load could hide a shot: the turret's hits since the last read show one when its ammo hits as it
+                  -- fires (instant); a rocket's hit lands after its flight, maybe in a later interval than its shot
+                  if t.shot and instant and c < 1e-6 then c = m
+                  else t.unsure, t.hidden = t.unsure + 1, (t.hidden or 0) + math.floor((most - c) / m + 1e-6) * m end
+                end
+                local loaded = (r1 - r0 + c) / m
+                t.used, t.uitems = t.used + c, (t.uitems or 0) + c / m
+                if c > 0 then t.uby = t.uby or {}; t.uby[k] = (t.uby[k] or 0) + c / m end
+                if loaded > 1e-6 then t.loaded = t.loaded + math.floor(loaded + 0.5) end
+                t.items[k] = true
+              end
+            end
+            t.rk, t.rt, t.reads, t.shot = now, tick, t.reads + 1, nil
+            -- how often to read it: the longest multiple of SAMPLE up to AMMO_MAX ticks over which it fires fewer
+            -- rounds than a magazine holds (exact), or at most one shot with magazines of 1
+            local item = next(now)
+            item = item and item:match('^(.-)@')
+            if item then
+              local m, every = mag_of(item), M.AMMO
+              local per = max_rounds(job, t.name, item, 1)
+              for k = M.AMMO_MAX, M.AMMO, -M.AMMO do
+                local most = max_rounds(job, t.name, item, k)
+                if most < m - 1e-6 or (m <= 1 and most <= per + 1e-6) then every = k; break end
+              end
+              t.every = every
+            end
+          end
+        else t.gone, t.e = tick, nil end
       end
     end
   end
@@ -264,6 +459,7 @@ return function(api)
             local h = t.ah[u]
             if not h then h = {0, 0, 0}; t.ah[u] = h end
             h[1], h[2] = h[1] + 1, h[2] + (event.final_damage_amount or 0)
+            t.shot = true
           end
         elseif cause and cause.valid and cause.type == 'asteroid' and e.force and e.force.name == job.force then
           local r, ust = rec_of(job, cause, event.tick)
@@ -289,6 +485,7 @@ return function(api)
       if not job.result and job.surface == si then
         local r, ust = rec_of(job, e, event.tick)
         if ust == 1 then job.untr[e.unit_number] = 3; local n = e.name; job.udied[n] = (job.udied[n] or 0) + 1 end
+        add_death(job, e.name, e.position, event.tick)
         if r then
           if not r.prj and not r.queued then r.queued = true; job.queue[#job.queue+1] = e.unit_number end
           r.p.x, r.p.y = e.position.x, e.position.y
@@ -311,6 +508,26 @@ return function(api)
   end
 
   local function sum(t) local n = 0; for _, v in pairs(t) do n = n + v end; return n end
+  -- (QX1) the platform's ammunition consumed since the game began, by "name@quality" (item production statistics of
+  -- its surface, every ammo item at every quality: api.count_by, qflow.lua's)
+  local AMMO_ITEMS
+  function M.consumed(force, s)
+    local stats = try(function() return force.get_item_production_statistics(s) end)
+    if not (stats and api.count_by) then return nil end
+    if not AMMO_ITEMS then
+      AMMO_ITEMS = {}
+      for n in pairs(try(function() return prototypes.get_item_filtered({{filter='type', type='ammo'}}) end) or {}) do AMMO_ITEMS[#AMMO_ITEMS+1] = n end
+      table.sort(AMMO_ITEMS)
+    end
+    local out = {}
+    for _, n in ipairs(AMMO_ITEMS) do
+      local total, by = api.count_by(stats, n, 'output')
+      if total and total > 0 then
+        if by then for _, x in ipairs(by) do out[n .. '@' .. x.quality] = x.n end else out[n .. '@normal'] = total end
+      end
+    end
+    return out
+  end
   local CLASSES = {'front/crosses', 'front/misses', 'side/crosses', 'side/misses', 'rear/crosses', 'rear/misses', 'clear', 'unknown'}
   local function class_text(k)
     if k == 'clear' then return 'clear (its line never enters the hull\'s box)' end
@@ -357,14 +574,20 @@ return function(api)
       nt.left_view = nt.left_view + math.max(0, c - died - hit - view)
     end
     local by_name, name_lines = {}, {}
-    for _, t in pairs(names) do
+    for n, t in pairs(names) do
       if t.untracked == 0 then t.untracked = nil end
+      -- (QX1) when first seen: in view at the first read, or later (a fragment matched to a death, or the rest)
+      local c = job.coh and job.coh[n]
+      if c then t.in_first_sample, t.later, t.later_fragments, t.later_other = c.first, c.fragment + c.later, c.fragment, c.later end
       by_name[#by_name+1] = t
     end
     table.sort(by_name, function(a, b) if a.seen ~= b.seen then return a.seen > b.seen end return a.name < b.name end)
     for _, t in ipairs(by_name) do
+      local paren = {}
+      if t.untracked then paren[#paren+1] = string.format('%d untracked', t.untracked) end
+      if t.later then paren[#paren+1] = string.format('%d in view at the first read, %d first seen later: %d fragments, %d other', t.in_first_sample, t.later, t.later_fragments, t.later_other) end
       name_lines[#name_lines+1] = string.format('%s: %d seen%s, %d destroyed, %d hit the platform, %d left the view, %d still in view', t.name, t.seen,
-        t.untracked and string.format(' (%d untracked)', t.untracked) or '', t.destroyed, t.hit, t.left_view, t.in_view)
+        #paren > 0 and ' (' .. table.concat(paren, '; ') .. ')' or '', t.destroyed, t.hit, t.left_view, t.in_view)
     end
     for _, u in ipairs(job.hits) do
       local r = job.asts[u]
@@ -388,7 +611,7 @@ return function(api)
       end
     end
     -- turrets: their hits, damage and kills by the asteroid's class, ammunition used
-    local rows, groups, gorder = {}, {}, {}
+    local rows, groups, gorder, used_by = {}, {}, {}, {}
     local fired, idle = 0, 0
     for _, t in pairs(job.turrets) do
       t.hits, t.dmg, t.kills = {}, {}, {}
@@ -400,16 +623,26 @@ return function(api)
         if h[3] > 0 then t.kills[k] = (t.kills[k] or 0) + h[3] end
       end
       local nh = sum(t.hits)
-      if nh > 0 or t.used > 0 then fired = fired + 1 else idle = idle + 1 end
+      local fired_any = nh > 0 or t.used > 0
+      if fired_any then fired = fired + 1 else idle = idle + 1 end
       local gk = t.name .. '|' .. t.region
       local g = groups[gk]
-      if not g then g = {name=t.name, region=t.region, turrets=0, hits={}, kills={}, damage=0, ammo_used=0}; groups[gk] = g; gorder[#gorder+1] = gk end
+      if not g then g = {name=t.name, region=t.region, turrets=0, hits={}, kills={}, damage=0, ammo_used=0, rounds_used=0, unsure_reads=0}; groups[gk] = g; gorder[#gorder+1] = gk end
       g.turrets = g.turrets + 1
       for k, n in pairs(t.hits) do g.hits[k] = (g.hits[k] or 0) + n end
       for k, n in pairs(t.kills) do g.kills[k] = (g.kills[k] or 0) + n end
-      g.damage, g.ammo_used = g.damage + sum(t.dmg), g.ammo_used + t.used
-      if nh > 0 or t.used > 0 then
-        rows[#rows+1] = {name=t.name, position=t.position, region=t.region, hits=t.hits, kills=t.kills, damage=r1(sum(t.dmg)), ammo_used=t.used, ammo_loaded=t.loaded, gone_s=t.gone and sec(t.gone) or nil, n=nh}
+      g.damage, g.ammo_used, g.rounds_used, g.unsure_reads = g.damage + sum(t.dmg), g.ammo_used + (t.uitems or 0), g.rounds_used + t.used, g.unsure_reads + (t.unsure or 0)
+      for k, v in pairs(t.uby or {}) do used_by[k] = (used_by[k] or 0) + v end
+      if fired_any then
+        local items = {}
+        for k in pairs(t.items or {}) do items[#items+1] = k end
+        for k in pairs(t.rk or {}) do if not (t.items or {})[k] then items[#items+1] = k end end
+        table.sort(items)
+        rows[#rows+1] = {name=t.name, position=t.position, region=t.region, hits=t.hits, kills=t.kills, damage=r1(sum(t.dmg)),
+          rounds_used=r3(t.used), ammo_used=r3(t.uitems or 0), ammo_loaded=t.loaded, rounds_start=t.r0 and r3(t.r0), rounds_end=t.rk and r3(sum(t.rk)),
+          ammo=#items > 0 and table.concat(items, ', ') or nil, reads=t.reads, every=t.every, unsure_reads=t.unsure, exact=t.rk and (t.unsure or 0) == 0 or nil,
+          rounds_used_most=(t.unsure or 0) > 0 and r3(t.used + (t.hidden or 0)) or nil,
+          gone_s=t.gone and sec(t.gone) or nil, n=nh}
       end
     end
     table.sort(rows, function(a, b) return a.n > b.n end)
@@ -430,20 +663,47 @@ return function(api)
       local g = groups[gk]
       local h, hc, hm = split(g.hits)
       local k, kc, km = split(g.kills)
-      g.damage = r1(g.damage)
+      g.damage, g.ammo_used, g.rounds_used = r1(g.damage), r3(g.ammo_used), r3(g.rounds_used)
       grows[#grows+1] = g
-      glines[#glines+1] = string.format('%s x%d (%s of the hull): %d hits, %d kills, %g damage, %d ammo used; on asteroids clear of the hull\'s box %d hits and %d kills, on ones whose line enters it but crosses no foundation %d hits and %d kills',
-        g.name, g.turrets, g.region, h, k, g.damage, g.ammo_used, hc, kc, hm, km)
+      glines[#glines+1] = string.format('%s x%d (%s of the hull): %d hits, %d kills, %g damage, %g ammo used (%g rounds%s); on asteroids clear of the hull\'s box %d hits and %d kills, on ones whose line enters it but crosses no foundation %d hits and %d kills',
+        g.name, g.turrets, g.region, h, k, g.damage, g.ammo_used, g.rounds_used, g.unsure_reads > 0 and string.format(', %d reads unsure', g.unsure_reads) or ', exact', hc, kc, hm, km)
     end
     local nd, nh = 0, 0
     for _, t in ipairs(by_name) do nd, nh = nd + t.destroyed, nh + t.hit end
-    local line = string.format('%s %s for %gs%s: %d asteroids seen in view%s (%d in view now), %d destroyed, %d hit the platform; turrets %d fired, %d did not',
+    -- (QX1, Sol: "3000 seen without capped warning; tracked cohort stops growing by ~577s") the cap said in the headline
+    local capped = job.cap_tick and string.format('; tracked capped at %d from +%gs: the %d first seen after that are counted (unique asteroids, each once), not followed',
+      M.MAX_ASTEROIDS, sec(job.cap_tick), job.untracked) or ''
+    -- the platform's ammunition consumed (item production statistics), and the turrets' reads beside it
+    local consumed, consumed_lines = nil, nil
+    if job.stats0 then
+      local f, sf = try(function() return game.forces[job.force] end), game.get_surface(job.surface)
+      local now_c = f and sf and M.consumed(f, sf) or {}
+      consumed, consumed_lines = {}, {}
+      local keys = {}
+      for k in pairs(now_c) do keys[k] = true end
+      for k in pairs(used_by) do keys[k] = true end
+      local list = {}
+      for k in pairs(keys) do list[#list+1] = k end
+      table.sort(list)
+      for _, k in ipairs(list) do
+        local d = (now_c[k] or 0) - (job.stats0[k] or 0)
+        local u = used_by[k] or 0
+        if d ~= 0 or u > 0 then
+          consumed[#consumed+1] = {ammo=k, consumed=d, turrets_used=r3(u)}
+          consumed_lines[#consumed_lines+1] = string.format('%s: %d consumed on %s (item production statistics), %g used by the turrets\' reads', k, d, job.platform, r3(u))
+        end
+      end
+    end
+    local line = string.format('%s %s for %gs%s: %d asteroids seen in view%s (%d in view now), %d destroyed, %d hit the platform; turrets %d fired, %d did not%s',
       done and 'watched' or 'watching', job.platform, r1(secs), done and '' or string.format(' of %ds', job.seconds), job.nast + job.untracked,
-      job.untracked > 0 and string.format(', %d of them past the %d tracked', job.untracked, M.MAX_ASTEROIDS) or '', job.in_view or 0, nd, nh, fired, idle)
+      job.untracked > 0 and string.format(', %d of them past the %d tracked', job.untracked, M.MAX_ASTEROIDS) or '', job.in_view or 0, nd, nh, fired, idle, capped)
     local out = {watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=r1(secs), start_tick=job.start, end_tick=done and job.until_tick or nil,
       samples=job.samples, every_ticks=M.SAMPLE, view=job.view, hull={left_top={x=job.hull.x0, y=job.hull.y0}, right_bottom={x=job.hull.x1, y=job.hull.y1}},
       drift_tiles_per_s=drift(job) and {x=r3(drift(job).x * 60), y=r3(drift(job).y * 60)} or nil,
       asteroids=job.nast + job.untracked, tracked=job.nast, tracked_cap=M.MAX_ASTEROIDS, untracked=job.untracked,
+      capped=job.cap_tick and true or nil, capped_at_tick=job.cap_tick, capped_at_s=job.cap_tick and sec(job.cap_tick) or nil,
+      untracked_unit='asteroids (unit numbers), each counted once however many reads saw it, first seen after the tracked set reached its cap',
+      cohort_note=M.COHORT, ammo_note=M.AMMO_NOTE, platform_consumed=consumed, platform_consumed_lines=consumed_lines,
       by_name=by_name, by_name_lines=name_lines, scope=string.format('by_name counts every asteroid seen in view (%d); classes, platform_hits, the turrets\' kills by class and trajectories cover the tracked ones (the first %d seen: %d), untracked: %d (their turret hits and kills count as untracked)%s',
         job.nast + job.untracked, M.MAX_ASTEROIDS, job.nast, job.untracked, M.CHUNKS),
       classes=classes, class_lines=class_lines,
@@ -452,11 +712,18 @@ return function(api)
     if unpaged then return out end
     return M.page(out, job, {})  -- the default page (the rarest names first) for every reader
   end
+  M.COHORT = 'by_name in_first_sample: in view at the watch\'s first read; later: first seen after it, later_fragments of them first seen within '
+    .. M.MATCH_R .. ' tiles (plus ' .. M.MATCH_DRIFT .. ' a tick since) of where an asteroid whose dying effect creates that name died (any death on the platform\'s surface the watch got, in the '
+    .. M.MATCH_TICKS .. ' ticks before plus a read): told by name, place and time, as the game links them by no event (the dying effect\'s trigger_created_entity is false); later_other: the rest (come into the view: new ones arrive at its front edge while the platform flies; or a fragment of a death not matched)'
+  M.AMMO_NOTE = 'per turret (ammo turrets): rounds_start and rounds_end exact (each stack (count - 1) * magazine size + the top magazine\'s ammo left); rounds_used and ammo_loaded from its ammo slot read every '
+    .. M.AMMO .. '-' .. M.AMMO_MAX .. ' ticks (every: the longest interval over which it fires fewer rounds than a magazine holds, or one shot at most with magazines of 1), each read\'s change split into rounds fired and whole items loaded; exact (unsure_reads 0) while the most rounds the turret fires between two reads (its cooldown with the force\'s shooting speed bonus) is under its magazine size (gun turrets); '
+    .. 'with a magazine of 1 (rocket, railgun) a load and a shot between two reads offset each other: with instant ammo (railgun) the turret\'s hits in that interval count the shot, else that read is unsure_reads and counts none (a rocket\'s hit lands after its flight, so its hits do not date its shots): rounds_used is then the fewest it fired, rounds_used_most the most (each unsure read hiding as many shots as fit in it); '
+    .. 'ammo_used is rounds_used in items; platform_consumed: the item production statistics\' consumed count on the platform over the watch (every turret\'s shots, whole platform), beside the turrets\' ammo_used summed'
   M.CHUNKS = '; asteroid chunks are not entities: this watch does not see them, and nothing it reads is collected (platform_supply {collection: true} and its collector_tally watch read chunks and what collectors take)'
   M.NOTE = 'heading: a platform faces north; approach is where the asteroid\'s straight line enters the box round the hull\'s foundation (front the north edge, side west or east, rear south; clear: it never enters it); '
     .. 'crosses/misses: a straight-line projection from its last two sampled positions (one seen once takes the drift common to the others: assumed_drift), as wide as the asteroid, until it leaves the view: '
     .. 'whether it would cross a foundation tile if no turret fired and the platform kept its speed; a projection, not what happened; outcome is what happened (the game\'s events: destroyed and by what, hit an entity of ours, left the view, still in view); '
-    .. 'turret hits are its damage events on asteroids, kills the asteroids it destroyed; ammo used is its ammo slot\'s drops read once a second (a refill in the same second offsets a drop)'
+    .. 'turret hits are its damage events on asteroids, kills the asteroids it destroyed; rounds and ammo used: ammo_note'
 
   -- (d24 batch161 QD1, Astra #2212: a watch counted 1 huge-promethium destroyed and 3 big-promethium leaving the view,
   -- and its trajectories showed only the first 24 asteroids, all common) the read's trajectories: every tracked
@@ -682,11 +949,16 @@ return function(api)
     for _, e in ipairs(s.find_entities_filtered{type=TURRETS, force=q.force, limit=M.MAX_TURRETS}) do
       n = n + 1
       tlist[n] = e.unit_number
-      turrets[e.unit_number] = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, region=region(hull, e.position), ammo=ammo_count(e), used=0, loaded=0, ah={}}
+      local rk = e.type == 'ammo-turret' and rounds_of(e, {}) or nil
+      local r0 = nil
+      if rk then r0 = 0; for _, v in pairs(rk) do r0 = r0 + v end end
+      turrets[e.unit_number] = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, region=region(hull, e.position), used=0, loaded=0, ah={},
+        rk=rk, r0=r0, rt=game.tick, reads=0, unsure=0, items={}}
     end
     local replaced = store()[p.index] and not store()[p.index].result
+    local stats0 = M.consumed(q.force, s)
     local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick, seconds=seconds, samples=0, platform=pl.name, surface=s.index,
-      force=q.force.name, hull=hull, view=view, asts={}, nast=0, ntrack=0, untracked=0, untr={}, useen={}, uhit={}, udied={}, uview={}, queue={}, hits={}, turrets=turrets, tlist=tlist, cells={}, reason=reason}
+      force=q.force.name, hull=hull, view=view, asts={}, nast=0, ntrack=0, untracked=0, untr={}, useen={}, uhit={}, udied={}, uview={}, queue={}, hits={}, turrets=turrets, tlist=tlist, cells={}, reason=reason, stats0=stats0}
     store()[p.index] = job
     return {watching=true, seconds=seconds, start_tick=job.start, platform=pl.name, turrets=n,
       hull={left_top={x=hull.x0, y=hull.y0}, right_bottom={x=hull.x1, y=hull.y1}}, view=view,
@@ -702,6 +974,7 @@ return function(api)
     trajectory_limit='optional, reading the watch: 1..100 trajectories a page (default 24)', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
     asteroids_returns='the start: hull (the box round its foundation), view, turrets, line; without seconds it reads it so far (watching) or done: asteroids (seen in view, every one), tracked (those followed one by one: the first tracked_cap seen), untracked (seen past the cap, each counted once), by_name [{name, seen, destroyed, hit, left_view, in_view, untracked}] (every asteroid, by name, the most seen first) and by_name_lines, scope (which totals cover which asteroids; asteroid chunks are not entities and not seen here), classes (the tracked ones) [{class (front|side|rear by where its straight line enters the hull\'s box, the platform facing north; /crosses or /misses: whether that line crosses foundation; clear: it never enters the box; unknown), seen, destroyed, hit, left_view, in_view}] and class_lines; '
       .. 'platform_hits and platform_hit_lines (what each asteroid that hit us hit, where, its damage, its approach and projection); turret_groups [{name, region (front|middle|rear third of the hull, west|east half), turrets, hits, kills (by class), damage, ammo_used}] and turret_group_lines (hits and kills on clear asteroids and on ones crossing no foundation); '
-      .. 'turrets (those that fired: name, position, region, hits, kills by class, damage, ammo_used, ammo_loaded; up to 64, turret_rows_more past that); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; drift_tiles_per_s; line; note. Read only'}
+      .. 'turrets (those that fired: name, position, region, hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
+      .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; drift_tiles_per_s; line; note. Read only'}
   return M
 end
