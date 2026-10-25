@@ -15148,9 +15148,9 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Test: tests/d25_batch210.lua. It fails on main (every_ticks 16; no hands).
 
 ## d25 batch212 (QX1, Sol #2372: flight_watch ammunition used per part)
-- Trial190 (Asterion, aquilo -> solar-system-edge -> aquilo): #1296 watched from the departure, #1297 started from now
-  at the turnaround, 2 ticks after #1296's window ended (63262999 / 63263001). Hub deltas and uptime gave no exact
-  whole-trip uranium magazine count; flight_watch counted repair packs only.
+- Trial190 (Asterion, aquilo -> solar-system-edge -> aquilo): #1296 watched from the departure (began 63165231),
+  #1297 from now at the turnaround (63263001). Hub deltas and uptime gave no exact whole-trip uranium magazine count;
+  flight_watch counted repair packs only.
 - flightwatch.lua reads the platform's item production statistics (`get_output_count`, consumed; a turret's shots
   count there) of `M.AMMO` (uranium-rounds-magazine, firearm-magazine, piercing-rounds-magazine, rocket,
   explosive-rocket, railgun-ammo) at every quality: at a window's start and end, at each sample while it watches,
