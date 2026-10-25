@@ -93,13 +93,16 @@ return function(api)
       #rows > 0 and table.concat(rows, '; ') or 'none')
   end
   -- configure {bar}: usable slots 0..#inv, or false (or "none") for none; read back after.
-  function M.set(e, v)
+  -- (d25 batch208 QU2) the bar's checks alone, before anything changes: the inventory, the bar index to set and its size.
+  function M.check(e, v)
     local inv = e.type ~= 'entity-ghost' and M.inventory(e)
     if not inv then error(M.refusal(e), 0) end
     local total = #inv
-    local want
-    if v == false or v == 'none' then want = total + 1
-    else want = api.integer(v, nil, 0, total, string.format('bar (usable slots 0..%d, or false for none)', total)) + 1 end
+    if v == false or v == 'none' then return inv, total + 1, total end
+    return inv, api.integer(v, nil, 0, total, string.format('bar (usable slots 0..%d, or false for none)', total)) + 1, total
+  end
+  function M.set(e, v)
+    local inv, want, total = M.check(e, v)
     local before = M.usable(inv)
     inv.set_bar(want)
     local after = M.usable(inv)

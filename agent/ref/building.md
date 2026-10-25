@@ -21,8 +21,12 @@
   single `build`, `builds` entries, `place_ghosts` entries): `configure`, `requests`, `circuit` (the arguments of
   `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side, to_side}]`. A hand
   build sets each entry's as it is placed, ghosts after every entry is placed, then the wires; the reply's `settings`
-  and `settings_line` say what was set or refused (a refused setting leaves the entry placed); each setting goes to the
-  ghost or entity of the entry's name at its position. A dry run gives `settings_planned` and `settings_check`, each
+  and `settings_line` say what was set or refused (a refused setting leaves the entry placed: `entry N configure: ...
+  (storage-chest at (x,y) is placed without it)`, the row's `placed_without`; a hand build adds `settings_refused` and
+  `summary`); each setting goes to the ghost or entity of the entry's name at its position. Settings that go in
+  separate `configure` calls refuse the whole call before anything is placed (`entry N configure: configure sets ...
+  in separate calls ...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry is
+  refused (in the dry run too); a `build` entry's chest takes it. A dry run gives `settings_planned` and `settings_check`, each
   setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
   (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already
   (`exists`) or an inserter with no target reads

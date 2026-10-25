@@ -3454,10 +3454,10 @@ end)()
     {name='assembling-machine-2',position={x=24.5,y=4.5},configure={recipe='sulfur'}},{name='assembling-machine-2',position={x=28.5,y=4.5}}}})
   eq(r.placed,3); eq(made[1].recipe,'iron-gear-wheel'); eq(made[2].recipe,nil); eq(#r.settings,2)
   eq(r.settings[1].configure,'set'); eq(r.settings[2].index,2); eq(r.settings[2].configure,'recipe incompatible with machine')
-  eq(r.settings_line,'settings: 1 set, 1 refused: entry 2 configure: recipe incompatible with machine')
+  eq(r.settings_line,'settings: 1 set, 1 refused: entry 2 configure: recipe incompatible with machine (assembling-machine-2 at (24.5,4.5) is placed without it)')
   -- (d24 batch142 PN2, Astra #2134) ghosts placed with settings refused: the verdict and summary count them
   eq(r.settings_refused,1); eq(r.summary,'3 ghosts placed; 1 of 2 settings refused')
-  eq(r.verdict,'partial: 3 ghosts placed; 1 of 2 settings refused: entry 2 configure: recipe incompatible with machine')
+  eq(r.verdict,'partial: 3 ghosts placed; 1 of 2 settings refused: entry 2 configure: recipe incompatible with machine (assembling-machine-2 at (24.5,4.5) is placed without it)')
   -- a dry run applies the live call's sight rule per entry: a chunk our force does not see now refuses the settings
   local vis=p.force.is_chunk_visible
   p.force.is_chunk_visible=function(_,c) return c.x<1 end

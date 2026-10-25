@@ -94,6 +94,11 @@ return function(api)
               error(where .. ': requests on a platform entry: requests with platform is the hub\'s; set the hub\'s requests there', 0)
             end
             api.check(k[2], v)
+            -- (d25 batch208 QU2, Astra #2357) the settings that go in one configure call, as configure checks them
+            if k[1] == 'configure' and api.together then
+              local ok, err = pcall(api.together, v)
+              if not ok then error(where .. ' configure: ' .. api.reason(err) .. '; nothing placed', 0) end
+            end
           end
         end
         if e.wires ~= nil then
@@ -163,7 +168,7 @@ return function(api)
             local args = {}
             for key, v in pairs(e[k[1]]) do args[key] = v end
             args.position = pos
-            local ok, res = pcall(api.dry, p, e, k[1], args)
+            local ok, res = pcall(api.dry, p, e, k[1], args, ctx)
             if ok then row[k[1]] = 'ok'; ok_n = ok_n + 1
             else row[k[1]] = api.reason(res); failed[#failed+1] = string.format('entry %d %s: %s', i, k[1], row[k[1]]) end
           end
@@ -204,7 +209,10 @@ return function(api)
               row[k[1]] = 'set'; set_n = set_n + 1
               if k[1] == 'configure' and type(res) == 'table' and res.line then row.configure = 'set: ' .. res.line end
             else
-              row[k[1]] = api.reason(res); failed[#failed+1] = string.format('entry %d %s: %s', i, k[1], row[k[1]])
+              -- (d25 batch208 QU2) the entity stands without it: the row says which and where
+              row[k[1]] = api.reason(res); row.placed_without = row.placed_without or {}
+              row.placed_without[#row.placed_without+1] = k[1]
+              failed[#failed+1] = string.format('entry %d %s: %s (%s at %s is placed without it)', i, k[1], row[k[1]], (e.name or e.item) and tostring(e.name or e.item) or 'the entity', at(pos))
             end
           end
         end
@@ -240,7 +248,13 @@ return function(api)
   end
   -- Hand builds configure each placed entry in the same tick, before attempting
   -- the next placement. Only wires wait for their potentially later endpoints.
-  function M.built(p, entry, index, batch)
+  function M.built(p, entry, index, batch, item)
+    -- an entry of builds may leave its item to the call's: the rows name it (d25 batch208 QU2)
+    if entry.item == nil and entry.name == nil and item ~= nil then
+      local copy = {}
+      for k, v in pairs(entry) do copy[k] = v end
+      copy.item, entry = item, copy
+    end
     local rows,_,stats=M.apply(p,{entry},{},{},true)
     if rows[1] then
       rows[1].index=index
@@ -263,6 +277,13 @@ return function(api)
     if #batch.rows>0 then
       out.settings=batch.rows
       out.settings_line='settings: '..batch.set..' set'..(#batch.failed>0 and ', '..#batch.failed..' refused: '..table.concat(batch.failed,'; ',1,math.min(4,#batch.failed)) or '')
+      -- (d25 batch208 QU2, Astra #2357: chests built, both settings refused, the walk's last read done) how many were
+      -- refused, each row naming the entity placed without it (settings[i].placed_without)
+      if #batch.failed>0 then
+        out.settings_refused=#batch.failed
+        out.summary=string.format('%d of %d settings refused; the entities stand placed without them: %s%s',#batch.failed,#batch.failed+batch.set,
+          batch.failed[1],#batch.failed>1 and string.format(' (and %d more: settings_line, settings)',#batch.failed-1) or '')
+      end
       if not complete and #batch.wires>0 then out.settings_note=#batch.wires..' entries have wires pending until the batch finishes' end
     end
     return out

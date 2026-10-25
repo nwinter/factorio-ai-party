@@ -317,7 +317,7 @@ eq(r.ignored[3],'force (goes with recipe or auto_requests)')
 ins.reset()
 -- A key the branch reached does not set: refused before anything changes, naming whose setting it is.
 fails(function() astra('configure',{position=storage.position,filters={'coal'},filter_mode='blacklist'}) end,
-  'storage-chest (5.5,0.5): configure sets storage_filter, filters here; filter_mode (an inserter\'s) is not: nothing changed')
+  'storage-chest (5.5,0.5): configure sets storage_filter, filters, bar here; filter_mode (an inserter\'s) is not: nothing changed')
 fails(function() astra('configure',{position=splitter.position,filters={'coal'},use_filters=true}) end,'use_filters (an inserter\'s) is not: nothing changed')
 fails(function() astra('configure',{position=wchest.position,auto_requests=true}) end,'wooden-chest (7.5,0.5): configure sets recipe here; auto_requests (a rocket silo\'s) is not')
 fails(function() astra('configure',{position=guns[1].position,ammo='firearm-magazine',item_requests=false}) end,'an ammo request is a turret ghost\'s')
