@@ -14059,3 +14059,45 @@ Fixed besides gates:
   each: platform_production {Asterion, explosives} main 2.0-2.7 ms, this branch 4.8-6.2 ms (the find of 55 crafting
   machines, each recipe's products, craftrate for the 4 that make it); {Asterion} without item 10.9-11.6 ms on both.
 - Test: tests/d24_batch171.lua (fails on main: inspect's line, no makers); tests/craftrate.lua takes the new line.
+
+## d24 batch181
+
+- QX1 (Sol #2013, after batch133's by_name): the asteroid watch (`platform_defense {platform, asteroids: true}`).
+  - Cohorts by name: `in_first_sample` (in view at the watch's first read) and `later`, split into `later_fragments`
+    and `later_other`. How a fragment is told: an asteroid's dying effect (prototype `dying_trigger_effect`) creates
+    its fragments (a big metallic asteroid: 3 medium-metallic at offsets (-1,-0.25), (0,-0.5), (1,-0.25)), with
+    `trigger_created_entity` false, so no on_trigger_created_entity event (none in 2,600 ticks of fighting on the copy,
+    a handler registered there for the test). The watch keeps each asteroid death on the platform's surface (the
+    on_entity_died it already gets) for 30 ticks plus a read, by 8-tile cell, with what it makes; an asteroid first
+    seen later whose name such a death makes, within 3 tiles plus 0.1 a tick since, is a fragment (each death matches
+    as many as its effect makes). The rest: arrivals (new big ones come in at the view's front edge while the platform
+    flies) or a fragment of a death not matched. On the copy, fragments appeared on the death's tick with consecutive
+    unit numbers, 0.2-0.9 tiles from it.
+  - The cap: `capped`, `capped_at_tick`, `capped_at_s`; the line ends "tracked capped at 3000 from +430s: the 1967
+    first seen after that are counted (unique asteroids, each once), not followed". `untracked_unit` defines it:
+    asteroids (unit numbers), each counted once, first seen after the cap.
+  - Rounds by turret: every ammo turret's ammo slot read every 15-60 ticks (`every`: the longest multiple of 15 up to
+    60 over which it fires fewer rounds than a magazine holds, or one shot at most with magazines of 1); rounds are
+    each stack's (count - 1) * magazine_size + the top magazine's ammo left (LuaItemStack.ammo). Each read's change
+    is split into rounds fired and whole items loaded: unique while the most rounds it can fire between two reads
+    (attack_parameters.cooldown with the ammo's cooldown modifier and the force's shooting speed bonus, as
+    ammorate.lua) is under the magazine size. World n's gun turrets: cooldown 6 / (1 + 1.5) = 2.4 ticks, at most 7
+    rounds in 15 ticks under 10: `exact`. Rocket (27.3 ticks) and railgun (97.1) turrets have magazines of 1: a load
+    and a shot between two reads offset each other; with instant ammo (railgun: delivery instant) the turret's hit
+    events in that interval count the shot; a rocket's (delivery projectile) hit lands after its flight, often in a
+    later interval, so that read is `unsure_reads` and counts none; `rounds_used_most` the most it can have fired.
+    Fields: rounds_start, rounds_end, rounds_used, ammo_used (items), ammo_loaded, ammo, reads, every, unsure_reads,
+    exact, rounds_used_most; groups add rounds_used and unsure_reads. Electric and fluid turrets have no rounds.
+  - `platform_consumed`: each ammo item@quality's consumed count (item production statistics of the platform's surface,
+    qflow.count_by at every quality) over the watch, beside the turrets' reads summed (`turrets_used`).
+- On a copy of world n's 16:49 save (shift71.zip), Asterion sent from Aquilo toward the solar system edge (unpaused
+  there), 114 turrets (45 gun, 26 rocket, 23 railgun, 20 laser), a 600 s watch: 4967 asteroids, capped at +430s;
+  small and medium ones first seen later all fragments (small-oxide 1848 of 1848), big ones 237 other and 57
+  fragments; consumed against the turrets' reads: firearm-magazine 700 / 702.1, uranium-rounds-magazine 12 / 11.1,
+  railgun-ammo 59 / 59, rocket 1335 / 1150 (most 2839, 1761 unsure reads); all 25 gun turrets that fired exact.
+- Tick cost (profile_ticks 60 s on that copy, Asterion under way, a watch running), median per second:
+  asteroid_watch.tick 5.22 ms on the save's runtime, 6.47 on the branch (its ammo part 0.39 -> 1.15 ms: every ammo
+  turret read at its own interval, a slot unchanged since the last read costing its count and ammo only; 2.48 ms
+  before that fast path); find 3.7-3.9 ms on both.
+- Tests: tests/d24_batch181.lua (fails on main); d22_batch82 and d23_batch133 take the new fields and line, their
+  turret mocks live as a LuaInventory is (the watch keeps each turret's inventory).
