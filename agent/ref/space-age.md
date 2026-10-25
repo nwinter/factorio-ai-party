@@ -280,7 +280,17 @@
   categories) at full fire: a shot every N ticks (cooldown over 1 + shooting speed), shots/min, rounds a shot and an
   item, items/min (each and for the turrets), damage a shot (ammunition quality, damage and turret attack bonuses;
   before resistances), and the technologies with levels each bonus comes from. `"all"`: every ammo turret and
-  ammunition. Turret quality changes neither rate nor damage; ammunition quality multiplies damage.
+  ammunition. Turret quality changes neither rate nor damage; ammunition quality multiplies damage. Rows give damage
+  a second, and held rows the items in those turrets and the rounds left in them (a part-used magazine is one item);
+  turret rows give `rounds` beside `ammo`. Electric turrets aboard (laser, tesla) have rows by quality (`kind:
+  "electric"`): a shot every N ticks (cooldown over 1 + shooting speed), damage a shot (the beam's damage x the
+  turret's damage modifier, laser 2, x (1 + damage bonus) x (1 + attack bonus); before resistances), damage a second,
+  the energy a shot draws from its buffer, the buffer's recharge, power at full fire, a tesla turret's chain. A laser
+  turret hits once a shot: at laser-weapons-damage 1-8 and laser-shooting-speed 1-7, 94 laser every 12.5 ticks
+  (451/s), 800 kJ a shot. An electric turret's quality multiplies its health and its buffer's recharge, not its
+  damage, rate or range. Asteroids resist laser: small 20%, medium 90%, big 95%, huge 99%. `bonuses`: the force's
+  research bonuses for each category the turrets aboard fire (damage and shooting speed, with the technologies and
+  levels) and the turrets' attack bonuses. Route damage counts electric turrets too.
   `planned: true` adds the planned defense apart (lines `planned:`, `planned {...}`): our turret ghosts with the
   built turrets, each by its prototype's range, minimum range and arc by its facing and its priority list; the
   collectors built and ghosts by size (uncovered, covered only by ghosts); the hull with our foundation tile ghosts,

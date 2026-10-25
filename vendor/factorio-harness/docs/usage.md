@@ -14447,3 +14447,44 @@ on its line (the reply's JSON dominates on the copy).
   - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
     (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
 - Test: tests/d24_batch187.lua (fails on main: no handler).
+
+## d25 batch202 (QO1, Sol #2326; QO2, viewer Aurora site:4874)
+- QO1: `platform_defense` `ammo_use` has rows for electric turrets aboard (laser, tesla), by kind and quality
+  (`kind: "electric"`, `where: "built"`; `"all"`: every electric turret prototype, `where: "any"`):
+  - a shot every `cooldown_ticks` (the turret's cooldown over 1 + the force's shooting speed bonus for its category),
+    `shots_per_min`;
+  - `damage_per_shot` and `damage {type: amount}`: the beam's damage (the beam entity's attack_result) x the turret's
+    `damage_modifier` (laser-turret 2) x (1 + `damage_bonus`) x (1 + `turret_attack_bonus`), before resistances;
+    `damage_per_second`, `damage_per_second_all`; `chain {max_jumps, range_per_jump}` for a tesla turret;
+  - `energy_per_shot_kj` (the prototype's energy_consumption), `buffer_kj`, `drain_kw`, `recharge_kw` (the buffer's
+    input flow limit at the turret's quality), `power_kw` at full fire; `recharge_limited` and `shots_per_min_powered`
+    when the recharge refills less than the shots draw;
+  - `quality_effect {multiplier, max_health, recharge_kw}`; `sources` (the technologies and levels behind each bonus).
+- `bonuses {categories [{category, turrets, damage_bonus, shooting_speed_bonus, damage_sources,
+  shooting_speed_sources}], turret_attack [{turret, bonus, sources}]}`: the force's research bonuses for every category
+  the turrets aboard fire, with a `research bonuses` line.
+- Ammo rows add `damage_per_second`. The route's damage (`route`) counts electric turrets (their beam at our bonuses,
+  after each asteroid's resistances).
+- Measured on a copy of world n's d25 07:26 save (2.0.77; laser-weapons-damage 1-8 +370%, laser-shooting-speed 1-7
+  +220%), a laser turret firing at a big worm, damage events logged with their cause:
+  - one hit a shot every 12.5 ticks (12 and 13 alternately; 40 / 3.2), 94 laser a hit (10 x 2 x 4.7), 47 after the
+    worm's 50%; normal, rare and legendary turrets the same; shooting speed bonus set to 0: one hit in 40 ticks;
+  - the buffer (801 kJ) emptied by 800 kJ at each shot and refilled 160 kJ a tick normal, 256 rare, 400 legendary
+    (get_input_flow_limit: 9.6 MW x the quality's multiplier), less the 24 kW drain;
+  - max health 1000 normal, 1600 rare, 2500 legendary; range 24 at every quality;
+  - a tesla turret: 372 electric a hit (120 x 3.1, electric-weapons-damage 1-3), one shot in 120 ticks;
+  - Asterion's own rare laser turrets hit small asteroids for 75.2 (94 less 20%); asteroids resist laser 20% small,
+    90% medium, 95% big, 99% huge (every kind).
+  - The electric network's statistics (input_counts, get_input_count) held only the normal turret's draw (800 kJ a
+    hit); rare and legendary read 0.
+- QO2: rounds left beside magazines (vehicles.lua `inventory_rounds`: a stack's rounds are its whole magazines and
+  its top one's ammo):
+  - `platform_defense`: turret rows `ammo` (`firearm-magazine*10 (93 rounds)`) and `rounds`; held `ammo_use` rows
+    `items_held` and `rounds_held`;
+  - `inspect`: `ammo_rounds {inventory: [{name, quality, count, rounds, magazine_size, partial}]}` for turrets,
+    artillery, cars and spidertrons; area rows and compact lines `ammo: name*count (N rounds)`; `scan` field `ammo`;
+  - the vehicle read's guns: `2 tank-machine-gun: 5 firearm-magazine (43 rounds) (range 20)`.
+- Cost on the copy (Asterion: 116 ammo turrets, 22 laser turrets; platform_defense there 190-260 ms a call as
+  before): the electric row about 0.3 ms, the bonuses about 0.4 ms (the technology read shared within a tick), the
+  rounds over 116 turrets 0.8-1.0 ms against 0.3 ms for the item counts (read once a call, reused by ammo_use).
+- Test: tests/d25_batch202.lua (fails on main: no electric rows).

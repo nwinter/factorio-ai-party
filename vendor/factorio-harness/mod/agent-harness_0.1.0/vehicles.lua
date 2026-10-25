@@ -1038,16 +1038,60 @@ return function(api)
   -- and the machine gun hit; shooting_enemies aims by itself). Opus and Astra
   -- (shift09 00:00): shoot refused in a tank, and a tank was lost at a nest.
   local AMMO_INV = {car='car_ammo', ['spider-vehicle']='spider_ammo'}
-  -- Rounds left in a gun slot: whole magazines and the one in use.
+  -- Rounds left in an ammunition stack: whole magazines and the one in use (the stack's ammo: rounds left in its top
+  -- magazine). -> rounds, magazine size
+  -- mags: optional {item name: magazine size}, a caller's cache across many inventories in one read
+  local function stack_rounds(stack, mags)
+    local name = stack.name
+    local mag = mags and mags[name]
+    if not mag then
+      mag = prototypes.item[name].magazine_size or 1
+      if mags then mags[name] = mag end
+    end
+    if mag == 1 then return stack.count, 1 end
+    return (stack.count - 1) * mag + (stack.ammo or mag), mag
+  end
+  M.stack_rounds = stack_rounds
+  -- Rounds left in a gun slot.
   function M.rounds(v, slot)
     local ok, n = pcall(function()
       local inv = v.get_inventory(defines.inventory[AMMO_INV[v.type]])
       local stack = inv and inv[slot]
       if not (stack and stack.valid_for_read) then return 0 end
-      local mag = prototypes.item[stack.name].magazine_size or 1
-      return (stack.count - 1) * mag + (stack.ammo or mag)
+      return (stack_rounds(stack))
     end)
     return ok and n or 0
+  end
+  -- (d25 batch202 QO2, viewer Aurora site:4874: Lark's part-used magazines blurred supply checks) an ammunition
+  -- inventory by item and quality: [{name, quality, count (items: a part-used magazine counts as one), rounds,
+  -- magazine_size, partial (stacks whose top magazine is part-used)}], in slot order. (Ammunition stacks only: a
+  -- stack's ammo errors for other items.)
+  function M.inventory_rounds(inv, mags)
+    local out, by = {}, {}
+    if not inv or inv.is_empty() then return out end
+    for i = 1, inv and #inv or 0 do
+      local st = inv[i]
+      if st.valid_for_read then
+        local q = st.quality.name
+        local k = st.name .. '|' .. q
+        local n, mag = stack_rounds(st, mags)
+        local r = by[k]
+        if not r then r = {name=st.name, quality=q, count=0, rounds=0, magazine_size=mag}; by[k] = r; out[#out+1] = r end
+        r.count, r.rounds = r.count + st.count, r.rounds + n
+        if n < st.count * mag then r.partial = (r.partial or 0) + 1 end
+      end
+    end
+    return out
+  end
+  -- "firearm-magazine*10 (95 rounds)" (rounds named where a magazine holds more than one), quality after @ when not
+  -- normal; nil for none
+  function M.rounds_text(rows)
+    local parts = {}
+    for i, r in ipairs(rows) do
+      parts[i] = r.name .. (r.quality ~= 'normal' and '@' .. r.quality or '') .. '*' .. r.count
+        .. (r.magazine_size > 1 and ' (' .. r.rounds .. ' rounds)' or '')
+    end
+    return #parts > 0 and table.concat(parts, ' ') or nil
   end
   local function category(name)
     local ok, c = pcall(function() return prototypes.item[name].ammo_category end)
@@ -1065,14 +1109,17 @@ return function(api)
       local ap = g.attack_parameters or {}
       local stack = inv and inv[i]
       local has = stack and stack.valid_for_read
-      out[i] = {slot=i, gun=g.name, categories=ap.ammo_categories or {}, range=ap.range, ammo=has and stack.name or nil, count=has and stack.count or 0}
+      local rounds, mag
+      if has then rounds, mag = stack_rounds(stack) end
+      out[i] = {slot=i, gun=g.name, categories=ap.ammo_categories or {}, range=ap.range, ammo=has and stack.name or nil, count=has and stack.count or 0,
+        rounds=rounds or 0, magazine_size=mag}
     end
     return out, inv
   end
   local function gun_lines(guns, selected)
     local out = {}
     for i, g in ipairs(guns) do
-      out[i] = string.format('%d %s: %s (range %s)%s', i, g.gun, g.ammo and (g.count .. ' ' .. g.ammo) or 'no ammo', tostring(g.range), i == selected and ' selected' or '')
+      out[i] = string.format('%d %s: %s (range %s)%s', i, g.gun, g.ammo and (g.count .. ' ' .. g.ammo .. ((g.magazine_size or 1) > 1 and ' (' .. g.rounds .. ' rounds)' or '')) or 'no ammo', tostring(g.range), i == selected and ' selected' or '')
     end
     return out
   end
