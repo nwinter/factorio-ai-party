@@ -81,8 +81,10 @@
         var g = ul.getAttribute('data-group'), head = root.querySelector('[data-group-head="' + g + '"]');
         if (head && ul.children.length && !head.id) head.id = g.replace(' ', '-');  // first row of a group the build had none of
       });
-      var none = document.getElementById('upd-none-open'), done = document.getElementById('upd-none-verified');
-      if (none) none.hidden = rows().some(function (li) { return li.dataset.status !== 'verified'; });
+      var none = document.getElementById('upd-none-open'), live = document.getElementById('upd-none-live'), done = document.getElementById('upd-none-verified');
+      // (d24 batch180) accepted (planned, in progress) and live are sections of their own
+      if (none) none.hidden = rows().some(function (li) { return li.dataset.status === 'planned' || li.dataset.status === 'in progress'; });
+      if (live) live.hidden = rows().some(function (li) { return li.dataset.status === 'live'; });
       if (done) done.hidden = rows().some(function (li) { return li.dataset.status === 'verified'; });
     }
     function mark(li, text) {

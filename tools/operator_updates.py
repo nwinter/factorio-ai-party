@@ -3,6 +3,7 @@
 Aurora site:4349, site:4350): add a change, move it to its next status, add a status notice, list what is open.
 
   tools/operator_updates.py add ID --title T --by NAME [--ref site:4386|#1925] [--by NAME --ref REF ...]
+                                (a board --ref '#1925' with no --by of its own: the asker from the board)
                                 [--status planned] [--area harness|stream|site] [--work "batch119 CB1"] [--note N]
                                 [--reply site:4407] [--at "YYYY-MM-DD HH:MM"]
   tools/operator_updates.py set ID [--status in\\ progress|live|verified] [--note N] [--work W] [--reply REF] [--at ...]
@@ -28,8 +29,15 @@ it is still on (the page reads "Not recovered yet") until recover closes the new
 and --kind when given). checked records that the operator's checks looked at the notices through now (or --at), and
 every notice and recover records it too; the page shows it apart from when the page was built. One writer at a time
 (a lock beside the file): two scripts posting at once both land.
+
+(d24 batch180 QW1, viewer Aurora 17:32, site:4789: "Could chat acknowledgements and Updates share one batch record?
+Show accepted work as Planned, then In progress when started.") tools/opreply.py --update ID answers a viewer and adds
+or moves that row in one call (upsert() here, under the same lock): the viewer and the line it answers (site:N) as who
+asked, the planned date recorded, the reply shown under the row; a status that would go backwards, or one past planned
+with no work, is refused before anything is sent. add --ref '#NNNN' with no --by of its own takes the asker from the
+board (the item's requested_by, else its owner; an operator read of the world, --world, default POG_WORLD or n).
 """
-import argparse, datetime, fcntl, json, os, sys
+import argparse, contextlib, datetime, fcntl, json, os, re, sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -99,6 +107,86 @@ def needs_work(uid, status, work):
         raise SystemExit(f"{uid}: {status} needs --work, the batch that did it (the row has none)")
 
 
+@contextlib.contextmanager
+def locked(path):
+    """One writer at a time: the lock beside the file, held while the caller reads, changes and writes it."""
+    with open(str(path) + ".lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def upsert(data, uid, status, *, title=None, area=None, work=None, name=None, ref=None, asked=None, at=None):
+    """(d24 batch180 QW1) add row uid or move it on: status planned or in progress, who asked (name, ref) added when new,
+    the status's date recorded when it changes (planned too). Refused (SystemExit naming why) when the row is missing
+    and no title is given, when the status would go backwards, or when a status past planned has no work. Returns what
+    it did, as a line; changes data only (the caller writes it)."""
+    if status not in updates.STATUSES:
+        raise SystemExit(f"{uid}: status {status!r} is not one of {', '.join(updates.STATUSES)}")
+    if area is not None and area not in updates.AREAS:
+        raise SystemExit(f"{uid}: area {area!r} is not one of {', '.join(updates.AREAS)}")
+    t = stamp(at)
+    rows = data.setdefault("updates", [])
+    u = next((x for x in rows if x.get("id") == uid), None)
+    said = []
+    if u is None:
+        if not title:
+            raise SystemExit(f"{uid}: no such update yet: give --title (and --area) to add it")
+        needs_work(uid, status, work)
+        u = {"id": uid, "title": title}
+        if area:
+            u["area"] = area
+        u["requested_by"] = []
+        u["status"] = status
+        u["dates"] = dict(({"asked": asked} if asked else {}), **{status: t})
+        if work:
+            u["work"] = work
+        rows.append(u)
+        said.append(f"added {uid}: {status} {t}")
+    else:
+        was = u["status"]
+        if updates.STATUSES.index(status) < updates.STATUSES.index(was):
+            raise SystemExit(f"{uid} is {was} (since {(u.get('dates') or {}).get(was) or '?'}): {status} would go backwards; "
+                             "set it with operator_updates.py set if that is meant")
+        needs_work(uid, status, work or u.get("work"))
+        if title and title != u.get("title"):
+            u["title"] = title
+            said.append("title set")
+        if area and area != u.get("area"):
+            u["area"] = area
+        if work and work != u.get("work"):
+            u["work"] = work
+            said.append(f"work {work}")
+        if status != was:
+            u["status"] = status
+            u.setdefault("dates", {})[status] = t
+            said.append(f"{was} -> {status} {t}")
+        else:
+            said.append(f"still {status}")
+        if asked and not (u.get("dates") or {}).get("asked"):
+            u.setdefault("dates", {})["asked"] = asked
+    if name and not any(r.get("ref") == ref and r.get("name") == name for r in u.setdefault("requested_by", [])):
+        u["requested_by"].append(dict({"name": name}, **({"ref": ref} if ref else {})))
+        said.append(f"asked by {name}" + (f" ({ref})" if ref else ""))
+    return f"{uid}: " + "; ".join(said)
+
+
+def board_asker(ref, world=None, dispatch=None):
+    """The asker of board item '#NNNN': its requested_by, else its owner (an operator board read of the world)."""
+    m = re.fullmatch(r"#(\d+)", ref or "")
+    if not m:
+        return None
+    if dispatch is None:
+        sys.path.insert(0, str(REPO / "tools"))
+        from idle_nudge import Harness  # the operator's own dispatch over RCON (read only here)
+        dispatch = Harness(world or os.environ.get("POG_WORLD", "n")).dispatch
+    res = dispatch("board", {"id": int(m.group(1))})
+    item = (res.get("item") if isinstance(res, dict) else None) or next(iter((res or {}).get("items") or []), None) or res
+    who = isinstance(item, dict) and (item.get("requested_by") or item.get("owner"))
+    if not who:
+        raise SystemExit(f"--ref {ref}: the board read gave no requested_by or owner (give --by)")
+    return who
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--file", default=str(DEFAULT))
@@ -115,6 +203,7 @@ def main(argv=None):
     a.add_argument("--reply", action="append", default=[])
     a.add_argument("--asked", help="when it was asked (YYYY-MM-DD HH:MM; a site message's own time is used without it)")
     a.add_argument("--at")
+    a.add_argument("--world", help="the world a board --ref is read from (default POG_WORLD or n)")
     s = sub.add_parser("set")
     s.add_argument("id")
     s.add_argument("--status", choices=updates.STATUSES)
@@ -141,12 +230,11 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.cmd == "list":
         return run(args)
-    with open(str(args.file) + ".lock", "a") as lock:  # one writer at a time: read, change and write under the lock
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with locked(args.file):  # one writer at a time: read, change and write under the lock
         return run(args)
 
 
-def run(args):
+def run(args, board=None):
     data = read(args.file)
     data.setdefault("updates", [])
     data.setdefault("notices", [])
@@ -154,8 +242,13 @@ def run(args):
     if args.cmd == "add":
         if any(u.get("id") == args.id for u in data["updates"]):
             raise SystemExit(f"update {args.id!r} exists: use set")
-        if len(args.ref) > len(args.by):
-            raise SystemExit("each --ref needs its --by")
+        # (d24 batch180) a board ref with no --by of its own: the asker from the board
+        for ref in args.ref[len(args.by):]:
+            if not re.fullmatch(r"#\d+", ref):
+                raise SystemExit(f"--ref {ref} needs its --by (only a board ref '#NNNN' takes the asker from the board)")
+            who = board_asker(ref, args.world, board)
+            args.by.append(who)
+            print(f"--ref {ref}: asked by {who} (the board)")
         row = {"id": args.id, "title": args.title}
         if args.area:
             row["area"] = args.area
