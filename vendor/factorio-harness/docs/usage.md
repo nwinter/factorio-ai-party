@@ -15146,3 +15146,37 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   inserters at each point at the start.
 - Not changed: a sample begun before a deploy runs on without hands (its rows read as before).
 - Test: tests/d25_batch210.lua. It fails on main (every_ticks 16; no hands).
+
+## d25 batch212 (QX1, Sol #2372: flight_watch ammunition used per part)
+- Trial190 (Asterion, aquilo -> solar-system-edge -> aquilo): #1296 watched from the departure, #1297 started from now
+  at the turnaround, 2 ticks after #1296's window ended (63262999 / 63263001). Hub deltas and uptime gave no exact
+  whole-trip uranium magazine count; flight_watch counted repair packs only.
+- flightwatch.lua reads the platform's item production statistics (`get_output_count`, consumed; a turret's shots
+  count there) of `M.AMMO` (uranium-rounds-magazine, firearm-magazine, piercing-rounds-magazine, rocket,
+  explosive-rocket, railgun-ammo) at every quality: at a window's start and end, at each sample while it watches,
+  and at each sample while armed and stopped.
+- Read fields:
+  - `ammunition` {from_tick, to_tick, ticks, total, used {item: {quality: n}}}: the window, from its start to its end
+    (or now). Each `mixed.parts` entry keeps its own `ammunition` and `repair_packs_used` (mixed.lua part()).
+  - `ammunition_watch`: from the tick the watch began, across its mixed splits (also the parts mixed.lua drops past 3).
+  - `ammunition_chain` (also `watches`, `first`, `more`): a start with `replace: true` carries the replaced watch's
+    chain on: from the first watch's start to this one's end, gaps between watches included. With no watch counting
+    (the old one done and read), `replace: true` chains to the platform's newest kept watch that is done. At most
+    `M.CHAIN` (8) ids are named; the count always runs from the first.
+  - `ammunition_boundaries` [{what, from_tick, to_tick, ticks, total, used, line}]: `departure` (from the last armed
+    sample that read it stopped to the first that read it flying: before the watch began, in no count), `arrival`
+    (from the last sample that read it flying to the end: in the last window), `between` (a replaced watch's end to
+    the next one's start: in the chain only), `start` (a watch begun from now while flying).
+  - The line adds "ammunition used ..." (and the whole watch's and the chain's); the end's team.alerts line adds the
+    window's. A watch begun before this runtime reads "ammunition used ?"; a replace of one says
+    `ammunition_chain_note`.
+- Tests: tests/d25_batch212.lua (fails on main: an armed watch reads nothing).
+- On a copy of world n (d25 16:24 save, tick 63358761):
+  - Watches started from now on Swiftlet, Anvil and Kestrel IVb ended at their arrivals with, for example, #1306
+    (Swiftlet) firearm-magazine 8 from tick 63369212 to 63372844, and the arrival between 63372784 and 63372844, none
+    used. A running watch on Weaver read 110 firearm magazines at tick 63433586; a direct read of the statistics in the
+    same command, less the watch's start read, gave 110.
+  - profile_ticks {seconds: 60}, part flightwatch.tick: 3 watching + 1 armed: main 23.6 ms (232 calls), this runtime
+    46.4 ms (236) with qflow.count_by reads; 1 armed (Asterion): main 1.87 ms (60 calls, median 0.029 ms a second),
+    this runtime 5.46 ms with the read as shipped (median 0.084 ms). A read alone, 100 in one command: 0.016 ms
+    (qflow.count_by's 0.044 ms fetched get_output_count for each count).

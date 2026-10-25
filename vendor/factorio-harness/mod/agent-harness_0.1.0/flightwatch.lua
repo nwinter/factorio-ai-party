@@ -169,17 +169,23 @@ return function(api)
     for _, name in ipairs(repair_names()) do n = n + (try(function() return qflow.count(stats, name, 'output') end) or 0) end
     return n
   end
-  -- (QX1) the platform's ammunition consumed since the game began, by item and quality, at this tick: {tick, c}
+  -- (QX1) the platform's ammunition consumed since the game began, by item and quality, at this tick: {tick, c}.
+  -- get_output_count fetched once and one argument table: on a copy of world n 0.016 ms a read (6 items x 5
+  -- qualities), qflow.count_by's 0.044 (it fetches the method each count)
+  local PAIR = {name=nil, quality=nil}
+  local function stats_of(pl) return pl.force.get_item_production_statistics(pl.surface) end
   local function ammo_read(pl)
-    local stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
-    if not stats then return nil end
-    local c = {}
+    local ok, stats = pcall(stats_of, pl)
+    if not (ok and stats) then return nil end
+    local okf, f = pcall(function() return stats.get_output_count end)
+    if not (okf and f) then return nil end
+    local c, qs = {}, qflow.qualities()
     for _, name in ipairs(M.AMMO) do
-      local total, by = qflow.count_by(stats, name, 'output')
-      if total ~= 0 then
-        local q = {}
-        if by then for _, b in ipairs(by) do q[b.quality] = b.n end else q.normal = total end
-        c[name] = q
+      for _, q in ipairs(qs) do
+        PAIR.name, PAIR.quality = name, q
+        local okn, n = pcall(f, q == 'normal' and name or PAIR)
+        n = okn and tonumber(n) or 0
+        if n ~= 0 then c[name] = c[name] or {}; c[name][q] = n end
       end
     end
     return {tick=game.tick, c=c}
