@@ -100,6 +100,8 @@
   `{action, args, wait?, label?, on_fail?, min_moved?, on_short?}` inside the game; an error names the step's path.
   At submit a step naming a platform that is not ours is refused (unless an earlier step creates it), and a requests
   `section` past the hub's count (unless an earlier requests step works on that hub); positions are not checked. A
+  step's numeric arguments are checked against the ranges its action takes when it runs (`seconds 3600 is outside
+  10..1800 (a whole number), what platform_defense takes when it runs`), in `dry_run` too. A
   plan that pauses on a step failing in its first 10 s is a line in your team block at once. `start: false` stages
   the steps: the lane is paused and held in the same call (an active step stopped and requeued), whatever its state
   was, until `queue_resume`; `state` in every reply says running, paused or held.

@@ -51,7 +51,9 @@
   copper-bacteria into copper-ore): how many are held and spoil within 5 min; the production statistics do not count
   spoiling. For an item that spoils, `flow` says spoiling counts in neither made nor used (used counts ingredients and
   fuel burned), and a whole-surface read gives `uncounted`: against the last one 1-60 min before, made, used, held
-  then and now, and what left uncounted (spoiled, or carried off the surface; Gleba's nutrients: about 570 a minute).
+  then and now, cargo pods landed and sent up in rockets over the same interval (the pod log), and the `residual`
+  (signed: above 0 more left the stock than these count, which spoiling or what left uncounted can be; below 0 more came
+  in uncounted; the game's statistics count no spoiling).
   `where` counts fuel slots and stacks on the ground too. `as_of` says whether a total is live or reused, and its age. `near` with `radius` (up to 512, default 64)
   limits it to that area; `compact: true`: lines only (flow, where, makers, the stopped makers and users by position,
   the chests holding most), about a fifth of the full reply; `all_stopped: true`: every maker and user not working,
@@ -143,7 +145,8 @@
     `output_stop`: per product its `capacity`, `delivers_up_to` (a finished craft goes out while that much or less is
     held, else waits in the machine), `full` and `idle_full_output_from`, and `blocking`: `output` (a finished craft
     waits for room, crafting_progress 1) or `input` (not crafting, an ingredient short, holding a few crafts' worth:
-    the game reads that full_output too);
+    the game reads that full_output too); inserters put no ingredient into a machine holding that much of an item
+    product (`refuses_ingredients`, with the inserters waiting for space in it);
   - a chest: `holds` (and `requests` with their fill); a full chest names the nearest chests with free slots, and a
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
@@ -276,7 +279,8 @@
   status other than working was read (`status_runs`: first and last tick, longest run of samples in a row; `changes`:
   its last 8 status changes), the ingredients short at the samples that read short (at the recipe's quality, with
   their first and last tick), outputs by quality from its output slot,
-  totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
+  totals by recipe (`groups`), `left_out`; a rocket silo's completions are rocket parts, with `silo_statistics` (the
+  surface's production statistics of them over the watch); rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
   name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock
   line: `measuring uptime@TICK`; the sleep line and `sleep_check` name it with its scope, end tick and latest sample; it
@@ -285,7 +289,8 @@
   records your own reason to wait; it is shown back as given, and the operator's idle check shows it.
   An edit inside what a running watch measures (a measured entity configured, rotated, wired, fed by hand, built or
   removed; a feeding inserter, drill, loader or beacon built, removed or configured; a turret, collector or feed aboard
-  a watched platform) splits it at the edit. The read up to the edit stays in `mixed.parts`, `mixed.edits` names each
+  a watched platform) splits it at the edit. The read up to the edit stays in `mixed.parts` (an asteroid watch keeps
+  that watch whole: `segments`, read with `segment_start`), `mixed.edits` names each
   edit, and the watch starts again from the edit to its end tick (it ends at the edit when that start is refused or a
   measured entity went). Its read, its watch row and one alert to you say so. Robot and platform builds are not seen.
 - `pipe_gaps {from, to, via?}` or `{line}` (`surface`: those pipes on another planet by remote view): a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
@@ -349,7 +354,9 @@
   says so). `items: [...]`
   (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is, landed
   cargo pods (of any force: kind `pod`) and stacks on the ground in sight (kind `ground`, `on_ground`, not in the total)
-  among the places with their positions. With
+  among the places with their positions. Ground places are of the quality asked (normal when none, the place's
+  `quality`) and within the circle read, each the stacks of one 32-tile cell at the nearest; a stack on the ground is
+  one quality (3 legendary iron spilled lay as 3 stacks of 1). With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
@@ -358,7 +365,7 @@
   largest). `by_holder` splits the places read: provider and storage chests (robots can take it), requester and buffer
   chests (held for their requests), plain chests, machine outputs, elsewhere; the summary says so when logistic chests
   hold it. With `surface`, `by_network`: each logistic network's hold in providers, storage and other
-  holders, and `on_ground`: stacks lying on the ground in chunks our force sees now. A spoilable item adds
+  holders, and `on_ground`: stacks of normal quality lying on the ground in chunks our force sees now. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. `network: 96` (the number `networks` and an `inspect` of a
   roboport give): what a logistic network holds, its robots, and `roboports`: the robots each roboport holds, most
   first. Example: `./fh call stock --args '{"item":"iron-plate","places":"all","limit":16}'`
@@ -408,8 +415,8 @@
   (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
-  or ok each; feasible, sustained and the first unsatisfied. An item that spoils counts what supply measured leaving
-  uncounted in the last 30 min (else says it is not counted); the crafts run count the makers' productivity bonus and
+  or ok each; feasible, sustained and the first unsatisfied. An item that spoils gives the residual supply measured in
+  the last 30 min, signed (else says it is not counted); the crafts run count the makers' productivity bonus and
   a returned catalyst (pentapod-egg). Example: `./fh call dependency --args '{"item":"rocket-fuel","surface":"nauvis"}'`
 - The operator's factory digest arrives by `tell` at the deadline minus 2 hours: what changed since the last digest
   (blockers per planet, lessons whose check is not met, items blocked, requests nobody owns), each to the owner of

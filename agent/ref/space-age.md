@@ -244,6 +244,10 @@
   asteroids once each. Each ammo turret's rounds (read every 15-60 ticks): `rounds_used` exact for gun turrets
   (`exact`); rocket turrets' a load and a shot can offset: `unsure_reads`, `rounds_used_most`. `platform_consumed`:
   the platform's consumed count per ammo item (item production statistics) beside the turrets' `turrets_used`.
+  Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
+  legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
+  restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
+  closed_by, line}] (at most 3, 3000 tracked asteroids together); `segment_start: <tick>` reads one in full.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
@@ -355,7 +359,7 @@
   `received` and `by_platform`. `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
   with room there, a pod landed with no pad, the platform paused away from the destination or not stopping there, a
   requester chest asking none of it. Stopped at the destination, paused or not (its hub sends pods down while paused),
-  `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
+  `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. A hub section's max is for its own quality (2.0.77: under asteroid-collector@rare 1..1 from fulgora the hub kept 6 legendary at Fulgora; two rare rows' maxes added up); a slot with a quality comparator other than = is named and not forecast. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
   watches in brief (id, item, quality rule, count, to, state, last confirmed stage and its age, received of count,
   blockers and risks counted, deadline); `{id}` gives one watch's whole row (every field here), `{full: true}` every
   whole row; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the

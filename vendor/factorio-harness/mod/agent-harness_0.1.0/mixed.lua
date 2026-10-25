@@ -12,7 +12,8 @@
 --   forwards (on_built_entity, on_player_mined_entity, on_robot_mined_entity, on_entity_died, on_player_fast_transferred,
 --   on_gui_opened/on_gui_closed with a recipe or module change between them). Not seen: a construction robot's build or a
 --   platform's own build (control.lua forwards no event of them), a circuit's own changes;
--- - what happens: the watch's read up to the edit is kept (mixed.parts: from, to, its line and lines), and the watch
+-- - what happens: the watch's read up to the edit is kept (mixed.parts: from, to, its line and lines; an asteroid_watch
+--   keeps the whole closed watch as a segment, read by segment_start), and the watch
 --   starts again from the edit tick with the same arguments to its end tick (flight_watch: its counts begun again, to
 --   its arrival or limit); when that start is refused (too few seconds left, the call refused), or an entity it
 --   measures was mined or destroyed, the watch ends at the edit and its final is that part. mixed.edits names each
@@ -203,8 +204,13 @@ return function(api)
       if not ok or new == job then why, new = 'the new start was refused: ' .. tostring(err), nil end
     end
     if new then
-      local okr, before = pcall(api.read[kind], job)
+      -- (d25 batch200 QM1) a kind that keeps the whole closed watch (api.close: asteroid_watch's segments) reads it so
+      local close = api.close and api.close[kind]
+      local okr, before = false, nil
+      if close then okr, before = pcall(close, job, new, tick, rec.text) end
+      if not okr then okr, before = pcall(api.read[kind], job) end
       mx.parts[#mx.parts+1] = part(okr and before or nil, job.start, tick)
+      if close and okr and type(before) == 'table' and before.segment_start then mx.parts[#mx.parts].segment_start = before.segment_start end
       while #mx.parts > M.PARTS do table.remove(mx.parts, 1) end
       mx.from_tick, new.call, new.mixed = tick, job.call, mx
     else

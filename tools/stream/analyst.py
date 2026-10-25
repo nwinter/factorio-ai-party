@@ -396,6 +396,8 @@ def run_claude(a, digest_text, system=None):
     if p.returncode:
         raise RuntimeError(f"claude exited {p.returncode}: {(p.stderr or p.stdout).strip()[:300]}")
     out = json.loads(p.stdout)
+    if isinstance(out, list):  # (d25) "verbose" in the route's ~/.claude.json prints every message; the last "result" row is the answer
+        out = next((x for x in reversed(out) if isinstance(x, dict) and x.get("type") == "result"), {})
     if out.get("is_error"):
         raise RuntimeError(f"claude error: {str(out.get('result'))[:300]}")
     return out.get("result") or "", {"seconds": round(dt, 1), "turns": out.get("num_turns"),

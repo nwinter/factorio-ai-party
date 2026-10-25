@@ -580,13 +580,14 @@ def platforms(feed):
 class Tour:
     def __init__(self, svc, rows, manifest, out, log_path, hush_file=HUSH_FILE, stop_file=STOP_FILE,
                  clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True, subtitles=True,
-                 videos=None):
+                 videos=None, interrupt=None):
         self.svc, self.rows, self.manifest, self.out = svc, rows, manifest, out
         self.log_path, self.hush_file, self.stop_file = log_path, hush_file, stop_file
         self.now, self.sleep = clock, sleep
         self.lead, self.tail, self.agent_gaps, self.subtitles = lead, tail, agent_gaps, subtitles
         self.videos = videos or {}  # (CK5) {stop id: resolved old clip}
         self.stopped = False
+        self.interrupt, self.stop_why = interrupt, None  # (d25 batch197) a callable: why to end the tour now, or None
         self.drift = 0.0  # aired - cut_at asked, smoothed: later cuts are asked this much sooner
         self.cur = None  # the stop holding the camera: {id, look_until, need_until}
         self.scheduled = []  # narration clip ids sent with at (taken back at a stop)
@@ -613,6 +614,11 @@ class Tour:
     def want_stop(self):
         if self.stopped or os.path.exists(self.stop_file):
             self.stopped = True
+        elif self.interrupt:
+            why = self.interrupt()
+            if why:
+                self.stopped, self.stop_why = True, why
+                log(f"[tour] ending early: {why}")
         return self.stopped
 
     def look_body(self, s, cut_at, seconds, length=None):
@@ -846,7 +852,8 @@ class Tour:
         finally:
             self.flush(self.now())
             self.finish()
-            self.record(event="end", aired=aired, skipped=skipped, stopped=self.stopped, drift_s=self.drift)
+            self.record(event="end", aired=aired, skipped=skipped, stopped=self.stopped, drift_s=self.drift,
+                        **({"why": self.stop_why} if self.stop_why else {}))
             log(f"[tour] {'stopped' if self.stopped else 'done'}: {aired} stops aired, {skipped} skipped; log "
                 f"{self.log_path}")
         return aired, skipped

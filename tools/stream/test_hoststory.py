@@ -285,7 +285,28 @@ def analyst_tests():
     assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp8", "a topic aired lately, its words in any order"
     aired = {}
     caster.analyst_aired(aired, {"topic": "steady-spm", "text": "Nothing alike."}, now - caster.ANALYST_TOPIC_GAP)
-    assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp9", "half an hour later"
+    assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp9", "two hours later"
+    # (d25 batch197 NP4) a topic within 2 hours airs again only when its number moved by a tenth
+    for was, held in ((112, True), (105, True), (100, False), (125, False)):
+        aired = {}
+        caster.analyst_aired(aired, {"topic": "spm-steady", "text": "Labs at a steady rate.", "facts": {"spm": was}}, now - 3600)
+        got = caster.analyst_event(s, set(), aired, now)["point"]["id"]
+        assert got == ("tp8" if held else "tp9"), (was, got, caster.analyst_held(aired, pts[0], now))
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "spm-steady", "facts": {"spm": 112}, "text": "x"}, now - 3600)
+    assert caster.analyst_held(aired, pts[0], now) == "topic spm-steady aired 60 min ago"
+    # another topic name on the same subject at the same number is held; at another number it airs
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "lab-rate", "text": "Research runs at 113 sets a minute.", "facts": {"spm": 113}}, now - 900)
+    assert caster.analyst_held(aired, pts[0], now) == "research at 112 aired 15 min ago"
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "lab-rate", "text": "Research runs at 92 sets a minute.", "facts": {"spm": 92}}, now - 900)
+    assert caster.analyst_held(aired, pts[0], now) is None, "the research number moved"
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "pack-gap", "text": "Purple packs are made at 105 a minute.", "facts": {"made": 112}}, now - 900)
+    assert caster.analyst_held(aired, pts[0], now) is None, "another subject at the same number"
+    assert caster.point_lead({"text": "Of 94 drills, 93 report no ore."}) == 94.0 and caster.point_lead({"text": "x"}) is None
+    assert caster.point_subjects({"text": "Purple packs hold the labs back."}) == {"production-pack", "research"}
     aired = {}
     caster.analyst_aired(aired, {"topic": "lab-rate", "text": "The labs hold 112.6 science per minute."}, now - 60)
     assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp8", "much the same text under another topic"
@@ -435,8 +456,17 @@ def plain_tests():
     c.a = a
     pw = c.plain_writer()
     assert pw.model == "anthropic/claude-haiku-5.5" and pw.reasoning == {"enabled": False}
+    # (d25) no low model: the main one, Opus, which refuses reasoning off on OpenRouter
+    c.a = caster.parser().parse_args(["--writer", "or", "--model", "anthropic/claude-opus-5.5"])
+    pw = c.plain_writer()
+    assert pw.model == "anthropic/claude-opus-5.5" and pw.reasoning == {"effort": "low"}, pw.reasoning
     c.a = caster.parser().parse_args(["--writer", "template"])
     assert c.plain_writer() is None
+    # (d25) the rewrite gets each agent's chosen pronouns, they/them when none or unreadable
+    hint = hoststory.PlainPlan.names({"agents": [{"name": "astra", "display_name": "Astra", "pronouns": "they"},
+                                                 {"name": "opus", "display_name": "Opus", "pronouns": "he/him"},
+                                                 {"name": "sonnet", "display_name": "Sonnet"}]})
+    assert "Astra (they), Opus (he/him), Sonnet (they/them)." in hint and "pronouns to use" in hint, hint
     print("hoststory: ok (run block from an editable file; plain plan: one call per ten minutes, no shorthand, no "
           "ticks, plan changes wait, kept; caster wiring)")
 

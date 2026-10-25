@@ -139,6 +139,12 @@ return function(api)
     local inv = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
     return inv and count_q(inv, item, q) or 0
   end
+  -- (d24 batch192 QAH1) the watched quality, or with none given the hub's counts of the item by quality: a hub
+  -- section's max is for its own quality (freight.lua hub_keeps_at)
+  local function hub_q(F, pl, w)
+    if w.quality then return w.quality end
+    return F.by_item and (F.by_item(try(function() return F.hub_counts(pl, true) end)) or {})[w.item] or nil
+  end
   local function stops_at(pl, planet)
     for _, r in ipairs(try(function() return pl.schedule.records end) or {}) do if r.station == planet then return true end end
     return false
@@ -205,18 +211,28 @@ return function(api)
     local pads = api.census_typed and try(function() return api.census_typed(force, s, 'cargo-landing-pad') end)
       or try(function() return s.find_entities_filtered{type='cargo-landing-pad', force=force} end) or {}
     for _, pad in ipairs(pads) do
-      local min = 0
+      local min, by = 0, {}
       local secs_ = try(function() return pad.get_logistic_sections() end)
       for i = 1, secs_ and secs_.sections_count or 0 do
         local sec = secs_.get_section(i)
         if sec and sec.active ~= false then
           for _, f in ipairs(sec.filters or {}) do
             local v = f.value
-            if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 and (not q or qname(type(v) == 'table' and v.quality) == q) then min = min + f.min end
+            local fq = qname(type(v) == 'table' and v.quality)
+            if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 and (not q or fq == q) then min = min + f.min; by[fq] = (by[fq] or 0) + f.min end
           end
         end
       end
-      if min > 0 then out[#out+1] = {pad=pad, min=min, held=count_q(pad, item, q)} end
+      if min > 0 then
+        -- (d25 batch198 QK1) with no quality given, each quality's ask less what the pad holds of it: a pad's ask is
+        -- for its own quality (freight.lua pads)
+        local want_q
+        if not q then
+          want_q = {}
+          for fq, m in pairs(by) do want_q[fq] = m - count_q(pad, item, fq) end
+        end
+        out[#out+1] = {pad=pad, min=min, held=count_q(pad, item, q), want_q=want_q}
+      end
     end
     return out
   end
@@ -340,16 +356,18 @@ return function(api)
           local F = api.freight
           local keeps = F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), w.to.where)
           local asks = pad_asks(force, w.to.where, w.item, w.quality)
-          local want, parts = 0, {}
+          local want, parts, want_q = 0, {}, not w.quality and {} or nil
           for _, a in ipairs(asks) do
             want = want + math.max(0, a.min - a.held)
+            for fq, x in pairs(a.want_q or {}) do want_q[fq] = (want_q[fq] or 0) + math.max(0, x) end
             parts[#parts+1] = string.format('the landing pad %s asks %d, holds %d', at(a.pad.position), a.min, a.held)
           end
           -- (d24 batch142 PN1) its stop there with unloading off: the pads take nothing, a finite max still sends down
           local off, off_line
           if F.no_unload then off, off_line = F.no_unload(pl, w.to.where) end
-          local go, k = F.hub_gives(keeps, w.item, n, want, off)
-          local why = off and (k and k.max ~= math.huge and string.format('%s; %s: all above %d goes down', off_line, F.keep_text(k), k.max) or off_line)
+          local go, k = F.hub_gives(keeps, w.item, n, want_q or want, off, hub_q(F, pl, w))
+          local why = k and k.ranged and F.keep_text(k)
+            or off and (k and k.max ~= math.huge and string.format('%s; %s: all above %d goes down', off_line, F.keep_text(k), k.max) or off_line)
             or k and (k.max == math.huge and F.keep_text(k) .. ': an infinite max keeps it all'
               or string.format('%s: all above %d goes down, asked or not', F.keep_text(k), k.max))
             or #asks == 0 and string.format('no hub section keeps %s at %s and no landing pad of ours there asks it: it goes down as far as the pads ask', label(w), w.to.where)
@@ -358,7 +376,7 @@ return function(api)
             pl.paused and ' (paused: its hub sends pods down at the planet it is stopped at all the same)' or '', n, label(w))
           w.at_destination = {sends=go, held=n, asked=want, keep=k and F.keep_text(k) or nil,
             line=string.format('%s: its hub sends %d down now (%s)', head, go, why)}
-          if go == 0 then
+          if go == 0 and not (k and k.ranged) then
             block(w, 'demand ' .. w.to.where, string.format('%s: none of it goes down now (%s)', head, why),
               'demand ' .. w.to.where .. ' ' .. (off and 'unloading off' or k and tostring(k.max) or (#asks == 0 and 'no pad' or 'asked')))
           end
@@ -373,20 +391,22 @@ return function(api)
         if n > 0 and stops_at(pl, w.to.where) and api.freight and api.freight.hub_keeps_at then
           local F = api.freight
           local secs_ = try(function() return pl.hub.get_logistic_sections() end)
+          local q = hub_q(F, pl, w)
           for _, stop in ipairs(stops_before(pl, w.to.where)) do
             local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
             local keeps = F.hub_keeps_at(secs_, stop.station)
             local off = stop.off
             local asks = pad_asks(force, stop.station, w.item, w.quality)
-            local k = keeps[w.item]
-            if #asks == 0 and k and k.max ~= math.huge and n > k.max then
+            -- (QAH1) the rows of its quality only: a section's max is for its own quality
+            local above, k = F.hub_gives(keeps, w.item, n, 0, false, q)
+            if #asks == 0 and above > 0 then
               local key = 'demand ' .. stop.station .. ' max'
               local text = string.format('%s %s %s (%s) with %d %s in its hub, before %s: %s, so all above %d goes down there, a landing pad asking or not',
                 pl.name, stop.now and 'is stopped at' or 'stops at', stop.station, which, n, label(w), w.to.where, F.keep_text(k), k.max)
               if stop.now then block(w, key, text, key .. ' ' .. k.max) else risk(w, key, text, key .. ' ' .. k.max) end
             end
             for _, a in ipairs(asks) do
-              local go = F.hub_gives(keeps, w.item, n, a.min - a.held, off)
+              local go = F.hub_gives(keeps, w.item, n, a.want_q or a.min - a.held, off, q)
               if go > 0 then
                 local key = 'demand ' .. stop.station .. ' ' .. at(a.pad.position)
                 local kept = k and '; ' .. F.keep_text(k) or ''

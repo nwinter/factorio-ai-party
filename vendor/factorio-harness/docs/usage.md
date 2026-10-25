@@ -14390,6 +14390,34 @@ Fixed besides gates:
   breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
   (unchanged: the scan).
 - Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
+## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
+
+At tick 59185129 delivery watch #384 (3 asteroid-collector@legendary from Kestrel IVc to Aquilo's pad) warned
+`hub section 24 keeps asteroid-collector 1..1 at fulgora, so all above 1 goes down there`. Section 24 asks
+asteroid-collector@rare 1..1 from fulgora; the legendary row is section 23, 0..3 from nauvis. batch137's rule added
+every slot of the item by name.
+
+2.0.77 on a copy of world n's 20:42 save, Kestrel IVc paused at Fulgora (no pad there asks collectors):
+- 3 legendary and 3 rare put in the hub: the hub held 6 legendary (3 were there) and 1 rare; the 2 rare went to the
+  hub's trash and down.
+- A second section of asteroid-collector@rare 0..2 from fulgora: 5 rare went to 3 (the maxes of one quality add up).
+- A slot with a quality comparator (`≥ rare`): the game refuses a min there ("Can't specify non zero request with non
+  trivial item filter condition"); a max-only slot `≥ rare 0..1` sent all 6 legendary down and kept 1 rare, but beside
+  `= legendary 0..3` it kept 3 rare and 2 epic. Its rule was not found, so it is named and not forecast.
+
+freight.lua `hub_keeps_at` now keeps each row by quality as well (`q`, and `ranged` for a comparator slot), and
+`hub_gives(keep, item, held, want, off, q)` takes the quality held, or `{quality=count}`: a quality's rows send down
+all above their maxes; a quality no row names goes down as far as the pads ask. The section text names item@quality
+for a quality other than normal: `hub section 24 keeps asteroid-collector@rare 1..1 at fulgora`. Callers:
+- delivery_watch: the watched quality (none given: the hub's counts of each quality), at the destination and at the
+  stops before it. Watch 384's case gives no warning; a rare watch there gets `... with 3 asteroid-collector@rare in its
+  hub, before aquilo: hub section 24 keeps asteroid-collector@rare 1..1 at fulgora, so all above 1 goes down there`.
+- shipment's ready read and cargo conflict lines, and the freight stop lines (`expected down`), by the hub's counts
+  of each quality (`hub_counts(pl, true)`, `by_item`).
+- Without a quality the name-level rule is unchanged.
+
+Test: tests/d24_batch192.lua (fails on main: legendary under the rare max gave 3 down; the watch warned as #2264;
+shipment's ready read sent 6 down).
 - QAC1: the plain platform_endurance forecast under 10 ms a call. Where the time went, on a copy of world n's 19:22
   autosave (timing marks in the read):
   - Asterion, forecast true: the forecast 17-27 ms (flown legs 1.5, the turret scan 2.8, the legs loop 7.5, targets
@@ -14478,6 +14506,65 @@ Fixed besides gates:
 - Test: tests/d25_batch199.lua (fails on main: Astra's call leaves the targeting unset). It checks every pair of
   configure settings on the entities they go to: a success set both, a refusal changed nothing.
 
+## d25 batch198 QK1: the hub keep reads by item@quality (after Sol #2264)
+
+batch192 made delivery_watch, shipment's ready read and cargo conflict lines and the freight stop lines take the hub's
+counts by quality, but the pads' ask stayed by name, and requests' `sends_down` (the preview) and `keep` counted by
+name. 2.0.77 on a copy of world n's d25 07:26 save, Kestrel IVc stopped at Fulgora with 4 normal and 3 legendary
+asteroid collectors (section 1 asteroid-collector 4..4 from nauvis, 23 asteroid-collector@legendary 0..3 from nauvis):
+- Main's preview of switching section 24 (asteroid-collector@rare 0..1 from fulgora) on: `asteroid-collector: the hub
+  holds 4; its requests would keep 1 at fulgora, 4 at nauvis (kept 4 at nauvis): 3 down to fulgora (here) (its landing
+  pads ask 0, hold 0; its requests from fulgora keep 1); 1 stay aboard`. It counted the normal 4 only
+  (`get_item_count(name)` is normal) and the rare max against them. Switched on in the game, both stayed (26 s).
+- A landing pad's ask is for its own quality: Fulgora's pad asking 2 normal took 2 normal and none of the legendary;
+  asking 1 legendary, it took 1 legendary and no normal (20 s each).
+
+What changed:
+- freight.lua `pads(planet, force, by_quality)`: ask and hold by "name@quality". `wants(ask_q, hold_q)`: {item={quality=
+  ask less held}}. `hub_gives`'s want may be {quality=count}: each quality no row names goes down as far as the pads ask
+  that quality.
+- requests: `hub_keep_at` and `hub_keep` by slot key ("name@quality"; "name@>=rare" for a comparator slot);
+  `sends_down` per item@quality (held of that quality, the pads' ask and hold of it, the max of that quality), named
+  `item@quality` for one other than normal; an item a comparator slot names: `asteroid-collector: a request names it
+  with a quality comparator (asteroid-collector@>=rare): what the hub keeps of it is not forecast`. On the Sol case the
+  preview gives no line. `keep` takes "item@quality" (a name alone: normal) and keeps the count held of that quality.
+- The freight stop lines: `expected down` with each quality's pad want; `expected up` (hub_asks) each quality's request
+  against the hub's count of that quality (3 legendary held do not meet a request for 3 normal).
+- shipment: the cargo conflict lines per item@quality (`the hub holds 3 asteroid-collector@legendary; ...`); the
+  ready read with each quality's pad want; the platform read's down list by hub_gives (it still used batch31's sum of
+  the mins of the requests from that planet) with each quality's want.
+- delivery_watch with no quality: each quality's pad ask less what the pad holds of it.
+- The launch ledger's hub asks name item@quality and count that quality held.
+
+Test: tests/d25_batch198.lua (each part fails on main; the preview part gives main's line above).
+
+## d25 batch198 QK2: stock's ground rows by quality (Astra #2325)
+
+stock {surface: nauvis, item: iron-plate, quality: legendary, position: (-71.5,86.7), radius: 3} gave on_ground 3 and
+a row "3 stacks on the ground": stores.lua on_ground read every item-entity on the surface and binned each item's
+stacks by 32-tile cell (every quality), and stock kept a cell whose first stack was within the radius, with all its
+stacks. 2.0.77 on a copy of world n's d25 07:26 save: that cell held 3 stacks of 1 normal iron plate, at (-71.5,86.7),
+(-68.5,86.7) and (-65.5,86.7); 2 are within 3 tiles. 3 legendary iron spilled at (-70.5,86.7) lay as 3 stacks of 1:
+each stack on the ground is one quality.
+
+What changed:
+- stores.lua `on_ground(force, surface, item, opts)`: opts.quality counts only stacks of that quality; opts.position
+  and opts.radius find the stacks within the circle (a cell's position is then its nearest stack). Without opts, as
+  before.
+- stock's scan passes the quality asked (normal when none, as its holders) and the circle (none for a platform read
+  whole); each ground place has `quality`; `on_ground_note` names item@quality (or "(normal quality)") and says a row
+  is one 32-tile cell's stacks within the radius.
+- stock {item, surface} (the planet's whole count, normal only): its ground line counts normal only and says so.
+- Belts: stock reads machine outputs, chests, pads and landed pods; no belt.
+- Not changed: where_is's ground (every quality, the ground watch's cells) and ingredient_gap's (stock.near: the
+  ground watch's cells by name).
+
+Cost on the copy (Nauvis, 175 stacks on the ground): the ground find in a stock call was the whole surface, 12-14 ms
+(67.6 ms the first time); now radius 3: 0.05 ms, radius 128: 2.2-2.3 ms (93 stacks). A whole stock call on the branch
+(legendary iron at that spot): radius 3 16.5-38.7 ms, radius 128 38-61 ms on the copy (its holder finds; the copy
+stalls).
+
+Test: tests/d25_batch198.lua's QK2 part (fails on main: 6 stacks of every quality where 3 legendary lie within 3 tiles).
 ## d24 batch195 (hotfix, operator d24 21:18: platform_endurance answered from a kept reading took 80.7 ms on world n)
 
 - Measured on world n by the operator (runtime 465f403f, bot sol), platform_endurance {platform: Swiftlet, forecast:
@@ -14489,3 +14576,123 @@ Fixed besides gates:
 - Kept: batch183's design, progress, basis and forecast_model, and the model taking the forecast's turret scan in the
   same call.
 - Test: tests/d24_batch195.lua (replaces tests/d24_batch187.lua; fails on main: a kept reading is answered, 0 reads).
+## d24 batch193
+
+QAI1 (viewer Aurora 20:58): a far vehicle refusal names the remote form. Opus's `vehicle {position, go_to}` (and once
+`{position, auto_target_without_gunner}`) in shift71 at 02:03:23, 03:08:44 and 03:31:12 UTC was refused as "vehicle is
+outside local visible area" with no word of `vehicle {remote: true, vehicle: N, go_to}`, which sends a spidertron in a
+chunk our force sees.
+- The refusal of a `position` out of sight (enter, go_to, clear, the targeting switches, or a read alone) now ends,
+  for our spidertron, car or tank within 2.5 tiles of it:
+  - with the remote call, its unit number and the call's own arguments: "; or by remote: vehicle {remote: true,
+    vehicle: 23036938, go_to: {x: -600, y: -380}}". A spidertron keeps go_to, mode, clear and the switches; a read
+    alone gives `{remote: true, vehicle: N}`; enter gives `go_to: {x, y}`. A car or tank gives `drive:` go_to's
+    target when it is one position, else `drive: {x, y}`;
+  - or, when the remote form is refused too, its refusal (the remote form's own rules): "; by remote it is refused
+    too: spidertron (-480,-500) is in no chunk our force sees now ...", or a car's driver seat taken.
+  - Nothing is added for another force's vehicle, a locomotive or wagon, or no vehicle there.
+- A bare `vehicle {position}` of a far vehicle was refused as "position names the vehicle for enter: true ...; nothing
+  is done"; it is now the out-of-sight refusal with the remote read. What is allowed is unchanged.
+- Cost: one find (position, radius 2.5, car and spider-vehicle, our force) and the remote form's checks, only on the
+  refusal. On a copy of world n (LuaProfiler, under Rosetta) the hint's game reads took 0.003-0.027 ms, and a whole
+  refused call 0.40-0.42 ms with it against 0.35-0.40 ms at an empty spot.
+- Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
+
+
+## d25 batch201
+
+Engine facts below are from a copy of world n's 06:26 save (box time; tick 61469440), 2.0.77, under Rosetta.
+
+QN1 (Astra #2302): uptime on rocket silos. Two Aquilo silos read 19 completions in 600 s while the surface's
+statistics counted 879 rocket parts.
+- A silo's products_finished counts rockets. On the copy it went up by one in the tick rocket_parts went 50 -> 0
+  (create_rocket). The silo built parts through every launch phase, and a full productivity bar added its part to
+  rocket_parts. Over 9466 ticks the two silos' finished x 50 + rocket_parts rose 113 + 160, and Aquilo's rocket-part
+  produced rose 273. The count never drops at a launch.
+- uptime now counts a silo's completions as rocket parts: finished rockets x rocket_parts_required + rocket_parts (as
+  silo.lua's parts made). Crafts come from them and the productivity bar as for other machines. Each silo row has
+  `completions_are`, and the baseline says "N rocket parts so far".
+- `silo_statistics {item, surface, silos, silos_made, statistics_produced, line}`: the watched silos' parts beside the
+  surface's production statistics of the item over the watch (read at the start and at each read).
+- On the copy (branch runtime, 120 s, both silos): 47 + 46 completions, "the 2 watched silos made 93 in 120s; the
+  production statistics on aquilo counted 93 produced". A watch begun before the deploy keeps the game's count and
+  says its completions are rockets.
+
+QN2 (Astra #2315): an output that refuses ingredients. Asterion's explosives plant held 10 explosives and no coal; its
+input inserter waited for space; output_stop said it lacks coal and crafts when it arrives; trace named the right lane
+full of sulfur as coal's jam while coal sat on the left lane.
+- Engine fact: an inserter puts no ingredient into an assembling machine that holds amount x (1 + ceil(1.166 x crafts
+  a second)) of an item product, the count from which an idle machine reads full_output. A fast inserter fed from a
+  chest into machines with their output set beforehand and their input empty:
+  - gears in an assembler 2: inserted at 2, not at 3;
+  - gears in an assembler 3: inserted at 3, not at 4;
+  - explosives in a chemical plant: inserted at 2, not at 4.
+  The inserter reads waiting_for_space_in_destination. The machine crafts on with what it holds.
+- In Astra's layout on the copy (a belt with coal on the left lane and the right lane backed up with sulfur, the plant
+  holding 10 explosives and 1 sulfur, its output inserter blocked by a full chest), the inserter waited at 10, 7 and 4
+  explosives, and put in coal once the output fell to 1.
+- output_stop: `refuses_ingredients {product, held, from, line, waiting}`. In full_output with an ingredient short,
+  the line now ends: "it lacks coal 0 (a craft takes 1), and inserters put no ingredient into it while it holds 2
+  crafts' worth of a product or more (explosives 10; below 4 they do); waiting for space in it: fast-inserter
+  (-7.5,48.5)". idle_full_output says it too. Item products only (fluids not measured).
+- trace back: a feeder waiting for space in a machine that refuses says "it waits for space in chemical-plant: ...".
+  No lane jam is named for an item that sits on a lane the inserter picks from. With the item on neither lane, the jam
+  is named as before.
+- Cost on the copy (LuaProfiler, 100 calls, 3 runs): output_stop's read on the blocked plant 0.077-0.114 ms, its
+  waiting-inserter find 0.021-0.031 ms of that; trace's extra read 0.022-0.037 ms and its two lane counts 0.002 ms.
+
+QN3 (Sol #2328): supply's residual. Nauvis agricultural science held 2801 then 2934, made 0, used 572: -705, read
+"spoiled, or carried off the surface".
+- The residual is signed: held then + made + landed - used - sent up - held now. landed and sent_up are that item's
+  cargo pods over the same interval, from the pod log (podlog.lua): landed by land tick, rockets by send tick, every
+  quality. `uncounted` keeps the statistics-only figure (then + made - used - now), signed.
+- `residual_means` gives each sign's meaning:
+  - above 0: more left the stock than these count; spoiling (no count of it in the game's statistics) or what left
+    the surface uncounted can be it;
+  - below 0: more came in than these count (what arrived uncounted).
+  No residual is named spoiling. dependency, fuelbudget and packaudit quote the residual with its meaning.
+- `pods_complete` is false when the pod log's oldest kept journey (1000 a planet) is after the interval began.
+- Engine fact: a lab's pack counts as used in the production statistics in the tick its last durability is drawn,
+  when the held count drops (a lab on the copy: held 10 -> 9 and used 0 -> 1 in the same tick, 7 times).
+- On the copy (with the repo's control.lua, which forwards pod events): over 1.1 min, made 0, used 250, held 2615
+  then 3368 now, 1000 landed in 1 pod: residual -3, where the statistics alone leave -1003.
+  - With the copy's older control.lua (no pod events), the pod log counted none: residual -165 over 1.2 min. That
+    matched Weaver's hub over Nauvis going from 388 to 223 (165 down).
+- Cost of the pod count on the copy: 0.010-0.036 ms over 1 min, 0.098 ms over 60 min (the walk stops 10 minutes before
+  the interval).
+- Tests: tests/d25_batch201.lua (QN1 to QN3, run by tests/d25batch201.test.ts) and a section in tests/trace.lua; each
+  fails on main. Changed: tests/outputstop.lua and tests/d22_batch122b.lua (the new lines).
+## d24 batch195 (hotfix, operator d24 21:18: platform_endurance answered from a kept reading took 80.7 ms on world n)
+
+## d25 batch200 (QM1 Astra #2292: an asteroid watch's record through edits; QM2 Astra #2313: queue step ranges)
+
+- QM1. Trial164: a laser destroyed mid-watch made mixed.lua start the asteroid watch again, and the watch before it
+  was kept as mixed.parts {from, to, line}: its summary only (the read has no `lines`).
+  - Now mixed.lua closes the old watch through api.close.asteroid_watch (asteroidwatch.close): done at the edit tick,
+    its full result made, its tracked records and who hit which kept (keep, as a watch done at its end), its turret
+    and walk state dropped. It hangs on the new watch as `segments` (the oldest first), at most SEGMENTS 3 and
+    SEGMENT_RECORDS 3000 tracked asteroids together (the newest always kept; `segments_dropped` counts the rest).
+    Later splits carry them on; a watch the agent starts anew has none.
+  - mixed.parts names the segment (`segment_start`); every read lists `segments` [{segment_start, end_tick, seconds,
+    closed_by, line}]; `segment_start: <tick>` reads one in full (trajectory_page, trajectory_limit, asteroid_names).
+  - Turret rows give `quality`, `range` (the prototype's attack range times the quality's range_multiplier: on a copy
+    of world n an uncommon gun turret hit asteroids 19.5 and 20.5 tiles off and a normal one none past 19),
+    `min_range`, and `turn_range` with `facing` when under a full turn (railgun 0.2).
+  - Size on a copy of world n (06:26 save): a done 120 s watch of 1501 tracked asteroids on Asterion held 12026 tables,
+    726 KB as JSON; a 104 s segment of 202 tracked on Anvil 1843 tables, 124 KB.
+  - Cost on the copy (profile_ticks 150 s, a 300 s watch on Anvil, a gun turret destroyed at 104 s):
+    asteroid_watch.tick 0.031 ms a tick (worst second 7.7 ms); the split, timed as the new part mixed.event, 5.4 ms
+    in that second (0.2-0.8 ms in other seconds) for closing the 202-asteroid watch and starting the next. A segment
+    read 20 ms on the copy (31 KB), the running watch's read 37 ms (43 KB).
+- QM2. dry_run and submit checked a step's argument names and shapes, not its values. On the copy a dry run with a value
+  past the documented range was accepted for about 60 scalar arguments the actions refuse when they run (feed, rearm,
+  refuel, transfer, collect, move_to, mine, load_silo, kite, recover, pickup, shoot, the watches, and reads).
+  - runtime.lua M.step_ranges: {key, low, high, whole?, when?} per action, checked by M.step_range_check for every
+    queue step (api.check_args) at submit and in dry_run; the refusal names the step, the argument, the value and the
+    range. The watches' seconds are their modules' constants (asteroidwatch, uptime, turrettally, beltsample,
+    collectreach SECONDS; signalwatch MIN_S/MAX_S), used by their own checks too. Where an action takes a key with
+    different ranges by mode, the widest is listed (collect ticks 1..72000, transfer count 1..1000000, pickup and mine
+    ticks 1..36000). A value of another type is left to the action.
+  - Checked on the copy for all 90 entries: low and high not refused by the range; past high and below low refused.
+- Tests: tests/d25_batch200.lua (QM1; fails on main: no segments), tests/d25_batch200b.lua (QM2, through queue_submit;
+  fails on main: the step goes on to the platform check).

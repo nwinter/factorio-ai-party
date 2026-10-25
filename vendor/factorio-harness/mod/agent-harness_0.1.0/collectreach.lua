@@ -361,8 +361,10 @@ return function(api)
     if refresh then job.catch_every = catch_period(job); job.feeders_next = tick + M.FEEDERS_EVERY end
     job.catch_reads = (job.catch_reads or 0) + 1
   end
+  -- (d25 batch200 QM2) a collector_tally's seconds: this check and a queue step's (runtime.lua step_ranges)
+  M.SECONDS = {10, 3600}
   function M.start(p, pl, seconds, reason)
-    assert(type(seconds) == 'number' and seconds >= 10 and seconds <= 3600 and seconds == math.floor(seconds), 'seconds: 10..3600')
+    assert(type(seconds) == 'number' and seconds >= M.SECONDS[1] and seconds <= M.SECONDS[2] and seconds == math.floor(seconds), string.format('seconds: %d..%d', M.SECONDS[1], M.SECONDS[2]))
     local s = pl.surface
     local cols = {}
     local x0, y0, x1, y1

@@ -4368,10 +4368,11 @@ function handlers.stock(p,a)
     assert(not other_q,string.format('quality %s: a planet\'s whole count (stock {item, surface}) is of normal quality only; stock {item, quality, surface, places: "all"} lists every place there holding %s of that quality, and stock {item, quality, surface, position} reads around a place',tostring(a.quality),a.item))
     local row=M.stock_planet_row(p,surface,a.item)
     local by_net=M.stock_by_network(p,surface,a.item)
-    -- (d17 batch14 B2) stacks on the ground, in chunks our force sees now: counted apart, not in total
-    local okg,g=pcall(M.stores.on_ground,p.force,surface,a.item)
+    -- (d17 batch14 B2) stacks on the ground, in chunks our force sees now: counted apart, not in total; (d25 batch198
+    -- QK2) of normal quality, as the whole count
+    local okg,g=pcall(M.stores.on_ground,p.force,surface,a.item,{quality='normal'})
     local ground=okg and g.count>0 and g or nil
-    local ground_line=ground and string.format('%d on the ground in %d stack%s (%s), not in total',ground.count,ground.stacks,ground.stacks==1 and '' or 's',
+    local ground_line=ground and string.format('%d of normal quality on the ground in %d stack%s (%s), not in total',ground.count,ground.stacks,ground.stacks==1 and '' or 's',
       table.concat((function() local t={} for i,c in ipairs(ground.cells) do if i<=4 then t[i]=string.format('%d near (%d,%d)',c.count,math.floor(c.position.x),math.floor(c.position.y)) end end return t end)(),', '))
     return {item=a.item,surface=surface.name,total=row.total,on_ground=ground and ground.count or nil,on_ground_line=ground_line,by_network=#by_net>0 and by_net or nil,networks=row.networks,pads=row.pads,pads_in_networks=row.pads_in_networks,chests=row.chests,
       chests_holding=row.chests_holding,silos=row.silos,labs=row.labs,made_per_min=row.made_per_min,used_per_min=row.used_per_min,line=row.line..(ground_line and '; '..ground_line or ''),
@@ -8662,6 +8663,62 @@ end
 function M.configure_what(e)
   local ghost=e.type=='entity-ghost'
   return string.format('%s%s (%g,%g)',ghost and 'ghost of ' or '',ghost and e.ghost_name or e.name,e.position.x,e.position.y)
+end
+-- (d25 batch200 QM2, Astra #2313: a queued platform_defense {asteroids, seconds: 3600} passed queue_submit's dry_run and
+-- the job refused it, 10..1800) The numeric ranges each queueable action checks when it runs, checked for every queue
+-- step at submit and in dry_run: {key, low, high, whole?=true, when?} (when: the arguments the range applies with; the
+-- watches' ranges are their modules' own constants). A value of another type is left to the action (true, text forms).
+-- Where an action takes a key in several modes with different ranges, the widest is listed: a value no mode takes.
+-- On a copy of world n (d25) dry_run took an out-of-range value for every one of these, and each direct call refused it.
+local function watch_range(mod) return function() local m=M[mod]; return m.SECONDS[1],m.SECONDS[2] end end
+local function starts(mod) return function(a) return M[mod].starts(a) end end
+local function retrying(a) return a.retry_when_clear==true end
+M.step_ranges={
+  platform_defense={{'seconds',watch_range('asteroidwatch'),when=function(a) return a.asteroids==true end},
+    {'trajectory_limit',1,100,when=function(a) return a.asteroids==true end}},
+  platform_supply={{'seconds',watch_range('collectreach'),when=function(a) return a.collection==true end}},
+  uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},
+  turret_tally={{'seconds',watch_range('turrettally'),when=starts('turrettally')}},
+  belt_flow={{'seconds',watch_range('beltsample'),when=function(a) return a.position~=nil end}},
+  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.position~=nil or a.seconds~=nil end}},
+  feed={{'count',1,1000},{'fuel_count',1,1000},{'crafts',1,1000},{'radius',1,256},{'ticks',1,36000}},
+  refuel={{'count',1,1000},{'radius',1,256},{'ticks',1,36000}},
+  rearm={{'count',1,1000},{'below',1,1000},{'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
+  transfer={{'count',1,1000000},{'keep',0,100000},{'up_to',1,100000},{'total',1,100000},{'max_fresh',0,100},{'min_spoil',0,100},{'min_spoiled',0,100},
+    {'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
+  collect={{'ticks',1,72000},{'wait_ticks',1,36000},{'keep_taking',1,36000},{'count',1,10000},{'want',1,100000},
+    {'min_fresh',0,100},{'radius',1,256}},
+  move_to={{'ticks',1,36000},{'combat',1,32},{'max_uncovered',0,256},{'tolerance',0.25,10,whole=false},{'reach',0.5,64,whole=false}},
+  mine={{'count',1,2000},{'ticks',1,36000},{'radius',1,32}},
+  load_silo={{'rockets',2,20},{'wait_min',1,60},{'ticks',1,36000}},
+  launch={{'timeout',1,54000}},
+  build={{'retries',0,6},{'retry_ticks',600,54000,when=retrying},{'size',1,4},{'orientation',0,1,whole=false}},
+  shoot={{'ticks',1,600},{'radius',1,36},{'gun_slot',1,3}},
+  kite={{'radius',8,32},{'ticks',1,36000}},
+  recover={{'stop_after',1,5},{'ticks',1,36000},{'group_radius',8,160}},
+  pickup={{'ticks',1,36000},{'radius',1,32},{'count',1,10000},{'min_spoiled',0,100}},
+  train_stop={{'limit',0,1000}},
+  train={{'limit',0,1000},{'wagon_slots',0,40}},
+  cancel_craft={{'index',1,10000}},
+  walk={{'ticks',1,600}},repair={{'ticks',1,36000}},
+  drops={{'limit',1,20}},eggs={{'limit',1,256}},ghosts={{'radius',1,256},{'limit',1,64}},labs={{'radius',1,256}},
+  losses={{'since',1,100800}},nearest_water={{'radius',1,256}},ores={{'limit',1,100}},platform_plan={{'salvage',1,2000}},
+  platform_rearm={{'ammo_below',1,10000}},players={{'minutes',1,240}},robot_losses={{'minutes',1,900}},
+  research_done={{'limit',1,50}},sight={{'radius',16,240}},tells={{'limit',1,100}},turret_feeds={{'count',1,1000}},
+  cargo={{'limit',1,32}},
+}
+function M.step_range_check(action,a)
+  for _,r in ipairs(M.step_ranges[action] or {}) do
+    local v=a[r[1]]
+    if type(v)=='number' and (not r.when or r.when(a)) then
+      local lo,hi=r[2],r[3]
+      if type(lo)=='function' then lo,hi=lo() end
+      local whole=r.whole~=false
+      if v<lo or v>hi or (whole and v~=math.floor(v)) then
+        error(string.format('%s %s is outside %s..%s%s, what %s takes when it runs',r[1],tostring(v),tostring(lo),tostring(hi),whole and ' (a whole number)' or '',action),0)
+      end
+    end
+  end
 end
 M.preflight.configure=function(p,a)
   M.configure_together(a)
@@ -14619,7 +14676,7 @@ M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w)
 function handlers.deliver(p,a) return M.deliver.handler(p,a) end
 -- An item and its recipe's ingredients joined: rates, stock, freight on the way, rocket loads (dependency.lua; #818).
 -- (d20 batch122 CE2, viewer Aurora 10:13) what the production statistics leave out for an item that spoils (spoilflow.lua)
-M.spoilflow=require('spoilflow'){state=state,secs=function(t) return M.spoil.secs(t) end}
+M.spoilflow=require('spoilflow'){state=state,secs=function(t) return M.spoil.secs(t) end,pods=function(...) return M.podlog.counted(...) end}
 M.dependency=require('dependency'){spoilflow=M.spoilflow,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
   in_flight=function(force,to) return M.pods and M.pods.in_flight(force,to) end,pads=function(planet,force) return M.freight.pads(planet,force) end}
 function handlers.dependency(p,a) return M.dependency.read(p,a) end
@@ -16804,7 +16861,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
-  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
@@ -18591,7 +18648,7 @@ M.batch=require('batch'){position=position,integer=integer,entity=function(p,pos
   submit=function(p,a) return handlers.queue_submit(p,a) end}
 function handlers.assembler_batch(p,a) return M.batch.run(p,a) end
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
-M.trace=require('trace'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
+M.trace=require('trace'){refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   wait_for_full_hand=function(e) return M.details.wait_for_full_hand(e) end,
@@ -19207,7 +19264,7 @@ M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
 M.shipment=require('shipment'){integer=integer,freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
-  pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
+  pads=function(planet,force,q) return M.freight.pads(planet,force,q) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
   launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,
@@ -19467,7 +19524,7 @@ function M.hold_off_belt(p,action,e)
   steer(p,hb.spot,nil)
   return true
 end
-stock=stock_module{hold_off_belt=function(p,action,e) return M.hold_off_belt(p,action,e) end,elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+stock=stock_module{hold_off_belt=function(p,action,e) return M.hold_off_belt(p,action,e) end,elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item,o) return M.stores.on_ground(force,surface,item,o) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
@@ -20560,7 +20617,7 @@ function M.on_event(event)
   -- (d22 batch97 BG3) a chunk something was built in by hand, mined in or died in is marked for the chart (chart.lua)
   if M.chart and M.chart.events[event.name] then pcall(M.chart.mark,event) end
   -- (d23 batch123 CF2) a build, mine, death, ctrl-click or GUI change inside what a running watch measures (mixed.lua)
-  if M.mixed and M.mixed.events[event.name] then pcall(M.mixed.on_event,event) end
+  if M.mixed and M.mixed.events[event.name] then pcall(M.timed,'mixed.event',M.mixed.on_event,event) end  -- (d25 batch200) its own part in profile_ticks: a split closes a watch here
   -- The player log must never quarantine the runtime: its faults are counted.
   if M.players.events[event.name] then
     local ok,err=pcall(M.players.on_event,event)
@@ -20795,7 +20852,8 @@ end)()
     call=function(p,action,args) return handlers[action](p,args) end,flight_rebase=function(w,tick) return M.flightwatch.rebase(w,tick) end,
     read={uptime=function(job) return M.uptime.result(job,false) end,turret_tally=function(job) return M.turrettally.result(job,false) end,
       belt_flow=function(job) return M.beltsample.finish(job) end,collector_tally=function(job) return M.collectreach.result(job,false) end,
-      asteroid_watch=function(job) return M.asteroidwatch.result(job,false) end}}
+      asteroid_watch=function(job) return M.asteroidwatch.result(job,false) end},
+    close={asteroid_watch=function(job,new,tick,why) return M.asteroidwatch.close(job,new,tick,why) end}}
   local WATCH={uptime='uptime',turret_tally='turret_tally',belt_flow='belt_flow',
     platform_defense=function(a) return a.asteroids==true and 'asteroid_watch' or nil end,
     platform_supply=function(a) return a.collection==true and 'collector_tally' or nil end}

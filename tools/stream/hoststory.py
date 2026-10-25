@@ -390,6 +390,12 @@ class StoryMemo:
 PLAIN_EVERY = 600     # seconds between rewrite calls (one small model call)
 PLAIN_HOLD = 900      # a plan change waits this long at most for its rewrite
 PLAIN_KEEP = 200      # rewrites kept (raw text -> English)
+def pronoun_text(a):
+    """An agent's chosen pronouns as caster.pronouns_of reads them ("he/him"), else "they/them"."""
+    p = re.sub(r"\s+", "", str((a or {}).get("pronouns") or "")).lower()
+    return p if re.fullmatch(r"[a-z]{2,6}(?:/[a-z]{2,6}){0,2}", p) else "they/them"
+
+
 PLAIN_SYSTEM = (
     "You rewrite an AI team's planning notes from a Factorio Space Age game into plain English for two livestream "
     "hosts. The notes are the agents' own shorthand: run-together words, task and plan ids, game ticks. Rewrite only: "
@@ -451,11 +457,13 @@ class PlainPlan:
     def names(s):
         """What the notes' names are: the agents and the space platforms (ships) in the snapshot."""
         s = s or {}
-        agents = [a.get("display_name") or a.get("name") for a in s.get("agents") or [] if a.get("name")]
+        # (d25) with each agent's chosen pronouns: without them the rewrite guessed ("She" for Astra, who chose they)
+        agents = [f"{a.get('display_name') or a.get('name')} ({pronoun_text(a)})" for a in s.get("agents") or [] if a.get("name")]
         ships = [p.get("name") for p in (s.get("space") or {}).get("platforms") or [] if p.get("name")]
         out = []
         if agents:
-            out.append("Agents (the AI players; 'line:NAME' is that agent's own line): " + ", ".join(agents) + ".")
+            out.append("Agents (the AI players, with the pronouns to use for each; 'line:NAME' is that agent's own "
+                       "line): " + ", ".join(agents) + ".")
         if ships:
             out.append("Space platforms (ships): " + ", ".join(ships) + ".")
         return " ".join(out + ["Planets: Nauvis, Vulcanus, Fulgora, Gleba, Aquilo; AQ is Aquilo; the solar system "

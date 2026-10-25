@@ -1713,6 +1713,80 @@ a host prompt.
   half the exchanges.
 - Tests: tools/stream/test_hoststory.py (plain_tests).
 
+## What changed this hour, and the analyst's repeats (2026-10-25, d20 batch197 NP1-NP4)
+From the hosts proposal, idea E (Nick d23 and d25: the tour's depth on the normal stream). tools/stream/hourly.py
+writes one prepared piece an hour for the narrator channel.
+- NP1, the producer. `gather(run_dir, t0, t1)` turns the hour into numbered rows, each with its source and a weight:
+  - scores.jsonl, the hour's first row against its last: rockets (against the hour before), research finished,
+    infinite levels, the labs' sets a minute and the tightest colour, entity counts, new and gone platforms, planets;
+  - chronicle.jsonl: research, deaths, platforms made, lost, renamed or deleted, a ship's first arrival at a planet
+    along the resumed-from chain, rockets by planet and cargo, the agents' chronicle entries;
+  - factory-digest.jsonl, efficiency.jsonl (machines working, machines built, the top maker);
+  - the analyst's points (tools/stream/logs/analyst-*.jsonl): one per topic or much the same text, the best 8;
+  - the agents' aloud lines (chat.jsonl, the last 2 each);
+  - plan.json's lines and goals set in the hour, in the hosts' plain English when host-plain.json has the rewrite;
+  - the attacks, losses and deaths the hosts called (tools/stream/logs/caster-*.jsonl).
+
+  Camera targets are our ships by name, a death's spot, and spots where science is made on each planet (the middle
+  of a science recipe's chart labels, kept only inside a building box of the chart index, as the tour build
+  checked). A target is a row too: where a ship was at the hour's end.
+- One model call (caster.LLMWriter on OpenRouter; default Opus 5.5 with reasoning at low effort, which batch196
+  found it needs; `--model anthropic/claude-sonnet-5.5` works too). The prompt gives the rows best weight first
+  (40 at most), the targets, the agents with the pronouns from the stream state (they/them when none), and the last
+  two pieces. It asks for the two or three changes that matter most, as one piece of 60-110 words in one or two
+  stops, with a cause and a consequence taken from the rows. The reply is JSON: changes, stops ({target, caption,
+  narration}), and facts ({claim, source row}).
+- NP2, the verifier, `check(piece, material)`:
+  - the tour build's checks: 60-110 words, captions of at most 60 characters, no dashes, known targets;
+  - every number the narration says (digits, and spelled out above ten) is in a fact's claim. A round figure may
+    be rounded honestly: within 10%, "over" up to 1.5 times, "nearly" or "under" down to 0.85;
+  - every name (agents, ships, planets; agents and planets in lower case too; any capitalised word mid-sentence) is
+    in a fact's claim;
+  - every number and name of a claim is in the row it names;
+  - he or she only for a named agent who chose it; no "we"; no advice (should, must, needs to, consider ...).
+
+  A refused piece is written once more with the reason. Refused again, it is dropped with a log line.
+- `hourly.py dry-run --run-dir runs/RUN [--hours 4] [--from HH:MM] [--no-model]` writes the pieces for past hours
+  into tools/stream/logs/hourly/: one JSON per piece (with its rows and targets) and RUN-pieces.md. Nothing airs.
+  `--no-model` prints the rows only.
+- What the verifier cannot see: a cause stated in words. The prompt says a cause comes from one row that states it
+  and that two rows are never joined by "because", "so" or "it answers" unless a row says the link. A d25 live piece
+  had said that a finished laser research "answers" the bow flaw Astra had named. Read the pieces for that.
+- NP3, airing: `hourly.py run --run-dir runs/RUN` is the stream's helper. One hour after it starts, and every hour
+  after that, it gathers the last hour, writes the piece and airs it as a one- or two-stop tour (tour.Tour). Each
+  stop is a look with cut_at, and its narration plays at the cut plus lead in the tour's narrator voice, the first
+  of el-brian and oa-fable that no host or agent speaks in. The hosts are hushed (the hush file) for the piece only.
+  - It waits while hourly.blocked() names something on air. That is a fresh attack, loss or death (an alert under
+    120 s old), a battle, an attack or an enemy group on air, or someone's look, follow, platform hold or host
+    view. A tour overlay, a replay playing, or tour.py's run file with a live pid also make it wait.
+  - It renders (tour.py prepare) only when it can air, then looks again. A piece not on air 10 minutes after it was
+    written is dropped (`expired`, with what it waited for).
+  - On air (Tour's new `interrupt` hook, looked at every 2 s): someone else's look or the host view ends the piece.
+    With one camera (POG_CAMS=1: no inset for an attack), a fresh attack, loss or death or a battle ends it too.
+    With more than one, the attack goes to the inset and the piece goes on. The camera count is `--cams`, else
+    POG_EXPECT_CAMS, else the snapshot's cameras.
+  - While it airs it writes tour.py's run file, so `tour.py stop` ends it and a tour started by hand waits.
+  - Logs: tools/stream/logs/hourly-START.jsonl (written, dropped, aired, expired, with costs), each piece's
+    tour-PIECE.jsonl, and the piece, its script and its clips in tools/stream/logs/hourly/.
+  - `--once`: one piece for the last hour now, then it exits. `--no-air`: write only.
+- The switch: POG_HOURLY=1 (default 0). start-team.sh starts the helper with it and writes it to switches.env, and
+  shift_change.py carries it. POG_HOURLY=1 in the operator's environment at a change turns it on (ENV_FIRST). Its
+  model is POG_HOURLY_MODEL (default anthropic/claude-opus-5.5).
+- NP4, the analyst beats (caster.analyst_held, used by analyst_event): a point does not air while one of these aired
+  in the last 2 hours (ANALYST_TOPIC_GAP, was 30 minutes), unless its number has moved by a tenth or more (and at
+  least 1). Its number is its first numeric fact, else the first number in its text.
+  - its topic;
+  - much the same text;
+  - the same subject (caster.SUBJECTS, by the text's words: research, a pack colour, mining, machines off,
+    rockets, spoilage, power; attacks have none) with the same number of the same fact.
+
+  `hourly.py repeats [--hours 24] [-v]` replays the analyst beats on air in the caster logs through it, joining
+  each point's text to its topic in the analyst logs.
+- Cost (d25): the piece's model call is $0.022-0.038 on Opus 5.5, and twice that when a draft is refused. The
+  narration's TTS is $0.039-0.048 (el-brian, ElevenLabs, 520-600 characters, about 40 s). So about $0.07-0.12 a
+  piece, and one piece an hour.
+- Tests: tools/stream/test_hourly.py; test_hoststory.py analyst_tests (NP4); test_shift_change.py (the switch).
+
 ## Camera crops: the inset, and captures not hooked yet (2026-10-24, d24 batch136 PH2)
 - After the 21:05 shift change (shift66), cam3 read crop 0 at about 21:07, and the operator set it with crop_for.
 - **The change itself left all three cropped:**

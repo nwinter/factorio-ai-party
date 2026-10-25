@@ -792,12 +792,26 @@ def analyst_pick(analyst, used, kinds=None, min_priority=0):
 # the same topic again each cycle under a new id), shaped as one number and one reason.
 ANALYST_EVERY = 240
 ANALYST_MIN_PRIORITY = 2
-ANALYST_TOPIC_GAP = 1800
+# (d25 batch197 NP4) the analyst beats kept coming back to a few themes (drills out of ore, purple science setting the
+# pace): a topic aired in the last 2 hours, or the same subject at the same number, does not air again unless its
+# number moved by ANALYST_MOVED or more.
+ANALYST_TOPIC_GAP = 7200
+ANALYST_MOVED = 0.1
 ANALYST_CALL = ("the analyst desk's point (analyst_point), in the hosts' own words: the one number that matters in "
                 "it and the reason behind it, a cause and what it leads to; one number at most, never a list of "
                 "numbers or the number read out alone; say what is, never what the team should do")
 # what an analyst beat's lines may state: the point, and the beat's own plain facts (check_line holds them to these)
 ANALYST_CHECK = ("event", "game_time", "analyst_point", "how_to_call_it", "agent", "on_camera", "shift")
+# A point's subjects (NP4), by the words of its text: the analyst writes one subject under many topic names.
+SUBJECTS = {"research": ("research", "labs", "science a minute", "science per minute", "sets of science", "sets a minute"),
+            "production-pack": ("production pack", "production science", "purple"),
+            "chemical-pack": ("chemical pack", "chemical science", "blue pack", "blue science"),
+            "agricultural-pack": ("agricultural", "farm pack"), "automation-pack": ("automation pack", "red science"),
+            "logistic-pack": ("logistic pack", "green science"), "space-pack": ("space science", "space pack"),
+            "mining": ("drill", "minable", "ore patch", "mining productivity"),
+            "machines-off": ("full output", "output full", "disabled by control", "switched off", "machines show"),
+            "rockets": ("rockets launched", "launched", "silos have"), "spoilage": ("spoil",),
+            "power": ("power", "accumulator", "reactor")}  # (an attack is news each time: no subject)
 
 
 def topic_key(p):
@@ -805,22 +819,69 @@ def topic_key(p):
     return "topic:" + "-".join(sorted(str(p.get("topic") or p.get("id") or "").lower().split("-")))
 
 
+def point_lead(p, key=False):
+    """A point's number: its first numeric fact, else the first number in its text; None without one. key: (the
+    fact's name or None, the number)."""
+    for k, v in (p.get("facts") or {}).items() if isinstance(p.get("facts"), dict) else ():
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return (k, float(v)) if key else float(v)
+    m = re.search(r"\d+(?:\.\d+)?", str(p.get("text") or "").replace(",", ""))
+    v = float(m.group()) if m else None
+    return (None, v) if key else v
+
+
+def point_subjects(p):
+    low = str(p.get("text") or "").lower()
+    return {k for k, words in SUBJECTS.items() if any(w in low for w in words)}
+
+
+def moved(a, b):
+    """Whether a point's number moved from the one aired (ANALYST_MOVED of it, and at least 1); without both
+    numbers it did not."""
+    if a is None or b is None:
+        return False
+    return abs(a - b) >= max(1.0, ANALYST_MOVED * max(abs(b), 1e-9))
+
+
 def analyst_aired(topics, p, now):
-    """Note a point on air for analyst_event: its topic and its text."""
+    """Note a point on air for analyst_event: its topic, its text and its subjects, each with its number."""
+    lead = point_lead(p)
     topics[topic_key(p)] = now
     topics["text:" + str(p.get("text") or "")] = now
+    topics["lead:" + topic_key(p)] = lead
+    topics["lead-text:" + str(p.get("text") or "")] = lead
+    for k in point_subjects(p):
+        topics["subject:" + k] = (now, lead, point_lead(p, key=True)[0])
+
+
+def analyst_held(topics, p, now):
+    """(NP4) Why point p would repeat what aired in the last ANALYST_TOPIC_GAP seconds, else None: its topic or much
+    the same text aired then and its number has not moved, or a subject of it aired then at the same number."""
+    lead = point_lead(p)
+    t = topics.get(topic_key(p))
+    if t is not None and now - t < ANALYST_TOPIC_GAP and not moved(lead, topics.get("lead:" + topic_key(p))):
+        return f"topic {topic_key(p)[6:]} aired {round((now - t) / 60)} min ago"
+    for k, t in list(topics.items()):
+        if k.startswith("text:") and now - t < ANALYST_TOPIC_GAP and near_same(str(p.get("text") or ""), k[5:], 0.5) \
+                and not moved(lead, topics.get("lead-text:" + k[5:])):
+            return f"much the same text aired {round((now - t) / 60)} min ago"
+    name = point_lead(p, key=True)[0]
+    for k in sorted(point_subjects(p)):
+        t, was, was_name = (topics.get("subject:" + k) or (None, None, None)) + (None,) * 0
+        same = name is None or was_name is None or name == was_name  # the same number of the same thing
+        if t is not None and now - t < ANALYST_TOPIC_GAP and lead is not None and was is not None and same \
+                and not moved(lead, was):
+            return f"{k} at {lead:g} aired {round((now - t) / 60)} min ago"
+    return None
 
 
 def analyst_event(s, used, topics, now):
     """An analyst beat for this snapshot, or None: the best fresh point of ANALYST_MIN_PRIORITY or more whose id is
-    unused and whose topic (or much the same text) has not aired in the last ANALYST_TOPIC_GAP seconds."""
+    unused and that analyst_held lets through (no topic, text or subject at the same number in the last 2 hours)."""
     an = (s or {}).get("analyst") or {}
-    lately = [k[5:] for k, t in topics.items() if k.startswith("text:") and now - t < ANALYST_TOPIC_GAP]
     pts = [p for p in an.get("talking_points") or [] if isinstance(p, dict)
            and int(p.get("priority") or 2) >= ANALYST_MIN_PRIORITY and p.get("id") not in used
-           and now - topics.get(topic_key(p), -1e9) >= ANALYST_TOPIC_GAP
-           and not any(near_same(str(p.get("text") or ""), x, 0.5) for x in lately)
-           and (p.get("expires") or now + 1) > now and p.get("text")]
+           and (p.get("expires") or now + 1) > now and p.get("text") and not analyst_held(topics, p, now)]
     if not pts:
         return None
     # the snapshot lists them best first (analyst_board.public: priority, then newest)
@@ -2330,7 +2391,10 @@ class Caster:
         model = getattr(a, "plain_model", "") or getattr(a, "low_model", "") or a.model
         if a.writer == "or" and model:
             w = LLMWriter("or", model, timeout=a.writer_timeout)
-            w.reasoning = {"enabled": False}
+            # (CM3) Haiku 5.5 spent a whole rewrite reasoning, so off for it. (d25) Opus 5.5 refuses reasoning off on
+            # OpenRouter (HTTP 400 "Reasoning is mandatory for this endpoint"): with no low model since d23 19:58 every
+            # rewrite failed and the hosts had no goals or plan lines. Other models: low effort.
+            w.reasoning = {"enabled": False} if "haiku" in model else {"effort": "low"}
             return w
         if a.writer == "claude":
             return LLMWriter("claude", getattr(a, "plain_model", "") or "haiku", bin=a.claude_bin,

@@ -22,7 +22,8 @@ return function(api)
     if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
     return sec .. 's'
   end
-  -- What a platform's hub asks of planet for these items: "low-density-structure 100 (holds 20)".
+  -- What a platform's hub asks of planet for these items: "low-density-structure 100 (holds 20)"; (d25 batch198 QK1)
+  -- a quality other than normal named, and held of that quality: "asteroid-collector@legendary 3 (holds 0)".
   local function hub_asks(pl, planet, names)
     local out = {}
     local secs = try(function() return pl.hub.get_logistic_sections() end)
@@ -33,7 +34,8 @@ return function(api)
         local n = v and name_of(v.name)
         local from = f.import_from and name_of(f.import_from)
         if n and names[n] and (from == nil or from == planet) then
-          out[#out+1] = string.format('%s %d (holds %d)', n, f.min or 0, try(function() return pl.hub.get_item_count(n) end) or 0)
+          local q = v.quality and name_of(v.quality) or 'normal'
+          out[#out+1] = string.format('%s %d (holds %d)', q == 'normal' and n or n .. '@' .. q, f.min or 0, try(function() return pl.hub.get_item_count(q == 'normal' and n or {name=n, quality=q}) end) or 0)
         end
       end
     end

@@ -36,13 +36,13 @@ do
   game.tick=1000+18000; totals.nutrients={made=17087324+20120,used=14028301+17445}
   local m=SF.sample(force,gleba,'nutrients',3770)
   eq(m.uncounted,2663); eq(m.uncounted_per_min,532.6); eq(m.minutes,5)
-  eq(m.line,'over the last 5 min (whole-surface counts at tick 1000 and now): made 20120, used 17445; held 3758 then, 3770 now; 2663 left uncounted (532.6 a minute): spoiled, or carried off the surface')
-  has(SF.text(force,gleba,'nutrients'),'532.6 a minute left uncounted (spoiled, or carried off the surface), measured by supply over 5 min to 0s ago')
+  eq(m.line,'over the last 5 min (whole-surface counts at tick 1000 and now): made 20120, used 17445; held 3758 then, 3770 now; cargo pods: no pod log here; residual +2663 (+532.6 a minute; held then + made + landed - used - sent up - held now): more left the stock than these count: spoiling (no count of it in the game\'s statistics), or what left the surface uncounted (characters, vehicles, pods the log missed)')
+  has(SF.text(force,gleba,'nutrients'),'residual +532.6 a minute (more left the stock than these count: spoiling (no count of it in the game\'s statistics), or what left the surface uncounted (characters, vehicles, pods the log missed)), measured by supply over 5 min to 0s ago')
   has(SF.text(force,gleba,'nutrients'),'the production statistics leave spoiling out: made counts crafts (a productivity bonus\'s extra among them), used counts ingredients and fuel burned')
   eq(SF.text(force,gleba,'iron-plate'),nil)
   -- quoted for 30 min, then the note alone
   game.tick=game.tick+108001
-  has(SF.text(force,gleba,'nutrients'),'supply {item, surface} measures what left uncounted between two of its reads 1 to 60 min apart')
+  has(SF.text(force,gleba,'nutrients'),'supply {item, surface} measures the residual between two of its reads 1 to 60 min apart')
   -- a count over 60 min after the kept one starts again
   game.tick=game.tick+216000
   eq(SF.sample(force,gleba,'nutrients',3000).line,nil,'the kept count is over 60 min old')
@@ -73,7 +73,7 @@ do
   -- and 2,992 nutrients a minute from the biochambers' finished crafts; before: 74.6 crafts and 2,236.5)
   eq(nut.for_this_per_min,2982)
   has(r.lines[1],'recipe pentapod-egg: 2 per craft (+50% productivity on its 2 makers there; the statistics count 1.5 a craft); 99.4 crafts a minute')
-  has(r.lines[2],'nutrients: made 4000/min, used 3500/min, 600/min left uncounted (spoiled, or carried off the surface; supply measured it: over 10 min, held 1800 then and 800 now, -100 a minute), stock 800 (8 min at the net use)')
+  has(r.lines[2],'nutrients: made 4000/min, used 3500/min, residual +600/min (more left the stock than these count: spoiling (no count of it in the game\'s statistics), or what left the surface uncounted (characters, vehicles, pods the log missed); supply measured it: over 10 min, held 1800 then and 800 now, -100 a minute), stock 800 (8 min at the net use)')
   -- a flat measure (Gleba live: held 3,730 then 3,738) is sustained though the 10-minute rates less it read -12/min
   game.tick=game.tick+18000; totals.nutrients={made=60000,used=52000}
   SF.sample(force,gleba,'nutrients',808)
@@ -121,7 +121,7 @@ do
   game.tick=game.tick+7200; totals.nutrients={made=1400,used=1150}
   S.forget()
   r=S.supply_fresh(surf,force,'nutrients')
-  eq(r.uncounted,'over the last 2 min (whole-surface counts at tick 900000 and now): made 400, used 350; held 85 then, 85 now; 50 left uncounted (25 a minute): spoiled, or carried off the surface')
+  eq(r.uncounted,'over the last 2 min (whole-surface counts at tick 900000 and now): made 400, used 350; held 85 then, 85 now; cargo pods: no pod log here; residual +50 (+25 a minute; held then + made + landed - used - sent up - held now): more left the stock than these count: spoiling (no count of it in the game\'s statistics), or what left the surface uncounted (characters, vehicles, pods the log missed)')
   -- an area read is no whole-surface count: no measure
   r=S.supply_fresh(surf,force,'nutrients',{position={x=0,y=0},radius=10})
   eq(r.uncounted,nil)

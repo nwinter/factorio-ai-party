@@ -9,6 +9,10 @@
 --   a minute) spoiled.
 -- A whole-surface count (supply without an area) is kept per force, surface and item; the next one 1 to 60 minutes
 -- later gives made, used, the stock then and now, and what left uncounted: then + made - used - now.
+-- (d25 batch201 QN3, Sol #2328: Nauvis agricultural science held 2801 then 2934, made 0, used 572: -705 read "spoiled,
+-- or carried off the surface") the residual is signed and each sign says what it can be; cargo pods counted by the
+-- pod log over the same interval (landed, sent up in rockets) are set beside and taken out of it. Spoiling has no count
+-- in the game's statistics (on neither side), so no residual is named spoiling.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
@@ -33,6 +37,12 @@ return function(api)
     if not st then return 0, 0 end
     return try(function() return qflow.count(st, item, 'input') end) or 0, try(function() return qflow.count(st, item, 'output') end) or 0
   end
+  -- What a residual's sign can be (then + made + landed - used - sent up - now).
+  function M.means(res)
+    if res > 0 then return 'more left the stock than these count: spoiling (no count of it in the game\'s statistics), or what left the surface uncounted (characters, vehicles, pods the log missed)' end
+    if res < 0 then return 'more came into the stock than these count: what arrived uncounted (cargo pods the log missed, what characters or vehicles brought, items put in by script)' end
+    return 'the counts account for every change'
+  end
   M.NOTE = 'the production statistics leave spoiling out: made counts crafts (a productivity bonus\'s extra among them), used counts ingredients and fuel burned'
   -- A whole-surface count of a spoilable item now (stock: every place counted): kept, and against the one kept 1 to 60
   -- minutes before, what left uncounted. nil for an item that does not spoil; {} with no count to measure against yet.
@@ -50,8 +60,21 @@ return function(api)
       local mins = dt / 3600
       out = {minutes=r1(mins), since_tick=prev.tick, made=m, used=u, stock_then=prev.stock, stock_now=stock, uncounted=gone,
         uncounted_per_min=r1(gone / mins), tick=game.tick}
-      out.line = string.format('over the last %g min (whole-surface counts at tick %d and now): made %d, used %d; held %d then, %d now; %d left uncounted (%g a minute): spoiled, or carried off the surface',
-        out.minutes, prev.tick, m, u, prev.stock, stock, gone, out.uncounted_per_min)
+      local pods = api.pods and try(function() return api.pods(surface.name, item, prev.tick, game.tick) end)
+      local res = gone
+      local pod_text = 'cargo pods: no pod log here'
+      if pods then
+        res = gone + pods.landed - pods.sent_up
+        out.landed, out.landed_pods, out.sent_up, out.sent_pods = pods.landed, pods.landed_pods, pods.sent_up, pods.sent_pods
+        out.pods_complete = pods.complete or nil
+        pod_text = string.format('cargo pods (the pod log): %d landed in %d pod%s, %d sent up in %d rocket%s%s', pods.landed, pods.landed_pods,
+          pods.landed_pods == 1 and '' or 's', pods.sent_up, pods.sent_pods, pods.sent_pods == 1 and '' or 's',
+          pods.complete and '' or ' (the log\'s oldest kept journey is after the interval began: some may be missing)')
+      end
+      out.residual, out.residual_per_min = res, r1(res / mins)
+      out.residual_means = M.means(res)
+      out.line = string.format('over the last %g min (whole-surface counts at tick %d and now): made %d, used %d; held %d then, %d now; %s; residual %+d (%+g a minute; held then + made + landed - used - sent up - held now): %s',
+        out.minutes, prev.tick, m, u, prev.stock, stock, pod_text, res, out.residual_per_min, out.residual_means)
     elseif prev and dt < M.MIN_TICKS then
       out.note = string.format('the whole-surface count kept %ds ago is under a minute old: the next read from %ds on is measured against it', math.floor(dt / 60), math.ceil((M.MIN_TICKS - dt) / 60))
     end
@@ -78,10 +101,11 @@ return function(api)
     if not M.spoils(item) then return nil end
     local m = M.last(force, surface, item)
     if m then
-      return string.format('%s; %g a minute left uncounted (spoiled, or carried off the surface), measured by supply over %g min to %s ago',
-        M.NOTE, m.uncounted_per_min, m.minutes, api.secs and api.secs(game.tick - m.tick) or (game.tick - m.tick) .. ' ticks')
+      local res = m.residual_per_min or m.uncounted_per_min
+      return string.format('%s; residual %+g a minute (%s), measured by supply over %g min to %s ago',
+        M.NOTE, res, M.means(res), m.minutes, api.secs and api.secs(game.tick - m.tick) or (game.tick - m.tick) .. ' ticks')
     end
-    return M.NOTE .. '; supply {item, surface} measures what left uncounted between two of its reads 1 to 60 min apart'
+    return M.NOTE .. '; supply {item, surface} measures the residual between two of its reads 1 to 60 min apart'
   end
   return M
 end
