@@ -121,7 +121,8 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     echo "4d. agy memory guard (an agy agent in the team): $(python3 tools/agy_memguard.py --check || true); started if not, log runs/$run/agy-memguard.log"
   fi
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
-  { python3 tools/quota_rest.py --at-limit "runs/$run" "$team" --brief "${POG_QUOTA_BRIEF:-$qbrief}" --dry-run || true; } | sed 's/^/5a. /'
+  rest_carry=(); [ -n "${carry_from:-}" ] && rest_carry=(--carry "$carry_from")   # (d24 batch172) the last run's rests
+  { python3 tools/quota_rest.py --at-limit "runs/$run" "$team" ${rest_carry[@]+"${rest_carry[@]}"} --brief "${POG_QUOTA_BRIEF:-$qbrief}" --dry-run || true; } | sed 's/^/5a. /'
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
 fi
@@ -454,7 +455,11 @@ done < "$team"
 # rest until that reset (resting.json and the runtime push; the runtime is deployed and the workspaces exist now), so
 # the card, the supervisor and the idle nudger see it from the first poll. The agent is launched anyway: at its limit
 # it makes no request, and one that can play after all ends the rest with its first status. Not at its limit: nothing.
-{ python3 tools/quota_rest.py --at-limit "$rundir" "$team" --brief "${POG_QUOTA_BRIEF:-$rundir/quota-brief.json}" 2>&1 || true; } \
+# (d24 batch172, viewer Aurora 16:05: Muse's hand-marked rest until Sun 17:00 was gone in shift70, its ai-usage data
+# stale) A resumed run also starts with every rest of the previous one that has not ended, whatever ai-usage says,
+# unless a fresh reading gives the account room (the start log says so).
+rest_carry=(); [ -n "${carry_from:-}" ] && rest_carry=(--carry "$carry_from")
+{ python3 tools/quota_rest.py --at-limit "$rundir" "$team" ${rest_carry[@]+"${rest_carry[@]}"} --brief "${POG_QUOTA_BRIEF:-$rundir/quota-brief.json}" 2>&1 || true; } \
   | while read -r line; do log "$line"; done
 prompt_args=()
 while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"

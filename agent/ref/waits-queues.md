@@ -35,7 +35,9 @@
   30..900 s, default 120): that item aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests)
   under count, from a background reading begun every 30 s while a check asks (a pass about 2 s on 6743 belts); saw
   gives the total by place and its age; met too when the reading is older than max_age, or none by max_age after the
-  first check; remote and platform lanes);
+  first check; `area` (one area aboard) or `loop` (a belt's `{x,y}`: the belts joined to it end to end, through
+  splitters and undergrounds, the inserters taking from them and the turrets those fill) counts that part alone, and
+  saw adds the change since the reading before, a minute; remote and platform lanes);
   `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the

@@ -1036,10 +1036,16 @@ return function(api)
     if c.position~=nil then api.position(c.position) end
     if c.radius~=nil then number(c.radius,1,256,'radius') end
     local kind=c['until']
+    if c.loop~=nil and kind~='platform_ammo_below' then error('loop applies to platform_ammo_below only (the belts joined to the belt at that position)',0) end
     if c.area~=nil and (kind=='platform_built' or kind=='platform_ready') then
       -- (C5: an area or a list of them on the platform, checked below)
     elseif c.area~=nil and kind=='ghosts_waiting' and c.platform~=nil then
       M.areas_of(c.area)
+    elseif c.area~=nil and kind=='platform_ammo_below' then
+      -- (d24 batch173 QP1) one area aboard, in platform coordinates
+      assert(type(c.area)=='table' and (c.area.left_top or type(c.area[1])=='table'),'platform_ammo_below area: one {left_top, right_bottom} (or [[x,y],[x,y]]) aboard')
+      local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
+      assert(r.x>l.x and r.y>l.y and r.x-l.x<=1024 and r.y-l.y<=1024,'platform_ammo_below area must be nonempty and at most 1024x1024')
     elseif c.area~=nil then
       assert(kind=='ammo_below' or kind=='fuel_below' or kind=='fluid_count','area applies to ammo_below, fuel_below or fluid_count (and platform_built, platform_ready, ghosts_waiting with platform)')
       assert(c.radius==nil and c.position==nil,'area excludes position and radius')
@@ -1175,6 +1181,10 @@ return function(api)
       assert(type(c.count)=='number' and c.count>=1 and c.count<=1e6 and c.count==math.floor(c.count),'platform_ammo_below count: 1..1000000, met below it')
       assert(c.quality==nil or c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),'platform_ammo_below quality: a quality name or "any" (default normal)')
       assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120): a reading older than this meets it')
+      -- (d24 batch173 QP1, Astra #2241) loop: the belts joined to the belt at that position, their inserters and turrets
+      assert(c.area==nil or c.loop==nil,'platform_ammo_below: area or loop, not both')
+      assert(c.position==nil and c.radius==nil,'platform_ammo_below: area or loop (a belt\'s position aboard) scopes it; no position or radius')
+      if c.loop~=nil then api.position(c.loop) end
     end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
