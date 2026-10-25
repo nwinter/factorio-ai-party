@@ -88,12 +88,32 @@ rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, re
 # the item was ever counted at on a surface is read and summed; one other than normal only with any in the last hour
 # (one read; 106 item-surface-quality pairs had a count on a copy of world n, d24 08:50, and reading each one's 30
 # buckets took the read from 40 to 46 ms). (No Lua comments: one_line joins the lines.)
+# (d24 batch184 QAA2, operator-todo 09:55: about 10 ms a read on world n, every 30 s) On a copy of world n (18:11 save)
+# the surfaces took about 23 ms and table_to_json 34.6 ms for its 5.5 KB (1230 float counts): the reply's text is now
+# built with string.format("%d") on each count rounded to a whole number (FLOW_JSON), and a read covers one part of the
+# surfaces (SPLIT: parts, part): the planets dealt out in turn (nauvis, vulcanus, fulgora, gleba, aquilo: parts 0, 1, 2,
+# 0, 1; by index the three heaviest, nauvis, fulgora and aquilo, fell in one part), a platform by its index mod parts;
+# live.py reads one part a poll.
+FLOW_JSON = r"""
+local parts = {}
+for n, series in pairs(out) do
+  local nums = {}
+  for i = 1, 30 do nums[i] = string.format("%d", math.floor((series[i] or 0) + 0.5)) end
+  parts[#parts + 1] = "\"" .. n .. "\":[" .. table.concat(nums, ",") .. "]"
+end
+rcon.print("{" .. table.concat(parts, ",") .. "}")
+"""
 FLOW_LUA = r"""
 local f = game.forces.player
 local out = {}
+local PARTS, PART = SPLIT
 local QS = {"normal"}
 for name, q in pairs(prototypes.quality) do if name ~= "normal" and not q.hidden then QS[#QS+1] = name end end
+local k = 0
 for _, s in pairs(game.surfaces) do
+  local slot = s.index
+  if s.planet then slot = k k = k + 1 end
+  if slot % PARTS == PART then
   local st = f.get_item_production_statistics(s)
   local totals = st.input_counts
   for _, n in ipairs(ITEMS) do
@@ -112,9 +132,9 @@ for _, s in pairs(game.surfaces) do
       end
     end
   end
+  end
 end
-rcon.print(helpers.table_to_json(out))
-"""
+""" + FLOW_JSON
 
 # Science packs the labs used, as FLOW_LUA's 30 two-minute buckets over the last hour, oldest first (the production
 # statistics' consumption side: labs are what consume science packs), read the same way. Only surfaces where a pack
@@ -592,8 +612,10 @@ class Harness:
     def extras(self):
         return self.lua(STREAM_LUA)
 
-    def flows(self, items):
-        lua = FLOW_LUA.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in items) + "}")
+    def flows(self, items, part=0, parts=1):
+        """{item: 30 two-minute counts, oldest first} over one part of the surfaces (FLOW_LUA: the planets in turn, a
+        platform by its index mod parts)."""
+        lua = FLOW_LUA.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in items) + "}").replace("SPLIT", f"{int(parts)}, {int(part)}")
         return self.lua(lua)
 
     def used_flows(self, items):
