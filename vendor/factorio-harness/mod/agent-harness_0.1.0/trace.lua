@@ -327,8 +327,21 @@ return function(api)
             -- (d17 batch34 B2) the other takers of the item before this feeder: upstream on its lane, or at its source
             local okc, comp = pcall(M.competitors, p.surface, p.force, e, f, w.item, cell_of)
             if okc and comp then parts[#parts+1] = comp.line; row.competitors = row.competitors or {}; row.competitors[#row.competitors+1] = comp end
-            -- (B1) a belt lane it picks from that is full of another item
+            -- (QN2) the machine's output at its crafts' worth or more: the inserter puts no ingredient in (outputstop.lua)
+            local refuse = api.refuses_ingredients and try(function() return api.refuses_ingredients(e) end)
+            if refuse and status(f.e) == 'waiting_for_space_in_destination' then
+              parts[#parts+1] = string.format('it waits for space in %s: %s', e.name, refuse.line)
+              row.refused = refuse.line
+            end
+            -- (B1) a belt lane it picks from that is full of another item; (QN2, Astra #2315: coal on the left lane and
+            -- the right lane, full of sulfur, named as the jam) none when a lane it picks from holds the item
+            local on_lane = false
             if f.pick and f.pick.valid and BELT[f.pick.type] then
+              for lane = 1, 2 do
+                if picks_lane(f.e, lane) and (try(function() return f.pick.get_transport_line(lane).get_item_count(w.item) end) or 0) > 0 then on_lane = true end
+              end
+            end
+            if f.pick and f.pick.valid and BELT[f.pick.type] and not on_lane then
               for lane = 1, 2 do
                 if picks_lane(f.e, lane) then
                   local okb, blk = pcall(M.lane_block, p.surface, p.force, f.pick, lane, w.item)

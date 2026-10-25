@@ -209,6 +209,27 @@ return function(api)
     end
   end
 
+  -- (d25 batch201 QN3, Sol #2328) an item's counted arrivals and departures on a planet over (from, to]: what pods
+  -- landed (by land tick) and what rockets' pods took up (by send tick), every quality; complete false when the log's
+  -- oldest kept journey is after from (the list keeps the last KEEP).
+  function M.counted(planet, item, from, to)
+    local list = store().by[planet] or {}
+    local prefix = item .. '@'
+    local out = {landed=0, landed_pods=0, sent_up=0, sent_pods=0, complete=#list < M.KEEP or (list[1] and list[1].sent <= from) or false}
+    for i = #list, 1, -1 do
+      local r = list[i]
+      local n = 0
+      for k, v in pairs(r.items or {}) do if k == item or string.find(k, prefix, 1, true) == 1 then n = n + v end end
+      if n > 0 then
+        if r.up then
+          if r.sent > from and r.sent <= to then out.sent_up, out.sent_pods = out.sent_up + n, out.sent_pods + 1 end
+        elseif r.landed and r.landed > from and r.landed <= to then out.landed, out.landed_pods = out.landed + n, out.landed_pods + 1 end
+      end
+      -- sent in send order: one sent long enough before from that it landed before it ends the walk
+      if r.sent < from - M.OPEN_TICKS then break end
+    end
+    return out
+  end
   local function items_text(t)
     local list = {}
     for k, v in pairs(t or {}) do list[#list+1] = {k=k, v=v} end

@@ -14495,7 +14495,7 @@ M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w)
 function handlers.deliver(p,a) return M.deliver.handler(p,a) end
 -- An item and its recipe's ingredients joined: rates, stock, freight on the way, rocket loads (dependency.lua; #818).
 -- (d20 batch122 CE2, viewer Aurora 10:13) what the production statistics leave out for an item that spoils (spoilflow.lua)
-M.spoilflow=require('spoilflow'){state=state,secs=function(t) return M.spoil.secs(t) end}
+M.spoilflow=require('spoilflow'){state=state,secs=function(t) return M.spoil.secs(t) end,pods=function(...) return M.podlog.counted(...) end}
 M.dependency=require('dependency'){spoilflow=M.spoilflow,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
   in_flight=function(force,to) return M.pods and M.pods.in_flight(force,to) end,pads=function(planet,force) return M.freight.pads(planet,force) end}
 function handlers.dependency(p,a) return M.dependency.read(p,a) end
@@ -18465,7 +18465,7 @@ M.batch=require('batch'){position=position,integer=integer,entity=function(p,pos
   submit=function(p,a) return handlers.queue_submit(p,a) end}
 function handlers.assembler_batch(p,a) return M.batch.run(p,a) end
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
-M.trace=require('trace'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
+M.trace=require('trace'){refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   wait_for_full_hand=function(e) return M.details.wait_for_full_hand(e) end,

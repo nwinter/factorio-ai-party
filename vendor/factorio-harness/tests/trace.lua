@@ -352,4 +352,33 @@ eq(trace.mined('copper-ore'),true); eq(trace.mined('iron-plate'),false); eq(trac
 -- A drill start traces forward.
 has(trace.trace(p,{position={x=80.5,y=78.5}}).note,'electric-mining-drill has no recipe to trace back: traced forward (its output)')
 drill.valid=false; idle.valid=false; other.valid=false; ore_box.valid=false
+
+-- (d25 batch201 QN2, Astra #2315) Asterion's explosives plant: coal on the left lane its inserter picks from, the right
+-- lane full of sulfur back up the line; the inserter waits for space in the plant, which holds 10 explosives (the
+-- output at its crafts' worth: outputstop.lua). The trace names that, and no jam on the sulfur lane for coal.
+do
+  local explosives={name='explosives',ingredients={{type='item',name='coal',amount=1},{type='item',name='sulfur',amount=1}},products={{name='explosives'}}}
+  local plant=crafter(105.5,100.5,'chemical-plant',explosives,{sulfur=1},{explosives=10},'full_output')
+  local back={}
+  for x=100,102 do back[#back+1]=belt(x+0.5,100.5,{{},{'sulfur','sulfur','sulfur','sulfur'}},'qn2') end
+  local pick=belt(103.5,100.5,{{'coal','coal','coal','coal'},{'sulfur','sulfur','sulfur','sulfur'}},'qn2')
+  for i=1,#back-1 do link(back[i],back[i+1]); feeds(back[i],back[i+1]) end
+  link(back[#back],pick); feeds(back[#back],pick)
+  local arm=inserter(104.5,100.5,'fast-inserter',pick,plant,{status='waiting_for_space_in_destination'})
+  local refuse={line='inserters put no ingredient into it while it holds 2 crafts\' worth of a product or more (explosives 10; below 4 they do)'}
+  local tq=require('trace'){supply=supply,entity=lookup,remote_entity=lookup,status_name=function(e) return e.status end,
+    position=function(v) return {x=v.x,y=v.y} end,integer=function(v,d) return v or d end,refuses_ingredients=function(e) return e==plant and refuse or nil end}
+  r=tq.trace(p,{position={x=105.5,y=100.5},all=true})
+  local coal
+  for _,row in ipairs(r.ingredients) do if row.item=='coal' then coal=row end end
+  has(coal.text,'fast-inserter (104.5,100.5) waiting_for_space_in_destination takes from transport-belt (103.5,100.5)')
+  has(coal.text,'it waits for space in chemical-plant: inserters put no ingredient into it while it holds 2 crafts\' worth of a product or more (explosives 10; below 4 they do)')
+  eq(coal.blocked,nil,'coal on a lane it picks from: no jam named on the other'); eq(coal.text:find('is full of',1,true),nil,coal.text)
+  eq(coal.refused,refuse.line)
+  -- no coal on either lane: the sulfur lane's jam is named as before
+  pick.lines[1].items={}
+  r=tq.trace(p,{position={x=105.5,y=100.5}})
+  has(r.ingredients[1].text,'is full of sulfur')
+  plant.valid=false; arm.valid=false; pick.valid=false; for _,b in ipairs(back) do b.valid=false end
+end
 print('trace: ok')
