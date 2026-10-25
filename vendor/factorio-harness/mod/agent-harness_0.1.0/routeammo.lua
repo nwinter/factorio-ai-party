@@ -88,6 +88,8 @@ return function(api)
   end
   -- The parts of a leg as text: {{f0, f1}, ...} -> '0-15%, 0-25%'.
   local function share_pct(x) return math.floor(x * 100 + 0.5) end
+  -- (QZ1) a progress share as a percent to 2 decimals: 0.002 -> 0.2
+  local function pct2(x) return math.floor(x * 10000 + 0.5) / 100 end
   local function ranges_text(list)
     local parts = {}
     for _, r in ipairs(list) do parts[#parts+1] = string.format('%d-%d%%', share_pct(r[1]), share_pct(r[2])) end
@@ -417,25 +419,9 @@ return function(api)
     if #t.list == 0 then return 'nothing (ignore unprioritised targets on, an empty list)' end
     return set_text(t.list) .. ' only'
   end
-  -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, received, phases});
-  -- model: endurance's ammomodel (optional: without it, made is the rate times the time).
-  function M.forecast(pl, legs, rows, opts, model)
-    opts = opts or {}
-    local sp = opts.speed or 1
-    local dwell = (opts.dwell_s or 0) / 60
-    local fl = flown(pl)
-    local fd, fmin = {}, 0
-    for _, l in ipairs(fl) do
-      -- (BO1) the asteroids of the part flown, not the whole connection's
-      local d = l.f0 and M.density_range(l.from, l.to, l.f0, l.f1) or M.density(l.from, l.to)
-      for k, p in pairs(d or {}) do fd[k] = (fd[k] or 0) + p * l.minutes end
-      fmin = fmin + l.minutes
-    end
-    for k, p in pairs(fd) do fd[k] = p / fmin end
-    local cache, lines = {}, {}
-    hits = {}  -- (AX1) the force's bonuses as they are now
-    -- (BO2) the turrets aboard, read once: the turret that fires each ammunition (the first of its category) and the
-    -- ammunition's quality (the first holding it), as turret_for; and what each targets
+  -- (BO2) the turrets aboard, read once: the turret that fires each ammunition (the first of its category) and the
+  -- ammunition's quality (the first holding it), as turret_for; and what each targets. Returns turrets, fire_of, aim_of.
+  local function aiming(pl)
     local turrets = scan_turrets(pl)
     local fire = {}  -- ammunition -> {turret, quality}
     local function fire_of(ammo)
@@ -481,6 +467,162 @@ return function(api)
       end
       return aims[ammo]
     end
+    return turrets, fire_of, aim_of
+  end
+  -- (d24 batch183 QZ1, Sol #2055: a forecast for a hull not built yet) How many asteroids a box flying a part of a
+  -- connection meets, by the game's spawn rule as read on a copy of world n (2.0.77): asteroids spawn on a line 72
+  -- tiles ahead of the platform's box (asteroid_spawning_offset {{-48, -72}, {48, 48}}), across its width + 96; its
+  -- height does not count. Their number per km flown, fitted over 15 test platforms (widths 10..410, speeds 0.25..4 km
+  -- a tick, nauvis-vulcanus, fulgora-aquilo, gleba-aquilo, aquilo-solar-system-edge; 41 to 2054 asteroids a run):
+  -- K x (width + 96 + EXTRA) x the spawn chance there (each kind's, linear between the connection's points), the runs
+  -- within about 6% of it. Stopped on a connection almost none spawn (1 in 120 s). Chunks are not entities and are not
+  -- counted. The game's own formula is not exposed: K and EXTRA are the fit. A platform on a schedule (state
+  -- on_the_path) meets more: Spindle 1.27, Kestrel II 1.57, Anvil 1.64 and Asterion 2.53 times the fit in 120 s of their
+  -- own flights; Asterion held at one place and speed 1.8 times with its schedule, 1.03 with it removed; a test platform
+  -- given a schedule 1.19. What sets the factor was not found: ON_PATH is the range read.
+  M.K, M.EXTRA = 0.0100, 20
+  M.ON_PATH = {1.19, 2.53}
+  -- The part of a leg's connection flown (0..1 the way it is flown): the rest of the leg flown now, cut to progress
+  -- {f0, f1}; with its km. nil when the connection is not read.
+  local function leg_part(l, progress)
+    local c = connection(l.from, l.to)
+    local len = c and try(function() return c.length end)
+    if not len or len <= 0 then return nil end
+    local f0 = l.now and l.km and math.max(0, 1 - l.km / len) or 0
+    local f1 = 1
+    if progress then f0, f1 = math.max(f0, progress[1]), progress[2] end
+    return f0, f1, math.max(0, f1 - f0) * len, len
+  end
+  M.leg_part = leg_part
+  local function offset()
+    local o = try(function() return prototypes.utility_constants.asteroid_spawning_offset end)
+    local lt, rb = o and (o.left_top or o[1]), o and (o.right_bottom or o[2])
+    local x0, y0 = lt and (lt.x or lt[1]), lt and (lt.y or lt[2])
+    local x1, y1 = rb and (rb.x or rb[1]), rb and (rb.y or rb[2])
+    if x0 and x1 and y0 and y1 then return {x0, y0, x1, y1}, 'the game\'s asteroid_spawning_offset' end
+    return {-48, -72, 48, 48}, '2.0.77\'s asteroid_spawning_offset (not read: taken as {{-48,-72},{48,48}})'
+  end
+  -- o: {width (tiles), width_from, height?, speed (km a minute), speed_from, mass?, progress {f0, f1}, ammo (names)}.
+  -- Per leg: the part flown (the rest of the leg flown now; progress cuts every leg to that part of its connection, the
+  -- way it is flown), its km and minutes, the asteroids by kind (and a 600 s window's), and the shots each ammunition
+  -- takes for them (fragments it can hurt and its turrets target included, as the forecast counts them).
+  function M.model(pl, legs, o)
+    local off, off_from = offset()
+    local pad = off[3] - off[1]
+    local w = o.width
+    local front = w and (w + pad + M.EXTRA) or nil
+    local turrets, fire_of, aim_of = aiming(pl)
+    local ammo, seen = {}, {}
+    for _, n in ipairs(o.ammo or {}) do if not seen[n] then seen[n] = true; ammo[#ammo+1] = n end end
+    for _, t in ipairs(turrets) do for _, c in ipairs(t.held or {}) do if not seen[c.name] then seen[c.name] = true; ammo[#ammo+1] = c.name end end end
+    table.sort(ammo)
+    hits = {}
+    local cache = {}
+    local rows, lines = {}, {}
+    local p0, p1 = o.progress and o.progress[1] or 0, o.progress and o.progress[2] or 1
+    for _, l in ipairs(legs) do
+      local f0, f1, km_part = leg_part(l, o.progress)
+      local row = {from=l.from, to=l.to}
+      if not f0 then
+        row.none = 'no space connection read'
+      else
+        row.part = {f0, f1}
+        if f1 <= f0 then
+          row.km, row.minutes, row.asteroids = 0, 0, {}
+          row.line = string.format('%s->%s: the part %g-%g%% is behind the ship or empty', l.from, l.to, pct2(p0), pct2(p1))
+        else
+          local km = km_part
+          row.km = math.floor(km + 0.5)
+          row.minutes = o.speed and o.speed > 0 and math.floor(km / o.speed * 10 + 0.5) / 10 or nil
+          local dens = M.density_range(l.from, l.to, f0, f1) or {}
+          local by, total, kinds = {}, 0, {}
+          for k, p in pairs(dens) do
+            local n = front and M.K * front * km * p or nil
+            if n then by[k] = math.floor(n * 10 + 0.5) / 10; total = total + n; kinds[#kinds+1] = k end
+          end
+          table.sort(kinds, function(x, y) return by[x] > by[y] end)
+          row.asteroids, row.total = by, math.floor(total * 10 + 0.5) / 10
+          row.on_path = {math.floor(total * M.ON_PATH[1] + 0.5), math.floor(total * M.ON_PATH[2] + 0.5)}
+          local secs = row.minutes and row.minutes * 60
+          if secs and secs > 0 then
+            row.per_600s = {}
+            for k, n in pairs(by) do row.per_600s[k] = math.floor(n * 600 / secs * 100 + 0.5) / 100 end
+            row.total_per_600s = math.floor(total * 600 / secs * 100 + 0.5) / 100
+          end
+          -- shots: each kind's count x the shots it and its fragments take of the ammunition, as the forecast counts
+          row.shots = {}
+          local st = {}
+          for _, a in ipairs(ammo) do
+            local turret, quality = fire_of(a)
+            local aim = aim_of(a)
+            local sum = 0
+            for k, n in pairs(by) do sum = sum + n * (tree_shots(k, a, pl.force, turret, cache, quality, aim)) end
+            row.shots[a] = math.floor(sum + 0.5)
+            st[#st+1] = string.format('%s %d', a, row.shots[a])
+          end
+          local kt = {}
+          for j = 1, math.min(6, #kinds) do kt[j] = string.format('%s %s', kinds[j], num(by[kinds[j]])) end
+          row.line = string.format('%s->%s %g-%g%%: %d km, %s; asteroids about %s (%s; flying on a schedule %d-%d read)%s%s', l.from, l.to, pct2(f0), pct2(f1), row.km,
+            row.minutes and mins(row.minutes) or 'time unknown', num(total), #kt > 0 and table.concat(kt, ', ') or 'none', row.on_path[1], row.on_path[2],
+            row.total_per_600s and string.format(', %s a 600 s', num(row.total_per_600s)) or '', #st > 0 and '; shots ' .. table.concat(st, ', ') or '')
+        end
+      end
+      rows[#rows+1] = row
+      lines[#lines+1] = row.line or string.format('%s->%s: %s', l.from, l.to, row.none)
+    end
+    local basis = {
+      spawn_line = string.format('asteroids spawn on a line %d tiles ahead of the platform\'s box, across its width + %d (%s: x %g..%g, y %g..%g); the box\'s height does not count',
+        -off[2], pad, off_from, off[1], off[3], off[2], off[4]),
+      count = string.format('per km flown: %.4f x (width + %d + %d) x the spawn chance there (each kind\'s, linear between the connection\'s points), with no schedule; on a schedule %g-%g times that was read (on_path); fitted on a copy of world n over 15 test platforms (widths 10..410 tiles, speeds 0.25..4 km a tick, 4 connections, 41 to 2054 asteroids a run), the runs within about 6%% of it; not the game\'s own formula, which is not exposed', M.K, pad, M.EXTRA, M.ON_PATH[1], M.ON_PATH[2]),
+      distance = 'asteroids come by km flown, not by time: at another speed a leg meets as many, in a shorter or longer time; stopped on a connection almost none spawn',
+      width = w and string.format('%d tiles (%s)', w, o.width_from or '?') or 'unknown: no width read',
+      height = o.height and string.format('%d tiles (not used: the count does not depend on it)', o.height) or nil,
+      mass = o.mass and string.format('%g (not used: the speed is given, and the count is per km)', o.mass) or nil,
+      speed = o.speed and string.format('%g km/s (%s)', math.floor(o.speed / 60 * 100 + 0.5) / 100, o.speed_from or '?') or 'unknown',
+      progress = o.progress and string.format('%g-%g%% of each leg\'s connection, the way it is flown', pct2(p0), pct2(p1)) or nil,
+      shots = 'shots per asteroid as the forecast counts them: its health against a shot\'s damage after resistances and our bonuses, its fragments it can hurt, only what its turrets aboard target',
+    }
+    local estimated = {
+      'the count: a fit on test platforms with no schedule, about 6% off in those runs; one flight varies further (the game spawns at random: a count N varies by about its square root)',
+      string.format('on a schedule: platforms flying their routes met %g to %g times the fit (Spindle 1.27, Kestrel II 1.57, Anvil 1.64, Asterion 2.53 in 120 s each; Asterion held at one place and speed 1.8 with its schedule, 1.03 without): on_path gives that range; what sets the factor is not known', M.ON_PATH[1], M.ON_PATH[2]),
+      'which spawned asteroids come within a turret\'s range or reach the hull: not modelled (the line is wider than the hull by 96 tiles, and asteroids drift)',
+      'shots: every asteroid counted destroyed by that one ammunition, each shot hitting; misses and shots at an asteroid already dying not modelled',
+      'chunks: not entities, not counted (collectors)',
+    }
+    return {basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines}
+  end
+  -- (QZ1) What the forecast (M.forecast) assumes, as lines.
+  function M.basis(opts, speed_from)
+    opts = opts or {}
+    local off, off_from = offset()
+    return {
+      legs = 'the route\'s stops (route, or the schedule from its current stop), each leg its space connection\'s length (the leg flown now: the km left); minutes at the speed read (' .. tostring(speed_from or 'unknown') .. ')'
+        .. (opts.speed and string.format(', times %g (pessimistic.speed)', opts.speed) or ''),
+      asteroids = 'each leg\'s connection\'s asteroid_spawn_definitions (asteroid entities; chunks not), each kind\'s spawn chance as a mean over the leg (linear between its points, by distance along the connection): a relative weight, not a count',
+      use = 'the ammunition used a minute while moving on the legs flown in the last 2 hours (production statistics), times this leg\'s shots weighted by spawn chance over theirs, times its minutes; what is made at the rate made a minute, at most what the ingredients aboard allow',
+      box = string.format('the hull\'s width and the speed enter the use only through that measured rate (measured with the hull and speed as they flew); forecast_model counts asteroids by the box: a line %d tiles ahead of it across its width + %d (%s)', -off[2], off[3] - off[1], off_from),
+      speed = 'the spawn rule read on a copy of world n: as many asteroids per km at any speed 0.25..4 km a tick; the use a minute is kept at another speed (pessimistic.speed), so a slower leg uses more in all',
+      progress = opts.progress and string.format('%g-%g%% of each leg\'s connection, the way it is flown: its asteroids and minutes', pct2(opts.progress[1]), pct2(opts.progress[2])) or nil,
+    }
+  end
+  -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, received, phases});
+  -- model: endurance's ammomodel (optional: without it, made is the rate times the time).
+  function M.forecast(pl, legs, rows, opts, model)
+    opts = opts or {}
+    local sp = opts.speed or 1
+    local dwell = (opts.dwell_s or 0) / 60
+    local fl = flown(pl)
+    local fd, fmin = {}, 0
+    for _, l in ipairs(fl) do
+      -- (BO1) the asteroids of the part flown, not the whole connection's
+      local d = l.f0 and M.density_range(l.from, l.to, l.f0, l.f1) or M.density(l.from, l.to)
+      for k, p in pairs(d or {}) do fd[k] = (fd[k] or 0) + p * l.minutes end
+      fmin = fmin + l.minutes
+    end
+    for k, p in pairs(fd) do fd[k] = p / fmin end
+    local cache, lines = {}, {}
+    hits = {}  -- (AX1) the force's bonuses as they are now
+    local turrets, fire_of, aim_of = aiming(pl)
     local seen_kinds, kind_list = {}, {}
     local flown_names = {}
     for _, l in ipairs(fl) do
@@ -507,6 +649,15 @@ return function(api)
     for i, l in ipairs(legs) do
       local dens = M.density(l.from, l.to)
       local m = l.minutes and l.minutes / sp or nil
+      -- (QZ1) progress: that part of the leg only, its asteroids and its minutes
+      local pf0, pf1, pkm = nil, nil, nil
+      if opts.progress then
+        pf0, pf1, pkm = leg_part(l, opts.progress)
+        if pf0 then
+          dens = pf1 > pf0 and M.density_range(l.from, l.to, pf0, pf1) or {}
+          if m and l.km and l.km > 0 then m = m * pkm / l.km end
+        end
+      end
       if not dens then
         lines[#lines+1] = string.format('%s->%s: no space connection read', tostring(l.from), tostring(l.to))
       else
@@ -521,7 +672,8 @@ return function(api)
           or share >= 0.995 and string.format('; the legs flown cover all of it (%s)', ranges_text(merged(parts)))
           or string.format('; the legs flown cover %d%% of it (%s); the other %d%% is the game\'s spawn definition, not measured', share_pct(share), ranges_text(merged(parts)), 100 - share_pct(share))
         coverage[#coverage+1] = {leg=l.from .. '->' .. l.to, flown=#parts > 0 and ranges_text(merged(parts)) or nil, flights=#parts, covered=math.floor(share * 1000 + 0.5) / 1000}
-        lines[#lines+1] = string.format('%s->%s %d km, %s%s: asteroids (spawn chance, mean over the leg): %s%s', l.from, l.to, l.km or 0, mins(l.minutes),
+        lines[#lines+1] = string.format('%s->%s %s%d km, %s%s: asteroids (spawn chance, mean over the leg): %s%s', l.from, l.to,
+          pf0 and string.format('%g-%g%%: ', pct2(pf0), pct2(pf1)) or '', pf0 and math.floor(pkm + 0.5) or l.km or 0, mins(m and m * sp or l.minutes),
           sp < 1 and ' (' .. mins(m) .. ' at ' .. round(sp * 100) .. '% speed)' or '', table.concat(kt, ', '), cov)
         for _, kd in ipairs(kinds) do
           for k in pairs(M.breakup(kd.k)) do if not seen_kinds[k] then seen_kinds[k] = true; kind_list[#kind_list+1] = k end end
