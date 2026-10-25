@@ -805,12 +805,19 @@ return function(api)
     return {holders=out, belts=(d.belt_items or {})[surface.index] or {}, hands=(d.hand_items or {})[surface.index] or {}, as_of=as_of,
       capped=capped or nil, refresh_failed=snapfail.line('the census pass', d.start, d.refresh_failed)}
   end
+  local function same_force(e, force, fi)
+    local efi = e.force_index
+    if efi ~= nil and fi ~= nil then return efi == fi end
+    return e.force == force
+  end
   -- (d18 batch37 B1) the chests of a force on a surface the last pass found (nil before a pass lists them).
   function M.chests_on(force, surface)
     local d = (api.state().census or {}).done
     if not (d and d.chests) then return nil end
     local out = {}
-    for _, e in ipairs(d.chests[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
+    -- (d25 batch206 QS) by force_index: e.force == force made a LuaForce an entity (9 ms of Nauvis's 3716 chests, 3.8 so)
+    local fi = force.index
+    for _, e in ipairs(d.chests[surface.index] or {}) do if e.valid and same_force(e, force, fi) then out[#out+1] = e end end
     return out
   end
   -- Only entity references are cached; preflight reads their current rocket/cargo state.
@@ -850,7 +857,8 @@ return function(api)
     local d = (api.state().census or {}).done
     if not (d and d.crafters) then return nil end
     local out = {}
-    for _, e in ipairs(d.crafters[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
+    local fi = force.index
+    for _, e in ipairs(d.crafters[surface.index] or {}) do if e.valid and same_force(e, force, fi) then out[#out+1] = e end end
     return out, d.start
   end
   -- (d21 batch68 AD3) our poles the last pass found on a surface, still valid, its tick and whether it hit POLES_MAX; nil

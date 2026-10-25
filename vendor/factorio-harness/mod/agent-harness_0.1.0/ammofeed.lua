@@ -49,6 +49,9 @@ return function(api)
   end
   local function read_contents(e)
     local m = {}
+    -- (d25 batch206 QS) an empty belt by one count (its lines' reads were four calls)
+    local okn, n = pcall(e.get_item_count)
+    if okn and n == 0 then return m end
     -- (only ammunition is kept: the trace counts nothing else)
     for i = 1, e.get_max_transport_line_index() do
       local l = e.get_transport_line(i)
@@ -665,7 +668,8 @@ return function(api)
     if not all_keys then all_keys = {}; for i, b in ipairs(all) do all_keys[i] = key(b) end end
     for i, b in ipairs(all) do
       local k = all_keys[i]
-      if not reached_belts[k] and not to_hub[k] and not at_end[k] and b.type == 'transport-belt' and belt_of(b, anyammo, k) > 0 and #neighbours(b, k, 'outputs') == 0 then
+      -- (QS) its ammunition before its type: the loose belts below read it anyway, and most belts hold none
+      if not reached_belts[k] and not to_hub[k] and not at_end[k] and belt_of(b, anyammo, k) > 0 and b.type == 'transport-belt' and #neighbours(b, k, 'outputs') == 0 then
         local chain, cur, past = {{e=b, k=k}}, {e=b, k=k}, nil
         for _ = 1, 4 do
           local ins = neighbours(cur.e, cur.k, 'inputs')
