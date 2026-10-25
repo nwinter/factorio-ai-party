@@ -14906,29 +14906,6 @@ chunk our force sees.
 - Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
 
 
-QT3 (Sol #2351): Sol's body plan 768 at 62391635: build steps with wait: true and clear_obstacles: true returned
-cleared, mining, then_runs and were marked ok at once. The next step ran while the clearing and its run again were
-pending, and the plan ended done with 4 of 132 entities built. Each step's clear call replaced the one job an agent
-keeps (clear_jobs by player), so the earlier step's run again was lost.
-- runtime busy (scheduler_api): a build or place_ghosts step is running while its clear_obstacles job or its run
-  again (then_calls) is pending (clearobs.pending). The run again's reply is kept (clearobs.ran). What it starts
-  belongs to the queue, so the step ends when that build ends (its completion and failed entries as before), or at
-  once with the reply when it builds at once.
-- The step fails, outcome not_run_again with reason and cleared, when the job ends without the run again: the 10-minute
-  watch is over ("1 of 1 trees and rocks still stand after 10 min: build not run again"), the run again was refused,
-  or another action was running then.
-- The run again never starts over another action, direct or queued. The job's own hand-mining construct
-  (active.clear_job) does not count. With another action running: "the N trees and rocks in the footprints are gone;
-  build not run again: your wait_ticks runs (started after the clear)" in last.cleared.
-- queue_status active.continuation: "clear_obstacles: 2 of 2 trees and rocks in the footprints still stand (marked
-  Ns ago); build runs again once all are gone (until tick T)", then "the trees and rocks are gone; build runs again
-  this tick".
-- A pause (a direct body call, queue_pause, a deploy) while the job is pending drops the job and its run again (the
-  marks stay) and requeues the step as it was. resumed_from says so. queue_resume runs it again with clear_obstacles.
-- Test: tests/d25_batch207b.lua through the runtime with the fake engine. The obstacle find and the placement are
-  stubbed (clearobs.obstacles, build_now). It fails on main ("not ok at then_runs").
-
-
 ## d25 batch206 (QS: platform_defense, its asteroid watch read and stock, cheaper with the same replies)
 No argument or reply changed: every reply below was compared with main's at the same paused tick on a copy of world n
 (shift75 save) and was the same JSON. What changed is how much each read reads:
@@ -14968,18 +14945,6 @@ No argument or reply changed: every reply below was compared with main's at the 
   its records come, and a done watch's groups per filter; elsewhere's kinds by name; census lists by force index;
   rounds text.
 
-QT4 (Astra #2353): watch 472 at 62422246: Asterion, paused at Aquilo, was blocked "Asterion is paused" while the same
-watch recorded 25 uranium-rounds-magazine launched at 62421858 and the pod in transit.
-- On the copy (world n's save): Kestrel IVb and Meridian-V, both stopped at Nauvis with unmet uranium-rounds-magazine
-  requests from Nauvis, were paused at 62350620. By 62359610 Kestrel IVb had been sent 7 rockets of 25 (4 landed, its
-  hub 1350 -> 1525); Meridian-V none. A paused platform stopped at a planet still receives that planet's rockets.
-- delivery_watch up: paused is a blocker only away from the planet the cargo comes from: with from, not stopped at
-  from ("Asterion is paused at nauvis: it goes nowhere until unpaused; a silo on aquilo launches to it only while it
-  is stopped there", beside the orbit blocker); with no from, paused in flight.
-- Every watch row has `paused`, a fact whether a blocker or not: "Asterion is paused at aquilo" or "... in flight"
-  (down watches too; their blocker rule is batch139's).
-- Test: tests/d25_batch207.lua QT4; it fails on main.
-
 ## d25 batch207
 
 QT1 (Sol #2344): Kestrel IVb plan14's `pod_landed` wait for 750 uranium-rounds-magazine (since 62060809) was met at
@@ -15007,3 +14972,37 @@ QT2 (Sol #2345): platform low-ammo alerts said "3 low (under 10 rounds), turrets
   magazines: 7 (68 rounds), 7 (70 rounds), 9 (88 rounds)); turrets hold 33 magazines (326 rounds)". A failed rounds
   read gives the items alone.
 - The empty alert and the feed alert ("can reach under 20 magazines and nothing more comes") keep their tests.
+
+QT3 (Sol #2351): Sol's body plan 768 at 62391635: build steps with wait: true and clear_obstacles: true returned
+cleared, mining, then_runs and were marked ok at once. The next step ran while the clearing and its run again were
+pending, and the plan ended done with 4 of 132 entities built. Each step's clear call replaced the one job an agent
+keeps (clear_jobs by player), so the earlier step's run again was lost.
+- runtime busy (scheduler_api): a build or place_ghosts step is running while its clear_obstacles job or its run
+  again (then_calls) is pending (clearobs.pending). The run again's reply is kept (clearobs.ran). What it starts
+  belongs to the queue, so the step ends when that build ends (its completion and failed entries as before), or at
+  once with the reply when it builds at once.
+- The step fails, outcome not_run_again with reason and cleared, when the job ends without the run again: the 10-minute
+  watch is over ("1 of 1 trees and rocks still stand after 10 min: build not run again"), the run again was refused,
+  or another action was running then.
+- The run again never starts over another action, direct or queued. The job's own hand-mining construct
+  (active.clear_job) does not count. With another action running: "the N trees and rocks in the footprints are gone;
+  build not run again: your wait_ticks runs (started after the clear)" in last.cleared.
+- queue_status active.continuation: "clear_obstacles: 2 of 2 trees and rocks in the footprints still stand (marked
+  Ns ago); build runs again once all are gone (until tick T)", then "the trees and rocks are gone; build runs again
+  this tick".
+- A pause (a direct body call, queue_pause, a deploy) while the job is pending drops the job and its run again (the
+  marks stay) and requeues the step as it was. resumed_from says so. queue_resume runs it again with clear_obstacles.
+- Test: tests/d25_batch207b.lua through the runtime with the fake engine. The obstacle find and the placement are
+  stubbed (clearobs.obstacles, build_now). It fails on main ("not ok at then_runs").
+
+QT4 (Astra #2353): watch 472 at 62422246: Asterion, paused at Aquilo, was blocked "Asterion is paused" while the same
+watch recorded 25 uranium-rounds-magazine launched at 62421858 and the pod in transit.
+- On the copy (world n's save): Kestrel IVb and Meridian-V, both stopped at Nauvis with unmet uranium-rounds-magazine
+  requests from Nauvis, were paused at 62350620. By 62359610 Kestrel IVb had been sent 7 rockets of 25 (4 landed, its
+  hub 1350 -> 1525); Meridian-V none. A paused platform stopped at a planet still receives that planet's rockets.
+- delivery_watch up: paused is a blocker only away from the planet the cargo comes from: with from, not stopped at
+  from ("Asterion is paused at nauvis: it goes nowhere until unpaused; a silo on aquilo launches to it only while it
+  is stopped there", beside the orbit blocker); with no from, paused in flight.
+- Every watch row has `paused`, a fact whether a blocker or not: "Asterion is paused at aquilo" or "... in flight"
+  (down watches too; their blocker rule is batch139's).
+- Test: tests/d25_batch207.lua QT4; it fails on main.
