@@ -8,7 +8,8 @@ ffmpeg, no clock: python3 tools/test_r2_shifts.py
 - captions on the joined video: the second recording's cues start after the first's length;
 - shift.json: the parts with names only (no local paths), the gaps, the stats row before the start;
 - the upload: segments first, playlists then master.m3u8 last; the jobs controller rises under 80% of the cap, takes
-  one off over it and never rises again; a stream health drop pauses new puts until two clean reads;
+  one off over it and never rises again; a stream health drop pauses new puts until two clean reads; at most 30
+  puts in any 10 s (the Cloudflare API's limit is about 4 a second), and a 429 holds new puts for a minute;
 - a whole shift with a fake runner (archive.py and ffmpeg) and a fake r2_put and HEAD: one object lost on the first
   pass is put again; the receipt in R2 and in the receipts folder; the local folder removed, the master untouched;
   the status row reads complete; a second run skips the shift.
@@ -169,6 +170,26 @@ def main():
         assert r2.order.index("shift01/full/540/index.m3u8") > r2.order.index("shift01/full/540/p00/seg0000.m4s")
         assert all(n == 0 for ok, n in calls[:4]), calls  # nothing went up while paused
         assert len(res["pauses"]) == 1 and res["objects"] == 6 and not res["failed"], res
+        # the API's request limit: at most 30 puts in any 10 s, and a 429 holds new puts for a minute
+        many = tmp / "many"
+        for i in range(80):
+            (many / "1080").mkdir(parents=True, exist_ok=True)
+            (many / "1080" / f"seg{i:04d}.m4s").write_bytes(b"x")
+        clock, stamps = Clock(), []
+
+        def stamped(item):
+            stamps.append((clock.t, item[1]))
+            if item[1].endswith("seg0040.m4s"):
+                return item[1], 1, ["Failed to fetch ... - 429: Too Many Requests;"]
+            return item[1], 0, []
+        res = rs.upload(r2_put.plan(many, "s/full"), stamped, jobs=8, jobs_max=8, clock=clock, sleep=lambda s: None,
+                        log=lambda *x: 0)
+        times = [t for t, _ in stamps]
+        assert all(sum(1 for u in times if t - 10 < u <= t) <= 30 for t in times), times
+        t429 = next(t for t, k in stamps if k.endswith("seg0040.m4s"))
+        later = [t for t, k in stamps if t > t429 + 1]
+        assert later and min(later) >= t429 + 60, (t429, later[:3])
+        assert res["too_many_requests"] == 1 and res["failed"] == ["s/full/1080/seg0040.m4s"], res
         # a whole shift
         hls_root = tmp / "pog-hls"
         hls_root.mkdir()
@@ -179,7 +200,8 @@ def main():
         cal.write_text("{}")
         a = argparse.Namespace(hls_root=str(hls_root), sources=[str(rec)], runs_dir=str(tmp), logs_dir=str(tmp),
                                calibration=str(cal), receipts=str(tmp / "receipts"), status=str(status),
-                               max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, max_local_gb=25.0, margin_gb=0.0,
+                               max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, max_obj_s=3.0, max_local_gb=25.0,
+                               margin_gb=0.0,
                                dry_run=False)
         runner = FakeRunner(idx)
         r2 = FakeR2(lose={"shift01/full/540/p01/seg0002.m4s"})
@@ -223,7 +245,7 @@ def main():
         assert (bad / "x.mkv").exists() and (rec / idx["media"][0]["name"]).exists()
         assert rs.shifts_arg("2-4,9") == ["shift02", "shift03", "shift04", "shift09"]
     print("r2 shifts: ok (parts, stitched playlists, joined captions, shift.json, jobs controller, stream health "
-          "pause, upload order, a whole shift with a lost object, receipt, cleanup, status row, skip on rerun)")
+          "pause, upload order, the API request cap and 429 hold, a whole shift with a lost object, receipt, cleanup, status row, skip on rerun)")
 
 
 if __name__ == "__main__":

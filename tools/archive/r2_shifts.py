@@ -39,6 +39,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
@@ -246,8 +247,11 @@ def next_jobs(jobs, mbps, max_mbps, jobs_max, capped):
 
 
 def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, health=None, clock=time.time,
-           sleep=time.sleep, log=print):
-    """Put every item, `jobs` at a time, the rate held at or under max_mbps; returns the upload's record."""
+           sleep=time.sleep, log=print, max_obj_s=3.0):
+    """Put every item, `jobs` at a time, the rate held at or under max_mbps and at most max_obj_s puts a second
+    (over each 10 s); a 429 from the Cloudflare API holds new puts for a minute. Returns the upload's record.
+    Each put is a call to the Cloudflare API, whose limit is 1,200 requests in 5 minutes for the whole user (about
+    4 a second, shared with the site's deploys): at 8 jobs wrangler made 6.8 puts a second and got 429s (batch211)."""
     items = order(items)
     todo = list(items)
     t_start = clock()
@@ -256,6 +260,13 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
     failed, pauses, trace = [], [], []
     running = {}
     paused_since, clean = None, 0
+    sent, hold_until, n429 = deque(), 0.0, 0
+
+    def room():
+        now = clock()
+        while sent and sent[0] < now - 10:
+            sent.popleft()
+        return now >= hold_until and len(sent) < max_obj_s * 10
 
     def gate():
         nonlocal paused_since, clean
@@ -277,8 +288,9 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
     open_gate = gate()
     with ThreadPoolExecutor(jobs_max) as ex:
         while todo or running:
-            while open_gate and todo and len(running) < jobs:
+            while open_gate and todo and len(running) < jobs and room():
                 it = todo.pop(0)
+                sent.append(clock())
                 running[ex.submit(putter, it)] = it
             if running:
                 fin, _ = wait(list(running), timeout=1.0, return_when=FIRST_COMPLETED)
@@ -288,11 +300,14 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
                     if code:
                         failed.append(key)
                         log(f"  failed {key}: {err}")
+                        if "429" in " ".join(err):
+                            n429 += 1
+                            hold_until = clock() + 60
                     else:
                         bytes_win += it[0].stat().st_size
                         done_bytes += it[0].stat().st_size
             else:
-                sleep(window / 3)
+                sleep(1.0 if open_gate else window / 3)
             now = clock()
             if now - t_win >= window:
                 mbps = bytes_win * 8 / (now - t_win) / 1e6
@@ -311,14 +326,15 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
     return {"objects": len(items) - len(failed), "bytes": done_bytes, "seconds": round(took, 1),
             "mbps": round(done_bytes * 8 / took / 1e6, 1) if took else None, "jobs_last": jobs,
             "jobs_max_used": max([j for _, j, _ in trace] + [jobs]), "capped": capped, "failed": failed,
-            "pauses": pauses, "windows": trace}
+            "pauses": pauses, "windows": trace, "max_obj_s": max_obj_s, "too_many_requests": n429}
 
 
 def head_size(url, tries=4, sleep=time.sleep):
     """The object's Content-Length from a HEAD at the public URL; None when it is not there."""
     for k in range(tries):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA}), timeout=30) as r:
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=30) as r:
                 return int(r.headers.get("Content-Length", -1))
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -446,7 +462,8 @@ def do_shift(run, a, putter, head, health, runner=subprocess.run, clock=time.tim
         todo = items
     (folder / "upload.started").write_text(iso(clock()))
     log(f"{run}: uploading {len(todo)} objects, {sum(it[0].stat().st_size for it in todo) / 1e9:.2f} GB")
-    up = upload(todo, putter, a.max_mbps, a.jobs, a.jobs_max, a.window, health, clock, log=log)
+    up = upload(todo, putter, a.max_mbps, a.jobs, a.jobs_max, a.window, health, clock, log=log,
+                max_obj_s=a.max_obj_s)
     log(f"{run}: upload {up['objects']} objects in {up['seconds']} s, {up['mbps']} Mbit/s, jobs {up['jobs_last']}"
         f" (max {up['jobs_max_used']}), {len(up['pauses'])} pause(s)")
     for attempt in range(2):
@@ -455,7 +472,8 @@ def do_shift(run, a, putter, head, health, runner=subprocess.run, clock=time.tim
             break
         log(f"{run}: {len(bad)} object(s) missing or a different size; putting them again")
         again = [it for it in items if it[1] in {k for k, _, _ in bad}]
-        upload(again, putter, a.max_mbps, min(a.jobs, 4), a.jobs_max, a.window, health, clock, log=log)
+        upload(again, putter, a.max_mbps, min(a.jobs, 4), a.jobs_max, a.window, health, clock, log=log,
+               max_obj_s=a.max_obj_s)
     else:
         bad = verify(items, head)
     if bad:
@@ -493,6 +511,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--jobs-max", type=int, default=8)
     ap.add_argument("--window", type=float, default=30.0)
+    ap.add_argument("--max-obj-s", type=float, default=3.0, help="puts a second (the Cloudflare API allows ~4)")
     ap.add_argument("--max-local-gb", type=float, default=25.0)
     ap.add_argument("--margin-gb", type=float, default=10.0)
     ap.add_argument("--no-health", action="store_true", help="do not read the stream's status")
