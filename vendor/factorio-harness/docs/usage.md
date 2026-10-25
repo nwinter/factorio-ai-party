@@ -13944,6 +13944,24 @@ Fixed besides gates:
     Slices over 3936 ticks: median 1.8 ms, p95 3.7 ms, p99 12.4 ms. The slices over 10 ms (47) came in runs of
     consecutive slices, the plain floor reads among them at 20-50 times their usual time.
   - Test: tests/d24_batch166.lua reads floor, salvage and the plain read 40 units a tick and in one go, the same.
+- d24 batch166 cp3 (operator 16:37: `platform_plan {platform: "Asterion", floor: true}` took 102 ms on world n although
+  it only started floor_job): the time was in the team block of every agent reply, any action.
+  - pushalerts.lua's roster (who hears each alert group) read every agent's place (where.lua). A resting agent's place
+    read the note of the alert groups that go to it (resting_note, d22 batch113 BW1), and that note read the roster
+    again. Places nested until the Lua stack ran out (48 levels in the test), each level over every alert group; the
+    note is kept a second per name, so the first agent reply each second paid it. World n had 2 resting agents and 158
+    alert groups.
+  - Routing reads bare places now (`where.place(index, true)`: the rest's label alone), as do claims' owner_surface. The
+    teammates line keeps the note, one per resting agent, unnested.
+  - Copy (shift70, 2 resting agents), as an agent 60 ticks after the previous call: every platform_plan reply 84-415 ms
+    before (start, running, result of floor, support, salvage, plain; ready), 3-37 ms after; platform_production 92-94
+    ms before, 14-27 ms after. World n (cp2 runtime), `peek: true` (no team block): floor start 2.84 ms, its result
+    read 2.84 ms.
+  - Left as they were: `helpers.table_to_json` (control.lua's reply envelope) costs about 3.9 us a number on world n
+    (27 on the emulated copy; a string 0.4), so a result with many positions takes a few ms to encode (support's
+    add_for and place_ghosts_entries: about 1000 numbers); platalerts' scan of an agent's platforms runs in a reply
+    when its last scan is old (20-32 ms on the copy after 600 ticks with no reply).
+  - Test: tests/d24_batch166_rest.lua (fails on cp2: resting_note nested 48 deep in a reply's routing).
 
 ## d24 batch168
 
@@ -13978,6 +13996,44 @@ Fixed besides gates:
   `--module PATH` replays another idle_nudge.py. It fails on main. tools/test_idle_nudge.py and
   tools/test_idle_nudge_answer.py take the repeat rule and the cover text.
 
+## d24 batch173
+
+- QP1 (#2241, Astra: "Asterion has disconnected left/right rocket loops. platform_ammo_below sums all belts, so a full
+  left reserve can mask right depletion."): wait_until and guards' `platform_ammo_below` take an optional scope; with
+  none the count is the whole platform's, as before.
+  - `area`: one {left_top, right_bottom} (or [[x,y],[x,y]]) aboard, up to 1024x1024: what each place in it holds
+    (turret slots, belts, inserter hands, machine outputs, chests, and the hub when it stands in it).
+  - `loop`: a belt's {x,y}: the belts joined to it end to end, through splitters, undergrounds and linked belts, and
+    through inserters that move items from one belt to another (Asterion's turrets are fed by short belts that
+    inserters fill from a main loop), either way along them; the inserters taking from those belts (their hands)
+    and the ammo turrets those inserters fill.
+  - area or loop, not both; no position or radius. loop on another condition is refused.
+  - The same background pass (ammoreserve.lua, one every 30 s while a check asks) counts each scope beside the whole
+    platform; no second pass. A loop's belts are found before the pass that first needs it: the belt-to-belt inserters a
+    chunk band at a time (as the pass walks), then 200 belts a step, at most 20000; found again when 5 min old at a
+    pass's start. A turret is the loop's when an inserter taking from one of its belts fills it.
+  - saw: "platform Asterion, loop from (16.5,-35.5): 2772 rocket (turrets 132, belts 2638, hands 2) as read 31s ago
+    (ticks ...: 932 belts joined to fast-transport-belt (16.5,-35.5), found 1m49s ago; 37 ammo turrets, 932 belts, 45
+    inserters, 0 machines, 0 chests in it); +0 since the reading before (30s earlier): +0.0/min net (made or brought in
+    less what left); met below N". The change between the newest reading and the one before is a net figure (what
+    was made or brought in less what left), for the whole platform too; a consumption rate apart from refills would
+    need the turrets' shots, not read here.
+  - No belt at a loop's position: "no belt of ours at that position", 0 counted.
+- A copy of world n's 16:19 autosave (tick 58283468), Astra waiting on all three (whole, left, right), count 1:
+  - Whole: 5968 rocket aboard (hub 32, turrets 264, belts 5654, hands 9, machines 9).
+  - Left loop from the turbo belt (-37.5,-17.5): 3149 (turrets 132, belts 3016, hands 1): 966 belts, 41 inserters,
+    34 ammo turrets (13 rocket turrets). Right loop from the turret feed belt (16.5,-35.5): 2772 (turrets 132, belts
+    2638, hands 2): 932 belts, 45 inserters, 37 ammo turrets. Astra's audit: right 2570 belt + 132 turret.
+  - Without the inserter hops a loop from a turret feed belt stopped at its stub (8 and 39 belts, 1 and 3 turrets).
+- Cost on that copy (profile_ticks; the copy runs slower than world n):
+  - ammoreserve.tick over 90 s with both loops: 294.9 ms, 0.055 ms a tick; over 60 s with the whole platform alone:
+    120.6 ms, 0.033 ms a tick.
+  - A pass (about 134 ticks, every 30 s): with both loops 39-50 ms in each of its game seconds (0.7-0.8 ms a tick
+    while it runs); the whole platform alone 25-28 ms a second (0.45 ms a tick).
+  - A loop's find (once per loop every 5 min): 2-9 ms a game second over about 6 s.
+  - The check a guard samples while a queue waits reads only the kept reading: a whole wait_until dispatch as Astra
+    (validation, start, one check, reply) 2.4-2.8 ms with a loop, 1.8-2.7 ms without.
+- Test: tests/d24_batch173.lua (fails on main: area refused for platform_ammo_below). tests/d22_batch117.lua unchanged.
 ## d24 batch171
 
 - QN1 (Sol 15:09: "Asterion three explosive plants (-5.5,48.5/56.5/64.5) inspect rate 39/min each ... total 117. ...
