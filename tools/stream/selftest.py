@@ -51,8 +51,8 @@ class FakeHarness:
     def extras(self):
         return {"progress": 0.4, "top_done": ["logistics", "automation"], "electric_machines": 40, "starved": 30}
 
-    def flows(self, items):
-        return {"iron-plate": [10] * 30}
+    def flows(self, items, part=0, parts=1):
+        return {"iron-plate": [10] * 30} if part == 0 else {}
 
     def used_flows(self, items):
         return {"automation-science-pack": [4] * 30}
@@ -147,7 +147,7 @@ def lua_globals_check():
         lua = getattr(harness, name, None)
         if lua is None:
             continue
-        lua = harness.one_line(lua).replace("ITEMS", "{}").replace("BODY", "'{}'")
+        lua = harness.one_line(lua).replace("ITEMS", "{}").replace("BODY", "'{}'").replace("SPLIT", "1, 0")
         out = subprocess.run(["luac", "-p", "-l", "-l", "-"], input=lua, capture_output=True, text=True)
         assert out.returncode == 0, f"{name}: {out.stderr.strip()}"
         names = set(re.findall(r'[GS]ETTABUP.*_ENV "([A-Za-z_]\w*)"', out.stdout))
