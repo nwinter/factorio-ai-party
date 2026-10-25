@@ -2302,6 +2302,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.delivwatch and M.delivwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.flightwatch and M.flightwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.signalwatch and M.signalwatch.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.sight and M.sight.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.removeghosts and M.removeghosts.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
@@ -18549,6 +18550,11 @@ end
 M.danger=require('danger'){state=state,position=position,avoid=M.avoid,eggs=function(surface,pos,r) return M.spoil.near(surface,pos,r) end,
   surface=function(p,name) local s=game.surfaces[name]; assert(s and (s.platform==nil or s.platform.force==p.force),'unknown surface '..tostring(name)); return s end}
 function handlers.danger(p,a) return M.danger.read(p,a) end
+-- (d24 batch174 QQ1, Luna #2242) sight: which chunks are visible now, only charted, or uncharted, and from what (sight.lua)
+M.sight=require('sight'){position=position,surface=function(p,name) local s=game.surfaces[name]; assert(s and (s.platform==nil or s.platform.force==p.force),'unknown surface '..tostring(name)); return s end,
+  census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
+function handlers.sight(p,a) return M.timed('sight.read',M.sight.read,p,a) end
+reads.sight=true
 function M.memory_visible(p,pos)
   return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos))
 end
