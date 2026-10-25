@@ -14485,3 +14485,14 @@ Cost on the copy (Nauvis, 175 stacks on the ground): the ground find in a stock 
 stalls).
 
 Test: tests/d25_batch198.lua's QK2 part (fails on main: 6 stacks of every quality where 3 legendary lie within 3 tiles).
+## d24 batch195 (hotfix, operator d24 21:18: platform_endurance answered from a kept reading took 80.7 ms on world n)
+
+- Measured on world n by the operator (runtime 465f403f, bot sol), platform_endurance {platform: Swiftlet, forecast:
+  true}: read in the call 13.7 ms, 31.7 KB; the same call 6 s later, answered from the kept reading (age 5.9 s),
+  80.7 ms, 31.3 KB.
+- batch187's kept readings and background reads are off: every call reads, as before batch187. `fresh` is accepted
+  and changes nothing; the reply has no `reading`. The readings batch187 left in storage are dropped once (the
+  endurance.refresh tick hook runs while `endurance_readings` is in storage).
+- Kept: batch183's design, progress, basis and forecast_model, and the model taking the forecast's turret scan in the
+  same call.
+- Test: tests/d24_batch195.lua (replaces tests/d24_batch187.lua; fails on main: a kept reading is answered, 0 reads).
