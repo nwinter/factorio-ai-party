@@ -28,7 +28,7 @@ import setup as sc_setup  # noqa: E402
 
 
 def timed(cmd, env=None, cap="1"):
-    e = dict(os.environ, POG_SLEEP_CAP_SECONDS=cap)
+    e = dict(os.environ, POG_SLEEP_CAP_SECONDS=cap, POG_TEST="1")
     for k in ("POG_SLEEP_CAP", "POG_SLEEPCAP_BIN", "POG_SLEEP_CAP_EXEMPT"):
         e.pop(k, None)
     e.update(env or {})
@@ -159,7 +159,7 @@ def grok_muse_agy():
         assert ok, (took, r.stderr)
         # agy: the loop's first turn runs agy under run; the loop's own quota sleep does not.
         loop = subprocess.run([os.path.join(ROOT, "tools", "launch-agent.sh"), "--agy-loop", tmp, "gemini", "0", "/dev/null"],
-                              capture_output=True, text=True, check=True)
+                              capture_output=True, text=True, check=True, env=dict(os.environ, POG_TEST="1"))
         text = open(os.path.join(tmp, ".agy-loop.sh")).read()
         assert f"'{RUN}' agy \"$@\"" in text and '*) sleep "$q" ;;' in text, text
     finally:

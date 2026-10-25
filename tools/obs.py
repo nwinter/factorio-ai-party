@@ -24,6 +24,9 @@ OVERLAY = r"D:\pog\overlay\coop.txt"
 
 
 def client():
+    # (d24 batch186) never the live OBS from a test run
+    if os.environ.get("POG_TEST") == "1":
+        raise SystemExit("POG_TEST=1: tools/obs.py does not connect to OBS in a test run")
     pw = open(os.path.expanduser("~/.config/pog/obs.pw")).read().strip()
     return obs.ReqClient(host="127.0.0.1", port=4455, password=pw, timeout=15)
 

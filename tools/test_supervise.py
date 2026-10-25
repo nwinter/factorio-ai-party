@@ -50,7 +50,7 @@ def run(last_request_ago, kind=None, deadline_in=240, resting_for=None):
                     % iso(last_request_ago))
             # A later response (a long --wait ending) is not a request.
             j.write('{"at":"%s","event":"response","response":{"id":"a","ok":true}}\n' % iso(0))
-    env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"], FAKE_HERDR_LOG=os.path.join(tmp, "herdr.log"),
+    env = dict(os.environ, POG_TEST="1", PATH=bindir + os.pathsep + os.environ["PATH"], FAKE_HERDR_LOG=os.path.join(tmp, "herdr.log"),
                POG_SUPERVISE_QUIET="1", POG_SUPERVISE_POLL="1")
     proc = subprocess.Popen(["bash", SUPERVISE, "p1", ws], env=env)
     time.sleep(4)
