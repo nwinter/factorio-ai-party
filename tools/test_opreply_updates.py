@@ -9,7 +9,7 @@ No game, no network: python3 tools/test_opreply_updates.py
 - tools/operator_updates.py add --ref '#NNNN' with no --by: the asker from the board.
 - /updates/: accepted work (in progress, planned) in a section apart from live rows, with its dates.
 """
-import html, json, os, sys, tempfile
+import datetime, html, json, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -134,7 +134,9 @@ def page_tests(upath):
                                   '<h3 id="live"', 'id="u-old"', '<h2 id="verified"')]
     assert at == sorted(at), at
     one = body[body.index('id="u-one-step"'):body.index("</li>", body.index('id="u-one-step"'))]
-    assert "asked Sat 24 Oct 17:32 · planned Sat 24 Oct" in one and "in progress Sat 24 Oct" in one and "batch180" in one, one
+    # planned and in progress carry the day the test runs (operator_updates.now_text); the gate failed on 25 Oct with them fixed at 24 Oct
+    today = datetime.datetime.now(updates.PACIFIC).strftime("%a %d %b")
+    assert f"asked Sat 24 Oct 17:32 · planned {today}" in one and f"in progress {today}" in one and "batch180" in one, one
     q = body[body.index('id="u-queued"'):body.index("</li>", body.index('id="u-queued"'))]
     assert "planned Sat 24 Oct 18:20" in q, q
     assert 'id="upd-none-open" hidden' in body and 'id="upd-none-live" hidden' in body, body
