@@ -8,7 +8,8 @@
 # 2. Reads PREV's switches while its helpers still run (tools/shift_change.py switches: switches.env, the helpers'
 #    arguments, start.log, stream.json, viewers-relay.on, viewers-route.on, team.txt), then POG_STOP_WORLD=1 tools/stop-team.sh PREV,
 #    closes PREV's agent panes (runs/PREV/panes.txt), and runs tools/start-team.sh NEXT MINUTES [--stream] with those
-#    switches, POG_RESUME=PREV and POG_NEXT_SHIFT at NEXT's end.
+#    switches, POG_RESUME=PREV and POG_NEXT_SHIFT at NEXT's end. A stop-team exit 3 (PREV's save failed: no save went
+#    through, the world left running) refuses here: no panes closed, NEXT not started.
 #    Once PREV is stopped (its row on the site is complete), tools/site-refresh.sh --last-run PREV runs in the
 #    background (log: runs/PREV/site-refresh.log): build, check and deploy the site. It never blocks or fails a shift;
 #    POG_SITE_REFRESH=0 skips it.
@@ -141,7 +142,14 @@ fi
 
 # 2. Stop PREV, close its panes, start NEXT.
 echo "stopping $prev"
-POG_STOP_WORLD=1 "${stop_team[@]}" "$prev" || echo "stop-team $prev exited $? (going on: the save step is what matters)"
+POG_STOP_WORLD=1 "${stop_team[@]}" "$prev"; rc=$?
+# (d24 batch175 QR2) exit 3: no save went through (tools/stop_save.py --failed); the world is left running and no next
+# shift starts on an older save. Run the shift change again once the world saves.
+if [ $rc = 3 ]; then
+  echo "refused: $prev's stop save failed (stop-team exit 3; $prev_dir/stopped.json: via failed); the world is left running, paused; $prev's agent panes left open; $next not started. Save the world (python3 tools/pog.py --world n save) and run the shift change again." >&2
+  exit 2
+fi
+[ $rc = 0 ] || echo "stop-team $prev exited $rc (going on: the save step is what matters)"
 if [ -f "$prev_dir/panes.txt" ]; then
   closed=0
   while read -r name pane kind; do

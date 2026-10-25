@@ -125,6 +125,15 @@
   tree destroyed is a kill. A kill goes to the turret whose hit destroyed the target; the others that damaged it get
   the damage only. Trees set alight that burn down do not count. A turret mined or rebuilt starts at 0.
   Example: `./fh call turret_tally --args '{"area":{"left_top":{"x":-40,"y":360},"right_bottom":{"x":40,"y":420}},"seconds":300}'`
+- `sight {surface?, position? + radius? | area}`: the chunks (up to 256 a call; radius 16..240 tiles, default 128) our
+  force sees now (`visible`), has only charted (`charted`) or has not charted (`uncharted`), as the map shows them, in
+  chunk coordinates ("x,y": tiles x*32..x*32+31), grouped by source, and `rows` (runs per chunk row). A visible chunk's
+  source (`sources`): the nearest working radar whose continuous scan covers it (radar: 3 chunks either axis, 7x7),
+  else a roboport (2 chunks), cargo landing pad (4) or spidertron (2), else a radar without power. Characters, cars and
+  tanks give no sight; a chunk stays visible about 10 s after its source stops or goes. A chunk not visible names the
+  nearest radar and how many chunks outside its scan it is (`outside`; 0: inside, that radar not working). Remote by
+  surface, no move.
+  Example: `./fh call sight --args '{"surface":"nauvis","position":{"x":-270,"y":-580},"radius":128}'`
 - `rearm {surface | area | radius | positions | alert, below?, count?, ammo?}`: tops up turrets in one walking tour,
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or

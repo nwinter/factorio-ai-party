@@ -95,13 +95,21 @@ EOS
 chmod +x "$dir/fh" "$dir/shot"
 date -v+"${minutes}"M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
 # A later shift of the same world (tools/start-team.sh, POG_RESUME): the agent starts from its notes of that shift.
-prev_notes="${POG_RESUME_DIR:-}/$ws/notes.md"
-if [ -n "${POG_RESUME:-}" ] && [ -n "${POG_RESUME_DIR:-}" ] && [ -f "$prev_notes" ]; then
+# (d24 batch175 QR2) of the newest run up the resumed-from chain it played in (tools/full_tools.py notes-from): a start
+# killed before it reached this agent, or one where it made no request and left its notes as carried, is skipped.
+src_dir=${POG_RESUME_DIR:-}
+if [ -n "${POG_RESUME:-}" ] && [ -n "$src_dir" ]; then
+  up=$(python3 "$root/tools/full_tools.py" notes-from "$src_dir" "$ws" 2>/dev/null || true)
+  [ -n "$up" ] && src_dir=$up
+fi
+prev_notes="$src_dir/$ws/notes.md"
+if [ -n "${POG_RESUME:-}" ] && [ -n "$src_dir" ] && [ -f "$prev_notes" ]; then
+  src_run=$(basename "$src_dir")   # the run the notes come from (start-team's walk may have gone past POG_RESUME)
   # with a "## Last shift, measured" section from that shift's journal and capped at 16 KB (tools/handover.py; the
   # full text goes to notes-archive.md); plain copy if that fails
-  python3 "$root/tools/handover.py" carry "$prev_notes" "${POG_RESUME_DIR}/$ws/journal.jsonl" "$dir/notes.md" \
-      "$POG_RESUME" "$player" >/dev/null 2>&1 ||
-    { echo "(Carried over from the previous shift, run $POG_RESUME: its notes.md for $player, as that shift left it.)"
+  python3 "$root/tools/handover.py" carry "$prev_notes" "$src_dir/$ws/journal.jsonl" "$dir/notes.md" \
+      "$src_run" "$player" >/dev/null 2>&1 ||
+    { echo "(Carried over from the previous shift, run $src_run: its notes.md for $player, as that shift left it.)"
       echo; cat "$prev_notes"; } > "$dir/notes.md"
   echo "$dir"
   exit 0
