@@ -6,6 +6,8 @@
 # POG_YOUTUBE (@handle or video id for the YouTube chat bridge; default @NickWinter), POG_SPACE_AGE=1 (Space Age world, expansion-build
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-c).
+# POG_HOURLY (default 0; 1: "what changed this hour", one prepared piece an hour on the narrator channel,
+# tools/stream/hourly.py; POG_HOURLY_MODEL its OpenRouter writer, default anthropic/claude-opus-5.5).
 # POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
 # POG_VIEWER_ROUTE (default 0; 1: a viewer line that names no agent goes by what it is about, tools/stream/router.py).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
@@ -155,7 +157,7 @@ clow=${POG_CASTER_LOW_MODEL-anthropic/claude-haiku-5.5}
 # The switches this run starts with, for the next shift (tools/shift-change.sh starts it with the same ones).
 printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}" "POG_SPACE_AGE=$POG_SPACE_AGE" \
   "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" "POG_CASTER_LOW_MODEL=$clow" \
-  "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
+  "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_HOURLY=${POG_HOURLY:-0}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
   "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_VIEWER_ROUTE=${POG_VIEWER_ROUTE:-0}" "POG_TEAM_FILE=$team" "POG_CAMS=${POG_CAMS:-3}" \
   "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" > "$rundir/switches.env"
 
@@ -398,6 +400,15 @@ if [ "${POG_ANALYST:-1}" != 0 ]; then
     --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 ${aflags[@]+"${aflags[@]}"} >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("analyst:$!:$rundir/analyst.log")
+fi
+# (d25 batch197) What changed this hour (tools/stream/hourly.py, docs/STREAM-NOTES.md): a piece for the last hour every
+# hour, aired as a one- or two-stop tour with the hosts hushed for it; off unless POG_HOURLY=1.
+if [ "${POG_HOURLY:-0}" = 1 ]; then
+  hkey=${OPENROUTER_API_KEY:-$(security find-generic-password -s openrouter -w 2>/dev/null || true)}
+  OPENROUTER_API_KEY=$hkey nohup python3 -u tools/stream/hourly.py run --run-dir "$rundir" --feed http://127.0.0.1:8788 \
+    --model "${POG_HOURLY_MODEL:-anthropic/claude-opus-5.5}" >"$rundir/hourly.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("hourly:$!:$rundir/hourly.log")
 fi
 # What code the helpers run, and whether each came up (docs/studies/shake3.md, P1 item 2).
 log "code $(git rev-parse --short HEAD)$(git diff --quiet HEAD -- tools agent vendor 2>/dev/null || echo ' plus uncommitted changes')"
