@@ -280,7 +280,7 @@ local function inserter(name,pos,filters,mode,use)
   local e={valid=true,name=name,type='inserter',position=pos,force=force,surface=surface,filter_slot_count=5,inserter_filter_mode=mode,use_filters=use,
     pickup_position={x=pos.x,y=pos.y-2},drop_position={x=pos.x,y=pos.y+2},direction=0,unit_number=unit,prototype={name=name,type='inserter'},
     quality={name='normal'},health=100,max_health=100,bounding_box={left_top={x=pos.x-0.15,y=pos.y-0.15},right_bottom={x=pos.x+0.15,y=pos.y+0.15}}}
-  e.get_filter=function(i) return set[i] and {name=set[i]} or nil end
+  e.get_filter=function(i) return set[i] and {name=set[i],quality='normal',comparator='='} or nil end  -- as 2.0.77 reads a name alone
   e.set_filter=function(i,f) set[i]=f end
   e.get_control_behavior=function() return cb end
   e.get_or_create_control_behavior=function() return cb end

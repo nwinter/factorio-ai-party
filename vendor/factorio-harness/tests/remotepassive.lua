@@ -80,7 +80,7 @@ local function inserter(x,y,surf)
   local e={valid=true,name='fast-inserter',type='inserter',position={x=x,y=y},force=force,surface=surf or surface,filter_slot_count=5,
     inserter_filter_mode='whitelist',use_filters=false}
   e.set_filter=function(i,v) f[i]=v end
-  e.get_filter=function(i) return f[i] and {name=f[i]} or nil end
+  e.get_filter=function(i) return f[i] and {name=f[i],quality='normal',comparator='='} or nil end  -- as 2.0.77 reads a name alone
   e.filters=f
   local list=surf==psurf and on_platform or world
   list[#list+1]=e

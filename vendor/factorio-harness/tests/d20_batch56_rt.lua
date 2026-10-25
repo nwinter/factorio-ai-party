@@ -178,7 +178,7 @@ do
   eq(r.line,'constant-combinator (150.5,20.5): description "Iron plate threshold" (was none)')
   r=astra('configure',{position={x=150.5,y=20.5},description=''})
   eq(placed.combinator_description,''); eq(r.line,'constant-combinator (150.5,20.5): description none (was "Iron plate threshold")')
-  fails(function() astra('configure',{position={x=150.5,y=20.5},description='x',recipe='y'}) end,'description goes alone')
+  fails(function() astra('configure',{position={x=150.5,y=20.5},description='x',recipe='y'}) end,'configure sets description and recipe in separate calls')
   surface.find_entities_filtered=function() return {} end
 end
 print('d20_batch56_rt R4 combinator description: ok')

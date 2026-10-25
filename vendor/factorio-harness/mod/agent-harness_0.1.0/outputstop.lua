@@ -11,12 +11,19 @@
 --     a slow recipe (cryogenic science: 2 packs or 6 hot fluoroketone), 3 for gears in an assembler 2, 6 for an
 --     electromagnetic plant on circuits. It crafts again as soon as the ingredients are there; that much output does
 --     not stop it (a plant holding 4 packs made 2 more when fed). A furnace with no input reads no_ingredients.
+-- (d25 batch199 QL3, Sol #2298: a refinery on coal liquefaction read full_output with petroleum 33..49 of 100, full
+-- false, full_output_from 20.) On a copy of world n (2.0.77, an oil refinery at speed 1): a craft starts whatever its
+-- output holds; at its end the results go out only if every product fits (petroleum 90 + 10 of 100 went out, 90.5 did
+-- not; heavy oil 90 + 90 of 180 went out, 90.5 did not), else the finished craft waits in the machine: status
+-- full_output, crafting_progress 1. With no coal, full_output read from petroleum 20 (19: item_ingredient_shortage),
+-- light oil 40, heavy oil 180, crafting_progress 0. So capacity, delivers_up_to (capacity less a craft), full (more
+-- than that held) and idle_full_output_from are told apart, and blocking says which rule holds the machine.
 -- (d25 batch201 QN2, Astra #2315: Asterion's explosives plant held 10 explosives and no coal, its input inserter held
 -- coal waiting_for_space_in_destination, and the line said it lacks coal and crafts when it arrives) an inserter puts
--- no ingredient into an assembling machine that holds that much of a product (2.0.77, a copy of world n, a fast inserter
--- from a chest into a machine with its output set beforehand, empty input: gears in an assembler 2 inserted at 2 and
--- not at 3 (3 crafts' worth), in an assembler 3 at 3 and not at 4 (4), explosives in a chemical plant at 2 and not at 4
--- (2 crafts' worth, 4); the inserter reads waiting_for_space_in_destination). The machine crafts on with what it holds.
+-- no ingredient into an assembling machine that holds idle_full_output_from of an item product (2.0.77, a copy of world
+-- n, a fast inserter from a chest into a machine with its output set beforehand, empty input: gears in an assembler 2
+-- inserted at 2 and not at 3 (3 crafts' worth), in an assembler 3 at 3 and not at 4 (4), explosives in a chemical
+-- plant at 2 and not at 4 (2 crafts' worth, 4); the inserter reads waiting_for_space_in_destination). The machine crafts on with what it holds.
 -- Pure: the factory takes the harness's try.
 return function(api)
   local M = {}
@@ -76,50 +83,62 @@ return function(api)
             cap = try(function() return fb.get_capacity(i) end)
           end
         end
-        row.held, row.stops_at = held, cap
+        row.held, row.capacity = held, cap
+        row.delivers_up_to = cap and cap - a or nil
         row.full = cap ~= nil and held + a > cap + 1e-6
         if cap then
-          lines[#lines+1] = string.format('%s %s of %s in its output box: it stops when a craft\'s %s no longer fit (pipes joined to the box take from it as they have room)',
-            p.name, fmt(math.floor(held*10+0.5)/10), fmt(cap), fmt(a))
+          lines[#lines+1] = string.format('%s %s of %s in its output box: a finished craft goes out while it holds %s or less (a craft adds %s), else waits finished in the machine (full_output); pipes joined to the box take from it as they have room',
+            p.name, fmt(math.floor(held*10+0.5)/10), fmt(cap), fmt(cap - a), fmt(a))
         end
       else
         local held = out_inv and try(function() return out_inv.get_item_count(p.name) end) or 0
         local item = prototypes.item[p.name]
         local stack = item and item.stack_size or nil
-        row.held, row.stops_at = held, stack
+        row.held, row.capacity = held, stack
+        row.delivers_up_to = stack and stack - a or nil
         row.full = stack ~= nil and held + a > stack
         if stack then
-          lines[#lines+1] = string.format('%s %d held: it stops when a craft\'s %s no longer fit in one stack (%d) and waits with that craft finished',
-            p.name, held, fmt(a), stack)
+          lines[#lines+1] = string.format('%s %d held: a finished craft goes out while it holds %s or less (one stack %d, a craft adds %s), else waits finished in the machine (full_output)',
+            p.name, held, fmt(stack - a), stack, fmt(a))
         end
       end
-      row.full_output_from = e.type == 'assembling-machine' and a * crafts or nil
+      row.idle_full_output_from = e.type == 'assembling-machine' and a * crafts or nil
       if row.full then at_limit[#at_limit+1] = row end
-      if row.full_output_from and row.held >= row.full_output_from - 1e-6 then soft_names[#soft_names+1] = string.format('%s %s', p.name, fmt(math.floor(row.held*10+0.5)/10)) end
+      if row.idle_full_output_from and row.held >= row.idle_full_output_from - 1e-6 then soft_names[#soft_names+1] = string.format('%s %s', p.name, fmt(math.floor(row.held*10+0.5)/10)) end
       rows[#rows+1] = row
     end
     if #rows == 0 then return nil end
     local out = {products=rows, lines=lines}
     -- (QN2) an item product at its crafts' worth or more: inserters put in no ingredient (measured for items only)
     for _, r in ipairs(rows) do
-      if not r.fluid and r.full_output_from and r.held >= r.full_output_from - 1e-6 and not out.refuses_ingredients then
-        out.refuses_ingredients = {product=r.name, held=r.held, from=r.full_output_from,
+      if not r.fluid and r.idle_full_output_from and r.held >= r.idle_full_output_from - 1e-6 and not out.refuses_ingredients then
+        out.refuses_ingredients = {product=r.name, held=r.held, from=r.idle_full_output_from,
           line=string.format('inserters put no ingredient into it while it holds %d crafts\' worth of a product or more (%s %s; below %s they do)',
-            crafts, r.name, fmt(math.floor(r.held*10+0.5)/10), fmt(r.full_output_from))}
+            crafts, r.name, fmt(math.floor(r.held*10+0.5)/10), fmt(r.idle_full_output_from))}
       end
     end
     if e.type == 'assembling-machine' and status_name ~= 'working' then
       local parts = {}
-      for _, r in ipairs(rows) do parts[#parts+1] = r.name .. ' ' .. fmt(r.full_output_from) end
+      for _, r in ipairs(rows) do parts[#parts+1] = r.name .. ' ' .. fmt(r.idle_full_output_from) end
       out.idle_full_output = string.format('when it is not crafting for another reason it reads full_output, not the shortage, once it holds %d crafts\' worth of a product (%s); that output does not stop it, it crafts again when the ingredients are there, and inserters put no ingredient into it while it holds that much',
         crafts, table.concat(parts, ', '))
     end
+    local function limits()
+      local parts = {}
+      for _, r in ipairs(at_limit) do
+        parts[#parts+1] = string.format('%s %s of %s (goes out at %s or less)', r.name, fmt(math.floor(r.held*10+0.5)/10), fmt(r.capacity), fmt(r.delivers_up_to))
+      end
+      return table.concat(parts, ', ')
+    end
+    -- A finished craft waiting reads crafting_progress 1; the idle rule reads 0 (no craft started).
+    local progress = try(function() return e.crafting_progress end)
     if status_name == 'full_output' then
-      if #at_limit > 0 then
-        local parts = {}
-        for _, r in ipairs(at_limit) do parts[#parts+1] = string.format('%s %s of %s', r.name, fmt(math.floor(r.held*10+0.5)/10), fmt(r.stops_at)) end
-        out.line = 'full_output: output at its limit, ' .. table.concat(parts, ', ') .. ': it crafts again when that is taken out'
+      if (progress and progress >= 0.999) or (progress == nil and #at_limit > 0) then
+        out.blocking = 'output'
+        out.line = #at_limit > 0 and 'full_output: a finished craft waits for room in its output, ' .. limits() .. ': it goes out when that is taken out'
+          or 'full_output: a finished craft waits for room in its output (crafting_progress 100%)'
       else
+        out.blocking = 'input'
         -- The other reason: an ingredient short of a craft.
         local short = {}
         local inv = try(function() return e.get_inventory(defines.inventory[e.type == 'furnace' and 'furnace_source' or 'assembling_machine_input']) end)
@@ -136,9 +155,11 @@ return function(api)
           refuse.waiting = #w > 0 and w or nil
           tail = ', and ' .. refuse.line .. (#w > 0 and '; waiting for space in it: ' .. table.concat(w, ', ') or '')
         end
-        out.line = 'full_output, no output at its limit: it is not crafting and holds ' .. crafts .. ' crafts\' worth or more (' .. table.concat(soft_names, ', ') .. ')'
+        out.line = 'full_output, no output at its limit: it is not crafting (crafting_progress 0) and holds ' .. crafts .. ' crafts\' worth or more (' .. table.concat(soft_names, ', ') .. ')'
           .. (#short > 0 and '; it lacks ' .. table.concat(short, ', ') .. tail or '; no ingredient is short of a craft now')
       end
+    elseif status_name == 'working' and #at_limit > 0 then
+      out.next_wait = 'this craft\'s results do not fit now, ' .. limits() .. ': at its end the craft waits finished unless that is taken out by then'
     end
     return out
   end

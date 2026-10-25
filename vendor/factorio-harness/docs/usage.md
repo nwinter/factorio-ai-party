@@ -2209,7 +2209,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   waits with that craft finished: `cryogenic-science-pack 45 held: it stops when a craft's 1 no longer fit in one
   stack (200) ...`), a fluid when a craft's amount no longer fits in its output box (`fluoroketone-hot 135 of 300 in
   its output box ...`; the box's own capacity, sized to the recipe; pipes joined to it take from it as they have
-  room); `products [{name, fluid, per_craft, held, stops_at, full, full_output_from}]`; when the machine is not
+  room); `products [{name, fluid, per_craft, held, capacity, delivers_up_to, full, idle_full_output_from}]` (d25
+  batch199: were stops_at and full_output_from); when the machine is not
   working, `idle_full_output`: an assembling machine that is not crafting for another reason reads `full_output`, not
   the shortage, once it holds amount x (1 + ceil(1.166 x crafts per second)) of any product (2 crafts' worth for a
   slow recipe: 2 cryogenic packs or 6 hot fluoroketone; 3 for gears in an assembler 2), and that output does not stop
@@ -14493,6 +14494,67 @@ shipment's ready read sent 6 down).
   - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
     (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
 - Test: tests/d24_batch187.lua (fails on main: no handler).
+## d24 batch194 (Sol #2270: quality filters for inserters and loaders)
+
+- QAJ1: every filter list (configure, build and place_ghosts `configure`/settings, circuit_set `settings`, an entry's
+  top-level `filters`) takes per filter: `"name"` (quality normal, comparator "=", as the game stores a name), 
+  `"name@quality"`, `"name@<=quality"` (comparators `=`, `!=`, `<`, `<=`, `>`, `>=`, and the game's signs ≤ ≥ ≠),
+  `"name@any"` (no quality: every quality passes), or `{name|item, quality?, comparator?}` (2.0.77's ItemFilter; a
+  table with no quality is every quality, as the game takes it). One filter alone is a list of one. Refused before
+  anything is set: an unknown item, quality ("unknown quality mythic; qualities: normal, uncommon, rare, epic,
+  legendary"; the hidden quality-unknown is not taken), comparator ("unknown comparator =<; comparators: =, !=, <, <=,
+  >, >="), a comparator with no quality (the game drops it), `any` with a comparator, an unknown table key.
+- Reads (configure's reply, inspect `filters`, scan rows' `filters` line, the circuit's "set by circuit (now: ...)",
+  placewhy's blueprint comparison) give each filter in the same string form: `plastic-bar`, `plastic-bar@epic`,
+  `plastic-bar@<=epic`, `coal@any`. configure reads each slot back and says `not_as_asked` for one that holds other
+  than asked.
+- Engine facts (2.0.77, a copy of world n's 19:57 autosave): `set_filter(1, "plastic-bar")` reads back {name,
+  quality "normal", comparator "="}; `{name}` reads back with no quality; `{name, comparator}` with no quality drops the
+  comparator; `"<="` reads back "≤" (also on a ghost); `"plastic-bar@epic"` is "Unknown item name"; a blueprint keeps
+  the same ItemFilter rows ({index, name, quality, comparator}; none for every quality).
+- Sol's case on the copy: a burner inserter between two chests, the first holding 5 plastic bars of each quality.
+  Whitelist `{name: plastic-bar, quality: epic, comparator: "<="}` moved the 20 normal..epic bars and left the 5
+  legendary; blacklist `["plastic-bar", "plastic-bar@uncommon", "plastic-bar@rare", "plastic-bar@epic"]` moved only
+  the 5 legendary. place_ghosts with `configure {filters: ["plastic-bar@<=epic"], filter_mode: blacklist}` set the ghost
+  so (dry run refuses "plastic-bar@mythic" naming the qualities). Sol's fallback, a constant combinator with
+  plastic-bar normal..epic signals and `circuit_set_filters`, still sets them: "set by circuit (now: plastic-bar,
+  plastic-bar@uncommon, plastic-bar@rare, plastic-bar@epic)".
+- Test: tests/d24_batch194.lua (fails on main: "unknown item table: ..."). Five fakes that read a name filter back with
+  no quality now read it as 2.0.77 does (quality normal, "=").
+## d25 batch199 (Astra #2285, Sol #2295 and #2298)
+
+- QL1 (Astra #2285: Asterion plan156, `configure {item_requests: false, priority_targets, ignore_unprioritised}` removed
+  the requests and left six guns' targeting as it was): configure sets every setting given or refuses the call before
+  anything changes. Settings that go in one call: item_requests, ammo, priority_targets, ignore_unprioritised (a built
+  turret's requests removed, then its targeting set; a turret ghost's ammo request and targeting) | ammo, modules |
+  modules, recipe | an inserter's wait_for_full_hand, hand_size, spoil_priority, filters, filter_mode, use_filters |
+  a splitter's input_priority, output_priority, filter | a silo's auto_requests, send_to_orbit_automatically; any other
+  goes alone ("configure sets item_requests and recipe in separate calls (...): nothing changed"). Each branch then
+  names what it sets on the entity it reached, and any other setting is refused with whose setting it is
+  ("storage-chest (5.5,0.5): configure sets storage_filter, filters here; filter_mode (an inserter's) is not: nothing
+  changed"). hand_size and spoil_priority check the filters and spoil priority given with them first. A success gives
+  `applied` (the settings it set) and `ignored` (by, quality, fluid, force given without what they modify). On the
+  copy (the 06:41 autosave): Asterion, two rocket turrets with requests and four gun turrets, one call: cleared 2,
+  without_requests 4, all six read back [big-metallic-asteroid, medium-metallic-asteroid], ignore off, no proxy left.
+- QL2 (Sol #2295): ores' help and the reference say `drill_list` is a reply field of `ores {patch}` (with forecast or
+  without); `drill_list: true` is still refused, now saying so.
+- QL3 (Sol #2298), output_stop. On the copy, a refinery on coal liquefaction at speed 1 (t199): a craft starts whatever
+  its output holds; at its end the results go out only if every product fits (petroleum 90 + 10 of 100 out, 90.5 held;
+  heavy oil 90 + 90 of 180 out, 90.5 held), else the finished craft waits: full_output, crafting_progress 1. With no
+  coal, full_output read from petroleum 20 (19: item_ingredient_shortage), light oil 40, heavy oil 180, progress 0.
+  Rows now carry `capacity`, `delivers_up_to` (capacity less a craft), `full` and `idle_full_output_from` (were
+  stops_at and full_output_from); `blocking` is `output` (crafting_progress 1) or `input` (0: the idle rule, the
+  shortage named in `line`); a working machine whose results would not fit gets `next_wait`. Refinery N(-108.5,-125.5)
+  on the copy read full_output with petroleum 39.5 of 100: blocking input, "it lacks coal 1 (a craft takes 10)".
+  Cost: 0.09 ms a read, as before.
+- QL3, the hub's trash. On the copy: stopped at a planet, what is over the max of a request from that planet went to
+  the trash within 8 ticks and down in a cargo pod within 276 ticks (20 barrels, Limestone at Nauvis from nauvis;
+  Anvil at Fulgora from fulgora); over the max of a request from another planet it stayed in the hub (600 ticks); in
+  flight (Kestrel II, a request from vulcanus) to the trash within 72 ticks. requests' `trash_note` says which (each
+  over_max row names its import planet; "barrel goes down now"), `sends_down` forecasts a max of 0 and leaves the
+  hub's max to the flight after a stop, and KEEP_RULE says it. The section scan costs 0.32 ms (19 sections).
+- Test: tests/d25_batch199.lua (fails on main: Astra's call leaves the targeting unset). It checks every pair of
+  configure settings on the entities they go to: a success set both, a refusal changed nothing.
 
 ## d25 batch198 QK1: the hub keep reads by item@quality (after Sol #2264)
 

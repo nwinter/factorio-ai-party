@@ -89,7 +89,7 @@ do
   ins.drop_target=e; idle.drop_target={}
   local O=dofile('mod/agent-harness_0.1.0/outputstop.lua'){}
   local r=O.read(e,'full_output')
-  eq(r.line,"full_output, no output at its limit: it is not crafting and holds 2 crafts' worth or more (explosives 10); it lacks coal 0 (a craft takes 1), and inserters put no ingredient into it while it holds 2 crafts' worth of a product or more (explosives 10; below 4 they do); waiting for space in it: fast-inserter (-7.5,48.5) holding 1 coal")
+  eq(r.line,"full_output, no output at its limit: it is not crafting (crafting_progress 0) and holds 2 crafts' worth or more (explosives 10); it lacks coal 0 (a craft takes 1), and inserters put no ingredient into it while it holds 2 crafts' worth of a product or more (explosives 10; below 4 they do); waiting for space in it: fast-inserter (-7.5,48.5) holding 1 coal")
   eq(r.refuses_ingredients.from,4); eq(r.refuses_ingredients.held,10); eq(r.refuses_ingredients.waiting[1],'fast-inserter (-7.5,48.5) holding 1 coal')
   has(r.idle_full_output,'and inserters put no ingredient into it while it holds that much')
   -- under its crafts' worth: none refused, the shortage as before

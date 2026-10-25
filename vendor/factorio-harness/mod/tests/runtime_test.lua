@@ -1508,7 +1508,7 @@ do
     'unknown entity big-asteroid in priority_targets; names like it: big-carbonic-asteroid, big-metallic-asteroid, big-oxide-asteroid')
   eq(ghost.length(),1)
   fails(function() call('configure',{position={x=12,y=0},priority_targets={'medium-biter'}}) end,'iron-chest (type container) has no priority targets')
-  fails(function() call('configure',{position={x=6,y=0},priority_targets={'medium-biter'},recipe='iron-gear-wheel'}) end,'go alone')
+  fails(function() call('configure',{position={x=6,y=0},priority_targets={'medium-biter'},recipe='iron-gear-wheel'}) end,'any other goes alone')
   fails(function() call('configure',{position={x=6,y=0},ignore_unprioritised='yes'}) end,'ignore_unprioritised must be true or false')
   -- Several at once: a row per turret, the one that fails with its error.
   r=call('configure',{positions={{x=6,y=0},{x=9,y=0},{x=12,y=0}},priority_targets={'big-metallic-asteroid'},ignore_unprioritised=true})
@@ -1687,12 +1687,12 @@ local set_filters={}
 prototypes.item['stone-brick']={type='item'}
 local fi={valid=true,name='fast-inserter',type='inserter',position={x=3,y=0},force=p.force,filter_slot_count=5,inserter_filter_mode='whitelist'}
 fi.set_filter=function(i,f) set_filters[i]=f or false end
-fi.get_filter=function(i) return set_filters[i] and {name=set_filters[i]} or nil end
+fi.get_filter=function(i) return set_filters[i] and {name=set_filters[i],quality='normal',comparator='='} or nil end  -- as 2.0.77 reads a name alone
 p.surface.find_entities_filtered=function() return {fi} end
 local filtered=call('configure',{position=fi.position,filters={'stone-brick'},filter_mode='whitelist'})
 eq(filtered.filters[1],'stone-brick'); eq(set_filters[1],'stone-brick'); eq(set_filters[2],false); eq(fi.use_filters,true)
 fails(function() call('configure',{position=fi.position,filters={'not-an-item'}}) end,'unknown item')
-fails(function() call('configure',{position=fi.position,filters={'stone-brick'},recipe='sulfur'}) end,'not both')
+fails(function() call('configure',{position=fi.position,filters={'stone-brick'},recipe='sulfur'}) end,'in separate calls')
 -- A built inserter's spoil priority, with its filters in the same call; an unknown value is refused.
 do
   fi.inserter_spoil_priority='none'

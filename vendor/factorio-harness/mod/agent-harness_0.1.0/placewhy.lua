@@ -332,7 +332,8 @@ return function(api)
     end
     local wanted = {}
     for _, f in ipairs(bp.filters or bp.chunk_filter or {}) do
-      local n = item_of(f.name or f)
+      -- (d24 batch194) an item filter with its quality and comparator, as the entity's read gives it
+      local n = bp.filters and type(f) == 'table' and api.filter_text and api.filter_text(f) or item_of(f.name or f)
       if n then wanted[#wanted+1] = n end
     end
     if #wanted > 0 then
