@@ -249,19 +249,31 @@ def failed_save():
         world, log = "zz-recovery-test", os.path.join(tmp, "calls.log")   # no RCON password for it: stop_save fails
         env = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
         env.update(POG_STOP_WORLD="1", STUB_LOG=log)
-        run = "shift71"
+        run = "zz-recovery-shift71"   # (d24 batch185) never a live run's name: stop-team looks for its push_live
         rd = os.path.join(tmp, "runs", run)
         put(os.path.join(rd, "luna", "journal.jsonl"), journal_lines("luna", ["status"]))
         put(os.path.join(rd, "luna", "notes.md"), notes("luna", run))
         open(log, "w").close()
-        r = subprocess.run(["bash", os.path.join(tmp, "tools", "stop-team.sh"), run, world], env=env, capture_output=True,
-                           text=True, timeout=120)
+        # (d24 batch185) a pusher of another checkout's run of the same name (the live shift's, when a test copies
+        # this script) is not this run's: it keeps running
+        other = os.path.join(tmp, "other-checkout")
+        put(os.path.join(other, "site", "push_live.py"), "import time\ntime.sleep(120)\n")
+        os.makedirs(os.path.join(other, "runs", run))
+        with open(os.path.join(other, "runs", run, "push-live.log"), "w") as out:
+            pusher = subprocess.Popen([sys.executable, os.path.join(other, "site", "push_live.py"), "--source", "x"],
+                                      stdout=out, stderr=subprocess.STDOUT)
+        try:
+            r = subprocess.run(["bash", os.path.join(tmp, "tools", "stop-team.sh"), run, world], env=env,
+                               capture_output=True, text=True, timeout=120)
+            assert pusher.poll() is None, "stop-team stopped another checkout's push_live: " + r.stdout
+        finally:
+            pusher.kill(); pusher.wait()
         assert r.returncode == 3, (r.returncode, r.stdout, r.stderr)
         assert "NOT saved (save FAILED; the world is left running, paused)" in r.stderr, r.stderr
         assert "stop-world" not in open(log).read(), open(log).read()   # the world keeps its state
         rec = json.load(open(os.path.join(rd, "stopped.json")))
         assert rec["via"] == "failed" and rec["save"] is None, rec
-        assert os.path.exists(os.path.join(rd, "luna", "journal.jsonl.gz")) and "goal in shift71" in open(
+        assert os.path.exists(os.path.join(rd, "luna", "journal.jsonl.gz")) and f"goal in {run}" in open(
             os.path.join(rd, "luna", "notes.md")).read()
         # the same stop again once the world is down, with the first stop's record (it saved): as before, the world stopped
         json.dump(dict(good, run=run), open(os.path.join(rd, "stopped.json"), "w"))
