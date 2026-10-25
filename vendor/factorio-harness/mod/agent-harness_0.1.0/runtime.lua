@@ -7311,7 +7311,7 @@ function handlers.build(p,a)
       out.placed=#placed>0 and placed or nil; out.failed=#failed>0 and failed or nil
       return M.entryset.built_result(p,settings,out,false)
     else
-      M.entryset.built(p,b,i+(a.index_before or 0),settings)
+      M.entryset.built(p,b,i+(a.index_before or 0),settings,a.item)
       local e=result.entity or (result.entities and result.entities[1])
       placed[#placed+1]=e and e.position or b.position
       -- (d23 batch120 CC1) a vehicle built with a grid: what the grid holds
@@ -8654,7 +8654,8 @@ M.CONFIGURE_SETTINGS={recipe='an assembling machine\'s',filters='an inserter\'s,
   speaker_alert='a programmable speaker\'s',description='a combinator\'s',auto_requests='a rocket silo\'s',send_to_orbit_automatically='a rocket silo\'s'}
 M.CONFIGURE_TOGETHER={{'item_requests','ammo','priority_targets','ignore_unprioritised'},{'ammo','modules','priority_targets','ignore_unprioritised'},
   {'modules','recipe'},{'wait_for_full_hand','hand_size','spoil_priority','filters','filter','filter_mode','use_filters'},
-  {'input_priority','output_priority','filter','filters'},{'auto_requests','send_to_orbit_automatically'}}
+  {'input_priority','output_priority','filter','filters'},{'auto_requests','send_to_orbit_automatically'},
+  {'storage_filter','filters','bar'}}  -- (d25 batch208 QU2, Astra #2357) a storage chest's filter and bar
 function M.configure_together(a)
   local given={}
   for k in pairs(a) do if M.CONFIGURE_SETTINGS[k] then given[#given+1]=k end end
@@ -9087,8 +9088,10 @@ local function configure_branch(p,a)
   end
   -- A storage chest's filter (details.lua; Astra 18:58: removed modules had no storage chest to go to): storage_filter,
   -- or filters with one item on a storage chest (its one filter slot).
+  -- (d25 batch208 QU2, Astra #2357: build {configure {storage_filter, bar}} placed storage chests and refused both) with
+  -- bar in the same call: both checked first (the bar's inventory and range, on a built chest), then both set.
   if a.storage_filter~=nil or (a.filters~=nil and M.details.storage_chest(e)) then
-    M.configure_only(a,{'storage_filter','filters'},M.configure_what(e))
+    M.configure_only(a,{'storage_filter','filters','bar'},M.configure_what(e))
     assert(a.storage_filter==nil or a.filters==nil,'storage_filter or filters (one item), not both')
     local v=a.storage_filter
     if v==nil then
@@ -9096,7 +9099,18 @@ local function configure_branch(p,a)
       assert(type(list)=='table' and #list<=1,'a storage chest has one filter slot: one item in storage_filter')
       v=list[1] or false
     end
+    if a.bar~=nil then
+      assert(M.details.storage_chest(e),M.configure_what(e)..' is not a storage chest: storage_filter is a storage chest\'s filter; nothing changed')
+      local ok,why=pcall(M.invbar.check,e,a.bar)
+      if not ok then error(reason(why)..'; nothing changed',0) end
+    end
     local out=M.details.configure_storage_filter(e,v)
+    if a.bar~=nil then
+      local b=M.invbar.set(e,a.bar)
+      out.bar,out.bar_before,out.slots,out.slots_used,out.slots_past_bar=b.bar,b.bar_before,b.slots,b.slots_used,b.slots_past_bar
+      out.line=string.format('storage_filter %s (was %s); %s',type(out.storage_filter)=='table' and (out.storage_filter.name or '?') or tostring(out.storage_filter),
+        type(out.storage_filter_before)=='table' and (out.storage_filter_before.name or '?') or tostring(out.storage_filter_before),b.line)
+    end
     out.remote=not near or nil
     return out
   end
@@ -16751,9 +16765,9 @@ end
 -- Settings on the entries of place_ghosts and build (entryset.lua; Sol, shift13 19:50: a bio cell took about 10
 -- configure and wire round trips): hand builds set each placement immediately; wires follow the batch.
 M.pumpcheck=require('pumpcheck'){read=function(e) return M.circuits.read(e) end}
-M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,
+M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,together=function(a) return M.configure_together(a) end,
   call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason,
-  dry=function(p,entry,kind,args) return M.settings_dry(p,entry,kind,args) end,
+  dry=function(p,entry,kind,args,ctx) return M.settings_dry(p,entry,kind,args,ctx) end,
   fix=function(action,args) return M.aliases.fix(action,args,M.takes) end,seen=function(p,ctx,pos) return M.settings_seen(p,ctx,pos) end}
 -- (d24 batch142 PN2, Astra #2134) whether the live call can set an entry's settings at pos: they go by remote view
 -- (configure_target, circuits' target, requests and wire), which needs our own platform or a chunk our force sees now
@@ -16771,7 +16785,7 @@ end
 -- requests (space.lua check_requests, on a chest that takes requests), configure's recipe (configure_check), modules
 -- (modules.lua check: slots, categories, effects under the recipe), filters (configure_filters' checks), spoil
 -- priority, and circuit_set's arguments (circuits.lua dry_set). Errors with the real call's refusal.
-function M.settings_dry(p,entry,kind,args)
+function M.settings_dry(p,entry,kind,args,ctx)
   local name=entry.name or entry.item
   local proto=type(name)=='string' and prototypes.entity[name]
   if not proto then return end
@@ -16817,6 +16831,26 @@ function M.settings_dry(p,entry,kind,args)
       end
     end
   elseif kind=='configure' then
+    -- (d25 batch208 QU2, Astra #2357: a place_ghosts dry run passed configure {storage_filter, bar}; the build refused
+    -- both) the settings that go in one call, a storage chest's filter, and a bar: as configure checks them on what
+    -- the call leaves there (place_ghosts a ghost, which holds no items; build the entity)
+    M.configure_together(args)
+    local storage=proto.type=='logistic-container' and proto.logistic_mode=='storage'
+    local what=string.format('%s%s (%g,%g)',ctx and ctx.ghosts and 'ghost of ' or '',name,ghost.position.x,ghost.position.y)
+    if args.storage_filter~=nil then
+      assert(storage,what..' is not a storage chest: storage_filter is a storage chest\'s filter')
+      local v=args.storage_filter
+      local item=type(v)=='table' and v.name or v
+      if v~=false and v~='none' and v~='' then assert(type(item)=='string' and prototypes.item[item],'storage_filter: unknown item '..tostring(item)) end
+    end
+    if args.bar~=nil then
+      if ctx and ctx.ghosts then error(M.invbar.refusal(ghost),0) end
+      local BARS={container=true,['logistic-container']=true,['cargo-wagon']=true,['cargo-landing-pad']=true}
+      assert(BARS[proto.type],string.format('bar: %s has no inventory with a bar in 2.0.77 (the red X is a chest\'s, logistic chest\'s, cargo wagon\'s or cargo landing pad\'s)',what))
+      local okq,size=pcall(function() return proto.get_inventory_size(defines.inventory.chest,entry.quality or 'normal') end)
+      if not (okq and size) then size=proto.inventory_size end
+      if args.bar~=false and args.bar~='none' and size then integer(args.bar,nil,0,size,string.format('bar (usable slots 0..%d, or false for none)',size)) end
+    end
     local rname=args.recipe or entry.recipe
     if args.recipe~=nil then M.configure_check(p,args,ghost,false) end
     if args.modules~=nil and args.modules~=false then
@@ -16913,7 +16947,7 @@ do
   handlers.place_ghosts=function(p,a)
     local aliased=type(a)=='table' and M.entryset.normalize(a.entities) or 0
     if type(a)~='table' or not M.entryset.any(a.entities) then return M.dry_verdict(place(p,a),a) end
-    local ctx={platform=a.platform,surface=a.surface}
+    local ctx={platform=a.platform,surface=a.surface,ghosts=true}
     local fixed=M.entryset.check(a.entities,ctx)
     local out=place(p,a)
     if type(out)=='table' and #fixed>0 then out.settings_corrected=fixed end
@@ -17032,7 +17066,7 @@ do
     if #fixed>0 then out.settings_corrected=fixed end
     out.settings_planned=M.entryset.plan(entries)
     -- each checked as the real call checks it (A3)
-    local rows,line,n,unseen=M.entryset.dry(p,entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
+    local rows,line,n,unseen=M.entryset.dry(p,entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface,ghosts=true} or {})
     out.settings_check,out.settings_line,out.settings_refused,out.settings_unseen=rows,line,n>0 and n or nil,unseen and unseen>0 and unseen or nil
     return M.dry_verdict(out,judged)
   end

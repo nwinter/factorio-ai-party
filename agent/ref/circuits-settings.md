@@ -122,7 +122,8 @@
     items past it stay, new ones go only under it. A crafting machine's output has no bar in 2.0.77 and its GUI no
     output limit: with nothing taking from it, it holds one stack. `bar` on one is refused, naming its output inserters,
     the chests they fill and its own logistic condition (`circuit_set logistic`).
-  - `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no other item in it);
+  - `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no other item in it), with
+    `bar` in the same call if given (both checked first; a ghost takes no bar);
     `input_priority`, `output_priority`, `filter` set a splitter's (left and right facing the way items move).
   - Turrets: `priority_targets: ["big-metallic-asteroid", ...]` with `ignore_unprioritised: true` sets a turret's (or
     ghost's) priority list as its GUI does, on one or `positions`; blueprints keep it. A turret ghost's targeting

@@ -15040,3 +15040,35 @@ characters; the optional diagnostic step then refused it when it ran).
   configure description and speaker_alert.message, platform_rearm positions, drop items and to, collect take_back,
   vehicle go_to, refuel positions with from. A direct feed {item, items: 16 others} was refused at 17, as counted.
 - Test: tests/d25_batch208.lua (tests/d25batch208.test.ts). It fails on main.
+
+QU2 (Astra #2357: at 62772396 a place_ghosts dry run said ok to configure {storage_filter, bar} on three storage
+chests; the build at 62773462 placed them and refused both, "configure sets bar and storage_filter in separate calls").
+- configure: `storage_filter` (or `filters` with one item on a storage chest) and `bar` go in one call
+  (CONFIGURE_TOGETHER `{storage_filter, filters, bar}`). The storage chest branch checks the bar first (invbar.lua
+  `M.check`: the inventory, 0..its slots; a ghost has none), then sets the filter and the bar. Its line gives both:
+  "storage_filter copper-plate (was iron-plate); storage-chest (87.5,95.5): bar 5 usable of 48 slots (was 10 usable)".
+  A bar refused refuses the call with nothing changed.
+- build and place_ghosts entries: entryset.check runs configure's `configure_together` on each entry's configure
+  before anything is placed, in the live call and in its dry run: "entry 1 configure: configure sets recipe and
+  storage_filter in separate calls (...): nothing changed; nothing placed".
+- Dry runs (settings_dry): `configure_together`; `storage_filter` only on a storage chest, and a known item; `bar`
+  only on a chest, logistic chest, cargo wagon or landing pad, 0..its slots at the entry's quality, and never on a
+  place_ghosts entry: "bar: ghost of storage-chest (83.5,95.5) holds no items: the bar is set on the built chest, cargo
+  wagon or landing pad", as the live configure refuses it on the ghost.
+- A setting refused after placing: `entry N configure: <why> (storage-chest at (x,y) is placed without it)`, the row's
+  `placed_without`; a build entry with no item of its own is named by the call's `item`. A hand build's reply (and its
+  last after a walk) adds `settings_refused` and `summary` ("1 of 1 settings refused; the entities stand placed
+  without them: ...").
+- On a copy of world n's save (d25, bot sol on Vulcanus), with main's runtime: both dry runs ok; the build (after a
+  walk) placed 2 storage chests with no filter and bar 48 (none), and its last said done with no settings line;
+  configure {storage_filter, bar} on a built chest was refused; a build with {storage_filter, recipe} placed its chest
+  and refused the setting. With this runtime: the place_ghosts dry run refused bar on both ghosts; the build dry run
+  ok; the build set both on each chest (filter iron-plate, bar 10); configure set copper-plate and bar 5 in one call;
+  {storage_filter, recipe} was refused before anything was placed, in the dry run and the live call; a build with bar
+  100 after a walk placed the chest and its last named it placed without the setting.
+- Not changed: place_ghosts sets no bar on its ghosts. In 2.0.77 a ghost pasted from a blueprint whose chest has a bar
+  keeps it (on the copy: bar 5 in the blueprint, the revived chest had 5 usable of 48); place_ghosts makes its ghosts
+  with create_entity, which takes none.
+- Test: tests/d25_batch208b.lua (tests/d25batch208b.test.ts). It fails on main. tests/d25_batch199.lua,
+  tests/entryset.lua and mod/tests/runtime_test.lua now expect the storage chest's settings with bar and the named
+  entity.
