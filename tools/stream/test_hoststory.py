@@ -435,8 +435,17 @@ def plain_tests():
     c.a = a
     pw = c.plain_writer()
     assert pw.model == "anthropic/claude-haiku-5.5" and pw.reasoning == {"enabled": False}
+    # (d25) no low model: the main one, Opus, which refuses reasoning off on OpenRouter
+    c.a = caster.parser().parse_args(["--writer", "or", "--model", "anthropic/claude-opus-5.5"])
+    pw = c.plain_writer()
+    assert pw.model == "anthropic/claude-opus-5.5" and pw.reasoning == {"effort": "low"}, pw.reasoning
     c.a = caster.parser().parse_args(["--writer", "template"])
     assert c.plain_writer() is None
+    # (d25) the rewrite gets each agent's chosen pronouns, they/them when none or unreadable
+    hint = hoststory.PlainPlan.names({"agents": [{"name": "astra", "display_name": "Astra", "pronouns": "they"},
+                                                 {"name": "opus", "display_name": "Opus", "pronouns": "he/him"},
+                                                 {"name": "sonnet", "display_name": "Sonnet"}]})
+    assert "Astra (they), Opus (he/him), Sonnet (they/them)." in hint and "pronouns to use" in hint, hint
     print("hoststory: ok (run block from an editable file; plain plan: one call per ten minutes, no shorthand, no "
           "ticks, plan changes wait, kept; caster wiring)")
 

@@ -2330,7 +2330,10 @@ class Caster:
         model = getattr(a, "plain_model", "") or getattr(a, "low_model", "") or a.model
         if a.writer == "or" and model:
             w = LLMWriter("or", model, timeout=a.writer_timeout)
-            w.reasoning = {"enabled": False}
+            # (CM3) Haiku 5.5 spent a whole rewrite reasoning, so off for it. (d25) Opus 5.5 refuses reasoning off on
+            # OpenRouter (HTTP 400 "Reasoning is mandatory for this endpoint"): with no low model since d23 19:58 every
+            # rewrite failed and the hosts had no goals or plan lines. Other models: low effort.
+            w.reasoning = {"enabled": False} if "haiku" in model else {"effort": "low"}
             return w
         if a.writer == "claude":
             return LLMWriter("claude", getattr(a, "plain_model", "") or "haiku", bin=a.claude_bin,
