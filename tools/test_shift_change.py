@@ -119,7 +119,7 @@ def setup():
 
 
 def run(tmp, runs, bin_, state, *args, **env):
-    e = dict(os.environ, POG_SC_STOP_TEAM=f"{bin_}/stop-team", POG_SC_START_TEAM=f"{bin_}/start-team",
+    e = dict(os.environ, POG_TEST="1", POG_SC_STOP_TEAM=f"{bin_}/stop-team", POG_SC_START_TEAM=f"{bin_}/start-team",
              POG_SC_QUOTA=f"{bin_}/quota", POG_SC_SSH=f"{bin_}/ssh", POG_SC_OBS=f"{bin_}/obs", POG_SC_PGREP=f"{bin_}/pgrep",
              POG_SC_HERDR=f"{bin_}/herdr", POG_SC_RUNS=runs, POG_SC_STATE_URL="file://" + state, POG_SC_HEALTH_WAIT="0",
              POG_SC_SITE_REFRESH=f"{bin_}/site-refresh",  # never the real one: it deploys the site
@@ -359,6 +359,7 @@ def start_cams():
             log = os.path.join(tmp, "calls.log")
             open(log, "w").close()
             e = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
+            e["POG_TEST"] = "1"   # (d24 batch186) a test run
             e.update(STUB_LOG=log, CAM_STATE=state, POG_CAM_WINPS=f"{bin_}/winps", POG_CAM_RCON=f"{bin_}/rcon",
                      POG_CAM_OBS=f"{bin_}/obs", POG_CAM_WAIT="2", POG_CAM_POLL="0.2", **env)
             r = subprocess.run([os.path.join(ROOT, "tools", "start-cams.sh"), "n", "34205", "--", "-Factorio", "D:\\f"],

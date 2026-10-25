@@ -128,7 +128,7 @@ def new_run(root, run, resume, name):
             and os.path.isfile(os.path.join(resume_dir, "resumed-from")):
         resume_dir = os.path.join(root, "runs", open(os.path.join(resume_dir, "resumed-from")).readline().strip())
     env = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
-    env.update(POG_WS=name, POG_BOT=name, POG_RESUME=resume, POG_RESUME_DIR=resume_dir)
+    env.update(POG_WS=name, POG_BOT=name, POG_RESUME=resume, POG_RESUME_DIR=resume_dir, POG_TEST="1")   # (batch186) no world password
     out = subprocess.run(["bash", os.path.join(root, "tools", "new-run.sh"), run, "n", name, "240"], env=env,
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
@@ -248,7 +248,12 @@ def failed_save():
             shutil.copy(os.path.join(ROOT, "tools", f), os.path.join(tmp, "tools"))
         world, log = "zz-recovery-test", os.path.join(tmp, "calls.log")   # no RCON password for it: stop_save fails
         env = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
-        env.update(POG_STOP_WORLD="1", STUB_LOG=log)
+        # (d24 batch186) a test run, and OBS through a stub: stop-team's own OBS calls stopped the live stream's outputs
+        # had the copy held tools/obs.py
+        obs_stub = os.path.join(tmp, "obs-stub")
+        put(obs_stub, '#!/usr/bin/env bash\necho "obs $*" >> "$STUB_LOG"\n')
+        os.chmod(obs_stub, 0o755)
+        env.update(POG_STOP_WORLD="1", STUB_LOG=log, POG_TEST="1", POG_STOP_OBS=obs_stub)
         run = "zz-recovery-shift71"   # (d24 batch185) never a live run's name: stop-team looks for its push_live
         rd = os.path.join(tmp, "runs", run)
         put(os.path.join(rd, "luna", "journal.jsonl"), journal_lines("luna", ["status"]))
@@ -260,7 +265,9 @@ def failed_save():
         put(os.path.join(other, "site", "push_live.py"), "import time\ntime.sleep(120)\n")
         os.makedirs(os.path.join(other, "runs", run))
         with open(os.path.join(other, "runs", run, "push-live.log"), "w") as out:
-            pusher = subprocess.Popen([sys.executable, os.path.join(other, "site", "push_live.py"), "--source", "x"],
+            # (d24 batch186) not "--source": the live start-team's pusher check matched this stand-in (a live shift
+            # start in that window would not have started its pusher)
+            pusher = subprocess.Popen([sys.executable, os.path.join(other, "site", "push_live.py"), "--test-stand-in"],
                                       stdout=out, stderr=subprocess.STDOUT)
         try:
             r = subprocess.run(["bash", os.path.join(tmp, "tools", "stop-team.sh"), run, world], env=env,
@@ -269,6 +276,8 @@ def failed_save():
         finally:
             pusher.kill(); pusher.wait()
         assert r.returncode == 3, (r.returncode, r.stdout, r.stderr)
+        calls = open(log).read()
+        assert "obs stream-stop" in calls and "obs replay-stop" in calls, calls   # OBS only through POG_STOP_OBS
         assert "NOT saved (save FAILED; the world is left running, paused)" in r.stderr, r.stderr
         assert "stop-world" not in open(log).read(), open(log).read()   # the world keeps its state
         rec = json.load(open(os.path.join(rd, "stopped.json")))

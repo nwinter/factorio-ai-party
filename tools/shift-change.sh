@@ -107,7 +107,9 @@ if [ -z "${POG_SC_PGREP:-}" ]; then
   mine=""
   for p in $others; do
     c=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
-    [ "$c" = "$root" ] && mine="$mine$p "
+    # (d24 batch186) a dry run's or a test run's start-team only plans (the gate runs test_resume's dry runs in this
+    # checkout): it marks itself (start-team.sh plan_mark) and blocks nothing
+    if [ "$c" = "$root" ] && [ ! -e "${TMPDIR:-/tmp}/pog-start-team-plan.$p" ]; then mine="$mine$p "; fi
   done
   others=$mine
 fi
