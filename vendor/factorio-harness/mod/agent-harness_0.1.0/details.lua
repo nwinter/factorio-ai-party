@@ -34,6 +34,87 @@ return function(api)
     return n .. (type(q) == 'string' and q ~= 'normal' and '@' .. q or '')
   end
   M.item_name = item_name
+  -- Item filters as 2.0.77's ItemFilter {name, quality?, comparator?} (d24 batch194 QAJ1, Sol #2270: "configure.filters
+  -- accepts only item strings, refuses {name,quality} as unknown item table and plastic-bar@quality as unknown item").
+  -- On a copy of world n, set_filter: a name alone stores quality normal, comparator "="; {name} with no quality stores
+  -- no quality (every quality passes); a comparator with no quality is dropped; comparators read back as the signs
+  -- ≤ ≥ ≠. Taken: "name" (normal, as the game), "name@quality", "name@<=quality" (any comparator), "name@any", or
+  -- {name|item, quality?, comparator?}. Read: the same strings ("name" for normal and "=").
+  local COMPARATORS = {['=']='=', ['!=']='!=', ['<']='<', ['<=']='<=', ['>']='>', ['>=']='>=', ['≠']='!=', ['≤']='<=', ['≥']='>='}
+  local OPS = {'<=', '>=', '!=', '≤', '≥', '≠', '<', '>', '='}
+  local function quality_names()
+    local list = {}
+    for name, q in pairs(prototypes.quality or {}) do if not q.hidden then list[#list+1] = {name, q.level or 0} end end
+    table.sort(list, function(a, b) if a[2] ~= b[2] then return a[2] < b[2] end return a[1] < b[1] end)
+    local out = {}
+    for i, q in ipairs(list) do out[i] = q[1] end
+    return table.concat(out, ', ')
+  end
+  M.FILTER_FORMS = '"name" (normal quality), "name@quality", "name@<=quality" (comparator =, !=, <, <=, >, >=), "name@any" (every quality), or {name, quality, comparator}'
+  -- One filter as the game takes it (a name, or an ItemFilter table), or an error naming what is known.
+  function M.parse_filter(f)
+    local name, quality, comparator
+    if type(f) == 'string' then
+      local at = f:find('@[^@]*$')
+      if not at then name = f
+      else
+        name = f:sub(1, at - 1)
+        local rest = f:sub(at + 1)
+        for _, op in ipairs(OPS) do
+          if rest:sub(1, #op) == op then comparator, rest = op, rest:sub(#op + 1); break end
+        end
+        if rest == 'any' then
+          if comparator then error('filter ' .. f .. ': any takes no comparator (every quality passes)', 0) end
+          quality = false
+        else quality = rest end
+      end
+    elseif type(f) == 'table' then
+      for k in pairs(f) do
+        if k ~= 'name' and k ~= 'item' and k ~= 'quality' and k ~= 'comparator' and k ~= 'index' then
+          error('filter: unknown key ' .. tostring(k) .. '; a filter is ' .. M.FILTER_FORMS, 0)
+        end
+      end
+      name, quality, comparator = f.name or f.item, f.quality, f.comparator
+      if quality == nil then quality = false end
+      if quality == 'any' then quality = false end
+    else
+      error('filter: ' .. tostring(f) .. ' is not a filter; a filter is ' .. M.FILTER_FORMS, 0)
+    end
+    if not (type(name) == 'string' and prototypes.item[name]) then error('unknown item ' .. tostring(name), 0) end
+    if quality then
+      local q = type(quality) == 'string' and (prototypes.quality or {})[quality]
+      if not q or q.hidden then error('unknown quality ' .. tostring(quality) .. '; qualities: ' .. quality_names(), 0) end
+    end
+    if comparator ~= nil then
+      if not COMPARATORS[comparator] then error('unknown comparator ' .. tostring(comparator) .. '; comparators: =, !=, <, <=, >, >=', 0) end
+      if not quality then error('filter ' .. name .. ': comparator ' .. comparator .. ' goes with quality (with no quality every quality passes, and the game drops the comparator)', 0) end
+    end
+    if quality == nil then return name end
+    if quality == false then return {name=name} end
+    return {name=name, quality=quality, comparator=COMPARATORS[comparator or '=']}
+  end
+  -- A filter list (one filter alone is a list of one), checked: the filters as the game takes them.
+  function M.filter_list(f, slots)
+    if type(f) == 'string' or (type(f) == 'table' and (f.name ~= nil or f.item ~= nil)) then f = {f} end
+    if not (type(f) == 'table' and #f <= slots) then error('filters requires 0..' .. slots .. ' filters: each ' .. M.FILTER_FORMS, 0) end
+    local out = {}
+    for i, one in ipairs(f) do out[i] = M.parse_filter(one) end
+    return out
+  end
+  -- A filter read back: "name" (normal, "="), "name@epic", "name@<=epic", "name@any" (no quality).
+  function M.filter_text(f)
+    if type(f) == 'string' then return f end
+    if type(f) ~= 'table' then return nil end
+    local n = f.name
+    if type(n) ~= 'string' then n = try(function() return n.name end) end
+    if type(n) ~= 'string' then return nil end
+    local q = f.quality
+    if q ~= nil and type(q) ~= 'string' then q = try(function() return q.name end) end
+    if type(q) ~= 'string' then return n .. '@any' end
+    local c = COMPARATORS[f.comparator or '='] or f.comparator
+    if c == '=' then return q == 'normal' and n or n .. '@' .. q end
+    return n .. '@' .. c .. q
+  end
   -- Why an inserter waits for source items (d17 batch18 A1, Grok: a heating tower's arm read waiting_for_source_items
   -- with rocket fuel in the requester beside it). On a copy of world n the game's arm kept the tower's fuel at about
   -- 5 rocket fuel and waited above that (with 10 yumako seeds in its second fuel slot, at 1 or 2); the tower ran dry
@@ -193,7 +274,7 @@ return function(api)
     if slots <= 0 then return nil end
     local list = {}
     for i = 1, slots do
-      local n = item_name(try(function() return e.get_filter(i) end))
+      local n = M.filter_text(try(function() return e.get_filter(i) end))
       if n then list[#list+1] = n end
     end
     local inserter = e.type == 'inserter' or (e.type == 'entity-ghost' and e.ghost_type == 'inserter')

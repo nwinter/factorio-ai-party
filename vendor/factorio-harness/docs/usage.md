@@ -14397,3 +14397,30 @@ Fixed besides gates:
   - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
     (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
 - Test: tests/d24_batch187.lua (fails on main: no handler).
+## d24 batch194 (Sol #2270: quality filters for inserters and loaders)
+
+- QAJ1: every filter list (configure, build and place_ghosts `configure`/settings, circuit_set `settings`, an entry's
+  top-level `filters`) takes per filter: `"name"` (quality normal, comparator "=", as the game stores a name), 
+  `"name@quality"`, `"name@<=quality"` (comparators `=`, `!=`, `<`, `<=`, `>`, `>=`, and the game's signs ≤ ≥ ≠),
+  `"name@any"` (no quality: every quality passes), or `{name|item, quality?, comparator?}` (2.0.77's ItemFilter; a
+  table with no quality is every quality, as the game takes it). One filter alone is a list of one. Refused before
+  anything is set: an unknown item, quality ("unknown quality mythic; qualities: normal, uncommon, rare, epic,
+  legendary"; the hidden quality-unknown is not taken), comparator ("unknown comparator =<; comparators: =, !=, <, <=,
+  >, >="), a comparator with no quality (the game drops it), `any` with a comparator, an unknown table key.
+- Reads (configure's reply, inspect `filters`, scan rows' `filters` line, the circuit's "set by circuit (now: ...)",
+  placewhy's blueprint comparison) give each filter in the same string form: `plastic-bar`, `plastic-bar@epic`,
+  `plastic-bar@<=epic`, `coal@any`. configure reads each slot back and says `not_as_asked` for one that holds other
+  than asked.
+- Engine facts (2.0.77, a copy of world n's 19:57 autosave): `set_filter(1, "plastic-bar")` reads back {name,
+  quality "normal", comparator "="}; `{name}` reads back with no quality; `{name, comparator}` with no quality drops the
+  comparator; `"<="` reads back "≤" (also on a ghost); `"plastic-bar@epic"` is "Unknown item name"; a blueprint keeps
+  the same ItemFilter rows ({index, name, quality, comparator}; none for every quality).
+- Sol's case on the copy: a burner inserter between two chests, the first holding 5 plastic bars of each quality.
+  Whitelist `{name: plastic-bar, quality: epic, comparator: "<="}` moved the 20 normal..epic bars and left the 5
+  legendary; blacklist `["plastic-bar", "plastic-bar@uncommon", "plastic-bar@rare", "plastic-bar@epic"]` moved only
+  the 5 legendary. place_ghosts with `configure {filters: ["plastic-bar@<=epic"], filter_mode: blacklist}` set the ghost
+  so (dry run refuses "plastic-bar@mythic" naming the qualities). Sol's fallback, a constant combinator with
+  plastic-bar normal..epic signals and `circuit_set_filters`, still sets them: "set by circuit (now: plastic-bar,
+  plastic-bar@uncommon, plastic-bar@rare, plastic-bar@epic)".
+- Test: tests/d24_batch194.lua (fails on main: "unknown item table: ..."). Five fakes that read a name filter back with
+  no quality now read it as 2.0.77 does (quality normal, "=").

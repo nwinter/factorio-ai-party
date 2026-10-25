@@ -107,7 +107,8 @@
     request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back (`by_slot`).
     `transfer {position, item: <module>}` also puts a module in a machine's or beacon's module slots.
   - Inserters and loaders: `filters`, `filter_mode` (or `mode`), `use_filters` (shown in `scan` rows: `filters:
-    whitelist: iron-plate`, `off`, `set by circuit`); `hand_size: N` sets an inserter's stack size override, as
+    whitelist: iron-plate`, `off`, `set by circuit`); a filter is `"iron-plate"` (normal), `"plastic-bar@epic"`,
+    `"plastic-bar@<=epic"` (`=`, `!=`, `<`, `<=`, `>`, `>=`), `"coal@any"` or `{name, quality, comparator}`, read back so; `hand_size: N` sets an inserter's stack size override, as
     its GUI does (1 up to its hand size now; 0 or false for none); `spoil_priority: fresh_first | spoiled_first | none` sets an
     inserter's Spoil priority (built or ghost). `wait_for_full_hand` has no setting in 2.0.77: it is fixed by the
     prototype (stack-inserter waits until its hand is full; burner, inserter, fast, long-handed and bulk do not). The
