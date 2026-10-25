@@ -219,7 +219,8 @@
   would touch (`last.preview`); `"combat":true` keeps the guns on auto for the drive (`last.shots`, `last.kills`).
   `remote: true, vehicle: N` drives one of our cars or tanks in radar coverage by remote view while your character
   stays put (its guns do not fire that way), or with `go_to` sends a spidertron; `auto_target_without_gunner` and
-  `auto_target_with_gunner` set a spidertron's switches.
+  `auto_target_with_gunner` set a spidertron's switches. A `position` call refused as out of sight, for one of ours
+  there, gives this remote call with its unit number, or the remote form's refusal.
   A spidertron's `go_to` replaces its route, as a click on its remote (`"mode":"append"` adds at the end, as a
   shift-click; a list of points sets several); `"clear":true` empties it; the reply has `route`. `vehicle {position}`
   (or `remote: true, vehicle`) of a spidertron alone reads its route and `stalled`: no progress toward its target for

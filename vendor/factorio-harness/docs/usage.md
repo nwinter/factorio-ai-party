@@ -14517,3 +14517,24 @@ on its line (the reply's JSON dominates on the copy).
 - Kept: batch183's design, progress, basis and forecast_model, and the model taking the forecast's turret scan in the
   same call.
 - Test: tests/d24_batch195.lua (replaces tests/d24_batch187.lua; fails on main: a kept reading is answered, 0 reads).
+## d24 batch193
+
+QAI1 (viewer Aurora 20:58): a far vehicle refusal names the remote form. Opus's `vehicle {position, go_to}` (and once
+`{position, auto_target_without_gunner}`) in shift71 at 02:03:23, 03:08:44 and 03:31:12 UTC was refused as "vehicle is
+outside local visible area" with no word of `vehicle {remote: true, vehicle: N, go_to}`, which sends a spidertron in a
+chunk our force sees.
+- The refusal of a `position` out of sight (enter, go_to, clear, the targeting switches, or a read alone) now ends,
+  for our spidertron, car or tank within 2.5 tiles of it:
+  - with the remote call, its unit number and the call's own arguments: "; or by remote: vehicle {remote: true,
+    vehicle: 23036938, go_to: {x: -600, y: -380}}". A spidertron keeps go_to, mode, clear and the switches; a read
+    alone gives `{remote: true, vehicle: N}`; enter gives `go_to: {x, y}`. A car or tank gives `drive:` go_to's
+    target when it is one position, else `drive: {x, y}`;
+  - or, when the remote form is refused too, its refusal (the remote form's own rules): "; by remote it is refused
+    too: spidertron (-480,-500) is in no chunk our force sees now ...", or a car's driver seat taken.
+  - Nothing is added for another force's vehicle, a locomotive or wagon, or no vehicle there.
+- A bare `vehicle {position}` of a far vehicle was refused as "position names the vehicle for enter: true ...; nothing
+  is done"; it is now the out-of-sight refusal with the remote read. What is allowed is unchanged.
+- Cost: one find (position, radius 2.5, car and spider-vehicle, our force) and the remote form's checks, only on the
+  refusal; measured below.
+- Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
+
