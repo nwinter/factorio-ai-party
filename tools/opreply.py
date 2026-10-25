@@ -8,12 +8,22 @@
     python3 tools/opreply.py --list [Aurora]               # recent inbox lines with the ids --to takes
     python3 tools/opreply.py --to site:3817 --dry-run "..."   # the parts and the record; sends and writes nothing
     python3 tools/opreply.py --to site:3817 --sent 18454 18456   # link lines already sent (RUN/chat.jsonl seqs), in order
+    python3 tools/opreply.py --to site:4789 --update reply-updates-one-step --title "..." --area site "accepted: ..."
+    python3 tools/opreply.py --to site:4790 --update reply-updates-one-step --status "in progress" --work batch180 "started"
 
 It names the viewer ("@Aurora Operator: ..."), cuts a reply over 500 bytes into parts at sentence ends ("@Aurora (1/2)
 Operator: ...", "@Aurora (2/2) Operator: ..."), writes RUN/operator-replies.jsonl first ({t, to, name, question {text,
 t, source}, parts}), then posts each part to the game chat over RCON as the operator does with tools/pog.py rcon. The
 stream service (model.py) reads that file: every part threads under the named line, at any age and after a restart,
 and the site shows "part 1 of 2". A reply sent without this tool is matched by name as before (viewer_replies.py).
+
+(d24 batch180 QW1, viewer Aurora 17:32, site:4789: "Could chat acknowledgements and Updates share one batch record? Show
+accepted work as Planned, then In progress when started.") --update ID [--title T --area A --work W --status planned|in
+progress] also adds or moves that row of the Updates page (site/content/operator-updates.json, tools/operator_updates.py
+upsert) in the same call: the viewer and the line answered (--to's id, site:N) as who asked, the line's time as asked,
+the status's date; the reply shows under the row (the build finds it by that ref). The change is checked before the
+reply goes: a row that would go backwards, a status past planned with no --work (the row's or this one), or a new row
+with no --title refuses the whole call and sends nothing. The file is written under its lock after the reply is sent.
 
 --world: POG_WORLD, else n. --run: the run folder (default: the runs/shift* folder whose chat.jsonl changed last, the
 live one); an inbox line from the 2 runs before it is found too, and the record still goes to this run (d22 batch89 AY4).
@@ -170,7 +180,15 @@ def main(argv=None):
                     "changed last); --to finds inbox lines there and in the 2 runs it resumed from")
     ap.add_argument("--dry-run", action="store_true", help="print the parts and the record; send and write nothing")
     ap.add_argument("--sent", nargs="+", metavar="SEQ", help="link Operator lines already in the game chat (RUN/chat.jsonl seqs, in order); sends nothing")
+    ap.add_argument("--update", metavar="ID", help="also add or move this Updates row (site/content/operator-updates.json)")
+    ap.add_argument("--title", help="--update: the row's title (needed for a new row)")
+    ap.add_argument("--area", help="--update: harness, stream or site")
+    ap.add_argument("--work", help="--update: the batch doing it (needed past planned)")
+    ap.add_argument("--status", default="planned", choices=("planned", "in progress"), help="--update: planned (default) or in progress")
+    ap.add_argument("--updates-file", help=argparse.SUPPRESS)  # tests: another JSON
     a = ap.parse_args(argv)
+    if (a.title or a.area or a.work or a.status != "planned") and not a.update:
+        ap.error("--title, --area, --work and --status go with --update ID")
     run = a.run or latest_run(os.path.join(os.path.dirname(HERE), "runs"))
     if a.list is not None:
         rows = [r for r in inbox_rows(run) if not a.list or r["agent"][7:].lower() == a.list.lower()][-12:]
@@ -192,12 +210,33 @@ def main(argv=None):
         print("  " + line)
     if a.sent:
         rec["sent"] = [int(x) for x in a.sent]
+    if not a.update:
+        return deliver(a, rec, lines, path)
+    # (d24 batch180) the Updates row in the same call: checked first, under its lock, written after the reply went
+    import operator_updates as ou
+    upath = a.updates_file or str(ou.DEFAULT)
+    asked = (datetime.datetime.fromtimestamp(question["t"], ou.updates.PACIFIC).strftime(ou.updates.FMT)
+             if isinstance(question.get("t"), (int, float)) else None)
+    with ou.locked(upath):
+        data = ou.read(upath)
+        said = ou.upsert(data, a.update, a.status, title=a.title, area=a.area, work=a.work, name=name, ref=ident, asked=asked)
+        if a.dry_run:
+            print(f"update (not written): {said}")
+            return deliver(a, rec, lines, path)
+        code = deliver(a, rec, lines, path)
+        ou.write(upath, data)
+    print(f"update {said} (the reply shows under it once the site is rebuilt)")
+    return code
+
+
+def deliver(a, rec, lines, path):
+    """The record first (the stream service links each part as it arrives), then the lines to the game chat."""
     if a.dry_run:
         print(f"dry run: nothing sent; the record would go to {path}")
         return 0
     if not path:
         sys.exit("opreply: no run folder (--run)")
-    with open(path, "a") as f:  # first: the stream service links each part as it arrives
+    with open(path, "a") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     if a.sent:
         print(f"linked {len(lines)} sent line{'s' if len(lines) > 1 else ''} in {path} (the stream service reads them at its next chat read)")

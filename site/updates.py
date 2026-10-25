@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 
 STATUSES = ("planned", "in progress", "live", "verified")
-OPEN_ORDER = ("in progress", "planned", "live")  # not yet verified: the work under way first
+ACCEPTED = ("in progress", "planned")  # (d24 batch180) accepted, not live yet: a section of its own
 CHIP = {"planned": "fx-chip--grey", "in progress": "fx-chip--orange", "live": "fx-chip--blue", "verified": "fx-chip--green"}
 WHAT = {"planned": "accepted, not started", "in progress": "an engineer is on it, or it waits for the merge gate",
         "live": "merged and deployed", "verified": "checked working in the game or on the site after it went live"}
@@ -366,23 +366,30 @@ def build_page(data, asks, replies, esc, built=None):
         head = (f'<h3 id="{s.replace(" ", "-")}" data-group-head="{esc(s)}">' if g else f'<h3 data-group-head="{esc(s)}" hidden>')
         head += f'{esc(s.capitalize())} (<span class="upd-n">{len(g)}</span>)</h3>'
         return head, f'<ul class="upd-list" data-group="{esc(s)}">' + "".join(lis[u["id"]][1] for u in g) + "</ul>", len(g)
-    open_parts = [group(s) for s in OPEN_ORDER]
-    open_html = "".join(h + ul for h, ul, _ in open_parts)
+    # (d24 batch180 QW1, viewer Aurora 17:32: "Show accepted work as Planned, then In progress when started") accepted
+    # work (in progress, planned) apart from what is live and not verified yet, each with its dates
+    accepted = [group(s) for s in ACCEPTED]
+    accepted_html = "".join(h + ul for h, ul, _ in accepted)
+    live_head, live_ul, n_live = group("live")
     _, done_ul, n_done = group("verified")
-    none_open = f'<p class="muted" id="upd-none-open"{" hidden" if any(n for _, _, n in open_parts) else ""}>Nothing open.</p>'
+    none_open = f'<p class="muted" id="upd-none-open"{" hidden" if any(n for _, _, n in accepted) else ""}>Nothing accepted waits.</p>'
+    none_live = f'<p class="muted" id="upd-none-live"{" hidden" if n_live else ""}>Nothing live waits to be verified.</p>'
     body = f"""
 <h1>Operator updates</h1>
 <p class="lede">Changes to the harness, the stream and this site that viewers and agents asked for, and where each one
-stands. Unresolved ones stay at the top until they are verified; each group lists the newest first, by the date it
-reached its status. Times are Pacific.</p>
+stands. Accepted work comes first (planned, then in progress once an engineer has it), then what is live and not
+verified yet, then what is verified; each group lists the newest first, by the date it reached its status. Times are
+Pacific.</p>
 <p class="muted small upd-updated" id="upd-updated">{esc(_updated(data, built))}</p>
 <p class="muted small upd-cadence">{esc(CADENCE)} <span id="upd-live-note" aria-live="polite"></span></p>
 <p class="upd-counts" id="upd-counts">{_counts(rows, esc)}</p>
 <ul class="upd-legend small">{legend}</ul>
 {_tools(rows, esc)}
 <div id="upd-root" data-built="{esc(built.strftime(FMT) if built else '')}" data-stamp="{data_stamp(data, asks, replies, esc)}">
-<h2 id="open">Not verified yet</h2>
-{open_html}{none_open}
+<h2 id="open">Accepted: planned and in progress</h2>
+{accepted_html}{none_open}
+<h2 id="live-unverified">Live, not verified yet</h2>
+{live_head}{live_ul}{none_live}
 <h2 id="verified" data-group-head="verified">Verified (<span class="upd-n">{n_done}</span>)</h2>
 {done_ul}<p class="muted" id="upd-none-verified"{" hidden" if n_done else ""}>None yet.</p>
 </div>
