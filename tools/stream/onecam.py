@@ -106,7 +106,7 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
   ("onecam" or "trio") and, in a trio, which client is in which hole.
 """
-import json, os, re, time
+import json, math, os, re, time
 
 from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame, surface_of
 import clouds
@@ -161,6 +161,7 @@ def loss_pieces(text):
 
 MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
 MINOR_MAX = 3
+BOW_REACH_MARGIN = 4.0  # (d24 batch188) tiles past the guns' reach the bow shot shows, ahead and on each side
 
 
 def minor_loss(text):
@@ -2692,12 +2693,28 @@ class OneCam(Director):
         if not view.get("surface") or not isinstance(bow, dict) or \
                 not all(isinstance(bow.get(k), (int, float)) for k in ("left", "top", "right")):
             return None
-        zoom = round(max(0.3, min(1.0, 60.0 * self.onair_frac() / (bow["right"] - bow["left"] + 12))), 2)
+        frac, ahead_frac = self.onair_frac(), self.cfg["bow_ahead"]
+        zoom = round(max(0.3, min(1.0, 60.0 * frac / (bow["right"] - bow["left"] + 12))), 2)
+        left, right = bow["left"], bow["right"]
+        # (d24 batch188 QAD1, viewer Caleb 19:15: "when showing Asterion's bow can you zoom out enough to see the
+        # asteroids in range?") with the guns read, the space ahead covers the turrets' reach ahead of the bow (model.
+        # gun_reach: each turret +- its range) plus BOW_REACH_MARGIN, and the frame its width: the zoom that fits both,
+        # no closer than the bow's own, at least 0.3, floored to the hundredth so the reach stays inside
+        from model import gun_reach
+        reach = gun_reach(view)
+        if reach:
+            rl, rt, rr, _ = reach
+            left, right = min(left, rl), max(right, rr)
+            ahead = bow["top"] - rt + BOW_REACH_MARGIN
+            fit = min(zoom, 60.0 * frac / (right - left + 2 * BOW_REACH_MARGIN))
+            if ahead > 0:
+                fit = min(fit, 34.0 * ahead_frac / ahead)
+            zoom = max(0.3, math.floor(fit * 100) / 100)
         vh = 34.0 / zoom
         label = self.platform_label(name)
         label = f"{name} · the bow" + label[len(name):] if label.startswith(name) else f"{name} · the bow"
-        return {"position": {"x": round((bow["left"] + bow["right"]) / 2, 1),
-                             "y": round(bow["top"] + (0.5 - self.cfg["bow_ahead"]) * vh, 1)},
+        return {"position": {"x": round((left + right) / 2, 1),
+                             "y": round(bow["top"] + (0.5 - ahead_frac) * vh, 1)},
                 "surface": view["surface"], "zoom": zoom, "exact_zoom": True, "agents": [], "subject": "@platform",
                 "until": until, "platform": {"name": name, "why": "bow", "label": label}}
 
