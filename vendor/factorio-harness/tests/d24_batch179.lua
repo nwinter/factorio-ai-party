@@ -22,7 +22,7 @@ local plat1={name='platform-1',platform=cinder}
 local plat18={name='platform-18',platform=meridian}
 local hub={valid=true,type='space-platform-hub',surface=plat1,position={x=0,y=0}}
 local hub18={valid=true,type='space-platform-hub',surface=plat18,position={x=0,y=0}}
-local silo={valid=true,type='rocket-silo',surface=nauvis,position={x=15.5,y=59.5}}
+local silo={valid=true,type='rocket-silo',unit_number=20720,surface=nauvis,position={x=15.5,y=59.5}}
 local main,trash=inv({}),inv({})
 main.empty,trash.empty=69,13
 local pad={valid=true,type='cargo-landing-pad',surface=gleba,position={x=54,y=8}}
@@ -109,7 +109,7 @@ P.tick(game.tick+1)
 eq(next(storage.podlog.after),nil)
 rows,total=P.read{surfaces={nauvis=true},limit=32}
 eq(total,1); eq(rows[1].direction,'up'); eq(rows[1].platform,'Meridian-V'); eq(rows[1].stop,'nauvis'); eq(rows[1].destination,'hub')
-assert(rows[1].line:find('nauvis to Meridian-V, uranium-rounds-magazine*25, rocket; landed in hub',1,true),rows[1].line)
+assert(rows[1].line:find('nauvis to Meridian-V, uranium-rounds-magazine*25, rocket from silo 20720 (15.5,59.5); landed in hub',1,true),rows[1].line)
 
 -- 5. Filters: direction, platform, item (any quality, or one), send ticks; the newest limit, oldest first.
 eq(select(2,P.read{up=true,limit=32}),1); eq(select(2,P.read{up=false,limit=32}),4)
