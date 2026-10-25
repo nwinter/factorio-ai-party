@@ -296,6 +296,7 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
             if now - t_win >= window:
                 mbps = bytes_win * 8 / (now - t_win) / 1e6
                 trace.append([round(now - t_start, 1), jobs, round(mbps, 1)])
+                log(f"  {len(items) - len(todo) - len(running)}/{len(items)} objects, {mbps:.1f} Mbit/s, jobs {jobs}")
                 if todo:
                     jobs, capped = next_jobs(jobs, mbps, max_mbps, jobs_max, capped)
                 t_win, bytes_win = now, 0
@@ -503,7 +504,7 @@ def main():
     health = None if a.no_health else Health(obs_status).check
 
     def putter(item):
-        return r2_put.put(a.bucket, item, nice=10)
+        return r2_put.put(a.bucket, item, nice=15)
 
     for run in runs:
         do_shift(run, a, putter, head_size, health)

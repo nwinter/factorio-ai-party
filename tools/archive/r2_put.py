@@ -16,6 +16,8 @@ Bucket layout (report-d20-batch126.md):
   player/index.html                                                               the prototype page
 """
 import argparse
+import functools
+import json
 import subprocess
 import sys
 import time
@@ -48,11 +50,27 @@ def plan(root, prefix):
     return out
 
 
+@functools.lru_cache(maxsize=1)
+def wrangler(npx_cache=Path.home() / ".npm" / "_npx"):
+    """The command that runs wrangler: node on npx's cached copy (the newest there) when there is one, which saves the
+    npm wrapper's start (about 2.1 s of CPU a call against 0.7 s, batch211), else `npx wrangler`."""
+    best = None
+    for pkg in Path(npx_cache).glob("*/node_modules/wrangler/package.json"):
+        try:
+            v = tuple(int(x) for x in json.loads(pkg.read_text())["version"].split("."))
+        except (OSError, ValueError, KeyError):
+            continue
+        js = pkg.parent / "bin" / "wrangler.js"
+        if js.exists() and (best is None or v > best[0]):
+            best = (v, js)
+    return ["node", str(best[1])] if best else ["npx", "wrangler"]
+
+
 def put(bucket, item, tries=3, nice=0):
     """One object; the API answers an occasional 502, so up to `tries` attempts. `nice` lowers wrangler's priority."""
     p, key, ctype, cache = item
-    cmd = (["nice", "-n", str(nice)] if nice else []) + [
-        "npx", "wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(p), "--remote",
+    cmd = (["nice", "-n", str(nice)] if nice else []) + wrangler() + [
+        "r2", "object", "put", f"{bucket}/{key}", "--file", str(p), "--remote",
         "--content-type", ctype, "--cache-control", cache]
     for k in range(tries):
         r = subprocess.run(cmd, cwd=REPO / "site" / "worker", capture_output=True, text=True)
