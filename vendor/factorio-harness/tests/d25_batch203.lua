@@ -75,8 +75,7 @@ launch(main,pod(main,AM),4000)
 launch(cell,p2,4100)
 local rk=Z.rocket(main)
 eq(rk.launch_count,2); eq(rk.launch_count_since,3000); eq(rk.last_launch.tick,4000); eq(rk.last_launch.pod,units)
-has(rk.last,'; 2 launches recorded since tick 3000')
-eq(Z.rocket(cell).launch_count,1); has(Z.rocket(cell).last,'pod '..p2.unit_number)
+eq(Z.rocket(cell).launch_count,1); eq(Z.rocket(cell).last_launch.pod,p2.unit_number)
 -- a launch call and the game's event of the same launch count once
 game.tick=5000
 Z.record(cell,{called=true,by='sol'})

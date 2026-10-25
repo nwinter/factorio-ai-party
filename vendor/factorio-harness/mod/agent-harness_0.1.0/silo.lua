@@ -295,9 +295,7 @@ return function(api)
     end
     local last = records()[try(function() return e.unit_number end) or -1]
     -- (d18 batch39 B1) the launch's tick and ledger id, and the tick this was read: shipment names the same launch so
-    local last_text = (last and string.format('last launch %s ago (%stick %d%s)%s%s', ago(game.tick - last.tick), last.up and 'up #' .. last.up .. ', ' or '', last.tick,
-      last.pod and ', pod ' .. last.pod or '', last.to and ' to ' .. last.to or '',
-      last.count and string.format('; %d launch%s recorded since tick %d', last.count, last.count == 1 and '' or 'es', last.count_since) or '')
+    local last_text = (last and string.format('last launch %s ago (%stick %d)%s', ago(game.tick - last.tick), last.up and 'up #' .. last.up .. ', ' or '', last.tick, last.to and ' to ' .. last.to or '')
       or 'no launch seen')
     return {rocket_ready=ready, parts=not next_parts and parts .. '/' .. required or nil, next_parts=next_parts, built_parts=built,
       rocket=now .. '; ' .. last_text, rocket_now=now, last=last_text,
