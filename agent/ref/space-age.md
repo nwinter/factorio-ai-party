@@ -359,7 +359,7 @@
   `received` and `by_platform`. `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
   with room there, a pod landed with no pad, the platform paused away from the destination or not stopping there, a
   requester chest asking none of it. Stopped at the destination, paused or not (its hub sends pods down while paused),
-  `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
+  `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. A hub section's max is for its own quality (2.0.77: under asteroid-collector@rare 1..1 from fulgora the hub kept 6 legendary at Fulgora; two rare rows' maxes added up); a slot with a quality comparator other than = is named and not forecast. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
   watches in brief (id, item, quality rule, count, to, state, last confirmed stage and its age, received of count,
   blockers and risks counted, deadline); `{id}` gives one watch's whole row (every field here), `{full: true}` every
   whole row; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the

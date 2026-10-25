@@ -135,13 +135,17 @@ return function(api)
           end
         end
       end
+      -- (d25 batch198 QK2, Astra #2325) the stacks of the quality asked (normal when none), each within the radius
+      -- (a row: the stacks of a 32-tile cell there, at the nearest one); near's cells are by name, every quality
       local g
-      if near then g=near.ground(item) else g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item) end) end
+      if near then g=near.ground(item) else g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item,
+        {quality=quality,position=not opts.whole and centre or nil,radius=not opts.whole and (opts.radius or 128) or nil}) end) end
       for _,c in ipairs(g and g.cells or {}) do
         local d=api.distance(centre,c.position)
         if opts.whole or d<=(opts.radius or 128) then
           on_ground=(on_ground or 0)+c.count
-          places[#places+1]={name=string.format('%d stack%s on the ground',c.stacks,c.stacks==1 and '' or 's'),position=c.position,count=c.count,distance=d,ground=true}
+          places[#places+1]={name=string.format('%d stack%s on the ground',c.stacks,c.stacks==1 and '' or 's'),position=c.position,count=c.count,distance=d,ground=true,
+            quality=not near and quality or nil}
         end
       end
     end
@@ -292,7 +296,7 @@ return function(api)
     for i=1,math.min(limit,#s.places-skip) do
       local x=s.places[skip+i]
       local reserved=x.entity and api.reserved and api.reserved(x.entity,a.item) or 0
-      places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),kind=M.holder_kind(x.entity),
+      places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),kind=M.holder_kind(x.entity),quality=x.ground and x.quality or nil,
         reserved=reserved>0 and reserved or nil,
         first_spoils_in=x.spoil_tick and api.spoil.secs(x.spoil_tick-game.tick) or nil,spoiled_percent=x.spoil_tick and math.floor(x.spoil_percent*100+0.5) or nil,
         within_5_min=x.soon and x.soon>0 and x.soon or nil,within_2_min=x.soon2}
@@ -344,7 +348,7 @@ return function(api)
       for _,x in ipairs(s.places) do soon2=soon2+(x.soon2 or 0) end
     end
     local h=api.spoil and api.spoil.hatch(a.item)
-    return {item=a.item,total=s.total,on_ground=s.on_ground,on_ground_note=s.on_ground and 'stacks on the ground in chunks our force sees now: places of kind ground, not in total' or nil,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,holders_left_out=s.left_out,
+    return {item=a.item,total=s.total,on_ground=s.on_ground,on_ground_note=s.on_ground and string.format('stacks of %s on the ground %s, in chunks our force sees now: places of kind ground (a row: those in one 32-tile cell, at the nearest), not in total',a.quality and a.quality~='normal' and a.item..'@'..a.quality or a.item..' (normal quality)',whole and 'aboard' or 'within the radius') or nil,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,holders_left_out=s.left_out,
       spoils_within_2_min=soon2,
       page=pages>1 and page or nil,pages=pages>1 and pages or nil,
       covered=whole and string.format('every machine output and chest of ours on %s',surface.name)

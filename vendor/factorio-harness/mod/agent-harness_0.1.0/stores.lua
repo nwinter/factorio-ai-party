@@ -47,13 +47,23 @@ return function(api)
   -- (d17 batch14 B2, Sol: a cargo pad's overflow spilled landed hardware and where_is and stock read 0) an item's stacks
   -- lying on the ground, as a player sees them: in chunks our force sees now. {count, stacks, cells [{position (the
   -- cell's first stack), count, stacks}] by 32-tile cell, most first}; MAX_GROUND stacks read.
+  -- (d25 batch198 QK2, Astra #2325: stock {item: iron-plate, quality: legendary, position, radius: 3} counted 3 stacks
+  -- of normal iron, every stack of the 32-tile cell) opts: quality (only stacks of that quality: each stack on the ground
+  -- is one item of one quality), position and radius (only the stacks within it, found there). A cell's position is its
+  -- nearest stack's then.
   M.MAX_GROUND = 20000
-  function M.on_ground(force, surface, item)
-    local list = surface.find_entities_filtered{type='item-entity', limit=M.MAX_GROUND}
+  function M.on_ground(force, surface, item, opts)
+    opts = opts or {}
+    local f = {type='item-entity', limit=M.MAX_GROUND}
+    if opts.position then f.position, f.radius = opts.position, opts.radius end
+    local list = surface.find_entities_filtered(f)
     local seen, cells, order, count, stacks = {}, {}, {}, 0, 0
+    local function d2(q) return opts.position and (q.x - opts.position.x) ^ 2 + (q.y - opts.position.y) ^ 2 or 0 end
     for _, e in ipairs(list) do
       local ok, st = pcall(function() return e.stack end)
-      if ok and st and st.valid_for_read and st.name == item then
+      local okq, sq = true, nil
+      if opts.quality and ok and st and st.valid_for_read and st.name == item then okq, sq = pcall(function() return st.quality.name end) end
+      if ok and st and st.valid_for_read and st.name == item and (not opts.quality or okq and (sq or 'normal') == opts.quality) then
         local q = e.position
         local cx, cy = math.floor(q.x / 32), math.floor(q.y / 32)
         local k = cx .. ',' .. cy
@@ -64,7 +74,8 @@ return function(api)
         if seen[k] then
           count, stacks = count + st.count, stacks + 1
           local c = cells[k]
-          if not c then c = {position={x=q.x, y=q.y}, count=0, stacks=0}; cells[k] = c; order[#order+1] = c end
+          if not c then c = {position={x=q.x, y=q.y}, count=0, stacks=0}; cells[k] = c; order[#order+1] = c
+          elseif d2(q) < d2(c.position) then c.position = {x=q.x, y=q.y} end
           c.count, c.stacks = c.count + st.count, c.stacks + 1
         end
       end
