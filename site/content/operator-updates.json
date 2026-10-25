@@ -89,6 +89,7 @@
   {"t": "2026-10-24 17:43", "kind": "deploy", "text": "Harness runtime deployed (5e2bec88).", "affected": "harness runtime"},
   {"t": "2026-10-24 17:49", "kind": "shift", "text": "Shift 71 change began.", "affected": "stream and agents", "recovered": "2026-10-24 17:57"},
   {"t": "2026-10-24 19:50", "kind": "deploy", "text": "Harness runtime deployed (f715ada7).", "affected": "harness runtime"},
-  {"t": "2026-10-24 21:14", "kind": "deploy", "text": "Harness runtime deployed (7a8d789f).", "affected": "harness runtime"}
+  {"t": "2026-10-24 21:14", "kind": "deploy", "text": "Harness runtime deployed (7a8d789f).", "affected": "harness runtime"},
+  {"t": "2026-10-24 18:03", "kind": "outage", "text": "The live page's state stopped updating 18:03-18:24 (and for under 15 s at 18:26 and 18:32): a new test stopped the site pusher. Fixed by batch185.", "affected": "site live page", "recovered": "2026-10-24 18:24"}
  ]
 }
