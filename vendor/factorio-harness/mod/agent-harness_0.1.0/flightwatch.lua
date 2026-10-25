@@ -56,6 +56,29 @@ return function(api)
     s.flightwatch = s.flightwatch or {seq=0, list={}, events={}, eseq=0}
     return s.flightwatch
   end
+  -- (d25 batch205 cp3, Astra at tick 62171636: a read by platform returned #1265 while #1270, read by id 1 h 7 min
+  -- before, had been dropped 1 h after that read) the tick a watch first began: began (kept by begin), else for one
+  -- begun before began was kept its first window (mixed parts' from_tick, a from-now watch's set tick), else its
+  -- window's start; nil while armed
+  function M.began(w)
+    if w.began then return w.began end
+    if not w.start then return nil end
+    local parts = w.mixed and w.mixed.parts
+    local first = parts and parts[1] and parts[1].from_tick
+    if w.from == 'now' then return math.min(w.set or w.start, first or w.start) end
+    return math.min(w.start, first or w.start)
+  end
+  -- A watch taken off the list: its platform's last DROPPED_KEEP drops kept (id, set, began, ended, why, tick), so a
+  -- read by platform can name a newer watch no longer kept.
+  M.DROPPED_KEEP = 4
+  local function dropped(st, w, why, tick)
+    st.dropped = st.dropped or {}
+    local key = w.platform or tostring(w.index)
+    local l = st.dropped[key] or {}
+    st.dropped[key] = l
+    l[#l+1] = {id=w.id, index=w.index, force=w.force, set=w.set, began=M.began(w), ended=w.ended, why=why, tick=tick or game.tick}
+    while #l > M.DROPPED_KEEP do table.remove(l, 1) end
+  end
   local function push(w, text)
     local st = store()
     st.eseq = st.eseq + 1
@@ -286,6 +309,7 @@ return function(api)
     end
   end
   local function begin(w, pl, tick)
+    w.began = w.began or tick  -- (d25 batch205 cp3) the first begin: a split (M.rebase) moves w.start, never this
     w.state, w.start, w.until_tick = 'watching', tick, tick + w.minutes * 3600
     w.leg = where(pl)
     w.at_start, w.flew = w.leg, flying(pl)
@@ -556,7 +580,11 @@ return function(api)
     if not st then return end
     for i = #st.list, 1, -1 do
       local w = st.list[i]
-      if w.state == 'done' and (w.read_tick and tick - w.read_tick > M.KEEP_READ or not w.read_tick and w.replaced_tick and tick - w.replaced_tick > M.WAIT) then table.remove(st.list, i) end
+      if w.state == 'done' and (w.read_tick and tick - w.read_tick > M.KEEP_READ or not w.read_tick and w.replaced_tick and tick - w.replaced_tick > M.WAIT) then
+        dropped(st, w, w.read_tick and string.format('%s after its first read at tick %d', secs(M.KEEP_READ), w.read_tick)
+          or string.format('%s after it was replaced at tick %d, not read', secs(M.WAIT), w.replaced_tick), tick)
+        table.remove(st.list, i)
+      end
     end
     if not st.due then M.reindex() end
     local ph = tick % M.EVERY
@@ -733,26 +761,42 @@ return function(api)
     assert(a.id == nil and a.clear == nil and a.from == nil and a.minutes == nil and a.replace == nil,
       'read: true takes platform only (id reads one watch by number; from, minutes and replace start one)')
   end
+  -- The newest by the tick it first began (M.began; an armed one by its set tick), ties by id; older: the rest kept on
+  -- it, newest first; dropped_newer: watches dropped from the list that began after it (or set after it, while armed).
+  local function order(w) return M.began(w) or w.set or 0 end
   local function latest(p, a)
     local st = store()
     local ok, pl = pcall(api.platform, p, a.platform)
     local index = ok and pl and pl.index
-    local found, older = nil, {}
+    local mine = {}
     for _, w in ipairs(st.list) do
-      if w.force == p.force.name and ((index and w.index == index) or w.platform == a.platform) then
-        if not found or w.id > found.id then found = w end
-        older[#older+1] = w.id
+      if w.force == p.force.name and ((index and w.index == index) or w.platform == a.platform) then mine[#mine+1] = w end
+    end
+    table.sort(mine, function(x, y) local ox, oy = order(x), order(y); if ox ~= oy then return ox > oy end return x.id > y.id end)
+    local found = mine[1]
+    local gone = {}
+    for _, d in ipairs((st.dropped or {})[a.platform] or {}) do
+      if d.force == p.force.name and (not found or (d.began or d.set or 0) > order(found) or ((d.began or d.set or 0) == order(found) and d.id > found.id)) then
+        gone[#gone+1] = {id=d.id, set_tick=d.set, began_tick=d.began, end_tick=d.ended, dropped_tick=d.tick, why=d.why,
+          line=string.format('#%d (began %s, ended %s) is no longer kept: dropped at tick %d, %s', d.id, d.began and 'at tick ' .. d.began or 'never',
+            d.ended and 'at tick ' .. d.ended or 'never', d.tick, d.why)}
       end
     end
-    for i = #older, 1, -1 do if found and older[i] == found.id then table.remove(older, i) end end
+    table.sort(gone, function(x, y) return x.id > y.id end)
+    local gone_text = #gone > 0 and '; newer on ' .. a.platform .. ' and no longer kept: ' .. (function() local t = {} for i, g in ipairs(gone) do t[i] = g.line end return table.concat(t, '; ') end)() or ''
     if not found then
-      return {not_found=true, platform=a.platform, line=string.format('no flight watch on %s is kept (flight_watch {} lists the force\'s)', a.platform)}
+      return {not_found=true, platform=a.platform, dropped_newer=#gone > 0 and gone or nil,
+        line=string.format('no flight watch on %s is kept (flight_watch {} lists the force\'s)', a.platform) .. gone_text}
     end
     if found.state == 'done' and not found.read_tick then found.read_tick = game.tick end
-    table.sort(older)
+    local older = {}
+    for i = 2, #mine do older[#older+1] = mine[i].id end
     local r = M.row(found, true)
+    r.began_tick = M.began(found)
     r.note = M.NOTE
-    return {watch=r, older=#older > 0 and older or nil, line=r.line .. (#older > 0 and string.format('; older kept on %s: #%s', a.platform, table.concat(older, ', #')) or '')}
+    return {watch=r, older=#older > 0 and older or nil, dropped_newer=#gone > 0 and gone or nil, latest_by='began_tick',
+      line=r.line .. string.format('; the newest kept on %s by the tick it began (%s)', a.platform, r.began_tick and 'tick ' .. r.began_tick or 'armed, set at tick ' .. found.set)
+        .. (#older > 0 and '; older kept on ' .. a.platform .. ': #' .. table.concat(older, ', #') or '') .. gone_text}
   end
   function M.call(p, a)
     local st = store()
@@ -763,7 +807,7 @@ return function(api)
       assert(type(a.id) == 'number', 'id: a watch\'s number (flight_watch {} lists them)')
       for i, w in ipairs(st.list) do
         if w.id == a.id and w.force == p.force.name then
-          if a.clear == true then table.remove(st.list, i); M.reindex(); return {cleared=a.id, line='flight watch #' .. a.id .. ' cleared'} end
+          if a.clear == true then dropped(st, w, 'cleared by ' .. tostring(who)); table.remove(st.list, i); M.reindex(); return {cleared=a.id, line='flight watch #' .. a.id .. ' cleared'} end
           if w.state == 'done' and not w.read_tick then w.read_tick = game.tick end
           local r = M.row(w, true)
           r.note = M.NOTE
@@ -803,7 +847,7 @@ return function(api)
       replaced = rep.id
       -- (BY1) kept readable by id unless armed (nothing read yet)
       if rep.state == 'armed' then
-        for i, w in ipairs(st.list) do if w == rep then table.remove(st.list, i); break end end
+        for i, w in ipairs(st.list) do if w == rep then dropped(st, w, 'replaced while armed by #' .. (st.seq + 1)); table.remove(st.list, i); break end end
         replaced_line = string.format('flight watch #%d on %s was waiting for its next departure: dropped, nothing read yet', rep.id, rep.platform)
       else
         if rep.state ~= 'done' then finish(rep, platform_of(rep), game.tick, 'replaced by #' .. (st.seq + 1)) end
@@ -820,7 +864,7 @@ return function(api)
     table.sort(read, function(x, y) if x[2] ~= y[2] then return x[2] < y[2] end return x[1] < y[1] end)
     local drop = {}
     for k = 1, #read - M.KEEP_DONE + 1 do drop[read[k][1]] = true end
-    for i = #st.list, 1, -1 do if drop[i] then table.remove(st.list, i) end end
+    for i = #st.list, 1, -1 do if drop[i] then dropped(st, st.list[i], 'past ' .. M.KEEP_DONE .. ' read or replaced watches kept a force'); table.remove(st.list, i) end end
     st.seq = st.seq + 1
     local w = {id=st.seq, platform=pl.name, index=pl.index, force=p.force.name, setter=who, set=game.tick, from=from, minutes=minutes, state='armed', pl=pl}
     w.phase = pick_phase(st)
@@ -873,7 +917,7 @@ return function(api)
   M.schema = {flight_watch = {platform='a platform of ours: start a watch on it', from='optional "now" (default) or "departure": begin at its next departure',
     minutes='optional 1..480 (default 120): the longest it watches; it ends sooner at the platform\'s next arrival after it flew', replace='optional true: replace this platform\'s watch running or not read yet; the replaced one stays readable by id (a running one ends there, replaced by #N; an armed one is dropped) and no longer counts',
     id='alone: read that watch in full (a done one is then kept 1 h and no longer counts against the limit); with clear: true, drop it', clear='true, with id: drop it',
-    read='true, with platform alone (in a platform lane its platform): read that platform\'s latest kept watch in full as id does (watch, older: the ids of older ones kept on it, line), or not_found and line when none is kept; never starts or replaces one; a queue step and dry_run check it',
+    read='true, with platform alone (in a platform lane its platform): read that platform\'s newest kept watch by the tick it first began (watch.began_tick: a from-now watch\'s call, a from-departure one\'s departure, not moved by a mixed split; an armed one by its set tick) in full as id does (watch, older: the ids of older ones kept on it, newest first; dropped_newer: newer ones no longer kept [{id, set_tick, began_tick, end_tick, dropped_tick, why, line}]; line), or not_found and line when none is kept; never starts or replaces one; a queue step and dry_run check it',
     returns='start: watch, line, note, and on a replace replaced_watch (its row: id, state, ended_by, end_tick, replaced_by, line) and replaced_line; {}: watches (the force\'s, each with counts: whether it counts against the limit), lines, limit, counted, counting (the ids that count), limit_line; id: watch {id, platform, setter, state (armed: waiting for the departure, watching, done), from, minutes, set_tick, start_tick, end_tick, until_tick, ended_by, replaced_by, replaced_tick, leg, samples, seconds, '
       .. 'turrets (up to 24: those that read empty, the longest run first, then the lowest on ammo; turrets_more and turrets_more_line count the rest) [{unit_number, name, position, ammo, least, least_tick, at_start, now, empty_samples, empty_ticks, empty_runs, longest_empty_ticks, longest_from_tick, empty_now, gone_tick, added_tick, feed_start, feed_empty (the first trace begun after it first read empty), feed_end: {kind (maker, hub, chest, preload, none), gated, reaches, stop, tick}}], '
       .. 'sample_ticks, accumulators {count, capped, least_fraction, least_tick, at_start, now}, railguns (ammo turrets with an electric buffer, up to 64, the longest run below a shot\'s energy first) [{unit_number, name, position, shot_energy, least_energy, least_tick, energy_at_start, energy_now, below_samples, below_ticks, below_runs, longest_below_ticks, longest_below_from_tick, below_now, hits, shots_hit, damage, kills, gone_tick}], railgun_lines, '
