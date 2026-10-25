@@ -18095,6 +18095,10 @@ function M.dispatch_inner(request)
       passive_failed=game.tick
       error(string.format('reader %s: %s acts as the agent (it can drive the character); a reader request takes reads only',request.reader,tostring(request.action)),0)
     end
+    -- (d24 batch190 QAF1, operator 19:56: reminders {id: 151} as reader "operator" without peek took 28.2 ms, a peek
+    -- 0.84 ms) a reader's read is a peek: the agent's team block (its alerts, news and cursors), clock and chat stay its own
+    if type(request.args)~='table' then request.args={} end
+    request.args.peek=true
   end
   -- Items this request moves by hand are a direct call's (hauling.lua).
   if type(request.player)=='number' and request.reader==nil then pcall(M.hauling.begin,request.player,'direct') end

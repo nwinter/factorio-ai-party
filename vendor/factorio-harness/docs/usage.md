@@ -14283,6 +14283,24 @@ Fixed besides gates:
 
 ## d24 batch187
 
+## d24 batch190 (QAF1, operator 19:56)
+
+- `reminders {id: 151}` as Sol with `reader: "operator"` and no peek took 28.2 ms on world n, the same read as a peek
+  0.84 ms. A reader request without peek ran the agent's whole reply wrapper: its team block, its call clock, its
+  chat trailer. It reset Sol's call clock and took Sol's tells, alerts and news, so Sol never saw them.
+- Where the time went (the private copy, world n's 19:41 save, runtime 6c5616aa deployed, then the operator's call):
+  24.2 ms in all. The team block's alert lines took 18.9 ms: platalerts.lines 15.1 ms (0.5 ms on the next call),
+  captive_lines 1.3 ms. The reminders handler took 1.4 ms (0.1 ms on the next call).
+- Changed (runtime): a request with `reader` is a peek (`args.peek` set true). The agent's team block, clock and chat
+  stay its own. The stream, the analyst, read_cost and fh_broker's probe already sent peek; the stream's
+  board_events read did not.
+- After, on the copy (same save and order): `reminders {id: 151}` as reader, no peek, 3.3 ms on the first call after
+  the deploy, then 1.0 ms. The list `reminders {}`: 6.4-7.4 ms, 64 KB. Of that, 4.7-5.0 ms is the encode of the rows'
+  178 numbers (about 27 µs a number on the copy). Sol's own call next still got its alerts and the deploy's note.
+- World n (runtime 6c5616aa, reads as peek, the same path a reader takes now): `reminders {id: 151}` 0.60 and
+  0.54 ms (3.5 KB); `reminders {}` 2.1 and 3.0 ms (63 KB); `reminders {all: true}` (the stream's 15 s read) 14.3 ms
+  (145 KB).
+- Test: tests/d24_batch190.lua (fails on main: a reader's read gave Astra's team block).
 ## d24 batch189 (viewer Aurora site:4814: retreat_guard for a spidertron)
 
 - QAE1: a spidertron sent by `vehicle {go_to}` is watched by a guard while it has a route: the go_to's own `retreat
