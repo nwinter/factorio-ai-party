@@ -14095,3 +14095,40 @@ Fixed besides gates:
   number cost 8 us each) took the list phase of 1024 chunks from 23-30 ms to 6-8 ms on the copy.
 - Test: tests/d24_batch174.lua (fails on main: no sight.lua). Docs: agent/ref/movement-combat.md and the index (the
   waits-queues label without "standing" pays for `sight`: the codex core stays 21995 bytes).
+
+## d24 batch183
+
+- QZ1 (Sol #2055: a forecast for a hull not built yet; later: phase-bounded, a progress interval per 600 s).
+- What the forecast assumed (now in the reply as `basis`): legs from the route or schedule at the speed read; asteroids
+  as each connection's spawn chance averaged over the leg, a relative weight only; use = the moving ammunition rate of
+  the legs flown in the last 2 hours x this leg's weighted shots over theirs. The hull's width and the speed entered
+  only through that measured rate. pessimistic.speed keeps the use a minute, so a slower leg uses more in all.
+- The spawn rule, read on a copy of world n (2.0.77), with scripted test platforms held on a connection at a set
+  speed and distance:
+  - asteroids spawn on a line 72 tiles ahead of the platform's box (y = top - 72), across x from its left - 48 to its
+    right + 48: utility constants asteroid_spawning_offset {{-48,-72},{48,48}} (Sol's 96x120), readable at runtime
+    (prototypes.utility_constants). Height made no difference (10 against 110);
+  - their number per km flown (15 runs: widths 10..410, speeds 0.25..4 km a tick, nauvis-vulcanus, fulgora-aquilo,
+    gleba-aquilo, aquilo-solar-system-edge, 41..2054 asteroids a run): 0.0100 x (width + 96 + 20) x the summed spawn
+    chance, each kind's linear between the connection's points; the runs within about 6%. The kind mix follows each
+    kind's chance. Per tick it scales with speed (speed 1 to 4: x4.06); stopped on a connection, 1 asteroid in 120 s;
+  - on a schedule more spawn: in 120 s of their own flights Spindle 1.27, Kestrel II 1.57, Anvil 1.64, Asterion 2.53
+    times the rule. Asterion held at one place and speed met 1.8 times it with its schedule and 1.03 times with the
+    schedule removed; a test platform given a schedule 1.19. What sets the factor was not found; the reply gives the
+    range (on_path).
+- platform_endurance changes:
+  - forecast: true adds `basis` and `forecast_model` (per leg: part, km, minutes, asteroids by kind, total, on_path
+    {low, high}, per_600s, shots per ammunition held in the turrets aboard, as the forecast counts shots: fragments,
+    targets);
+  - `design {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same model for that box and speed, read only
+    (nothing built or imported), on the platform's route with its turrets' settings and our bonuses. mass is said and
+    not used. It is a light read: no rates, stock or production;
+  - `progress {from, to}` (with forecast or design) cuts each leg to that part of its connection, the way it is flown;
+    the forecast's own lines and use count that part too.
+- Check on the copy (paused, so both reads saw the same tick): design {width 102, speed = the speed read} on Asterion
+  gave forecast_model's part, km, minutes, asteroids, per_600s and shots on all 3 legs, with and without progress.
+- Cost on the copy (profile, one call a game second; the team block apart):
+  - design: 4.5-7.3 ms (the dispatch 6-9 ms; 114 turrets read on Asterion, 1.6 ms);
+  - forecast: Asterion 30-37 ms, Kestrel II 17-34, Swiftlet 11 (main: 30-50, 20, 12).
+  - The space connections are now looked up once; a design read looked them up several times a leg.
+- Test: tests/d24_batch183.lua (fails on main: design is ignored).
