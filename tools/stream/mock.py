@@ -651,6 +651,10 @@ class MockSource:
                 "bounds": {"left": -49.5, "top": -46, "right": 6, "bottom": 229.5},
                 "hull": {"left": -51, "top": -50, "right": 71, "bottom": 230},
                 "bow": {"left": -51, "top": -50, "right": 51, "bottom": -26},
+                # (d24 batch188) guns whose reach is world n's Asterion's at 19:30 (114 turrets; the railguns, range 40,
+                # set the box: x -88.5..88.5, top y -82.5), as live.py's platform views give them
+                "guns": [{"x": -48.5, "y": -42.5, "range": 40}, {"x": 48.5, "y": -42.5, "range": 40},
+                         {"x": -19.5, "y": -35.5, "range": 36}, {"x": 19.5, "y": -35.5, "range": 36}],
                 "where": {"state": "on_the_path", "at": f"solar-system-edge->aquilo {pct}%", "speed": 2.0}}
         sp = obs.setdefault("space", {"rockets": 0, "planets": ["nauvis"], "platforms": []})
         sp.setdefault("platforms", []).append({"name": "Asterion", "at": f"solar-system-edge->aquilo {pct}%",
