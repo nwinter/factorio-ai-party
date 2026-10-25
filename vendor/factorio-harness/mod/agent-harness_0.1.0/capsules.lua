@@ -8,6 +8,8 @@
 -- every agent throws this one way.
 return function(api)
   local M = {handlers={}}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.CLIFF_POSITIONS = 16
   local SUPPORTED = {throw=true, ['use-on-self']=true}
   M.schema = {
     use_item = {surface='your surface only (named, it must be yours): the artillery remote is not used on another surface here (see its refusal)', item='a capsule you hold (grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives), or artillery-targeting-remote, which needs none held once artillery is researched (the shortcut gives it; not used up: an artillery flare at position, any charted tile, and our artillery with shells that reaches it fires there; the reply lists those pieces), ...',
@@ -155,7 +157,7 @@ return function(api)
     local list
     if a.positions ~= nil then
       assert(a.position == nil, 'position or positions, not both')
-      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= 16, 'positions requires 1..16 {x,y}')
+      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= M.CLIFF_POSITIONS, 'positions requires 1..' .. M.CLIFF_POSITIONS .. ' {x,y}')
       list = {}
       for _, raw in ipairs(a.positions) do list[#list+1] = api.position(raw) end
     else

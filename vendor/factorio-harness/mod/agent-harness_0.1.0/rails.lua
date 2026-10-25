@@ -8,6 +8,8 @@
 local heap=require('heap')
 return function(api)
   local M={}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.VIA=16
   local NAMES={[0]='north','northnortheast','northeast','eastnortheast','east','eastsoutheast','southeast','southsoutheast',
     'south','southsouthwest','southwest','westsouthwest','west','westnorthwest','northwest','northnorthwest'}
   local LETTERS={[0]='N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'}
@@ -258,7 +260,7 @@ return function(api)
     end
     local points={api.position(a.from)}
     if a.via~=nil then
-      assert(type(a.via)=='table' and #a.via>=1 and #a.via<=16,'via is 1..16 {x,y} points passed in order')
+      assert(type(a.via)=='table' and #a.via>=1 and #a.via<=M.VIA,'via is 1..'..M.VIA..' {x,y} points passed in order')
       for _,v in ipairs(a.via) do points[#points+1]=api.position(v) end
     end
     points[#points+1]=api.position(a.to)

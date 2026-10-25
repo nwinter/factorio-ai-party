@@ -7,7 +7,10 @@
 -- By default only one's own; owner: "any" or an agent's name widens it, and the reply lists them by owner.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.NAMES = 32
   local MAX_FIND, MAX_REMOVE, MAX_ROWS, MAX_SIDE, MAX_POSITIONS = 4096, 256, 64, 256, 64
+  M.MAX_POSITIONS = MAX_POSITIONS  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function area_of(v)
@@ -21,8 +24,8 @@ return function(api)
   local function names_of(v)
     if v == nil then return nil end
     local list = type(v) == 'string' and {v} or v
-    assert(type(list) == 'table' and #list >= 1 and #list <= 32, 'names: 1..32 entity or tile names (or one)')
-    for _, n in ipairs(list) do assert(type(n) == 'string' and n ~= '', 'names: 1..32 entity or tile names (or one)') end
+    assert(type(list) == 'table' and #list >= 1 and #list <= M.NAMES, 'names: 1..' .. M.NAMES .. ' entity or tile names (or one)')
+    for _, n in ipairs(list) do assert(type(n) == 'string' and n ~= '', 'names: 1..' .. M.NAMES .. ' entity or tile names (or one)') end
     return list
   end
   local function by_text(t)

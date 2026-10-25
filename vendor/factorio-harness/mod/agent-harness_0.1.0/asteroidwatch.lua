@@ -28,6 +28,8 @@
 -- - trajectory samples of the first TRACK asteroids (up to POINTS points each, one a second).
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.NAME_LEN = 100
   M.SAMPLE, M.AMMO, M.AMMO_MAX, M.VIEW_MARGIN = 15, 15, 60, 32
   M.MATCH_TICKS, M.MATCH_R, M.MATCH_DRIFT = 30, 3, 0.1
   -- the projection's lookups (a cell's foundation count, a tile) at most WALK_STEPS an asteroid and WALK_BUDGET a sample;
@@ -806,7 +808,7 @@ return function(api)
       for _, n in ipairs(known) do set[n] = true end
       pick.names, pick.patterns = {}, {}
       for _, n in ipairs(v) do
-        assert(type(n) == 'string' and #n >= 1 and #n <= 100, 'asteroid_names: each a name or a pattern, 1..100 characters')
+        assert(type(n) == 'string' and #n >= 1 and #n <= M.NAME_LEN, 'asteroid_names: each a name or a pattern, 1..' .. M.NAME_LEN .. ' characters')
         if n:find('*', 1, true) then
           local pat, any = name_pattern(n), false
           for _, k in ipairs(known) do if k:find(pat) then any = true end end

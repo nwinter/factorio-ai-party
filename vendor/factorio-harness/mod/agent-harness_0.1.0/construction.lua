@@ -2,9 +2,11 @@
 -- State is plain save-persistent data; no coroutine, host polling, or teleport.
 return function(api)
   local M={}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POINTS=64
   local names={[0]='north',[4]='east',[8]='south',[12]='west'}
   function M.plan(p,a)
-    assert(type(a.points)=='table' and #a.points>=2 and #a.points<=64,'points requires 2..64 tile-centred waypoints')
+    assert(type(a.points)=='table' and #a.points>=2 and #a.points<=M.POINTS,'points requires 2..'..M.POINTS..' tile-centred waypoints')
     local item=a.item or 'transport-belt'
     local prototype=prototypes.item[item]
     assert(prototype and prototype.place_result and prototype.place_result.type=='transport-belt','build_path requires a transport belt item')

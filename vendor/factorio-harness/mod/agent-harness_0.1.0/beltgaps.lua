@@ -3,6 +3,8 @@
 -- A hidden pending refresh is discarded without reading its entities.
 return function(api)
   local M={}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.VIA=16
   local BELT={['transport-belt']=true,['underground-belt']=true,splitter=true,['linked-belt']=true}
   local TYPES={'transport-belt','underground-belt','splitter','linked-belt','entity-ghost'}
   local key=require('numtext').pair  -- x..','..y, fast (numtext; d21 batch73 AI)
@@ -255,7 +257,7 @@ return function(api)
   end
   local function line(a,f,s,prepare)
     local points={api.position(a.from)}
-    if a.via then assert(type(a.via)=='table' and #a.via<=16,'via takes at most 16 positions');for _,p in ipairs(a.via) do points[#points+1]=api.position(p) end end
+    if a.via then assert(type(a.via)=='table' and #a.via<=M.VIA,'via takes at most '..M.VIA..' positions');for _,p in ipairs(a.via) do points[#points+1]=api.position(p) end end
     points[#points+1]=api.position(a.to)
     local tiles,seen,under,followed={},{},{},nil
     local function add(t) local k=key(t.x,t.y); if not seen[k] then tiles[#tiles+1]=t;seen[k]=true;assert(#tiles<=512,'belt line exceeds 512 tiles') end end

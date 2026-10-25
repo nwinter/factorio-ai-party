@@ -7,6 +7,8 @@ local snapfail = require('snapfail')
 local groundstack = require('groundstack')
 return function(api)
   local M = {handlers={}}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.ITEMS = 16
   local WATCH_EVERY = 1800      -- ticks between watch passes (shared by every agent)
   local PILE_MIN = 100          -- stacks in a 64-tile cell that make a pile
   local PILE_CELL = 64
@@ -515,7 +517,7 @@ return function(api)
     api.assert_visible(p, {x=(box.left_top.x + box.right_bottom.x) / 2, y=(box.left_top.y + box.right_bottom.y) / 2}, 'pickup area')
     local items
     if a.items ~= nil then
-      assert(type(a.items) == 'table' and #a.items >= 1 and #a.items <= 16, 'items requires 1..16 item names')
+      assert(type(a.items) == 'table' and #a.items >= 1 and #a.items <= M.ITEMS, 'items requires 1..' .. M.ITEMS .. ' item names')
       items = {}
       for _, name in ipairs(a.items) do assert(type(name) == 'string', 'items requires item names'); items[name] = true end
     end

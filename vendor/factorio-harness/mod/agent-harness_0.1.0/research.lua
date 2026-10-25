@@ -7,6 +7,8 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.REMOVE_MAX = 64
   local MAX_DONE, FIRST_LOOK, MAX_LINES, MAX_UNLOCKS = 50, 36000, 4, 8
   local SAMPLE_TICKS, MAX_SAMPLES, MAX_BY = 600, 31, 200
   local snapshot  -- the researched set per force (shift section below)
@@ -563,7 +565,7 @@ return function(api)
   -- on production packs nobody made). Progress stays with the technology.
   function M.without(force, list, drop)
     local names = type(drop) == 'table' and drop or {drop}
-    assert(#names >= 1 and #names <= 64, 'remove takes a technology name or an array of 1..64 names')
+    assert(#names >= 1 and #names <= M.REMOVE_MAX, 'remove takes a technology name or an array of 1..' .. M.REMOVE_MAX .. ' names')
     local gone = {}
     for _, n in ipairs(names) do
       assert(type(n) == 'string', 'remove takes technology names')

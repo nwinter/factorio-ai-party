@@ -8,6 +8,8 @@
 -- Tiles are named by the game's tile coordinates: the tile's top-left corner, as grid and F4 show them.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POSITIONS = 64
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(x, y) return string.format('(%d,%d)', x, y) end
   -- What never stands in the way of mining a tile: what moves or flies, marks, remnants and items on the ground (a
@@ -98,7 +100,7 @@ return function(api)
       return {x0=x0, y0=y0, x1=x1, y1=y1}
     end
     local raw = a.positions or (a.position ~= nil and {a.position}) or nil
-    assert(type(raw) == 'table' and #raw >= 1 and #raw <= 64, 'tiles: true takes position, positions (1..64) or area')
+    assert(type(raw) == 'table' and #raw >= 1 and #raw <= M.POSITIONS, 'tiles: true takes position, positions (1..' .. M.POSITIONS .. ') or area')
     for _, q in ipairs(raw) do
       local pos = api.position(q)
       list[#list+1] = {x=math.floor(pos.x), y=math.floor(pos.y)}

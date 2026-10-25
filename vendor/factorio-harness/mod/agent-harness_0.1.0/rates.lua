@@ -10,6 +10,8 @@
 -- belt tier capacity against the area's outside needs.
 return function(api)
   local M={}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POSITIONS=64
   local MAX_INT53=2^53
 
   local function new_set(force,surface)
@@ -229,7 +231,7 @@ return function(api)
       assert(rb.x>lt.x and rb.y>lt.y and rb.x-lt.x<=192 and rb.y-lt.y<=192,'area must be nonempty and at most 192x192')
       found=p.surface.find_entities_filtered{area={left_top=lt,right_bottom=rb},force=p.force,type=types}
     else
-      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'area or positions (1..64) is required')
+      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS,'area or positions (1..'..M.POSITIONS..') is required')
       local seen={}
       for _,pos in ipairs(a.positions) do
         local e=p.surface.find_entities_filtered{position=api.position(pos),radius=0.5,force=p.force,type=types,limit=1}[1]

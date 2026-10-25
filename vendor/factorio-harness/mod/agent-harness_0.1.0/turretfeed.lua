@@ -8,6 +8,7 @@
 return function(api)
   local M = {}
   local MAX = 32
+  M.MAX = MAX  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   local DIRS = {0, 4, 8, 12}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end

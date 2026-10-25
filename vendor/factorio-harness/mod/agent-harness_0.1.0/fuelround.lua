@@ -2,6 +2,8 @@
 -- then continue the same burner tour. All movement uses stock's enemy checks.
 return function(api)
   local M={}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POSITIONS=128
   local CHEST={container=true,['logistic-container']=true}
   local CHEST_TYPES={'container','logistic-container'}
   local BELT={['transport-belt']=true,['underground-belt']=true,splitter=true}
@@ -32,7 +34,7 @@ return function(api)
     local named
     if a.positions~=nil then
       assert(a.area==nil and a.radius==nil,'give positions, area or radius: one of them')
-      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=128,'positions takes 1..128 burners {x,y}')
+      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS,'positions takes 1..'..M.POSITIONS..' burners {x,y}')
       named={}
       for _,q in ipairs(a.positions) do
         local ok,e=pcall(api.entity,p,{position=api.position(q)})

@@ -4,6 +4,8 @@
 -- schedules and logistic requests name planets, not platforms, so a rename leaves them as they are.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.NAME_MAX = 64
   local MAX_LINES = 24
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- Whether a value holds the string old (equal, or a word of a longer text), at most 6 deep.
@@ -30,7 +32,7 @@ return function(api)
   M.names = names
   function M.rename(p, a)
     assert(type(a.platform) == 'string', 'platform is the platform\'s name now')
-    assert(type(a.name) == 'string' and #a.name >= 1 and #a.name <= 64, 'name must be 1..64 characters')
+    assert(type(a.name) == 'string' and #a.name >= 1 and #a.name <= M.NAME_MAX, 'name must be 1..' .. M.NAME_MAX .. ' characters')
     local pl = api.platform(p, a.platform)
     local old = pl.name
     assert(a.name ~= old, 'the platform is named ' .. old .. ' already')

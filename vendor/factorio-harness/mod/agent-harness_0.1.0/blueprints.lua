@@ -147,6 +147,8 @@ return function(api)
   -- the description (which stays as written). A list row, an export and a paste (dry run or real) of it say so and go
   -- on; nothing is refused for it.
   local MAX_REASON = 200
+  -- (d25 batch208 QU1) list lengths a call takes, also a queue step's check (H.limits, runtime.lua step_lengths)
+  local SAVE_POSITIONS, FILTER_NAMES = 256, 32
   local function retired_line(e)
     local r = e and e.retired
     if not r then return nil end
@@ -927,7 +929,7 @@ return function(api)
       end
       table.sort(names)
     else
-      assert(type(v)=='table' and #v>0 and #v<=32,'tiles requires true or 1..32 tile names')
+      assert(type(v)=='table' and #v>0 and #v<=FILTER_NAMES,'tiles requires true or 1..'..FILTER_NAMES..' tile names')
       for _,name in ipairs(v) do
         assert(type(name)=='string' and prototypes.tile[name],'unknown tile '..tostring(name))
         local t=prototypes.tile[name]
@@ -1097,7 +1099,7 @@ return function(api)
     local filters={}
     for _,key in ipairs({'entity_types','entity_names'}) do
       if a[key] then
-        assert(type(a[key])=='table' and #a[key]>0 and #a[key]<=32,key..' requires 1..32 names')
+        assert(type(a[key])=='table' and #a[key]>0 and #a[key]<=FILTER_NAMES,key..' requires 1..'..FILTER_NAMES..' names')
         filters[key]={}
         for _,value in ipairs(a[key]) do assert(type(value)=='string',key..' requires strings'); filters[key][value]=true end
       end
@@ -1550,7 +1552,7 @@ return function(api)
     end
     local box,keep
     if a.positions~=nil then
-      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=256,'positions requires 1..256 entries')
+      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=SAVE_POSITIONS,'positions requires 1..'..SAVE_POSITIONS..' entries')
       keep={}
       local l,t,r,b
       for _,pos in ipairs(a.positions) do
@@ -1858,5 +1860,8 @@ return function(api)
     end
     return {revision=lib.revision,tick=game.tick,entries=rows,strings_after=held and last or nil}
   end
+  -- (d25 batch208 QU1) the lengths above, for a queue step's check (runtime.lua step_lengths); not an action
+  H.limits={NAME=MAX_NAME,DESCRIPTION=MAX_DESCRIPTION,STRING=MAX_STRING,REASON=MAX_REASON,NOTE=MAX_NOTE,
+    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,entry_name=entry_name}
   return H
 end

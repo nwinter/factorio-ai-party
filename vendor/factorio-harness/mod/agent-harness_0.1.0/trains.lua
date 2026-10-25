@@ -6,6 +6,8 @@ return function(api)
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
   local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
   local M = {handlers={}}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.STATION_MAX, M.SCHEDULE_MAX = 100, 32
   local WAITS = {time=true, inactivity=true, full=true, empty=true, item_count=true, fluid_count=true, circuit=true,
     passenger_present=true, passenger_not_present=true, fuel_item_count_all=true, fuel_item_count_any=true,
     robots_inactive=true, specific_destination_full=true, specific_destination_not_full=true}
@@ -517,7 +519,7 @@ return function(api)
     if e.type == 'train-stop' then
       assert(a.schedule == nil and a.automatic == nil and a.current == nil and a.wagon_slots == nil, 'schedule, current, automatic and wagon_slots are for a train: give a locomotive or wagon position')
       if a.station ~= nil then
-        assert(type(a.station) == 'string' and #a.station >= 1 and #a.station <= 100, 'station is 1..100 characters')
+        assert(type(a.station) == 'string' and #a.station >= 1 and #a.station <= M.STATION_MAX, 'station is 1..' .. M.STATION_MAX .. ' characters')
         e.backer_name = a.station
       end
       if a.limit ~= nil then
@@ -531,7 +533,7 @@ return function(api)
     local train = e.train
     assert(train and train.valid, 'no train here')
     if a.schedule ~= nil then
-      assert(type(a.schedule) == 'table' and #a.schedule <= 32, 'schedule takes 0..32 {station, wait}')
+      assert(type(a.schedule) == 'table' and #a.schedule <= M.SCHEDULE_MAX, 'schedule takes 0..' .. M.SCHEDULE_MAX .. ' {station, wait}')
       local records = {}
       for i, s in ipairs(a.schedule) do
         assert(type(s) == 'table' and type(s.station) == 'string' and #s.station > 0, 'schedule ' .. i .. ': station (a train stop name) is required')

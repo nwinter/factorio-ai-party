@@ -8,6 +8,8 @@
 -- Engine calls are guarded so a refusal comes back as a plain error.
 return function(api)
   local M = {handlers={}}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.DESCRIPTION, M.SPEAKER_MESSAGE = 500, 500
   local COMPARATORS = {['<']=true, ['>']=true, ['=']=true, ['>=']=true, ['<=']=true, ['!=']=true, ['≥']=true, ['≤']=true, ['≠']=true}
   local ASCII = {['≥']='>=', ['≤']='<=', ['≠']='!='}
   local OPERATIONS = {['+']=true, ['-']=true, ['*']=true, ['/']=true, ['%']=true, ['^']=true, ['<<']=true, ['>>']=true, AND=true, OR=true, XOR=true}
@@ -827,7 +829,7 @@ return function(api)
       end
     end
     if spec.message ~= nil then
-      if type(spec.message) ~= 'string' or #spec.message > 500 then error('speaker_alert.message is text, up to 500 characters', 0) end
+      if type(spec.message) ~= 'string' or #spec.message > M.SPEAKER_MESSAGE then error('speaker_alert.message is text, up to ' .. M.SPEAKER_MESSAGE .. ' characters', 0) end
       new.alert_message = spec.message
     end
     if spec.icon ~= nil then new.icon_signal_id = spec.icon ~= false and signal(spec.icon, 'speaker_alert.icon') or nil end
@@ -1068,8 +1070,8 @@ return function(api)
         e.type == 'entity-ghost' and 'a ghost of ' .. tostring(try(function() return e.ghost_name end)) or e.name), 0)
     end
     if d == false then d = '' end
-    if type(d) ~= 'string' then error('description is a string up to 500 bytes ("" or false clears it)', 0) end
-    if #d > 500 then error(string.format('description is %d bytes; the game keeps at most 500 (a longer one is cut at 500, even mid-character)', #d), 0) end
+    if type(d) ~= 'string' then error('description is a string up to ' .. M.DESCRIPTION .. ' bytes ("" or false clears it)', 0) end
+    if #d > M.DESCRIPTION then error(string.format('description is %d bytes; the game keeps at most ' .. M.DESCRIPTION .. ' (a longer one is cut at ' .. M.DESCRIPTION .. ', even mid-character)', #d), 0) end
     return d
   end
   -- circuit_set's arguments for this entity (an unknown argument's reply names them).

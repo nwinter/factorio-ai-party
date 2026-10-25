@@ -10,6 +10,8 @@
 -- rules met (its own tile on land, water in front of it).
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.FLUIDS = 6
   local DIRS = {0, 4, 8, 12}
   local NAMES = {[0]='north', [4]='east', [8]='south', [12]='west'}
   local DIRS_BY_NAME = {north=0, east=4, south=8, west=12}
@@ -661,7 +663,7 @@ return function(api)
     -- another fluid than that port's recipe takes (fluidjoin.lua touches, the join check of batch34 B1)
     local accept
     if a.fluids ~= nil then
-      assert(type(a.fluids) == 'table' and #a.fluids >= 1 and #a.fluids <= 6, 'fluids: 1..6 fluid names its ports should touch')
+      assert(type(a.fluids) == 'table' and #a.fluids >= 1 and #a.fluids <= M.FLUIDS, 'fluids: 1..' .. M.FLUIDS .. ' fluid names its ports should touch')
       for _, f in ipairs(a.fluids) do assert(type(f) == 'string' and prototypes.fluid[f], 'unknown fluid ' .. tostring(f)) end
       assert(api.fluid_touches, 'fluids needs the fluid join reader')
       if a.recipe ~= nil then assert(type(a.recipe) == 'string' and prototypes.recipe[a.recipe], 'unknown recipe ' .. tostring(a.recipe)) end

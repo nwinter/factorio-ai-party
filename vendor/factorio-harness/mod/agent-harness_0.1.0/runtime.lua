@@ -1994,6 +1994,10 @@ local function inventory(e, name)
   return inv
 end
 local handlers = {}
+-- (d25 batch208 QU1) list lengths the handlers below refuse past, also a queue step's check (M.step_lengths): a call's
+-- positions, entity types, items and names, via points, build entries, and the like.
+M.POSITIONS_MAX,M.TYPES_MAX,M.ITEMS_MAX,M.NAMES_MAX,M.LIST_NAMES,M.VIA_POINTS=64,16,16,32,64,16
+M.ENTRIES_MAX,M.CRAFT_RECIPES,M.TAKE_BACK,M.FIRST_ITEMS,M.TOUR_DRY_RUN=256,32,8,8,128
 local request_path,navigate,check_args
 -- One call that works, per action (Luna, shift11: launch {platform} without its silo failed twice and transfer's docs
 -- named forms the runtime refused; Muse, 6+ refused calls in a 2-minute rocket load). fh help ACTION prints them,
@@ -3148,7 +3152,7 @@ function handlers.nearest(p,a)
   assert(a.name or a.type,'name or type is required')
   for _,key in ipairs({'name','type'}) do
     local v=a[key]
-    assert(v==nil or type(v)=='string' or (type(v)=='table' and #v>=1 and #v<=32),key..' must be a string or 1..32 strings')
+    assert(v==nil or type(v)=='string' or (type(v)=='table' and #v>=1 and #v<=M.NAMES_MAX),key..' must be a string or 1..'..M.NAMES_MAX..' strings')
   end
   local radius=integer(a.radius,32,1,128,'radius')
   local limit=integer(a.limit,5,1,64,'limit')
@@ -3428,7 +3432,7 @@ function handlers.scan(p,a)
   local area=a.positions==nil and view_area(p,a) or nil
   for _,key in ipairs({'name','type','fields'}) do
     local v=a[key]
-    assert(v==nil or type(v)=='string' or (type(v)=='table' and #v<=32),key..' must be a string or up to 32 strings')
+    assert(v==nil or type(v)=='string' or (type(v)=='table' and #v<=M.NAMES_MAX),key..' must be a string or up to '..M.NAMES_MAX..' strings')
   end
   -- "hp|fuel" or "hp,fuel" as one string, as describe's example reads (61% of
   -- unknown-field errors copied it whole): each name a field.
@@ -3444,7 +3448,7 @@ function handlers.scan(p,a)
   local candidates
   if a.positions~=nil then
     assert(a.area==nil and a.position==nil and a.radius==nil and a.ore==nil,'positions replaces area, position, radius and ore')
-    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions requires 1..64 {x,y}')
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' {x,y}')
     candidates={}
     local seen={}
     for _,raw in ipairs(a.positions) do
@@ -4427,7 +4431,7 @@ function handlers.stock(p,a)
     return out
   end
   if a.items==nil then return M.stock_one(p,a) end
-  assert(type(a.items)=='table' and #a.items>=1 and #a.items<=32,'items: 1..32 item names')
+  assert(type(a.items)=='table' and #a.items>=1 and #a.items<=M.NAMES_MAX,'items: 1..'..M.NAMES_MAX..' item names')
   assert(a.item==nil and a.places==nil and a.network==nil,'items is one row an item: no item, places or network with it')
   local rows,lines={},{}
   for _,name in ipairs(a.items) do
@@ -4648,7 +4652,7 @@ function handlers.observe(p,a)
   local limit=integer(a.limit,128,1,512,'limit')
   for _,key in ipairs({'entity_types','entity_names'}) do
     if a[key] then
-      assert(type(a[key])=='table' and #a[key]>0 and #a[key]<=32,key..' requires 1..32 names')
+      assert(type(a[key])=='table' and #a[key]>0 and #a[key]<=M.NAMES_MAX,key..' requires 1..'..M.NAMES_MAX..' names')
       for _,name in ipairs(a[key]) do assert(type(name)=='string',key..' requires strings') end
     end
   end
@@ -4721,7 +4725,7 @@ function handlers.observe(p,a)
   if a.tile_runs then
     local names
     if a.tile_names~=nil then
-      assert(type(a.tile_names)=='table' and #a.tile_names>=1 and #a.tile_names<=32,'tile_names requires 1..32 tile names')
+      assert(type(a.tile_names)=='table' and #a.tile_names>=1 and #a.tile_names<=M.NAMES_MAX,'tile_names requires 1..'..M.NAMES_MAX..' tile names')
       names=a.tile_names
     end
     local cap=integer(a.tiles_limit,1024,1,4096,'tiles_limit')
@@ -5822,6 +5826,7 @@ end
 -- A block: its helpers take no top-level local slots (tests/locals.lua).
 do
 local MAX_REPAIR=64
+M.MAX_REPAIR=MAX_REPAIR  -- (d25 batch208 QU1) and a queue step's check (M.step_lengths)
 local function damaged(e)
   local ok,hurt=pcall(function() return e.health~=nil and e.max_health~=nil and e.health<e.max_health end)
   return ok and hurt
@@ -6226,7 +6231,7 @@ function handlers.craft(p,a)
     return craft_facts(p,{started=started,nothing_queued=none,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
       hand_s=hand_s,queue_s=queue_s,assemblers=assemblers,spoil=spoil_line,products_spoil=sp and #sp.products>0 and sp.products or nil},{[a.recipe]=started})
   end
-  assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=32,'recipes requires 1..32 {recipe,count} entries')
+  assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=M.CRAFT_RECIPES,'recipes requires 1..'..M.CRAFT_RECIPES..' {recipe,count} entries')
   -- Every entry is attempted: a shortfall in one should not hide what the
   -- others queued. Repeated recipes accumulate.
   local started,errors,fromq={},{},{}
@@ -6251,7 +6256,7 @@ function handlers.craftable(p,a)
   local categories=p.character.prototype.crafting_categories or {}
   local function by_hand(recipe) return takes(categories,recipe) end
   if names then
-    assert(type(names)=='table' and #names>=1 and #names<=64,'recipes requires 1..64 names')
+    assert(type(names)=='table' and #names>=1 and #names<=M.LIST_NAMES,'recipes requires 1..'..M.LIST_NAMES..' names')
     for _,name in ipairs(names) do
       local recipe=type(name)=='string' and p.force.recipes[name]
       assert(recipe,'unknown recipe: '..tostring(name))
@@ -7218,7 +7223,7 @@ function handlers.build(p,a)
   end
   -- More than 64 entries (d17 batch19 D3, Opus 65 and Sonnet 72, refused): worked in batches of 64 in this call, one
   -- reply (batches says how many), up to 256.
-  assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=256,'builds requires 1..256 {item,position,direction} entries (more than 64: worked in batches of 64, one reply)')
+  assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=M.ENTRIES_MAX,'builds requires 1..'..M.ENTRIES_MAX..' {item,position,direction} entries (more than 64: worked in batches of 64, one reply)')
   assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
   assert(a.all==nil or type(a.all)=='boolean','all must be true or false')
   local skip=a.skip_failed==true or a.all==true
@@ -8007,12 +8012,12 @@ do
     local names
     if a.name~=nil then
       names=type(a.name)=='table' and a.name or {a.name}
-      assert(#names>=1 and #names<=16,'name is an entity name or a list of 1..16')
+      assert(#names>=1 and #names<=M.TYPES_MAX,'name is an entity name or a list of 1..'..M.TYPES_MAX)
       for _,n in ipairs(names) do assert(type(n)=='string' and prototypes.entity[n],'unknown entity name '..tostring(n)) end
     end
     local as_names
     if types~=nil then
-      assert(type(types)=='table' and #types>=1 and #types<=16,'types requires 1..16 entity types')
+      assert(type(types)=='table' and #types>=1 and #types<=M.TYPES_MAX,'types requires 1..'..M.TYPES_MAX..' entity types')
       local kept={}
       for _,t in ipairs(types) do
         if type(t)=='string' and not M.known_type(t) and prototypes.entity[t] then
@@ -8742,6 +8747,148 @@ function M.step_range_check(action,a)
     end
   end
 end
+-- (d25 batch208 QU1, Astra #2355: trial187's queue dry_run took platform_defense, uptime and platform_supply reasons
+-- over 200 characters, and the step refused them when it ran) The text and list lengths each queueable action refuses
+-- when it runs, checked for every queue step at submit and in dry_run beside step_ranges: {key, low, high, list?,
+-- when?, one?, each?, count?, check?}. low and high are numbers or functions reading the action's own constant; a key
+-- with a dot is a field of a table argument. A list counts its entries (one: a single text counts as one; a table of
+-- named fields, {x, y} or {item: count}, is left to the action; count: the entries as the action counts them, feed's
+-- item with its items); a text counts its bytes, as the actions do (#). each: the {low, high} of each text in a list.
+-- check: the action's own validator (reason: line breaks as spaces and the ends
+-- trimmed before it counts), its refusal as the action gives it. A value of another type is left to the action. Where
+-- an action takes a key in several modes with different limits, the widest is listed, or each mode with when.
+-- The steps of the shifts before (s70-75) queued game actions only; board, lesson, reminder, chat and profile actions
+-- are not listed, nor observe's entity and tile names (a queued observe reads a platform or a scope, without them).
+local function of(mod,field) return function() return M[mod][field] end end
+local function own(field) return function() return M[field] end end
+local function bp(field) return function() return M.bplimits[field] end end
+local function dry(a) return a.dry_run==true end
+local function walking(a) return a.dry_run~=true end
+local function reason_check(v) M.measures.reason(v) end
+local function asteroids(a) return a.asteroids==true end
+local function fuel_round(a) return a.from~=nil or a.area~=nil or a.feed_chests~=nil end  -- refuel's tour (fuelround.lua)
+M.step_lengths={
+  platform_defense={{'reason',check=reason_check,when=function(a) return a.asteroids==true and a.seconds~=nil end},
+    {'asteroid_names',1,of('asteroidwatch','NAMES_MAX'),list=true,one=true,each={1,of('asteroidwatch','NAME_LEN')},when=asteroids},
+    {'names',1,of('platdefense','PICK_NAMES'),list=true,one=true,when=function(a) return not asteroids(a) end},
+    {'positions',1,of('platdefense','PICK_POSITIONS'),list=true,when=function(a) return not asteroids(a) end}},
+  platform_supply={{'reason',check=reason_check,when=function(a) return a.collection==true and a.seconds~=nil end}},
+  uptime={{'reason',check=reason_check,when=starts('uptime')},{'positions',1,of('uptime','MAX'),list=true,when=function(a) return a.items==nil end}},
+  turret_tally={{'reason',check=reason_check,when=starts('turrettally')},{'positions',1,of('turrettally','MAX'),list=true}},
+  belt_flow={{'reason',check=reason_check,when=function(a) return a.position~=nil end}},
+  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil end},
+    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true}},
+  sleep={{'reason',check=reason_check}},
+  scan={{'positions',1,own('POSITIONS_MAX'),list=true},{'name',0,own('NAMES_MAX'),list=true},{'type',0,own('NAMES_MAX'),list=true},
+    {'fields',0,own('NAMES_MAX'),list=true}},
+  nearest={{'name',1,own('NAMES_MAX'),list=true},{'type',1,own('NAMES_MAX'),list=true}},
+  stock={{'items',1,own('NAMES_MAX'),list=true}},
+  inspect={{'positions',1,own('INSPECT_POSITIONS'),list=true},{'fields',1,own('NAMES_MAX'),list=true},
+    {'types',1,own('TYPES_MAX'),list=true,when=function(a) return a.area~=nil or a.radius~=nil end}},
+  move_to={{'via',1,own('VIA_MAX'),list=true}},
+  repair={{'positions',1,own('MAX_REPAIR'),list=true}},
+  craft={{'recipes',1,own('CRAFT_RECIPES'),list=true}},
+  build={{'builds',1,own('ENTRIES_MAX'),list=true}},
+  place_ghosts={{'entities',1,own('ENTRIES_MAX'),list=true}},
+  configure={{'positions',1,own('POSITIONS_MAX'),list=true},{'description',0,of('circuits','DESCRIPTION')},
+    {'speaker_alert.message',0,of('circuits','SPEAKER_MESSAGE')}},
+  feed={{'items',1,own('ITEMS_MAX'),list=true,count=function(a,list)
+      if type(a.item)~='string' then return #list end
+      local n=1
+      for _,name in ipairs(list) do if name~=a.item then n=n+1 end end
+      return n
+    end},{'types',1,own('TYPES_MAX'),list=true},
+    {'positions',1,own('POSITIONS_MAX'),list=true,when=walking},{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry}},
+  collect={{'types',1,own('TYPES_MAX'),list=true},{'positions',1,own('POSITIONS_MAX'),list=true,when=walking},
+    {'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry},{'take_back',1,own('TAKE_BACK'),list=true,when=function(a) return a.wait_ticks~=nil end}},
+  transfer={{'positions',1,own('POSITIONS_MAX'),list=true,when=walking},{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry},
+    {'types',1,own('TYPES_MAX'),list=true,when=function(a) return a.area~=nil end}},
+  refuel={{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry},
+    {'positions',1,of('fuelround','POSITIONS'),list=true,when=function(a) return walking(a) and fuel_round(a) end},
+    {'positions',1,own('POSITIONS_MAX'),list=true,when=function(a) return walking(a) and not fuel_round(a) end}},
+  rearm={{'positions',1,own('POSITIONS_MAX'),list=true,when=walking},{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry}},
+  research_next={{'technologies',1,own('LIST_NAMES'),list=true}},
+  research={{'research_queue',0,own('LIST_NAMES'),list=true},{'remove',1,of('research','REMOVE_MAX'),list=true,one=true},
+    {'cancel',1,of('research','REMOVE_MAX'),list=true,one=true}},
+  load_silo={{'first',1,own('FIRST_ITEMS'),list=true},{'from',1,of('rocketload','MAX_FROM'),list=true}},
+  train_stop={{'name',1,of('trains','STATION_MAX')},{'station',1,of('trains','STATION_MAX')}},
+  train={{'station',1,of('trains','STATION_MAX')},{'schedule',0,of('trains','SCHEDULE_MAX'),list=true}},
+  pipe_route={{'waypoints',1,own('VIA_POINTS'),list=true}},
+  platform_tiles={{'positions',1,own('POSITIONS_MAX'),list=true}},
+  platform_rename={{'name',1,of('platrename','NAME_MAX')}},
+  platform_create={{'name',1,function() return space.NAME_MAX end}},
+  requests={{'keep',1,function() return space.KEEP_MAX end,list=true},{'set',0,function() return space.SET_MAX end,list=true},
+    {'group',check=function(v) if v~=false then space.reqgroups.check_name(v) end end}},
+  platform_schedule={{'stops',0,function() return space.STOPS_MAX end,list=true}},
+  drop={{'items',1,function() return space.DROP_ITEMS end,list=true},{'to',0,of('drops','MAX_TO'),list=true,one=true}},
+  platform_rearm={{'positions',1,of('platrearm','POSITIONS'),list=true}},
+  turret_feeds={{'positions',1,of('turretfeed','MAX'),list=true}},
+  character_settings={{'filters',1,of('charsettings','FILTERS'),list=true}},
+  circuit_gate={{'all',1,of('circgate','MAX_ALL'),list=true}},
+  circuit_audit={{'positions',1,of('circaudit','POSITIONS'),list=true}},
+  clear_cliffs={{'positions',1,of('capsules','CLIFF_POSITIONS'),list=true}},
+  build_path={{'points',2,function() return construction.POINTS end,list=true}},
+  pickup={{'items',1,function() return math.max(M.ground.ITEMS,M.beltpick.ITEMS) end,list=true}},
+  placements={{'fluids',1,of('shore','FLUIDS'),list=true}},
+  rail_route={{'via',1,of('rails','VIA'),list=true}},
+  belt_route={{'via',1,function() return route.MAX_POINTS end,list=true}},
+  belt_gaps={{'via',0,of('beltgaps','VIA'),list=true}},
+  pipe_gaps={{'via',0,of('pipegaps','VIA'),list=true}},
+  rates={{'positions',1,function() return rates.POSITIONS end,list=true}},
+  remove_ghosts={{'names',1,of('removeghosts','NAMES'),list=true,one=true},{'positions',1,of('removeghosts','MAX_POSITIONS'),list=true}},
+  deliver={{'positions',1,of('deliver','POSITIONS'),list=true}},
+  platform_endurance={{'route',1,of('endurance','ROUTE_MAX'),list=true}},
+  ingredient_gap={{'positions',1,of('gap','MAX'),list=true}},
+  upgrade={{'positions',1,of('upgrade','MAX'),list=true}},
+  rebuild={{'from',1,of('lostlog','FROM_MAX'),list=true}},
+  silo_stage={{'from',1,of('stage','FROM_MAX'),list=true}},
+  game_alerts={{'kind',1,of('pushalerts','KINDS'),list=true,one=true}},
+  mine={{'positions',1,of('tilemine','POSITIONS'),list=true,when=function(a) return a.tiles==true end}},
+  deconstruct={{'entity_types',1,bp('FILTER_NAMES'),list=true},{'entity_names',1,bp('FILTER_NAMES'),list=true},
+    {'tiles',1,bp('FILTER_NAMES'),list=true}},
+  blueprint_save={{'name',check=function(v) M.bplimits.entry_name(v) end},{'description',0,bp('DESCRIPTION')},
+    {'positions',1,bp('SAVE_POSITIONS'),list=true},{'status_note',1,bp('NOTE')}},
+  blueprint_import={{'name',check=function(v) M.bplimits.entry_name(v) end},{'blueprint',1,bp('STRING')},{'description',0,bp('DESCRIPTION')}},
+  blueprint_status={{'note',1,bp('NOTE')}},
+  blueprint_retire={{'reason',1,bp('REASON')}},
+  vehicle={{'go_to',1,of('spiderroute','MAX_TARGETS'),list=true}},
+}
+M.step_lengths.cancel_deconstruction=M.step_lengths.deconstruct
+local function text_size(v)
+  local chars=select(2,v:gsub('[^\128-\191]',''))
+  return chars~=#v and string.format('%d characters (%d bytes)',chars,#v) or string.format('%d characters',#v)
+end
+function M.step_length_check(action,a)
+  for _,r in ipairs(M.step_lengths[action] or {}) do
+    local v=a
+    for part in r[1]:gmatch('[^.]+') do v=type(v)=='table' and v[part] or nil end
+    if v~=nil and (not r.when or r.when(a)) then
+      local lo,hi=r[2],r[3]
+      if type(lo)=='function' then lo=lo() end
+      if type(hi)=='function' then hi=hi() end
+      local function refuse(what) error(string.format('%s %s, outside %d..%d, what %s takes when it runs',r[1],what,lo,hi,action),0) end
+      if r.check then
+        local ok,err=pcall(r.check,v)
+        if not ok then error(string.format('%s, what %s takes when it runs',reason(err),action),0) end
+      elseif r.list then
+        local list=r.one and type(v)=='string' and {v} or v
+        if type(list)=='table' and (#list>0 or next(list)==nil) then
+          local n=r.count and r.count(a,list) or #list
+          if n<lo or n>hi then refuse(string.format('has %d %s%s',n,n==1 and 'entry' or 'entries',n~=#list and ' (item counts too)' or '')) end
+          if r.each then
+            local elo,ehi=r.each[1],r.each[2]
+            if type(ehi)=='function' then ehi=ehi() end
+            for i,t in ipairs(list) do
+              if type(t)=='string' and (#t<elo or #t>ehi) then
+                error(string.format('%s[%d] is %s, outside %d..%d, what %s takes when it runs',r[1],i,text_size(t),elo,ehi,action),0)
+              end
+            end
+          end
+        end
+      elseif type(v)=='string' and (#v<lo or #v>hi) then refuse('is '..text_size(v)) end
+    end
+  end
+end
 M.preflight.configure=function(p,a)
   M.configure_together(a)
   if a.modules~=nil then M.modules.parse(a.modules) end
@@ -8783,7 +8930,7 @@ function M.configure_modules(p,a)
     return row
   end
   if a.positions==nil then return one(a) end
-  assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions requires 1..64 {x,y} (machines or their ghosts)')
+  assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' {x,y} (machines or their ghosts)')
   assert(a.position==nil,'give position or positions, not both')
   local rows,done,failed={},0,0
   for i,pos in ipairs(a.positions) do
@@ -8812,7 +8959,7 @@ function M.clear_requests(p,a,near,e)
     if a.priority_targets~=nil then M.target_names(a.priority_targets) end
   end
   local list=a.positions or {a.position}
-  assert(type(list)=='table' and #list>=1 and #list<=64,'positions requires 1..64 {x,y}')
+  assert(type(list)=='table' and #list>=1 and #list<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' {x,y}')
   local rows,cleared,none,failed={},0,0,0
   for i,pos in ipairs(list) do
     local ok,out=pcall(function()
@@ -8851,7 +8998,7 @@ function M.clear_requests(p,a,near,e)
 end
 function M.configure_turrets(p,a)
   M.configure_only(a,{'priority_targets','ignore_unprioritised'},'positions with turrets')
-  assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions requires 1..64 {x,y} (turrets or their ghosts)')
+  assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' {x,y} (turrets or their ghosts)')
   assert(a.position==nil,'give position or positions, not both')
   local rows,done,failed={},0,0
   for i,pos in ipairs(a.positions) do
@@ -9977,7 +10124,7 @@ end
 local function reachable(p,a,wanted)
   local out={}
   if a.positions then
-    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions requires 1..64 entries')
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' entries')
     for i,pos in ipairs(a.positions) do out[i]={position=pos} end
     return out
   end
@@ -10992,7 +11139,7 @@ function handlers.collect(p,a)
       ..M.aliases.encode({pick='first_with_stock',positions={{x=12.5,y=4.5}},items=type(a.items)=='table' and a.items or {'ITEM'},to=type(a.to)=='table' and a.to or {x=30.5,y=4.5}}).."'",0)
   end
   assert(a.chests==nil or type(a.chests)=='boolean','chests must be true or false')
-  assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=16),'types requires 1..16 entity types')
+  assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=M.TYPES_MAX),'types requires 1..'..M.TYPES_MAX..' entity types')
   assert(a.up_to==nil or a.up_to==true,'up_to must be true (an empty source never fails the step)')
   -- want: a target holding (shake2 and shake3 plans wrote collect want=N);
   -- takes only the difference, and nothing when the character has enough.
@@ -11093,7 +11240,7 @@ function handlers.collect(p,a)
       end
     end
     if a.take_back~=nil then
-      assert(type(a.take_back)=='table' and #a.take_back>=1 and #a.take_back<=8,'take_back is a list of item names: what is left of them in the machine comes back at the end')
+      assert(type(a.take_back)=='table' and #a.take_back>=1 and #a.take_back<=M.TAKE_BACK,'take_back is a list of item names: what is left of them in the machine comes back at the end')
       for _,item in ipairs(a.take_back) do assert(type(item)=='string' and prototypes.item[item],'take_back: unknown item '..tostring(item)) end
       back=a.take_back
     end
@@ -11140,7 +11287,7 @@ function handlers.collect(p,a)
   end
   if walk then
     local list=a.positions or (a.position~=nil and {a.position}) or nil
-    assert(type(list)=='table' and #list>=1 and #list<=64,'walk goes with positions (1..64 places to collect from)')
+    assert(type(list)=='table' and #list>=1 and #list<=M.POSITIONS_MAX,'walk goes with positions (1..'..M.POSITIONS_MAX..' places to collect from)')
     local entities,far={},0
     -- A stop that does not resolve is left out and named (skipped), as transfer's walk does.
     local skipped={}
@@ -11522,11 +11669,11 @@ function handlers.feed(p,a)
     for _,name in ipairs(a.items or {}) do if name~=a.item then list[#list+1]=name end end
     a.items=list; a.item=nil
   end
-  assert(a.items==nil or (type(a.items)=='table' and #a.items>=1 and #a.items<=16),'items requires 1..16 item names')
+  assert(a.items==nil or (type(a.items)=='table' and #a.items>=1 and #a.items<=M.ITEMS_MAX),'items requires 1..'..M.ITEMS_MAX..' item names')
   for _,name in ipairs(a.items or {}) do assert(prototypes.item[name],'unknown item '..tostring(name)) end
   assert(a.fuel==nil or type(a.fuel)=='boolean' or (type(a.fuel)=='string' and prototypes.item[a.fuel] and (prototypes.item[a.fuel].fuel_value or 0)>0),'fuel must be a fuel item, true or false')
   a.count=integer(a.count,20,1,1000,'count'); a.fuel_count=integer(a.fuel_count,10,1,1000,'fuel_count')
-  assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=16),'types requires 1..16 entity types')
+  assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=M.TYPES_MAX),'types requires 1..'..M.TYPES_MAX..' entity types')
   assert(a.up_to==nil or a.up_to==true,'up_to must be true (a short inventory never fails the step)')
   assert(a.crafts==nil or a.recipe~=nil,'crafts goes with recipe')
   if a.recipe~=nil then
@@ -11603,7 +11750,7 @@ function handlers.feed(p,a)
     if worst then walk=true; walking=M.autowalk.line(far,n,worst) end
   end
   if walk then
-    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'walk goes with positions (1..64)')
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'walk goes with positions (1..'..M.POSITIONS_MAX..')')
     local entities,far={},0
     for i,pos in ipairs(a.positions) do
       local e=entity(p,{position=pos,name=type(pos)=='table' and pos.name or nil,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
@@ -11748,7 +11895,7 @@ function M.moved_by_note(step,ok)
 end
 function M.tour_via(v)
   if v==nil then return nil end
-  assert(type(v)=='table' and #v>=1 and #v<=16,'via takes 1..16 points {x,y}, walked in order before the first stop')
+  assert(type(v)=='table' and #v>=1 and #v<=M.VIA_POINTS,'via takes 1..'..M.VIA_POINTS..' points {x,y}, walked in order before the first stop')
   local out={}
   for i,q in ipairs(v) do out[i]=position(q) end
   return out
@@ -11758,7 +11905,7 @@ function M.transfer_walk(p,a)
   -- fill (from: "nearest" over several chests): the count in all, what is still missing taken at each stop.
   local fill=a.fill
   local list=a.positions or {a.position}
-  assert(type(list)=='table' and #list>=1 and #list<=64,'positions requires 1..64 entries')
+  assert(type(list)=='table' and #list>=1 and #list<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' entries')
   assert(list[1]~=nil,'position or positions is required')
   local args={}
   for k,v in pairs(a) do args[k]=v end
@@ -12309,7 +12456,7 @@ function M.pick_source(p,a,verb)
   assert(a.direction==nil or a.direction=='to_player','pick takes from the listed places: direction to_player')
   assert(a.total==nil and a.area==nil and a.radius==nil,'pick goes with positions (not total, area or radius)')
   local list=a.positions or (a.position~=nil and {a.position}) or nil
-  assert(type(list)=='table' and #list>=1 and #list<=64,'pick needs positions: 1..64 places to take from')
+  assert(type(list)=='table' and #list>=1 and #list<=M.POSITIONS_MAX,'pick needs positions: 1..'..M.POSITIONS_MAX..' places to take from')
   local items,counts={},{}
   -- items as {name: count} (Luna, shift17 10:50: {"items":{"bioflux":5}} was refused, and items:["bioflux"] then moved the
   -- whole 24-item stack): the picked item's count caps the take, as count does.
@@ -12320,7 +12467,7 @@ function M.pick_source(p,a,verb)
     for _,n in ipairs(names) do items[#items+1]=n; counts[n]=integer(a.items[n],nil,1,100000,'items count for '..tostring(n)) end
   elseif type(a.items)=='table' then for _,n in ipairs(a.items) do items[#items+1]=n end elseif a.items~=nil then items[1]=a.items end
   if a.item~=nil then table.insert(items,1,a.item) end
-  assert(#items>=1 and #items<=16,'pick needs item or items (1..16 item names, or {name: count})')
+  assert(#items>=1 and #items<=M.ITEMS_MAX,'pick needs item or items (1..'..M.ITEMS_MAX..' item names, or {name: count})')
   for _,n in ipairs(items) do assert(type(n)=='string' and prototypes.item[n],'unknown item '..tostring(n)) end
   -- The destination per item: one {x,y} for all, or a map item -> {x,y}.
   local function is_pos(v) return type(v)=='table' and ((type(v.x)=='number' and type(v.y)=='number') or (type(v[1])=='number' and type(v[2])=='number')) end
@@ -12795,7 +12942,7 @@ transfer_directed=function(p,a)
       prototypes.item[a.item] and prototypes.item[a.item].type=='ammo' and ' or ammo slots' or '',out.target_has))
     return M.give_short(out,a,1)
   end
-  assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions requires 1..64 entries')
+  assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' entries')
   -- One unit_number cannot identify several entities; put it on the entries.
   assert(a.unit_number==nil,'with positions, give unit_number per entry: {x,y,unit_number}')
   -- total caps the whole batch, filled in order; count stays per entity.
@@ -12936,7 +13083,7 @@ local function set_research_queue(force,list)
     pending_note=#pending>0 and 'the engine queue is full (or prerequisites are pending): these are fed in as it frees up' or nil,added_prerequisites=added}
 end
 do local function array_of_names(list)
-  assert(type(list)=='table' and #list<=64 and (#list>0 or next(list)==nil),'research_queue requires an array of 0..64 names')
+  assert(type(list)=='table' and #list<=M.LIST_NAMES and (#list>0 or next(list)==nil),'research_queue requires an array of 0..'..M.LIST_NAMES..' names')
   return list
 end
 -- research_queue replaces the queue; with front it goes ahead of the current
@@ -13081,7 +13228,7 @@ local function feed_research_plans()
   end
 end
 function handlers.research_next(p,a)
-  assert(type(a.technologies)=='table' and #a.technologies>0 and #a.technologies<=64,'technologies requires 1..64 names')
+  assert(type(a.technologies)=='table' and #a.technologies>0 and #a.technologies<=M.LIST_NAMES,'technologies requires 1..'..M.LIST_NAMES..' names')
   for _,name in ipairs(a.technologies) do assert(type(name)=='string' and p.force.technologies[name],'unknown technology') end
   if p.force.current_research then return {current=p.force.current_research.name,started=false} end
   for _,name in ipairs(a.technologies) do
@@ -13110,7 +13257,7 @@ do local function catalog(p,a,kind)
   -- a list of names), refused when unknown or not enabled, with names that start alike
   if a.name~=nil then
     local list=type(a.name)=='string' and {a.name} or a.name
-    assert(type(list)=='table' and #list>=1 and #list<=64,'name is a '..(kind=='recipes' and 'recipe' or 'technology')..' name or a list of 1..64')
+    assert(type(list)=='table' and #list>=1 and #list<=M.LIST_NAMES,'name is a '..(kind=='recipes' and 'recipe' or 'technology')..' name or a list of 1..'..M.LIST_NAMES)
     for _,n in ipairs(list) do
       local entry=type(n)=='string' and p.force[kind][n]
       if not (entry and entry.enabled) then
@@ -13636,7 +13783,8 @@ do local blueprint_handlers=blueprint_module{railrun=function() return M.railrun
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   who=function(p) return M.board.who(p) end,tunnels=function(s,force,ghosts,on) return M.platplan.tunnels(s,force,ghosts,on) end,
   checks_placed=function(p,name,rec) if M.checks then return M.checks.placed(p,name,rec) end end}
-for name,handler in pairs(blueprint_handlers) do if name~='plan' and name~='operator' then handlers[name]=handler end end
+for name,handler in pairs(blueprint_handlers) do if name~='plan' and name~='operator' and name~='limits' then handlers[name]=handler end end
+M.bplimits=blueprint_handlers.limits  -- (d25 batch208 QU1) its lengths, for a queue step's check (M.step_lengths)
 -- The team blueprint library's operator read (tools/bplibrary.py mirrors it to runs/RUN/blueprints/).
 M.bplibrary_operator=blueprint_handlers.operator
 -- Where a paste would land, placing nothing (paste dry_run).
@@ -14033,7 +14181,7 @@ function M.load_first(p,a)
     end
     table.sort(order)
   else
-    assert(type(a.first)=='table' and #a.first>=1 and #a.first<=8,'first is 1..8 item names (each at what the hub lacks of its requests) or {item: count}')
+    assert(type(a.first)=='table' and #a.first>=1 and #a.first<=M.FIRST_ITEMS,'first is 1..'..M.FIRST_ITEMS..' item names (each at what the hub lacks of its requests) or {item: count}')
     -- what the hub asks of each (its sections that are on) against what it holds
     local asks={}
     local secs=try(function() return hub.get_logistic_sections() end)
@@ -15293,7 +15441,7 @@ function handlers.place_ghosts(p,a)
   M.fluid_guard(p,a,'place_ghosts')
   local out={}
   if a.entities~=nil then
-    assert(type(a.entities)=='table' and #a.entities>=1 and #a.entities<=256,'entities requires 1..256 {name,position,direction?}')
+    assert(type(a.entities)=='table' and #a.entities>=1 and #a.entities<=M.ENTRIES_MAX,'entities requires 1..'..M.ENTRIES_MAX..' {name,position,direction?}')
     M.turretammo.check(a.ammo)
     out=place_ghost_list(p,a.entities,a.ammo)
   end
@@ -15568,7 +15716,7 @@ function handlers.train_stop(p,a)
   -- (d18 batch36 D2) where it goes, named when missing
   assert(a.position~=nil,'train_stop needs position {x, y}: a spot beside a straight rail (the stop stands on the right of the way trains run there), and name: the station name')
   local name=a.name or a.station
-  assert(type(name)=='string' and #name>=1 and #name<=100,'name (the station name) is 1..100 characters')
+  assert(type(name)=='string' and #name>=1 and #name<=M.trains.STATION_MAX,'name (the station name) is 1..'..M.trains.STATION_MAX..' characters')
   assert(a.name==nil or a.station==nil or a.name==a.station,'name and station differ; give one of them')
   assert(a.ghosts==nil or type(a.ghosts)=='boolean','ghosts must be true or false')
   local limit=a.limit~=nil and integer(a.limit,nil,0,1000,'limit (0..1000)') or nil
@@ -15690,7 +15838,7 @@ function handlers.pole_route(p,a)
   local points={position(a.from)}
   for _,w in ipairs(a.waypoints or {}) do points[#points+1]=position(w) end
   points[#points+1]=position(a.to)
-  assert(#points<=18,'waypoints requires at most 16 entries')
+  assert(#points<=M.VIA_POINTS+2,'waypoints requires at most '..M.VIA_POINTS..' entries')
   local function free(pos)
     return p.surface.can_place_entity{name=pole.name,position=pos,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true}
   end
@@ -15776,7 +15924,7 @@ function handlers.pipe_route(p,a)
   local from,to=position(a.from),position(a.to)
   local points={from}
   if a.waypoints~=nil then
-    assert(type(a.waypoints)=='table' and #a.waypoints>=1 and #a.waypoints<=16,'waypoints requires 1..16 {x,y} free tiles')
+    assert(type(a.waypoints)=='table' and #a.waypoints>=1 and #a.waypoints<=M.VIA_POINTS,'waypoints requires 1..'..M.VIA_POINTS..' {x,y} free tiles')
     for _,w in ipairs(a.waypoints) do points[#points+1]=position(w) end
   else
     local span=math.abs(to.x-from.x)+math.abs(to.y-from.y)
@@ -16123,14 +16271,14 @@ for _,name in ipairs({'feed','collect','transfer','rearm','refuel'}) do
       rest.dry_run_plan=true
       plan=M.rearm_now(p,rest)
       list={}
-      for i,e in ipairs(plan.plan or {}) do if i<=128 then list[i]=e.position end end
+      for i,e in ipairs(plan.plan or {}) do if i<=M.TOUR_DRY_RUN then list[i]=e.position end end
       if #list==0 then
         return {dry_run=true,stops=0,nothing='no turret there under '..tostring(plan.below)..' rounds that a rearm would walk to with what you carry',turrets=plan.turrets,left_out=plan.left_out,other_ammo=plan.other_ammo}
       end
     elseif a.radius~=nil or a.area~=nil or type(list)~='table' or #list==0 then
-      error(name..' dry_run reads the route through positions (1..128 places); a radius or area tour chooses its stops when it runs',0)
+      error(name..' dry_run reads the route through positions (1..'..M.TOUR_DRY_RUN..' places); a radius or area tour chooses its stops when it runs',0)
     end
-    assert(#list<=128,name..' dry_run: at most 128 positions')
+    assert(#list<=M.TOUR_DRY_RUN,name..' dry_run: at most '..M.TOUR_DRY_RUN..' positions')
     local left={}
     for i,q in ipairs(list) do left[i]=position(type(q)=='table' and q.position or q) end
     local points,from={{x=p.position.x,y=p.position.y}},p.position
@@ -16315,7 +16463,7 @@ do
     'cargo-landing-pad','roboport','agricultural-tower'}
   local function types_for(action,a)
     if a.types~=nil then
-      assert(type(a.types)=='table' and #a.types>=1 and #a.types<=16,'types requires 1..16 entity types')
+      assert(type(a.types)=='table' and #a.types>=1 and #a.types<=M.TYPES_MAX,'types requires 1..'..M.TYPES_MAX..' entity types')
       return a.types
     end
     if action=='feed' then return a.recipe and {'assembling-machine','furnace'} or feeding.TYPES end
@@ -16932,7 +17080,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
-  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args); M.step_length_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
@@ -19074,7 +19222,7 @@ function M.project(out,fields,action)
   local list={}
   if type(fields)=='string' then for f in fields:gmatch('[^|,%s]+') do list[#list+1]=f end
   elseif type(fields)=='table' then for _,f in ipairs(fields) do assert(type(f)=='string','fields are names (strings)'); list[#list+1]=f end end
-  assert(#list>=1 and #list<=32,'fields: 1..32 names')
+  assert(#list>=1 and #list<=M.NAMES_MAX,'fields: 1..'..M.NAMES_MAX..' names')
   if type(out)~='table' then return out end
   local rowkey
   for _,k in ipairs(M.FIELD_ROWS) do if type(out[k])=='table' and type(out[k][1])=='table' then rowkey=k; break end end
@@ -19493,7 +19641,7 @@ function handlers.platform_tiles(p,a)
   assert(pl.surface,'platform '..pl.name..' has no surface yet')
   local cells={}
   if a.positions~=nil then
-    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions: 1..64 tiles {x,y}')
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions: 1..'..M.POSITIONS_MAX..' tiles {x,y}')
     for _,q in ipairs(a.positions) do local v=position(q); cells[#cells+1]={v.x,v.y} end
   else
     assert(type(a.area)=='table' and a.area.left_top and a.area.right_bottom,'positions (1..64 tiles) or area {left_top, right_bottom}')

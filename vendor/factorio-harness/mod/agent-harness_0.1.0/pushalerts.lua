@@ -23,6 +23,8 @@ local flameroil = require('flameroil')
 local snapfail = require('snapfail')
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.KINDS = 16
   local CELL, SCAN_TICKS, DIGEST_TICKS, MAX_LINES, MAX_SCAN = 64, 1800, 9000, 5, 20000
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- (d22 batch110 BT1: the background read made about 1 MB of Lua garbage a second on the copy, most of it a closure for
@@ -2569,7 +2571,7 @@ return function(api)
         assert(type(a.kind) == 'table', 'kind is an alert kind, several in an array, or "a,b"')
         for _, w in ipairs(a.kind) do assert(type(w) == 'string', 'kind names are strings'); kinds[#kinds+1] = w end
       end
-      assert(#kinds >= 1 and #kinds <= 16, 'kind: 1..16 alert kinds')
+      assert(#kinds >= 1 and #kinds <= M.KINDS, 'kind: 1..' .. M.KINDS .. ' alert kinds')
     end
     local function wanted(kind)
       if not kinds then return true end

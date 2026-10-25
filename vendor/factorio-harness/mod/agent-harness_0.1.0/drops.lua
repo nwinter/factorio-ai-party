@@ -12,6 +12,8 @@
 -- Kept in storage so every peer computes the same lines.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.MAX_TO = 8
   local KEEP, SAMPLE, SEARCH, GIVE_UP, QUIET = 20, 15, 24, 600, 300
   local MAX_LINES = 4  -- a reply's team block shows this many drop lines (board.lua)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -158,7 +160,7 @@ return function(api)
   function M.recipients(to)
     if to == nil then return {} end
     local list = type(to) == 'table' and to or {to}
-    assert(#list <= 8, 'to is at most 8 teammates')
+    assert(#list <= M.MAX_TO, 'to is at most ' .. M.MAX_TO .. ' teammates')
     local out = {}
     for _, name in ipairs(list) do out[#out+1] = api.resolve(name) end
     return out

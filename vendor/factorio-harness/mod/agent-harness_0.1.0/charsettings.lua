@@ -11,6 +11,8 @@
 -- anything changes, and the reply is the read after it.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.FILTERS = 200
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x * 10 + 0.5) / 10, math.floor(q.y * 10 + 0.5) / 10) end
   local function onoff(v) return v and 'on' or 'off' end
@@ -166,7 +168,7 @@ return function(api)
     if a.movement_bonus ~= nil then assert(grid, 'movement_bonus: your armor has no equipment grid') end
     local edits = {}
     if a.filters ~= nil then
-      assert(type(a.filters) == 'table' and #a.filters >= 1 and #a.filters <= 200, 'filters is a list of 1..200 {slot, item} (item false clears the slot\'s filter)')
+      assert(type(a.filters) == 'table' and #a.filters >= 1 and #a.filters <= M.FILTERS, 'filters is a list of 1..' .. M.FILTERS .. ' {slot, item} (item false clears the slot\'s filter)')
       local seen = {}
       for i, f in ipairs(a.filters) do
         assert(type(f) == 'table', 'filters[' .. i .. '] must be {slot, item}')
