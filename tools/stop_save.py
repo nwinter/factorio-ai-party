@@ -12,6 +12,14 @@ written (its time on the Windows box at or after the stop, its size steady) and 
 tools/start-team.sh passes stop_utc and save to tools/win/resume-save.ps1 and checks the tick it resumes at.
 When the named save does not appear, it falls back to /server-save (the old way) and says so in via and note; the next
 shift then takes the newest save written after stop_utc.
+
+  tools/stop_save.py --failed --world n --run RUN [--run-dir DIR]   (tools/stop-team.sh, when no save went through)
+(d24 batch175 QR2) Neither this nor stop-team's /server-save went through (RCON down, the server hung): before, the world
+was stopped unsaved and the next shift took the newest autosave, up to 18 game minutes older, without a word, and the
+agents' board items, tells, reminders and watch results of those minutes were gone. This writes a stop record with no
+save (via "failed", stop_utc by the Mac's clock a minute back), so tools/win/resume-save.ps1 takes only a save written
+after it, and exits 3; stop-team then leaves the world running and exits 3, and tools/shift-change.sh starts no next
+shift. A record of an earlier stop of this run that saved (a stop run again, its world already down) is kept: exit 0.
 """
 import argparse
 import base64
@@ -98,12 +106,36 @@ def stop_save(rcon, run, world, now=win_now, info=save_info, sleep=time.sleep, w
     return rec
 
 
+def failed_record(run_dir, run, world, now=None):
+    """(record, kept): an earlier stop's record that saved (kept True), else a new one with no save, written."""
+    path = os.path.join(run_dir, "stopped.json")
+    try:
+        old = json.load(open(path))
+    except (OSError, ValueError):
+        old = None
+    if isinstance(old, dict) and (old.get("save") or old.get("via") == "server-save") and isinstance(old.get("tick"), int):
+        return old, True
+    t0 = (now or datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)) - datetime.timedelta(minutes=1)
+    rec = {"run": run, "world": world, "stop_utc": iso(t0), "clock": "mac", "save": None, "tick": None, "via": "failed",
+           "note": "neither game.server_save nor /server-save went through: no save of this stop; the world was left running"}
+    os.makedirs(run_dir, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(rec, f, indent=1)
+        f.write("\n")
+    return rec, False
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--world", default="n")
     ap.add_argument("--run", required=True)
     ap.add_argument("--run-dir")
+    ap.add_argument("--failed", action="store_true")
     a = ap.parse_args()
+    if a.failed:
+        rec, kept = failed_record(a.run_dir or os.path.join(os.path.dirname(HERE), "runs", a.run), a.run, a.world)
+        print(("an earlier stop's record stands: " if kept else "no save: ") + json.dumps(rec))
+        sys.exit(0 if kept else 3)
     import pog
     pw = open(os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
     rcon = pog.Rcon("127.0.0.1", pog.PORTS[a.world], pw)
