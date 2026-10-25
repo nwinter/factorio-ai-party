@@ -14095,3 +14095,39 @@ Fixed besides gates:
   number cost 8 us each) took the list phase of 1024 chunks from 23-30 ms to 6-8 ms on the copy.
 - Test: tests/d24_batch174.lua (fails on main: no sight.lua). Docs: agent/ref/movement-combat.md and the index (the
   waits-queues label without "standing" pays for `sight`: the codex core stays 21995 bytes).
+## d24 batch176
+
+- QS1 (Astra #2248: Asterion's explosives line reads stopped at its blocked end (13.5,38.5) while inserters take from
+  it before the end). `belt_flow {position, exact_tile: true, seconds?, platform?}` samples the belt at position only:
+  its two lanes (a splitter: the half position is in, its input lanes 1,2 or 3,4; an underground: the tile's lanes 1,2),
+  no line walked. The default line read is unchanged.
+- 2.0.77's LuaTransportLine has no pass count (owner, line_length, total_segment_length, input_lines, output_lines;
+  contents reads), so lanes are read by item id, every quarter tile at the belt's speed (4 ticks on a fast belt). An
+  item seen on a lane and gone at a later sample left it:
+  - `passed_on`: seen on what the tile feeds (the next belt's lines, an underground entrance's own lines 3,4, a
+    splitter's lines 5..8);
+  - `taken`: gone further from the exit than a sample's travel. A lane's positions count down to its exit (read on
+    the copy: an item at 0.94 has just come on, one at 0.00 goes next);
+  - `not_seen_after`: gone at the exit and not on what it feeds: taken there or here before a sample saw it.
+  Each inserter whose pickup point is on the tile is read each sample: `picked` counts its hand's rises (the game's own
+  read), so items it takes in the tick they arrive count there and not in the lane's `taken`. The reply names the tile
+  (name, type, direction, unit number, half, underground), `feeds`, per lane `rate`, `left`, `passed_on`, `taken`,
+  `not_seen_after`, `entered`, `held`, `held_max`, `state`, and `inserters` [{inserter, picked, rate, items}].
+  - output_lines on a 2.0 belt's line names the segment's owner (13.5,28.5 for the tiles at 24.5 and 25.5), not the
+    next tile, so the next tile is found by belt_neighbours.
+- Verified on a copy of world n's 16:22 autosave (Asterion; the line x 13.5 facing south, full from 24.5 to its end at
+  38.5; railgun-ammo assemblers' inserters pick at 25.5, 31.5 and 37.5, and one at (14.5,33.5) picks at 33.5). Each
+  inserter's pickups were counted every tick by a separate script, over the same 30 s:
+  - (13.5,24.5): 60/min left, 30 items, and the four inserters picked 30 together.
+  - (13.5,31.5): right lane 20/min, 4 taken from mid-lane, 6 passed on; left 36/min passed on; its inserter picked 6
+    by its hand and by the counter. The inserters downstream picked 24, and 24 passed on.
+  - (13.5,37.5), the last one before the end: left lane stopped full; right lane 8/min, 4 taken; its inserter picked 6
+    (the counter 6). The end (13.5,38.5) read stopped full on both lanes, and the line read there (73 tiles) read
+    stopped with the end backed up.
+  - A per-tick trace saw the 25.5 inserter take an item at its tile's 0.81 and 0.31, and one at the exit of (13.5,24.5)
+    in the tick it reached 25.5.
+- Cost on the copy (1000 samples each): a sample 0.020-0.027 ms, 0.033-0.039 ms when items left (the next tile read);
+  start 0.14-0.67 ms; finish 0.07-0.08 ms. profile_ticks 60 s: beltsample.tick (now timed) 0.0057 ms a tick with
+  finished samples stored and none running; 0.057 ms a tick with three exact samples running (worst second 5.5 ms over
+  60 ticks).
+- Test: tests/d24_batch176.lua (fails on main: exact_tile is ignored and the line is read).
