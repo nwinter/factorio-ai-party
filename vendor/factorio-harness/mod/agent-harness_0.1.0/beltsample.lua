@@ -478,6 +478,8 @@ return function(api)
   -- (d22 batch106 BP1, Luna sent stop to end a sample) a sample is no character action: nothing ends it before until_tick
   -- (stop ends the character's action and combat and pauses the queue; a new sample, belt_flow {position}, replaces it).
   M.ENDS = 'the sample ends at until_tick: stop and your actions do not end it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs'
+  -- (d25 batch200 QM2) a new sample's seconds: the handler's check and a queue step's (runtime.lua step_ranges)
+  M.SECONDS = {2, 30}
   function M.handler(p, a)
     if a.position == nil then
       -- (d20 batch62 X2, Sol #1529) the sample so far is read where it was started: platform goes with position (a new sample there)
@@ -488,7 +490,7 @@ return function(api)
       return {sampling=true, until_tick=job.until_tick, seconds_left=math.max(0, math.ceil((job.until_tick - game.tick) / 60)), ends=M.ENDS}
     end
     local seconds = a.seconds == nil and 10 or a.seconds
-    assert(type(seconds) == 'number' and seconds >= 2 and seconds <= 30 and seconds == math.floor(seconds), 'seconds: 2..30 (default 10)')
+    assert(type(seconds) == 'number' and seconds >= M.SECONDS[1] and seconds <= M.SECONDS[2] and seconds == math.floor(seconds), string.format('seconds: %d..%d (default 10)', M.SECONDS[1], M.SECONDS[2]))
     local reason = api.reason and api.reason(a.reason)  -- (d20 batch70 AF1) its own reason to wait (measures.lua)
     assert(a.platform == nil or a.surface == nil, 'give platform or surface, not both')
     local q = a.surface ~= nil and api.on_surface(p, a.surface) or a.platform ~= nil and api.on_platform(p, a.platform) or p
