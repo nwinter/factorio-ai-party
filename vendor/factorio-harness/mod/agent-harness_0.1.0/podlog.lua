@@ -1,0 +1,282 @@
+-- podlog: one ledger of cargo pod journeys, both ways (d24 batch179 QV1; #1989 Astra: Gleba's native drops from
+-- Kestrel IVa never showed once the alert scrolled away; #2024 Sol: receipts pruned before the audit, pod ids lost after
+-- departure). Every pod sent up (a rocket) or down (from a platform's hub: what the game sends for landing pad requests
+-- and hub trash, and the harness's drops) is one journey: pod unit number, platform and its stop, send tick, land tick,
+-- where it landed (landing pad, hub or ground position), the items with quality, and at a landing pad the pad's free
+-- slots before and after and what did not fit (the game puts it on the ground beside the pad). Kept per planet surface
+-- (KEEP journeys each, oldest dropped), across departures and watch completions; shipment {ledger} reads it.
+-- Work only on pod events: on_cargo_pod_started_ascending (a hub's pod leaves), on_rocket_launch_ordered (a rocket's
+-- pod), on_cargo_pod_finished_descending (landed: the pad's free slots then) and on_cargo_pod_delivered_cargo (the
+-- pad's free slots after). Until control.lua forwards the pod events, pods.lua's once-a-second read of the platforms at
+-- a stop records hub pods (sent and gone to the second, no pad slots).
+-- Facts seen on a copy of world n (2.0.77): a hub pod reads its origin (the hub) and, for a pad request, the pad as its
+-- station from the start; a drop names only the surface until it nears the pad. A rocket's pod raises no
+-- started_ascending. delivered_cargo comes ~80 ticks after finished_descending, the pod empty by then. A landing pad
+-- takes items in its 80 main slots, then (unrequested items and amounts over a request) its 20 trash slots; with both
+-- full the rest lands on the ground beside the pad as items on the ground.
+return function(api)
+  local M = {}
+  -- (d24 batch179) a journey is about 170 bytes serialized: 1000 a planet, about 170 KB each, under 1 MB for 5 planets.
+  -- A copy of world n's save sent about 7 a minute up and down at Nauvis: about 2.4 h of Nauvis, more elsewhere.
+  M.KEEP, M.OPEN_MAX, M.OPEN_TICKS = 1000, 256, 36000
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local function store()
+    local s = api.state()
+    s.podlog = s.podlog or {seq=0, by={}, open={}}
+    return s.podlog
+  end
+  local MAIN, TRASH = 1, 2  -- defines.inventory.cargo_landing_pad_main, cargo_landing_pad_trash
+  local function contents(pod)
+    local inv = try(function() return pod.get_inventory(defines.inventory.cargo_unit) end)
+    local out, any = {}, false
+    for _, st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+      local q = type(st.quality) == 'table' and st.quality.name or st.quality
+      local key = st.name .. (q and q ~= 'normal' and '@' .. q or '')
+      out[key] = (out[key] or 0) + st.count
+      any = true
+    end
+    return any and out or nil
+  end
+  local function find(st, open)
+    local list = open and st.by[open.planet]
+    for i = #(list or {}), 1, -1 do
+      local r = list[i]
+      if r.id == open.id then return r end
+      if r.id < open.id then return nil end
+    end
+  end
+  local function platform_of(e)
+    local pl = e and try(function() return e.surface.platform end)
+    return pl and pl.valid and pl or nil
+  end
+  local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
+  -- A pod leaving: its journey (once per pod; a later call adds what it knows). info: kind, by, drop, seen.
+  function M.sent(pod, info, tick)
+    local unit = pod and pod.valid and pod.unit_number
+    if not unit then return nil end
+    local st = store()
+    local open = st.open[unit]
+    local r = open and find(st, open)
+    if r then
+      -- the event's tick over a sampled one (pods.lua sees a pod waiting to launch, before the first pod event)
+      if info and info.seen == 'event' and r.seen == 'sampled' then r.sent, r.seen = tick or game.tick, 'event' end
+      for k, v in pairs(info or {}) do if r[k] == nil then r[k] = v end end
+      if not r.items then r.items = contents(pod) end
+      return r.id
+    end
+    local origin = try(function() return pod.cargo_pod_origin end)
+    local d = try(function() return pod.cargo_pod_destination end)
+    local station = d and d.station and try(function() return d.station.valid and d.station end)
+    local up = origin and try(function() return origin.type == 'rocket-silo' end)
+    local pl, planet
+    if up then
+      pl = platform_of(station)
+      planet = try(function() return origin.surface.name end)
+    else
+      pl = platform_of(origin) or platform_of(pod)
+      planet = station and try(function() return station.surface.name end)
+        or d and try(function() return type(d.surface) == 'string' and d.surface or d.surface.name end)
+    end
+    if not planet then return nil end
+    st.seq = st.seq + 1
+    r = {id=st.seq, unit=unit, up=up or nil, platform=pl and pl.name, stop=pl and try(function() return pl.space_location.name end),
+      sent=tick or game.tick, items=contents(pod)}
+    for k, v in pairs(info or {}) do r[k] = v end
+    local list = st.by[planet] or {}
+    st.by[planet] = list
+    list[#list+1] = r
+    while #list > M.KEEP do table.remove(list, 1) end
+    -- in flight: unit -> where its journey is; every 32nd send drops old ones (a pod removed with its platform)
+    if r.id % 32 == 0 or not st.open_n then
+      local n = 0
+      for u, o in pairs(st.open) do
+        if (tick or game.tick) - o.tick > M.OPEN_TICKS then st.open[u] = nil else n = n + 1 end
+      end
+      st.open_n = n
+    end
+    if st.open_n < M.OPEN_MAX then st.open[unit] = {planet=planet, id=r.id, tick=tick or game.tick}; st.open_n = st.open_n + 1 end
+    return r.id
+  end
+  local function pad_state(pad, items)
+    local main = try(function() return pad.get_inventory(MAIN) end)
+    local trash = try(function() return pad.get_inventory(TRASH) end)
+    local counts = {}
+    for key in pairs(items or {}) do
+      local name, q = key:match('^([^@]+)@?(.*)$')
+      local id = {name=name, quality=q ~= '' and q or 'normal'}
+      counts[key] = (main and try(function() return main.get_item_count(id) end) or 0) + (trash and try(function() return trash.get_item_count(id) end) or 0)
+    end
+    return {main=main and main.count_empty_stacks() or 0, trash=trash and trash.count_empty_stacks() or 0}, counts
+  end
+  -- Landed: where, and at a pad its free slots (main, trash) and its counts of the pod's items.
+  local function landed(pod, tick)
+    local st = store()
+    local open = st.open[pod.unit_number]
+    local r = find(st, open)
+    if not r then return end
+    r.landed = tick
+    r.seen = 'event'
+    if not r.items then r.items = contents(pod) end
+    local d = try(function() return pod.cargo_pod_destination end)
+    local station = d and d.station and try(function() return d.station.valid and d.station end)
+    if station and station.type == 'cargo-landing-pad' then
+      r.dest = 'landing pad ' .. at(station.position)
+      local free, counts = pad_state(station, r.items)
+      r.free = free
+      open.pad, open.counts = station, counts
+    elseif station then
+      r.dest = 'hub'
+    else
+      r.dest = 'ground ' .. at(pod.position)
+    end
+  end
+  -- Delivered: the pad takes the items (or the ground container appears) the tick after on_cargo_pod_delivered_cargo
+  -- (the copy, 2.0.77: trash 20 free at the event, 19 the next tick), so it is read then (M.tick).
+  local function delivered(pod)
+    local st = store()
+    local unit = pod.unit_number
+    local open = st.open[unit]
+    if open then st.open[unit] = nil; st.open_n = math.max(0, (st.open_n or 1) - 1) end
+    if not (open and find(st, open)) then return end
+    open.tick, open.surface, open.position = game.tick, pod.surface, {x=pod.position.x, y=pod.position.y}
+    st.after = st.after or {}
+    st.after[unit] = open
+  end
+  -- At a pad: its free slots after, and what it did not take (counted only when no slot is left); on the ground: the
+  -- cargo-pod-container it became.
+  local function after(st, open)
+    local r = find(st, open)
+    if not r then return end
+    local pad = open.pad
+    if pad and pad.valid and r.items then
+      local free, counts = pad_state(pad, r.items)
+      r.free_after = free
+      if free.main == 0 and free.trash == 0 then
+        local short = 0
+        for key, n in pairs(r.items) do short = short + math.max(0, n - math.max(0, (counts[key] or 0) - ((open.counts or {})[key] or 0))) end
+        if short > 0 then r.ground = short end
+      end
+    elseif r.dest and r.dest:find('^ground') then
+      local box = try(function() return open.surface.find_entities_filtered{name='cargo-pod-container', position=open.position, radius=4, limit=1}[1] end)
+      if box then r.dest = 'ground ' .. at(box.position) .. ' (cargo-pod-container)' end
+    end
+  end
+  -- The deliveries read the tick after (the runtime's tick calls it only while one waits).
+  function M.tick(tick)
+    local st = api.state().podlog
+    local a = st and st.after or {}
+    for unit, open in pairs(a) do
+      if tick > open.tick then a[unit] = nil; pcall(after, st, open) end
+    end
+  end
+  M.EVENTS = {}
+  local E = defines and defines.events or {}
+  for _, n in ipairs({'on_cargo_pod_started_ascending', 'on_cargo_pod_finished_ascending', 'on_cargo_pod_finished_descending', 'on_cargo_pod_delivered_cargo'}) do
+    if E[n] then M.EVENTS[E[n]] = n end
+  end
+  function M.on_event(event)
+    local n = M.EVENTS[event.name]
+    local pod = event.cargo_pod
+    if not (n and pod and pod.valid) then return end
+    local st = store()
+    st.events = true
+    if n == 'on_cargo_pod_started_ascending' then M.sent(pod, {seen='event'}, event.tick)
+    elseif n == 'on_cargo_pod_finished_ascending' then
+      if not st.open[pod.unit_number] then M.sent(pod, {seen='event'}, event.tick) end
+    elseif n == 'on_cargo_pod_finished_descending' then landed(pod, event.tick)
+    else delivered(pod) end
+  end
+  -- A rocket's pod (on_rocket_launch_ordered, forwarded since d18).
+  function M.on_launch(event)
+    local pod = try(function() return event.rocket.attached_cargo_pod end)
+    if pod then return M.sent(pod, {kind='rocket', by=event.player_index and try(function() return game.get_player(event.player_index).name end) or nil}, event.tick) end
+  end
+  -- (no pod events forwarded) pods.lua's read: a hub's pod seen leaving, and gone
+  function M.sampled(pod, tick)
+    if store().events then return end
+    return M.sent(pod, {seen='sampled'}, tick)
+  end
+  -- pad: the landing pad pods.lua read for it (the planet's pad, where a platform's pods land), or nil
+  function M.gone(unit, tick, pad)
+    local st = store()
+    if st.events then return end
+    local open = st.open[unit]
+    local r = find(st, open)
+    if open then st.open[unit] = nil; st.open_n = math.max(0, (st.open_n or 1) - 1) end
+    if r and not r.landed then
+      r.landed, r.seen = tick, 'sampled'
+      if pad then r.dest = 'landing pad ' .. at(pad) end
+    end
+  end
+
+  local function items_text(t)
+    local list = {}
+    for k, v in pairs(t or {}) do list[#list+1] = {k=k, v=v} end
+    table.sort(list, function(x, y) return x.v > y.v or (x.v == y.v and x.k < y.k) end)
+    local parts = {}
+    for i, x in ipairs(list) do
+      if i > 8 then parts[#parts+1] = '+' .. (#list - 8) .. ' more'; break end
+      parts[#parts+1] = x.k .. '*' .. x.v
+    end
+    return #parts > 0 and table.concat(parts, ' ') or 'contents not read'
+  end
+  -- item: name@quality (that quality), or a name (any quality; prefix: name .. '@')
+  local function has_item(r, item, prefix)
+    local t = r.items
+    if not t then return false end
+    if t[item] then return true end
+    if prefix then for k in pairs(t) do if string.find(k, prefix, 1, true) == 1 then return true end end end
+    return false
+  end
+  local function ago(t)
+    local sec = math.floor(t / 60)
+    if sec >= 3600 then return string.format('%dh%02dm', math.floor(sec / 3600), math.floor(sec / 60) % 60) end
+    if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
+    return sec .. 's'
+  end
+  local function kind_text(r)
+    if r.up then return 'rocket' .. (r.by and ' (launched by ' .. r.by .. ')' or '') end
+    if r.kind == 'drop' then return 'drop #' .. tostring(r.drop) .. (r.by and ' by ' .. r.by or '') end
+    return 'sent by the hub (landing pad requests or hub trash)'
+  end
+  local function slots(f) return f and string.format('main %d, trash %d', f.main, f.trash) or nil end
+  -- Journeys on planet surfaces (surfaces: a set, nil for all), oldest first, filtered: up (true: up, false: down, nil:
+  -- both), platform, item (a name, any quality, or name@quality), from and to (send ticks); the newest limit of them.
+  function M.read(f)
+    local rows, total = {}, 0
+    local planets = {}
+    for planet in pairs(store().by) do if not f.surfaces or f.surfaces[planet] then planets[#planets+1] = planet end end
+    table.sort(planets)
+    -- every match counted; the newest limit of each planet (its list in send order) kept, then the newest limit of those
+    local all = {}
+    local prefix = f.item and not f.item:find('@', 1, true) and f.item .. '@' or nil
+    for _, planet in ipairs(planets) do
+      local list, kept = store().by[planet], 0
+      for i = #list, 1, -1 do
+        local r = list[i]
+        if (f.up == nil or (r.up == true) == f.up) and (not f.platform or r.platform == f.platform) and (not f.item or has_item(r, f.item, prefix))
+          and (not f.from or r.sent >= f.from) and (not f.to or r.sent <= f.to) then
+          total = total + 1
+          if kept < f.limit then kept = kept + 1; all[#all+1] = {r=r, planet=planet} end
+        end
+      end
+    end
+    table.sort(all, function(x, y) return x.r.sent < y.r.sent or (x.r.sent == y.r.sent and x.r.id < y.r.id) end)
+    for i = math.max(1, #all - f.limit + 1), #all do
+      local r, planet = all[i].r, all[i].planet
+      local from, to = r.up and planet or tostring(r.platform), r.up and tostring(r.platform) or planet
+      local flying = not r.landed
+      rows[#rows+1] = {id=r.id, pod=r.unit, direction=r.up and 'up' or 'down', platform=r.platform, stop=r.stop, surface=planet,
+        sent_tick=r.sent, landed_tick=r.landed, destination=r.dest, items=items_text(r.items), by=r.kind == 'drop' and r.by or nil,
+        pad_free_before=slots(r.free), pad_free_after=slots(r.free_after), ground=r.ground,
+        line=string.format('%s #%d, pod %d, %s ago: %s to %s%s, %s, %s; %s', r.up and 'up' or 'down', r.id, r.unit, ago(game.tick - r.sent), from, to,
+          not r.up and r.stop and ' (at ' .. r.stop .. ')' or '', items_text(r.items), kind_text(r),
+          flying and (game.tick - r.sent > M.OPEN_TICKS and 'no landing recorded' or 'in flight')
+            or string.format('landed %s after %ds%s', r.dest and 'in ' .. r.dest or '(where not read)', math.floor((r.landed - r.sent) / 60), r.seen == 'sampled' and ' (to the second)' or '')
+            .. (r.free and string.format('; the pad\'s free slots %s before, %s after', slots(r.free), r.free_after and slots(r.free_after) or '?') or '')
+            .. (r.ground and string.format('; %d did not fit in the pad and landed on the ground beside it', r.ground) or ''))}
+    end
+    return rows, total
+  end
+  return M
+end
