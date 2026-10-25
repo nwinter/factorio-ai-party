@@ -9,6 +9,8 @@
 -- Read only; bounded: 256 readers, 64 collectors, SEG tiles each way of a belt.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POSITIONS = 64
   local SEG, MAX_READERS = 400, 256
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
@@ -81,7 +83,7 @@ return function(api)
       end
     end
     if a.positions ~= nil then
-      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= 64, 'positions is a list of 1..64 {x, y}')
+      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= M.POSITIONS, 'positions is a list of 1..' .. M.POSITIONS .. ' {x, y}')
       for i, q in ipairs(a.positions) do
         local x, y = type(q) == 'table' and tonumber(q.x or q[1]), type(q) == 'table' and tonumber(q.y or q[2])
         assert(x and y, 'positions[' .. i .. '] needs x and y')

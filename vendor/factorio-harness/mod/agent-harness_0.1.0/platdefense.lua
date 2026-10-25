@@ -17,6 +17,8 @@
 -- Read only; bounded: 40000 foundation tiles, 256 turrets.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.PICK_NAMES, M.PICK_POSITIONS = 16, 64
   local MAX_TILES, MAX_TURRETS, GAPS = 40000, 256, 8
   local mags = {}  -- magazine sizes by item, one read's (inventory_rounds)
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
@@ -799,8 +801,8 @@ return function(api)
   function M.pick(turrets, a)
     local names, pos = a.names, a.positions
     if type(names) == 'string' then names = {names} end
-    assert(names == nil or (type(names) == 'table' and #names >= 1 and #names <= 16), 'names: 1..16 turret prototype names')
-    assert(pos == nil or (type(pos) == 'table' and #pos >= 1 and #pos <= 64), 'positions: 1..64 {x, y}')
+    assert(names == nil or (type(names) == 'table' and #names >= 1 and #names <= M.PICK_NAMES), 'names: 1..' .. M.PICK_NAMES .. ' turret prototype names')
+    assert(pos == nil or (type(pos) == 'table' and #pos >= 1 and #pos <= M.PICK_POSITIONS), 'positions: 1..' .. M.PICK_POSITIONS .. ' {x, y}')
     assert(a.page == nil or (type(a.page) == 'number' and a.page >= 1 and a.page == math.floor(a.page)), 'page is 1, 2, ...')
     assert(a.railguns_only == nil or type(a.railguns_only) == 'boolean', 'railguns_only is true or false')
     local rails = a.railguns_only == true

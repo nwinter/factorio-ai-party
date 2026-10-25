@@ -15006,3 +15006,37 @@ watch recorded 25 uranium-rounds-magazine launched at 62421858 and the pod in tr
 - Every watch row has `paused`, a fact whether a blocker or not: "Asterion is paused at aquilo" or "... in flight"
   (down watches too; their blocker rule is batch139's).
 - Test: tests/d25_batch207.lua QT4; it fails on main.
+
+## d25 batch208
+
+QU1 (Astra #2355: trial187's queue dry_run took platform_defense, uptime and platform_supply `reason` texts over 200
+characters; the optional diagnostic step then refused it when it ran).
+- queue_submit (and dry_run, queue_repeat, order_set: every plan step goes through the same check) checks each step's
+  text and list arguments against the lengths its action refuses when it runs (runtime.lua `M.step_lengths`, beside
+  batch200's `M.step_ranges`). The refusal names the step, the argument, its length and the limit:
+  `steps[2] (uptime, label "rates"): args: reason: up to 200 characters (214 given), what uptime takes when it runs`;
+  `steps[1] (scan, label "ores"): args: positions has 65 entries, outside 1..64, what scan takes when it runs`;
+  `name is 33 characters (66 bytes), outside 1..64, what platform_rename takes when it runs`.
+- The limits are the actions' own constants: the handler's check and the step's read the same field (runtime.lua
+  `M.POSITIONS_MAX`, `M.TYPES_MAX`, `M.ITEMS_MAX`, `M.NAMES_MAX`, `M.LIST_NAMES`, `M.VIA_POINTS`, `M.ENTRIES_MAX`, ...;
+  each module's `M.*` limit, blueprints.lua `H.limits`). The watches' `reason` goes through measures.lua `M.reason`
+  itself (line breaks as spaces, the ends trimmed, then up to `M.REASON`); a library name through blueprints'
+  `entry_name`, a requests group through reqgroups' `check_name`. The reason refusal now gives the length too.
+- A text counts its bytes as the actions do (`#`); the line says the characters and the bytes when they differ. A
+  list counts its entries; a single text where the action takes one counts as one; a table of named fields
+  (`{x, y}`, `{item: count}`) is left to the action. feed counts `item` with `items`, as the handler does.
+- Modes: an argument whose limit depends on the call is checked with that call's limit (transfer, feed, collect and
+  rearm positions: 64, or 128 with dry_run; refuel 64, 128 with from, area or feed_chests or with dry_run;
+  platform_defense asteroid_names with asteroids, names and positions without; a watch's reason only when it starts a
+  watch, as the handler reads it only then).
+- Not listed: board, lesson, reminder, chat and profile actions (the queues of shifts 70-75 held game actions only);
+  observe's entity and tile names (a queued observe reads a platform or a scope, which take none); fields inside list
+  entries (stops[i].save_as, a schedule's records). The step label (64 bytes) was already checked at submit.
+- On a copy of world n's save (d25): with main's runtime, dry_run took a step one past the limit for all 107 entries;
+  with this runtime it refused each, naming the limit. Direct calls one past the limit were refused by the action's
+  own length check in 92; in the other 15 the call stopped at an earlier check on the copy (no such library entry, the
+  platform not stopped at a planet, no silo, train, spidertron or speaker there): blueprint_retire reason,
+  blueprint_import blueprint and description, train station and schedule, signal_watch reason, silo_stage from,
+  configure description and speaker_alert.message, platform_rearm positions, drop items and to, collect take_back,
+  vehicle go_to, refuel positions with from. A direct feed {item, items: 16 others} was refused at 17, as counted.
+- Test: tests/d25_batch208.lua (tests/d25batch208.test.ts). It fails on main.

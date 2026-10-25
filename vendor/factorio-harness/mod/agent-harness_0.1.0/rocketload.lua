@@ -16,6 +16,7 @@
 return function(api)
   local M = {}
   local MAX_ITEMS, MAX_CHESTS, MAX_FROM = 20, 16, 16
+  M.MAX_FROM = MAX_FROM  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function kg(g) return math.floor(g / 100 + 0.5) / 10 end

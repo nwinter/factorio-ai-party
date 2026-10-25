@@ -12,13 +12,15 @@
 -- or by remote view; tiles in chunks our force does not see now are not used.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.VIA = 16
   local MAX_TILES = 512
   local function try(f) local ok, v = pcall(f); if ok then return v end end
   local function key(x, y) return x .. ',' .. y end
   local function line(a)
     local points = {api.position(a.from)}
     if a.via then
-      assert(type(a.via) == 'table' and #a.via <= 16, 'via takes at most 16 positions')
+      assert(type(a.via) == 'table' and #a.via <= M.VIA, 'via takes at most ' .. M.VIA .. ' positions')
       for _, q in ipairs(a.via) do points[#points+1] = api.position(q) end
     end
     points[#points+1] = api.position(a.to)

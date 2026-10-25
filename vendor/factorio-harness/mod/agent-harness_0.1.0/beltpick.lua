@@ -13,6 +13,8 @@
 -- reach that removes nothing three times running ends it (nothing_removed).
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.ITEMS = 16
   local PICK_EVERY, PER_PICK, IDLE_TICKS, MAX_SKIPS, SAMPLE, ZERO_PASSES, BELT_LINES = 6, 6, 180, 8, 512, 3, 32
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -26,7 +28,7 @@ return function(api)
       out[a.item] = true; list[1] = a.item
     end
     if a.items ~= nil then
-      assert(type(a.items) == 'table' and #a.items >= 1 and #a.items <= 16, 'items requires 1..16 item names')
+      assert(type(a.items) == 'table' and #a.items >= 1 and #a.items <= M.ITEMS, 'items requires 1..' .. M.ITEMS .. ' item names')
       for _, n in ipairs(a.items) do
         assert(type(n) == 'string' and prototypes.item[n], 'items: unknown item ' .. tostring(n))
         if not out[n] then out[n] = true; list[#list+1] = n end

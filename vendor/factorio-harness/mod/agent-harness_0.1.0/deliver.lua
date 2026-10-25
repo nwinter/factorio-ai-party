@@ -7,6 +7,8 @@
 -- items and its free construction robots.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POSITIONS = 32
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   -- {name=count} from items: {name: count}, [{name, count}] or "name".
@@ -92,7 +94,7 @@ return function(api)
   function M.handler(p, a)
     local items = items_of(a.items or a.item, a.count)
     local list = a.positions or (a.position and {a.position})
-    assert(type(list) == 'table' and #list >= 1 and #list <= 32, 'position, or positions: 1..32 {x,y}')
+    assert(type(list) == 'table' and #list >= 1 and #list <= M.POSITIONS, 'position, or positions: 1..' .. M.POSITIONS .. ' {x,y}')
     local q = a.surface ~= nil and api.on_surface(p, a.surface) or p
     local rows, n = {}, 0
     for _, pos in ipairs(list) do

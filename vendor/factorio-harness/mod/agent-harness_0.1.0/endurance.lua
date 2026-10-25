@@ -10,6 +10,8 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.ROUTE_MAX = 12
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(x, d) if d == 0 then return math.floor(x + 0.5) end local m = 10 ^ (d or 1); return math.floor(x * m + 0.5) / m end
   local function mins(m)
@@ -73,7 +75,7 @@ return function(api)
   -- The route as stops: given, else the schedule from its current record round to it.
   local function route_of(pl, given)
     if given ~= nil then
-      assert(type(given) == 'table' and #given >= 1 and #given <= 12, 'route is a list of 1..12 space locations (planet names)')
+      assert(type(given) == 'table' and #given >= 1 and #given <= M.ROUTE_MAX, 'route is a list of 1..' .. M.ROUTE_MAX .. ' space locations (planet names)')
       for _, n in ipairs(given) do assert(type(n) == 'string' and prototypes.space_location[n], 'route: unknown space location ' .. tostring(n)) end
       return given, 'given'
     end

@@ -12,6 +12,8 @@
 -- plan, nothing queued. A take that finds less runs short and the plan goes on (on_short skip).
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.FROM_MAX = 16
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function list_text(map)
@@ -128,7 +130,7 @@ return function(api)
     local froms = a.from
     assert(type(froms) == 'table' and (froms.x or froms[1]), 'from: a chest {x,y} or 1..16 of them')
     if froms.x then froms = {froms} end
-    assert(#froms >= 1 and #froms <= 16, 'from: 1..16 chests')
+    assert(#froms >= 1 and #froms <= M.FROM_MAX, 'from: 1..' .. M.FROM_MAX .. ' chests')
     local chests = {}
     for i, q in ipairs(froms) do
       local pos = api.position(q)

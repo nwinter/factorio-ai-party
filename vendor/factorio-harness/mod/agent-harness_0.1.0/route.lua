@@ -20,6 +20,7 @@ return function(api)
   local LETTER={[0]='N',[4]='E',[8]='S',[12]='W'}
   local BELT_TYPES={'transport-belt','underground-belt','splitter','loader','loader-1x1','lane-splitter','linked-belt'}
   local MARGIN,MAX_LEG,MAX_POINTS=24,1000,16
+  M.MAX_POINTS=MAX_POINTS  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   M.BUDGET={checks=8000,expansions=8000,total_checks=12000,total_expansions=13000}
   -- Belts and undergrounds one call lays, the return line's included.
   local MAX_ENTITIES=2048

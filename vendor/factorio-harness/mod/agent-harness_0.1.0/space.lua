@@ -5,6 +5,8 @@
 local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M={}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.KEEP_MAX,M.SET_MAX,M.NAME_MAX,M.STOPS_MAX,M.DROP_ITEMS=50,100,64,32,20
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
   local function sigtext(s) local q=s.quality; if q and type(q)~='string' then q=q.name end; return q and q~='normal' and s.name..'@'..q or s.name end
   M.waitgroups=require('waitgroups')()  -- (d18 batch36 A3) the waits' and/or chain: groups, the mixed refusal, the readback
@@ -285,7 +287,7 @@ return function(api)
     assert(not a.dry_run or (a.from_buffers==nil and a.trash_unrequested==nil and a.construction_requests==nil),
       'dry_run reads set, clear, clear_all, active and keep; from_buffers, trash_unrequested and construction_requests switch at once')
     if a.keep~=nil then
-      assert(type(a.keep)=='table' and #a.keep>=1 and #a.keep<=50,'keep is a list of item names or item@quality: ["firearm-magazine", "asteroid-collector@legendary"]')
+      assert(type(a.keep)=='table' and #a.keep>=1 and #a.keep<=M.KEEP_MAX,'keep is a list of item names or item@quality: ["firearm-magazine", "asteroid-collector@legendary"]')
       for _,name in ipairs(a.keep) do
         local kq=type(name)=='string' and name:match('@([^@]+)$')
         item_name(kq and name:sub(1,-#kq-2) or name)
@@ -296,7 +298,7 @@ return function(api)
     end
     local listed=type(a.set)=='table'
     if listed then local n=0; for _ in pairs(a.set) do n=n+1 end; listed=n==#a.set end
-    assert(a.set==nil or (listed and #a.set<=100),'set requires an array of {item,min,max?,quality?,from?}: [{"item":"iron-plate","min":100}]')
+    assert(a.set==nil or (listed and #a.set<=M.SET_MAX),'set requires an array of {item,min,max?,quality?,from?}: [{"item":"iron-plate","min":100}]')
     local entries={}
     for k,r in ipairs(a.set or {}) do
       assert(type(r)=='table','each request is {item,min,max?,quality?,from?}')
@@ -1975,7 +1977,7 @@ return function(api)
     assert(not recipe or recipe.enabled,pack..' is not unlocked yet (research space-platform)')
     local planet=a.planet or (p.surface.planet and p.surface.planet.name)
     assert(planet,'planet is required off a planet surface')
-    assert(a.name==nil or (type(a.name)=='string' and #a.name>=1 and #a.name<=64),'name must be 1..64 characters')
+    assert(a.name==nil or (type(a.name)=='string' and #a.name>=1 and #a.name<=M.NAME_MAX),'name must be 1..'..M.NAME_MAX..' characters')
     local pl=p.force.create_space_platform{name=a.name,planet=planet,starter_pack=pack}
     assert(pl,'the game refused to create a platform')
     if api.chronicle_created then pcall(api.chronicle_created,pl,p.name) end  -- who made it (chronicle.lua)
@@ -2434,7 +2436,7 @@ return function(api)
     local leg_before=pl.space_connection and try(function() return freight.leg(pl) end) or nil
     assert(a.keep_leg==nil or type(a.keep_leg)=='boolean','keep_leg must be true or false')
     if a.stops~=nil then
-      assert(type(a.stops)=='table' and #a.stops<=32,'stops requires 0..32 {station,wait?}')
+      assert(type(a.stops)=='table' and #a.stops<=M.STOPS_MAX,'stops requires 0..'..M.STOPS_MAX..' {station,wait?}')
       local records={}
       local watch={}
       runs,read_as={},{}
@@ -2871,7 +2873,7 @@ return function(api)
     assert(pl.hub and pl.hub.valid,'platform '..pl.name..' has no hub yet')
     local loc=pl.space_location
     assert(loc and loc.type=='planet','platform '..pl.name..' is not stopped at a planet (at '..tostring(location(pl))..')')
-    assert(type(a.items)=='table' and #a.items>=1 and #a.items<=20,'items requires 1..20 {item,count,quality?}')
+    assert(type(a.items)=='table' and #a.items>=1 and #a.items<=M.DROP_ITEMS,'items requires 1..'..M.DROP_ITEMS..' {item,count,quality?}')
     assert(a.full==nil or type(a.full)=='boolean','full must be true or false')
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
     -- Repeated entries add up; the hub must hold the total.

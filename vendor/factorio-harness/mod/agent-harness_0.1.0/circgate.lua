@@ -6,6 +6,8 @@
 -- wire), in that order; a step that fails stops it and the reply says which steps were done and the calls left.
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.MAX_ALL = 8
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local DECIDER = 'decider-combinator'
@@ -46,7 +48,7 @@ return function(api)
     return best, net
   end
   function M.handler(p, a)
-    assert(type(a.all) == 'table' and #a.all >= 1 and #a.all <= 8, 'all is a list of 1..8 conditions, e.g. ["bioflux > 200", "agricultural-science-pack < 500"]')
+    assert(type(a.all) == 'table' and #a.all >= 1 and #a.all <= M.MAX_ALL, 'all is a list of 1..' .. M.MAX_ALL .. ' conditions, e.g. ["bioflux > 200", "agricultural-science-pack < 500"]')
     for i, c in ipairs(a.all) do assert(type(c) == 'string' or type(c) == 'table', 'all ' .. i .. ' is a condition: "bioflux > 200" or {signal, comparator, value}') end
     local target = api.entity(p, {position=a.position})
     assert(target and target.valid and target.force == p.force, 'position must name an entity of ours with a circuit condition (an inserter, a belt, a pump, ...)')

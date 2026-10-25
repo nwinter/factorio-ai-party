@@ -6,6 +6,8 @@
 -- standing top-up. Requests made are counted per platform (refills since).
 return function(api)
   local M = {}
+  -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
+  M.POSITIONS = 32
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function store(name)
@@ -53,7 +55,7 @@ return function(api)
     local hub_inv = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     local turrets = {}
     if a.positions ~= nil then
-      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= 32, 'positions: 1..32 turret positions {x,y}')
+      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= M.POSITIONS, 'positions: 1..' .. M.POSITIONS .. ' turret positions {x,y}')
       for _, pos in ipairs(a.positions) do
         local ok, e = pcall(api.remote_entity, q, {position=pos})
         if not ok then turrets[#turrets+1] = {position=pos, error=tostring(e):gsub('^[^:]*:%d+: ', '')}

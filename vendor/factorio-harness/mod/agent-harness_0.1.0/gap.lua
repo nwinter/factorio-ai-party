@@ -9,6 +9,7 @@ return function(api)
   local M = {}
   -- (d19 batch45) PER machines a call: 32 machines' reply was 26 KB, 9 ms to encode on the private copy
   local MAX, PER, NEAR, SOON, MAX_DONORS = 32, 16, 64, 5 * 3600, 8
+  M.MAX = MAX  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   local CRAFTERS = {['assembling-machine']=true, furnace=true, ['rocket-silo']=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end

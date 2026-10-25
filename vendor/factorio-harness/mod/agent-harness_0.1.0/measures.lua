@@ -23,7 +23,7 @@ return function(api)
     if v == nil then return nil end
     assert(type(v) == 'string', 'reason: text, up to ' .. M.REASON .. ' characters')
     v = v:gsub('[\r\n]+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
-    assert(#v <= M.REASON, 'reason: up to ' .. M.REASON .. ' characters')
+    assert(#v <= M.REASON, 'reason: up to ' .. M.REASON .. ' characters (' .. #v .. ' given)')
     return v ~= '' and v or nil
   end
   local function at(q) return q and string.format('(%g,%g)', q.x, q.y) or '?' end
