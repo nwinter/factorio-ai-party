@@ -14,6 +14,7 @@ python3 tools/test_agy_memguard.py
    Mac, and its log under the run).
 """
 import json, os, signal, subprocess, sys, tempfile, time
+import testsafe  # noqa: E402  (d24 batch186: what a test runs a repo script with)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -149,7 +150,7 @@ def start_team():
                               "gemini\tagy\t-\tgemini-3.8-flash-high\t-\tGemini 3.8 Flash\tAntigravity\n")
         qb = os.path.join(tmp, "brief.json")
         json.dump({"profiles": []}, open(qb, "w"))
-        env = dict(os.environ, POG_DRY_RUN="1", POG_TEAM_FILE=team, POG_CASTER="0", POG_ANALYST="0",
+        env = testsafe.env(POG_DRY_RUN="1", POG_TEAM_FILE=team, POG_CASTER="0", POG_ANALYST="0",
                    POG_QUOTA_BRIEF=qb, POG_QUOTA_BURN=os.path.join(tmp, "no-burn.tsv"))
         env.pop("POG_RESUME", None)
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "memguard-dry-test", "10"], env=env,

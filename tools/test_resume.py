@@ -12,6 +12,7 @@
   (tools/win/resume-save.ps1 itself is checked on the Windows box: tools/test_resume_save.py.)
 """
 import json
+import testsafe  # noqa: E402  (d24 batch186: what a test runs a repo script with)
 import os
 import shutil
 import subprocess
@@ -67,7 +68,7 @@ def workspace():
         prev = os.path.join(tmp, "runs", "shake4", "haiku")
         os.makedirs(prev)
         open(os.path.join(prev, "notes.md"), "w").write("# Notes (haiku, world n)\n\n## Now\nGoal: iron row at -40,12\n")
-        env = dict(os.environ, POG_WS="haiku", POG_BOT="haiku", POG_RESUME="shake4",
+        env = testsafe.env(POG_WS="haiku", POG_BOT="haiku", POG_RESUME="shake4",
                    POG_RESUME_DIR=os.path.join(tmp, "runs", "shake4"))
         out = subprocess.run(["bash", os.path.join(tmp, "tools", "new-run.sh"), "shake5", "n", "haiku", "10"], env=env,
                              capture_output=True, text=True, check=True).stdout.strip()
@@ -106,7 +107,7 @@ def dry_run():
         qb = os.path.join(tmp, "brief.json")   # quota: Gemini-style full window on Luna's route
         json.dump({"profiles": [{"id": "codex_account_b", "command": "codex-b", "windows": [
             {"label": "Codex · Weekly", "percent": 100, "resets_at": 4102444800}]}]}, open(qb, "w"))
-        env = dict(os.environ, POG_DRY_RUN="1", POG_RESUME="shake4", POG_RESUME_DIR=prev, POG_TEAM_FILE=team,
+        env = testsafe.env(POG_DRY_RUN="1", POG_RESUME="shake4", POG_RESUME_DIR=prev, POG_TEAM_FILE=team,
                    POG_CASTER="0", POG_ANALYST="0", POG_QUOTA_BRIEF=qb,
                    POG_QUOTA_BURN=os.path.join(tmp, "no-burn.tsv"))   # no rates: a full window warns all the same
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"], env=env,

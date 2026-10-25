@@ -3,9 +3,15 @@
 # Env: POG_STOP_WORLD=1 also stops the world's server and clients after the save (shifts).
 cd "$(dirname "$0")/.."
 run=$1 world=${2:-n} rundir="runs/$1"
-tools/.venv/bin/python tools/obs.py stream-stop 2>/dev/null || true
-tools/.venv/bin/python tools/obs.py stop 2>/dev/null || true
-tools/.venv/bin/python tools/obs.py replay-stop 2>/dev/null || true
+# (d24 batch186) POG_STOP_OBS: the OBS command (tests: a stub); a test run (POG_TEST=1) without one leaves OBS alone (a
+# copy of this script with tools/obs.py in it would stop the live stream and recording)
+obs_cmd=${POG_STOP_OBS:-tools/.venv/bin/python tools/obs.py}
+if [ "${POG_TEST:-0}" = 1 ] && [ -z "${POG_STOP_OBS:-}" ]; then echo "POG_TEST=1: OBS left alone (set POG_STOP_OBS)"
+else
+  $obs_cmd stream-stop 2>/dev/null || true
+  $obs_cmd stop 2>/dev/null || true
+  $obs_cmd replay-stop 2>/dev/null || true
+fi
 for f in stream-service.pid overlay-tunnel.pid supervisors.pid score-loop.pid; do
   [ -f "$rundir/$f" ] && while read -r pid; do pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null || true; done < "$rundir/$f"
 done

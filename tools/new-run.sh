@@ -33,7 +33,8 @@ if [ "${POG_BROKER:-0}" = 1 ]; then
   conn="POG_FH_SOCKET=\"$root/runs/$run/.sock/${POG_BOT:-$ws}.sock\""
 else
   mkdir -p "$keys" && chmod 700 "$keys"
-  if [ -f "$HOME/.config/pog/rcon-$world.pw" ]; then
+  # (d24 batch186) a test run (POG_TEST=1) gets no world's password: tests copied rcon-n.pw into their temp runs
+  if [ "${POG_TEST:-0}" != 1 ] && [ -f "$HOME/.config/pog/rcon-$world.pw" ]; then
     install -m 600 "$HOME/.config/pog/rcon-$world.pw" "$keys/rcon-$world.pw"
   fi
   conn="POG_RCON_PASSWORD_FILE=\"$keys/rcon-$world.pw\""

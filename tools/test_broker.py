@@ -10,6 +10,7 @@
 Needs the harness built (cd vendor/factorio-harness && npm run build) for the end-to-end part.
 """
 import json, os, re, shutil, socket, struct, subprocess, sys, tempfile, threading, time
+import testsafe  # noqa: E402  (d24 batch186: what a test runs a repo script with)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -402,7 +403,7 @@ def new_run():
             if f.endswith(".md"):
                 shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
         shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
-        base = dict(os.environ, POG_WS="haiku", POG_BOT="haiku")
+        base = testsafe.env(POG_WS="haiku", POG_BOT="haiku")
         out = subprocess.run(["bash", os.path.join(tmp, "tools", "new-run.sh"), "brk", "n", "haiku", "10"],
                              env=dict(base, POG_BROKER="1"), capture_output=True, text=True, check=True).stdout.strip()
         fh, shot = open(os.path.join(out, "fh")).read(), open(os.path.join(out, "shot")).read()
@@ -416,6 +417,8 @@ def new_run():
                              env=base, capture_output=True, text=True, check=True).stdout.strip()
         fh = open(os.path.join(out, "fh")).read()
         assert re.search(r'POG_RCON_PASSWORD_FILE=".*/runs/plain/\.keys/rcon-n\.pw"', fh) and "POG_FH_SOCKET" not in fh, fh
+        # (d24 batch186) a test run gets no world's password (the live world's rcon-n.pw was copied on every gate run)
+        assert not os.path.exists(os.path.join(tmp, "runs", "plain", ".keys", "rcon-n.pw")), "a test run copied the world's password"
     finally:
         shutil.rmtree(tmp)
     print("new-run: ok")

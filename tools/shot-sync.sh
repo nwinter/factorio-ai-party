@@ -7,6 +7,9 @@
 # Logs a start line, each copy, and errors (shake3's log was empty: everything went to /dev/null). A listing error
 # that repeats every second (the box unreachable) is logged when it changes and then once a minute.
 dir=$1; shift
+# (d24 batch186) the box (POG_WIN_HOST, default pogwin); a test run (POG_TEST=1) never reaches pogwin
+host=${POG_WIN_HOST:-pogwin}
+if [ "${POG_TEST:-0}" = 1 ] && [ "$host" = pogwin ]; then echo "POG_TEST=1: shot-sync.sh does not reach pogwin (set POG_WIN_HOST)" >&2; exit 3; fi
 prev=""
 last_err="" last_err_t=0
 skipped=""  # screenshots for workspaces not in this run, already reported
@@ -24,7 +27,7 @@ while true; do
   for cl in "$@"; do
     remote="D:\\pog\\inst\\$cl\\script-output\\pog"
     # cmd's dir exits 1 with "File Not Found" when there are no screenshots: that is an empty list, not an error
-    if ! out=$(ssh pogwin "if exist $remote dir /b /s /a-d $remote\\*.png" 2>&1) && ! grep -qi "file not found" <<<"$out"; then
+    if ! out=$(ssh "$host" "if exist $remote dir /b /s /a-d $remote\\*.png" 2>&1) && ! grep -qi "file not found" <<<"$out"; then
       note_err "list:$cl:$out" "listing $cl failed: $(tr -d '\r' <<<"$out" | tail -2 | tr '\n' ' ')"
       continue
     fi
@@ -45,13 +48,13 @@ while true; do
       fi
       continue
     fi
-    if ! err=$(scp -q "pogwin:${path//\\//}" "$dir/$ws/shots/.incoming-$f" 2>&1); then
+    if ! err=$(scp -q "$host:${path//\\//}" "$dir/$ws/shots/.incoming-$f" 2>&1); then
       note_err "scp:$path" "copy of $path failed: $(tr '\n' ' ' <<<"$err")"
       continue
     fi
     mv "$dir/$ws/shots/.incoming-$f" "$dir/$ws/shots/$f" || continue
     echo "[shot-sync] $(ts) copied $ws/shots/$f"
-    if ! err=$(ssh pogwin "del \"$path\"" 2>&1); then
+    if ! err=$(ssh "$host" "del \"$path\"" 2>&1); then
       note_err "del:$path" "copied but could not delete $path on the box: $(tr -d '\r' <<<"$err" | tr '\n' ' ')"
     fi
   done <<<"$now"

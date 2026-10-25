@@ -356,7 +356,7 @@ def codex_and_grok():
             os.environ.pop("POG_GROK_SANDBOX")
         def grok_env(full):
             return subprocess.run(["bash", "-c", f". '{ROOT}/tools/profile-flags.sh'; echo \"$grok_env\""],
-                                  env=dict(os.environ, POG_FULL_TOOLS=full), capture_output=True, text=True,
+                                  env=dict(os.environ, POG_FULL_TOOLS=full, POG_TEST="1"), capture_output=True, text=True,
                                   check=True).stdout
         assert "GROK_SUBAGENTS=0" in grok_env("0") and "GROK_WEB_FETCH" not in grok_env("0")
         assert "GROK_SUBAGENTS" not in grok_env("1") and "GROK_WEB_FETCH=1" in grok_env("1")

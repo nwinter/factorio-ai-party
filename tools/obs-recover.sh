@@ -35,8 +35,11 @@ if grep -q 'active=True' <<<"$st"; then
   say "stream active: nothing to do"
   exit 0
 fi
-lock=$root/runs/.obs-recover.lock
-mkdir -p "$root/runs"
+# (d24 batch186) POG_REC_LOCK: another lock (tests: the gate runs them in the live checkout, whose runs/ holds the
+# watchdog's real lock); under POG_TEST=1 the one in runs/ is refused
+lock=${POG_REC_LOCK:-$root/runs/.obs-recover.lock}
+if [ "${POG_TEST:-0}" = 1 ] && [ -z "${POG_REC_LOCK:-}" ]; then say "POG_TEST=1: not taking the live lock $lock (set POG_REC_LOCK)"; exit 3; fi
+mkdir -p "$(dirname "$lock")"
 if ! mkdir "$lock" 2>/dev/null; then
   say "another obs-recover is running ($lock): not starting a second one"
   exit 2

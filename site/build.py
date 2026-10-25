@@ -1879,6 +1879,10 @@ def main():
                     help="the shifts' YouTube videos (tools/yt_upload.py writes it; missing: no videos)")
     ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
     args = ap.parse_args()
+    # (d24 batch186) a test run (POG_TEST=1) builds from its own runs folder: the gate runs the tests in the live
+    # checkout, where the repo's runs/ is the live run's and the stats caches land in its shift folders
+    if os.environ.get("POG_TEST") == "1" and os.path.realpath(args.runs_dir) == os.path.realpath(REPO / "runs"):
+        raise SystemExit("POG_TEST=1: build.py needs --runs-dir (not the repo's runs/) in a test run")
     if args.content:
         global CONTENT, AGENTS
         CONTENT = json.loads(Path(args.content).read_text())
