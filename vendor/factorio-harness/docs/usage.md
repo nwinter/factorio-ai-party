@@ -14667,3 +14667,48 @@ QN3 (Sol #2328): supply's residual. Nauvis agricultural science held 2801 then 2
   - Checked on the copy for all 90 entries: low and high not refused by the range; past high and below low refused.
 - Tests: tests/d25_batch200.lua (QM1; fails on main: no segments), tests/d25_batch200b.lua (QM2, through queue_submit;
   fails on main: the step goes on to the platform check).
+
+## d25 batch203 (QP1, Sol #2331: the rocket ledger keeps which silo launched each rocket)
+
+- Engine, on a copy of world n's 07:11 save (level-script handlers, 14 silos, 12 with automatic launches): every
+  launch, native ones for platform requests too (player_index nil), raised on_rocket_launch_ordered with rocket_silo
+  and the rocket's attached_cargo_pod; on_rocket_launched (the silo, no pod) ~1160 ticks later; the pod's
+  on_cargo_pod_finished_ascending ~490 ticks after that. The pod's cargo_pod_origin was the silo at both pod reads.
+  The harness's silo records (on_rocket_launch_ordered) already held every silo's native launches there; "no launch
+  seen" fits a silo built after the harness last recorded one.
+- podlog.lua: a rocket journey keeps silo (unit number) and its position (sx, sy); the planet is its list's. Set from
+  the launch event's rocket_silo, else the pod's cargo_pod_origin (a rocket-silo with a unit number); nothing is
+  searched. silo_since: the tick this runtime began keeping silos. Rows: silo {unit_number, surface, position},
+  'unknown' (sent before silo_since) or 'not read'; the line adds "rocket from silo N (x,y)". read takes silo.
+- shipment {ledger, silo: N}: that silo's rockets (direction up; down with silo refused).
+- silo.lua: each silo's record counts launches (count, count_since: its first launch this runtime recorded; a launch
+  call and the game's event of it count once) and keeps the pod's unit number; the silo read and inspect give
+  last_launch.pod, launch_count, launch_count_since.
+- Storage on the copy: a rocket row 226 B as JSON with its silo, 184 B without (+42 B; at most 42 KB a planet at the
+  ledger's 1000 journeys); 14 silo records 2835 B.
+- Cost on the copy, profile_ticks 180 s each, the save's runtime then this branch (the copy given world n's control.lua,
+  which forwards pod events; its own was from before batch179): on_rocket_launch_ordered 0.658 then 0.687 ms each (16
+  and 17 launches); on_cargo_pod_finished_ascending 0.013 then 0.016 ms each.
+- Test: tests/d25_batch203.lua (fails on main: no silo in the rows). tests/d24_batch179.lua's rocket line now ends
+  "rocket from silo 20720 (15.5,59.5)".
+## d24 batch193
+
+QAI1 (viewer Aurora 20:58): a far vehicle refusal names the remote form. Opus's `vehicle {position, go_to}` (and once
+`{position, auto_target_without_gunner}`) in shift71 at 02:03:23, 03:08:44 and 03:31:12 UTC was refused as "vehicle is
+outside local visible area" with no word of `vehicle {remote: true, vehicle: N, go_to}`, which sends a spidertron in a
+chunk our force sees.
+- The refusal of a `position` out of sight (enter, go_to, clear, the targeting switches, or a read alone) now ends,
+  for our spidertron, car or tank within 2.5 tiles of it:
+  - with the remote call, its unit number and the call's own arguments: "; or by remote: vehicle {remote: true,
+    vehicle: 23036938, go_to: {x: -600, y: -380}}". A spidertron keeps go_to, mode, clear and the switches; a read
+    alone gives `{remote: true, vehicle: N}`; enter gives `go_to: {x, y}`. A car or tank gives `drive:` go_to's
+    target when it is one position, else `drive: {x, y}`;
+  - or, when the remote form is refused too, its refusal (the remote form's own rules): "; by remote it is refused
+    too: spidertron (-480,-500) is in no chunk our force sees now ...", or a car's driver seat taken.
+  - Nothing is added for another force's vehicle, a locomotive or wagon, or no vehicle there.
+- A bare `vehicle {position}` of a far vehicle was refused as "position names the vehicle for enter: true ...; nothing
+  is done"; it is now the out-of-sight refusal with the remote read. What is allowed is unchanged.
+- Cost: one find (position, radius 2.5, car and spider-vehicle, our force) and the remote form's checks, only on the
+  refusal; measured below.
+- Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
+

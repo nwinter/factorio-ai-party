@@ -341,11 +341,14 @@
   inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
   hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
   minute.
-  `shipment {ledger: true, surface?, direction?, platform?, item?, from_tick?, to_tick?, limit?}`: the pod ledger, every
+  `shipment {ledger: true, surface?, direction?, platform?, item?, silo?, from_tick?, to_tick?, limit?}`: the pod ledger, every
   cargo pod sent up (a rocket) or down (a hub's pod for landing pad requests or hub trash, and drops) on a planet, the
   last 1000 a planet, kept after the platform leaves: pod unit number, platform and its stop, sent and landed ticks,
   where it landed (landing pad, hub, ground position), items with quality, a pad's free main and trash slots before
-  and after, and `ground`: what the full pad did not take (it lands on the ground beside the pad).
+  and after, and `ground`: what the full pad did not take (it lands on the ground beside the pad). A rocket's `silo`
+  {unit_number, surface, position} is the silo the game names for that launch (native launches for platform requests
+  too); `unknown` for rockets sent before the ledger kept silos (d25), never taken from nearby entities. `silo: N`
+  (a unit number) lists that silo's rockets.
 - `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
@@ -435,7 +438,8 @@
 - `silo {position?, surface?, why?, requests?, page?}`: `loading` near the head (when anything is): for whom (the platform its automatic
   requests fill for, else the platform a hand load was for and by whom), the requests it fills now, what is aboard,
   what robots bring and a paused manifest's rockets left; a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
-  its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
+  its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch (with its `pod`),
+  `launch_count` and `launch_count_since` (every launch the game reports, counted from d25), `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
   `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min);
   `parts_rate` says that window and how long in it the silo built parts, stood short of an ingredient or held a built
