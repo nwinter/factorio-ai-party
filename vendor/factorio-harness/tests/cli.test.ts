@@ -758,6 +758,31 @@ test('kite --wait waits for the fight to end and reports it like move_to',async(
     });
   }
 });
+test('spider_kite --wait waits for the spidertron fight to end and reports kills, rockets and recovery',async()=>{
+  // d24 batch191 QAG1: a spidertron's fight runs while the model waits; timed_out is done, as kite's.
+  for (const end of [
+    {last:{kind:'spider_kite',outcome:'clear',why:'no enemies left within 40 tiles in chunks our force sees',kills:30,enemies_left:0,ammo_used:31,ammo_left:277,spidertron:'spidertron #7 at (1,2), health 100%'}, code:0},
+    {last:{kind:'spider_kite',outcome:'timed_out',why:'time up',kills:3,enemies_left:4,ammo_used:5,ammo_left:60,spidertron:'spidertron #7 at (1,2), health 90%'}, code:0},
+    {last:{kind:'spider_kite',outcome:'stalled',why:'no progress toward (100,0) for 6 s from (0,0); re-routed once (its route turned 60 degrees)',kills:0,enemies_left:0,ammo_used:0,ammo_left:40,spidertron:'spidertron #7 at (0,0), health 100%',recovery:'re-routed once (its route turned 60 degrees)'}, code:1},
+  ]) {
+    let polls=0;
+    await engine(request=>{
+      if(request.action==='spider_kite')return {ok:true,result:{until_tick:180,ammo:40,by:'remote view'}};
+      if(request.action==='observe')return {ok:true,result:{player:{position:{x:3,y:4},health:250,max_health:250,inventory:[]},clock:'c'}};
+      polls++;
+      return {ok:true,result:polls<3?{active:{kind:'spider_kite',until_tick:180},combat:false}:{active:false,combat:false,last:end.last}};
+    },async port=>{
+      const {code,stdout}=await compact(port,['call','spider_kite','--args','{"vehicle":7}','--wait']);
+      assert.equal(code,end.code,stdout);
+      assert.ok(polls>=3,'it polled until the fight ended');
+      const second=stdout.slice(stdout.indexOf('\ntick:',1)+1);
+      assert.match(second,new RegExp(`outcome: ${end.last.outcome}\\n\\s*action: spider_kite\\n`));
+      for (const key of ['kills','enemies_left','ammo_used','ammo_left'] as const) assert.match(second,new RegExp(`\\n\\s*${key}: ${end.last[key]}\\n`));
+      assert.ok(second.includes(end.last.spidertron),second);
+      if (end.code) assert.ok(second.includes('recovery: "re-routed once (its route turned 60 degrees)"'),second);
+    });
+  }
+});
 test('a walk that gave up says why on the error line',async()=>{
   await engine(request=>{
     if(request.action==='move_to')return {ok:true,result:{until_tick:60}};

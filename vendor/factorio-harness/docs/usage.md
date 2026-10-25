@@ -14346,6 +14346,56 @@ Fixed besides gates:
 - Test: tests/d24_batch189.lua (fails on main: "attempt to call a nil value (field 'guard_tick')").
 ## d24 batch182
 
+
+## d24 batch191 (QAG1, viewer Aurora site:4818 and site:4826)
+
+`spider_kite {vehicle?, position?, min_distance?, max_distance?, range?, radius?, min_health?, min_shield?, ammo_below?,
+retreat?, ticks?}` (spiderkite.lua): kite for a spidertron the agent rides (no `vehicle`) or sends by remote view
+(`vehicle`: unit_number or {x,y}, in a chunk our force sees, as `vehicle {remote}`). Only what a player has: both
+targeting switches on (its guns fire by themselves; back as they were at the end) and route targets as its remote sets
+them. Read every 10 ticks (nothing runs between): health, grid shield, rockets, enemies within `radius` (40) in chunks our
+force sees. A unit nearer than `min_distance` (16): a route away from the group's centre (the units within
+`max_distance`, 28) out to the band's far side, turned onto ground its legs stand on with a walkable straight line; a
+unit in the band: it stands; no unit within max_distance + 8 and a spawner or worm beyond `range` (34): toward it; units
+beyond the band only: it stands; none: back to `position`, then `clear`. Outcomes: `clear`, `low_health` (`min_health`
+0.4 or the standing retreat_guard's `health_below`), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
+`stalled`, `route_changed` (another call or a player set its route), `out_of_coverage` (by remote view), `destroyed`,
+`timed_out` (`ticks`, 3600). A low end with `retreat` {x,y} (default the standing retreat_guard's `to`; `false`: none)
+sends it there by `vehicle {go_to}`'s route (round water too), guns left on. Its go_to route is replaced at the start
+(the reply's `replaced`) and its go_to stall sampling ends. `last`: why, kills, kills_by, enemies_left, ammo_used,
+ammo_left, spidertron, turns, recovery, water, routed, retreat, targeting; status `active.spider_kite` says what it does.
+`fh call spider_kite --wait` waits and reports them; `timed_out` exits 0, as kite's.
+
+Water (spiderpath.lua, the addendum), for `spider_kite`'s legs back to `position` or toward a nest and for
+`vehicle {go_to}`: each straight leg is read tile by tile; over 12 tiles in a row with the `water_tile` layer it gets
+`LuaSurface.request_path` with that layer only and a 2x2 box (it walks over buildings and trees, as legs do); the path
+comes back thinned to points 12 tiles apart (each straight piece read again) and the route goes through them. go_to's
+reply says `water` {crossing, note}; the route change and a failed path (`the pathfinder found no path round the water
+to (x,y) (the target itself is on water)`) are said once in the sender's team alerts (the path often comes back
+within the go_to call, so in its own reply). batch189's retreat route goes round water the same way (its retreat record
+and status say `water`), and spider_kite is refused on a spidertron held on its retreat. A body standing over the water at a shore
+starts its path from the nearest dry tile. No progress (go_to: 10 s, now read as 1 tile nearer than its nearest, so a
+sway at a shore is no progress; spider_kite: 2 s): re-routed once (a path round the water, or spider_kite turned 60
+degrees), then with water within 16 tiles ahead shore recovery (its route goes first to the dry tile nearest the target
+on rings 4..24 tiles round it), then the stall line / `stalled`. A go_to route of more than 8 points reads as the first 4
+and the last 2.
+
+Engine facts (2.0.77, a copy of world n's 20:12 autosave):
+- `add_autopilot_destination` walks the straight line, about 0.22 tiles a tick; no waypoints are added and nothing paths
+  round water; at a wide lake it stands at the shore with the target kept. 2.0.77's changelog names no spidertron
+  pathing.
+- The legs' collision mask is {player, rail}; every tile that holds them off has `water_tile` (water, deepwater,
+  green and wube water, lava, ammoniacal ocean, brash ice, empty space, out of map). They stepped across a deepwater
+  strip 14 tiles wide; 16 stopped them.
+- `request_path` with collision_mask {water_tile} went round the lake (356 tiles, 291 points with a 1x1 box, 79 with a
+  3x3 one), in the tick after the request; a start or goal on water finds no path.
+- With nobody aboard only `auto_target_without_gunner` fires; with a script character (no player) in the driver seat
+  only `auto_target_with_gunner` fires. A grid's personal laser defense kills biters with both switches off.
+
+Cost on the copy (x86 under Rosetta): a scan with 30-40 enemies in view 0.14-0.17 ms median (p95 0.21-0.27, max 0.59),
+a back-off scan 0.22 ms median (p95 0.39); the first scan after a deploy 2.5 ms. Every 10 ticks: about 0.02-0.03 ms a
+tick averaged. A path result's handling (thinning, reads) 0.79 ms once. A go_to call 2.9-5.5 ms with or without water
+on its line (the reply's JSON dominates on the copy).
 - QY1 (Astra #2044: "Gleba six breeders uptime ~104 base craft/min, 156 completions/min while supply made ~149/min.
   Physical recipe 2 out plus 0.5 bonus, 1 seed returned => 260 gross/156 net. Does native production statistics or
   supply made already subtract ignored seed?"; "recipe-only supply consumers missed egg disposal burners ... Please
@@ -14565,6 +14615,46 @@ Cost on the copy (Nauvis, 175 stacks on the ground): the ground find in a stock 
 stalls).
 
 Test: tests/d25_batch198.lua's QK2 part (fails on main: 6 stacks of every quality where 3 legendary lie within 3 tiles).
+## d25 batch202 (QO1, Sol #2326; QO2, viewer Aurora site:4874)
+- QO1: `platform_defense` `ammo_use` has rows for electric turrets aboard (laser, tesla), by kind and quality
+  (`kind: "electric"`, `where: "built"`; `"all"`: every electric turret prototype, `where: "any"`):
+  - a shot every `cooldown_ticks` (the turret's cooldown over 1 + the force's shooting speed bonus for its category),
+    `shots_per_min`;
+  - `damage_per_shot` and `damage {type: amount}`: the beam's damage (the beam entity's attack_result) x the turret's
+    `damage_modifier` (laser-turret 2) x (1 + `damage_bonus`) x (1 + `turret_attack_bonus`), before resistances;
+    `damage_per_second`, `damage_per_second_all`; `chain {max_jumps, range_per_jump}` for a tesla turret;
+  - `energy_per_shot_kj` (the prototype's energy_consumption), `buffer_kj`, `drain_kw`, `recharge_kw` (the buffer's
+    input flow limit at the turret's quality), `power_kw` at full fire; `recharge_limited` and `shots_per_min_powered`
+    when the recharge refills less than the shots draw;
+  - `quality_effect {multiplier, max_health, recharge_kw}`; `sources` (the technologies and levels behind each bonus).
+- `bonuses {categories [{category, turrets, damage_bonus, shooting_speed_bonus, damage_sources,
+  shooting_speed_sources}], turret_attack [{turret, bonus, sources}]}`: the force's research bonuses for every category
+  the turrets aboard fire, with a `research bonuses` line.
+- Ammo rows add `damage_per_second`. The route's damage (`route`) counts electric turrets (their beam at our bonuses,
+  after each asteroid's resistances).
+- Measured on a copy of world n's d25 07:26 save (2.0.77; laser-weapons-damage 1-8 +370%, laser-shooting-speed 1-7
+  +220%), a laser turret firing at a big worm, damage events logged with their cause:
+  - one hit a shot every 12.5 ticks (12 and 13 alternately; 40 / 3.2), 94 laser a hit (10 x 2 x 4.7), 47 after the
+    worm's 50%; normal, rare and legendary turrets the same; shooting speed bonus set to 0: one hit in 40 ticks;
+  - the buffer (801 kJ) emptied by 800 kJ at each shot and refilled 160 kJ a tick normal, 256 rare, 400 legendary
+    (get_input_flow_limit: 9.6 MW x the quality's multiplier), less the 24 kW drain;
+  - max health 1000 normal, 1600 rare, 2500 legendary; range 24 at every quality;
+  - a tesla turret: 372 electric a hit (120 x 3.1, electric-weapons-damage 1-3), one shot in 120 ticks;
+  - Asterion's own rare laser turrets hit small asteroids for 75.2 (94 less 20%); asteroids resist laser 20% small,
+    90% medium, 95% big, 99% huge (every kind).
+  - The electric network's statistics (input_counts, get_input_count) held only the normal turret's draw (800 kJ a
+    hit); rare and legendary read 0.
+- QO2: rounds left beside magazines (vehicles.lua `inventory_rounds`: a stack's rounds are its whole magazines and
+  its top one's ammo):
+  - `platform_defense`: turret rows `ammo` (`firearm-magazine*10 (93 rounds)`) and `rounds`; held `ammo_use` rows
+    `items_held` and `rounds_held`;
+  - `inspect`: `ammo_rounds {inventory: [{name, quality, count, rounds, magazine_size, partial}]}` for turrets,
+    artillery, cars and spidertrons; area rows and compact lines `ammo: name*count (N rounds)`; `scan` field `ammo`;
+  - the vehicle read's guns: `2 tank-machine-gun: 5 firearm-magazine (43 rounds) (range 20)`.
+- Cost on the copy (Asterion: 116 ammo turrets, 22 laser turrets; platform_defense there 190-260 ms a call as
+  before): the electric row about 0.3 ms, the bonuses about 0.4 ms (the technology read shared within a tick), the
+  rounds over 116 turrets 0.8-1.0 ms against 0.3 ms for the item counts (read once a call, reused by ammo_use).
+- Test: tests/d25_batch202.lua (fails on main: no electric rows).
 ## d24 batch195 (hotfix, operator d24 21:18: platform_endurance answered from a kept reading took 80.7 ms on world n)
 
 - Measured on world n by the operator (runtime 465f403f, bot sol), platform_endurance {platform: Swiftlet, forecast:
