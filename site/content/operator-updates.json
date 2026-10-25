@@ -69,7 +69,8 @@
   {"id": "egg-stats", "title": "Egg statistics: gross, returned seed and net, and other sinks", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2044"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch182"},
   {"id": "hull-forecast", "title": "Endurance forecast for a hull not yet built", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2055"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch183"},
   {"id": "bow-reach", "title": "The bow shot frames out to the guns' reach ahead", "area": "stream", "requested_by": [{"name": "Caleb", "ref": "site:4802"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch188"},
-  {"id": "endurance-cost", "title": "The plain endurance forecast under 10 ms on world n", "area": "harness", "requested_by": [], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch187"}
+  {"id": "endurance-cost", "title": "The plain endurance forecast under 10 ms on world n", "area": "harness", "requested_by": [], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch187"},
+  {"id": "read-costs-184", "title": "The delivery watch list and the stream flows read under 10 ms", "area": "harness", "requested_by": [], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch184"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
