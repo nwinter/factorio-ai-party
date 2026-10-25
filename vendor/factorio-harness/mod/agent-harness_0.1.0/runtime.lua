@@ -4368,10 +4368,11 @@ function handlers.stock(p,a)
     assert(not other_q,string.format('quality %s: a planet\'s whole count (stock {item, surface}) is of normal quality only; stock {item, quality, surface, places: "all"} lists every place there holding %s of that quality, and stock {item, quality, surface, position} reads around a place',tostring(a.quality),a.item))
     local row=M.stock_planet_row(p,surface,a.item)
     local by_net=M.stock_by_network(p,surface,a.item)
-    -- (d17 batch14 B2) stacks on the ground, in chunks our force sees now: counted apart, not in total
-    local okg,g=pcall(M.stores.on_ground,p.force,surface,a.item)
+    -- (d17 batch14 B2) stacks on the ground, in chunks our force sees now: counted apart, not in total; (d25 batch198
+    -- QK2) of normal quality, as the whole count
+    local okg,g=pcall(M.stores.on_ground,p.force,surface,a.item,{quality='normal'})
     local ground=okg and g.count>0 and g or nil
-    local ground_line=ground and string.format('%d on the ground in %d stack%s (%s), not in total',ground.count,ground.stacks,ground.stacks==1 and '' or 's',
+    local ground_line=ground and string.format('%d of normal quality on the ground in %d stack%s (%s), not in total',ground.count,ground.stacks,ground.stacks==1 and '' or 's',
       table.concat((function() local t={} for i,c in ipairs(ground.cells) do if i<=4 then t[i]=string.format('%d near (%d,%d)',c.count,math.floor(c.position.x),math.floor(c.position.y)) end end return t end)(),', '))
     return {item=a.item,surface=surface.name,total=row.total,on_ground=ground and ground.count or nil,on_ground_line=ground_line,by_network=#by_net>0 and by_net or nil,networks=row.networks,pads=row.pads,pads_in_networks=row.pads_in_networks,chests=row.chests,
       chests_holding=row.chests_holding,silos=row.silos,labs=row.labs,made_per_min=row.made_per_min,used_per_min=row.used_per_min,line=row.line..(ground_line and '; '..ground_line or ''),
@@ -19081,7 +19082,7 @@ M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
 M.shipment=require('shipment'){integer=integer,freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
-  pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
+  pads=function(planet,force,q) return M.freight.pads(planet,force,q) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
   launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,
@@ -19341,7 +19342,7 @@ function M.hold_off_belt(p,action,e)
   steer(p,hb.spot,nil)
   return true
 end
-stock=stock_module{hold_off_belt=function(p,action,e) return M.hold_off_belt(p,action,e) end,elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+stock=stock_module{hold_off_belt=function(p,action,e) return M.hold_off_belt(p,action,e) end,elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item,o) return M.stores.on_ground(force,surface,item,o) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,

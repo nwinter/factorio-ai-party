@@ -38,6 +38,18 @@ return function(api)
   -- and comparator (its value {name, quality, comparator}; "=" when none), the qualities it takes, its label.
   local CMP = {['=']='=', ['>']='>', ['<']='<', ['>=']='>=', ['≥']='>=', ['<=']='<=', ['≤']='<=', ['!=']='!=', ['≠']='!='}
   local function qname(x) return type(x) == 'string' and x or type(x) == 'table' and x.name or 'normal' end
+  -- (d25 batch198 QK1) a planet's landing pads' ask and hold by "name@quality" (freight.lua pads; a reader without
+  -- qualities: normal), and such a table by name
+  local function pads_q(planet, force)
+    local a, h = api.pads(planet, force, true)
+    local function norm(t) local out = {}; for k, v in pairs(t or {}) do out[k:find('@', 1, true) and k or k .. '@normal'] = v end; return out end
+    return norm(a), norm(h)
+  end
+  local function by_name(t)
+    local out = {}
+    for k, v in pairs(t) do local n = k:match('^(.*)@[^@]*$') or k; out[n] = (out[n] or 0) + v end
+    return out
+  end
   local function takes(q, cmp)
     if cmp == '=' then return {q} end
     local qs = pget(prototypes, 'quality')
@@ -294,8 +306,8 @@ return function(api)
       end
       if parts and n > 24 then parts[#parts+1] = string.format('+%d more requests', n - 24) end
       -- down: what the planet's landing pads ask of the hub now, and the last visit's receipts and spills
-      local ask, hold = {}, {}
-      if api.pads and not fast then local a1, h1 = api.pads(planet, force); ask, hold = a1 or {}, h1 or {} end
+      local ask, hold, ask_q, hold_q = {}, {}, {}, {}
+      if api.pads and not fast then ask_q, hold_q = pads_q(planet, force); ask, hold = by_name(ask_q), by_name(hold_q) end
       -- (d24 batch142 PN1) its stop there with unloading off: the pads take nothing from the hub
       local F = api.freight and api.freight()
       local off, off_line
@@ -303,16 +315,20 @@ return function(api)
       if off then ask = {} end
       if parts and off_line then parts[#parts+1] = off_line end
       local down = {}
-      -- (batch31 B6) the hub keeps at a stop what its requests from that planet ask, and no more (by item: BA1's keys
-      -- summed over qualities)
-      local keep_here = {}
-      if next(ask) then for _, r in pairs(mine) do keep_here[r.item] = (keep_here[r.item] or 0) + r.min end end
+      -- (d25 batch198 QK1) what the hub gives up there to the pads asking by its sections for that planet
+      -- (freight.lua hub_keeps_at, hub_gives; batch31 B6's sum of the mins went before PI1's maxes), each quality held
+      -- against the rows and the pads' ask of that quality
+      local asked = next(ask) ~= nil
+      local keeps = F and F.hub_keeps_at and asked and F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), planet) or {}
+      local byq = F and F.by_item and asked and F.by_item(counts_q) or {}
+      local wants = F and F.wants and asked and F.wants(ask_q, hold_q) or {}
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
-        local carry = (counts[item] or 0) - (keep_here[item] or 0)
-        if want > 0 and carry > 0 and (not only or item == only) then
-          down[#down+1] = string.format('%s %d (pads ask %d, hold %d)', item, math.min(want, carry), a, hold[item] or 0)
-          rows[#rows+1] = {platform=pl.name, planet=planet, item=item, direction='down', state=here and 'unloading' or 'aboard for ' .. planet, count=math.min(want, carry)}
+        local go
+        if F and F.hub_gives then go = F.hub_gives(keeps, item, counts[item] or 0, wants[item] or want, false, byq[item]) else go = math.max(0, math.min(want, counts[item] or 0)) end
+        if want > 0 and go > 0 and (not only or item == only) then
+          down[#down+1] = string.format('%s %d (pads ask %d, hold %d)', item, go, a, hold[item] or 0)
+          rows[#rows+1] = {platform=pl.name, planet=planet, item=item, direction='down', state=here and 'unloading' or 'aboard for ' .. planet, count=go}
         end
       end
       table.sort(down)
@@ -383,37 +399,43 @@ return function(api)
     local asks = {}
     local F0 = api.freight and api.freight()
     local byq = F0 and F0.by_item and F0.by_item(try(function() return api.hub_counts(pl, true) end)) or {}
+    local held_of = {}
     for _, o in ipairs(order) do
+      -- (d25 batch198 QK1) by item@quality: a pad's ask and a section's max are each for their own quality
       local ask, hold = {}, {}
-      if api.pads then local a1, h1 = api.pads(o.planet, pl.force); ask, hold = a1 or {}, h1 or {} end
+      if api.pads then ask, hold = pads_q(o.planet, pl.force) end
       -- (d24 batch137 PI1) what the hub's sections for that planet keep (freight.lua hub_keeps_at): an infinite max
       -- keeps it all, a finite one sends down all above it
       local F = api.freight and api.freight()
       local keeps = F and F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), o.planet) or {}
       -- (d24 batch142 PN1) a stop with unloading off: its pads take nothing from the hub
       if F and F.no_unload and F.no_unload(pl, o.planet, o.i) then ask = {} end
-      for item, a in pairs(ask) do
-        local want = a - (hold[item] or 0)
-        -- (d24 batch192 QAH1) a section's max is for its own quality: what the rows of each quality held keep
+      for key, a in pairs(ask) do
+        local item, q = key:match('^(.*)@([^@]*)$')
+        local want = a - (hold[key] or 0)
+        -- (a reader without qualities: what it counts by name is normal)
+        local held = byq[item] and byq[item][q] or not next(byq) and q == 'normal' and counts[item] or 0
+        held_of[key] = held
+        -- (d24 batch192 QAH1) a section's max is for its own quality: what the rows of that quality keep
         local k, keep = keeps[item], 0
-        if F and F.hub_kept and byq[item] then keep, k = F.hub_kept(keeps, item, byq[item]) else keep = k and math.min(k.max, counts[item] or 0) or 0 end
-        if want > 0 and (counts[item] or 0) - keep > 0 then
-          asks[item] = asks[item] or {}
-          table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0, keep=keep, keep_text=F and F.keep_text(k)})
+        if F and F.hub_kept then keep, k = F.hub_kept(keeps, item, {[q]=held}) else keep = k and math.min(k.max, held) or 0 end
+        if want > 0 and held - keep > 0 then
+          asks[key] = asks[key] or {}
+          table.insert(asks[key], {stop=o, want=want, ask=a, hold=hold[key] or 0, keep=keep, keep_text=F and F.keep_text(k)})
         end
       end
     end
     local lines = {}
-    for item, list in pairs(asks) do
+    for key, list in pairs(asks) do
       if #list >= 2 then
-        local left, parts = counts[item], {}
+        local left, parts = held_of[key], {}
         for _, x in ipairs(list) do
           local take = math.max(0, math.min(left - x.keep, x.want))
           left = left - take
           parts[#parts+1] = string.format('stop %d %s%s: its pads ask %d (hold %d)%s, %d go down there, %d left aboard',
             x.stop.i, x.stop.planet, x.stop.here and ' (here)' or '', x.ask, x.hold, x.keep > 0 and string.format(', its requests from %s keep %d (%s)', x.stop.planet, x.keep, tostring(x.keep_text)) or '', take, left)
         end
-        lines[#lines+1] = string.format('cargo conflict on %s: the hub holds %d %s; %s', pl.name, counts[item], item, table.concat(parts, '; '))
+        lines[#lines+1] = string.format('cargo conflict on %s: the hub holds %d %s; %s', pl.name, held_of[key], (key:gsub('@normal$', '')), table.concat(parts, '; '))
       end
     end
     table.sort(lines)
@@ -510,7 +532,8 @@ return function(api)
     if F and F.no_unload then off, off_line = F.no_unload(pl, planet) end
     out.no_unload = off_line
     -- what the pads ask (their active sections' minimums) and hold, as freight's pads reads them
-    local ask, hold, invs = {}, {}, {}
+    -- (d25 batch198 QK1) and by item@quality: a pad's ask is for its own quality
+    local ask, hold, invs, ask_q, hold_q = {}, {}, {}, {}, {}
     for i, pad in ipairs(pads) do
       local ls = try(function() return pad.get_logistic_sections() end)
       for k = 1, ls and ls.sections_count or 0 do
@@ -518,11 +541,19 @@ return function(api)
         for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
           local v = f.value
           local name = type(v) == 'table' and v.name or v
-          if type(name) == 'string' and (f.min or 0) > 0 then ask[name] = (ask[name] or 0) + f.min end
+          if type(name) == 'string' and (f.min or 0) > 0 then
+            ask[name] = (ask[name] or 0) + f.min
+            local key = name .. '@' .. qname(type(v) == 'table' and v.quality)
+            ask_q[key] = (ask_q[key] or 0) + f.min
+          end
         end
       end
       local inv = defines.inventory.cargo_landing_pad_main and try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
-      for _, x in ipairs(inv and try(function() return inv.get_contents() end) or {}) do hold[x.name] = (hold[x.name] or 0) + x.count end
+      for _, x in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+        hold[x.name] = (hold[x.name] or 0) + x.count
+        local key = x.name .. '@' .. qname(x.quality)
+        hold_q[key] = (hold_q[key] or 0) + x.count
+      end
       invs[i] = inv or false
     end
     if #pads == 0 then lines[#lines+1] = 'no landing pad of ours on ' .. planet .. ': what the hub drops there lands with no pad'
@@ -548,10 +579,11 @@ return function(api)
       end
       table.sort(names)
       out.down = {}
+      local wants = F and F.wants and F.wants(ask_q, hold_q) or {}
       for _, item in ipairs(names) do
         local want = (ask[item] or 0) - (hold[item] or 0)
         local n, k = 0, nil
-        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, want, off, byq[item]) else n = math.max(0, math.min(want, counts[item] or 0)) end
+        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, wants[item] or want, off, byq[item]) else n = math.max(0, math.min(want, counts[item] or 0)) end
         if n == 0 and (k or off) and want > 0 and (counts[item] or 0) > 0 then
           kept[#kept+1] = string.format('%s: none of %d (%s; the pads ask %d, hold %d)', item, counts[item], k and F.keep_text(k) or 'unloading off', ask[item] or 0, hold[item] or 0)
         end
@@ -562,7 +594,7 @@ return function(api)
           local need = math.ceil(n / stack)
           slots = slots + need
           down[#down+1] = string.format('%s %d (pads ask %d, hold %d%s; %d slots; the pads can take %d of it now%s)', item, n, ask[item] or 0, hold[item] or 0,
-            k and string.format('; all above %d: %s, and a finite max sends the rest down asked or not', k.max, F.keep_text(k)) or '', need, take,
+            k and string.format('; %s, and a finite max sends all above it down asked or not', F.keep_text(k)) or '', need, take,
             take < n and string.format(', %d short', n - take) or '')
           out.down[#out.down+1] = {item=item, count=n, slots=need, pads_take=take, keep=k and F.keep_text(k) or nil}
         end

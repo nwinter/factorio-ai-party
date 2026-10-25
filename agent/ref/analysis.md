@@ -346,7 +346,9 @@
   says so). `items: [...]`
   (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is, landed
   cargo pods (of any force: kind `pod`) and stacks on the ground in sight (kind `ground`, `on_ground`, not in the total)
-  among the places with their positions. With
+  among the places with their positions. Ground places are of the quality asked (normal when none, the place's
+  `quality`) and within the circle read, each the stacks of one 32-tile cell at the nearest; a stack on the ground is
+  one quality (3 legendary iron spilled lay as 3 stacks of 1). With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
@@ -355,7 +357,7 @@
   largest). `by_holder` splits the places read: provider and storage chests (robots can take it), requester and buffer
   chests (held for their requests), plain chests, machine outputs, elsewhere; the summary says so when logistic chests
   hold it. With `surface`, `by_network`: each logistic network's hold in providers, storage and other
-  holders, and `on_ground`: stacks lying on the ground in chunks our force sees now. A spoilable item adds
+  holders, and `on_ground`: stacks of normal quality lying on the ground in chunks our force sees now. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. `network: 96` (the number `networks` and an `inspect` of a
   roboport give): what a logistic network holds, its robots, and `roboports`: the robots each roboport holds, most
   first. Example: `./fh call stock --args '{"item":"iron-plate","places":"all","limit":16}'`

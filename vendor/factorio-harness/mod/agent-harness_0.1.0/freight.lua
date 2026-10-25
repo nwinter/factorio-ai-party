@@ -609,9 +609,19 @@ return function(api)
     return r
   end
   local function copy(t) local out = {}; for k, v in pairs(t or {}) do out[k] = v end; return out end
+  -- a slot value's quality name (normal when none)
+  local function qual(v)
+    local q = type(v) == 'table' and v.quality
+    if type(q) == 'table' then q = q.name end
+    return type(q) == 'string' and q or 'normal'
+  end
   -- The planet's landing pads of the force: what they ask (active sections'
-  -- minimums) and hold, by item.
-  local function pads(planet, force)
+  -- minimums) and hold, by item; by_quality (d25 batch198 QK1): by "name@quality". A pad's ask is for its own quality,
+  -- as 2.0.77 did on a copy of world n (d25, Kestrel IVc stopped at Fulgora with 4 normal and 3 legendary asteroid
+  -- collectors, no hub section for them from fulgora): Fulgora's pad asking 2 normal took 2 normal and none of the
+  -- legendary; asking 1 legendary, it took 1 legendary and no normal. A slot with a quality comparator other than =
+  -- asks nothing (the game refuses a min there).
+  local function pads(planet, force, by_quality)
     local s = try(function() return game.planets[planet].surface end) or try(function() return game.get_surface(planet) end)
     local ask, hold = {}, {}
     if not s then return ask, hold end
@@ -626,12 +636,13 @@ return function(api)
           for _, f in ipairs(sec.filters or {}) do
             local v = f.value
             local name = type(v) == 'table' and v.name or v
+            if by_quality and type(name) == 'string' then name = name .. '@' .. qual(v) end
             if type(name) == 'string' and (f.min or 0) > 0 then ask[name] = (ask[name] or 0) + f.min end
           end
         end
       end
       local inv = defines.inventory.cargo_landing_pad_main and try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
-      if inv then add_contents(hold, try(function() return inv.get_contents() end)) end
+      if inv then (by_quality and add_contents_q or add_contents)(hold, try(function() return inv.get_contents() end)) end
     end
     return ask, hold
   end
@@ -651,11 +662,6 @@ return function(api)
   -- while 3 rare went to 1; with asteroid-collector@rare 0..2 from fulgora in another section, rare stayed at 3 (the
   -- maxes of one quality add up). A slot with a quality comparator other than = (a max only: the game refuses a min
   -- there) did not follow one count on that copy; it is in ranged, and what it keeps is not forecast.
-  local function qual(v)
-    local q = type(v) == 'table' and v.quality
-    if type(q) == 'table' then q = q.name end
-    return type(q) == 'string' and q or 'normal'
-  end
   local ASCII = {['≥']='>=', ['≤']='<=', ['≠']='!='}
   local function level(q) return try(function() return prototypes.quality[q].level end) or 0 end
   local function matches(cmp, q, slot_q)
@@ -704,7 +710,7 @@ return function(api)
   -- one is infinite; nil when none). held_q: {quality=count}.
   local function split(keep, item, held_q)
     local k = keep and keep[item]
-    local kept, above, free, row = 0, 0, 0, nil
+    local kept, above, free, row = 0, 0, {}, nil
     for q, h in pairs(held_q) do
       if h > 0 then
         local r = k and k.q[q]
@@ -720,7 +726,7 @@ return function(api)
           row.max, row.ranged = math.huge, true
           row.parts[#row.parts+1] = ranged.text
           kept = kept + h
-        else free = free + h end
+        else free[q] = h end
       end
     end
     return kept, above, free, row
@@ -731,12 +737,20 @@ return function(api)
   -- sends down all above it.
   -- (QAH1) q: the quality held (a name), or {quality=count}: the rows of each quality; nil: by name, every quality
   -- together.
+  -- (d25 batch198 QK1) want may be {quality=count}: the pads' want of each quality (a pad's ask is for its own
+  -- quality, pads above); a count is the want of whatever quality no row names.
   function M.hub_gives(keep, item, held, want, off, q)
     if off then want = 0 end
     if q ~= nil then
       local _, above, free, row = split(keep, item, type(q) == 'table' and q or {[q]=held or 0})
-      return above + math.max(0, math.min(free, want or 0)), row
+      local go, pool = above, 0
+      for fq, h in pairs(free) do
+        if type(want) == 'table' then go = go + math.max(0, math.min(h, want[fq] or 0)) else pool = pool + h end
+      end
+      if type(want) ~= 'table' then go = go + math.max(0, math.min(pool, want or 0)) end
+      return go, row
     end
+    if type(want) == 'table' then local n = 0; for _, x in pairs(want) do n = n + math.max(0, x) end; want = n end
     local k = keep and keep[item]
     if not k then return math.max(0, math.min(held or 0, want or 0)), nil end
     if k.max == math.huge then return 0, k end
@@ -746,6 +760,18 @@ return function(api)
   function M.hub_kept(keep, item, held_q)
     local kept, _, _, row = split(keep, item, held_q)
     return kept, row
+  end
+  -- (QK1) The pads' want of each quality of each item, from pads(planet, force, true): {item={quality=ask less held}}.
+  function M.wants(ask_q, hold_q)
+    local out = {}
+    for key, a in pairs(ask_q or {}) do
+      local name, q = key:match('^(.*)@([^@]*)$')
+      if name then
+        out[name] = out[name] or {}
+        out[name][q] = (out[name][q] or 0) + a - ((hold_q or {})[key] or 0)
+      end
+    end
+    return out
   end
   -- (QAH1) The hub's counts by quality (hub_counts(pl, true)) by item: {item={quality=count}}.
   function M.by_item(counts_q)
@@ -856,12 +882,17 @@ return function(api)
   end
   -- The hub's requests that import from this planet: {item={min, short, way}}; (d20 batch55 P6) less what rockets
   -- launched to the hub carry on the way (its requester point's deliveries, the hub GUI's in-transit count).
-  local function hub_asks(pl, planet, counts)
-    local out = {}
+  -- (d25 batch198 QK1) each quality's request against what the hub holds of that quality (counts_q: hub_counts(pl,
+  -- true)), summed by item: 3 legendary held do not meet a request for 3 normal.
+  local function hub_asks(pl, planet, counts_q)
+    local out, by = {}, {}
     local way = {}
     local pt = defines.logistic_member_index and defines.logistic_member_index.space_platform_hub_requester
       and try(function() return pl.hub.get_logistic_point(defines.logistic_member_index.space_platform_hub_requester) end)
-    for _, it in ipairs(pt and try(function() return pt.targeted_items_deliver end) or {}) do way[it.name] = (way[it.name] or 0) + (it.count or 0) end
+    for _, it in ipairs(pt and try(function() return pt.targeted_items_deliver end) or {}) do
+      local key = it.name .. '@' .. qual(it)
+      way[key] = (way[key] or 0) + (it.count or 0)
+    end
     local secs_ = try(function() return pl.hub.get_logistic_sections() end)
     for i = 1, secs_ and secs_.sections_count or 0 do
       local sec = secs_.get_section(i)
@@ -871,14 +902,19 @@ return function(api)
           local name = type(v) == 'table' and v.name or v
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
           if type(name) == 'string' and from == planet and (f.min or 0) > 0 then
-            local r = out[name] or {min=0}
-            r.min = r.min + f.min
-            r.way = way[name] and way[name] > 0 and way[name] or nil
-            r.short = math.max(0, r.min - (counts[name] or 0) - (way[name] or 0))
-            out[name] = r
+            local key = name .. '@' .. qual(v)
+            by[key] = (by[key] or 0) + f.min
           end
         end
       end
+    end
+    for key, min in pairs(by) do
+      local name = key:match('^(.*)@[^@]*$')
+      local r = out[name] or {min=0, short=0}
+      r.min = r.min + min
+      if (way[key] or 0) > 0 then r.way = (r.way or 0) + way[key] end
+      r.short = r.short + math.max(0, min - (counts_q[key] or 0) - (way[key] or 0))
+      out[name] = r
     end
     return out
   end
@@ -974,22 +1010,29 @@ return function(api)
     local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), fuel0=fluid_counts(pl), places0=M.places_snapshot(pl)}
     if w.stopped then
       seg.kind, seg.at = 'stop', w.at
-      local ask, hold = pads(w.at, pl.force)
+      -- (QK1) read once, by quality; ask and hold by name are their sums
+      local ask_q, hold_q = pads(w.at, pl.force, true)
+      local ask, hold = {}, {}
+      for t, from in pairs({[ask]=ask_q, [hold]=hold_q}) do
+        for key, n in pairs(from) do local name = key:match('^(.*)@[^@]*$') or key; t[name] = (t[name] or 0) + n end
+      end
       -- (PI1) less what the hub's sections for that planet keep; a finite max sends the rest down asked or not
       local keep = M.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), w.at)
       -- (PN1) a stop with unloading off: the pads take nothing, a finite max still sends down
       local off, off_line = M.no_unload(pl, w.at)
       local down = {}
-      -- (QAH1) a section's max is for its own quality: the hub's counts by quality
-      local byq = M.by_item(M.hub_counts(pl, true))
+      -- (QAH1) a section's max is for its own quality: the hub's counts by quality; (QK1) a pad's ask too
+      local counts_q = M.hub_counts(pl, true) or {}
+      local byq = M.by_item(counts_q)
+      local wants = M.wants(ask_q, hold_q)
       for name, n in pairs(counts) do
         local want = (ask[name] or 0) - (hold[name] or 0)
-        local go, k = M.hub_gives(keep, name, n, want, off, byq[name])
+        local go, k = M.hub_gives(keep, name, n, wants[name] or want, off, byq[name])
         if go > 0 or ((k or off) and want > 0) then down[name] = {expected=go, ask=ask[name] or 0, hold=hold[name] or 0, keep=M.keep_text(k)} end
       end
       seg.down = next(down) and down or nil
       seg.no_unload = off_line
-      local up = hub_asks(pl, w.at, counts)
+      local up = hub_asks(pl, w.at, counts_q)
       seg.up = next(up) and up or nil
     else
       seg.kind, seg.from, seg.to = 'leg', w.leg.from, w.leg.to

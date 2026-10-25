@@ -14425,3 +14425,63 @@ shipment's ready read sent 6 down).
   - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
     (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
 - Test: tests/d24_batch187.lua (fails on main: no handler).
+
+## d25 batch198 QK1: the hub keep reads by item@quality (after Sol #2264)
+
+batch192 made delivery_watch, shipment's ready read and cargo conflict lines and the freight stop lines take the hub's
+counts by quality, but the pads' ask stayed by name, and requests' `sends_down` (the preview) and `keep` counted by
+name. 2.0.77 on a copy of world n's d25 07:26 save, Kestrel IVc stopped at Fulgora with 4 normal and 3 legendary
+asteroid collectors (section 1 asteroid-collector 4..4 from nauvis, 23 asteroid-collector@legendary 0..3 from nauvis):
+- Main's preview of switching section 24 (asteroid-collector@rare 0..1 from fulgora) on: `asteroid-collector: the hub
+  holds 4; its requests would keep 1 at fulgora, 4 at nauvis (kept 4 at nauvis): 3 down to fulgora (here) (its landing
+  pads ask 0, hold 0; its requests from fulgora keep 1); 1 stay aboard`. It counted the normal 4 only
+  (`get_item_count(name)` is normal) and the rare max against them. Switched on in the game, both stayed (26 s).
+- A landing pad's ask is for its own quality: Fulgora's pad asking 2 normal took 2 normal and none of the legendary;
+  asking 1 legendary, it took 1 legendary and no normal (20 s each).
+
+What changed:
+- freight.lua `pads(planet, force, by_quality)`: ask and hold by "name@quality". `wants(ask_q, hold_q)`: {item={quality=
+  ask less held}}. `hub_gives`'s want may be {quality=count}: each quality no row names goes down as far as the pads ask
+  that quality.
+- requests: `hub_keep_at` and `hub_keep` by slot key ("name@quality"; "name@>=rare" for a comparator slot);
+  `sends_down` per item@quality (held of that quality, the pads' ask and hold of it, the max of that quality), named
+  `item@quality` for one other than normal; an item a comparator slot names: `asteroid-collector: a request names it
+  with a quality comparator (asteroid-collector@>=rare): what the hub keeps of it is not forecast`. On the Sol case the
+  preview gives no line. `keep` takes "item@quality" (a name alone: normal) and keeps the count held of that quality.
+- The freight stop lines: `expected down` with each quality's pad want; `expected up` (hub_asks) each quality's request
+  against the hub's count of that quality (3 legendary held do not meet a request for 3 normal).
+- shipment: the cargo conflict lines per item@quality (`the hub holds 3 asteroid-collector@legendary; ...`); the
+  ready read with each quality's pad want; the platform read's down list by hub_gives (it still used batch31's sum of
+  the mins of the requests from that planet) with each quality's want.
+- delivery_watch with no quality: each quality's pad ask less what the pad holds of it.
+- The launch ledger's hub asks name item@quality and count that quality held.
+
+Test: tests/d25_batch198.lua (each part fails on main; the preview part gives main's line above).
+
+## d25 batch198 QK2: stock's ground rows by quality (Astra #2325)
+
+stock {surface: nauvis, item: iron-plate, quality: legendary, position: (-71.5,86.7), radius: 3} gave on_ground 3 and
+a row "3 stacks on the ground": stores.lua on_ground read every item-entity on the surface and binned each item's
+stacks by 32-tile cell (every quality), and stock kept a cell whose first stack was within the radius, with all its
+stacks. 2.0.77 on a copy of world n's d25 07:26 save: that cell held 3 stacks of 1 normal iron plate, at (-71.5,86.7),
+(-68.5,86.7) and (-65.5,86.7); 2 are within 3 tiles. 3 legendary iron spilled at (-70.5,86.7) lay as 3 stacks of 1:
+each stack on the ground is one quality.
+
+What changed:
+- stores.lua `on_ground(force, surface, item, opts)`: opts.quality counts only stacks of that quality; opts.position
+  and opts.radius find the stacks within the circle (a cell's position is then its nearest stack). Without opts, as
+  before.
+- stock's scan passes the quality asked (normal when none, as its holders) and the circle (none for a platform read
+  whole); each ground place has `quality`; `on_ground_note` names item@quality (or "(normal quality)") and says a row
+  is one 32-tile cell's stacks within the radius.
+- stock {item, surface} (the planet's whole count, normal only): its ground line counts normal only and says so.
+- Belts: stock reads machine outputs, chests, pads and landed pods; no belt.
+- Not changed: where_is's ground (every quality, the ground watch's cells) and ingredient_gap's (stock.near: the
+  ground watch's cells by name).
+
+Cost on the copy (Nauvis, 175 stacks on the ground): the ground find in a stock call was the whole surface, 12-14 ms
+(67.6 ms the first time); now radius 3: 0.05 ms, radius 128: 2.2-2.3 ms (93 stacks). A whole stock call on the branch
+(legendary iron at that spot): radius 3 16.5-38.7 ms, radius 128 38-61 ms on the copy (its holder finds; the copy
+stalls).
+
+Test: tests/d25_batch198.lua's QK2 part (fails on main: 6 stacks of every quality where 3 legendary lie within 3 tiles).
