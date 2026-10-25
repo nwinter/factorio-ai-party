@@ -401,8 +401,9 @@ def public_reminders(rem):
             out["jobs"] = [latest_without_results(j, same_only) for j in out["jobs"]]
     if size() > REMINDER_BYTES:
         head, tail = out["jobs"][:REMINDERS_SHOWN], list(out["jobs"][REMINDERS_SHOWN:])
-        drop = [i for i in reversed(range(len(tail))) if isinstance(tail[i], dict) and tail[i].get("done")] + \
-            [i for i in reversed(range(len(tail))) if not (isinstance(tail[i], dict) and tail[i].get("done"))]
+        # (d24 batch177) finished: done and off (an enabled job is active whatever its last run)
+        fin = lambda j: isinstance(j, dict) and bool(j.get("done")) and not j.get("enabled")  # noqa: E731
+        drop = [i for i in reversed(range(len(tail))) if fin(tail[i])] + [i for i in reversed(range(len(tail))) if not fin(tail[i])]
         gone = set()
         for i in drop:
             if size() <= REMINDER_BYTES:
