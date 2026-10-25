@@ -61,9 +61,12 @@ eq(w.received,5000); eq(w.received_pods,5); eq(w.received_tick,4000)
 -- a pod to pad B (not the consumer) does not count
 land(1000,padB,4300); eq(w.received,5000)
 local lines=W.lines(sol,h)
-has(lines[5],'delivery watch #1: pod 105 from Spindle\'s hub at fulgora')
-has(lines[5],'; received 5000 of 10000 in 5 pods by cargo-landing-pad (74,208) on fulgora since the watch was set, the last at tick 4000')
-eq(lines[6]:find('received 5000',1,true),nil,'pad B\'s pod: no total')
+-- (d24 batch167 QJ1) the first pod lands the landed stage (the arrivals are its one source), so the pad-room blocker
+-- read before it is gone: lines[2]
+has(lines[2],'delivery watch #1: no longer blocked: no landing pad of ours on fulgora has room for copper-plate')
+has(lines[6],'delivery watch #1: pod 105 from Spindle\'s hub at fulgora')
+has(lines[6],'; received 5000 of 10000 in 5 pods by cargo-landing-pad (74,208) on fulgora since the watch was set, the last at tick 4000')
+eq(lines[7]:find('received 5000',1,true),nil,'pad B\'s pod: no total')
 -- the deadline passes at 5000: late, and the line says the received total
 game.tick=1000+40*3600+20; W.tick(game.tick)
 eq(w.state,'late')

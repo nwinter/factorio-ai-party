@@ -110,6 +110,11 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
   (`tools/quota_rest.py --at-limit`: `resting.json` and the runtime's `rest`); it is launched anyway, and its first
   request ends the rest if it can play. By hand: `tools/quota_rest.py RUN AGENT --until "YYYY-MM-DD HH:MM"
   [--reason quota|pace]`, `--done` to end it (d22 batch108 BR1).
+- A resumed run starts with every rest of the previous run that has not ended (quota or pace, by hand or by
+  `--at-limit`; `--carry PREV_RUN`, which start-team passes): until the same time, whatever ai-usage says. A quota
+  rest is not carried only when a fresh reading (under 30 min old, the profile not stale) gives the account room, and
+  the start log says so; an account at its limit rests until the later of its reset and the carried rest (d24
+  batch172: Muse's rest until Sun 17:00 was lost at shift70's start because ai-usage read Muse stale).
 - The agy memory guard (`tools/agy_memguard.py`, d22 09:27: one agy turn grew to 21 GiB and filled the Mac's swap
   because agy loads every untracked file at a fresh session, and `runs/` was not ignored; `.gitignore` has `runs/`
   since then) kills a process under a run's `.agy-loop.sh` whose footprint passes 4 GiB (TERM, then KILL after 5 s).

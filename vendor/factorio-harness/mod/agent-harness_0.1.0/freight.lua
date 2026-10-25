@@ -167,6 +167,18 @@ return function(api)
     end
     return out
   end
+  -- (d24 batch167 QJ1, Sol #2224: a watch's pod of 2 legendary thrusters counted as none) the same list by
+  -- "name@quality" (normal: "name@normal"), for a pod's or rocket's cargo beside cargo by name (every quality together)
+  local function add_contents_q(out, list)
+    for _, v in pairs(list or {}) do
+      if type(v) == 'table' and type(v.name) == 'string' and type(v.count) == 'number' and v.count > 0 then
+        local q = type(v.quality) == 'table' and v.quality.name or v.quality or 'normal'
+        local key = v.name .. '@' .. tostring(q)
+        out[key] = (out[key] or 0) + v.count
+      end
+    end
+    return out
+  end
   -- The hub's items, its main inventory and its trash, by name (every quality together); by_quality (d22 batch91 BA1):
   -- by "name@quality" instead.
   -- (d22 batch110 BT1: freight.tick made 502 KB a second on a copy of world n, most of it each hub's get_contents, a
@@ -719,7 +731,18 @@ return function(api)
       end
     end
     local inv = defines.inventory.cargo_landing_pad_main and try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
-    for name, it in pairs(items) do it.hold = inv and try(function() return inv.get_item_count(name) end) or 0 end
+    -- (QJ1) every quality: get_item_count(name) counts normal only, and cargo is by name with every quality together;
+    -- get_item_count_filtered {name} counts every quality (Nauvis's pad on a copy of world n: get_contents 0.58 ms, 5
+    -- counts per quality 6.6 us, the filtered count 0.7 us)
+    local filtered = inv and try(function() return inv.get_item_count_filtered end)
+    for name, it in pairs(items) do
+      local n = filtered and try(function() return filtered({name=name}) end)
+      if not n then
+        n = 0
+        for _, q in ipairs(inv and qflow.qualities() or {}) do n = n + (try(function() return inv.get_item_count({name=name, quality=q}) end) or 0) end
+      end
+      it.hold = n
+    end
     -- the pad's own on-the-way count (its requester point's deliveries: the pods sent to it, this one among them once
     -- it is sent)
     local pt = try(function() return pad.get_requester_point() end)
@@ -1350,7 +1373,8 @@ return function(api)
     if rec then
       rec.incoming = rec.incoming or {}
       if #rec.incoming < 32 then
-        rec.incoming[#rec.incoming+1] = {pod=pod, tick=game.tick, cargo=add_contents({}, inv and try(function() return inv.get_contents() end)),
+        local list = inv and try(function() return inv.get_contents() end)
+        rec.incoming[#rec.incoming+1] = {pod=pod, tick=game.tick, cargo=add_contents({}, list), cargo_q=add_contents_q({}, list),
           from=try(function() return event.rocket_silo.surface.name end), up=event.harness_up,
           silo=try(function() return xy(event.rocket_silo.position) end)}
       end
@@ -1369,9 +1393,11 @@ return function(api)
   end
 
   -- Cargo pods from the hub ----------------------------------------------------
+  -- by name (every quality together), and by name@quality (QJ1)
   local function pod_cargo(pod)
     local inv = defines.inventory.cargo_unit and try(function() return pod.get_inventory(defines.inventory.cargo_unit) end)
-    return add_contents({}, inv and try(function() return inv.get_contents() end))
+    local list = inv and try(function() return inv.get_contents() end)
+    return add_contents({}, list), add_contents_q({}, list)
   end
   -- Where a pod is sent: {pad, position, surface} for a landing pad, else {surface}.
   local function pod_dest(pod)
@@ -1405,7 +1431,7 @@ return function(api)
   -- (d22 batch94 BD1) a pod received by a landing pad goes to api.delivered (reminders' on.delivered)
   local function receipt(rec, p, tick, kind, where, pl)
     rec.receipts = rec.receipts or {}
-    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest, asked=p.asked})
+    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, cargo_q=p.cargo_q, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest, asked=p.asked})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
     if kind == 'received' and api.delivered then
       pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where})
@@ -1495,7 +1521,7 @@ return function(api)
     local out = {}
     local rec = store()[pl.index]
     for _, r in ipairs(rec and rec.receipts or {}) do
-      if r.tick > since then out[#out+1] = {tick=r.tick, kind=r.kind, where=r.where, cargo=r.cargo, dest=r.dest, stop=r.stop} end
+      if r.tick > since then out[#out+1] = {tick=r.tick, kind=r.kind, where=r.where, cargo=r.cargo, cargo_q=r.cargo_q, unit=r.unit, dest=r.dest, stop=r.stop} end
     end
     return out
   end
@@ -1532,7 +1558,7 @@ return function(api)
         local sn, pos = pget(pget(p.pod, 'surface'), 'name'), pget(p.pod, 'position')
         local where = sn ~= nil and pos ~= nil and {surface=sn, position=xy(pos)} or nil
         if where then p.last = where end
-        if where and where.surface == p.from then p.cargo = pod_cargo(p.pod); ask_for(p, pl) end
+        if where and where.surface == p.from then p.cargo, p.cargo_q = pod_cargo(p.pod); ask_for(p, pl) end
         p.dest = pod_dest(p.pod) or p.dest
         keep[#keep+1] = p
       else
@@ -1562,7 +1588,8 @@ return function(api)
       end
       if not known and #rec.pods < POD_PENDING and pget(pod, 'valid') and is_mine(pod, pl, hub) then
         local p = {pod=pod, unit=try(function() return pod.unit_number end), seg=seg.start, at=seg.at, tick=tick,
-          from=s.name, cargo=pod_cargo(pod), dest=pod_dest(pod), last={surface=s.name, position=xy(pod.position)}}
+          from=s.name, dest=pod_dest(pod), last={surface=s.name, position=xy(pod.position)}}
+        p.cargo, p.cargo_q = pod_cargo(pod)
         ask_for(p, pl)
         rec.pods[#rec.pods+1] = p
       end
@@ -1837,7 +1864,7 @@ return function(api)
     local rows = {}
     for _, r in ipairs(keep) do
       local on = try(function() return r.pod.surface.name end)
-      rows[#rows+1] = {cargo=r.cargo or {}, from=r.from, tick=r.tick, down=on == here, eta_ticks=r.eta}
+      rows[#rows+1] = {cargo=r.cargo or {}, cargo_q=r.cargo_q, from=r.from, tick=r.tick, down=on == here, eta_ticks=r.eta}
     end
     local total = {}
     for name, n in pairs(all) do total[#total+1] = name .. '*' .. n end

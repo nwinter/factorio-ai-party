@@ -154,6 +154,29 @@ def at_limit(brief, team_file, now=None):
     return out
 
 
+FRESH_S = 30 * 60   # (d24 batch172) a reading this old or newer is now's
+
+
+def room(brief, team_file, now=None, hits=None):
+    """(d24 batch172) {name: "Muse · Weekly 40%, Muse · 5-hour 9%"} for each team member whose account has a fresh
+    reading with room: the brief made within FRESH_S, its profile neither stale nor unavailable, no window that counts
+    for its model at its limit (at_limit's `hits`)."""
+    now = now or time.time()
+    if not brief or now - float(brief.get("generated_at") or 0) > FRESH_S:
+        return {}
+    hits = at_limit(brief, team_file, now) if hits is None else hits
+    by_command = {p.get("command"): p for p in brief.get("profiles", [])}
+    out = {}
+    for name, _, command, model in members(team_file):
+        p = by_command.get(command)
+        if p is None or p.get("stale") or not p.get("available", True) or name in hits:
+            continue
+        windows = [f"{w['label']} {float(w.get('percent') or 0):.0f}%" for w in p.get("windows", []) if relevant(w["label"], model)]
+        if windows:
+            out[name] = ", ".join(windows)
+    return out
+
+
 def main():
     args = sys.argv[1:]
     brief_path = now = None
