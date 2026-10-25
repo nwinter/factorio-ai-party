@@ -145,12 +145,34 @@ has(st.spidertrons[1],'spidertron #7001 at (20,4): 1 target: (-20,0); retreated 
 spider.health=900; advance(60); eq(#spider_route,1); eq(team(astra('status',{})),nil)
 eq(astra('vehicle',{position={x=20,y=4}}).retreated.why,'spidertron health 46% (1400/3000) under 50%')
 
--- Sent again it is armed again, from its health then (30%): only a further fall triggers.
+-- (addendum, Aurora 20:07 site:4823) held after it: a later go_to (or a queued one) and clear are refused, naming what
+-- re-arms it; the retreat route stays.
+fails(function() astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4}}) end,'spidertron #7001 is held on its retreat (standing retreat_guard')
+fails(function() astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4},retreat=false}) end,'retreat_guard {to, health_below} again, retreat_guard {clear: true}, or a go_to with its own retreat')
+fails(function() astra('vehicle',{position={x=20,y=4},clear=true}) end,'go_to and clear are refused until re-armed')
+eq(#spider_route,1); eq(spider_route[1].x,-20)
+has(astra('status',{}).spidertrons[1],'; held: go_to and clear refused until re-armed')
+-- re-armed by setting the guard again; sent again it is armed from its health then (30%): only a further fall triggers
+r=astra('retreat_guard',{to={x=-20,y=0},health_below=0.5})
+eq(r.spidertrons,'1 spidertron held after a retreat re-armed: go_to and clear work on it again')
 spider.health=900
 r=astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4}})
 advance(60); eq(spider_route[1].x,200,'no fall since sent')
+-- a sleep wakes on it
+astra('sleep',{seconds=60})
 spider.health=800; advance(30); eq(spider_route[1].x,-20)
-has(team(astra('status',{}))[1].why,'health 26% (800/3000)')
+local woke=astra('sleep_check',{})
+eq(woke.woke,'spidertron_retreated'); has(woke.spidertron_retreated,'spidertron #7001 retreated (standing retreat_guard: spidertron health 26% (800/3000) under 50%) from (20,4); its route became 1 target: (-20,0)')
+has(team(woke)[1].why,'health 26% (800/3000)')  -- the waking reply carries it
+-- a go_to with its own retreat re-arms it too
+r=astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4},retreat={to={x=-20,y=0},health_below=0.2}})
+eq(r.rearmed,'its retreat hold ended: this go_to carries its own retreat'); eq(spider_route[1].x,200)
+-- a direct wait ends on it (last.why says it)
+astra('wait_ticks',{ticks=1200})
+spider.health=500; advance(60); eq(spider_route[1].x,-20)
+local last=astra('status',{}).last
+eq(last.outcome,'spidertron_retreated'); has(last.why,'spidertron #7001 retreated (the go_to\'s retreat: spidertron health 16% (500/3000) under 20%)')
+astra('retreat_guard',{to={x=-20,y=0},health_below=0.5})
 
 -- A go_to's own retreat wins (the grid's shield here); its line says so.
 spider.health=3000
@@ -161,6 +183,7 @@ spider.grid.shield=20; advance(30); eq(spider_route[1].x,-30)
 rec=team(astra('status',{}))[1]
 eq(rec.guard,'the go_to\'s retreat'); eq(rec.why,'spidertron shield 20% (20/100) under 30%'); eq(rec.shield,'20/100')
 spider.grid.shield=100; spider.health=3000
+astra('retreat_guard',{to={x=-20,y=0},health_below=0.5})  -- re-armed
 
 -- retreat: false: nothing watches it.
 r=astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4},retreat=false})
@@ -185,8 +208,13 @@ has(r.retreat,'to (-40,0) at health under 60% (standing retreat_guard) (sol ride
 spider.health=1500; advance(30); eq(spider_route[1].x,-40)
 rec=team(sol('status',{}))[1]; eq(rec.guard,'sol\'s standing retreat_guard (riding it)')
 eq(team(astra('status',{}))[1].guard,'sol\'s standing retreat_guard (riding it)')
--- the route over: the entry goes; status still says the retreat for 10 minutes
+-- the route over: the entry goes; status says the retreat and the hold until re-armed, by either of them
 spider_route={}; advance(60)
 has(astra('status',{}).spidertrons[1],'spidertron #7001 at (20,4): no target: it stands; retreated')
-jump(36000); advance(1); eq(astra('status',{}).spidertrons,nil)
+jump(36000); advance(1)
+has(sol('status',{}).spidertrons[1],'held: go_to and clear refused until re-armed')
+fails(function() astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4}}) end,'is held on its retreat (sol\'s standing retreat_guard (riding it)')
+eq(sol('retreat_guard',{clear=true}).spidertrons,'1 spidertron held after a retreat re-armed: go_to and clear work on it again')
+eq(astra('status',{}).spidertrons,nil)
+astra('vehicle',{position={x=20,y=4},go_to={x=200,y=4}}); eq(spider_route[1].x,200)
 print('d24_batch189 ok')

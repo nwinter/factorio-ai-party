@@ -103,7 +103,7 @@ return function(api)
     retreat_guard={to='{x,y}: where to go back to',retreat_to='the same as to',health_below='0..1, default 0.4 when neither is given',shield_below='0..1 (the armor\'s, or the vehicle\'s grid when driving)',
       clear='true: no standing retreat any more (and no go_to retreat on the spidertrons you sent)',
       idle='true (default) or false: when hit with no action running, or during a mine, a walking tour, pickup, repair, construct or a wait (with its guns off), the character walks away at once: to to when set, else 24 tiles straight away from the attacker; false keeps it standing',
-      note='a standing retreat for move_to, shoot, kite, vehicle drive and the spidertrons you send by vehicle go_to or ride (its route replaced by one to to, read every 30 ticks) until cleared (a call\'s own retreat wins; retreat: false skips it); no arguments: shows it',
+      note='a standing retreat for move_to, shoot, kite, vehicle drive and the spidertrons you send by vehicle go_to or ride (its route replaced by one to to, read every 30 ticks; then go_to on it is refused until this guard is set again or cleared) until cleared (a call\'s own retreat wins; retreat: false skips it); no arguments: shows it',
       returns='retreat_guard: what is set, or false; idle when set to false'},
   }
   function M.handlers.retreat_guard(p, a)

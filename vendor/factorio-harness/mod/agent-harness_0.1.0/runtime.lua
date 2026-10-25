@@ -14224,10 +14224,19 @@ do
   local plain=handlers.retreat_guard
   handlers.retreat_guard=function(p,a)
     local out=plain(p,a)
-    if type(a)=='table' and a.clear==true and M.spiderroute then
-      local n=M.spiderroute.clear_retreats(M.board.who(p))
-      if n>0 then out.spidertrons=string.format('%d spidertron go_to retreat%s cleared',n,n==1 and '' or 's') end
+    if type(a)~='table' or not M.spiderroute then return out end
+    local who=M.board.who(p)
+    local said={}
+    if a.clear==true then
+      local n=M.spiderroute.clear_retreats(who)
+      if n>0 then said[#said+1]=string.format('%d spidertron go_to retreat%s cleared',n,n==1 and '' or 's') end
     end
+    -- (addendum) set or cleared: a spidertron held after its retreat takes go_to again
+    if a.clear==true or a.to~=nil or a.retreat_to~=nil then
+      local n=M.spiderroute.rearm(who)
+      if n>0 then said[#said+1]=string.format('%d spidertron%s held after a retreat re-armed: go_to and clear work on %s again',n,n==1 and '' or 's',n==1 and 'it' or 'them') end
+    end
+    if #said>0 then out.spidertrons=table.concat(said,'; ') end
     return out
   end
 end
@@ -16845,6 +16854,7 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
   urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
+  spider_retreat=function(p,since) return M.spiderroute and M.spiderroute.since(M.board.who(p),since) end,
   urgent_option=function(v) return M.urgent.option(v) end,wake_arg=function(a) return M.wake_arg(a) end,
   alert_line=function(p,from,filter,known) return M.urgent.alert(p,from,filter,known) end,alert_known=function(p) return M.urgent.alert_known(p) end,alert_held=function(k) return M.urgent.held_text(k) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
@@ -18421,7 +18431,7 @@ M.personal=require('personal'){}
 M.charsettings=require('charsettings'){personal=function() return M.personal end}
 function handlers.character_settings(p,a) return M.charsettings.handle(p,a) end
 -- (d17 batch31 C2) the personal requests unfilled, a line each, or nil: for a sleep or direct wait that ends early.
-M.WAIT_EARLY={told=true,mentioned=true,urgent=true,damaged=true}
+M.WAIT_EARLY={told=true,mentioned=true,urgent=true,damaged=true,spidertron_retreated=true}
 function M.personal_unfilled_lines(p)
   if not (p and p.valid) then return nil end
   local rows=M.personal.unfilled(p)
@@ -19972,6 +19982,11 @@ function M.tick_action(index,action,event)
     local _,kind,from=M.board.inbox_tick(index,action.wake_viewers,action.wake_filter)
     action.told=from and kind..' by '..from or kind
     finish(index,kind)
+  elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick and event.tick%30==19
+    and state().spiderroute and M.spiderroute.since(M.board.who(p),action.start_tick) then
+    -- (d24 batch189 addendum) a spidertron of ours retreated (spiderroute.lua): last.why says it
+    action.told=M.spiderroute.since(M.board.who(p),action.start_tick)
+    finish(index,'spidertron_retreated')
   elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.urgent and event.tick%60==0
     and M.urgent.waking(p,action) then
     -- An urgent alert ends a direct wait as it ends a sleep (urgent.lua; last.why names it).
