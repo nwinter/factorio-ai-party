@@ -34,9 +34,12 @@ return function(api)
   table.sort(TYPES)
   -- The vehicle at a position: only vehicles count, so the rail under a
   -- locomotive does not make the target ambiguous (live check 00:40).
+  local remote_hint
   local function find_vehicle(p, a)
     local pos = api.position(a.position)
-    api.assert_visible(p, pos, 'vehicle')
+    -- under pcall the refusal has no source line (level 2 is pcall's)
+    local seen, why = pcall(api.assert_visible, p, pos, 'vehicle')
+    if not seen then error(tostring(why) .. remote_hint(p, a, pos, tostring(why)), 0) end
     local best, bd
     for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=2.5, type=TYPES}) do
       if e.valid then
@@ -50,7 +53,8 @@ return function(api)
   end
   local function try_vehicle(p, a)
     local ok, e = pcall(find_vehicle, p, a)
-    return ok and e or nil
+    if ok then return e end
+    return nil, e
   end
   -- Who sits in a seat, as a unit number (a player's character, or a character).
   local function unit_of(x)
@@ -167,6 +171,49 @@ return function(api)
         math.floor(v.position.x * 10 + 0.5) / 10, math.floor(v.position.y * 10 + 0.5) / 10), 0)
     end
     return v
+  end
+  -- (d24 batch193 QAI1, viewer Aurora 20:58: Opus's vehicle {position, go_to} refused three times in shift71 as out
+  -- of sight) a refusal of a far vehicle names the remote form for our spidertron, car or tank there, with its unit
+  -- number and the call's own arguments, or the remote form's refusal; '' with none of ours there.
+  local function arg_text(x)
+    if type(x) == 'string' then return '"' .. x .. '"' end
+    if type(x) ~= 'table' then return tostring(x) end
+    if x.x ~= nil and x.y ~= nil then return '{x: ' .. arg_text(x.x) .. ', y: ' .. arg_text(x.y) .. '}' end
+    local parts = {}
+    for i, y in ipairs(x) do parts[i] = arg_text(y) end
+    return '[' .. table.concat(parts, ', ') .. ']'
+  end
+  local SPIDER_ARGS = {'go_to', 'mode', 'clear', 'auto_target_without_gunner', 'auto_target_with_gunner'}
+  remote_hint = function(p, a, pos, said)
+    local ok, text = pcall(function()
+      local v, bd
+      for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=2.5, type={'car', 'spider-vehicle'}, force=p.force}) do
+        if e.valid then
+          local d = api.distance(e.position, pos)
+          if not bd or d < bd then v, bd = e, d end
+        end
+      end
+      if not v then return '' end
+      local spider = v.type == 'spider-vehicle'
+      local okr, why = pcall(spider and remote_spider or remote_vehicle, p, {vehicle=v.unit_number})
+      if not okr then
+        -- the nearest coverage once: the refusal before it names it already
+        local text, note = tostring(why), api.coverage_note and api.coverage_note(p, v) or ''
+        local i = note ~= '' and said:find(note, 1, true) and text:find(note, 1, true)
+        if i then text = text:sub(1, i - 1) .. text:sub(i + #note) end
+        return '; by remote it is refused too: ' .. text
+      end
+      local call = 'vehicle {remote: true, vehicle: ' .. v.unit_number
+      if spider then
+        for _, k in ipairs(SPIDER_ARGS) do if a[k] ~= nil then call = call .. ', ' .. k .. ': ' .. arg_text(a[k]) end end
+        if a.enter then call = call .. ', go_to: {x, y}' end
+      else
+        local to = a.go_to ~= nil and pcall(api.position, a.go_to) and arg_text(a.go_to) or '{x, y}'
+        call = call .. ', drive: ' .. to
+      end
+      return '; or by remote: ' .. call .. '}'
+    end)
+    return ok and text or ''
   end
   -- The spidertron GUI's two switches: auto target without gunner, auto target with gunner.
   local function targeting(spider, a)
@@ -334,7 +381,10 @@ return function(api)
     -- drive argument, with no enter, exit, drive or go_to is refused naming what it goes with; vehicle {} alone reads
     -- the seat.
     if a.position ~= nil then
-      local e, pos = try_vehicle(p, a), api.position(a.position)
+      local e, why = try_vehicle(p, a)
+      local pos = api.position(a.position)
+      -- (QAI1) out of sight: the refusal, with the remote form
+      if why and tostring(why):find('outside local visible area', 1, true) then error(why, 0) end
       -- (BK1) a spidertron alone: its route and stall (Opus, shift59 21:42: vehicle {position} to see where it was going)
       if e and e.type == 'spider-vehicle' then
         local out = {spidertron=e.name, unit_number=e.unit_number, position=e.position, speed=e.speed and math.floor(e.speed * 216 + 0.5) or nil}
