@@ -26,7 +26,7 @@ return function(api)
       remote='with drive: true: drive one of our cars or tanks by remote view while the character stays where it is, as 2.0 lets a player (operator 08:32: to cut character deaths). vehicle names it. Refused, as the game refuses, when it is in no chunk our force sees now (radar coverage or a character\'s sight; the refusal names the nearest coverage), when someone sits in its driver seat or another agent drives it remotely, and for a spidertron (go_to) or a train. The drive ends out_of_coverage when the vehicle leaves the chunks our force sees, and driver_seated when someone gets into its driver seat. Its guns stay silent: a vehicle\'s guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player',
       vehicle='with remote: the car or tank (drive), or the spidertron (go_to, the targeting switches), by unit_number or {x,y} (any tile of it)',
       combat='with drive, seated as the gunner: true or a radius 1..36: the guns fire at the nearest enemy in range for the whole drive, as shoot auto does, and stop with it; last.shots (rounds fired), last.ammo_used, last.kills and kills_by_name (refused with remote)',
-      retreat='with drive: optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): when the vehicle\'s health or its grid\'s shield falls under it during the drive, the drive ends retreated and the vehicle is driven back to `to` at once (guns on when seated); false: not even the standing retreat_guard',
+      retreat='with drive: optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): when the vehicle\'s health or its grid\'s shield falls under it during the drive, the drive ends retreated and the vehicle is driven back to `to` at once (guns on when seated); false: not even the standing retreat_guard. With go_to the same for the spidertron while it has a route (else the standing retreat_guard of its sender, else of the agent riding it), read every 30 ticks: under it and lower than when sent, its route is replaced by one to `to` (as a click on its remote), then held: go_to and clear on it refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat); a sleep wakes and a direct wait ends (spidertron_retreated); the reply\'s retreat says what watches it; team.spidertron_retreated {why, from, health, shield, to, replaced, route_line, guard} in your next reply, and status spidertrons',
       ticks='with drive', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
   local TYPES = {}
@@ -178,6 +178,12 @@ return function(api)
     local now = spider.vehicle_automatic_targeting_parameters
     return {auto_target_without_gunner=now.auto_target_without_gunner, auto_target_with_gunner=now.auto_target_with_gunner}
   end
+  -- (d24 batch189 QAE1) a go_to's own retreat: nil (the standing retreat_guard), false (none) or the cfg.
+  local function spider_retreat(p, a)
+    if a.retreat == nil or a.go_to == nil then return nil end
+    if a.retreat == false then return false end
+    return api.spider_retreat(p, a)
+  end
   function M.handlers.vehicle(p, a)
     local c = p.character
     assert(c and c.valid, 'a living character is required')
@@ -197,7 +203,7 @@ return function(api)
     if read_e then
       local e = read_e
       local out = {spidertron=e.name, unit_number=e.unit_number, position=e.position, speed=e.speed and math.floor(e.speed * 216 + 0.5) or nil, by='remote view'}
-      for k, v in pairs(api.spider_facts(e, api.who and api.who(p) or p.name)) do out[k] = v end
+      for k, v in pairs(api.spider_facts(e, api.who and api.who(p) or p.name, p.index)) do out[k] = v end
       return out
     end
     refuse(a.vehicle == nil or a.remote, 'vehicle names the vehicle of a remote call (remote: true)')
@@ -208,7 +214,7 @@ return function(api)
       refuse(spider and spider.valid and spider.type == 'spider-vehicle', 'the targeting switches are a spidertron\'s (give its position, remote: true with vehicle, or ride it)')
       local out = {spidertron=spider.name, position=spider.position, targeting=targeting(spider, a), by=a.remote and 'remote view' or nil}
       if a.go_to ~= nil or a.clear ~= nil then
-        for k, v in pairs(api.spider_set(spider, a, api.who and api.who(p) or p.name)) do out[k] = v end
+        for k, v in pairs(api.spider_set(spider, a, api.who and api.who(p) or p.name, p.index, spider_retreat(p, a))) do out[k] = v end
         out.go_to = a.go_to
       end
       return out
@@ -258,8 +264,9 @@ return function(api)
       elseif a.position then spider = find_vehicle(p, a) else spider = c.vehicle end
       assert(spider and spider.valid and spider.type == 'spider-vehicle', (a.go_to ~= nil and 'go_to' or 'clear') .. ' is for a spidertron (give its position, remote: true with vehicle, or ride it)')
       local out = {spidertron=spider.name, unit_number=spider.unit_number, position=spider.position, go_to=a.go_to, by=a.remote and 'remote view' or nil}
-      -- (d22 batch101 BK1) replace (default), append or clear, as the remote does; the route said back
-      for k, v in pairs(api.spider_set(spider, a, api.who and api.who(p) or p.name)) do out[k] = v end
+      -- (d22 batch101 BK1) replace (default), append or clear, as the remote does; the route said back. (d24 batch189
+      -- QAE1) its own retreat, or false for none; else the standing retreat_guard watches it.
+      for k, v in pairs(api.spider_set(spider, a, api.who and api.who(p) or p.name, p.index, spider_retreat(p, a))) do out[k] = v end
       -- A spidertron with a fuel slot and nothing to burn stands still.
       pcall(function()
         local fuel = spider.get_fuel_inventory and spider.get_fuel_inventory()
@@ -338,7 +345,7 @@ return function(api)
       -- (BK1) a spidertron alone: its route and stall (Opus, shift59 21:42: vehicle {position} to see where it was going)
       if e and e.type == 'spider-vehicle' then
         local out = {spidertron=e.name, unit_number=e.unit_number, position=e.position, speed=e.speed and math.floor(e.speed * 216 + 0.5) or nil}
-        for k, v in pairs(api.spider_facts(e, api.who and api.who(p) or p.name)) do out[k] = v end
+        for k, v in pairs(api.spider_facts(e, api.who and api.who(p) or p.name, p.index)) do out[k] = v end
         return out
       end
       error(string.format('position names the vehicle for enter: true (get in), go_to or the targeting switches; with none of them nothing is done%s: vehicle {position: {x: %g, y: %g}, enter: true} gets in%s',
