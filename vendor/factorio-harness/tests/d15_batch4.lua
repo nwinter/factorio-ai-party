@@ -37,7 +37,7 @@ do
   eq(r.stored[1],'firearm-magazine 400..inf from vulcanus')
   eq(r.over_max,nil,'no max, nothing over it')
   r=space.requests(p,{platform='Starling',set={{item='firearm-magazine',min=400,max=420}}})
-  eq(r.over_max[1],'firearm-magazine: the hub holds 450, 30 over the max 420')
+  eq(r.over_max[1],'firearm-magazine: the hub holds 450, 30 over the max 420 (from vulcanus)')
   -- A bad second entry: nothing changes, not even the construction switch or the first entry.
   fails(function() space.requests(p,{platform='Starling',construction_requests=true,set={{item='coal',min=5},{item='firearm-magazine',min=10,max='lots'}}}) end,
     'or "inf" for none: "lots" is not')

@@ -99,6 +99,7 @@ function M.platform_value(rule, name, surface_of)
 end
 
 -- The refusal for argument key of action, when this module knows the form meant; nil otherwise.
+M.REPLY_FIELD = {ores = {drill_list = 'drill_list is a reply field: every ores call with patch carries it on the patch row (with forecast or without)'}}
 function M.refusal(action, key, args, takes, surface_of)
   if key == 'platform' then
     local rule = M.platform_as(action, takes)
@@ -113,6 +114,8 @@ function M.refusal(action, key, args, takes, surface_of)
     if text then return string.format('%s takes no platform argument: %s', action, text) end
   end
   if action == 'tells' and M.TELLS[key] then return M.TELLS[key] end
+  -- (d25 batch199 QL2, Sol #2295) a reply field sent as an argument
+  if M.REPLY_FIELD[action] and M.REPLY_FIELD[action][key] then return M.REPLY_FIELD[action][key] end
   if action == 'tells' and key == 'after' then return 'tells takes since: since=N lists the tells after seq N (after is since, a number)' end
   return nil
 end

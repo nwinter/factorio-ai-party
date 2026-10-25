@@ -50,7 +50,7 @@ local filters={}
 local ins={valid=true,name='inserter',type='inserter',position={x=-2.5,y=-4.5},force=force,surface=psurf,direction=0,status=62,
   bounding_box={left_top={x=-3,y=-5},right_bottom={x=-2,y=-4}},pickup_position={x=-2.5,y=-5.5},drop_position={x=-2.5,y=-3.5},
   filter_slot_count=5,use_filters=false,inserter_filter_mode='whitelist',held_stack=stack(nil,0),pickup_target=collector,drop_target=hub,
-  get_filter=function(i) return filters[i] end,set_filter=function(i,f) filters[i]=f and {name=f} or nil end,
+  get_filter=function(i) return filters[i] end,set_filter=function(i,f) filters[i]=f and {name=f,quality='normal',comparator='='} or nil end,  -- as 2.0.77 reads a name alone
   to_be_deconstructed=function() return true end,to_be_upgraded=function() return false end,
   get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
 local ghost={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='inserter',ghost_type='inserter',position={x=-2.5,y=-4.5},force=force,surface=psurf,direction=0,
