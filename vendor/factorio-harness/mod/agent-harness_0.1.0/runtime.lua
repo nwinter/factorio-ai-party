@@ -14134,9 +14134,26 @@ M.trains=require('trains'){entity=entity,remote_entity=remote_entity,friendly=fr
 handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
 -- A spidertron's route as its remote gives it: replace, append, clear; stalls said (spiderroute.lua; d22 batch101 BK1).
-M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end}
+-- (d24 batch189 QAE1) a spidertron's retreat: the guard read as retreat.lua reads a vehicle's; the agent riding it.
+M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end,
+  reading=function(e) return M.retreat.reading(e) end,retreat_check=function(e,cfg) return M.retreat.check_entity(e,cfg) end,
+  retreat_line=function(cfg) return M.retreat.line(cfg) end,
+  rider=function(e)
+    for _,get in ipairs({'get_driver','get_passenger'}) do
+      local ok,c=pcall(function() return e[get]() end)
+      if ok and c and c.valid then
+        local name=c.object_name=='LuaPlayer' and c.name or M.character_owner(c)
+        if name then for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index,name end end end
+      end
+    end
+  end}
 M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
-  spider_set=function(e,a,by) return M.spiderroute.set(e,a,by) end,spider_facts=function(e,by) return M.spiderroute.facts(e,by) end,
+  spider_set=function(e,a,by,index,own) return M.spiderroute.set(e,a,by,index,own) end,spider_facts=function(e,by,index) return M.spiderroute.facts(e,by,index) end,
+  spider_retreat=function(p,a)
+    local cfg=M.retreat.config(p,{retreat=a.retreat},'go_to')
+    if cfg and M.retreat.check_goal then M.retreat.check_goal(p,cfg.to) end
+    return cfg
+  end,
   who=function(p) return M.board.who(p) end,
   retreat=function(p,a) return M.retreat.config(p,a,'drive') end,arm_retreat=function(p,action,cfg) return M.retreat.arm(p,action,cfg) end,
   retreat_line=function(cfg) return M.retreat.line(cfg) end,
@@ -14202,6 +14219,27 @@ M.retreat=require('retreat'){state=state,position=position,check_goal=function(p
   if c then error(M.avoid.goal_text('retreat point',to,c)..': a retreat point must lie out of enemy reach'..M.avoid.spot_text(to,c,mode),0) end
 end}
 for name,handler in pairs(M.retreat.handlers) do handlers[name]=handler end
+-- (d24 batch189 QAE1) clear also drops the go_to retreats of the spidertrons this agent sent.
+do
+  local plain=handlers.retreat_guard
+  handlers.retreat_guard=function(p,a)
+    local out=plain(p,a)
+    if type(a)~='table' or not M.spiderroute then return out end
+    local who=M.board.who(p)
+    local said={}
+    if a.clear==true then
+      local n=M.spiderroute.clear_retreats(who)
+      if n>0 then said[#said+1]=string.format('%d spidertron go_to retreat%s cleared',n,n==1 and '' or 's') end
+    end
+    -- (addendum) set or cleared: a spidertron held after its retreat takes go_to again
+    if a.clear==true or a.to~=nil or a.retreat_to~=nil then
+      local n=M.spiderroute.rearm(who)
+      if n>0 then said[#said+1]=string.format('%d spidertron%s held after a retreat re-armed: go_to and clear work on %s again',n,n==1 and '' or 's',n==1 and 'it' or 'them') end
+    end
+    if #said>0 then out.spidertrons=table.concat(said,'; ') end
+    return out
+  end
+end
 -- The standing guard as one line for status, or nil.
 function M.retreat_guard_line(index)
   local g=(state().retreat_guards or {})[index]
@@ -16816,6 +16854,7 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
   urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
+  spider_retreat=function(p,since) return M.spiderroute and M.spiderroute.since(M.board.who(p),since) end,
   urgent_option=function(v) return M.urgent.option(v) end,wake_arg=function(a) return M.wake_arg(a) end,
   alert_line=function(p,from,filter,known) return M.urgent.alert(p,from,filter,known) end,alert_known=function(p) return M.urgent.alert_known(p) end,alert_held=function(k) return M.urgent.held_text(k) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
@@ -16852,7 +16891,7 @@ M.board=require('board'){state=state,rest_label=function(name) local r=M.rests a
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,speaker_lines=function(p,h) return M.pushalerts.speaker_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   death_lines=function(p,h) return M.death_lines(p,h) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,spider_lines=function(p,h) return M.spiderroute and M.spiderroute.lines(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,mixed_lines=function(p,h) return M.mixed and M.mixed.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,spider_lines=function(p,h) return M.spiderroute and M.spiderroute.lines(p,h) end,spider_retreats=function(p,h) return M.spiderroute and M.spiderroute.retreats(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,mixed_lines=function(p,h) return M.mixed and M.mixed.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -18396,7 +18435,7 @@ M.personal=require('personal'){}
 M.charsettings=require('charsettings'){personal=function() return M.personal end}
 function handlers.character_settings(p,a) return M.charsettings.handle(p,a) end
 -- (d17 batch31 C2) the personal requests unfilled, a line each, or nil: for a sleep or direct wait that ends early.
-M.WAIT_EARLY={told=true,mentioned=true,urgent=true,damaged=true}
+M.WAIT_EARLY={told=true,mentioned=true,urgent=true,damaged=true,spidertron_retreated=true}
 function M.personal_unfilled_lines(p)
   if not (p and p.valid) then return nil end
   local rows=M.personal.unfilled(p)
@@ -19947,6 +19986,11 @@ function M.tick_action(index,action,event)
     local _,kind,from=M.board.inbox_tick(index,action.wake_viewers,action.wake_filter)
     action.told=from and kind..' by '..from or kind
     finish(index,kind)
+  elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick and event.tick%30==19
+    and state().spiderroute and M.spiderroute.since(M.board.who(p),action.start_tick) then
+    -- (d24 batch189 addendum) a spidertron of ours retreated (spiderroute.lua): last.why says it
+    action.told=M.spiderroute.since(M.board.who(p),action.start_tick)
+    finish(index,'spidertron_retreated')
   elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.urgent and event.tick%60==0
     and M.urgent.waking(p,action) then
     -- An urgent alert ends a direct wait as it ends a sleep (urgent.lua; last.why names it).
@@ -20215,6 +20259,7 @@ function M.tick_body(event)
   if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
+  if event.tick%30==19 and M.spiderroute and state().spiderroute then pcall(M.timed,'spiderroute.guard_tick',M.spiderroute.guard_tick) end  -- their retreat guards (QAE1)
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
   if state().ammo_reserve then pcall(M.timed,'ammoreserve.tick',M.ammoreserve.tick,event.tick) end  -- platform_ammo_below's readings (ammoreserve.lua): a band a step while a pass runs
   if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)

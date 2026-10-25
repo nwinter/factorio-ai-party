@@ -14256,6 +14256,49 @@ Fixed besides gates:
   0.54 ms (3.5 KB); `reminders {}` 2.1 and 3.0 ms (63 KB); `reminders {all: true}` (the stream's 15 s read) 14.3 ms
   (145 KB).
 - Test: tests/d24_batch190.lua (fails on main: a reader's read gave Astra's team block).
+## d24 batch189 (viewer Aurora site:4814: retreat_guard for a spidertron)
+
+- QAE1: a spidertron sent by `vehicle {go_to}` is watched by a guard while it has a route: the go_to's own `retreat
+  {to, health_below?, shield_below?}` (or `retreat: false` for none), else its sender's standing `retreat_guard`, else
+  the standing guard of the agent riding it (driver, then passenger). `spiderroute.guard_tick` reads each such
+  spidertron every 30 ticks (none with no guard: no entity read). Its health, or its grid's shield, under the limit
+  and lower than when it was sent replaces its route by one to `to` (`autopilot_destination` nil, then
+  `add_autopilot_destination`, as a click on its remote), once until it is sent again. The go_to reply's `retreat`
+  says what watches it. The sender and the rider whose guard it was get `team.spidertron_retreated` [{spidertron,
+  unit_number, why, from, health, shield, to, replaced, route_line, guard, tick, refused?}] in their next reply, and
+  status `spidertrons` says it while the route lasts and for 10 minutes after. `retreat_guard {clear: true}` also drops
+  the go_to retreats of the spidertrons that agent sent (`spidertrons: "1 spidertron go_to retreat cleared"`). The
+  retreat point is checked as the guard's is (out of enemy reach on the agent's surface).
+- On a private copy of world n's shift71 save: Gleba spidertron #23117830, Grok's guard (to (60,40), health under 50%):
+  health set to 1200/3000 at tick 59046572 at (130.2,20); retreat at 59046589 (17 ticks), its 5 targets replaced by
+  (60,40), where it stood by 59046826. A go_to retreat on the shield (under 30%): 250 damage at 59046953, retreat at
+  59046979 (shield 72/300). Nauvis spidertron #27069154 ridden by Muse and sent by Opus (no guard): Muse's guard
+  (health under 60%) at 16 ticks; both heard it. After clear, health 900/3000 kept the route.
+- Cost (`profile_ticks` 20 s, the copy, one guarded spidertron walking): `spiderroute.guard_tick` 40 calls, 1.46 ms,
+  0.036 ms a call, worst second 0.09 ms.
+- Addendum (viewer Aurora 20:07, site:4823): once its guard has fired the spidertron is held. `vehicle {go_to}` and
+  `{clear}` on it are refused, a queued one too (its step fails with the reason), naming what re-arms it:
+  `retreat_guard {to, ...}` again or `retreat_guard {clear: true}` by the sender or the rider whose guard fired (reply
+  `spidertrons: "1 spidertron held after a retreat re-armed: ..."`), or a go_to with its own `retreat` (reply
+  `rearmed`). A transfer into it changes nothing. A sleep wakes `spidertron_retreated` (sleep_check
+  `spidertron_retreated`: the line) and a direct `wait_ticks`/`wait_until` ends with that outcome (`last.why`). A stall
+  of the retreat route says it is held. Status `spidertrons` lists a held one until it is re-armed.
+- Addendum checks on the copy, ticks from the damage that crossed the limit to the route change:
+  - Grok asleep (sleep 60), a queued wait_ticks 240 then go_to: damage at 59050137, retreat at 59050159 (22 ticks);
+    sleep_check woke `spidertron_retreated` after 2 s; the queued go_to step failed with the hold text, and a direct
+    go_to was refused the same way.
+  - Grok in wait_ticks 3600: damage at 59050572, retreat and the wait's end at 59050579 (7 ticks), last.outcome
+    `spidertron_retreated`.
+  - Ammo partly refilled while held (Grok's transfer of 40 rockets, 80 to 120 of 400): still held; a go_to with its own
+    retreat re-armed it; damage at 59051086, retreat at 59051089 (3 ticks).
+  - Blocked retreat route: Nauvis spidertron #23036938 (Opus), go_to west on land with a retreat to (-10,-440) across
+    the lake's deep water: damage at 59051273, retreat at 59051299 (26 ticks); it stood at (-130.1,-437) at the shore,
+    and 10 s later the stall alert and the stalled read named "water at (-129.5,-436.5), 1 tile ahead" and the hold.
+  - With the earlier three: 17, 26, 16, 22, 7, 3 and 26 ticks; the read runs every 30 ticks, so at most 29 plus the
+    tick the damage lands.
+- Cost with the hold (profile_ticks 20 s, one guarded spidertron walking, one held): guard_tick 0.045 ms a call (40
+  calls, 1.80 ms), spiderroute.tick 0.045 ms (20 calls, 0.89 ms).
+- Test: tests/d24_batch189.lua (fails on main: "attempt to call a nil value (field 'guard_tick')").
 ## d24 batch182
 
 - QY1 (Astra #2044: "Gleba six breeders uptime ~104 base craft/min, 156 completions/min while supply made ~149/min.

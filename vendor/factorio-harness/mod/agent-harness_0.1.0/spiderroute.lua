@@ -11,7 +11,17 @@
 --   where it stands, the target; the agent who sent it gets one line when it begins (and one when it moves again);
 -- - facts(spider): the route and, when stalled, the stall with what stands on the straight line ahead within AHEAD tiles
 --   (a tile or an entity its legs collide with, as the leg prototype's collision mask says), read when asked.
--- Facts only; nothing is moved or cleared but by the call.
+-- Facts only; nothing is moved or cleared but by the call, or by a retreat:
+-- - (d24 batch189 QAE1, viewer Aurora site:4814: "Could native retreat_guard handle Spidertrons using vehicle shield/health
+--   limits? On a trigger, replace outward waypoints and start retreat without waiting for another model response.")
+--   a spidertron sent this way with a guard (the go_to's own retreat, else its sender's standing retreat_guard, else the
+--   one of the agent riding it) is read every GUARD_EVERY ticks: its health, or its grid's shield, under the limit and
+--   lower than when it was sent replaces its route by one to `to` (as a click on its remote), once until it is sent
+--   again; the sender (and the rider whose guard it was) read it in team.spidertron_retreated and in status.
+-- - (addendum, Aurora 20:07 site:4823: "Could Spidertron retreat ignore old or competing commands until rearmed?") once
+--   it has retreated the spidertron is held: go_to and clear on it are refused (a queued one too) until one of those
+--   agents re-arms: retreat_guard {to, ...} again, a go_to with its own retreat, or retreat_guard {clear: true}. A
+--   sleep wakes and a direct wait ends on it (since).
 return function(api)
   local M = {}
   M.SAMPLE, M.STALL, M.MOVED, M.AHEAD, M.MAX_TARGETS = 60, 600, 0.5, 24, 16
@@ -19,6 +29,7 @@ return function(api)
   -- Opus's at a lake's edge read speed 0 and moved 1.2 tiles between two samples, and "moves again" was said 4 s after
   -- its stall. Stalled, it moves again only past WOBBLE tiles from where it stood or that much nearer its target.
   M.WOBBLE = 3
+  M.GUARD_EVERY = 30
   local function store()
     local s = api.state()
     s.spiderroute = s.spiderroute or {spiders={}, events={}, eseq=0}
@@ -48,6 +59,17 @@ return function(api)
     for i, d in ipairs(r) do parts[i] = at(d) end
     return string.format('%d target%s: %s', #r, #r == 1 and '' or 's', table.concat(parts, ' -> '))
   end
+  -- The health and shield fractions now (the baseline a guard triggers under).
+  local function fractions(spider)
+    if not api.reading then return 1, nil end
+    local h, m, sh, sm = api.reading(spider)
+    return h and h / m or 1, sh and sh / sm or nil
+  end
+  local function entry(spider, r, by, index)
+    local h0, s0 = fractions(spider)
+    return {by=by, idx=index, tick=game.tick, pos={x=spider.position.x, y=spider.position.y}, near=dist(spider.position, r[1]),
+      moved=game.tick, target={x=r[1].x, y=r[1].y}, h0=h0, s0=s0}
+  end
   local function event(text, to, unit)
     local st = store()
     st.eseq = st.eseq + 1
@@ -61,12 +83,23 @@ return function(api)
     for i, q in ipairs(a) do out[i] = api.position(q) end
     return out
   end
-  -- The call: go_to (with mode) or clear. -> the reply's facts.
-  function M.set(spider, a, by)
+  -- The call: go_to (with mode) or clear. -> the reply's facts. index: the sender's player index (its standing
+  -- retreat_guard); own: the go_to's own retreat cfg, or false for none (retreat: false).
+  function M.set(spider, a, by, index, own)
     assert(a.mode == nil or a.mode == 'replace' or a.mode == 'append', 'mode is "replace" (the default: the route becomes these targets, as a click on the remote) or "append" (added at the end, as a shift-click)')
     assert(a.clear == nil or a.clear == true, 'clear must be true')
-    local before = route(spider)
+    local st = store()
+    local lock = st.locks and st.locks[spider.unit_number]
     local out = {}
+    if lock and type(own) == 'table' then
+      st.locks[spider.unit_number] = nil
+      out.rearmed = 'its retreat hold ended: this go_to carries its own retreat'
+    elseif lock then
+      local rec = lock.rec
+      error(string.format('spidertron #%d is held on its retreat (%s %s ago: %s; its route became %s): go_to and clear are refused until re-armed; retreat_guard {to, health_below} again, retreat_guard {clear: true}, or a go_to with its own retreat {to, health_below} re-arms it',
+        spider.unit_number, rec.guard, ago(game.tick - rec.tick), rec.why, rec.route_line), 0)
+    end
+    local before = route(spider)
     if a.clear then
       assert(a.go_to == nil or a.mode ~= 'append', 'clear goes alone or with go_to (then the route becomes go_to)')
       spider.autopilot_destination = nil
@@ -90,10 +123,12 @@ return function(api)
     end
     local r = route(spider)
     out.route, out.route_line = r, route_line(r)
-    local st = store()
     if #r > 0 then
-      st.spiders[spider.unit_number] = {by=by, tick=game.tick, pos={x=spider.position.x, y=spider.position.y}, near=dist(spider.position, r[1]),
-        moved=game.tick, target={x=r[1].x, y=r[1].y}}
+      local t = entry(spider, r, by, index)
+      if own ~= nil then t.retreat = own end
+      st.spiders[spider.unit_number] = t
+      local cfg = M.guard(spider, t)
+      if cfg then out.retreat = api.retreat_line(cfg) .. (cfg.rider and ' (' .. cfg.rider .. ' rides it)' or '') .. string.format(', read every %d ticks', M.GUARD_EVERY) end
     else
       st.spiders[spider.unit_number] = nil
     end
@@ -133,17 +168,18 @@ return function(api)
   end
   -- The route and, when stalled, the stall: {route, route_line, stalled?}. A spidertron with a route that nothing samples
   -- yet (sent before, or by a player) is sampled from this read on, `by` told of a stall (sampling: since when).
-  function M.facts(spider, by)
+  function M.facts(spider, by, index)
     local r = route(spider)
     local out = {route=r, route_line=route_line(r)}
     local t = store().spiders[spider.unit_number]
     if not t and #r > 0 and by then
-      t = {by=by, tick=game.tick, pos={x=spider.position.x, y=spider.position.y}, near=dist(spider.position, r[1]), moved=game.tick, target={x=r[1].x, y=r[1].y}}
+      t = entry(spider, r, by, index)
       store().spiders[spider.unit_number] = t
       out.sampling = 'from now: no progress for ' .. math.floor(M.STALL / 60) .. ' s is said in your next reply'
     elseif t and #r > 0 and not t.stalled then
       out.sampling = string.format('moving or sampled under %d s: last progress %s ago', math.floor(M.STALL / 60), ago(game.tick - t.moved))
     end
+    if t and t.retreated then out.retreated = t.retreated end
     if t and #r > 0 and t.stalled then
       local why = ahead(spider, r[1])
       out.stalled = {since_tick=t.moved, for_s=math.floor((game.tick - t.moved) / 60), position=spider.position, target=r[1],
@@ -152,9 +188,121 @@ return function(api)
     end
     return out
   end
+  -- The guard that watches a spidertron now: the go_to's own retreat; else the sender's standing retreat_guard; else
+  -- that of the agent riding it (driver, then passenger). nil when none (or retreat: false).
+  function M.guard(spider, t)
+    if t.retreat == false then return nil end
+    if t.retreat then return t.retreat end
+    local guards = api.state().retreat_guards
+    if not guards then return nil end
+    local g = t.idx and guards[t.idx]
+    if g and g.to then return {to=g.to, health_below=g.health_below or (not g.shield_below and 0.4 or nil), shield_below=g.shield_below, standing=true} end
+    local index, name = nil, nil
+    if api.rider then index, name = api.rider(spider) end
+    g = index and guards[index]
+    if g and g.to then return {to=g.to, health_below=g.health_below or (not g.shield_below and 0.4 or nil), shield_below=g.shield_below, standing=true, rider=name} end
+    return nil
+  end
+  -- Every GUARD_EVERY ticks: each spidertron with a route and a guard, read once; a trigger sends it to `to`.
+  function M.guard_tick()
+    local st = api.state().spiderroute
+    if not (st and next(st.spiders)) then return end
+    local guards = api.state().retreat_guards
+    local any = guards and next(guards) ~= nil
+    for unit, t in pairs(st.spiders) do
+      if not t.retreated and (t.retreat or (t.retreat == nil and any)) then
+        local e = game.get_entity_by_unit_number(unit)
+        local cfg = e and e.valid and M.guard(e, t)
+        if cfg then
+          local look = {to=cfg.to, health_below=cfg.health_below, shield_below=cfg.shield_below, h0=t.h0 or 1, s0=t.s0, standing=cfg.standing}
+          local info = api.retreat_check(e, look)
+          if info then M.retreat(e, unit, t, cfg, info) end
+        end
+      end
+    end
+  end
+  -- The retreat: the route replaced by one to `to` (the remote's click), said to the sender and the guard's rider.
+  function M.retreat(e, unit, t, cfg, info)
+    local st = store()
+    local before = route(e)
+    local refused
+    local ok, err = pcall(function()
+      e.autopilot_destination = nil
+      e.add_autopilot_destination(cfg.to)
+    end)
+    if not ok then refused = 'the game refused the destination ' .. at(cfg.to) .. ': ' .. tostring(err) end
+    local r = route(e)
+    local parts = {}
+    for i, d in ipairs(before) do parts[i] = at(d) end
+    local rec = {spidertron=e.name, unit_number=unit, why=info.why, from=info.from, health=info.health, shield=info.shield, to=cfg.to,
+      replaced=parts, route_line=route_line(r), refused=refused, guard=cfg.standing and (cfg.rider and cfg.rider .. '\'s standing retreat_guard (riding it)' or 'standing retreat_guard') or 'the go_to\'s retreat',
+      tick=game.tick}
+    t.retreated = rec
+    if #r > 0 then
+      t.pos, t.near, t.moved, t.stalled, t.target = {x=e.position.x, y=e.position.y}, dist(e.position, r[1]), game.tick, nil, {x=r[1].x, y=r[1].y}
+    end
+    st.retreats = st.retreats or {}
+    st.rseq = (st.rseq or 0) + 1
+    st.retreats[#st.retreats+1] = {id=st.rseq, to={t.by, cfg.rider}, rec=rec}
+    while #st.retreats > 32 do table.remove(st.retreats, 1) end
+    st.locks = st.locks or {}
+    st.locks[unit] = {agents={t.by, cfg.rider}, rec=rec}
+    st.rlast = st.rlast or {}
+    for _, name in ipairs({t.by, cfg.rider}) do st.rlast[name] = {tick=game.tick, unit=unit} end
+  end
+  -- A retreat said to this agent at or after tick (a sleep's or a direct wait's start): its line, or nil.
+  function M.since(name, tick)
+    local st = api.state().spiderroute
+    local last = st and st.rlast and st.rlast[name]
+    if not (last and last.tick >= tick) then return nil end
+    local lock = st.locks and st.locks[last.unit]
+    local rec = lock and lock.rec
+    if not rec then return string.format('spidertron #%d retreated', last.unit) end
+    return string.format('spidertron #%d retreated (%s: %s) from %s; its route became %s', last.unit, rec.guard, rec.why, at(rec.from), rec.route_line)
+  end
+  -- Re-armed by one of the agents it told (retreat_guard set or cleared): the holds end. -> how many.
+  function M.rearm(name)
+    local st = api.state().spiderroute
+    local n = 0
+    for unit, lock in pairs(st and st.locks or {}) do
+      if lock.agents[1] == name or lock.agents[2] == name then st.locks[unit] = nil; n = n + 1 end
+    end
+    return n
+  end
+  -- retreat_guard {clear: true}: the go_to retreats of the spidertrons this agent sent are dropped too (and the holds
+  -- end: M.rearm). -> how many.
+  function M.clear_retreats(name)
+    local n = 0
+    for _, t in pairs(store().spiders) do
+      if t.by == name and t.retreat then t.retreat = nil; n = n + 1 end
+    end
+    return n
+  end
+  -- The retreats this agent has not read yet (team.spidertron_retreated), once each.
+  function M.retreats(p, h)
+    local st = api.state().spiderroute
+    if not (st and st.retreats and #st.retreats > 0) then return nil end
+    local me = api.who and api.who(p) or p.name
+    local out = {}
+    for _, r in ipairs(st.retreats) do
+      if r.id > (h.spider_retreat_seen or 0) and (r.to[1] == me or r.to[2] == me) then out[#out+1] = r.rec end
+    end
+    h.spider_retreat_seen = st.rseq
+    return #out > 0 and out or nil
+  end
+  local function retreat_text(rec)
+    local held = store().locks and store().locks[rec.unit_number]
+    return string.format('retreated %s ago (%s: %s) from %s, health %s%s; its route became %s%s%s', ago(game.tick - rec.tick), rec.guard, rec.why, at(rec.from), rec.health,
+      rec.shield and ', shield ' .. rec.shield or '', rec.route_line, rec.refused and '; ' .. rec.refused or '',
+      held and held.rec == rec and '; held: go_to and clear refused until re-armed' or '')
+  end
   -- Every SAMPLE ticks: each spidertron sent by go_to.
   function M.tick()
     local st = store()
+    for unit in pairs(st.locks or {}) do
+      local e = game.get_entity_by_unit_number(unit)
+      if not (e and e.valid) then st.locks[unit] = nil end
+    end
     for unit, t in pairs(st.spiders) do
       local e = game.get_entity_by_unit_number(unit)
       local r = e and e.valid and route(e) or {}
@@ -172,8 +320,11 @@ return function(api)
         elseif not t.stalled and game.tick - t.moved >= M.STALL then
           t.stalled = true
           local f = M.facts(e)
-          event(string.format('spidertron #%d: %s; its route: %s (vehicle {go_to, mode: "replace"} sets a new one, {clear: true} empties it)',
-            unit, f.stalled and f.stalled.line or 'no progress', f.route_line), t.by, unit)
+          local held = st.locks and st.locks[unit]
+          event(string.format('spidertron #%d: %s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress', f.route_line,
+            held and 'its retreat route; held: go_to is refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat)'
+              or 'vehicle {go_to, mode: "replace"} sets a new one, {clear: true} empties it'), t.by, unit)
+          if held and held.agents[2] and held.agents[2] ~= t.by then event(st.events[#st.events].text, held.agents[2], unit) end
         end
       end
     end
@@ -192,14 +343,24 @@ return function(api)
   end
   -- The spidertrons this agent sent that hold a route now, for its status.
   function M.mine(name)
-    local out = {}
+    local out, seen = {}, {}
     for unit, t in pairs(store().spiders) do
       if t.by == name then
         local e = game.get_entity_by_unit_number(unit)
         if e and e.valid then
           local f = M.facts(e)
-          out[#out+1] = string.format('spidertron #%d at %s: %s%s', unit, at(e.position), f.route_line, f.stalled and '; ' .. f.stalled.line or '')
+          out[#out+1] = string.format('spidertron #%d at %s: %s%s%s', unit, at(e.position), f.route_line, f.stalled and '; ' .. f.stalled.line or '',
+            t.retreated and '; ' .. retreat_text(t.retreated) or '')
+          seen[unit] = true
         end
+      end
+    end
+    -- held after a retreat, its route ended since (or sent by another agent): until re-armed
+    for unit, lock in pairs(store().locks or {}) do
+      local rec = lock.rec
+      local e = (lock.agents[1] == name or lock.agents[2] == name) and not seen[unit] and game.get_entity_by_unit_number(unit)
+      if e and e.valid then
+        out[#out+1] = string.format('spidertron #%d at %s: %s; %s', unit, at(e.position), route_line(route(e)), retreat_text(rec))
       end
     end
     table.sort(out)
