@@ -50,11 +50,21 @@ return function(api)
     return pl and pl.valid and pl or nil
   end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
+  -- (d25 batch203 QP1, Sol #2331: native rockets could not be told apart by silo) a rocket's journey keeps the silo the
+  -- game names: the launch event's rocket_silo, else the pod's cargo_pod_origin (a rocket-silo; on a copy of world n
+  -- every launch, native ones too, raised on_rocket_launch_ordered with the silo, and the pod named it as its origin
+  -- there and at on_cargo_pod_finished_ascending ~1650 ticks later). Never a silo found near the pod. silo_since: the
+  -- tick this runtime began keeping silos; a rocket sent before it has silo unknown.
+  local function set_silo(r, silo)
+    if r.silo or not (silo and try(function() return silo.valid and silo.type == 'rocket-silo' and silo.unit_number end)) then return end
+    r.silo, r.sx, r.sy = silo.unit_number, silo.position.x, silo.position.y
+  end
   -- A pod leaving: its journey (once per pod; a later call adds what it knows). info: kind, by, drop, seen.
-  function M.sent(pod, info, tick)
+  function M.sent(pod, info, tick, silo)
     local unit = pod and pod.valid and pod.unit_number
     if not unit then return nil end
     local st = store()
+    st.silo_since = st.silo_since or tick or game.tick
     local open = st.open[unit]
     local r = open and find(st, open)
     if r then
@@ -62,6 +72,7 @@ return function(api)
       if info and info.seen == 'event' and r.seen == 'sampled' then r.sent, r.seen = tick or game.tick, 'event' end
       for k, v in pairs(info or {}) do if r[k] == nil then r[k] = v end end
       if not r.items then r.items = contents(pod) end
+      if r.up then set_silo(r, silo or try(function() return pod.cargo_pod_origin end)) end
       return r.id
     end
     local origin = try(function() return pod.cargo_pod_origin end)
@@ -82,6 +93,7 @@ return function(api)
     r = {id=st.seq, unit=unit, up=up or nil, platform=pl and pl.name, stop=pl and try(function() return pl.space_location.name end),
       sent=tick or game.tick, items=contents(pod)}
     for k, v in pairs(info or {}) do r[k] = v end
+    if up then set_silo(r, silo or origin) end
     local list = st.by[planet] or {}
     st.by[planet] = list
     list[#list+1] = r
@@ -189,7 +201,7 @@ return function(api)
   -- A rocket's pod (on_rocket_launch_ordered, forwarded since d18).
   function M.on_launch(event)
     local pod = try(function() return event.rocket.attached_cargo_pod end)
-    if pod then return M.sent(pod, {kind='rocket', by=event.player_index and try(function() return game.get_player(event.player_index).name end) or nil}, event.tick) end
+    if pod then return M.sent(pod, {kind='rocket', by=event.player_index and try(function() return game.get_player(event.player_index).name end) or nil}, event.tick, event.rocket_silo) end
   end
   -- (no pod events forwarded) pods.lua's read: a hub's pod seen leaving, and gone
   function M.sampled(pod, tick)
@@ -276,6 +288,7 @@ return function(api)
       for i = #list, 1, -1 do
         local r = list[i]
         if (f.up == nil or (r.up == true) == f.up) and (not f.platform or r.platform == f.platform) and (not f.item or has_item(r, f.item, prefix))
+          and (not f.silo or r.silo == f.silo)
           and (not f.from or r.sent >= f.from) and (not f.to or r.sent <= f.to) then
           total = total + 1
           if kept < f.limit then kept = kept + 1; all[#all+1] = {r=r, planet=planet} end
@@ -283,15 +296,24 @@ return function(api)
       end
     end
     table.sort(all, function(x, y) return x.r.sent < y.r.sent or (x.r.sent == y.r.sent and x.r.id < y.r.id) end)
+    local since = store().silo_since
     for i = math.max(1, #all - f.limit + 1), #all do
       local r, planet = all[i].r, all[i].planet
       local from, to = r.up and planet or tostring(r.platform), r.up and tostring(r.platform) or planet
       local flying = not r.landed
-      rows[#rows+1] = {id=r.id, pod=r.unit, direction=r.up and 'up' or 'down', platform=r.platform, stop=r.stop, surface=planet,
+      local silo, silo_text
+      if r.up then
+        if r.silo then
+          silo = {unit_number=r.silo, surface=planet, position={x=r.sx, y=r.sy}}
+          silo_text = string.format('from silo %d %s', r.silo, at({x=r.sx, y=r.sy}))
+        elseif since and r.sent >= since then silo, silo_text = 'not read', 'silo not read (the game named none for this pod)'
+        else silo, silo_text = 'unknown', 'silo unknown (sent before the ledger kept silos)' end
+      end
+      rows[#rows+1] = {id=r.id, pod=r.unit, direction=r.up and 'up' or 'down', silo=silo, platform=r.platform, stop=r.stop, surface=planet,
         sent_tick=r.sent, landed_tick=r.landed, destination=r.dest, items=items_text(r.items), by=r.kind == 'drop' and r.by or nil,
         pad_free_before=slots(r.free), pad_free_after=slots(r.free_after), ground=r.ground,
-        line=string.format('%s #%d, pod %d, %s ago: %s to %s%s, %s, %s; %s', r.up and 'up' or 'down', r.id, r.unit, ago(game.tick - r.sent), from, to,
-          not r.up and r.stop and ' (at ' .. r.stop .. ')' or '', items_text(r.items), kind_text(r),
+        line=string.format('%s #%d, pod %d, %s ago: %s to %s%s, %s, %s%s; %s', r.up and 'up' or 'down', r.id, r.unit, ago(game.tick - r.sent), from, to,
+          not r.up and r.stop and ' (at ' .. r.stop .. ')' or '', items_text(r.items), kind_text(r), silo_text and ' ' .. silo_text or '',
           flying and (game.tick - r.sent > M.OPEN_TICKS and 'no landing recorded' or 'in flight')
             or string.format('landed %s after %ds%s', r.dest and 'in ' .. r.dest or '(where not read)', math.floor((r.landed - r.sent) / 60), r.seen == 'sampled' and ' (to the second)' or '')
             .. (r.free and string.format('; the pad\'s free slots %s before, %s after', slots(r.free), r.free_after and slots(r.free_after) or '?') or '')
