@@ -596,6 +596,11 @@ local function finish(index, outcome)
       p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
     end
   end
+  -- (d24 batch191 QAG1) spider_kite: kills, rockets, why; its route and switches (spiderkite.lua)
+  if action and action.kind=='spider_kite' then
+    local pb=body(M.lookup(index))
+    M.spiderkite.finish(action,outcome,s.last[index],function(e,args,by) return M.spiderroute.set(e,args,by) end,pb and M.board.who(pb) or nil)
+  end
   if action and action.kind=='drive' then
     local p=body(M.lookup(index))
     local last=s.last[index]
@@ -1373,6 +1378,7 @@ local function active(index)
     next_position=action.cells and action.cells[action.next_index] and action.cells[action.next_index].position,
     target=action.entity and action.entity.valid and {name=action.entity.name,position=action.entity.position} or nil,
     kills=action.kills,shooting=action.kind=='kite' and action.target or nil,
+    spider_kite=action.kind=='spider_kite' and M.spiderkite.line(action) or nil,
     built=action.built,remaining=action.kind=='construct' and construction.remaining(action) or nil,
     missing=action.missing and next(action.missing) and action.missing or nil,
     awaiting_craft=action.awaiting_craft,got=action.got,
@@ -2258,6 +2264,7 @@ function handlers.describe(_,a)
     returns='parts, mean_c (weighted by heat capacity), lowest, highest, capacity_mj_per_c, stored_above_30_mj, after_c (with add_pipes: the mean once the new pipes share the heat, none made or used meanwhile), line'}
   for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.spiderkite and M.spiderkite.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.retreat and M.retreat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.defense and M.defense.schema or {}) do description.actions[name]=schema end
@@ -14134,7 +14141,9 @@ M.trains=require('trains'){entity=entity,remote_entity=remote_entity,friendly=fr
 handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
 -- A spidertron's route as its remote gives it: replace, append, clear; stalls said (spiderroute.lua; d22 batch101 BK1).
-M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end}
+-- (d24 batch191 addendum) its routes round water its legs cannot cross; no progress: a path, then the shore (spiderpath.lua).
+M.spiderpath=require('spiderpath'){state=state}
+M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end,path=M.spiderpath}
 M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
   spider_set=function(e,a,by) return M.spiderroute.set(e,a,by) end,spider_facts=function(e,by) return M.spiderroute.facts(e,by) end,
   who=function(p) return M.board.who(p) end,
@@ -14173,6 +14182,53 @@ do
     end
     return out
   end
+end
+-- (d24 batch191 QAG1) spider_kite: kite for a spidertron you ride or send by remote view (spiderkite.lua): its guns on
+-- auto by its targeting switches, its legs moved by route targets as its remote sets them, every 10 ticks.
+M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath}
+function handlers.spider_kite(p,a)
+  local c=p.character
+  assert(c and c.valid,'a living character is required')
+  local v=c.vehicle
+  local spider,how
+  if a.vehicle~=nil then
+    spider=M.vehicles.remote_spider(p,{vehicle=a.vehicle})
+    how=v==spider and 'riding' or 'remote'
+  elseif v and v.valid and v.type=='spider-vehicle' then spider,how=v,'riding'
+  else error('vehicle names the spidertron (its unit_number or {x,y}; by remote view in a chunk our force sees now), or ride one',0) end
+  for i,act in pairs(state().active) do
+    if i~=p.index and act.kind=='spider_kite' and act.spider==spider then
+      local b=M.bots.record(i)
+      local pl=not b and game.get_player(i)
+      error(string.format('%s #%d: %s runs spider_kite with it',spider.name,spider.unit_number,b and b.name or pl and pl.name or 'another agent'),0)
+    end
+  end
+  -- (QAE1, batch189) a retreat its guard started holds its route
+  local sr=state().spiderroute
+  local t=sr and sr.spiders[spider.unit_number]
+  local route=M.spiderroute.route(spider)
+  if t and t.retreated and #route>0 then
+    error(string.format('%s #%d walks its retreat route (%s): its guard fired; spider_kite would replace that route',spider.name,spider.unit_number,
+      t.retreated.why or 'retreat'),0)
+  end
+  local g=(state().retreat_guards or {})[p.index]
+  local action=M.spiderkite.plan(p,a,spider,how,g and g.to and g or nil)
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  -- the fight owns its route now: a go_to's stall sampling (spiderroute.lua) ends, the route is cleared
+  if sr then sr.spiders[spider.unit_number]=nil end
+  if #route>0 then spider.autopilot_destination=nil end
+  local targeting=M.spiderkite.start(action)
+  state().active[p.index]=action
+  local replaced
+  if #route>0 then
+    replaced={}
+    for i,q in ipairs(route) do replaced[i]=string.format('(%g,%g)',math.floor(q.x*10+0.5)/10,math.floor(q.y*10+0.5)/10) end
+  end
+  return {spidertron=spider.name,unit_number=spider.unit_number,position=spider.position,by=how=='remote' and 'remote view' or 'riding',
+    until_tick=action.until_tick,ammo=action.ammo_start,band={min_distance=action.band_min,max_distance=action.band_max},range=action.range,
+    gun_range=action.gun_range,radius=action.radius,min_health=action.min_health,min_shield=action.min_shield,ammo_below=action.ammo_below,
+    retreat=action.back and string.format('(%g,%g)%s',action.back.x,action.back.y,action.back_standing and ' (standing retreat_guard)' or '') or nil,
+    targeting=targeting,replaced=replaced}
 end
 -- Items on the ground (ground.lua): summaries for scan/observe, spill and pile
 -- alerts, deconstruct items_on_ground, pickup over an area.
@@ -16609,7 +16665,7 @@ end -- Actions whose handler can start a timed action: as a queue step they wait
 -- began and ended in the same tick, and the next step, a move_to, stopped its throw; vehicle drives the same).
 -- tests/queuetimed.lua lists every timed action and checks each is here.
 local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true,
-  clear_cliffs=true,use_item=true,vehicle=true,
+  clear_cliffs=true,use_item=true,vehicle=true,spider_kite=true,
   -- configure and rotate: a walk into reach that the call makes first (autowalk.lua)
   configure=true,rotate=true,
   -- launch {wait_ready}: a wait for the rocket, then the launch
@@ -18205,7 +18261,7 @@ dispatch_request=function(request)
     error('unsupported action'..(#near>0 and '; closest: '..table.concat(near,', ') or '')..'; call describe',0)
   end
   -- equipment too: the vehicle's grid and the armor's open seated, as their GUIs do (operator 09:13).
-  M.seated_ok=(M.read_call(request.action,request.args) or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot'
+  M.seated_ok=(M.read_call(request.action,request.args) or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='spider_kite' or request.action=='shoot'
     or request.action=='equipment' or (request.action:match('^queue_') and ((request.args or {}).lane=='remote' or M.platform_lane(request.args)))) and true or nil
   local args_ok,args_err=pcall(check_args,request.action,request.args)
   if not args_ok then
@@ -19923,7 +19979,7 @@ function M.tick(event)
 end
 -- One running action's tick (M.tick_body).
 function M.tick_action(index,action,event)
-  local ok,p=pcall(player,index,action.kind=='drive')
+  local ok,p=pcall(player,index,action.kind=='drive' or action.kind=='spider_kite')
   -- Read a due silo sample before testing the deadline: a part arriving on
   -- that tick can extend the idle window, but never the absolute give-up.
   local silo_ready
@@ -19950,7 +20006,7 @@ function M.tick_action(index,action,event)
   elseif event.tick>action.until_tick and action.kind=='wait_until' and action.default_timeout and M.waiteta.extend(action,action.condition,action.start_tick) then
     action.until_tick=M.waiteta.extend(action,action.condition,action.start_tick)
   elseif event.tick>action.until_tick then
-    finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
+    finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='spider_kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
   elseif action.kind=='wait_until' then
     if event.tick>=action.next_check then
       action.next_check=event.tick+FEED_CHECK
@@ -19986,6 +20042,11 @@ function M.tick_action(index,action,event)
   elseif action.kind=='kite' then
     local outcome=kite.tick(p,action,event.tick)
     if outcome then finish(index,outcome) end
+  elseif action.kind=='spider_kite' then
+    if event.tick>=action.next_scan then
+      local outcome=M.spiderkite.tick(action,event.tick)
+      if outcome then finish(index,outcome) end
+    end
   elseif action.kind=='drive' then
     local outcome=M.vehicles.tick(p,action)
     if outcome then finish(index,outcome) end
@@ -20424,6 +20485,11 @@ function M.on_event(event)
     return
   end
   if event.name==defines.events.on_script_path_request_finished then
+    -- (d24 batch191) a spidertron's path round water (spiderpath.lua): its go_to route or its spider_kite
+    local okp,ours=pcall(M.spiderpath.on_path,event,function(rec,plan,spider,pts,notes)
+      if rec.owner=='kite' then M.spiderkite.routed(state().active[rec.index],plan,spider,pts) else M.spiderroute.routed(rec,plan,spider,pts,notes) end
+    end)
+    if okp and ours then return end
     local paths=state().paths or {}
     local index=paths[event.id]; paths[event.id]=nil
     local action=index and state().active[index]
@@ -20486,6 +20552,12 @@ function M.on_event(event)
       for index,action in pairs(state().active) do
         local p=action.kind=='kite' and M.lookup(index)
         if p and p.character==cause then action.kills=action.kills+1 end
+      end
+    end
+    -- (QAG1) a spidertron's rockets, or the character riding it
+    if cause and cause.valid and (cause.type=='spider-vehicle' or cause.type=='character') then
+      for _,action in pairs(state().active) do
+        if action.kind=='spider_kite' then pcall(M.spiderkite.died,action,cause,event.entity) end
       end
     end
     -- A vehicle's guns (shoot seated, drive combat): a death caused by the vehicle or by its gunner counts.

@@ -168,6 +168,7 @@ return function(api)
     end
     return v
   end
+  M.remote_spider = remote_spider
   -- The spidertron GUI's two switches: auto target without gunner, auto target with gunner.
   local function targeting(spider, a)
     local cur = spider.vehicle_automatic_targeting_parameters or {}

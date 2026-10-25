@@ -1373,6 +1373,10 @@ async function main() {
       // kite: what it killed, what is left, the ammunition, where it retreated from (kite.lua).
       ...(last?.kind === 'kite' ? {kills: last.kills, enemies_left: last.enemies_left, ammo_used: last.ammo_used, ammo_left: last.ammo_left,
         reloads: last.reloads, retreated_from: last.retreated_from} : {}),
+      // spider_kite (d24 batch191): the same for a spidertron, with where it stands, its route back and the switches.
+      ...(last?.kind === 'spider_kite' ? {kills: last.kills, kills_by: last.kills_by, enemies_left: last.enemies_left,
+        ammo_used: last.ammo_used, ammo_left: last.ammo_left, spidertron: last.spidertron, turns: last.turns, recovery: last.recovery,
+        water: last.water, routed: last.routed, retreat: last.retreat, targeting: last.targeting} : {}),
       // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua); a gap it
       // stopped before, a squeeze it walked out of, what to mine when closed in; enemies gone around (avoid.lua).
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
@@ -1507,7 +1511,7 @@ async function main() {
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
         // A kite that ran its ticks out kited for as long as it was asked: done, as shoot's duration_elapsed is.
-        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true) && !(action === 'kite' && last.outcome === 'timed_out')) {
+        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true) && !((action === 'kite' || action === 'spider_kite') && last.outcome === 'timed_out')) {
           return {...status,ok:false,error:endedError(action,last)};
         }
         return status;
@@ -2064,7 +2068,7 @@ async function main() {
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).
     const waits = bridged ? ['walk','mine','build'].includes(action)
-      : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
+      : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite','spider_kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         // rearm over an area or the whole surface: the same tour (Opus, shift12 13:50).
         || (['rearm','refuel'].includes(action) && (args.area !== undefined || args.surface !== undefined) && reply.result?.until_tick !== undefined)
         // recover: the walk to your corpses (round1520d).
