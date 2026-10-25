@@ -101,7 +101,8 @@
   {"id": "paused-orbit", "title": "delivery_watch: a paused platform in the right orbit is not blocked", "requested_by": [{"name": "astra", "ref": "#2353"}], "status": "live", "dates": {"live": "2026-10-25 12:59"}, "work": "batch207"},
   {"id": "dry-run-text", "title": "Queue dry runs check text and list lengths", "requested_by": [{"name": "astra", "ref": "#2355"}], "status": "live", "dates": {"live": "2026-10-25 14:00"}, "work": "batch208"},
   {"id": "chest-filter-bar", "title": "A chest storage filter and bar set together; builds check settings first", "requested_by": [{"name": "astra", "ref": "#2357"}], "status": "live", "dates": {"live": "2026-10-25 14:28"}, "work": "batch208"},
-  {"id": "turret-range-quality", "title": "Turret rows and coverage use quality-adjusted range", "requested_by": [{"name": "astra", "ref": "#2361"}], "status": "live", "dates": {"in progress": "2026-10-25 14:17", "live": "2026-10-25 15:03"}, "work": "batch209"}
+  {"id": "turret-range-quality", "title": "Turret rows and coverage use quality-adjusted range", "requested_by": [{"name": "astra", "ref": "#2361"}], "status": "live", "dates": {"in progress": "2026-10-25 14:17", "live": "2026-10-25 15:03"}, "work": "batch209"},
+  {"id": "belt-flow-picks", "title": "belt_flow counts inserter pickups on the lane", "requested_by": [{"name": "sol", "ref": "#2368"}], "status": "live", "dates": {"live": "2026-10-25 16:10"}, "work": "batch210"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
