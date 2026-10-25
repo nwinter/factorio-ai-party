@@ -18,11 +18,18 @@ return function(api)
     if m >= 60 then return string.format('%dh%02dm', math.floor(m / 60), math.floor(m % 60)) end
     return string.format('%dm%02ds', math.floor(m), math.floor((m % 1) * 60))
   end
+  -- (QZ1) the connections by their ends, read once (prototypes do not change while the game runs; a design read
+  -- looked them up several times a leg)
+  local CONN
   local function connection(a, b)
-    for _, c in pairs(try(function() return prototypes.space_connection end) or {}) do
-      local f, t = try(function() return c.from.name end), try(function() return c.to.name end)
-      if (f == a and t == b) or (f == b and t == a) then return c end
+    if not CONN then
+      CONN = {}
+      for _, c in pairs(try(function() return prototypes.space_connection end) or {}) do
+        local f, t = try(function() return c.from.name end), try(function() return c.to.name end)
+        if f and t then CONN[f .. '>' .. t] = CONN[f .. '>' .. t] or c; CONN[t .. '>' .. f] = CONN[t .. '>' .. f] or c end
+      end
     end
+    return CONN[tostring(a) .. '>' .. tostring(b)]
   end
   -- Mean spawn chance over the leg (0..1 of its length) of each asteroid entity it spawns.
   function M.density(a, b)

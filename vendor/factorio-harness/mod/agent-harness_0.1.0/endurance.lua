@@ -247,7 +247,8 @@ return function(api)
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
     local stops, route_by = route_of(pl, a.route)
-    local v, v_by = speed(pl)
+    local v, v_by
+    if not design then v, v_by = speed(pl) end
     -- Legs: from where it is (the rest of the leg it flies), then stop to stop.
     local legs, total_km = {}, 0
     local leg_now = api.leg and api.leg(pl)
