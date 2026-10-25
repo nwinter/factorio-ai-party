@@ -67,7 +67,22 @@ return function(api)
     return r, r and quality_name(q) or nil
   end
   local function qlabel(name, q) return q and q ~= 'normal' and string.format('%s (%s)', name, q) or name end
-  local function finished(e) return try(function() return e.products_finished end) or 0 end
+  -- (d24 batch201 QN1, Astra #2302: two silos read 19 completions in 600 s while Aquilo's statistics counted 879 rocket
+  -- parts) a rocket silo's products_finished counts rockets, not parts (silo.lua's parts made): on a copy of world n
+  -- (2.0.77) it went up by one in the tick rocket_parts went 50 -> 0 (create_rocket), the silo built parts through every
+  -- launch phase, and a full productivity bar added its part to rocket_parts; over 9466 ticks the two Aquilo silos'
+  -- finished x 50 + rocket_parts rose 113 + 160 and the surface's rocket-part produced 273. So a silo's completions are
+  -- rocket parts: finished rockets x the parts a rocket takes, plus rocket_parts (it never drops at a launch). parts=
+  -- false keeps the game's count (a watch begun before this counted it so).
+  local function finished(e, parts)
+    if parts and e.type == 'rocket-silo' then
+      local fin = try(function() return e.products_finished end)
+      if not fin then return 0 end
+      local req = try(function() return e.prototype.rocket_parts_required end) or 1
+      return fin * req + (try(function() return e.rocket_parts end) or 0)
+    end
+    return try(function() return e.products_finished end) or 0
+  end
   local function bar(e) return try(function() return e.bonus_progress end) or 0 end
   local function progress(e) return try(function() return e.crafting_progress end) or 0 end
   local function pct(v) return math.floor(v * 100 + 0.5) end
@@ -604,6 +619,26 @@ return function(api)
     return {surface=f.surface, rows=rows, line=string.format('production statistics on %s in %ds (every machine and hand there): %s', f.surface, math.floor(secs + 0.5),
       #words > 0 and table.concat(words, '; ') or 'none of them produced or consumed at any quality')}
   end
+  -- (QN1) the watched silos' parts beside the surface's production statistics of their product over the watch.
+  function M.silo_result(job, secs)
+    local st = job.silo_stats
+    if not st then return nil end
+    local made, n = 0, 0
+    for _, m in ipairs(job.machines) do
+      if m.parts and m.recipe == st.item then
+        local e = m.e
+        local now = e and e.valid and finished(e, true) or m.last_finished or m.finished0
+        made, n = made + math.max(0, now - m.finished0), n + 1
+      end
+    end
+    local surface, force = game.surfaces[st.surface], game.forces[st.force]
+    local stats = surface and force and flow_stats(force, surface)
+    local c = stats and try(function() return qflow.count(stats, st.item, 'input') end)
+    local produced = c and c - st.n0 or nil
+    return {item=st.item, surface=st.surface, silos=n, silos_made=made, statistics_produced=produced,
+      line=string.format('%s: the %d watched silo%s made %d in %ds; the production statistics on %s counted %s produced (every silo there, productivity\'s included)',
+        st.item, n, n == 1 and '' or 's', made, math.floor(secs + 0.5), st.surface, produced and tostring(produced) or 'unknown (could not be read)')}
+  end
   function M.result(job, done)
     local secs = (game.tick - job.start) / 60
     local rows, lines = {}, {}
@@ -616,7 +651,7 @@ return function(api)
       end
       do
       local e = m.e
-      local now = e and e.valid and finished(e) or m.last_finished
+      local now = e and e.valid and finished(e, m.parts) or m.last_finished
       if e and e.valid then m.last_finished, m.last_bar, m.last_progress = now, bar(e), progress(e) end
       local done = math.max(0, (now or m.finished0) - m.finished0)
       local unknown
@@ -650,6 +685,8 @@ return function(api)
         outputs_by_quality=m.products and m.out_intervals and (m.outputs or {}) or nil, outputs_unknown_intervals=m.products and (m.out_unknown or 0) > 0 and m.out_unknown or nil,
         outputs_intervals=m.products and m.out_intervals or nil}
       row.returned = crafts and M.returned(m.recipe, crafts, bonus or 0) or nil
+      if m.parts then row.completions_are = 'rocket parts: a silo\'s products_finished counts rockets, so completions are finished rockets x the parts a rocket takes plus rocket_parts (it does not drop at a launch); productivity\'s parts included'
+      elseif e and e.valid and e.type == 'rocket-silo' then row.completions_are = 'rockets (the watch began before parts were counted: products_finished, one a rocket)' end
       local tm = M.timing(job, m)
       if tm then row.status_runs, row.changes = tm.status_runs, tm.changes end
       local otext = outputs_text(m)
@@ -673,6 +710,8 @@ return function(api)
       ::next_machine::
     end
     local research, used_up = M.research_result(job)
+    local silo_stats = M.silo_result(job, secs)
+    if silo_stats then lines[#lines+1] = silo_stats.line end
     local groups, group_lines = M.groups(rows, job, secs)
     local flows = M.flows_result(job, secs)
     if group_lines or flows then
@@ -689,7 +728,7 @@ return function(api)
     end
     if groups and #groups > M.GROUP_ROWS then groups = nil end
     if flows and #flows.rows > M.FLOW_ROWS then flows.rows = nil end
-    return {done=done or nil, groups=groups, group_lines=group_lines, flows=flows, research=research, packs_used_up=used_up, machine_rows=machine_rows, watching=not done or nil, seconds=math.floor(secs + 0.5), of_seconds=job.seconds, samples=job.samples, every_ticks=M.EVERY, phase_step_ticks=M.STEP,
+    return {done=done or nil, groups=groups, group_lines=group_lines, flows=flows, silo_statistics=silo_stats, research=research, packs_used_up=used_up, machine_rows=machine_rows, watching=not done or nil, seconds=math.floor(secs + 0.5), of_seconds=job.seconds, samples=job.samples, every_ticks=M.EVERY, phase_step_ticks=M.STEP,
       started_tick=job.start, machines=rows, lines=lines,
       left_out='status once a second at a phase 7 ticks later each second (60 samples meet every tick of a second once): a stop shorter than a second may not be seen and shares are of samples, not exact ticks; completions are the machine\'s finished count (productivity\'s included): crafts finished, not items, each giving the recipe\'s products once (a productivity completion the amount past ignored_by_productivity: 1 pentapod-egg of 2), crafts the base ones from it and its productivity bar (a craft in progress at either end is not counted); returned (a recipe that gives or takes an item with ignored_by_stats) is figured from the crafts and the recipe: out, in, the amount given back, net, and what the production statistics count; why an ingredient is short upstream is not read (supply or trace for that); outputs by quality are what each output slot gained over intervals whose gain matched the completions (products taken out between samples make an interval unknown)' .. (job.research and '; a lab\'s packs used are their durability drained between samples (a pack moved partly used, or spoil results taken out within a second, are not seen); research and packs used up are the force\'s and the surface\'s, not one lab\'s' or '')}
   end
@@ -769,7 +808,7 @@ return function(api)
       local rates = key and rate_of[key]
       if rates == nil then rates = api.craftrate and try(function() return api.craftrate(e) end) or false; if key then rate_of[key] = rates end end
       rates = rates or nil
-      local m = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, recipe=r and r.name or 'none', recipe_quality=rq, finished0=finished(e),
+      local m = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, recipe=r and r.name or 'none', recipe_quality=rq, finished0=finished(e, true), parts=e.type == 'rocket-silo' or nil,
         bar0=bar(e), progress0=progress(e), status={}, short={}, full_cpm=rates and rates.crafts_per_min or nil}
       M.keep_prod(m, rates)
       machines[#machines+1] = m
@@ -788,6 +827,14 @@ return function(api)
       job.pack_stats = {surface=labs.surface, names=labs.names, counts={}, q=true}
       for _, n in ipairs(labs.names) do job.pack_stats.counts[n] = stats and try(function() return qflow.count(stats, n, 'output') end) or 0 end
     end
+    -- (QN1) silos: the surface's production statistics of their product, to set beside the parts they made
+    for _, m in ipairs(machines) do
+      if m.parts and m.recipe ~= 'none' and not job.silo_stats then
+        local stats = flow_stats(q.force, q.surface)
+        local n = stats and try(function() return qflow.count(stats, m.recipe, 'input') end)
+        if n then job.silo_stats = {force=q.force.name, surface=q.surface.name, item=m.recipe, n0=n} end
+      end
+    end
     store()[p.index] = job
     timed('uptime.sample', M.sample, job)
     job.next_tick = next_at(job)
@@ -797,6 +844,7 @@ return function(api)
         local held = {}
         for _, name in ipairs(m.order) do held[#held+1] = string.format('%s %d', name, m.packs[name].n) end
         lines[#lines+1] = string.format('%s %s: holds %s', m.name, at(m.position), #held > 0 and table.concat(held, ', ') or 'no science packs')
+      elseif m.parts then lines[#lines+1] = string.format('%s %s %s: %d rocket parts so far (finished rockets x the parts a rocket takes, plus those of the one building; productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0)
       else lines[#lines+1] = string.format('%s %s %s: %d completions so far (the game\'s count, productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0) end
     end
     return {watching=true, seconds=seconds, machines=#machines, baseline=lines, items_recent=flows_line, replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
@@ -807,6 +855,6 @@ return function(api)
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
     items='optional 1..8 items, a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch)',
     seconds='optional 10..3600 (default 600): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); lines; left_out (what the watch does not see). Read only'}}
+    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see). Read only'}}
   return M
 end

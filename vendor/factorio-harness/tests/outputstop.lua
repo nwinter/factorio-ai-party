@@ -27,7 +27,7 @@ local function plant(o)
 end
 -- Sol's plant: 45 packs, 135 hot, 2 ice: full_output with nothing at its limit; the shortage named.
 local r=O.read(plant{out={['cryogenic-science-pack']=45},hot=135,cold=12,input={ice=2,['lithium-plate']=11}},'full_output')
-eq(r.line,"full_output, no output at its limit: it is not crafting and holds 2 crafts' worth or more (cryogenic-science-pack 45, fluoroketone-hot 135); it lacks ice 2 (a craft takes 3): it crafts again when that arrives")
+eq(r.line,"full_output, no output at its limit: it is not crafting and holds 2 crafts' worth or more (cryogenic-science-pack 45, fluoroketone-hot 135); it lacks ice 2 (a craft takes 3), and inserters put no ingredient into it while it holds 2 crafts' worth of a product or more (cryogenic-science-pack 45; below 2 they do)")
 eq(r.lines[1],"cryogenic-science-pack 45 held: it stops when a craft's 1 no longer fit in one stack (200) and waits with that craft finished")
 eq(r.lines[2],"fluoroketone-hot 135 of 300 in its output box: it stops when a craft's 3 no longer fit (pipes joined to the box take from it as they have room)")
 has(r.idle_full_output,"once it holds 2 crafts' worth of a product (cryogenic-science-pack 2, fluoroketone-hot 6)")

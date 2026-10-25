@@ -11,6 +11,12 @@
 --     a slow recipe (cryogenic science: 2 packs or 6 hot fluoroketone), 3 for gears in an assembler 2, 6 for an
 --     electromagnetic plant on circuits. It crafts again as soon as the ingredients are there; that much output does
 --     not stop it (a plant holding 4 packs made 2 more when fed). A furnace with no input reads no_ingredients.
+-- (d25 batch201 QN2, Astra #2315: Asterion's explosives plant held 10 explosives and no coal, its input inserter held
+-- coal waiting_for_space_in_destination, and the line said it lacks coal and crafts when it arrives) an inserter puts
+-- no ingredient into an assembling machine that holds that much of a product (2.0.77, a copy of world n, a fast inserter
+-- from a chest into a machine with its output set beforehand, empty input: gears in an assembler 2 inserted at 2 and
+-- not at 3 (3 crafts' worth), in an assembler 3 at 3 and not at 4 (4), explosives in a chemical plant at 2 and not at 4
+-- (2 crafts' worth, 4); the inserter reads waiting_for_space_in_destination). The machine crafts on with what it holds.
 -- Pure: the factory takes the harness's try.
 return function(api)
   local M = {}
@@ -24,6 +30,22 @@ return function(api)
     return 1
   end
 
+  -- The inserters dropping into e that wait for space in it, with what they hold: "fast-inserter (-7.5,48.5) holding
+  -- 1 coal".
+  local function waiting(e)
+    local b = try(function() return e.bounding_box end)
+    if not b then return {} end
+    local out = {}
+    local wait = defines.entity_status and defines.entity_status.waiting_for_space_in_destination
+    for _, ins in pairs(try(function() return e.surface.find_entities_filtered{area={{b.left_top.x - 3, b.left_top.y - 3}, {b.right_bottom.x + 3, b.right_bottom.y + 3}}, type='inserter', force=e.force} end) or {}) do
+      if ins.valid and try(function() return ins.drop_target end) == e and try(function() return ins.status end) == wait then
+        local h = try(function() local st = ins.held_stack; return st.valid_for_read and (st.count .. ' ' .. st.name) end)
+        out[#out+1] = string.format('%s (%g,%g)%s', ins.name, ins.position.x, ins.position.y, h and ' holding ' .. h or '')
+      end
+    end
+    return out
+  end
+  M.waiting = waiting
   -- {lines, line, at_limit} for an assembler or furnace with a recipe (a furnace's last one), else nil.
   function M.read(e, status_name)
     local recipe = try(function() return e.get_recipe() end) or (e.type == 'furnace' and try(function() return e.previous_recipe end))
@@ -78,10 +100,18 @@ return function(api)
     end
     if #rows == 0 then return nil end
     local out = {products=rows, lines=lines}
+    -- (QN2) an item product at its crafts' worth or more: inserters put in no ingredient (measured for items only)
+    for _, r in ipairs(rows) do
+      if not r.fluid and r.full_output_from and r.held >= r.full_output_from - 1e-6 and not out.refuses_ingredients then
+        out.refuses_ingredients = {product=r.name, held=r.held, from=r.full_output_from,
+          line=string.format('inserters put no ingredient into it while it holds %d crafts\' worth of a product or more (%s %s; below %s they do)',
+            crafts, r.name, fmt(math.floor(r.held*10+0.5)/10), fmt(r.full_output_from))}
+      end
+    end
     if e.type == 'assembling-machine' and status_name ~= 'working' then
       local parts = {}
       for _, r in ipairs(rows) do parts[#parts+1] = r.name .. ' ' .. fmt(r.full_output_from) end
-      out.idle_full_output = string.format('when it is not crafting for another reason it reads full_output, not the shortage, once it holds %d crafts\' worth of a product (%s); that output does not stop it, it crafts again when the ingredients are there',
+      out.idle_full_output = string.format('when it is not crafting for another reason it reads full_output, not the shortage, once it holds %d crafts\' worth of a product (%s); that output does not stop it, it crafts again when the ingredients are there, and inserters put no ingredient into it while it holds that much',
         crafts, table.concat(parts, ', '))
     end
     if status_name == 'full_output' then
@@ -99,8 +129,15 @@ return function(api)
           local have = ing.type == 'fluid' and (fluids[ing.name] or 0) or (inv and try(function() return inv.get_item_count(ing.name) end) or 0)
           if have + 1e-6 < need then short[#short+1] = string.format('%s %s (a craft takes %s)', ing.name, fmt(math.floor(have*10+0.5)/10), fmt(need)) end
         end
+        local refuse = out.refuses_ingredients
+        local tail = ': it crafts again when that arrives'
+        if refuse then
+          local w = waiting(e)
+          refuse.waiting = #w > 0 and w or nil
+          tail = ', and ' .. refuse.line .. (#w > 0 and '; waiting for space in it: ' .. table.concat(w, ', ') or '')
+        end
         out.line = 'full_output, no output at its limit: it is not crafting and holds ' .. crafts .. ' crafts\' worth or more (' .. table.concat(soft_names, ', ') .. ')'
-          .. (#short > 0 and '; it lacks ' .. table.concat(short, ', ') .. ': it crafts again when that arrives' or '; no ingredient is short of a craft now')
+          .. (#short > 0 and '; it lacks ' .. table.concat(short, ', ') .. tail or '; no ingredient is short of a craft now')
       end
     end
     return out

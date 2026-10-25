@@ -51,7 +51,9 @@
   copper-bacteria into copper-ore): how many are held and spoil within 5 min; the production statistics do not count
   spoiling. For an item that spoils, `flow` says spoiling counts in neither made nor used (used counts ingredients and
   fuel burned), and a whole-surface read gives `uncounted`: against the last one 1-60 min before, made, used, held
-  then and now, and what left uncounted (spoiled, or carried off the surface; Gleba's nutrients: about 570 a minute).
+  then and now, cargo pods landed and sent up in rockets over the same interval (the pod log), and the `residual`
+  (signed: above 0 more left the stock than these count, which spoiling or what left uncounted can be; below 0 more came
+  in uncounted; the game's statistics count no spoiling).
   `where` counts fuel slots and stacks on the ground too. `as_of` says whether a total is live or reused, and its age. `near` with `radius` (up to 512, default 64)
   limits it to that area; `compact: true`: lines only (flow, where, makers, the stopped makers and users by position,
   the chests holding most), about a fifth of the full reply; `all_stopped: true`: every maker and user not working,
@@ -141,7 +143,8 @@
   says so); with a `name` that left out what stands there, the refusal names that entity. `positions`: up to 8 entities in one call (`positions_limit` says 8; more is refused; `compact: true`: one line each). What it shows:
   - a machine: its `rate` (crafts and output per minute, net of what goes back in), `output_fill` (and `full`) and
     `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an
-    ingredient holding a few crafts' worth (the game reads it so);
+    ingredient holding a few crafts' worth (the game reads it so); inserters put no ingredient into a machine holding
+    that much of an item product (`refuses_ingredients`, with the inserters waiting for space in it);
   - a chest: `holds` (and `requests` with their fill); a full chest names the nearest chests with free slots, and a
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
@@ -274,7 +277,8 @@
   status other than working was read (`status_runs`: first and last tick, longest run of samples in a row; `changes`:
   its last 8 status changes), the ingredients short at the samples that read short (at the recipe's quality, with
   their first and last tick), outputs by quality from its output slot,
-  totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
+  totals by recipe (`groups`), `left_out`; a rocket silo's completions are rocket parts, with `silo_statistics` (the
+  surface's production statistics of them over the watch); rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
   name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock
   line: `measuring uptime@TICK`; the sleep line and `sleep_check` name it with its scope, end tick and latest sample; it
@@ -408,8 +412,8 @@
   (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
-  or ok each; feasible, sustained and the first unsatisfied. An item that spoils counts what supply measured leaving
-  uncounted in the last 30 min (else says it is not counted); the crafts run count the makers' productivity bonus and
+  or ok each; feasible, sustained and the first unsatisfied. An item that spoils gives the residual supply measured in
+  the last 30 min, signed (else says it is not counted); the crafts run count the makers' productivity bonus and
   a returned catalyst (pentapod-egg). Example: `./fh call dependency --args '{"item":"rocket-fuel","surface":"nauvis"}'`
 - The operator's factory digest arrives by `tell` at the deadline minus 2 hours: what changed since the last digest
   (blockers per planet, lessons whose check is not met, items blocked, requests nobody owns), each to the owner of
