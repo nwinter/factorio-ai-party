@@ -84,9 +84,12 @@
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, hand_size?, wait_for_full_hand?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?, bar?}`: a machine's or building's
-  settings, as its GUI sets them; `inspect` reads each back.
+  settings, as its GUI sets them; `inspect` reads each back. A success sets every setting given (`applied`; `ignored`:
+  `by`, `quality`, `fluid` or `force` given without what they modify); settings that do not go together, or one the
+  entity has not, refuse the call before anything changes.
   - `item_requests: false` (or `ammo: false` on a built turret): a built entity's item requests removed, every one on
-    it, as a deconstruction planner over it and a cancel of that deconstruction do (`removed` per entity).
+    it, as a deconstruction planner over it and a cancel of that deconstruction do (`removed` per entity); with
+    `priority_targets` and `ignore_unprioritised`, each turret's targeting is set after.
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
     where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
     what it held comes to your inventory (the reply says `moved` and ends with `inv`). A remote refusal never walks the body. Aboard,

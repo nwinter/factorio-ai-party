@@ -140,8 +140,10 @@
   returns dated last-seen memory. `inspect {position}` with nothing there lists what stands within 3 tiles (`not_at`
   says so); with a `name` that left out what stands there, the refusal names that entity. `positions`: up to 8 entities in one call (`positions_limit` says 8; more is refused; `compact: true`: one line each). What it shows:
   - a machine: its `rate` (crafts and output per minute, net of what goes back in), `output_fill` (and `full`) and
-    `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an
-    ingredient holding a few crafts' worth (the game reads it so);
+    `output_stop`: per product its `capacity`, `delivers_up_to` (a finished craft goes out while that much or less is
+    held, else waits in the machine), `full` and `idle_full_output_from`, and `blocking`: `output` (a finished craft
+    waits for room, crafting_progress 1) or `input` (not crafting, an ingredient short, holding a few crafts' worth:
+    the game reads that full_output too);
   - a chest: `holds` (and `requests` with their fill); a full chest names the nearest chests with free slots, and a
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
@@ -334,8 +336,9 @@
   also a team alert (`mine_depleting`) to their builders. Otherwise the patches on the charted map (one resource, or
   every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
   and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
-  8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
-  mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
+  8 tiles of it; its row then carries `drill_list` (a reply field, no argument; with `forecast` or without): every
+  drill of ours on it, one line each (position, name, status, the ore under its mining area), stopped ones first, then
+  the least ore; no scan radius; up to 200 lines.
   Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
 - `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?, unrequested?}`:
   `quality`: places and reads round a position count that quality; a planet's whole count is of normal quality only

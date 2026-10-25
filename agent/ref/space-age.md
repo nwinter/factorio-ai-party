@@ -597,7 +597,9 @@
   else all but the largest (`holes_other`). The dry run's `summary` says when the floor is not checked yet or tiles
   stay unbuilt.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
-  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
+  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). Stopped at a
+  planet, what is over the max of a request from that planet goes to the trash and down within about 5 s; over the
+  max of a request from another planet it stays in the hub until the platform flies. A `drop` to
   a planet with no pad lands the same way, near its `near` spot.
 - `pods {surface?, position?}`: the landed cargo pods (cargo-pod-containers) on a planet: how many, what they hold by
   item, the nearest (to `position`, default you), each one's position and holding (`at`), the landing pads and their
