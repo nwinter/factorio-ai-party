@@ -274,8 +274,9 @@
   lane's mix, and what lies behind counts as blocked, apart from what reaches the turret.
   `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. Cover is per asteroid size (small, medium, big, huge): a turret engages what its
-  priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range and past its
-  minimum range (rocket turret 15 tiles); a size is covered where every kind of it (metallic, carbonic, oxide;
+  priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range (the
+  prototype's, `base_range`, x its quality's range_multiplier: a legendary gun turret 27, normal 18; rows give
+  `quality`, `range`, `base_range`; inspect too) and past its minimum range (rocket turret 15 tiles at every quality); a size is covered where every kind of it (metallic, carbonic, oxide;
   promethium when a turret lists one) is engaged by a turret reaching it. Each collector line gives `by size`, each
   side its uncovered edge tiles per size, and a line names the turrets engaging only part of the asteroids.
   `ammo_use` (default on) gives each ammo turret aboard, by quality, with each ammunition it holds (and the hub's of its
@@ -290,11 +291,11 @@
   the energy a shot draws from its buffer, the buffer's recharge, power at full fire, a tesla turret's chain. A laser
   turret hits once a shot: at laser-weapons-damage 1-8 and laser-shooting-speed 1-7, 94 laser every 12.5 ticks
   (451/s), 800 kJ a shot. An electric turret's quality multiplies its health and its buffer's recharge, not its
-  damage, rate or range. Asteroids resist laser: small 20%, medium 90%, big 95%, huge 99%. `bonuses`: the force's
+  damage or rate; its range goes up as any turret's. Asteroids resist laser: small 20%, medium 90%, big 95%, huge 99%. `bonuses`: the force's
   research bonuses for each category the turrets aboard fire (damage and shooting speed, with the technologies and
   levels) and the turrets' attack bonuses. Route damage counts electric turrets too.
   `planned: true` adds the planned defense apart (lines `planned:`, `planned {...}`): our turret ghosts with the
-  built turrets, each by its prototype's range, minimum range and arc by its facing and its priority list; the
+  built turrets, each by its range at its quality, minimum range and arc by its facing and its priority list; the
   collectors built and ghosts by size (uncovered, covered only by ghosts); the hull with our foundation tile ghosts,
   each side's edge tiles per size uncovered and `ghost_only`. The hull is read in the background: the first call
   gives `sides_pending`, a later call the sides (`sides_as_of`, kept 30 s; a 15,000-tile hull takes about 20 s). A ghost holds no

@@ -21,8 +21,9 @@
 -- refilled 160 kJ a tick normal, 256 rare, 400 legendary (get_input_flow_limit at the quality: 9.6 MW x the quality's
 -- multiplier); with the shooting speed bonus at 0, one hit in 40 ticks. A tesla turret: 372 electric a hit on its
 -- target (120 x 3.1, electric-weapons-damage 1-3), one shot in 120 ticks; its chain jumps on to more targets.
--- The turret's quality multiplies its health and its buffer's recharge only (measured: damage, rate, range and energy a
--- shot the same).
+-- The turret's quality multiplies its health and its buffer's recharge (measured: damage, rate and energy a shot the
+-- same), and its range by the quality's range_multiplier (d25 batch209: a legendary laser turret fired at a target 31
+-- tiles off, a normal one did not; platdefense.lua reads it).
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -391,6 +392,6 @@ return function(api)
     for _, l in ipairs(bare) do lines[#lines+1] = l end
     return rows, lines
   end
-  M.NOTE = 'at full fire: one turret shooting while a target stays in its reach; turning to a new target, and rockets in flight at a target that dies, take more time and ammunition (the private copy: a rocket turret 2.05 shots/s against 2.2 across 16 worms, and 92 rockets for 13 kills that 78 would make by damage); the turret\'s quality changes neither (measured); ammunition quality multiplies its damage by the quality\'s multiplier (uncommon 1.3, rare 1.6, epic 1.9, legendary 2.5), not its rate; damage is before the target\'s resistances (damage on the route reads those); electric turrets (kind electric) use no ammunition: a shot draws energy_per_shot_kj from the turret\'s buffer, which refills at recharge_kw, and past that the recharge sets the rate (recharge_limited); a laser turret hits its target once a shot, a tesla turret\'s chain jumps on to more targets; the electric turret\'s quality multiplies its health and recharge, not its damage, rate or range (measured); fluid turrets are left out; held rows: items_held (a part-used magazine is one item) and rounds_held (the rounds left in them)'
+  M.NOTE = 'at full fire: one turret shooting while a target stays in its reach; turning to a new target, and rockets in flight at a target that dies, take more time and ammunition (the private copy: a rocket turret 2.05 shots/s against 2.2 across 16 worms, and 92 rockets for 13 kills that 78 would make by damage); the turret\'s quality changes neither (measured); ammunition quality multiplies its damage by the quality\'s multiplier (uncommon 1.3, rare 1.6, epic 1.9, legendary 2.5), not its rate; damage is before the target\'s resistances (damage on the route reads those); electric turrets (kind electric) use no ammunition: a shot draws energy_per_shot_kj from the turret\'s buffer, which refills at recharge_kw, and past that the recharge sets the rate (recharge_limited); a laser turret hits its target once a shot, a tesla turret\'s chain jumps on to more targets; the electric turret\'s quality multiplies its health and recharge, not its damage or rate (measured), and its range by the quality\'s range_multiplier (platform_defense turret rows); fluid turrets are left out; held rows: items_held (a part-used magazine is one item) and rounds_held (the rounds left in them)'
   return M
 end

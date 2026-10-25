@@ -49,12 +49,13 @@ return function(api)
     local s = try(function() return event.source end)
     local sname, sx, sy, stype, range
     if s and s.valid and s ~= c then sname, sx, sy, stype = s.name, s.position.x, s.position.y, s.type end
-    if c and c.valid then range = try(function() return c.prototype.attack_parameters.range end) end
     local last = rec.rows[#rec.rows]
     if last and last.cause == cname and last.cx == cx and last.cy == cy and last.type == dtype and last.source == sname and event.tick - last.last <= JOIN then
       last.count = last.count + 1; last.damage = last.damage + (event.final_damage_amount or 0); last.last = event.tick
       return
     end
+    -- (d25 batch209 QV1) its range at its quality: the prototype's times the quality's range_multiplier
+    if c and c.valid then range = try(function() local r = c.prototype.attack_parameters.range; local q = c.quality; return q and q.name ~= 'normal' and math.floor(r * q.range_multiplier * 10 + 0.5) / 10 or r end) end
     rec.rows[#rec.rows+1] = {tick=event.tick, last=event.tick, count=1, damage=event.final_damage_amount or 0, type=dtype,
       cause=cname, cx=cx, cy=cy, facing=facing, force=cforce, source=sname, sx=sx, sy=sy, stype=stype, range=range,
       dist=cx and math.floor(math.sqrt((cx - pos.x) ^ 2 + (cy - pos.y) ^ 2) + 0.5) or nil}
