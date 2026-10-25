@@ -13944,6 +13944,24 @@ Fixed besides gates:
     Slices over 3936 ticks: median 1.8 ms, p95 3.7 ms, p99 12.4 ms. The slices over 10 ms (47) came in runs of
     consecutive slices, the plain floor reads among them at 20-50 times their usual time.
   - Test: tests/d24_batch166.lua reads floor, salvage and the plain read 40 units a tick and in one go, the same.
+- d24 batch166 cp3 (operator 16:37: `platform_plan {platform: "Asterion", floor: true}` took 102 ms on world n although
+  it only started floor_job): the time was in the team block of every agent reply, any action.
+  - pushalerts.lua's roster (who hears each alert group) read every agent's place (where.lua). A resting agent's place
+    read the note of the alert groups that go to it (resting_note, d22 batch113 BW1), and that note read the roster
+    again. Places nested until the Lua stack ran out (48 levels in the test), each level over every alert group; the
+    note is kept a second per name, so the first agent reply each second paid it. World n had 2 resting agents and 158
+    alert groups.
+  - Routing reads bare places now (`where.place(index, true)`: the rest's label alone), as do claims' owner_surface. The
+    teammates line keeps the note, one per resting agent, unnested.
+  - Copy (shift70, 2 resting agents), as an agent 60 ticks after the previous call: every platform_plan reply 84-415 ms
+    before (start, running, result of floor, support, salvage, plain; ready), 3-37 ms after; platform_production 92-94
+    ms before, 14-27 ms after. World n (cp2 runtime), `peek: true` (no team block): floor start 2.84 ms, its result
+    read 2.84 ms.
+  - Left as they were: `helpers.table_to_json` (control.lua's reply envelope) costs about 3.9 us a number on world n
+    (27 on the emulated copy; a string 0.4), so a result with many positions takes a few ms to encode (support's
+    add_for and place_ghosts_entries: about 1000 numbers); platalerts' scan of an agent's platforms runs in a reply
+    when its last scan is old (20-32 ms on the copy after 600 ticks with no reply).
+  - Test: tests/d24_batch166_rest.lua (fails on cp2: resting_note nested 48 deep in a reply's routing).
 
 ## d24 batch168
 
