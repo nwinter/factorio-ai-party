@@ -7,7 +7,8 @@ local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '
 local function fails(f,x) local ok,err=pcall(f); assert(not ok,'did not fail'); has(err,x) end
 game={tick=1000}
 defines={inventory={turret_ammo=1}}
-prototypes={entity={['medium-carbonic-asteroid']={collision_box={left_top={x=-1,y=-1},right_bottom={x=1,y=1}}}}}
+prototypes={entity={['medium-carbonic-asteroid']={collision_box={left_top={x=-1,y=-1},right_bottom={x=1,y=1}}},['gun-turret']={attack_parameters={cooldown=2.5}}},
+  item={['firearm-magazine']={magazine_size=10}}}
 -- A hull: foundation x 0..19, y 0..39, with a slot x 8..11 from y 10 to its south edge (empty space)
 local function foundation(x,y) return x>=0 and x<=19 and y>=0 and y<=39 and not (x>=8 and x<=11 and y>=10) end
 local reads=0
@@ -55,7 +56,11 @@ local asts={}
 local function asteroid(u,x,y) local e={valid=true,unit_number=u,name='medium-carbonic-asteroid',type='asteroid',surface=surface,position={x=x,y=y}}; asts[u]=e; return e end
 local turret={valid=true,unit_number=900,name='gun-turret',type='ammo-turret',position={x=-1,y=2},surface=surface,force={name='player'},
   ammo=10}
-turret.get_inventory=function() return {get_item_count=function() return turret.ammo end} end
+-- (d24 batch181) its ammo slot as stacks: rounds (count - 1) * 10 + the top magazine's ammo left
+-- live as a LuaInventory is: the stack reads the turret's count and ammo left when read
+local stack=setmetatable({valid_for_read=true,name='firearm-magazine',quality={name='normal'}},{__index=function(_,k) if k=='count' then return turret.ammo elseif k=='ammo' then return turret.left or 10 end end})
+local tinv={stack,get_item_count=function() return turret.ammo end}
+turret.get_inventory=function() return tinv end
 local hub={valid=true,unit_number=901,name='space-platform-hub',type='space-platform-hub',position={x=5,y=2},surface=surface,force={name='player'}}
 surface.find_entities_filtered=function(f)
   if f.type=='asteroid' then local out={}; for _,e in pairs(asts) do if e.valid then out[#out+1]=e end end; table.sort(out,function(a,b) return a.unit_number<b.unit_number end); return out end
@@ -79,8 +84,11 @@ A.on_damaged({entity=hub,cause=asts[3],final_damage_amount=120,tick=1018})
 A.on_died({entity=asts[3],tick=1018}); asts[3].valid=false
 A.on_damaged({entity=asts[1],cause=turret,final_damage_amount=400,tick=1019})
 A.on_died({entity=asts[1],cause=turret,tick=1019}); asts[1].valid=false
-turret.ammo=8
-game.tick=1075; A.tick(1030); A.tick(1045); A.tick(1060); A.tick(1075)
+-- 5 rounds a read (at most 6 at a 2.5-tick cooldown, under the magazine's 10): 100, 95, 90, 85, 80
+turret.ammo,turret.left=10,5; A.tick(1030)
+turret.ammo,turret.left=9,10; A.tick(1045)
+turret.ammo,turret.left=9,5; A.tick(1060)
+turret.ammo,turret.left=8,10; game.tick=1075; A.tick(1075)
 local r=A.handler({index=1},{platform='Asterion',asteroids=true})
 eq(r.asteroids,3); eq(r.platform_hits,1)
 local by={}
@@ -91,8 +99,8 @@ has(table.concat(r.class_lines,' | '),'clear (its line never enters the hull\'s 
 has(r.platform_hit_lines[1],'medium-carbonic-asteroid hit space-platform-hub (5,2)')
 has(r.platform_hit_lines[1],'approach front; projected: crosses foundation at (5.5,0.5)')
 local t=r.turrets[1]
-eq(t.hits.clear,2); eq(t.kills.clear,1); eq(t.hits['front/crosses'],1); eq(t.kills['front/crosses'],1); eq(t.damage,500); eq(t.ammo_used,2)
-has(r.turret_group_lines[1],'gun-turret x1 (front west of the hull): 3 hits, 2 kills, 500 damage, 2 ammo used; on asteroids clear of the hull\'s box 2 hits and 1 kills')
+eq(t.hits.clear,2); eq(t.kills.clear,1); eq(t.hits['front/crosses'],1); eq(t.kills['front/crosses'],1); eq(t.damage,500); eq(t.ammo_used,2); eq(t.rounds_used,20); eq(t.rounds_start,100); eq(t.rounds_end,80); eq(t.exact,true)
+has(r.turret_group_lines[1],'gun-turret x1 (front west of the hull): 3 hits, 2 kills, 500 damage, 2 ammo used (20 rounds, exact); on asteroids clear of the hull\'s box 2 hits and 1 kills')
 eq(#r.trajectories,3); eq(r.trajectories[1].outcome,'destroyed')
 eq(r.drift_tiles_per_s.y,30)
 -- the end: the result is kept, the turrets let go; (d24 batch161) the asteroids' records stay for filtered reads

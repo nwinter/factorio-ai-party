@@ -231,6 +231,12 @@
   (one a second) for the first 24 tracked only. Reading it: `asteroid_names: ["*promethium*"]` (1..16 names or
   patterns with *), `trajectory_page`, `trajectory_limit` (1..100); `trajectory_untracked` counts a picked name's
   asteroids past the 3000, which have no record.
+  `by_name` also splits `in_first_sample` (in view at the first read) from `later`: `later_fragments` (first seen
+  where an asteroid that breaks into that name died just before: by name, place and time, as no game event links
+  them) and `later_other`. Past the cap the line says from what second (`capped_at_s`); `untracked` counts unique
+  asteroids once each. Each ammo turret's rounds (read every 15-60 ticks): `rounds_used` exact for gun turrets
+  (`exact`); rocket turrets' a load and a shot can offset: `unsure_reads`, `rounds_used_most`. `platform_consumed`:
+  the platform's consumed count per ammo item (item production statistics) beside the turrets' `turrets_used`.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
