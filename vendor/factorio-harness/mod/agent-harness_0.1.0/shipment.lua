@@ -381,6 +381,8 @@ return function(api)
     -- Nauvis kept its 501 magazines under 500..2000 from nauvis; Cinder at Nauvis sent all 85 foundation down under
     -- 50..inf from fulgora)
     local asks = {}
+    local F0 = api.freight and api.freight()
+    local byq = F0 and F0.by_item and F0.by_item(try(function() return api.hub_counts(pl, true) end)) or {}
     for _, o in ipairs(order) do
       local ask, hold = {}, {}
       if api.pads then local a1, h1 = api.pads(o.planet, pl.force); ask, hold = a1 or {}, h1 or {} end
@@ -392,8 +394,9 @@ return function(api)
       if F and F.no_unload and F.no_unload(pl, o.planet, o.i) then ask = {} end
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
-        local k = keeps[item]
-        local keep = k and math.min(k.max, counts[item] or 0) or 0
+        -- (d24 batch192 QAH1) a section's max is for its own quality: what the rows of each quality held keep
+        local k, keep = keeps[item], 0
+        if F and F.hub_kept and byq[item] then keep, k = F.hub_kept(keeps, item, byq[item]) else keep = k and math.min(k.max, counts[item] or 0) or 0 end
         if want > 0 and (counts[item] or 0) - keep > 0 then
           asks[item] = asks[item] or {}
           table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0, keep=keep, keep_text=F and F.keep_text(k)})
@@ -538,13 +541,17 @@ return function(api)
       local names, named = {}, {}
       for item in pairs(ask) do names[#names+1] = item; named[item] = true end
       -- a finite max sends down what the hub holds above it, asked or not
-      for item, k in pairs(keeps) do if not named[item] and k.max ~= math.huge and (counts[item] or 0) > k.max then names[#names+1] = item end end
+      -- (QAH1) a section's max is for its own quality
+      local byq = F and F.by_item and F.by_item(try(function() return api.hub_counts(pl, true) end)) or {}
+      for item, k in pairs(keeps) do
+        if not named[item] and (counts[item] or 0) > 0 and (byq[item] and F.hub_gives(keeps, item, counts[item], 0, false, byq[item]) > 0 or not byq[item] and k.max ~= math.huge and counts[item] > k.max) then names[#names+1] = item end
+      end
       table.sort(names)
       out.down = {}
       for _, item in ipairs(names) do
         local want = (ask[item] or 0) - (hold[item] or 0)
         local n, k = 0, nil
-        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, want, off) else n = math.max(0, math.min(want, counts[item] or 0)) end
+        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, want, off, byq[item]) else n = math.max(0, math.min(want, counts[item] or 0)) end
         if n == 0 and (k or off) and want > 0 and (counts[item] or 0) > 0 then
           kept[#kept+1] = string.format('%s: none of %d (%s; the pads ask %d, hold %d)', item, counts[item], k and F.keep_text(k) or 'unloading off', ask[item] or 0, hold[item] or 0)
         end

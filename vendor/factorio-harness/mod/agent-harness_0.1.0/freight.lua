@@ -643,7 +643,28 @@ return function(api)
   -- 200..400 kept 700); an infinite max keeps it all, whatever the pads ask; with a finite max the hub sends down all it
   -- holds above it, to the pad, whether a pad asks or not (200..500 with no request on the pad: 1000 of 1500 went down);
   -- an item no such section names goes down as far as the pads ask (their ask less what they hold). secs: the hub's
-  -- logistic sections. Returns {item={max (math.huge: none), parts={'hub section 1 keeps calcite 200..inf at nauvis'}}}.
+  -- logistic sections. Returns {item={max (math.huge: none), parts={'hub section 1 keeps calcite 200..inf at nauvis'},
+  -- q={quality={max, parts}}, ranged={...}}}: max and parts by name, every quality together; q by quality.
+  -- (d24 batch192 QAH1, Sol #2264: watch 384's 3 legendary asteroid collectors warned that Kestrel IVc's section 24,
+  -- asteroid-collector@rare 1..1 from fulgora, would send 2 down at Fulgora) a slot's max is for its own quality, as
+  -- 2.0.77 did on a copy of world n (d24, Kestrel IVc at Fulgora): under that section 6 legendary stayed in the hub
+  -- while 3 rare went to 1; with asteroid-collector@rare 0..2 from fulgora in another section, rare stayed at 3 (the
+  -- maxes of one quality add up). A slot with a quality comparator other than = (a max only: the game refuses a min
+  -- there) did not follow one count on that copy; it is in ranged, and what it keeps is not forecast.
+  local function qual(v)
+    local q = type(v) == 'table' and v.quality
+    if type(q) == 'table' then q = q.name end
+    return type(q) == 'string' and q or 'normal'
+  end
+  local ASCII = {['≥']='>=', ['≤']='<=', ['≠']='!='}
+  local function level(q) return try(function() return prototypes.quality[q].level end) or 0 end
+  local function matches(cmp, q, slot_q)
+    local a, b = level(q), level(slot_q)
+    cmp = ASCII[cmp] or cmp
+    if cmp == '>=' then return a >= b elseif cmp == '<=' then return a <= b elseif cmp == '>' then return a > b
+    elseif cmp == '<' then return a < b elseif cmp == '!=' then return q ~= slot_q end
+    return q == slot_q
+  end
   function M.hub_keeps_at(secs, planet)
     local out = {}
     for i = 1, secs and secs.sections_count or 0 do
@@ -655,9 +676,22 @@ return function(api)
           if type(name) == 'table' then name = name.name end
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or pget(f.import_from, 'name'))
           if type(name) == 'string' and from == planet then
-            local k = out[name] or {max=0, parts={}}
+            local q, cmp = qual(v), type(v) == 'table' and v.comparator or '='
+            local k = out[name] or {max=0, parts={}, q={}}
             k.max = k.max + (f.max or math.huge)
-            k.parts[#k.parts+1] = string.format('hub section %d keeps %s %d..%s at %s', i, name, f.min or 0, f.max and tostring(f.max) or 'inf', planet)
+            local text
+            if cmp == '=' then
+              text = string.format('hub section %d keeps %s %d..%s at %s', i, q == 'normal' and name or name .. '@' .. q, f.min or 0, f.max and tostring(f.max) or 'inf', planet)
+              local r = k.q[q] or {max=0, parts={}}
+              r.max = r.max + (f.max or math.huge)
+              r.parts[#r.parts+1] = text
+              k.q[q] = r
+            else
+              text = string.format('hub section %d keeps %s of quality %s %s 0..%s at %s (a quality comparator: what it keeps is not forecast)', i, name, ASCII[cmp] or cmp, q, f.max and tostring(f.max) or 'inf', planet)
+              k.ranged = k.ranged or {}
+              k.ranged[#k.ranged+1] = {cmp=cmp, quality=q, text=text}
+            end
+            k.parts[#k.parts+1] = text
             out[name] = k
           end
         end
@@ -665,16 +699,66 @@ return function(api)
     end
     return out
   end
+  -- (QAH1) The hub's item by quality against the keep rows: kept (by a row), above (all above a finite max), free (no
+  -- row names that quality) and the rows that applied ({max, parts}: the maxes of those rows added, math.huge when
+  -- one is infinite; nil when none). held_q: {quality=count}.
+  local function split(keep, item, held_q)
+    local k = keep and keep[item]
+    local kept, above, free, row = 0, 0, 0, nil
+    for q, h in pairs(held_q) do
+      if h > 0 then
+        local r = k and k.q[q]
+        local ranged
+        if not r then for _, x in ipairs(k and k.ranged or {}) do if matches(x.cmp, q, x.quality) then ranged = x end end end
+        if r then
+          row = row or {max=0, parts={}}
+          row.max = row.max + r.max
+          for _, t in ipairs(r.parts) do row.parts[#row.parts+1] = t end
+          if r.max == math.huge or h <= r.max then kept = kept + h else kept, above = kept + r.max, above + h - r.max end
+        elseif ranged then
+          row = row or {max=0, parts={}}
+          row.max, row.ranged = math.huge, true
+          row.parts[#row.parts+1] = ranged.text
+          kept = kept + h
+        else free = free + h end
+      end
+    end
+    return kept, above, free, row
+  end
   -- What the hub gives up of an item it holds (held) at that stop by those rules, the pads wanting want (their ask less
   -- what they hold): the count, and the keep row ({max, parts}) or nil when no section names it.
   -- (d24 batch142 PN1) off: the stop does not unload (M.unloads), and the pads there take nothing; a finite max still
   -- sends down all above it.
-  function M.hub_gives(keep, item, held, want, off)
+  -- (QAH1) q: the quality held (a name), or {quality=count}: the rows of each quality; nil: by name, every quality
+  -- together.
+  function M.hub_gives(keep, item, held, want, off, q)
     if off then want = 0 end
+    if q ~= nil then
+      local _, above, free, row = split(keep, item, type(q) == 'table' and q or {[q]=held or 0})
+      return above + math.max(0, math.min(free, want or 0)), row
+    end
     local k = keep and keep[item]
     if not k then return math.max(0, math.min(held or 0, want or 0)), nil end
     if k.max == math.huge then return 0, k end
     return math.max(0, (held or 0) - k.max), k
+  end
+  -- (QAH1) What the rows keep of it ({quality=count}): the count and the rows.
+  function M.hub_kept(keep, item, held_q)
+    local kept, _, _, row = split(keep, item, held_q)
+    return kept, row
+  end
+  -- (QAH1) The hub's counts by quality (hub_counts(pl, true)) by item: {item={quality=count}}.
+  function M.by_item(counts_q)
+    local out = {}
+    for key, n in pairs(counts_q or {}) do
+      local name, q = key:match('^(.*)@([^@]*)$')
+      if name then
+        local t = out[name] or {}
+        t[q] = (t[q] or 0) + n
+        out[name] = t
+      end
+    end
+    return out
   end
   -- (d24 batch142 PN1, Sol #2135, Luna #2136) a schedule stop's allow unloading: the schedule GUI's checkbox, the
   -- record's allows_unloading (LuaSchedule.set_allow_unloading). Off, as 2.0.77 did on a copy of world n (d24, Petrel
@@ -896,9 +980,11 @@ return function(api)
       -- (PN1) a stop with unloading off: the pads take nothing, a finite max still sends down
       local off, off_line = M.no_unload(pl, w.at)
       local down = {}
+      -- (QAH1) a section's max is for its own quality: the hub's counts by quality
+      local byq = M.by_item(M.hub_counts(pl, true))
       for name, n in pairs(counts) do
         local want = (ask[name] or 0) - (hold[name] or 0)
-        local go, k = M.hub_gives(keep, name, n, want, off)
+        local go, k = M.hub_gives(keep, name, n, want, off, byq[name])
         if go > 0 or ((k or off) and want > 0) then down[name] = {expected=go, ask=ask[name] or 0, hold=hold[name] or 0, keep=M.keep_text(k)} end
       end
       seg.down = next(down) and down or nil
