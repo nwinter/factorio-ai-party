@@ -57,7 +57,7 @@ calls={}
 refuse['circuit_set@43.5']='circuit_mode_of_operation is not a setting of requester-chest'
 rows,line=E.apply({},entries,{},{[1]=true})
 eq(#rows,1); eq(rows[1].index,3); eq(rows[1].requests,'set'); eq(rows[1].circuit,'circuit_mode_of_operation is not a setting of requester-chest')
-eq(line,'settings: 1 set, 1 refused: entry 3 circuit: circuit_mode_of_operation is not a setting of requester-chest')
+eq(line,'settings: 1 set, 1 refused: entry 3 circuit: circuit_mode_of_operation is not a setting of requester-chest (requester-chest at (43.5,48.5) is placed without it)')
 for _,c in ipairs(calls) do assert(c.args.position.x~=47.5,'entry 1 skipped') end
 -- configure's readback line in the row
 rows=E.apply({},{{name='assembling-machine-2',position={x=10.5,y=10.5},configure={recipe='iron-gear-wheel'}}},{},{})
