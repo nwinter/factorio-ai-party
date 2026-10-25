@@ -15097,3 +15097,52 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   JSON on world n) and the watch's rows one a turret that fired (1335 -> 1363). No tick work added: damagelog reads
   the cause's range only for a new row (on_entity_damaged: main 61 and 60 us a call in two windows, this runtime 58; profile_ticks 60 s each; census.step 399 and 796 ms on main, 799 here: the pass's phase).
 - Test: tests/d25_batch209.lua. It fails on main.
+
+## d25 batch210 (QW1, Sol #2368: belt_flow undercounts a lane where an inserter picks)
+- Sol's uranium line ends at (92.5,-82.5) (a transport belt facing east), where a bulk inserter at (92.5,-81.5)
+  picks. The line read (every 16 ticks) gave 276.8 + 99.6/min there. exact_tile (every 8) saw 446-458/min leave
+  the lanes, and the inserter's hand counted 736-750/min (the source made about 748).
+- Measured on a copy of world n (d25 14:06 save), 2.0.77, straight lines on a test surface, one tile read each tick:
+  - The time between two items on a full lane: transport belt 8 ticks (200 of 200), fast 4, express 2 or 3
+    (67 and 132 of 199 gaps), turbo 2. An item is first seen one tick's travel onto the tile (0.969 on a transport
+    belt, 0.875 turbo).
+  - A bulk inserter (rotation 0.04 a tick) at the end of a line, picking into a chest, sampled every 1, 2, 4, 8 and
+    16 ticks over 30 s:
+    - Transport belt, one lane (450/min, the inserter waiting for items): 225 picked. Every 1 or 2 ticks saw all
+      225 on the tile; every 4, 8 and 16 saw 36. The hand count read 225 at every interval up to 8 and 224 at 16.
+    - Turbo belt, one lane (the inserter the limit): 396 picked. On the tile at any tick: 194, at every 2 ticks 177,
+      4: 153, 8: 141, 16: 131. The hand count read 396 up to every 8 ticks and 345 at 16 (a half swing is 12.5
+      ticks: a hand that fills and drops between two samples is missed).
+  - An inserter can take an item in the tick it comes onto the tile, so no sample interval sees every item taken
+    there. A hand holds what it picked from its last pickup until it drops it, at least half a turn later
+    (0.5 / rotation speed: 12 ticks for fast, bulk and stack inserters at normal quality, 5 at legendary; 35 for
+    an inserter).
+- belt_flow (line read) now finds the inserters whose pickup point is on each sampled tile (a splitter point: its
+  left half, the half lanes 1,2 run on), once at the start, and reads their hands each sample. Such a point adds
+  `inserters` [{inserter, picked, rate, items}], `picked`, `passed_on` (items gone from the tile and seen on what it
+  feeds at that sample: the next belt, an underground entrance's own lines, a splitter's outputs) and `lanes_rate`
+  (left + right, the old rate); its `rate` is passed_on + picked a minute, and its line adds "N/min through it: N seen
+  next on X + N picked by the inserters picking from it (...)". `merges` sums use that rate. Lanes add `entered`
+  (new on the lane after the first sample). `limit` still reads the lanes.
+- The interval: half the ticks an item takes to cross a tile on the fastest belt sampled, as before (every item that
+  crosses a sampled tile is on it for two samples; 16 ticks on a transport belt). Where an inserter picks from a
+  sampled tile it is at most the item spacing (8, 4, 2, 2) and at most the half swing of every such inserter.
+  exact_tile was already at the item spacing and now also takes the half swing; it adds `through` and
+  `through_rate` (passed_on + picked where inserters pick from the tile, else left) and a line "through the tile".
+- Each result's note names what each count can miss: a lane's rate misses an item taken off the tile before a
+  sample sees it; picked counts those and misses what anything else takes (a character, a loader); passed_on misses
+  an item taken on the next tile before a sample sees it there; entered misses what is taken before a sample sees it.
+- On the copy (bot sol, `belt_flow {surface: nauvis, position: (91.5,-82.5), seconds: 30}`): main 272.4 + 106.6/min
+  (every 16, 20 samples, 5 s); this runtime every 8 ticks, left 188/min + right 144/min on the lanes, "746/min through
+  it: 0 seen next on nothing: the line ends here + 373 picked"; a second run 438 + 160 on the lanes, 746 through.
+  A 16-point turbo line fed by a loader (15 side-loads, bulk inserters at 4 section ends): the section (22.5,-19.5)
+  to (28.5,-19.5) read 1800 + 1492/min on its lanes and 3606/min through (1332 passed on + 471 picked); the section
+  after it 1644 + 1020/min.
+- Cost (profile_ticks 30 s on the copy, beltsample.tick): Sol's line alone, main 21.5 ms in 1801 ticks (0.012 ms a
+  tick, worst second 1.5 ms), this runtime 31.6 ms (0.018, worst 2.9). Sol's line and the 16-point turbo line
+  together: main 292 ms (every 4 on the turbo line; median second 6.95 ms, worst 31), this runtime 544 and 656 ms in
+  two runs (every 2; median second 15.2 and 15.1 ms; worst 52 and 145, the second in the second just after a deploy,
+  when every part rose). A line with no inserter at a sampled tile samples as before; the added work is a find for
+  inserters at each point at the start.
+- Not changed: a sample begun before a deploy runs on without hands (its rows read as before).
+- Test: tests/d25_batch210.lua. It fails on main (every_ticks 16; no hands).
