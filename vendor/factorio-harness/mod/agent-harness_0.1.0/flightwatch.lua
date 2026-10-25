@@ -723,9 +723,42 @@ return function(api)
     .. 'hits, damage and kills from the game\'s damage and death events with the railgun as cause, shots_hit the ticks it hit something (one shot hits all on its line in one tick; a shot that hits nothing is not counted); '
     .. 'laser turrets (electric turrets of ammo category laser, up to 128): energy each sample, below a shot\'s energy meaning under the prototype\'s energy per shot (attack_parameters.ammo_type.energy_consumption, 800 kJ for laser-turret; 2.0.77 has no getter by quality: a rare laser\'s shot took 800 kJ on a copy of world n, its recharge 255.6 kJ a tick), so a laser that fires and refills between two samples (3 ticks at that rate) reads full; '
     .. 'kills and damage dealt the turret\'s own counts (its tooltip\'s Kills and Damage dealt, as turret_tally reads them), each sample\'s less the start\'s (a laser gone keeps its change up to its last sample)'
+  -- (d25 batch205 QR2, Astra #2338: a queue could not read the watch its earlier step started without its id) read:
+  -- true with platform reads that platform's latest watch, never starting or replacing one; checked with no world at
+  -- submit and in dry_run (runtime.lua step_checks) as here.
+  function M.check_read(a)
+    if a.read == nil then return end
+    assert(a.read == true, 'read: true, with platform: that platform\'s latest flight watch')
+    assert(type(a.platform) == 'string' and a.platform ~= '', 'read: true takes platform (in a platform lane, the lane\'s platform)')
+    assert(a.id == nil and a.clear == nil and a.from == nil and a.minutes == nil and a.replace == nil,
+      'read: true takes platform only (id reads one watch by number; from, minutes and replace start one)')
+  end
+  local function latest(p, a)
+    local st = store()
+    local ok, pl = pcall(api.platform, p, a.platform)
+    local index = ok and pl and pl.index
+    local found, older = nil, {}
+    for _, w in ipairs(st.list) do
+      if w.force == p.force.name and ((index and w.index == index) or w.platform == a.platform) then
+        if not found or w.id > found.id then found = w end
+        older[#older+1] = w.id
+      end
+    end
+    for i = #older, 1, -1 do if found and older[i] == found.id then table.remove(older, i) end end
+    if not found then
+      return {not_found=true, platform=a.platform, line=string.format('no flight watch on %s is kept (flight_watch {} lists the force\'s)', a.platform)}
+    end
+    if found.state == 'done' and not found.read_tick then found.read_tick = game.tick end
+    table.sort(older)
+    local r = M.row(found, true)
+    r.note = M.NOTE
+    return {watch=r, older=#older > 0 and older or nil, line=r.line .. (#older > 0 and string.format('; older kept on %s: #%s', a.platform, table.concat(older, ', #')) or '')}
+  end
   function M.call(p, a)
     local st = store()
     local who = api.who and api.who(p) or p.name
+    M.check_read(a)
+    if a.read == true then return latest(p, a) end
     if a.id ~= nil then
       assert(type(a.id) == 'number', 'id: a watch\'s number (flight_watch {} lists them)')
       for i, w in ipairs(st.list) do
@@ -840,6 +873,7 @@ return function(api)
   M.schema = {flight_watch = {platform='a platform of ours: start a watch on it', from='optional "now" (default) or "departure": begin at its next departure',
     minutes='optional 1..480 (default 120): the longest it watches; it ends sooner at the platform\'s next arrival after it flew', replace='optional true: replace this platform\'s watch running or not read yet; the replaced one stays readable by id (a running one ends there, replaced by #N; an armed one is dropped) and no longer counts',
     id='alone: read that watch in full (a done one is then kept 1 h and no longer counts against the limit); with clear: true, drop it', clear='true, with id: drop it',
+    read='true, with platform alone (in a platform lane its platform): read that platform\'s latest kept watch in full as id does (watch, older: the ids of older ones kept on it, line), or not_found and line when none is kept; never starts or replaces one; a queue step and dry_run check it',
     returns='start: watch, line, note, and on a replace replaced_watch (its row: id, state, ended_by, end_tick, replaced_by, line) and replaced_line; {}: watches (the force\'s, each with counts: whether it counts against the limit), lines, limit, counted, counting (the ids that count), limit_line; id: watch {id, platform, setter, state (armed: waiting for the departure, watching, done), from, minutes, set_tick, start_tick, end_tick, until_tick, ended_by, replaced_by, replaced_tick, leg, samples, seconds, '
       .. 'turrets (up to 24: those that read empty, the longest run first, then the lowest on ammo; turrets_more and turrets_more_line count the rest) [{unit_number, name, position, ammo, least, least_tick, at_start, now, empty_samples, empty_ticks, empty_runs, longest_empty_ticks, longest_from_tick, empty_now, gone_tick, added_tick, feed_start, feed_empty (the first trace begun after it first read empty), feed_end: {kind (maker, hub, chest, preload, none), gated, reaches, stop, tick}}], '
       .. 'sample_ticks, accumulators {count, capped, least_fraction, least_tick, at_start, now}, railguns (ammo turrets with an electric buffer, up to 64, the longest run below a shot\'s energy first) [{unit_number, name, position, shot_energy, least_energy, least_tick, energy_at_start, energy_now, below_samples, below_ticks, below_runs, longest_below_ticks, longest_below_from_tick, below_now, hits, shots_hit, damage, kills, gone_tick}], railgun_lines, '

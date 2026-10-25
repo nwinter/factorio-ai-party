@@ -389,7 +389,10 @@
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
   the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it
   first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
-  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them with
+  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{platform, read:
+  true}` reads that platform's latest kept watch in full as `{id}` does (`older`: the ids of older ones kept on it), or
+  `not_found`, and never starts or replaces one (in a platform lane `{read: true}` reads the lane's platform; dry_run
+  checks it); `{}` lists them with
   `limit` (one watch a platform of the force), `counted` and `counting`: armed, watching, or done and not read; a done
   one stops counting once read, kept 1 h after. `replace: true` keeps the watch it replaces readable by `{id}`
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
@@ -613,7 +616,9 @@
   else all but the largest (`holes_other`). The dry run's `summary` says when the floor is not checked yet or tiles
   stay unbuilt.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
-  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
+  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). Stopped at a
+  planet, what is over the max of a request from that planet goes to the trash and down within about 5 s; over the
+  max of a request from another planet it stays in the hub until the platform flies. A `drop` to
   a planet with no pad lands the same way, near its `near` spot.
 - `pods {surface?, position?}`: the landed cargo pods (cargo-pod-containers) on a planet: how many, what they hold by
   item, the nearest (to `position`, default you), each one's position and holding (`at`), the landing pads and their

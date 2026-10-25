@@ -2161,7 +2161,7 @@ function handlers.describe(_,a)
       scan={fog='out of sight (a chunk no radar or character of ours sees): fog beside the entities: buildings and belts our force saw there that no longer stand there (remembered, with seen_s_ago; status then with fields status) and ours destroyed there (lost); fog_strict on (operator setting): our own buildings there are read only from the memory',platform='optional platform name: act on that space platform (hub at 0,0)',surface='optional planet name: scan there by remote view (position, area or positions required; what the map shows: our entities in charted chunks, others where our force sees now)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory (a belt, splitter or underground: its items per lane, as lanes)|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype)|filters (inserters, loaders: "whitelist: items", "blacklist: items", "off (filters: items)", "set by circuit", none; our inserters and loaders with filters in use carry it unasked); other forces under fog show only static fields',limit='1..1024 rows (default 256)',page='optional 1..4: rows come 256 a call in reading order (d23 batch123 CF4); with more than 256 kept the reply has page, pages, rows ("257..512 of 697") and, before the last, more {rows, next {page}, line}; the same arguments with page: N list the next',item='optional item name: belt_item, the belts of ours found (all, before limit) holding it: count, belts, positions [{x,y,name,count}] (64; more), line',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)',returns='belt_items (with item, or a type naming a belt type: what the belts of ours found carry by item, all of them before limit, up to 1024 belts); entities (in reading order: by y, then x; quality when not normal (a ghost\'s: what it builds); a cargo-pod-container, a pod landed without a pad, adds holds unasked; a logistic or construction robot adds unit_number and cargo {name, quality, count}, none when it carries nothing), total, truncated, kept_nearest (when more than limit: the limit rows nearest the centre, the position given, the character or the area\'s middle, are kept: centre, within tiles, note), ore; ground_items {stacks, items [{name, count, stacks, box, fresh (an item that spoils: its stalest stack, percent fresh)}], more_items}: items on the ground in the area by item, all of them before limit (rows for them only when name or type asks: item-on-ground, item-entity; each such row has stack {name, quality, count, fresh}, and fields inventory and spoil read the stack)'},
       nearest={surface='optional planet or platform name: nearest there by remote view (a planet: position required), what the map shows there: charted chunks only',platform='optional platform name: nearest there (centre default the hub)',position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance, amount (an ore tile: what is left in it now)}], total; note when nothing was found'},cancel_craft={all='true: cancel every queued craft (latest first); returns cancelled, recipes {recipe=count}, returned {item=count}',recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules',returns='cancelled, moved (the recipe\'s ingredients that came back), returned {item=count}, inv (the inventory line after)'}, build={mix_fluids='true: build pipes, pumps, pumpjacks or fluid machines that would join two fluids (refused without it: the fluid segments named; its dry run says them in fluid_mix)',check_inserters='true: the call\'s dry run first; every planned inserter\'s pickup and drop (what stands there), power (a pole\'s supply area, built or planned; a build only) and filters (one that takes none) are checked, and any problem refuses the whole call before anything is placed, naming every inserter that would not work; all good: the call runs and inserter_check lists each inserter [{index, name, position, pickup, drop, filters, power, ok, line: #1 burner-inserter (3.5,4.5) facing north: picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5): ok}] (a refusal gives each failing one\'s line, both sides named)',heating='dry_run: heating per placement (up to 64), demand_kw, adjacent built/ghost/planned heat buffers and their temperatures when built; thermal_mass_mj_per_c for heat buffers; existing connections still lists planned heat ports; proposed placements have no frozen flag or assumed heat supply',materials='pre-action snapshot per item/quality: need, held, missing, queued, missing_after_queue and hand_craftable (independent counts); also in build dry_run; before recovered items, tile brushes are upper bounds',walk=WALK..'; with builds, the entries are built in order, each out of reach walked to first (the reply: built so far, walking for entry N); last.walked, last.result',avoid_enemies='walking: as move_to\'s',unsafe_goal='walking: as move_to\'s',dry_run='boolean: build nothing; check every entry from where you stand (a read): placeable or why not, out of reach (distance vs build reach), items short (held + hand-craft queue), tiles needing landfill, poles\'s wire reach, and standing spots that reach every entry; inserters: each planned inserter\'s pickup and drop target, as place_ghosts dry_run gives them; a build over one of its fast-replace group off its centre or of another size is blocked, as the build refuses it; connections [{index, name, position, direction, fluid, heat}]: each fluid and heat connection point of a planned boiler, heat exchanger, generator, reactor, pump, tank, pipe, heat pipe (and a machine given a recipe): the tile it joins and what is there (planned #k NAME, ours built with a connection back, faces X (no connection back), nothing there); each pipe-to-ground: what its mouth joins and whether it pairs (with which, how far; unpaired: why); connections_open counts the points that join nothing, pipes and heat pipes aside; belts: each planned belt, underground exit and splitter: the tile its items move to and what stands there (a planned entry, a belt built or a ghost and which way it faces, or nothing)',item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name, or the number inspect prints (0..15, 4 is east; default north)',builds='optional batch of 1..64 {item,position,direction,quality,type,recipe}; top-level item/direction/quality are defaults (recipe: for the entries that place an assembling machine); the first failure fails the action (earlier entries stay built; the error names the entries not tried); with all=true every entry that can be built is, and the rest are listed',recipe='optional: an assembling machine (assembler, foundry, chemical plant, electromagnetic plant, crusher, ...) gets this recipe as it is built, as configure would set it after; checked before anything is placed (unavailable, or a category the machine does not make: refused, nothing built); the reply says recipe',all='boolean, with builds: build every entry that can be built; one that fails is listed in failed {index, item, position, error} (blocked by an entity an earlier entry of this batch placed: the error names that entry) and the rest still build; summary: N of M built; K not built',skip_failed='boolean, with builds: the same as all',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the side it picks up from; it drops to the opposite side. direction east at (10.5,5.5): picks up at (11.5,5.5), drops at (9.5,5.5) (items move west); direction west: picks up at (9.5,5.5), drops at (11.5,5.5) (items move east). The reply says it in words (entity.inserter: direction east: picks up from its east side at (11.5,5.5), drops to its west side at (9.5,5.5) (items move west)) and gives the pickup and drop tiles; rotate replies too',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       inspect={signals='optional 1..32 signal names (items, fluids, virtual signals; name@quality; recipe:NAME ...; a list, or one string with | or ,), with position or positions (not compact): circuit.networks.<wire>.picked [{name, count}], each named signal\'s count on each red and green network the entity\'s wires join, by colour and side, 0 when absent, past the 30 signals listed (signals and more unchanged); circuit.signals_picked: one line of them',fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',all='with area: optional true: as the default, every entity of ours there (belts, poles, inserters ... no type filter; characters left out), each with its direction and an inserter\'s pickup and drop positions; compact: true gives a line each; paged as any area read',page='with area or radius: 1.. the page of entities (64 a page, reading order); every reply has entities (that page) and by_name (all of them by name: count, states, where), with page, pages and next past one page',radius='with position, 1..64: the square of that half-width round it, read as area (every entity of ours there; square says which; also counts robots flying through)',memory='hidden position reads return a recorded observation with observed_tick, age_ticks, age_s, current=false; fields historical, current state unknown; at most 2048 summaries plus 256 detailed reads; background sightings do not evict detailed reads; basic summary when no detailed inspect was recorded',heating='heating: demand_kw, surface_requires_heating, freezable/frozen, observed adjacent heat buffers with temperatures and >=30 C, one-tile heating border; heat_neighbours are engine heat-network links, separate from nearby heaters; buffer thermal mass and limits when exposed',position='{x,y}',positions='optional 1..8 positions: one inspect each, results in order (an entry that fails has position and error); positions_limit in the reply says 8; more is refused (logistics_audit {charging: true} ranks a network\'s roboports in one read)',compact='boolean: one line per entity instead of the full read, with position, positions or area: lines [name (x,y): status; health H/M; recipe R; what it holds (in, out, fuel, ammo; a chest\'s items largest first and slots); requests], in order (an entry that fails: its position and error); a ghost reads ghost of NAME',area='or {left_top, right_bottom} up to 128x128: every entity of ours (types to choose; characters left out, robots flying through counted in also) with their centre inside that inspect can read (in sight, or by remote view in a chunk our force sees now), at most 64, one row each in reading order: entities [{name, position, holds (a chest: its items largest first, slots used of the total; a machine: in, out, fuel, ...; a robot: its cargo, with unit_number, cargo {name, quality, count} and heading, where it flies), requests (requester, buffer: held/asked), recipe, status_name}], count, not_in_sight (how many more the area holds in chunks our force does not see), fog beside it (the part out of sight: remembered, buildings and belts our force saw there that no longer stand there, with seen_s_ago and status then; ghosts, ours there now; lost, ours destroyed there; fog_strict on: remembered is all of them and they are not read as they stand now)',types='with area: entity types (1..16; default every entity of ours: belts, inserters, poles, chests, machines, ...; robots flying through are counted in also)',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only, without reach: any entity in sight (32 tiles of the character), or by remote view any entity on your surface in a chunk our force sees now (radar coverage or a character\'s sight), as the map shows it (by: remote view; surface= another surface reads the same way); out of both, a recorded observation is returned with its age, or the target is unknown; in_reach says whether acting on it would reach; signal (a rail or chain signal: rail_layer, rails it is attached to, signal_state, state (chain), line); rolling_stock (a locomotive or wagon: orientation, facing, coupled {front, back}, train {id, carriages, front_locomotives, back_locomotives, state, manual}, line); fusion (a fusion reactor: neighbours (the reactors its plasma ports join), generators, neighbour_bonus {per_neighbour, connected, at_full} (formula), max {coolant_per_s, plasma_per_s, fuel_mw, electric_mw, plasma_mw_alone, plasma_mw_with_neighbours} at its quality, now {status, plasma {amount, temperature, bonus_seen}, coolant, fuel}, measured {window (rolling: the last 30 s, 31 samples 1 s apart), over_s, samples, fuel_mw (measured), running_pct, coolant_per_s and plasma_per_s (derived at 25 MJ a unit), bonus_estimate, plasma_mw_estimate} once two samples are in (every 1 s from the first read), sampling {began_tick, ends_tick (600 s after the last read; each read extends it), note}, totals over the whole stretch since sampling began {since_s, covered_s, running_s, fuel_mj, fuel_mw_avg, running_pct, gaps, gap_s, put_in_mj (seconds in which cells were put in: their burn not counted)} (measured), line); electricity (a producer or consumer of electricity): max_kw at its quality (a machine with its modules\' consumption_bonus, and drain_kw; a solar panel at 100% and at_solar_power_kw where it is, with solar_power; an accumulator stored_mj, capacity_mj, charge_kw, discharge_kw), and now: what all of its name on its electric network make or draw (5 s average; the game counts power by prototype, not per entity); holds (a chest, logistic chest, wagon, car or spider trunk, landing pad, hub): one line, the largest stacks first as name*count, then slots used of the total and the red-X limit; requests (requester, buffer): item held/asked per request, summed over active sections; slots_full (a chest, wagon or vehicle with every slot taken: what fills them, the most slots first, spoilage named, e.g. all 48 slots taken (spoilage 494 in 10 slots, ...); a chest so full adds slots_used (48/48), output_waits (the machines whose output inserters wait for space in it) and free_chests_near (the nearest 3 chests of ours within 32 tiles with a free slot: slots free and distance)); requests_blocked (a requester or buffer chest so full: the requests no slot takes); input_spoilage (assembler, furnace: spoilage its recipe does not take, in its input: how many in how many slots); output_fill (assembler, furnace): each product in the output held of its stack size and %, and full when the machine stopped for it (status full_output), e.g. copper-cable 200/200 (100%), full; input_imbalance (assembler, furnace): an ingredient short of one craft while another is stacked (5 crafts or more), e.g. iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable, with feeders: the inserters dropping into it, the ones whose source holds the missing one first (from where, how much of it there, or a filter that keeps it out; a fluid: its pipes); inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; silo_inventories (a silo): [{inventory (its transfer name), alias, holds, what, example (one fh call transfer for it)}]: assembling_machine_input (parts: the rocket-part recipe\'s ingredients), rocket_silo_rocket (cargo: goes up with the rocket at launch), rocket_silo_trash (take-only); modules {inventory_index (the inventory a blueprint module request names), slots, contents, requested and removing (modules on their way in and out: configure modules\' item request, a ghost\'s requests), by_slot (each slot numbered: what it holds, what is requested or coming out, e.g. 2 speed-module-2 (efficiency-module requested; speed-module-2 coming out))}; storage_filter (a storage chest or its ghost: the item robots store in it, or none); splitter {input_priority, output_priority, filter, line: the input and output tiles each names, as seen facing the way items move}; filters, filter_mode, use_filters (inserters, loaders); spoil_priority (an inserter, built or ghost: none, fresh-first or spoiled-first, the GUI\'s Spoil priority); wait_for_full_hand (an inserter, built or ghost: its prototype\'s, fixed in 2.0.77: stack-inserter true, the others false); hand_wait (an inserter holding part of its hand with status waiting_for_more_items: what it holds of what hand, and for a stack-inserter that it waits for a full hand); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; a turret (built or ghost): priority_targets (names in priority order), ignore_unprioritised, targeting (one line); ammo_rounds (a turret, artillery, car or spidertron: each ammunition inventory [{name, quality, count (items: a part-used magazine counts as one), rounds (left in them), magazine_size, partial (stacks whose top magazine is part-used)}]; compact lines and area rows say ammo: name*count (N rounds)); a built turret, artillery turret or wagon: kills and damage_dealt, the tooltip\'s Kills and Damage dealt, its own since it was placed (damage after resistances, overkill and splash included; a kill is the last hit\'s; area rows and compact lines carry them; turret_tally watches them over a window); held (an inserter\'s hand), pickup_target, drop_target, pickup_wait (an inserter waiting for source items: what its pickup holds of what it may take, a requester\'s network stock of it, robots on the way to take from it, and whether the drop target takes it now and what it holds: fuel slots, burn rate at full power, or its recipe), io_warning (\'no pickup target\', \'no drop target\': the engine\'s targets; also in io and observe rows; build and rotate replies read what stands on the points (on the engine\'s 1/256-tile grid), as the engine sets targets a tick later; a builds batch lists inserters_without_target after all its entries (first 16; inserters_without_target_count past them); an inserter ghost: what stands on its points); marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks); tile_wait (a marked foundation tile, its deconstructible-tile-proxy, or a tile ghost: what holds it by the game\'s tile rules, or that nothing does); spoiling: per inventory (and a belt\'s lanes, an inserter\'s hand, an item on the ground) each spoilable item, the time until its first stack spoils and how spoiled that stack is, and how many spoil within 5 min, earliest first; an item that hatches into enemies when it spoils (pentapod-egg, biter-egg) says hatches, and what into; freshness: per inventory each spoilable item\'s spread (count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min); hatch_warning sums those up (count, into what, the first, how many within 5 min); output_spoil (an assembler, furnace or biochamber whose products spoil): what the next products start at, the count-weighted spoilage of the spoilable ingredients in its input (bioflux from 15 yumako-mash at 80% and 12 jelly at 20%: about 53%), or fresh when the recipe resets freshness (pentapod-egg); an agricultural tower: tower {state, seeds, output, area, cells (growing, grown, free with soil for which seeds, blocked by what, no soil), plantable_now, planted_10min, plants (time until grown), harvest_made_10min, empty_cells (each cell with soil and no plant, nearest first: where and why: the tower holds none of its seed, what blocks it, tiles round it that are not soil, or free and plantable with the tower\'s state)}; burnt_result_full (a burner whose burnt-result slot is full: what fills it and its fuel slot, and that nothing burns, whatever status_name reads; scan, supply and bottleneck read such a burner as burnt_result_full; one with nothing burning and only fuel it does not burn in its fuel slot, spoilage in a biochamber\'s, reads fuel_unusable, said the same way; the builder of a stopped burner crafter gets a burner alert once per stop); heat (a heat pipe, heat exchanger, reactor or heating tower, heat interface; a ghost too): connections (each heat connection: its side, the tile it joins and what is there: ours with a heat connection back, faces X (no heat connection back), or nothing there), temperature and max_temperature (C; built); rate (an assembler or furnace: its recipe at its crafting speed and productivity now, as if it ran all the time: crafts_per_min, productivity with its parts, products per craft and per minute, net of the same item among its ingredients, ignored_by_productivity, line); quality (normal too; a ghost\'s: what it builds; area rows carry it when not normal, compact lines name it before the entity: legendary thruster (x,y)); placed: who placed it or its ghost, when and through which request (place_ghosts and the routes, paste, blueprint_place, restore, a hand build; a call, a queue step or a standing order), from the harness\'s record of the last 8192 placements: {by, tick, ago, through, built_by_hand, last_user, line}, else unknown with the reason; last_user is the game\'s Last user (a player who placed it or its ghost; a bot\'s ghost and what robots build from it have none); area rows and compact lines carry placed in short when known'}, rotate={platform='optional platform name: rotate a ghost or built entity there by remote view (platform coordinates, hub at 0,0)',surface='optional planet name: rotate there by remote view, in a chunk our force sees now',walk=WALK..'; then rotates it on arrival (last.walked, last.result)',avoid_enemies='walking: as move_to\'s',unsafe_goal='walking: as move_to\'s',direction='optional compass name (north, east, south, west; 2.0 numbers 0, 4, 8, 12 too): turn until it faces this way, one 90-degree turn at a time as the R key does',returns='rotated, before, after (compass names; 2.0 directions: north 0, east 4, south 8, west 12), turns (how many 90-degree turns it took), entity; one call without direction is one 90-degree turn clockwise, reverse=true counter-clockwise',position='{x,y}',reverse='boolean'},
-      configure={description='an arithmetic, decider, selector or constant combinator (built or ghost; in reach, by remote view, surface= or platform=): the description its GUI shows (LuaEntity.combinator_description), up to 500 bytes, newlines kept; "" or false clears it; the reply: description, description_before, line. inspect, circuit and circuit_set read it back as description; blueprint_capture and blueprint_save keep it (the blueprint\'s player_description), and a ghost placed from such a blueprint has it',ammo='a turret ghost (in reach, by remote view or on a platform): its ammo request changed in place: an ammo name, {name?, count?} or false for none; its other requests (modules) stay; the reply: ammo_request and before (item*count), line. A built turret takes ammo by platform_rearm, deliver or transfer; ammo: false on a built one is item_requests: false',item_requests='false: a built entity\'s item requests removed (ammunition, modules, removals: every one on it), as a deconstruction planner over it and a cancel of that deconstruction do; with position or positions (1..64); the reply: removed (bring item*count; take out item*count) or line no item request on it',speaker_alert='a programmable speaker (built, in reach or by remote view): {show_alert?, show_on_map?, message? (up to 500 characters), icon? (a signal: "rocket-part", "signal-A", "fluid:water"; false clears it), condition? (its circuit condition, as circuit_set\'s enable: "rocket-part < 1")}, its GUI\'s alert settings; the rest kept. The reply: speaker_alert {show_alert, show_on_map, icon, message, condition, condition_met, line}, before. It alerts while the circuit condition holds; game_alerts kind speaker, the team block and a wait on alert kinds speaker tell it',fluid='optional, with recipe: a fluid the machine holds that the new recipe takes none of refuses the change by default (naming it). In 2.0.77 a recipe change drops such a fluid (input or output box; one the new recipe takes is kept), and a machine\'s box has no fluid segment to flush: "drain" changes the recipe and lets it go; "keep" (or force) makes the same change. The reply: fluid (the line: what left the machine, anything still in it by box) and fluid_flushed {fluid: amount gone}',walk=WALK..'; configure needs reach only for modules by hand and a recipe change on a machine holding items or mid-craft (one machine, not positions); anything else out of reach goes by remote view, nothing walked',avoid_enemies='walking: as move_to\'s',unsafe_goal='walking: as move_to\'s',surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, the game moves that cargo to the trash slots, which never launch: true is refused while the rocket holds cargo no platform stopped above asks this planet for, naming it, unless force: true)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine; modules the new recipe allows stay, as in the game; one it forbids (a positive effect it does not allow, e.g. productivity for wooden-chest) is named with its slot and refused)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names (one name alone too) for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears and, on an inserter, turns filtering off; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; alias mode; alone it keeps the items; asteroid collectors have no filter mode in the game)',use_filters='inserters: true|false, the GUI\'s use filters (false keeps the items, unused)',hand_size='an inserter (built or ghost; in reach, by remote view or on a platform): the GUI\'s stack size override ("Override hand size" from 2.1.22): 1 up to its hand size now (its bonus and the force\'s), 0 or false for none; returns hand_size, hand_size_before, hand_max, circuit_note (a circuit set stack size that is on sets the hand while its signal holds); with filters and spoil_priority in the same call',wait_for_full_hand='an inserter (built or ghost): true|false, its wait for a full hand. 2.0.77 has no setting for it: it is the prototype\'s wait_for_full_hand, fixed at data stage (stack-inserter: true; burner, inserter, fast, long-handed and bulk: false), with no GUI control and no key on an inserter, a ghost or a blueprint; the same as its own is read back (wait_for_full_hand, wait_for_full_hand_before, unchanged, line), the other refused with this; a stack inserter waits for its hand size, which hand_size sets; inspect reads it as wait_for_full_hand, and hand_wait when one holds part of a hand and waits',bar='a chest, logistic chest, cargo wagon or cargo landing pad (built; in reach, by remote view, surface= or platform=): its red-X bar as usable slots 0..its slot count, false or "none" for none; items already past it stay, new ones go only under it. The reply: bar, bar_before, slots, slots_used, slots_past_bar, line; inspect\'s holds reads it back ((limited to N)) and bar. A crafting machine has none in 2.0.77 (its output is one slot, no bar, no output limit in its GUI): refused with what the game has (the bar of the chest its output inserters fill, the machine\'s logistic condition by circuit_set logistic, an output inserter\'s conditions), naming its output inserters and what they drop into',spoil_priority='inserters (built or ghost): none|fresh_first|spoiled_first, the inserter GUI\'s Spoil priority (which spoilable stack it takes first); read back as spoil_priority, with spoil_priority_before; there is no freshness threshold in the game',force='boolean: allow destroying held fluids; a rocket silo: auto_requests: true even though cargo aboard would go to the trash slots',priority_targets='turrets (gun, rocket, railgun, laser, tesla, flamethrower; built or ghost, in reach, by remote view or on a platform): entity names in priority order, as the turret GUI\'s priority list, e.g. ["big-metallic-asteroid","big-carbonic-asteroid","big-oxide-asteroid"] or ["medium-biter","big-biter"]; replaces the list; [] or false clears it; at most 64; an unknown name is refused with names like it; artillery has none',auto_targeting='an artillery turret or wagon (built or ghost, in reach or by remote view): true|false, the GUI\'s automatic targeting (off: it fires only at artillery-targeting-remote flares); the reply is the artillery read\'s row for it (shells, range, the spawners and worms in range, nearest first) with auto_targeting_before',ignore_unprioritised='turrets: true|false, the turret GUI\'s Ignore unprioritised targets',modules='a machine\'s module slots (assemblers, furnaces, drills, labs, beacons, silos; built or ghost): a list of module names (or {name, count?, quality?}) the machine ends up holding, e.g. ["speed-module-2","efficiency-module"]: the modules it holds or has coming that the list names stay in their slots, the rest go into the other slots in slot order, slots left over end up empty; a list with "keep" and "empty" entries goes slot by slot (entry i for slot i; keep: as it is, requests too; slots past the list empty), e.g. ["keep","efficiency-module","empty"]; numbered slots change only the slots named, e.g. {"2":"efficiency-module","3":"empty"}; [] or false empties them all. In reach (by hand): the old modules go to your inventory, the new ones come from it. Out of reach, by remote view, surface= or platform=: an item request (as remote view\'s ghost cursor makes): construction robots (on a platform its hub) bring the new ones and take the old ones to storage (a swap goes ahead with no room, the old ones riding in a robot; a removal alone waits for room). A ghost: its module requests. A module the machine or its recipe does not take is refused (e.g. productivity under a recipe that allows none)',by='with modules: hand (in reach, from your inventory) or robots (an item request even in reach); default: hand in reach, else robots',storage_filter='a storage chest (built or ghost): the item (name, or {name, quality}) robots store in it, as its GUI\'s filter slot; false or "none" clears it; filters with one name does the same; a ghost keeps it for the chest it becomes',input_priority='a splitter (built or ghost): left|right|none, as seen facing the way items move: it takes from that input while it has items, the other only then',output_priority='a splitter: left|right|none: items go to that output while it takes them, the other when it is full',filter='a splitter: an item (name, or {name, quality}) that goes only to the output priority side (waiting there when it is full, which holds up the lane behind it), other items only to the other side; needs output_priority left or right (with none a filter does nothing); false or "none" clears it; filters with one name does the same; on an inserter, loader or storage chest filter is filters (one name)',positions='with priority_targets or ignore_unprioritised: 1..64 turrets (or ghosts) set alike in one call; a row each (turrets), one that fails with its error; configured, failed; with modules: 1..64 machines set alike (machines)',returns='modules: name, position, by (hand, robots, hub, ghost), before, after (by hand) or requested and removing (an item request: the whole module request on it now), by_slot (each slot: what it holds, what is requested or coming out), unchanged, returned (the old modules, to your inventory), note (who brings them: the network that covers it, what it holds of each, idle construction robots, and a storage chest\'s room for the removed ones (a removal alone waits for room); or the hub); returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change; filters: filters, filter_mode, use_filters read back, line (whitelist: items | blacklist: items | off (filters: items) | set by circuit), before (the line before); a turret: priority_targets and ignore_unprioritised read back, targeting (priority targets: a, b (in this order); ignore unprioritised targets: on|off), ghost; a storage chest: storage_filter and storage_filter_before (none when clear); a splitter: input_priority, output_priority, filter, line (the input and output tiles each names), before (the line before)'},
+      configure={description='an arithmetic, decider, selector or constant combinator (built or ghost; in reach, by remote view, surface= or platform=): the description its GUI shows (LuaEntity.combinator_description), up to 500 bytes, newlines kept; "" or false clears it; the reply: description, description_before, line. inspect, circuit and circuit_set read it back as description; blueprint_capture and blueprint_save keep it (the blueprint\'s player_description), and a ghost placed from such a blueprint has it',ammo='a turret ghost (in reach, by remote view or on a platform): its ammo request changed in place: an ammo name, {name?, count?} or false for none; its other requests (modules) stay; with priority_targets and ignore_unprioritised in the same call; the reply: ammo_request and before (item*count), line. A built turret takes ammo by platform_rearm, deliver or transfer; ammo: false on a built one is item_requests: false',item_requests='false: a built entity\'s item requests removed (ammunition, modules, removals: every one on it), as a deconstruction planner over it and a cancel of that deconstruction do; with position or positions (1..64); with priority_targets and ignore_unprioritised, each turret\'s requests go and then its targeting is set (both checked first); the reply: removed (bring item*count; take out item*count) or line no item request on it',speaker_alert='a programmable speaker (built, in reach or by remote view): {show_alert?, show_on_map?, message? (up to 500 characters), icon? (a signal: "rocket-part", "signal-A", "fluid:water"; false clears it), condition? (its circuit condition, as circuit_set\'s enable: "rocket-part < 1")}, its GUI\'s alert settings; the rest kept. The reply: speaker_alert {show_alert, show_on_map, icon, message, condition, condition_met, line}, before. It alerts while the circuit condition holds; game_alerts kind speaker, the team block and a wait on alert kinds speaker tell it',fluid='optional, with recipe: a fluid the machine holds that the new recipe takes none of refuses the change by default (naming it). In 2.0.77 a recipe change drops such a fluid (input or output box; one the new recipe takes is kept), and a machine\'s box has no fluid segment to flush: "drain" changes the recipe and lets it go; "keep" (or force) makes the same change. The reply: fluid (the line: what left the machine, anything still in it by box) and fluid_flushed {fluid: amount gone}',walk=WALK..'; configure needs reach only for modules by hand and a recipe change on a machine holding items or mid-craft (one machine, not positions); anything else out of reach goes by remote view, nothing walked',avoid_enemies='walking: as move_to\'s',unsafe_goal='walking: as move_to\'s',surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, the game moves that cargo to the trash slots, which never launch: true is refused while the rocket holds cargo no platform stopped above asks this planet for, naming it, unless force: true)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine; modules the new recipe allows stay, as in the game; one it forbids (a positive effect it does not allow, e.g. productivity for wooden-chest) is named with its slot and refused)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item filters (one alone too) for a filtering inserter/loader, each "name" (normal quality, as the game sets a name), "name@quality", "name@<=quality" (comparator =, !=, <, <=, >, >=), "name@any" (every quality) or {name, quality, comparator}; read back in the same form (not_as_asked: a slot holding other than asked), or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears and, on an inserter, turns filtering off; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; alias mode; alone it keeps the items; asteroid collectors have no filter mode in the game)',use_filters='inserters: true|false, the GUI\'s use filters (false keeps the items, unused)',hand_size='an inserter (built or ghost; in reach, by remote view or on a platform): the GUI\'s stack size override ("Override hand size" from 2.1.22): 1 up to its hand size now (its bonus and the force\'s), 0 or false for none; returns hand_size, hand_size_before, hand_max, circuit_note (a circuit set stack size that is on sets the hand while its signal holds); with filters and spoil_priority in the same call',wait_for_full_hand='an inserter (built or ghost): true|false, its wait for a full hand. 2.0.77 has no setting for it: it is the prototype\'s wait_for_full_hand, fixed at data stage (stack-inserter: true; burner, inserter, fast, long-handed and bulk: false), with no GUI control and no key on an inserter, a ghost or a blueprint; the same as its own is read back (wait_for_full_hand, wait_for_full_hand_before, unchanged, line), the other refused with this; a stack inserter waits for its hand size, which hand_size sets; inspect reads it as wait_for_full_hand, and hand_wait when one holds part of a hand and waits',bar='a chest, logistic chest, cargo wagon or cargo landing pad (built; in reach, by remote view, surface= or platform=): its red-X bar as usable slots 0..its slot count, false or "none" for none; items already past it stay, new ones go only under it. The reply: bar, bar_before, slots, slots_used, slots_past_bar, line; inspect\'s holds reads it back ((limited to N)) and bar. A crafting machine has none in 2.0.77 (its output is one slot, no bar, no output limit in its GUI): refused with what the game has (the bar of the chest its output inserters fill, the machine\'s logistic condition by circuit_set logistic, an output inserter\'s conditions), naming its output inserters and what they drop into',spoil_priority='inserters (built or ghost): none|fresh_first|spoiled_first, the inserter GUI\'s Spoil priority (which spoilable stack it takes first); read back as spoil_priority, with spoil_priority_before; there is no freshness threshold in the game',force='boolean: allow destroying held fluids; a rocket silo: auto_requests: true even though cargo aboard would go to the trash slots',priority_targets='turrets (gun, rocket, railgun, laser, tesla, flamethrower; built or ghost, in reach, by remote view or on a platform): entity names in priority order, as the turret GUI\'s priority list, e.g. ["big-metallic-asteroid","big-carbonic-asteroid","big-oxide-asteroid"] or ["medium-biter","big-biter"]; replaces the list; [] or false clears it; at most 64; an unknown name is refused with names like it; artillery has none',auto_targeting='an artillery turret or wagon (built or ghost, in reach or by remote view): true|false, the GUI\'s automatic targeting (off: it fires only at artillery-targeting-remote flares); the reply is the artillery read\'s row for it (shells, range, the spawners and worms in range, nearest first) with auto_targeting_before',ignore_unprioritised='turrets: true|false, the turret GUI\'s Ignore unprioritised targets',modules='a machine\'s module slots (assemblers, furnaces, drills, labs, beacons, silos; built or ghost): a list of module names (or {name, count?, quality?}) the machine ends up holding, e.g. ["speed-module-2","efficiency-module"]: the modules it holds or has coming that the list names stay in their slots, the rest go into the other slots in slot order, slots left over end up empty; a list with "keep" and "empty" entries goes slot by slot (entry i for slot i; keep: as it is, requests too; slots past the list empty), e.g. ["keep","efficiency-module","empty"]; numbered slots change only the slots named, e.g. {"2":"efficiency-module","3":"empty"}; [] or false empties them all. In reach (by hand): the old modules go to your inventory, the new ones come from it. Out of reach, by remote view, surface= or platform=: an item request (as remote view\'s ghost cursor makes): construction robots (on a platform its hub) bring the new ones and take the old ones to storage (a swap goes ahead with no room, the old ones riding in a robot; a removal alone waits for room). A ghost: its module requests. A module the machine or its recipe does not take is refused (e.g. productivity under a recipe that allows none)',by='with modules: hand (in reach, from your inventory) or robots (an item request even in reach); default: hand in reach, else robots',storage_filter='a storage chest (built or ghost): the item (name, or {name, quality}) robots store in it, as its GUI\'s filter slot; false or "none" clears it; filters with one name does the same; a ghost keeps it for the chest it becomes',input_priority='a splitter (built or ghost): left|right|none, as seen facing the way items move: it takes from that input while it has items, the other only then',output_priority='a splitter: left|right|none: items go to that output while it takes them, the other when it is full',filter='a splitter: an item (name, or {name, quality}) that goes only to the output priority side (waiting there when it is full, which holds up the lane behind it), other items only to the other side; needs output_priority left or right (with none a filter does nothing); false or "none" clears it; filters with one name does the same; on an inserter, loader or storage chest filter is filters (one name)',positions='with priority_targets or ignore_unprioritised: 1..64 turrets (or ghosts) set alike in one call; a row each (turrets), one that fails with its error; configured, failed; with modules: 1..64 machines set alike (machines)',returns='every success: applied (the settings it set) and ignored (by, quality, fluid or force given without what they modify); settings that do not go together, or one the entity has not, refuse the call before anything changes, naming whose setting it is; modules: name, position, by (hand, robots, hub, ghost), before, after (by hand) or requested and removing (an item request: the whole module request on it now), by_slot (each slot: what it holds, what is requested or coming out), unchanged, returned (the old modules, to your inventory), note (who brings them: the network that covers it, what it holds of each, idle construction robots, and a storage chest\'s room for the removed ones (a removal alone waits for room); or the hub); returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change; filters: filters, filter_mode, use_filters read back, line (whitelist: items | blacklist: items | off (filters: items) | set by circuit), before (the line before); a turret: priority_targets and ignore_unprioritised read back, targeting (priority targets: a, b (in this order); ignore unprioritised targets: on|off), ghost; a storage chest: storage_filter and storage_filter_before (none when clear); a splitter: input_priority, output_priority, filter, line (the input and output tiles each names), before (the line before)'},
       transfer={up_to_request='optional true, with direction to_entity into a requester or buffer chest: only up to its request for the item (its max, else its min); every move into such a chest says request (what it asks, what it holds now, how many over its max)',retry_when_clear='optional true: a refusal for passing enemies only (an attack, units or a group seen now) waits until no enemy unit is within 48 tiles of the first place held, then the transfer runs again, at most 6 times (as rearm\'s); retry_ticks: the longest wait (600..54000, default 18000)',retry_ticks='with retry_when_clear',retries='kept by the harness between tries',
         chest='with to: "nearest_room": a chest name or names: only chests of that kind',to_player='optional teammate name (or to: NAME; to: "nearest_room": what you hold of item (count, default all) into our chests in reach (radius up to your reach) with room for it, the nearest first, each filled before the next: chests [{name, position, moved}], line, the rest not placed said): hand item/count or items to that agent\'s character within your reach, dropped at their feet as loot their character picks up (no one opens another\'s inventory); players lists teammates with positions',via='optional 1..16 points {x,y} (or [x,y]): a walking transfer (via alone walks, as walk: true) walks them in order before its first stop, each reached within 1.5 tiles; one not reached ends it unreached (last.first_unreached names it). last.route: from where, each via point and stop as reached, and the tiles walked (any walking transfer)',from_inventory='with to: the inventory taken from at position (e.g. assembling_machine_output); alone, as inventory with direction to_player',to_inventory='with to: the inventory given to at to (e.g. assembling_machine_input); alone, as inventory with direction to_entity',fresh='with from: nearest, for a spoilable item: default true, the chests holding the freshest stock first (count-weighted spoiled share, in steps of 10%), then the nearest; false: the nearest first. source_freshness names each source\'s share. With count, chests holding less than it ahead of one that holds it all are skipped to the end (skipped_small names them). from: nearest with to: a courier from the first of them holding it straight to to (to_inventory as a courier\'s), its freshest stacks first. On a courier (positions and to): true is fresh_first',fresh_first='optional true: a spoilable item\'s least spoiled stacks first (each stack whole; a take from a chest, a give from your inventory, a courier\'s take); default slot order (from: nearest and load_silo: fresh first already)',spoiled_first='optional true (with item): the most spoiled stacks first, each whole (a cleanup of the rotten tail)',min_spoil='optional 0..100 (alias min_spoiled, as pickup\'s): move only stacks at least that spoiled; the rest stay and left_less_fresh says how many and the least spoiled of them',min_spoiled='as min_spoil',max_fresh='optional 0..100: move only stacks at most that fresh (spoiled at least 100 - it), as min_spoil',personal_logistics='"pause", on a courier (positions or from, and to): your personal logistic requests off while it carries the items (the game trashes what you hold over a request\'s max), back on when it ends; without it, a carry over the max is said in personal_logistics (and the dry run\'s arrives)',dry_run='true with positions: walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',
         from='"nearest" (with item; to_player): take from the nearest of our chests in reach (or within radius) that holds the item now, as the map shows them; chests that feed something are left out (requester and buffer chests, and chests an inserter takes from: a machine\'s input, a turret\'s feeder; feeding: true takes from them too, last), and walking, chests in a worm\'s reach the map shows (the legs go round the worms as move_to\'s do); a count more than that chest holds comes from the next ones too, nearest first (up to 16 chests), and one chest that holds it all, no farther than those, goes alone; from_nearest says which (name, position, distance, how many each holds, chests checked, what was left out and why); none: refused with the nearest within 32 tiles (up_to=true: moved 0, short)',
@@ -7803,6 +7803,8 @@ function M.output_fill(e)
       if s.valid_for_read and s.count>=((s.prototype and s.prototype.stack_size) or (prototypes.item[s.name] and prototypes.item[s.name].stack_size) or 1) then at=true end
     end
   end
+  -- (d25 batch199 QL3) a finished craft waiting (crafting_progress 1) is a full output whatever the computed limits say
+  if not at and not fluid_at and ok and stop and stop.blocking=='output' then fluid_at=true end
   local tail=at and ', full' or fluid_at and ', full (a fluid output: output_stop)' or ', status full_output below its limit (output_stop)'
   if #parts==0 then return 'empty'..tail end
   return table.concat(parts,', ')..tail
@@ -8318,9 +8320,8 @@ local function configure_filters(e,a)
   local slots=e.filter_slot_count or 0
   assert(slots>0,e.name..' has no filter slots')
   -- One name is a list of one; filter_mode or use_filters alone keep the items (Sonnet 06:20: stale filters).
-  local list=type(a.filters)=='string' and {a.filters} or a.filters
-  assert(list==nil or (type(list)=='table' and #list<=slots),'filters requires 0..'..slots..' item names')
-  for _,name in ipairs(list or {}) do assert(prototypes.item[name],'unknown item '..tostring(name)) end
+  -- (d24 batch194 QAJ1) each "name", "name@quality", "name@<=quality", "name@any" or {name, quality, comparator}
+  local list=a.filters~=nil and M.details.filter_list(a.filters,slots) or nil
   local inserter=etype=='inserter'
   assert(a.use_filters==nil or (inserter and type(a.use_filters)=='boolean'),'use_filters is true or false, on an inserter')
   local before=M.details.filters_line(e) or 'none'
@@ -8329,16 +8330,36 @@ local function configure_filters(e,a)
     assert(inserter,'filter_mode applies to inserters')
     e.inserter_filter_mode=a.filter_mode
   end
+  local differs
   if list then
     for i=1,slots do e.set_filter(i,list[i]) end
     if inserter then e.use_filters=#list>0 end
+    -- read back slot by slot: what the game holds against what was asked
+    for i,f in ipairs(list) do
+      local want,got=M.details.filter_text(f),M.details.filter_text(e.get_filter(i))
+      if want~=got then differs=differs or {}; differs[#differs+1]=string.format('slot %d holds %s (asked %s)',i,tostring(got or 'nothing'),tostring(want)) end
+    end
   end
   if a.use_filters~=nil then e.use_filters=a.use_filters end
   local now=M.details.filters(e) or {filters={}}
   return {filters=now.filters,filter_mode=now.filter_mode,use_filters=now.use_filters,line=M.details.filters_line(e) or 'none',before=before,
-    ghost=e.type=='entity-ghost' and e.ghost_name or nil}
+    ghost=e.type=='entity-ghost' and e.ghost_name or nil,not_as_asked=differs}
 end
 M.configure_filters=configure_filters
+-- (d25 batch199 QL1) an inserter's filters, filter mode, use filters and spoil priority checked as configure_filters
+-- and set_spoil_priority check them, before a call that sets them with its hand size or spoil priority changes anything.
+function M.filters_check(e,a)
+  if a.spoil_priority~=nil and not (type(a.spoil_priority)=='string' and M.SPOIL_PRIORITY[a.spoil_priority]) then
+    error('spoil_priority is none, fresh_first or spoiled_first (the inserter GUI\'s Spoil priority)',0)
+  end
+  if a.filters==nil and a.filter_mode==nil and a.use_filters==nil then return end
+  local etype=e.type=='entity-ghost' and e.ghost_type or e.type
+  local slots=e.filter_slot_count or 0
+  assert(slots>0,e.name..' has no filter slots')
+  if a.filters~=nil then M.details.filter_list(a.filters,slots) end
+  assert(a.filter_mode==nil or a.filter_mode=='whitelist' or a.filter_mode=='blacklist','filter_mode is whitelist or blacklist')
+  assert(a.use_filters==nil or (etype=='inserter' and type(a.use_filters)=='boolean'),'use_filters is true or false, on an inserter')
+end
 -- Out of reach, 2.0's remote view still opens the machine: recipes and
 -- filters change the same way, but contents cannot come back to the
 -- character, so a remote recipe change needs an empty, idle machine.
@@ -8427,7 +8448,8 @@ function M.target_names(v)
   return out
 end
 -- Sets one turret or its ghost and reads it back.
-function M.configure_turret(e,a)
+-- (d25 batch199 QL1) checked before anything in the call changes: the list, the flag and that it is a turret.
+function M.turret_check(e,a)
   local t=e.type=='entity-ghost' and e.ghost_type or e.type
   local name=e.type=='entity-ghost' and e.ghost_name or e.name
   if not M.TARGETING[t] then
@@ -8435,7 +8457,10 @@ function M.configure_turret(e,a)
       name,tostring(t)),0)
   end
   if a.ignore_unprioritised~=nil and type(a.ignore_unprioritised)~='boolean' then error('ignore_unprioritised must be true or false',0) end
-  local list=a.priority_targets~=nil and M.target_names(a.priority_targets) or nil
+  return a.priority_targets~=nil and M.target_names(a.priority_targets) or nil,name
+end
+function M.configure_turret(e,a)
+  local list,name=M.turret_check(e,a)
   if list then
     -- Every slot from the last down (a gap reads nil, past the end raises), then the list from slot 1.
     local n=0
@@ -8593,6 +8618,7 @@ M.preflight=M.preflight or {}
 -- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
+  flight_watch=function(a) M.flightwatch.check_read(a) end,  -- (d25 batch205 QR2) read: true with platform alone
   configure=function(a)
     if a.modules~=nil then M.modules.parse(a.modules) end
     assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')
@@ -8610,6 +8636,56 @@ M.step_checks={
     end
   end,
 }
+-- (d25 batch199 QL1, Astra #2285: item_requests: false with priority_targets and ignore_unprioritised removed the
+-- requests and left six guns' targeting as it was) configure's settings. A call's settings must go together (one of
+-- CONFIGURE_TOGETHER, or one alone), and each branch of handlers.configure names the settings it sets for the entity it
+-- reached; any other is refused there, before anything changes. A success lists what it set (applied) and the
+-- modifiers that did nothing (ignored).
+M.CONFIGURE_SETTINGS={recipe='an assembling machine\'s',filters='an inserter\'s, loader\'s, asteroid collector\'s, splitter\'s or storage chest\'s',
+  filter='a splitter\'s',filter_mode='an inserter\'s',use_filters='an inserter\'s',hand_size='an inserter\'s',wait_for_full_hand='an inserter\'s',
+  spoil_priority='an inserter\'s',bar='a chest\'s, cargo wagon\'s or landing pad\'s',priority_targets='a turret\'s',ignore_unprioritised='a turret\'s',
+  auto_targeting='an artillery turret\'s or wagon\'s',modules='a machine\'s',storage_filter='a storage chest\'s',input_priority='a splitter\'s',
+  output_priority='a splitter\'s',item_requests='a built entity\'s',ammo='a turret ghost\'s (false: a built turret\'s requests)',
+  speaker_alert='a programmable speaker\'s',description='a combinator\'s',auto_requests='a rocket silo\'s',send_to_orbit_automatically='a rocket silo\'s'}
+M.CONFIGURE_TOGETHER={{'item_requests','ammo','priority_targets','ignore_unprioritised'},{'ammo','modules','priority_targets','ignore_unprioritised'},
+  {'modules','recipe'},{'wait_for_full_hand','hand_size','spoil_priority','filters','filter','filter_mode','use_filters'},
+  {'input_priority','output_priority','filter','filters'},{'auto_requests','send_to_orbit_automatically'}}
+function M.configure_together(a)
+  local given={}
+  for k in pairs(a) do if M.CONFIGURE_SETTINGS[k] then given[#given+1]=k end end
+  if #given<2 then return end
+  for _,group in ipairs(M.CONFIGURE_TOGETHER) do
+    local set,all={},true
+    for _,k in ipairs(group) do set[k]=true end
+    for _,k in ipairs(given) do if not set[k] then all=false; break end end
+    if all then return end
+  end
+  table.sort(given)
+  local near={}
+  for _,group in ipairs(M.CONFIGURE_TOGETHER) do
+    local hit
+    for _,g in ipairs(group) do for _,k in ipairs(given) do if g==k then hit=true end end end
+    if hit then near[#near+1]=table.concat(group,', ') end
+  end
+  error(string.format('configure sets %s in separate calls (settings that go in one call: %s; any other goes alone): nothing changed',
+    table.concat(given,' and '),#near>0 and table.concat(near,' | ') or 'none of these'),0)
+end
+-- The settings a branch sets on the entity it reached (what: that entity); any other setting given is refused.
+function M.configure_only(a,keys,what)
+  local set={}
+  for _,k in ipairs(keys) do set[k]=true end
+  local extra={}
+  for k in pairs(a) do if M.CONFIGURE_SETTINGS[k] and not set[k] then extra[#extra+1]=k end end
+  if #extra==0 then return end
+  table.sort(extra)
+  for i,k in ipairs(extra) do extra[i]=k..' ('..M.CONFIGURE_SETTINGS[k]..')' end
+  error(string.format('%s: configure sets %s here; %s %s not: nothing changed',what,table.concat(keys,', '),table.concat(extra,', '),
+    #extra>1 and 'are' or 'is'),0)
+end
+function M.configure_what(e)
+  local ghost=e.type=='entity-ghost'
+  return string.format('%s%s (%g,%g)',ghost and 'ghost of ' or '',ghost and e.ghost_name or e.name,e.position.x,e.position.y)
+end
 -- (d25 batch200 QM2, Astra #2313: a queued platform_defense {asteroids, seconds: 3600} passed queue_submit's dry_run and
 -- the job refused it, 10..1800) The numeric ranges each queueable action checks when it runs, checked for every queue
 -- step at submit and in dry_run: {key, low, high, whole?=true, when?} (when: the arguments the range applies with; the
@@ -8667,6 +8743,7 @@ function M.step_range_check(action,a)
   end
 end
 M.preflight.configure=function(p,a)
+  M.configure_together(a)
   if a.modules~=nil then M.modules.parse(a.modules) end
   if a.positions~=nil then return end
   local near,e=configure_target(p,a)
@@ -8678,7 +8755,7 @@ end
 function M.configure_modules(p,a)
   local want=M.modules.parse(a.modules)
   assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')
-  assert(a.priority_targets==nil and a.ignore_unprioritised==nil and a.filters==nil,'modules goes with position or positions, recipe and by')
+  M.configure_only(a,{'modules','recipe'},a.positions and 'positions with modules' or 'modules')
   -- One machine out of reach that needs you there (by hand, or a recipe change on one holding items; autowalk.lua):
   -- within 32 tiles the character walks into reach first, and the whole call is made there.
   if a.positions==nil then
@@ -8723,8 +8800,17 @@ end
 -- (d19 batch41 A2, Sol seq 868-869: 11 turrets rebuilt to clear ammunition requests they could not use) configure
 -- {position | positions, item_requests: false} (ammo: false on a built turret is the same): each built entity's item
 -- requests removed, as a deconstruction planner over it and a cancel do (turretammo.lua's clear).
+-- (d25 batch199 QL1, Astra #2285) with priority_targets or ignore_unprioritised: each turret's requests removed, then
+-- its targeting set, both checked first (a ghost, an entity with no targeting or a bad name changes nothing on it).
 function M.clear_requests(p,a,near,e)
   assert(a.item_requests==nil or a.item_requests==false,'item_requests: false removes a built entity\'s item requests')
+  assert(a.ammo==nil or a.ammo==false,'ammo with item_requests: false is false (a built turret\'s requests removed); an ammo request is a turret ghost\'s')
+  M.configure_only(a,{'item_requests','ammo','priority_targets','ignore_unprioritised'},a.positions and 'positions with item_requests: false' or M.configure_what(e))
+  local targeting=a.priority_targets~=nil or a.ignore_unprioritised~=nil
+  if targeting then
+    if a.ignore_unprioritised~=nil and type(a.ignore_unprioritised)~='boolean' then error('ignore_unprioritised must be true or false',0) end
+    if a.priority_targets~=nil then M.target_names(a.priority_targets) end
+  end
   local list=a.positions or {a.position}
   assert(type(list)=='table' and #list>=1 and #list<=64,'positions requires 1..64 {x,y}')
   local rows,cleared,none,failed={},0,0,0
@@ -8740,10 +8826,17 @@ function M.clear_requests(p,a,near,e)
       end
       local what=x.type=='entity-ghost' and x.ghost_name or x.name
       assert(x.type~='entity-ghost' and x.type~='tile-ghost',string.format('%s (%g,%g) is a ghost: configure {position, ammo} or {modules} changes its requests',what,x.position.x,x.position.y))
+      if targeting then M.turret_check(x,a) end
       local r=M.turretammo.clear(x,p.force)
       local text=r and table.concat({r.into and 'bring '..r.into or nil,r.out and 'take out '..r.out or nil},'; ') or nil
-      return {name=x.name,position=x.position,removed=text,remote=not n or nil,
+      local row={name=x.name,position=x.position,removed=text,remote=not n or nil,
         line=string.format('%s (%g,%g): %s',x.name,x.position.x,x.position.y,text and 'item requests removed ('..text..')' or 'no item request on it')}
+      if targeting then
+        local t=M.configure_turret(x,a)
+        row.priority_targets,row.ignore_unprioritised,row.targeting,row.line_of_fire=t.priority_targets,t.ignore_unprioritised,t.targeting,t.line_of_fire
+        row.line=row.line..'; '..t.targeting
+      end
+      return row
     end)
     if ok then rows[i]=out; if out.removed then cleared=cleared+1 else none=none+1 end
     else failed=failed+1; rows[i]={position=pos,error=reason(out)} end
@@ -8757,6 +8850,7 @@ function M.clear_requests(p,a,near,e)
     note='as a deconstruction planner over each and a cancel of that deconstruction: every item request on it goes'}
 end
 function M.configure_turrets(p,a)
+  M.configure_only(a,{'priority_targets','ignore_unprioritised'},'positions with turrets')
   assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions requires 1..64 {x,y} (turrets or their ghosts)')
   assert(a.position==nil,'give position or positions, not both')
   local rows,done,failed={},0,0
@@ -8806,7 +8900,8 @@ function M.inserter_hand_max(e)
   end
   return n
 end
-function handlers.configure(p,a)
+local function configure_branch(p,a)
+  M.configure_together(a)
   if a.modules~=nil and a.ammo==nil then return M.configure_modules(p,a) end
   -- A turret's priority targets and Ignore unprioritised targets: several at once with positions.
   if a.positions~=nil then
@@ -8819,9 +8914,9 @@ function handlers.configure(p,a)
   -- the same as its own is read back and the other refused, before anything else in the call changes; with filters,
   -- spoil_priority or hand_size in the same call, those go on as without it.
   if a.wait_for_full_hand~=nil then
+    M.configure_only(a,{'wait_for_full_hand','hand_size','spoil_priority','filters','filter','filter_mode','use_filters'},M.configure_what(e))
     local w=M.details.configure_wait_for_full_hand(e,a.wait_for_full_hand)
     if a.hand_size==nil and a.spoil_priority==nil and a.filters==nil and a.filter==nil and a.filter_mode==nil and a.use_filters==nil then
-      assert(a.recipe==nil and a.modules==nil,'wait_for_full_hand goes with an inserter\'s filters, spoil priority and hand size')
       w.name=e.type=='entity-ghost' and e.ghost_name or e.name; w.position=e.position; w.ghost=e.type=='entity-ghost' or nil
       w.remote=not near or nil
       return w
@@ -8846,7 +8941,8 @@ function handlers.configure(p,a)
   -- A storage chest's filter (details.lua; Astra 18:58: removed modules had no storage chest to go to): storage_filter,
   -- or filters with one item on a storage chest (its one filter slot).
   if a.storage_filter~=nil or (a.filters~=nil and M.details.storage_chest(e)) then
-    assert(a.recipe==nil and a.modules==nil and a.priority_targets==nil,'storage_filter is set alone: a storage chest has no recipe or modules')
+    M.configure_only(a,{'storage_filter','filters'},M.configure_what(e))
+    assert(a.storage_filter==nil or a.filters==nil,'storage_filter or filters (one item), not both')
     local v=a.storage_filter
     if v==nil then
       local list=type(a.filters)=='string' and {a.filters} or a.filters
@@ -8864,7 +8960,7 @@ function handlers.configure(p,a)
       error(string.format('input_priority, output_priority and filter are a splitter\'s settings; %s (%g,%g) is a %s',
         e.type=='entity-ghost' and e.ghost_name or e.name,e.position.x,e.position.y,e.type=='entity-ghost' and e.ghost_type or e.type),0)
     end
-    assert(a.recipe==nil and a.modules==nil,'a splitter has input_priority, output_priority and filter only')
+    M.configure_only(a,{'input_priority','output_priority','filter','filters'},M.configure_what(e))
     local args={input_priority=a.input_priority,output_priority=a.output_priority,filter=a.filter}
     if a.filters~=nil then
       assert(a.filter==nil,'filter or filters, not both')
@@ -8879,30 +8975,38 @@ function handlers.configure(p,a)
   -- A chest's, cargo wagon's or landing pad's red-X bar, or the game's reason a machine has none and what it has
   -- instead (invbar.lua; d21 batch64 Z2, Luna #1576).
   if a.bar~=nil then
-    assert(a.recipe==nil and a.filters==nil and a.storage_filter==nil,'bar goes alone (a chest, cargo wagon or landing pad: its usable slots)')
+    M.configure_only(a,{'bar'},M.configure_what(e))
     local out=M.invbar.set(e,a.bar)
     out.remote=not near or nil
     return out
   end
   -- A turret ghost's ammo request, changed or cleared in place (turretammo.lua; batch33 A5, Sol 09:59).
   if a.ammo~=nil then
-    assert(a.recipe==nil and a.filters==nil and a.priority_targets==nil,'ammo goes alone or with modules (a turret ghost\'s requests)')
+    M.configure_only(a,{'ammo','modules','priority_targets','ignore_unprioritised'},M.configure_what(e))
     M.turretammo.check(a.ammo)
+    local targeting=a.priority_targets~=nil or a.ignore_unprioritised~=nil
+    if targeting then M.turret_check(e,a) end
     local r=M.turretammo.set(e,a.ammo)
     local out={name=e.ghost_name,position=e.position,ammo_request=r.after,before=r.before,network_holds=r.network_holds,remote=not near or nil,
       line=string.format('%s ghost (%g,%g) requests %s (was %s)',e.ghost_name,e.position.x,e.position.y,r.after,r.before)}
-    if a.modules~=nil then local b={}; for k,v in pairs(a) do if k~='ammo' then b[k]=v end end; out.modules=M.configure_modules(p,b) end
+    -- (d25 batch199 QL1) a turret ghost's targeting in the same call
+    if targeting then
+      local t=M.configure_turret(e,a)
+      out.priority_targets,out.ignore_unprioritised,out.targeting=t.priority_targets,t.ignore_unprioritised,t.targeting
+      out.line=out.line..'; '..t.targeting
+    end
+    if a.modules~=nil then local b={}; for k,v in pairs(a) do if k=='modules' or not M.CONFIGURE_SETTINGS[k] then b[k]=v end end; out.modules=M.configure_modules(p,b) end
     return out
   end
   -- A programmable speaker's alert settings (circuits.lua; batch30 A2, Sol and viewer Foobator 05:47).
   if a.speaker_alert~=nil then
-    assert(a.recipe==nil and a.filters==nil and a.modules==nil,'speaker_alert goes alone (a speaker takes no recipe, filters or modules)')
+    M.configure_only(a,{'speaker_alert'},M.configure_what(e))
     local after,before=M.circuits.set_speaker_alert(e,a.speaker_alert)
     return {name=e.name,position=e.position,speaker_alert=after,before=before and before.line,line=after and after.line,remote=not near or nil}
   end
   -- A combinator's description, as its GUI writes it (circuits.lua; d20 batch56 R4, Astra #1399 for viewer Foobator).
   if a.description~=nil then
-    assert(a.recipe==nil and a.filters==nil and a.modules==nil,'description goes alone (a combinator takes no recipe, filters or modules)')
+    M.configure_only(a,{'description'},M.configure_what(e))
     local d=M.circuits.check_description(e,a.description)
     local before=M.circuits.description(e) or ''
     e.combinator_description=d
@@ -8914,14 +9018,13 @@ function handlers.configure(p,a)
   end
   -- An artillery turret's or wagon's automatic targeting (artillery.lua; Grok, d15 14:07).
   if a.auto_targeting~=nil then
-    assert(a.recipe==nil and a.filters==nil and a.priority_targets==nil and a.ignore_unprioritised==nil,'auto_targeting goes alone (an artillery piece takes no recipe, filters or priority targets)')
+    M.configure_only(a,{'auto_targeting'},M.configure_what(e))
     local out=M.artillery.configure(e,a.auto_targeting)
     out.remote=not near or nil
     return out
   end
   if a.priority_targets~=nil or a.ignore_unprioritised~=nil then
-    assert(a.recipe==nil and a.filters==nil and a.filter_mode==nil and a.use_filters==nil,
-      'priority_targets and ignore_unprioritised go alone (a turret takes no recipe or filters)')
+    M.configure_only(a,{'priority_targets','ignore_unprioritised'},M.configure_what(e))
     local out=M.configure_turret(e,a)
     out.remote=not near or nil
     return out
@@ -8931,7 +9034,7 @@ function handlers.configure(p,a)
   -- (d20 batch53, Astra #1223 note) a rocket silo's ghost keeps both checkboxes for the silo it becomes (2.0.77: set on a
   -- ghost, read on the silo it revived as); it holds no cargo, so automatic requests are set as asked.
   if e.type=='entity-ghost' and e.ghost_type=='rocket-silo' then
-    assert(a.recipe==nil and a.filters==nil,'a rocket silo takes auto_requests and send_to_orbit_automatically (its recipe is fixed)')
+    M.configure_only(a,{'auto_requests','send_to_orbit_automatically'},M.configure_what(e)..' (a rocket silo: its recipe is fixed)')
     assert(a.auto_requests~=nil or a.send_to_orbit_automatically~=nil,'a rocket silo takes auto_requests and send_to_orbit_automatically (true or false)')
     assert(a.auto_requests==nil or type(a.auto_requests)=='boolean','auto_requests must be true or false')
     assert(a.send_to_orbit_automatically==nil or type(a.send_to_orbit_automatically)=='boolean','send_to_orbit_automatically must be true or false')
@@ -8943,7 +9046,7 @@ function handlers.configure(p,a)
         e.position.x,e.position.y,e.use_transitional_requests and 'on' or 'off',e.send_to_orbit_automatically and 'on' or 'off')}
   end
   if e.type=='rocket-silo' then
-    assert(a.recipe==nil and a.filters==nil,'a rocket silo takes auto_requests and send_to_orbit_automatically (its recipe is fixed)')
+    M.configure_only(a,{'auto_requests','send_to_orbit_automatically'},M.configure_what(e)..' (a rocket silo: its recipe is fixed)')
     assert(a.auto_requests~=nil or a.send_to_orbit_automatically~=nil,'a rocket silo takes auto_requests and send_to_orbit_automatically (true or false)')
     assert(a.send_to_orbit_automatically==nil or type(a.send_to_orbit_automatically)=='boolean','send_to_orbit_automatically must be true or false')
     local out={}
@@ -8965,9 +9068,10 @@ function handlers.configure(p,a)
   if a.hand_size~=nil then
     local kind=e.type=='entity-ghost' and e.ghost_type or e.type
     if kind~='inserter' then error('hand_size applies to inserters (built or ghost); '..e.name..' is a '..tostring(kind),0) end
-    assert(a.recipe==nil,'hand_size goes with an inserter\'s filters and spoil priority, not a recipe')
+    M.configure_only(a,{'hand_size','filters','filter_mode','use_filters','spoil_priority'},M.configure_what(e))
     local max=M.inserter_hand_max(e)
     local want=a.hand_size==false and 0 or integer(a.hand_size,nil,0,max,'hand_size (1..'..max..', its hand size now; 0 or false for none)')
+    M.filters_check(e,a)
     local _,before=pcall(function() return e.inserter_stack_size_override end)
     local ok,err=pcall(function() e.inserter_stack_size_override=want end)
     if not ok then error('the game refused hand size '..want..' on '..e.name..(e.type=='entity-ghost' and ' (a ghost)' or '')..': '..tostring(err),0) end
@@ -8989,7 +9093,8 @@ function handlers.configure(p,a)
   if a.spoil_priority~=nil then
     local kind=e.type=='entity-ghost' and e.ghost_type or e.type
     if kind~='inserter' then error('spoil_priority applies to inserters (built or ghost); '..e.name..' is a '..tostring(kind),0) end
-    assert(a.recipe==nil,'spoil_priority goes with an inserter\'s filters, not a recipe')
+    M.configure_only(a,{'spoil_priority','filters','filter_mode','use_filters'},M.configure_what(e))
+    M.filters_check(e,a)
     local before=M.read_spoil_priority(e)
     local now=M.set_spoil_priority(e,a.spoil_priority)
     local out=(a.filters~=nil or a.filter_mode~=nil or a.use_filters~=nil) and configure_filters(e,a) or {}
@@ -8998,7 +9103,11 @@ function handlers.configure(p,a)
     out.remote=not near or nil
     return out
   end
-  if a.filters~=nil or (a.recipe==nil and (a.filter_mode~=nil or a.use_filters~=nil)) then return configure_filters(e,a) end
+  if a.filters~=nil or (a.recipe==nil and (a.filter_mode~=nil or a.use_filters~=nil)) then
+    M.configure_only(a,{'filters','filter_mode','use_filters'},M.configure_what(e))
+    return configure_filters(e,a)
+  end
+  M.configure_only(a,{'recipe'},M.configure_what(e))
   local need=configure_check(p,a,e,near)
   if need then
     -- (autowalk.lua) within 32 tiles: walk into reach, then change it there
@@ -9143,6 +9252,22 @@ function handlers.configure(p,a)
   assert(current and current.name==recipe.name,'recipe incompatible with machine')
   local fluid_flushed=fluid_after and fluid_after()
   return {recipe=current.name,quality=a.quality,remote=not near or nil,returned=next(returned) and returned or nil,spilled=next(spilled) and spilled or nil,fluid=fluid_note,fluid_flushed=fluid_flushed}
+end
+-- (d25 batch199 QL1) every setting given is set or the call is refused (configure_branch); applied names them, ignored
+-- the modifiers given without what they modify. A walk into reach sets them on arrival (last.result).
+function handlers.configure(p,a)
+  local out=configure_branch(p,a)
+  if type(out)~='table' or out.walking then return out end
+  local applied,ignored={},{}
+  for k in pairs(a) do if M.CONFIGURE_SETTINGS[k] then applied[#applied+1]=k end end
+  table.sort(applied)
+  if a.by~=nil and a.modules==nil then ignored[#ignored+1]='by (goes with modules)' end
+  if a.quality~=nil and a.recipe==nil then ignored[#ignored+1]='quality (the recipe\'s quality: goes with recipe)' end
+  if a.fluid~=nil and a.recipe==nil then ignored[#ignored+1]='fluid (goes with recipe)' end
+  if a.force~=nil and a.recipe==nil and a.auto_requests==nil then ignored[#ignored+1]='force (goes with recipe or auto_requests)' end
+  out.applied=applied
+  out.ignored=#ignored>0 and ignored or nil
+  return out
 end
 end
 end -- Omitted inventories are inferred the way a player's click is: fuel into the
@@ -13485,7 +13610,7 @@ function handlers.equip(p,a)
   return {equipped=a.item,slot=a.slot,index=index}
 end
 -- Why a ghost was not placed, and settings a pasted-over entity lacks (placewhy.lua).
-M.placewhy=require('placewhy'){filters=function(e) return M.details.filters(e) end}
+M.placewhy=require('placewhy'){filters=function(e) return M.details.filters(e) end,filter_text=function(f) return M.details.filter_text(f) end}
 -- What inserters take from and put into (targets.lua): built, ghost or planned.
 M.targets=require('targets'){}
 -- The requests of entities a paste lands on (keep.lua).
@@ -16556,9 +16681,7 @@ function M.settings_dry(p,entry,kind,args)
     if f~=nil and proto.type~='asteroid-collector' then
       local slots=ghost.filter_slot_count
       assert(slots>0,name..' has no filter slots')
-      local list=type(f)=='string' and {f} or f
-      assert(type(list)=='table' and #list<=slots,'filters requires 0..'..slots..' item names')
-      for _,n in ipairs(list) do assert(prototypes.item[n],'unknown item '..tostring(n)) end
+      M.details.filter_list(f,slots)
     end
     if args.use_filters~=nil then assert(proto.type=='inserter' and type(args.use_filters)=='boolean','use_filters is true or false, on an inserter') end
     if args.filter_mode~=nil then
@@ -16790,7 +16913,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q) return M.podlog.landed_from(name,since,item,q) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline

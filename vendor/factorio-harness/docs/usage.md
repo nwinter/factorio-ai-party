@@ -2209,7 +2209,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   waits with that craft finished: `cryogenic-science-pack 45 held: it stops when a craft's 1 no longer fit in one
   stack (200) ...`), a fluid when a craft's amount no longer fits in its output box (`fluoroketone-hot 135 of 300 in
   its output box ...`; the box's own capacity, sized to the recipe; pipes joined to it take from it as they have
-  room); `products [{name, fluid, per_craft, held, stops_at, full, full_output_from}]`; when the machine is not
+  room); `products [{name, fluid, per_craft, held, capacity, delivers_up_to, full, idle_full_output_from}]` (d25
+  batch199: were stops_at and full_output_from); when the machine is not
   working, `idle_full_output`: an assembling machine that is not crafting for another reason reads `full_output`, not
   the shortage, once it holds amount x (1 + ceil(1.166 x crafts per second)) of any product (2 crafts' worth for a
   slow recipe: 2 cryogenic packs or 6 hot fluoroketone; 3 for gears in an assembler 2), and that output does not stop
@@ -14493,6 +14494,67 @@ shipment's ready read sent 6 down).
   - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
     (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
 - Test: tests/d24_batch187.lua (fails on main: no handler).
+## d24 batch194 (Sol #2270: quality filters for inserters and loaders)
+
+- QAJ1: every filter list (configure, build and place_ghosts `configure`/settings, circuit_set `settings`, an entry's
+  top-level `filters`) takes per filter: `"name"` (quality normal, comparator "=", as the game stores a name), 
+  `"name@quality"`, `"name@<=quality"` (comparators `=`, `!=`, `<`, `<=`, `>`, `>=`, and the game's signs ≤ ≥ ≠),
+  `"name@any"` (no quality: every quality passes), or `{name|item, quality?, comparator?}` (2.0.77's ItemFilter; a
+  table with no quality is every quality, as the game takes it). One filter alone is a list of one. Refused before
+  anything is set: an unknown item, quality ("unknown quality mythic; qualities: normal, uncommon, rare, epic,
+  legendary"; the hidden quality-unknown is not taken), comparator ("unknown comparator =<; comparators: =, !=, <, <=,
+  >, >="), a comparator with no quality (the game drops it), `any` with a comparator, an unknown table key.
+- Reads (configure's reply, inspect `filters`, scan rows' `filters` line, the circuit's "set by circuit (now: ...)",
+  placewhy's blueprint comparison) give each filter in the same string form: `plastic-bar`, `plastic-bar@epic`,
+  `plastic-bar@<=epic`, `coal@any`. configure reads each slot back and says `not_as_asked` for one that holds other
+  than asked.
+- Engine facts (2.0.77, a copy of world n's 19:57 autosave): `set_filter(1, "plastic-bar")` reads back {name,
+  quality "normal", comparator "="}; `{name}` reads back with no quality; `{name, comparator}` with no quality drops the
+  comparator; `"<="` reads back "≤" (also on a ghost); `"plastic-bar@epic"` is "Unknown item name"; a blueprint keeps
+  the same ItemFilter rows ({index, name, quality, comparator}; none for every quality).
+- Sol's case on the copy: a burner inserter between two chests, the first holding 5 plastic bars of each quality.
+  Whitelist `{name: plastic-bar, quality: epic, comparator: "<="}` moved the 20 normal..epic bars and left the 5
+  legendary; blacklist `["plastic-bar", "plastic-bar@uncommon", "plastic-bar@rare", "plastic-bar@epic"]` moved only
+  the 5 legendary. place_ghosts with `configure {filters: ["plastic-bar@<=epic"], filter_mode: blacklist}` set the ghost
+  so (dry run refuses "plastic-bar@mythic" naming the qualities). Sol's fallback, a constant combinator with
+  plastic-bar normal..epic signals and `circuit_set_filters`, still sets them: "set by circuit (now: plastic-bar,
+  plastic-bar@uncommon, plastic-bar@rare, plastic-bar@epic)".
+- Test: tests/d24_batch194.lua (fails on main: "unknown item table: ..."). Five fakes that read a name filter back with
+  no quality now read it as 2.0.77 does (quality normal, "=").
+## d25 batch199 (Astra #2285, Sol #2295 and #2298)
+
+- QL1 (Astra #2285: Asterion plan156, `configure {item_requests: false, priority_targets, ignore_unprioritised}` removed
+  the requests and left six guns' targeting as it was): configure sets every setting given or refuses the call before
+  anything changes. Settings that go in one call: item_requests, ammo, priority_targets, ignore_unprioritised (a built
+  turret's requests removed, then its targeting set; a turret ghost's ammo request and targeting) | ammo, modules |
+  modules, recipe | an inserter's wait_for_full_hand, hand_size, spoil_priority, filters, filter_mode, use_filters |
+  a splitter's input_priority, output_priority, filter | a silo's auto_requests, send_to_orbit_automatically; any other
+  goes alone ("configure sets item_requests and recipe in separate calls (...): nothing changed"). Each branch then
+  names what it sets on the entity it reached, and any other setting is refused with whose setting it is
+  ("storage-chest (5.5,0.5): configure sets storage_filter, filters here; filter_mode (an inserter's) is not: nothing
+  changed"). hand_size and spoil_priority check the filters and spoil priority given with them first. A success gives
+  `applied` (the settings it set) and `ignored` (by, quality, fluid, force given without what they modify). On the
+  copy (the 06:41 autosave): Asterion, two rocket turrets with requests and four gun turrets, one call: cleared 2,
+  without_requests 4, all six read back [big-metallic-asteroid, medium-metallic-asteroid], ignore off, no proxy left.
+- QL2 (Sol #2295): ores' help and the reference say `drill_list` is a reply field of `ores {patch}` (with forecast or
+  without); `drill_list: true` is still refused, now saying so.
+- QL3 (Sol #2298), output_stop. On the copy, a refinery on coal liquefaction at speed 1 (t199): a craft starts whatever
+  its output holds; at its end the results go out only if every product fits (petroleum 90 + 10 of 100 out, 90.5 held;
+  heavy oil 90 + 90 of 180 out, 90.5 held), else the finished craft waits: full_output, crafting_progress 1. With no
+  coal, full_output read from petroleum 20 (19: item_ingredient_shortage), light oil 40, heavy oil 180, progress 0.
+  Rows now carry `capacity`, `delivers_up_to` (capacity less a craft), `full` and `idle_full_output_from` (were
+  stops_at and full_output_from); `blocking` is `output` (crafting_progress 1) or `input` (0: the idle rule, the
+  shortage named in `line`); a working machine whose results would not fit gets `next_wait`. Refinery N(-108.5,-125.5)
+  on the copy read full_output with petroleum 39.5 of 100: blocking input, "it lacks coal 1 (a craft takes 10)".
+  Cost: 0.09 ms a read, as before.
+- QL3, the hub's trash. On the copy: stopped at a planet, what is over the max of a request from that planet went to
+  the trash within 8 ticks and down in a cargo pod within 276 ticks (20 barrels, Limestone at Nauvis from nauvis;
+  Anvil at Fulgora from fulgora); over the max of a request from another planet it stayed in the hub (600 ticks); in
+  flight (Kestrel II, a request from vulcanus) to the trash within 72 ticks. requests' `trash_note` says which (each
+  over_max row names its import planet; "barrel goes down now"), `sends_down` forecasts a max of 0 and leaves the
+  hub's max to the flight after a stop, and KEEP_RULE says it. The section scan costs 0.32 ms (19 sections).
+- Test: tests/d25_batch199.lua (fails on main: Astra's call leaves the targeting unset). It checks every pair of
+  configure settings on the entities they go to: a success set both, a refusal changed nothing.
 
 ## d25 batch198 QK1: the hub keep reads by item@quality (after Sol #2264)
 
@@ -14626,6 +14688,58 @@ chunk our force sees.
   refused call 0.40-0.42 ms with it against 0.35-0.40 ms at an empty spot.
 - Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
 
+
+## d25 batch205
+
+Engine facts below are from a copy of world n's _autosave8 (box time 08:42; tick 61955043 at the deploy), 2.0.77,
+under Rosetta.
+
+QR1 (Sol #2337): a queue wait on landed freight from a fixed start. Sol's finite 750 uranium-rounds-magazine pickup
+from Kestrel IVb to Aquilo takes longer than wait_until's 54000-tick maximum. pod_landed counted from the wait's first
+check. A held wait (`on_timeout: "hold"`) and a requeued one (the queue paused while it ran) went back into pending as
+a new step and counted from the resume. It read freight's receipts, the last 16 a platform.
+- `wait_until {until: "pod_landed", platform, item?, quality?, at_least?, since_tick?}`: pods sent down from the
+  platform that landed on any planet after `since_tick` (a whole tick 0..now), else after the wait's first check.
+  Counted from the pod ledger (podlog.lua M.landed_from: the journeys down with that platform name, landed tick after
+  the start; a planet's list walked from the newest until a journey sent 36000 ticks before the start). `quality`
+  goes with item: that quality only; without it, or with "any", every quality counts.
+- saw names the start tick ("since tick T" or "since the wait began (tick T)"), the newest landed pod's tick, pad and
+  planet. When a planet's list is full (1000) and its oldest kept journey was sent after the start, saw says so.
+- A held wait and a requeued wait keep their start (`pod_since`) and drop id (scheduler.lua hold and pause_inner). A
+  failed or replaced wait does not: its saw gives the tick for since_tick in a new step.
+- validate_condition checks since_tick and quality at submit and in queue_submit dry_run. On the copy dry_run refused
+  since_tick past now, since_tick 5.5, timeout 54001 and quality without item, and took the real step.
+- wait_line names "pod_landed ITEM landed from PLATFORM since tick T" (before, "in PLATFORM hub").
+- On the copy: Kestrel IVb's last uranium-rounds-magazine pod to Aquilo before the copy landed at 61923898 (200). A
+  platform-lane wait with since_tick 61900000 read "1 pod from Kestrel IVb landed since tick 61900000 with 200
+  uranium-rounds-magazine (normal quality) (the last at tick 61923898, landing pad (-8,-22) on aquilo)". A
+  Kestrel IVc wait held at 120 ticks (start 61972037) and resumed said "since the wait began (tick 61972037)".
+- Cost on the copy. The ledger held 3812 journeys (aquilo 654, fulgora 1000, gleba 296, nauvis 1000, vulcanus 862).
+  landed_from timed over 100 calls: 0.025 ms a call for start 61943185, 0.038 ms for 61900000, 0.44 ms for 59400000
+  (every journey kept). A wait checks every 10 ticks: 0.0025, 0.0038 and 0.044 ms a tick. profile_ticks 60 s before and
+  with the wait running: scheduler.wait_until rose from 720 calls / 107.1 ms to 1080 / 160.7 ms (0.149 ms a check,
+  waiteta included); scheduler.tick 0.343 and 0.329 ms a tick.
+- Tests: tests/d25_batch205.lua (run by tests/d25batch205.test.ts; fails on main: no landed_from, and with the
+  branch's conditions the resumed wait counts from tick 320002); tests/conditions.lua takes the new saw text.
+
+QR2 (Astra #2338): a platform's latest flight watch read without starting one. `flight_watch {platform}` starts or
+replaces a watch, and only `{id}` read a full result; a queue step cannot know the id an earlier step's start returned.
+- `flight_watch {platform, read: true}`: the force's watch with the highest id kept on that platform (matched by the
+  platform's index, else by name for a platform gone), in full as `{id}` reads it, with `older` (the ids of older
+  watches kept on it, also at the end of line). A done one is marked read, as `{id}` marks it (it stops counting
+  against the limit and is kept 1 h). None kept: `{not_found: true, platform, line}`, not an error. It never starts,
+  replaces or ends a watch. `{id}`, `{}` and starts are unchanged.
+- flightwatch.lua M.check_read: read must be true and goes with platform alone (no id, clear, from, minutes or
+  replace); runtime.lua step_checks.flight_watch runs it at submit and in dry_run, and step_read_check checks the
+  platform exists. In a platform lane `{read: true}` takes the lane's platform (queue_lanes.lua, as a start does).
+- On the copy (18 watches kept, 13 of them on Asterion, the latest #1270): `{platform: "Asterion", read: true}`
+  returned #1270 (57 KB); Kestrel IVb, with none kept, returned not_found. A platform:Asterion lane ran
+  `{read: true}` and `{read: true, platform: "Kestrel IVb"}` as two steps, both ok; 18 watches were kept after. dry_run
+  took `{read: true}` in the Asterion lane and refused it in the remote lane (no platform), with minutes, with
+  read "yes" and with platform "Nope".
+- Cost on the copy, through dispatch, 3 runs each: read by platform 56.1, 47.4, 44.9 ms; `{id: 1270}` 46.5, 45.3,
+  46.1 ms (both build the same 56 KB row); not_found 2.4, 17.0, 2.5 ms.
+- Tests: tests/d25_batch205b.lua (run by tests/d25batch205b.test.ts; fails on main: the read started a watch).
 
 ## d25 batch201
 

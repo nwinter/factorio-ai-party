@@ -224,11 +224,16 @@ do
   -- requests on a hub: a max under what it holds is named, with the trash and where it goes.
   hub_inv.get_item_count=function(it) assert(it.name=='iron-plate' and it.quality=='normal'); return 5 end
   local rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=2}}})
-  eq(rq.over_max[1],'iron-plate: the hub holds 5, 3 over the max 2'); eq(rq.hub_trash,'iron-plate*5')
+  eq(rq.over_max[1],'iron-plate: the hub holds 5, 3 over the max 2 (from nauvis)'); eq(rq.hub_trash,'iron-plate*5')
   assert(rq.trash_note:find('^in flight the game moves what is over a max to the hub\'s trash within a second%. the hub keeps its trash while flying'),rq.trash_note)
   platform.space_location,platform.space_connection={name='gleba',type='planet'},nil
   rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=2}}})
-  assert(rq.trash_note:find('^while the platform is stopped the game leaves what is over a max in the hub; once it flies, the game moves that to the trash, which goes down at the next stop%. the game sends the hub\'s trash down to gleba'),rq.trash_note)
+  -- (d25 batch199 QL3, Sol #2298) stopped at gleba, a request from nauvis: it stays in the hub until it flies
+  assert(rq.trash_note:find('^what is over the max of a request from another planet stays in the hub while the platform is stopped here %(iron%-plate %(from nauvis%)%); once it flies, the game moves that to the trash, which goes down at the next stop%. the game sends the hub\'s trash down to gleba'),rq.trash_note)
+  -- stopped at nauvis, the request from nauvis: to the trash and down now
+  platform.space_location={name='nauvis',type='planet'}
+  rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=2}}})
+  assert(rq.trash_note:find('^stopped at nauvis, the game moves what is over the max of a request from nauvis to the trash within a few ticks and sends it down in a cargo pod within about 5 s: iron%-plate goes down now%. the game sends'),rq.trash_note)
   platform.space_location,platform.space_connection={name='nauvis'},{from={name='nauvis'},to={name='gleba'},length=15000}
   rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=9}}})
   eq(rq.over_max,nil); assert(rq.trash_note:find('^the hub keeps its trash while flying'),rq.trash_note)

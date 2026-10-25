@@ -51,13 +51,26 @@ return function(api)
   -- landed as a cargo-pod container 14 tiles from (0,0). Parked, what was put
   -- in the trash went down within 20 ticks (Nauvis: to the landing pad), but
   -- 12 processing units over a max of 0 stayed in the hub for 3500 ticks.
-  -- over: the call set a max under what the hub holds.
+  -- (d25 batch199 QL3, Sol #2298: Kestrel IVb, stopped at Fulgora with barrel 0..0 from fulgora, sent 66 barrels
+  -- down unasked.) On a copy of world n (2.0.77): stopped at a planet, what is over the max of a request importing from
+  -- that planet went to the trash within 8 ticks and down in one cargo pod within 276 ticks (20 barrels, Limestone at
+  -- Nauvis, request from nauvis; Anvil at Fulgora, from fulgora); over the max of a request from another planet it
+  -- stayed in the hub (Limestone, from fulgora, 600 ticks; Anvil, from vulcanus). In flight (Kestrel II,
+  -- gleba->aquilo, a request from vulcanus) it went to the trash within 72 ticks.
+  -- over: what the call set a max under, {name, from}: from the planet its request imports from.
   function M.trash_note(pl,over)
     local loc=pl.space_location
     local planet=loc and (loc.type=='planet' or try(function() return prototypes.space_location[loc.name].type end)=='planet')
     local where='to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)'
     if planet then
-      return (over and 'while the platform is stopped the game leaves what is over a max in the hub; once it flies, the game moves that to the trash, which goes down at the next stop. ' or '')
+      local here,later={},{}
+      for _,o in ipairs(type(over)=='table' and over or {}) do
+        if o.from==loc.name then here[#here+1]=o.name else later[#later+1]=o.name..(o.from and ' (from '..o.from..')' or '') end
+      end
+      return (#here>0 and 'stopped at '..loc.name..', the game moves what is over the max of a request from '..loc.name..' to the trash within a few ticks and sends it down in a cargo pod within about 5 s: '
+          ..table.concat(here,', ')..' goes down now. ' or '')
+        ..((#later>0 or over==true) and 'what is over the max of a request from another planet stays in the hub while the platform is stopped here'
+          ..(#later>0 and ' ('..table.concat(later,', ')..')' or '')..'; once it flies, the game moves that to the trash, which goes down at the next stop. ' or '')
         ..'the game sends the hub\'s trash down to '..loc.name..' in cargo pods while the platform is stopped there: '..where
     elseif pl.space_connection then
       return (over and 'in flight the game moves what is over a max to the hub\'s trash within a second. ' or '')
@@ -397,7 +410,7 @@ return function(api)
   -- planet ask; a request from another planet keeps nothing there. Swift at Nauvis kept its 501 magazines under
   -- firearm-magazine 500..2000 from nauvis (pads asking 1461, the copy of world n, 2026-10-17); Cinder at Nauvis sent
   -- all 85 of its foundation down under space-platform-foundation 50..inf from fulgora (shift33, about tick 27162800).
-  M.KEEP_RULE='each item by quality: a request\'s max is for its own quality, and a landing pad\'s ask too (2.0.77, d24-d25: Kestrel IVc at Fulgora kept its legendary and normal asteroid collectors under asteroid-collector@rare 0..1 from fulgora; Fulgora\'s pad asking 2 normal took 2 normal and none of the legendary). At a stop the hub keeps what its active requests importing from that planet allow, their maxes added up: no max keeps all of it; with a max it sends down all it holds above it to the landing pad there, whether the pad asks or not; an item no such request names goes down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing there (2.0.77, d24: Petrel at Nauvis kept all 1980 calcite under 200..inf from nauvis with the pad asking 2000, and sent all above 200 under 200..200). All it holds over the hub\'s max (the maxes of its active requests for the item added up, any planet) goes to its trash within a second, in flight too, and down at the first stop it waits at, asked or not (2.0.77, d24: Meridian-V flying to Nauvis, bioflux 20..30 from gleba: its 150 over 30 went down at Nauvis, 30 stayed aboard)'
+  M.KEEP_RULE='each item by quality: a request\'s max is for its own quality, and a landing pad\'s ask too (2.0.77, d24-d25: Kestrel IVc at Fulgora kept its legendary and normal asteroid collectors under asteroid-collector@rare 0..1 from fulgora; Fulgora\'s pad asking 2 normal took 2 normal and none of the legendary). At a stop the hub keeps what its active requests importing from that planet allow, their maxes added up: no max keeps all of it; with a max it sends down all it holds above it to the landing pad there, whether the pad asks or not; an item no such request names goes down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing there (2.0.77, d24: Petrel at Nauvis kept all 1980 calcite under 200..inf from nauvis with the pad asking 2000, and sent all above 200 under 200..200). In flight all it holds over the hub\'s max (the maxes of its active requests for the item added up, any planet) goes to its trash within a second, and down at the first stop it waits at, asked or not (2.0.77, d24: Meridian-V flying to Nauvis, bioflux 20..30 from gleba: its 150 over 30 went down at Nauvis, 30 stayed aboard). Stopped at a planet, what is over the max of a request from that planet goes to the trash within a few ticks and down in a cargo pod within about 5 s; over the max of a request from another planet it stays in the hub until the platform flies (2.0.77, d25: 20 barrels under barrel 0..0, from nauvis at Nauvis: trash in 8 ticks, down in 276; from fulgora at Nauvis: in the hub after 600 ticks)'
   -- Per item whose kept stock a change alters: what goes down at each stop after it. The stops: where it waits now,
   -- then its schedule's in order. before, after: hub_keep_at.
   function M.sends_down(hub,pl,before,after)
@@ -443,11 +456,13 @@ return function(api)
     for _,n in ipairs(names) do
       local item,q=key_parts(n)
       local held=not ranged[item] and held_q(hub,item,q) or 0
+      -- (d25 batch199 QL3) a max of 0 keeps nothing and is told apart from no request there
       local differs=false
       for planet in pairs(seen) do
-        if ((before[planet] or {})[n] or 0)~=((after[planet] or {})[n] or 0) then differs=true end
+        if (before[planet] or {})[n]~=(after[planet] or {})[n] then differs=true end
       end
-      for planet,list in pairs(before) do if (list[n] or 0)~=((after[planet] or {})[n] or 0) then differs=true end end
+      for planet,list in pairs(before) do if list[n]~=(after[planet] or {})[n] then differs=true end end
+      for planet,list in pairs(after) do if list[n]~=(before[planet] or {})[n] then differs=true end end
       if differs and ranged[item] and not said[item] and #lines<12 then
         said[item]=true
         lines[#lines+1]=string.format('%s: a request names it with a quality comparator (%s): what the hub keeps of it is not forecast',item,key_label(ranged[item]))
@@ -459,26 +474,41 @@ return function(api)
         local cap,capped=0,false
         for _,list in pairs(after) do if list[n] then capped=true; cap=cap+list[n] end end
         local dumped={}
-        if capped and cap<left then
+        -- (d25 batch199 QL3, Sol #2298) the hub's max sends to the trash in flight; stopped at a planet only the requests
+        -- from that planet keep or send (the stop rule below), so there it applies once the platform flies on
+        local here=stops[1] and stops[1].here
+        if capped and cap<left and not here then
           local first=stops[1]
           parts[#parts+1]=string.format('%d over its max %d go to the hub\'s trash now and down %s, asked or not',left-cap,cap,
-            not first and 'at the first planet it stops at' or first.here and 'to '..first.planet..' (here)' or 'to '..first.planet..' at its next stop')
+            not first and 'at the first planet it stops at' or 'to '..first.planet..' at its next stop')
           if first then dumped[first.planet]=left-cap end
           left=cap
         end
-        for _,st in ipairs(stops) do
+        local keep_here=here and (after[stops[1].planet] or {})[n]
+        if keep_here and keep_here~=math.huge and keep_here<left then
+          parts[#parts+1]=string.format('%d over its max %d go to the hub\'s trash now and down to %s (here), asked or not',left-keep_here,keep_here,stops[1].planet)
+          dumped[stops[1].planet]=left-keep_here
+          left=keep_here
+        end
+        for i,st in ipairs(stops) do
+          if i==2 and here and capped and cap<left then
+            parts[#parts+1]=string.format('%d over its max %d go to the hub\'s trash once it flies and down to %s at its next stop, asked or not',left-cap,cap,st.planet)
+            dumped[st.planet]=left-cap
+            left=cap
+          end
           local pd=pad(st.planet)
           -- (d24 batch142 PN1) a stop with unloading off: its pads take nothing (a finite max still sends down)
           local off=freight.no_unload and freight.no_unload(pl,st.planet)
           local want=off and 0 or (pd.ask[n] or 0)-(pd.hold[n] or 0)-(dumped[st.planet] or 0)
+          local named=(after[st.planet] or {})[n]~=nil
           local keep=(after[st.planet] or {})[n] or 0
-          -- (PI1) all above a finite max goes down, asked or not; an infinite max keeps it all
-          local go=keep==math.huge and 0 or keep>0 and math.max(0,left-keep) or math.max(0,math.min(left,want))
+          -- (PI1) all above a finite max goes down, asked or not (a max of 0: all of it); an infinite max keeps it all
+          local go=keep==math.huge and 0 or named and math.max(0,left-keep) or math.max(0,math.min(left,want))
           if go>0 then
             left=left-go
             -- (d24 batch141 PM1, Sol #2125) a pad that asks none of it: ask 0 (nil made the format fail after the change)
             parts[#parts+1]=string.format('%d down to %s%s (its landing pads ask %d, hold %d%s%s)',go,st.planet,st.here and ' (here)' or '',pd.ask[n] or 0,pd.hold[n] or 0,
-              keep>0 and string.format('; its requests from %s keep %s',st.planet,keep==math.huge and 'all of it' or tostring(keep)) or '',off and '; unloading off there: only what is above the max' or '')
+              named and string.format('; its requests from %s keep %s',st.planet,keep==math.huge and 'all of it' or tostring(keep)) or '',off and '; unloading off there: only what is above the max' or '')
           end
         end
         local now_text=kept(after,n,held)
@@ -1011,16 +1041,30 @@ return function(api)
         local pl=a.platform~=nil and M.platform(p,a.platform) or chest.surface.platform
         local hub=pl and pl.hub
         if hub and hub.valid then
-          local over={}
+          local over,overs={},{}
           local main=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+          -- the planet each request imports from, as the hub's sections hold it after the call
+          local from={}
+          local hs=try(function() return hub.get_logistic_sections() end)
+          for i=1,hs and hs.sections_count or 0 do
+            local sec=hs.get_section(i)
+            for _,f in ipairs(sec.active~=false and try(function() return sec.filters end) or {}) do
+              local v=f.value
+              if v and v.name and f.import_from then from[v.name..'@'..(v.quality or 'normal')]=try(function() return f.import_from.name end) or f.import_from end
+            end
+          end
           for _,e in ipairs(entries) do
             local held=e.max and main and try(function() return main.get_item_count({name=e.name,quality=e.quality}) end) or 0
-            if e.max and held>e.max then over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d',e.name,held,held-e.max,e.max) end
+            if e.max and held>e.max then
+              local src=from[e.name..'@'..(e.quality or 'normal')]
+              over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d%s',e.name,held,held-e.max,e.max,src and ' (from '..src..')' or '')
+              overs[#overs+1]={name=e.name,from=src}
+            end
           end
           local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
           out.hub_trash=trash and top_items(trash,12) or nil
           out.over_max=#over>0 and over or nil
-          if out.hub_trash or out.over_max then out.trash_note=M.trash_note(pl,out.over_max~=nil) end
+          if out.hub_trash or out.over_max then out.trash_note=M.trash_note(pl,#overs>0 and overs or nil) end
         end
       end
     end)

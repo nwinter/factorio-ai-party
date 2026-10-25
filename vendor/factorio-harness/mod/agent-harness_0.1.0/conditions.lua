@@ -911,8 +911,23 @@ return function(api)
           ..(r.at and string.format(' at (%g,%g)',r.at.x,r.at.y) or '')..(r.surface and ' on '..r.surface or '')) or 'still descending'),
           estimate and {value=landed and 1 or 0,scope='drop:'..r.id} or nil
       end
+      -- (d25 batch205 QR1, Sol #2337: a 750-magazine pickup outlasted the 54000-tick timeout and its resume counted from
+      -- zero) since_tick: a fixed start; else the wait's first check, kept by a held or requeued step (scheduler.lua).
+      -- Counted from the pod ledger (podlog.lua: its last 1000 journeys a planet), else freight's last 16 receipts.
       record.pod_since=record.pod_since or game.tick
-      local list=api.receipts and api.receipts(pl,record.pod_since) or {}
+      local since=c.since_tick or record.pod_since
+      local from=c.since_tick and 'since tick '..since or string.format('since the wait began (tick %d)',since)
+      local want=c.at_least or 1
+      local what=c.item and (c.quality and c.quality~='any' and c.item..' ('..c.quality..' quality)' or c.item) or nil
+      if api.pods_landed then
+        local r=api.pods_landed(c.platform,since,c.item,c.quality~='any' and c.quality or nil)
+        local have=c.item and r.items or r.pods
+        return have>=want,string.format('%d pod%s from %s landed %s%s%s%s',r.pods,r.pods==1 and '' or 's',c.platform,from,
+          what and string.format(' with %d %s',r.items,what) or '',r.last and string.format(' (the last at tick %d, %s on %s)',r.last.landed,tostring(r.last.dest or 'where not read'),r.last.planet) or '',
+          r.complete and '' or string.format('; the pod ledger keeps journeys sent from tick %d on: pods landed before that are not counted',r.oldest or 0)),
+          estimate and {value=have,scope='pods:'..c.platform..':'..tostring(what)} or nil
+      end
+      local list=api.receipts and api.receipts(pl,since) or {}
       local pods,items,last=0,0,nil
       for _,r in ipairs(list) do
         if r.kind~='gone' and r.kind~='lost' then
@@ -920,9 +935,8 @@ return function(api)
           if n>0 then pods=pods+1; items=items+(c.item and n or 0); last=r end
         end
       end
-      local want=c.at_least or 1
       local have=c.item and items or pods
-      return have>=want,string.format('%d pod%s from %s landed since the wait began%s%s',pods,pods==1 and '' or 's',c.platform,
+      return have>=want,string.format('%d pod%s from %s landed %s%s%s',pods,pods==1 and '' or 's',c.platform,from,
         c.item and string.format(' with %d %s',items,c.item) or '',last and string.format(' (the last %s)',tostring(last.where)) or ''),
         estimate and {value=have,scope='pods:'..c.platform..':'..tostring(c.item)} or nil
     end,
@@ -1065,9 +1079,10 @@ return function(api)
       for _,pos in ipairs(c.positions) do api.position(pos) end
     end
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
-    -- (batch33 A2) quality: item_count and (d22 batch117 BZ1) platform_ammo_below read it; one given elsewhere is refused
+    -- (batch33 A2) quality: item_count and (d22 batch117 BZ1) platform_ammo_below read it, and (d25 batch205 QR1)
+    -- pod_landed with item; one given elsewhere is refused
     if c.quality~=nil then
-      assert(kind=='item_count' or kind=='platform_ammo_below','quality applies to item_count and platform_ammo_below only (no other condition counts by quality)')
+      assert(kind=='item_count' or kind=='platform_ammo_below' or kind=='pod_landed','quality applies to item_count, platform_ammo_below and pod_landed only (no other condition counts by quality)')
       assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
         kind..' quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
     end
@@ -1196,6 +1211,11 @@ return function(api)
       assert(not ((c.drop_id or c.last_drop) and (c.item or c.at_least)),'drop_id and last_drop wait for one drop: no item or at_least')
       assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'item must be a known item')
       if c.at_least~=nil then number(c.at_least,1,1e9,'at_least') end
+      -- (d25 batch205 QR1) a fixed start, and one quality of item
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick==math.floor(c.since_tick) and c.since_tick>=0 and c.since_tick<=game.tick),
+        'pod_landed since_tick is a whole game tick 0..now ('..game.tick..'): pods landed after it count')
+      assert(not ((c.drop_id or c.last_drop) and c.since_tick~=nil),'drop_id and last_drop wait for one drop: no since_tick')
+      assert(c.quality==nil or c.item~=nil,'pod_landed quality goes with item; without it (or with "any") every quality of item counts')
     end
     if kind=='spoil_within' then
       assert(c.position~=nil,'spoil_within requires position (an assembler, furnace or biochamber)')

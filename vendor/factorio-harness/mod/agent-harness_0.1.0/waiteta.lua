@@ -5,6 +5,7 @@ return function(api)
   local function label(c)
     local text=c['until']..(c.technology and ' '..c.technology or c.item and ' '..c.item or c.platform and ' '..c.platform or '')
     if c['until']=='platform_ammo_below' then text=text..(c.area and ' in an area of ' or c.loop and ' in a belt loop of ' or ' aboard ')..tostring(c.platform)  -- (d22 batch117 BZ1) every place aboard; (d24 batch173) or a scope
+    elseif c['until']=='pod_landed' then text='pod_landed '..(c.item or 'pods')..' landed from '..tostring(c.platform)..(c.since_tick and ' since tick '..c.since_tick or '')  -- (d25 batch205 QR1) pods sent down, not the hub
     elseif c.item and c.platform then text=text..' in '..c.platform..' hub'
     elseif c.positions or c.position then
       local positions=c.positions or {c.position}; local parts={}
