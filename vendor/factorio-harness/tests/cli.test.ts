@@ -371,7 +371,7 @@ test('board and plan commands map to the board actions',async()=>{
     await cli(port,['board','--bot','astra']);
     await cli(port,['board','post','--bot','astra','--args','{"kind":"task","title":"x"}']);
     await cli(port,['board','request','--bot','astra','--args','{"title":"x","problem":"y"}']);
-    const dir=await (await import('node:fs/promises')).mkdtemp('.cache/plan-');
+    const dir=await tempDir('fh-plan-save-');  // (d24 batch186) not .cache/ in the checkout: the gate runs in the live one
     const file=`${dir}/plan.json`;
     await (await import('node:fs/promises')).writeFile(file,'[{"action":"walk","args":{"direction":"east","ticks":5}}]');
     await cli(port,['plan','save','east','--file',file,'--bot','astra']);
@@ -396,8 +396,8 @@ function compact(port:number,args:string[],env:Record<string,string>={},input?:s
 }
 test('say takes plain text, a file or stdin, without JSON quoting',async()=>{
   const seen:any[]=[];
-  const {writeFile,mkdtemp}=await import('node:fs/promises');
-  const dir=await mkdtemp('.cache/say-');
+  const {writeFile}=await import('node:fs/promises');
+  const dir=await tempDir('fh-say-');
   await writeFile(`${dir}/line.txt`,"it's \"done\" $HOME\n");
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length}};},async port=>{
     await cli(port,['say',"I'll","bring","gears",'--bot','astra']);
@@ -617,8 +617,8 @@ test('chat and board events take --since; chat --limit and --peek',async()=>{
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['chat',{}],['chat',{since:0,limit:5,peek:true}],['chat',{since:7}],['board_events',{since_seq:12}]]);
 });
 test('the clock line carries the time left from the deadline file',async()=>{
-  const {writeFile,mkdtemp}=await import('node:fs/promises');
-  const dir=await mkdtemp('.cache/deadline-');
+  const {writeFile}=await import('node:fs/promises');
+  const dir=await tempDir('fh-deadline-');
   const at=new Date(Date.now()+23*60000+30000);
   const pad=(n:number)=>String(n).padStart(2,'0');
   await writeFile(`${dir}/deadline.txt`,`${at.getFullYear()}-${pad(at.getMonth()+1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}\n`);

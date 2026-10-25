@@ -46,6 +46,7 @@ def start_cams_one():
     log = os.path.join(tmp, "calls.log")
     open(log, "w").close()
     e = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
+    e["POG_TEST"] = "1"   # (d24 batch186) a test run
     e.update(STUB_LOG=log, CAM_STATE=state, POG_CAM_WINPS=f"{bin_}/winps", POG_CAM_RCON=f"{bin_}/rcon",
              POG_CAM_OBS=f"{bin_}/obs", POG_CAM_WAIT="2", POG_CAM_POLL="0.2", POG_CAMS="1")
     r = subprocess.run([os.path.join(ROOT, "tools", "start-cams.sh"), "n", "34205"], cwd=ROOT, env=e,

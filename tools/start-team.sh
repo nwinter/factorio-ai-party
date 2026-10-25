@@ -23,6 +23,12 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
+# (d24 batch186) a plan only (POG_DRY_RUN=1, or a test run, POG_TEST=1) marks itself for tools/shift-change.sh, which
+# refuses while another start-team runs in this checkout: the gate runs test_resume's dry runs in the live checkout
+plan_mark=""
+if [ "${POG_DRY_RUN:-0}" = 1 ] || [ "${POG_TEST:-0}" = 1 ]; then
+  plan_mark="${TMPDIR:-/tmp}/pog-start-team-plan.$$"; : > "$plan_mark"; trap 'rm -f "$plan_mark"' EXIT
+fi
 run=$1 minutes=$2 stream=${3:-}
 world=${POG_WORLD_NAME:-n} game=34205 rcon=27025
 team=${POG_TEAM_FILE:-agent/team-nine.tsv}
@@ -79,7 +85,7 @@ has_agy=$(awk -F'\t' '!/^#/ && NF && $2 == "agy" {f = 1} END {print f + 0}' "$te
 quota() { python3 tools/quota_check.py "$team" "$minutes" ${POG_QUOTA_BRIEF:+--brief "$POG_QUOTA_BRIEF"} "$@" || true; }
 if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "plan for $run ($minutes min) on world $world (game $game, rcon $rcon), team $team: $(echo $members)"
-  qbrief=$(mktemp); trap 'rm -f "$qbrief"' EXIT
+  qbrief=$(mktemp); trap 'rm -f "$qbrief" ${plan_mark:+"$plan_mark"}' EXIT
   quota --save "$qbrief"
   python3 tools/code_check.py || true
   if [ -n "$resume" ]; then
@@ -318,7 +324,14 @@ fi
 # (d22 batch89 AY2) one pusher at a time: one already running (a shift not stopped, or one started by hand) is left
 # alone and named; push_live.py's own lock refuses a second copy too.
 if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; }; then
-  if running=$(pgrep -f "site/push_live.py --source" | tr '\n' ' ') && [ -n "$running" ]; then
+  # (d24 batch186) only a pusher run from this checkout counts: a test's stand-in in a temp folder (test_shift_recovery's
+  # other checkout, 18:03) made a live start skip its pusher
+  running=""
+  for pid in $(pgrep -f "site/push_live.py --source" || true); do
+    c=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    [ "$c" = "$(pwd -P)" ] || [ "$c" = "$PWD" ] && running="$running$pid "
+  done
+  if [ -n "$running" ]; then
     log "push_live already runs (pid $running): not started again; tools/stop-team.sh stops it with its run"
   else
     nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &

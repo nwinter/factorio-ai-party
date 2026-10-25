@@ -49,7 +49,7 @@ def main():
     assert '"$dir/fh" call ground_rules' in codex and 'brief.py" rules "$dir"' in codex, codex
     with tempfile.TemporaryDirectory() as d:
         subprocess.run(["bash", os.path.join(ROOT, "tools", "launch-agent.sh"), "--agy-loop", d, "gemini-x", "100000", "/dev/null"],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, env=dict(os.environ, POG_TEST="1"))
         loop = open(os.path.join(d, ".agy-loop.sh")).read()
         fresh = loop[loop.index("This is a fresh conversation"):]
         assert "digest-rules" in loop and "$(memr)" in fresh.split("elif")[0], fresh[:600]
