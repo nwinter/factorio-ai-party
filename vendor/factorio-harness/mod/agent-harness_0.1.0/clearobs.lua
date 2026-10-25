@@ -3,6 +3,11 @@
 -- player's planner marks them; those in reach are mined by hand (a timed construct over them, as move_to's mine_out
 -- does), the rest go to the construction robots; once every one is gone the call runs again, without clear_obstacles.
 -- A watch per agent, WAIT ticks at most. With none in the way the call runs at once.
+-- (d25 batch207 QT3, Sol #2351: plan 768's build steps with wait: true and clear_obstacles were marked ok at then_runs,
+-- the next step ran while the clearing was pending, and the plan ended done with 4 of 132 entities built) the job and
+-- its run again are the step's own: a queue step waits while they are pending (runtime busy: M.pending), and fails
+-- when the job ends without the call run again (M.ended: timed out, refused, or another action running then). The run
+-- again never interrupts another action: with one running (not the job's own hand mining) the call is not run.
 return function(api)
   local M = {}
   M.WAIT, M.MAX = 10 * 3600, 64
@@ -85,10 +90,54 @@ return function(api)
       end
       local ok, err = pcall(api.construct, p, {area={left_top={x=math.floor(x0) - 1, y=math.floor(y0) - 1}, right_bottom={x=math.ceil(x1) + 1, y=math.ceil(y1) + 1}}})
       out.mining = ok and string.format('%d in reach mined by hand now (a timed construct over them)', #near) or ('the hand mining could not start: ' .. tostring(err))
+      local act = ok and st.active and st.active[p.index]
+      if act then act.clear_job = true end
     end
     if #far > 0 then out.robots = string.format('%d out of reach left to the construction robots', #far) end
     out.then_runs = string.format('%s runs again once all %d are gone (watched up to %d min)', action, #obs, math.floor(M.WAIT / 3600))
     return out
+  end
+  -- How a job ended for a queue step (M.ended): ok with the call's reply, or not run with why.
+  local function ended(st, index, action, ok, text, result)
+    st.clear_end = st.clear_end or {}
+    st.clear_end[index] = {action=action, tick=game.tick, ok=ok, text=text, result=result}
+  end
+  -- (QT3) the job, or its run again due, of index for action: a line, else nil.
+  function M.pending(index, action)
+    local st = api.state()
+    local j = st.clear_jobs and st.clear_jobs[index]
+    if j and (not action or j.action == action) then
+      local left = 0
+      for _, e in ipairs(j.ents) do if e.valid then left = left + 1 end end
+      return string.format('clear_obstacles: %d of %d trees and rocks in the footprints still stand (marked %ds ago); %s runs again once all are gone (until tick %d)',
+        left, #j.ents, math.floor((game.tick - j.started) / 60), j.action, j.until_tick), j
+    end
+    for _, c in ipairs(st.then_calls or {}) do
+      if c.clear and c.index == index and (not action or c.call.action == action) then
+        return string.format('clear_obstacles: the trees and rocks are gone; %s runs again this tick', c.call.action), c
+      end
+    end
+  end
+  -- (QT3) a queue step interrupted while its job is pending: the job and its run again dropped (the marks stay); a line
+  function M.cancel(index, action)
+    local st = api.state()
+    local line = M.pending(index, action)
+    if not line then return nil end
+    if st.clear_jobs then st.clear_jobs[index] = nil; if next(st.clear_jobs) == nil then st.clear_jobs = nil end end
+    local keep = {}
+    for _, c in ipairs(st.then_calls or {}) do if not (c.clear and c.index == index) then keep[#keep+1] = c end end
+    st.then_calls = #keep > 0 and keep or nil
+    return line
+  end
+  -- (QT3) how the job of index ended at or after tick since: {action, tick, ok, text, result}, else nil.
+  function M.ended(index, since)
+    local e = api.state().clear_end
+    e = e and e[index]
+    if e and e.tick >= (since or 0) then return e end
+  end
+  -- (QT3) the run again's reply (runtime's then_calls loop)
+  function M.ran(index, action, ok, r)
+    ended(api.state(), index, action, ok, ok and string.format('%s ran again after the trees and rocks were gone', action) or string.format('%s run again after the trees and rocks were gone was refused: %s', action, tostring(r)), ok and r or nil)
   end
   -- Every second: a job whose obstacles are all gone runs its call (next tick, as then_call); one past WAIT ends.
   function M.tick()
@@ -97,14 +146,23 @@ return function(api)
       local left = 0
       for _, e in ipairs(j.ents) do if e.valid then left = left + 1 end end
       local last = st.last and st.last[index]
-      if left == 0 then
+      local busy = st.active and st.active[index]
+      if left == 0 and busy and not busy.clear_job then
+        -- (QT3) another action runs now: the call is not run over it
+        st.clear_jobs[index] = nil
+        local text = string.format('the %d trees and rocks in the footprints are gone; %s not run again: your %s runs (started after the clear)', #j.ents, j.action, tostring(busy.kind))
+        if last then last.cleared = text end
+        ended(st, index, j.action, false, text)
+      elseif left == 0 then
         st.clear_jobs[index] = nil
         st.then_calls = st.then_calls or {}
-        st.then_calls[#st.then_calls+1] = {index=index, call={action=j.action, args=j.args}}
+        st.then_calls[#st.then_calls+1] = {index=index, call={action=j.action, args=j.args}, clear=true, queued=j.queued}
         if last then last.cleared = string.format('the %d trees and rocks in the footprints are gone: %s runs again now', #j.ents, j.action) end
       elseif game.tick > j.until_tick then
         st.clear_jobs[index] = nil
-        if last then last.cleared = string.format('%d of %d trees and rocks still stand after %d min: %s not run again', left, #j.ents, math.floor(M.WAIT / 3600), j.action) end
+        local text = string.format('%d of %d trees and rocks still stand after %d min: %s not run again', left, #j.ents, math.floor(M.WAIT / 3600), j.action)
+        if last then last.cleared = text end
+        ended(st, index, j.action, false, text)
       end
     end
     if st.clear_jobs and next(st.clear_jobs) == nil then st.clear_jobs = nil end
