@@ -874,7 +874,7 @@ def dry_run(a):
         print(piece_md(p))
     if writer is not None:
         cost = sum(p.get("cost_usd") or 0 for p in pieces)
-        md.append(f"Model ${cost:.4f} for {len(pieces)} pieces ({writer.calls if hasattr(writer, 'calls') else '?'} calls).")
+        md.append(f"Model ${cost:.4f} for {len(pieces)} pieces ({sum(len(p.get('attempts') or []) for p in pieces)} calls).")
         with open(os.path.join(a.out, f"{run}-pieces.md"), "w") as f:
             f.write("\n".join(md) + "\n")
         log(f"[hourly] {len(pieces)} pieces in {a.out} ({run}-pieces.md)")
