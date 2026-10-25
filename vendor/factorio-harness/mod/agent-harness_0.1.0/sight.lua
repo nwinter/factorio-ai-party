@@ -9,7 +9,7 @@
 -- square of chunks within get_max_distance_of_nearby_sector_revealed (its quality's; 3 for radar: 7x7) of its own
 -- chunk on either axis, none without power; a roboport (powered or not) 2 chunks (5x5), a cargo landing pad 4 (9x9), a
 -- spidertron 2 (5x5; its chunk_exploration_radius reads 3). None from a character without a player (the bots), nor
--- a car or tank, driven or not, nor any turret, machine, pole, wall, chest, belt or lamp tried. A chunk stays visible
+-- a car or tank (a car with a driver too), nor any turret, machine, pole, wall, chest, belt or lamp tried. A chunk stays visible
 -- about 560-600 ticks after its source stops or goes. For each visible chunk the source: the nearest working radar
 -- whose scan covers it, else the nearest roboport, pad or spidertron covering it, else a radar not working (lit from
 -- before it stopped); for each chunk not visible, the nearest radar of ours and how many chunks outside its continuous

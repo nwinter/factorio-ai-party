@@ -13983,10 +13983,10 @@ Fixed besides gates:
     power (status 54) none. On world n the radar at chunk (-5,-18) lights x -8..-2, y -21..-15.
   - roboport, powered or not: 2 chunks (5x5), the same square at a chunk corner (the range is in chunks round its
     chunk); cargo-landing-pad 4 (9x9); spidertron 2 (5x5; its chunk_exploration_radius reads 3).
-  - none: a character with no player (the bots' are such), a car or tank, empty or with a character driving, and 36
-    other types tried alone (every turret kind, foundry, furnace, lab, rocket silo, agricultural tower, drill, beacon,
+  - none: a character with no player (the bots' are such), a car or tank (empty; a car with a character driving too), and 37 other
+    types tried alone (every turret kind, foundry, furnace, lab, rocket silo, agricultural tower, drill, beacon,
     pole, accumulator, solar panel, boiler, steam engine, nuclear and fusion reactors, fusion generator, chests, wall,
-    lamp, train stop, tank, lightning rod, heat pipe, pump, inserter, belt, pipe, land mine, combinators, speaker).
+    lamp, train stop, storage tank, lightning rod, heat pipe, pump, inserter, belt, pipe, land mine, combinators, speaker).
   - no prototype field gives a roboport's or pad's range (radar_range nil; get_radar_range absent).
   - after its source goes (a roboport destroyed) or stops (a radar's power cut) a chunk stays visible 563-594 ticks; a
     radar's long-range scan lights single chunks now and then (one at (2,-18) on world n, one at (14,-20) on the copy).
