@@ -102,7 +102,8 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "2. directors $(python3 tools/cams.py list) join one at a time (tools/start-cams.sh: each in the game before the next, up to ${POG_CAM_WAIT:-180} s, a stuck one restarted once; then OBS's camera captures rehooked)"
   for name in $members; do
     if [ -n "$resume" ]; then
-      if [ -f "$prev_dir/$name/notes.md" ]; then notes="notes.md from $prev_dir/$name ($(wc -l < "$prev_dir/$name/notes.md" | tr -d ' ') lines)"; else notes="fresh notes.md (none in $resume)"; fi
+      src=$(python3 tools/full_tools.py notes-from "$prev_dir" "$name" 2>/dev/null || true); src=${src:-$prev_dir}   # (tools/new-run.sh)
+      if [ -f "$src/$name/notes.md" ]; then notes="notes.md from $src/$name ($(wc -l < "$src/$name/notes.md" | tr -d ' ') lines)"; else notes="fresh notes.md (none in $resume)"; fi
       echo "3. bot $name: kept if the save has it, else created; $notes"
     else
       echo "3. bot $name: created; fresh notes.md"

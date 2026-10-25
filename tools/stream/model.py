@@ -1544,8 +1544,16 @@ class Model:
         verb = board_verb(e.get("change"))
         it = board["items"].get(e.get("id")) or {}
         kind = e.get("kind") or it.get("kind")
+        # (d24 batch175 QR1, viewer Aurora 17:02: "project 1816 showed done 5/5, then doing 1/5, then done again while
+        # its completion notes stayed") a restart reads the kept events from 0, 100 a poll, and a `board` read comes
+        # only every 15 s: in shift69 #1816's step event of tick 55848278 ("1 of 5 steps", doing) came in a later poll
+        # than the read that had it done at 56774930. An event older than the item's state leaves the item alone, and an
+        # old backlog event (backlog_old) does not make an item no read listed (the reads list every open one).
+        stale = isinstance(e.get("tick"), (int, float)) and isinstance(it.get("updated_tick"), (int, float)) \
+            and e["tick"] < it["updated_tick"]
+        unread = not it and self.backlog_old(e, "board_events")
         # keep the item cache moving between (slower) `board` reads, so claims and the request count stay current
-        if e.get("id") is not None:
+        if e.get("id") is not None and not stale and not unread:
             it = board["items"].setdefault(e["id"], {"id": e["id"]})
             it["title"] = e.get("title") or it.get("title")
             it["kind"] = kind

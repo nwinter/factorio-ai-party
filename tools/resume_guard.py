@@ -6,10 +6,15 @@ its scores.jsonl. Prints one line for start.log; exits 1 when the world is behin
 POG_RESUME_TICK_SLACK ticks (default 64800, 18 game minutes: world n autosaves every 15 minutes since d22 06:15, so
 after a crash, with no stop save, the newest autosave is up to 15 minutes older than the last score), so
 tools/start-team.sh refuses to go on (operator 17:00: shift13 started 3 game hours back from a stale save).
+A previous run with neither (a start that died before its agents played: killed, a refused deploy) gives the last tick
+of the nearest run up its resumed-from chain that has one (d24 batch175 QR2): before, the tick was unknown and any save
+was taken.
 """
 import json
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 SLACK = 64800  # 18 game minutes: one 15-minute autosave interval and a margin
 
@@ -20,7 +25,21 @@ def span(ticks):
 
 
 def previous(prev_dir):
-    """(tick, where it comes from) of the previous run's end, or (None, why not)."""
+    """(tick, where it comes from) of the previous run's end, up its resumed-from chain, or (None, why not)."""
+    from full_tools import chain
+    runs = chain(prev_dir)
+    for i, d in enumerate(runs):
+        tick, source = own(d)
+        if tick is not None:
+            if i:
+                source += (f" of {os.path.basename(d)}, up the resumed-from chain "
+                           f"({', '.join(os.path.basename(r) for r in runs[:i])}: no stopped.json or scores.jsonl)")
+            return tick, source
+    return None, "no stopped.json or scores.jsonl in " + ", ".join(runs)
+
+
+def own(prev_dir):
+    """(tick, where it comes from) of one run's end, or (None, None)."""
     p = os.path.join(prev_dir, "stopped.json")
     if os.path.exists(p):
         try:
@@ -40,7 +59,7 @@ def previous(prev_dir):
             best = t if best is None or t > best else best
     if best is not None:
         return best, "its last score in scores.jsonl"
-    return None, "no stopped.json or scores.jsonl in " + prev_dir
+    return None, None
 
 
 def check(tick, prev_tick, source, save="", slack=SLACK):
