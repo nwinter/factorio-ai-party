@@ -575,6 +575,7 @@ return function(api)
     local a, c = k:match('^(%a+)/(%a+)$')
     return string.format('%s, %s foundation', a, c == 'crosses' and 'crosses' or 'misses')
   end
+  local PASS = {}  -- (QS) the last result's pass: {job, tick, n, units (by name), names (in order)}
   function M.result(job, done, unpaged)
     local now = done and job.until_tick or game.tick
     local secs = math.max(0, now - job.start) / 60
@@ -590,14 +591,24 @@ return function(api)
       if not t then t = {name=n, seen=0, destroyed=0, hit=0, left_view=0, in_view=0, untracked=0}; names[n] = t end
       return t
     end
+    -- (d25 batch206 QS) one pass over the records: each one's class for the turrets' hits below, and the units by name
+    -- in this order for the page read in the same call (PASS)
+    local sampled = job.sampled or 0
+    local cls, units, order_n = {}, {}, {}
     for u, r in pairs(job.asts) do
       local k = key(r)
+      cls[u] = k
       local b = by[k]
       b.seen = b.seen + 1
       local out = r.out
-      if not out then out = (r.t >= (job.sampled or 0)) and 'in_view' or 'left_view' end
-      local nt = nrow(r.n)
+      if not out then out = r.t >= sampled and 'in_view' or 'left_view' end
+      local n = r.n
+      local nt = names[n]
+      if not nt then nt = {name=n, seen=0, destroyed=0, hit=0, left_view=0, in_view=0, untracked=0}; names[n] = nt end
       nt.seen, nt[out] = nt.seen + 1, nt[out] + 1
+      local g = units[n]
+      if not g then g = {}; units[n] = g; order_n[#order_n+1] = n end
+      g[#g+1] = u
       if out == 'destroyed' then
         b.destroyed = b.destroyed + 1
         b.destroyed_by = b.destroyed_by or {}
@@ -653,14 +664,16 @@ return function(api)
     -- turrets: their hits, damage and kills by the asteroid's class, ammunition used
     local rows, groups, gorder, used_by = {}, {}, {}, {}
     local fired, idle = 0, 0
+    PASS.job, PASS.tick, PASS.n, PASS.units, PASS.names = job, game.tick, job.nast, units, order_n
     for _, t in pairs(job.turrets) do
-      t.hits, t.dmg, t.kills = {}, {}, {}
+      local th, td, tk = {}, {}, {}
+      t.hits, t.dmg, t.kills = th, td, tk
       for u, h in pairs(t.ah) do
-        local r = job.asts[u]
-        local k = r and key(r) or 'untracked'
-        t.hits[k] = (t.hits[k] or 0) + h[1]
-        t.dmg[k] = (t.dmg[k] or 0) + h[2]
-        if h[3] > 0 then t.kills[k] = (t.kills[k] or 0) + h[3] end
+        local k = cls[u] or 'untracked'
+        th[k] = (th[k] or 0) + h[1]
+        td[k] = (td[k] or 0) + h[2]
+        local kh = h[3]
+        if kh > 0 then tk[k] = (tk[k] or 0) + kh end
       end
       local nh = sum(t.hits)
       local fired_any = nh > 0 or t.used > 0
@@ -918,6 +931,13 @@ return function(api)
     local kept = done and GROUPS[job]
     local groups, names, total, sorted
     if kept and kept.key == fkey then groups, names, total, sorted = kept.groups, kept.names, kept.total, kept.sorted
+    elseif not done and PASS.job == job and PASS.tick == game.tick and PASS.n == job.nast then
+      -- the result's pass of this call: its units by name, in the same order
+      groups, names, total, sorted = {}, {}, 0, {}
+      for _, n in ipairs(PASS.names) do
+        if matches(pick, n) then local g = PASS.units[n]; groups[n] = g; names[#names+1] = n; total = total + #g end
+      end
+      PASS.job, PASS.units, PASS.names = nil, nil, nil
     else
       groups, names, total, sorted = {}, {}, 0, {}
       local ok_name = {}
