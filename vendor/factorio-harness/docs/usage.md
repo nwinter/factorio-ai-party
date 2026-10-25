@@ -14327,6 +14327,56 @@ Fixed besides gates:
 - Test: tests/d24_batch189.lua (fails on main: "attempt to call a nil value (field 'guard_tick')").
 ## d24 batch182
 
+
+## d24 batch191 (QAG1, viewer Aurora site:4818 and site:4826)
+
+`spider_kite {vehicle?, position?, min_distance?, max_distance?, range?, radius?, min_health?, min_shield?, ammo_below?,
+retreat?, ticks?}` (spiderkite.lua): kite for a spidertron the agent rides (no `vehicle`) or sends by remote view
+(`vehicle`: unit_number or {x,y}, in a chunk our force sees, as `vehicle {remote}`). Only what a player has: both
+targeting switches on (its guns fire by themselves; back as they were at the end) and route targets as its remote sets
+them. Read every 10 ticks (nothing runs between): health, grid shield, rockets, enemies within `radius` (40) in chunks our
+force sees. A unit nearer than `min_distance` (16): a route away from the group's centre (the units within
+`max_distance`, 28) out to the band's far side, turned onto ground its legs stand on with a walkable straight line; a
+unit in the band: it stands; no unit within max_distance + 8 and a spawner or worm beyond `range` (34): toward it; units
+beyond the band only: it stands; none: back to `position`, then `clear`. Outcomes: `clear`, `low_health` (`min_health`
+0.4 or the standing retreat_guard's `health_below`), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
+`stalled`, `route_changed` (another call or a player set its route), `out_of_coverage` (by remote view), `destroyed`,
+`timed_out` (`ticks`, 3600). A low end with `retreat` {x,y} (default the standing retreat_guard's `to`; `false`: none)
+sends it there by `vehicle {go_to}`'s route (round water too), guns left on. Its go_to route is replaced at the start
+(the reply's `replaced`) and its go_to stall sampling ends. `last`: why, kills, kills_by, enemies_left, ammo_used,
+ammo_left, spidertron, turns, recovery, water, routed, retreat, targeting; status `active.spider_kite` says what it does.
+`fh call spider_kite --wait` waits and reports them; `timed_out` exits 0, as kite's.
+
+Water (spiderpath.lua, the addendum), for `spider_kite`'s legs back to `position` or toward a nest and for
+`vehicle {go_to}`: each straight leg is read tile by tile; over 12 tiles in a row with the `water_tile` layer it gets
+`LuaSurface.request_path` with that layer only and a 2x2 box (it walks over buildings and trees, as legs do); the path
+comes back thinned to points 12 tiles apart (each straight piece read again) and the route goes through them. go_to's
+reply says `water` {crossing, note}; the route change and a failed path (`the pathfinder found no path round the water
+to (x,y) (the target itself is on water)`) are said once in the sender's team alerts (the path often comes back
+within the go_to call, so in its own reply). batch189's retreat route goes round water the same way (its retreat record
+and status say `water`), and spider_kite is refused on a spidertron held on its retreat. A body standing over the water at a shore
+starts its path from the nearest dry tile. No progress (go_to: 10 s, now read as 1 tile nearer than its nearest, so a
+sway at a shore is no progress; spider_kite: 2 s): re-routed once (a path round the water, or spider_kite turned 60
+degrees), then with water within 16 tiles ahead shore recovery (its route goes first to the dry tile nearest the target
+on rings 4..24 tiles round it), then the stall line / `stalled`. A go_to route of more than 8 points reads as the first 4
+and the last 2.
+
+Engine facts (2.0.77, a copy of world n's 20:12 autosave):
+- `add_autopilot_destination` walks the straight line, about 0.22 tiles a tick; no waypoints are added and nothing paths
+  round water; at a wide lake it stands at the shore with the target kept. 2.0.77's changelog names no spidertron
+  pathing.
+- The legs' collision mask is {player, rail}; every tile that holds them off has `water_tile` (water, deepwater,
+  green and wube water, lava, ammoniacal ocean, brash ice, empty space, out of map). They stepped across a deepwater
+  strip 14 tiles wide; 16 stopped them.
+- `request_path` with collision_mask {water_tile} went round the lake (356 tiles, 291 points with a 1x1 box, 79 with a
+  3x3 one), in the tick after the request; a start or goal on water finds no path.
+- With nobody aboard only `auto_target_without_gunner` fires; with a script character (no player) in the driver seat
+  only `auto_target_with_gunner` fires. A grid's personal laser defense kills biters with both switches off.
+
+Cost on the copy (x86 under Rosetta): a scan with 30-40 enemies in view 0.14-0.17 ms median (p95 0.21-0.27, max 0.59),
+a back-off scan 0.22 ms median (p95 0.39); the first scan after a deploy 2.5 ms. Every 10 ticks: about 0.02-0.03 ms a
+tick averaged. A path result's handling (thinning, reads) 0.79 ms once. A go_to call 2.9-5.5 ms with or without water
+on its line (the reply's JSON dominates on the copy).
 - QY1 (Astra #2044: "Gleba six breeders uptime ~104 base craft/min, 156 completions/min while supply made ~149/min.
   Physical recipe 2 out plus 0.5 bonus, 1 seed returned => 260 gross/156 net. Does native production statistics or
   supply made already subtract ignored seed?"; "recipe-only supply consumers missed egg disposal burners ... Please
