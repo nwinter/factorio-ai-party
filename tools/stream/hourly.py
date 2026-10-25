@@ -5,6 +5,7 @@ aired through tour.py's machinery (prepare/render, the hush file, looks with cut
 
   python3 tools/stream/hourly.py dry-run --run-dir runs/shift73 [--hours 4] [--from HH:MM] [--render]
   python3 tools/stream/hourly.py run --run-dir runs/RUN          # the stream's helper (POG_HOURLY=1, start-team.sh)
+  python3 tools/stream/hourly.py repeats [--hours 24]            # NP4: analyst lines the 2 h topic rule holds back
 
 NP1 the producer: gather() reads the hour from the run folder: scores.jsonl (rockets, research, lab use, entity and
 platform counts, first row of the hour against its last), chronicle.jsonl (research, deaths, platforms created, lost,
@@ -1097,6 +1098,73 @@ def run(a):
     return 0
 
 
+# ---- NP4: the analyst beats' repeats -------------------------------------------------------------------------------
+def analyst_topics(logs_dir):
+    """{point text: topic} from the analyst's cycle logs (the caster logs keep a point's text, not its topic)."""
+    out = {}
+    for path in sorted(glob.glob(os.path.join(logs_dir, "analyst-*.jsonl"))):
+        for r in jsonl(path):
+            for p in (r.get("reply") or {}).get("talking_points") or []:
+                if isinstance(p, dict) and p.get("text"):
+                    out[str(p["text"])] = p.get("topic")
+    return out
+
+
+def analyst_beats(logs_dir, t0, t1):
+    """The analyst beats on air in [t0, t1): [{t, point: {topic, text, facts}, lines}] in time order, a beat being
+    one exchange (its lines share `exchange`; the first carries the facts)."""
+    beats, topics = {}, analyst_topics(logs_dir)
+    for path in caster_logs(logs_dir, t0, t1):
+        for r in jsonl(path):
+            if r.get("type") != "caster" or r.get("event") != "analyst" or not r.get("pushed"):
+                continue
+            ex = float(r.get("exchange") or 0)
+            if not t0 <= ex < t1:
+                continue
+            b = beats.setdefault(ex, {"t": ex, "point": None, "lines": 0, "log": rel(path)})
+            b["lines"] += 1
+            ap = (r.get("facts") or {}).get("analyst_point")
+            if isinstance(ap, dict) and ap.get("point"):
+                text = str(ap["point"])
+                b["point"] = {"topic": topics.get(text), "text": text,
+                              "facts": {k: v for k, v in ap.items() if k not in ("point", "kind", "pace")}}
+    return [b for _, b in sorted(beats.items())]
+
+
+def repeats(a):
+    """How many of the analyst beats and lines on air in the last --hours the 2 h rule (caster.analyst_held) would
+    have held back: each beat in order against the ones it let through."""
+    t1 = a.until if a.until else time.time()
+    t0 = t1 - a.hours * HOUR_S
+    beats = analyst_beats(a.logs, t0, t1)
+    aired, held, why = {}, [], {}
+    for b in beats:
+        if not b["point"]:
+            continue
+        w = caster.analyst_held(aired, b["point"], b["t"])
+        if w:
+            held.append(dict(b, why=w))
+            kind = w.split(" aired")[0].split(" at ")[0] if not w.startswith("topic") else "topic"
+            why["same topic, number not moved" if w.startswith("topic") else "much the same text" if w.startswith("much")
+                else "same subject and number"] = why.get("same topic, number not moved" if w.startswith("topic") else
+                                                          "much the same text" if w.startswith("much") else
+                                                          "same subject and number", 0) + 1
+        else:
+            caster.analyst_aired(aired, b["point"], b["t"])
+    with_point = [b for b in beats if b["point"]]
+    lines = sum(b["lines"] for b in beats)
+    out = {"from": time.strftime("%Y-%m-%d %H:%M", time.localtime(t0)), "to": time.strftime("%Y-%m-%d %H:%M", time.localtime(t1)),
+           "beats": len(beats), "beats_with_point": len(with_point), "lines": lines,
+           "last_beat": time.strftime("%Y-%m-%d %H:%M", time.localtime(beats[-1]["t"])) if beats else None,
+           "topics_known": sum(1 for b in with_point if b["point"]["topic"]),
+           "held_beats": len(held), "held_lines": sum(b["lines"] for b in held), "held_by": why}
+    print(json.dumps(out, indent=1))
+    if a.verbose:
+        for b in held:
+            print(f"{time.strftime('%d %H:%M', time.localtime(b['t']))}  {b['lines']} line(s)  {b['why']}: {b['point']['text'][:110]}")
+    return 0
+
+
 def parser():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1109,6 +1177,11 @@ def parser():
     d.add_argument("--logs", default=LOG_DIR, help="the caster and analyst logs")
     d.add_argument("--feed", default=FEED, help="the stream service, for the agents' pronouns (else the caster logs)")
     d.add_argument("--out", default=OUT_DIR)
+    q = sub.add_parser("repeats", help="NP4: the analyst beats on air the 2 h topic rule would have held back")
+    q.add_argument("--hours", type=float, default=24)
+    q.add_argument("--until", type=float, help="the window's end, epoch seconds (default now)")
+    q.add_argument("--logs", default=LOG_DIR)
+    q.add_argument("--verbose", "-v", action="store_true", help="list the beats held back")
     r = sub.add_parser("run", help="the stream's helper: a piece an hour, aired on the narrator channel")
     r.add_argument("--run-dir", required=True)
     r.add_argument("--model", default=MODEL, help="OpenRouter model id")
@@ -1123,7 +1196,7 @@ def parser():
 
 def main(argv=None):
     a = parser().parse_args(argv)
-    return {"dry-run": dry_run, "run": run}[a.cmd](a)
+    return {"dry-run": dry_run, "run": run, "repeats": repeats}[a.cmd](a)
 
 
 if __name__ == "__main__":

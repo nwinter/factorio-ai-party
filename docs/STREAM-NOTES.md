@@ -1713,7 +1713,7 @@ a host prompt.
   half the exchanges.
 - Tests: tools/stream/test_hoststory.py (plain_tests).
 
-## What changed this hour (2026-10-25, d20 batch197 NP1-NP3)
+## What changed this hour, and the analyst's repeats (2026-10-25, d20 batch197 NP1-NP4)
 From the hosts proposal, idea E (Nick d23 and d25: the tour's depth on the normal stream). tools/stream/hourly.py
 writes one prepared piece an hour for the narrator channel.
 - NP1, the producer. `gather(run_dir, t0, t1)` turns the hour into numbered rows, each with its source and a weight:
@@ -1772,10 +1772,20 @@ writes one prepared piece an hour for the narrator channel.
 - The switch: POG_HOURLY=1 (default 0). start-team.sh starts the helper with it and writes it to switches.env, and
   shift_change.py carries it. POG_HOURLY=1 in the operator's environment at a change turns it on (ENV_FIRST). Its
   model is POG_HOURLY_MODEL (default anthropic/claude-opus-5.5).
+- NP4, the analyst beats (caster.analyst_held, used by analyst_event): a point does not air while one of these aired
+  in the last 2 hours (ANALYST_TOPIC_GAP, was 30 minutes), unless its number has moved by a tenth or more (and at
+  least 1). Its number is its first numeric fact, else the first number in its text.
+  - its topic;
+  - much the same text;
+  - the same subject (caster.SUBJECTS, by the text's words: research, a pack colour, mining, machines off,
+    rockets, spoilage, power; attacks have none) with the same number of the same fact.
+
+  `hourly.py repeats [--hours 24] [-v]` replays the analyst beats on air in the caster logs through it, joining
+  each point's text to its topic in the analyst logs.
 - Cost (d25): the piece's model call is $0.022-0.038 on Opus 5.5, and twice that when a draft is refused. The
   narration's TTS is $0.039-0.048 (el-brian, ElevenLabs, 520-600 characters, about 40 s). So about $0.07-0.12 a
   piece, and one piece an hour.
-- Tests: tools/stream/test_hourly.py; test_shift_change.py (the switch).
+- Tests: tools/stream/test_hourly.py; test_hoststory.py analyst_tests (NP4); test_shift_change.py (the switch).
 
 ## Camera crops: the inset, and captures not hooked yet (2026-10-24, d24 batch136 PH2)
 - After the 21:05 shift change (shift66), cam3 read crop 0 at about 21:07, and the operator set it with crop_for.
