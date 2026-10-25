@@ -20262,7 +20262,7 @@ function M.tick_body(event)
   if M.delivwatch then pcall(M.delivwatch.pod_tick,event.tick) end  -- (AB7) watched pods read each tick near landing; none followed: one lookup
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
-  if event.tick%60==17 and state().endurance_readings then pcall(M.timed,'endurance.refresh',M.endurance.tick,event.tick) end  -- (QAC1) platform_endurance readings kept fresh while asked for: one a second at most
+  if event.tick%60==17 and state().endurance_readings then pcall(M.timed,'endurance.refresh',M.endurance.tick,event.tick) end  -- (batch195) drops batch187's kept platform_endurance readings once; none are kept now
   if M.beltsample and state().belt_flow then pcall(M.timed,'beltsample.tick',M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
   if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks
