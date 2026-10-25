@@ -230,6 +230,33 @@ return function(api)
     end
     return out
   end
+  -- (d25 batch205 QR1, Sol #2337) pods sent down from a platform that landed after since (land tick > since), on every
+  -- planet: pods, and with item how many of it (quality: that one; nil: every quality); last, the newest landed;
+  -- complete false when a planet's list is full and its oldest kept journey was sent after since (earlier ones dropped).
+  function M.landed_from(platform, since, item, quality)
+    local out = {pods=0, items=0, complete=true}
+    local key = item and (quality and quality ~= 'normal' and item .. '@' .. quality or item)
+    local prefix = item and not quality and item .. '@' or nil
+    for planet, list in pairs(store().by) do
+      if #list >= M.KEEP and list[1] and list[1].sent > since then out.complete = false; out.oldest = math.min(out.oldest or list[1].sent, list[1].sent) end
+      for i = #list, 1, -1 do
+        local r = list[i]
+        if r.sent < since - M.OPEN_TICKS then break end
+        if not r.up and r.platform == platform and r.landed and r.landed > since then
+          local n = 1
+          if item then
+            n = 0
+            for k, v in pairs(r.items or {}) do if k == key or (prefix and string.find(k, prefix, 1, true) == 1) then n = n + v end end
+          end
+          if n > 0 then
+            out.pods, out.items = out.pods + 1, out.items + (item and n or 0)
+            if not out.last or r.landed > out.last.landed then out.last = {landed=r.landed, dest=r.dest, planet=planet, id=r.id} end
+          end
+        end
+      end
+    end
+    return out
+  end
   local function items_text(t)
     local list = {}
     for k, v in pairs(t or {}) do list[#list+1] = {k=k, v=v} end

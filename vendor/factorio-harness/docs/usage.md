@@ -14537,6 +14537,39 @@ chunk our force sees.
 - Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
 
 
+## d25 batch205
+
+Engine facts below are from a copy of world n's _autosave8 (box time 08:42; tick 61955043 at the deploy), 2.0.77,
+under Rosetta.
+
+QR1 (Sol #2337): a queue wait on landed freight from a fixed start. Sol's finite 750 uranium-rounds-magazine pickup
+from Kestrel IVb to Aquilo takes longer than wait_until's 54000-tick maximum. pod_landed counted from the wait's first
+check. A held wait (`on_timeout: "hold"`) and a requeued one (the queue paused while it ran) went back into pending as
+a new step and counted from the resume. It read freight's receipts, the last 16 a platform.
+- `wait_until {until: "pod_landed", platform, item?, quality?, at_least?, since_tick?}`: pods sent down from the
+  platform that landed on any planet after `since_tick` (a whole tick 0..now), else after the wait's first check.
+  Counted from the pod ledger (podlog.lua M.landed_from: the journeys down with that platform name, landed tick after
+  the start; a planet's list walked from the newest until a journey sent 36000 ticks before the start). `quality`
+  goes with item: that quality only; without it, or with "any", every quality counts.
+- saw names the start tick ("since tick T" or "since the wait began (tick T)"), the newest landed pod's tick, pad and
+  planet. When a planet's list is full (1000) and its oldest kept journey was sent after the start, saw says so.
+- A held wait and a requeued wait keep their start (`pod_since`) and drop id (scheduler.lua hold and pause_inner). A
+  failed or replaced wait does not: its saw gives the tick for since_tick in a new step.
+- validate_condition checks since_tick and quality at submit and in queue_submit dry_run. On the copy dry_run refused
+  since_tick past now, since_tick 5.5, timeout 54001 and quality without item, and took the real step.
+- wait_line names "pod_landed ITEM landed from PLATFORM since tick T" (before, "in PLATFORM hub").
+- On the copy: Kestrel IVb's last uranium-rounds-magazine pod to Aquilo before the copy landed at 61923898 (200). A
+  platform-lane wait with since_tick 61900000 read "1 pod from Kestrel IVb landed since tick 61900000 with 200
+  uranium-rounds-magazine (normal quality) (the last at tick 61923898, landing pad (-8,-22) on aquilo)". A
+  Kestrel IVc wait held at 120 ticks (start 61972037) and resumed said "since the wait began (tick 61972037)".
+- Cost on the copy. The ledger held 3812 journeys (aquilo 654, fulgora 1000, gleba 296, nauvis 1000, vulcanus 862).
+  landed_from timed over 100 calls: 0.025 ms a call for start 61943185, 0.038 ms for 61900000, 0.44 ms for 59400000
+  (every journey kept). A wait checks every 10 ticks: 0.0025, 0.0038 and 0.044 ms a tick. profile_ticks 60 s before and
+  with the wait running: scheduler.wait_until rose from 720 calls / 107.1 ms to 1080 / 160.7 ms (0.149 ms a check,
+  waiteta included); scheduler.tick 0.343 and 0.329 ms a tick.
+- Tests: tests/d25_batch205.lua (run by tests/d25batch205.test.ts; fails on main: no landed_from, and with the
+  branch's conditions the resumed wait counts from tick 320002); tests/conditions.lua takes the new saw text.
+
 ## d25 batch201
 
 Engine facts below are from a copy of world n's 06:26 save (box time; tick 61469440), 2.0.77, under Rosetta.

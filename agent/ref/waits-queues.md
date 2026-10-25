@@ -3,15 +3,18 @@
   (`technology`; without it the research running now; a technology with levels, an infinite one too, is met once the
   level it was on when the wait began is done, or `level: N` is); `crafting_done`; `item_count` (`item`, `at_least` or `below`;
   `quality`: that quality only, `"any"` every quality summed, none the name alone, which counts normal quality only;
-  no other condition takes `quality`; `positions`: chests or machines of ours, summed, a silo's rocket cargo too (the item `rocket` is ammunition);
+  pod_landed takes it too, no other condition; `positions`: chests or machines of ours, summed, a silo's rocket cargo too (the item `rocket` is ammunition);
   default your inventory; `"surface":"nauvis"`: with positions, those chests there, alone, our logistic networks
   there (all of them summed), in the remote lane too; `network: {x,y}`: the one logistic network covering that spot;
   `platform`: the landed items in that hub, not incoming cargo or hub trash); `spoil_within` (`position`: an assembler,
   furnace or biochamber; `seconds` 1..3600; `item` optional: met when its input's first stack, of item or any,
   spoils or hatches within seconds; saw names it and the seconds left); `pod_landed` (`platform`, `item`?,
-  `at_least`?: pods sent down from it that landed since the wait began, by freight's receipts: received by a pad or
-  landed as a container; with `item`, how many of it; default 1; `drop_id: N` or `last_drop: true` (its latest drop
-  when the wait begins): that one drop, met once it has landed; in the remote and platform lanes too). A rocket's cargo loaded to N is `item_count` with
+  `quality`? (with item: that quality only; default every quality), `at_least`?, `since_tick`?: pods sent down from it
+  that landed on any planet after `since_tick`, else since the wait's first check, by the pod ledger (`shipment
+  {ledger: true}` pods; its last 1000 journeys a planet; saw says when the ledger starts after since_tick); with `item`,
+  how many of it; default 1; saw names the start tick; a held (`on_timeout: "hold"`) or requeued wait keeps its start;
+  `drop_id: N` or `last_drop: true` (its latest drop when the wait begins): that one drop, met once it has landed; in
+  the remote and platform lanes too). A rocket's cargo loaded to N is `item_count` with
   the silo's position; what a hub or a landing pad holds is `item_count` with `platform` or the pad's position;
   `rocket_ready` (`position`: the silo; `surface`: another planet's silo by remote view, a charted chunk, in the
   remote lane too); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts` is the same name;
