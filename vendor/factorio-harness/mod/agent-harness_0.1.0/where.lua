@@ -12,7 +12,9 @@ return function(api)
   local function title(s) return (tostring(s):gsub('^%l', string.upper)) end
   -- Where agent `index` is: {key, text, position, dead, offline}, or nil.
   -- A player in remote view is where its body is (physical_*).
-  local function place(index)
+  -- bare: resting is the rest's label alone, without the alert groups that go to it (pushalerts.lua reads places to
+  -- route those groups; d24 batch166: that note read places again, about 75-465 ms in the first reply each second)
+  local function place(index, bare)
     local b = api.bot(index)
     local t = b and b.travel
     if t and t.state ~= 'aboard' then
@@ -39,7 +41,7 @@ return function(api)
       local last = c and math.max(not c.peeked and c.call_tick or 0, c.wait_tick or 0) or nil
       out.offline = not (last and game.tick - last <= OFFLINE) or nil
       -- (d20 batch50 B1) a rest between turns pushed by its loop (rests.lua): said in place of offline
-      local r = api.resting and try(function() return api.resting(index) end)
+      local r = api.resting and try(function() return api.resting(index, bare) end)
       if r then out.resting, out.offline = r, nil end
     else
       out.offline = not p.connected or nil
