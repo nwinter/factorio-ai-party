@@ -55,7 +55,8 @@
   {"id": "bow-shot", "title": "During long flights the camera shows the ship's bow a few seconds each round", "area": "stream", "requested_by": [{"name": "Caleb", "ref": "site:4766"}], "status": "live", "dates": {"live": "2026-10-24 15:46"}, "work": "batch170"},
   {"id": "team-block-cost", "title": "Agent replies no longer pay about 100 ms for the team block while a teammate rests", "area": "harness", "requested_by": [], "status": "live", "dates": {"live": "2026-10-24 17:43"}, "work": "batch166 cp3", "note": "Cheap agent calls: median 129 ms in the 2 h before the deploy, 32 ms after.", "note_at": "2026-10-24 17:43", "note_status": "live"},
   {"id": "quality-delivery-watch", "title": "Delivery watches count one quality, or every quality, and say which", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2224"}], "status": "live", "dates": {"live": "2026-10-24 17:43"}, "work": "batch167"},
-  {"id": "ammo-reserve-scope", "title": "Ammo reserve guards can count one area or one belt loop aboard", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2241"}], "status": "live", "dates": {"live": "2026-10-24 17:43"}, "work": "batch173"}
+  {"id": "ammo-reserve-scope", "title": "Ammo reserve guards can count one area or one belt loop aboard", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2241"}], "status": "live", "dates": {"live": "2026-10-24 17:43"}, "work": "batch173"},
+  {"id": "quota-rest-carry", "title": "A quota rest is kept across a shift change", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4780"}], "status": "live", "dates": {"live": "2026-10-24 17:57"}, "work": "batch172", "note": "Muse's Sun 17:00 rest carried from shift70 into shift71.", "note_at": "2026-10-24 17:57", "note_status": "live"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
