@@ -91,6 +91,19 @@
   (14), until below `min_health` (0.4); outcomes `clear`, `low_health`, `out_of_ammo`, `retreated`, `timed_out`.
   `--wait` waits until it ends and reports the outcome, kills and ammo.
   Example: `./fh call kite --args '{"position":{"x":120,"y":-40},"radius":24}' --wait`
+- `spider_kite {vehicle?, position?, min_distance?, max_distance?, range?, radius?, min_health?, min_shield?,
+  ammo_below?, retreat?, ticks?}`: kite for a spidertron you ride (no `vehicle`) or send by remote view (`vehicle`: its
+  unit_number or {x,y}, in radar coverage). Its guns on auto (both targeting switches; back as they were at the end),
+  its legs moved by route targets as its remote sets them, read every 10 ticks: a unit nearer than `min_distance` (16):
+  a route away from the group out to `max_distance` (28; its rockets reach 36); a unit within the band: it stands; no
+  unit near and a nest beyond `range` (34): toward it; none left within `radius` (40): back to `position`, then
+  `clear`. A leg over wide water goes round it. No progress for 2 s: re-routed once, then shore recovery, then
+  `stalled`. Outcomes `clear`, `low_health` (0.4), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
+  `stalled`, `route_changed`, `out_of_coverage`, `destroyed`, `timed_out` (3600). On a low end with `retreat` {x,y}
+  (default your retreat_guard's `to`) its route goes there, guns on. Its go_to route is replaced at the start.
+  `--wait` reports `why`, kills, `kills_by`, `ammo_used`, `ammo_left`, `spidertron` (where, health, shield),
+  `recovery`, `retreat`.
+  Example: `./fh call spider_kite --args '{"vehicle":23036938,"retreat":{"x":-19,"y":-787}}' --wait`
 - `recover {corpse?, stop_after?, dry_run?}`: walks to your own corpses on your surface, nearest first, and takes
   everything; a corpse keeps what you carried and does not expire. One inside a worm's range is left out (`left_out`).
   `stop_after: 1`: the nearest only (`not_walked` names the rest); `corpse: {x,y}`: that one. `dry_run: true` walks
@@ -212,7 +225,10 @@
   shift-click; a list of points sets several); `"clear":true` empties it; the reply has `route`. `vehicle {position}`
   (or `remote: true, vehicle`) of a spidertron alone reads its route and `stalled`: no progress toward its target for
   10 s (where it stands, for how long, and what its legs cannot stand on in the straight line ahead), also said once in
-  your next reply and listed in status `spidertrons`. The game keeps a target its legs cannot reach (deep water).
+  your next reply and listed in status `spidertrons`. Its legs stand on no water, lava or space tile and step across
+  14 tiles of it at most: a straight leg over more than 12 gets a path round it (reply `water`; the route becomes the
+  path when it comes, said once in team alerts). No progress for 10 s with water ahead: one re-route, then shore
+  recovery (first to the dry tile nearest its target within 24 tiles), then `stalled`.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.

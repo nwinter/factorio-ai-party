@@ -161,6 +161,10 @@
     after the last read (a read after that begins a new stretch; the ended one's totals stay in `last_stretch`, expired); `power` lists it in `fusion_reactors`;
   - a built turret, artillery turret or wagon: `kills` and `damage_dealt`, its tooltip's Kills and Damage dealt, its own
     since it was placed (area rows and compact lines too; `turret_tally` watches them over a window);
+  - a turret, artillery, car or spidertron: `ammo_rounds` per ammunition inventory: items (a part-used magazine is one
+    item in `inventories`) and the rounds left in them (`partial`: stacks whose top magazine is part-used); area rows
+    and compact lines say `ammo: firearm-magazine*10 (93 rounds)`, the vehicle read's guns `5 firearm-magazine (43
+    rounds)`;
   - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
     a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
     holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
