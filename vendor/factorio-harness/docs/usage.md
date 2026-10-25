@@ -14162,6 +14162,43 @@ Fixed besides gates:
   number cost 8 us each) took the list phase of 1024 chunks from 23-30 ms to 6-8 ms on the copy.
 - Test: tests/d24_batch174.lua (fails on main: no sight.lua). Docs: agent/ref/movement-combat.md and the index (the
   waits-queues label without "standing" pays for `sight`: the codex core stays 21995 bytes).
+
+## d24 batch183
+
+- QZ1 (Sol #2055: a forecast for a hull not built yet; later: phase-bounded, a progress interval per 600 s).
+- What the forecast assumed (now in the reply as `basis`): legs from the route or schedule at the speed read; asteroids
+  as each connection's spawn chance averaged over the leg, a relative weight only; use = the moving ammunition rate of
+  the legs flown in the last 2 hours x this leg's weighted shots over theirs. The hull's width and the speed entered
+  only through that measured rate. pessimistic.speed keeps the use a minute, so a slower leg uses more in all.
+- The spawn rule, read on a copy of world n (2.0.77), with scripted test platforms held on a connection at a set
+  speed and distance:
+  - asteroids spawn on a line 72 tiles ahead of the platform's box (y = top - 72), across x from its left - 48 to its
+    right + 48: utility constants asteroid_spawning_offset {{-48,-72},{48,48}} (Sol's 96x120), readable at runtime
+    (prototypes.utility_constants). Height made no difference (10 against 110);
+  - their number per km flown (15 runs: widths 10..410, speeds 0.25..4 km a tick, nauvis-vulcanus, fulgora-aquilo,
+    gleba-aquilo, aquilo-solar-system-edge, 41..2054 asteroids a run): 0.0100 x (width + 96 + 20) x the summed spawn
+    chance, each kind's linear between the connection's points; the runs within about 6%. The kind mix follows each
+    kind's chance. Per tick it scales with speed (speed 1 to 4: x4.06); stopped on a connection, 1 asteroid in 120 s;
+  - on a schedule more spawn: in 120 s of their own flights Spindle 1.27, Kestrel II 1.57, Anvil 1.64, Asterion 2.53
+    times the rule. Asterion held at one place and speed met 1.8 times it with its schedule and 1.03 times with the
+    schedule removed; a test platform given a schedule 1.19. What sets the factor was not found; the reply gives the
+    range (on_path).
+- platform_endurance changes:
+  - forecast: true adds `basis` and `forecast_model` (per leg: part, km, minutes, asteroids by kind, total, on_path
+    {low, high}, per_600s, shots per ammunition held in the turrets aboard, as the forecast counts shots: fragments,
+    targets);
+  - `design {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same model for that box and speed, read only
+    (nothing built or imported), on the platform's route with its turrets' settings and our bonuses. mass is said and
+    not used. It is a light read: no rates, stock or production;
+  - `progress {from, to}` (with forecast or design) cuts each leg to that part of its connection, the way it is flown;
+    the forecast's own lines and use count that part too.
+- Check on the copy (paused, so both reads saw the same tick): design {width 102, speed = the speed read} on Asterion
+  gave forecast_model's part, km, minutes, asteroids, per_600s and shots on all 3 legs, with and without progress.
+- Cost on the copy (profile, one call a game second; the team block apart):
+  - design: 4.5-7.3 ms (the dispatch 6-9 ms; 114 turrets read on Asterion, 1.6 ms);
+  - forecast: Asterion 30-37 ms, Kestrel II 17-34, Swiftlet 11 (main: 30-50, 20, 12).
+  - The space connections are now looked up once; a design read looked them up several times a leg.
+- Test: tests/d24_batch183.lua (fails on main: design is ignored).
 ## d24 batch176
 
 - QS1 (Astra #2248: Asterion's explosives line reads stopped at its blocked end (13.5,38.5) while inserters take from
@@ -14198,50 +14235,8 @@ Fixed besides gates:
   finished samples stored and none running; 0.057 ms a tick with three exact samples running (worst second 5.5 ms over
   60 ticks).
 - Test: tests/d24_batch176.lua (fails on main: exact_tile is ignored and the line is read).
-## d24 batch177
 
-- QT1 (viewer Aurora 17:20: "On the site, could recurring reminders show schedule and last-run status separately? #151
-  is enabled every 20m but hidden from Active and labelled done despite its next run."). World n 17:25, one read
-  (`reminders {id: 151}` as a peek, 0.84 ms): #151 enabled true, done true, every 20m00s, next in 17m51s, last fired at
-  tick 58491420, states "sol done".
-  - Why: a one-time job that runs is switched off and marked done; `reminder_edit {every_ticks, enabled: true}` made
-    it repeat and turned it on, and done stayed. The site took done before enabled: "done" in place of the next run,
-    and out of Active (enabled and not done).
-  - reminders.lua: an edit that enables a job clears done, and a job's row gives done only while it is off, so a job
-    saved enabled and done (as #151 is) reads right without an edit.
-  - The site's reminders panel (site/static/live.js): each row gives "Schedule: every 20m00s, next in 18 min" (off; or
-    done for a job that is off and done), and apart from it the recipients' states as the last run's: "Last run 2 min
-    ago: Sol done" (from last_fired_tick and the reading's tick), "Not run yet:" when every state is scheduled. Active:
-    every enabled job. Finished: a job that is off, done or with every recipient done or acknowledged (an enabled job
-    whose last run everyone acknowledged was counted finished). The same in the collapsed view, Show all and the board
-    document's list.
-  - site/push_live.py: trimmed for size, the finished jobs (done and off) go first; an enabled job stays.
-- Tests: tests/d24_batch177.lua (fails on main: an enabled job read done) and site/test_reminders_schedule.py (fails on
-  main: push_live dropped #151 as finished; the row said done). site/test_reminders_all.py: Finished counts 15 where it
-  counted 22 (7 enabled jobs whose last run was acknowledged), and its trimming case's finished jobs are off.
-## d24 batch178 (Sol #2063, #2062, #2052)
-
-- QU1: a queued `wait_ticks` step's `result.completion` is its own: `{kind: "wait_ticks", outcome: "completed", tick,
-  ticks, start_tick, end_tick, waited}`. Before, it was the character's last completion (on the private copy of world n's
-  save: job-2 `wait_ticks` read job-1 `move_to` "arrived"). Any other queued step's completion and outcome come from
-  the character's last completion only when it was written since the step began; a timed step that left none (a
-  refusal, an instant finish) has no completion and the outcome `completed`.
-- QU2: `power {platform, by_cause: true}` reads the platform's own network (networks.platform_grid: the surface's
-  statistics; the network and capacity from its generators, panels and accumulators, found by type), names the platform
-  (`platform`; "no electric network of ours with a draw on platform Asterion (platform-16)" when there is none), and
-  each network row has `made_by` (by name and quality) and, on a platform, `capacity_kw` and `platform_network`. On the
-  copy, Asterion: network 20579, draw 39,409 kW, made 39,409 kW, capacity 280,266 kW, consumers and producers the
-  same as the plain read's `platform_power`. Cost (`profile_ticks` part `powercause.read`, the copy): Swiftlet 0.5-0.7
-  ms, Asterion 2.0-2.2 ms (13.5-15.1 ms with platform_power's scan of all 8,429 entities). World n, the game reads of
-  the new path (typed find and statistics): Chalk 0.19 ms, Swiftlet 0.32 ms, Meridian-V 0.40 ms, Kestrel II 0.69 ms,
-  Asterion 1.51 ms.
-- QU3: `requests` `section` is an index as the sections were before the call, or a logistic group's name (the one
-  section in it; none or several refused, naming them). A `construction_requests` switch in the same call inserts or
-  removes the game's section at 1 and the manual sections keep their order: the section named is found again by its
-  place among them and written (`section_moved`: "section 15 (as the call found it) is section 16 after
-  construction_requests on switched the game's section in: the call wrote section 16"). A write's reply has
-  `section_before` and `section_after` {index, group, active}. On the copy, Asterion: construction_requests false with
-  section 16 active true switched on "Astra2238 production upgrade pickup", now section 15.
+## d24 batch187
 
 ## d24 batch190 (QAF1, operator 19:56)
 
@@ -14307,3 +14302,29 @@ Fixed besides gates:
   breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
   (unchanged: the scan).
 - Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
+- QAC1: the plain platform_endurance forecast under 10 ms a call. Where the time went, on a copy of world n's 19:22
+  autosave (timing marks in the read):
+  - Asterion, forecast true: the forecast 17-27 ms (flown legs 1.5, the turret scan 2.8, the legs loop 7.5, targets
+    2.6, damage rows 2.3, and batch183's model scanning the turrets again); the ammunition rows 4.7-8.2; route and legs
+    1.8-3.8; stock places 1.6-4; the machine status scan 1.7-6; fluids, power and the fuel outlook 1-3.6 each.
+  - Encoding the reply (control.lua): 12-15 ms on the copy for Asterion's 422 numbers (about 38 us a number there, a
+    string 0.2 us); world n writes a number in about 3.9 us (d24 batch166 cp3), so about 1.7 ms. Not changed.
+- What changed:
+  - The last complete reading of a platform for the same arguments (route, forecast, pessimistic, progress) is kept in
+    storage (plain data: every peer holds the same) and answered for 60 s with `reading` {tick, age_s, fresh,
+    refresh_s, note}. An older or missing one is read in the call; `fresh: true` reads now. At most 12 kept, none over
+    10 minutes old. The reply keeps every field.
+  - A reading asked for within 3 minutes is read again in the background (endurance.refresh, on tick%60 == 17) once
+    45 s old, the oldest first, one a second at most; a caller gone drops it. Each such read costs one tick what one
+    call cost before. It is not split over ticks: the read's working state (closures, the ammunition model) cannot be
+    kept in storage, and state kept outside it would differ on a client that joins later.
+  - batch183's model takes the forecast's turret scan and shots in the same call instead of scanning again.
+- Same figures: with the copy paused, main's reply and this branch's (fresh: true) for Swiftlet, Kestrel II and
+  Asterion agree on every field main gives (the branch adds basis, forecast_model and reading).
+- Cost on the copy (profile, one call a game second; the team block apart; encode timed apart):
+  - answered from a reading: read 1.1-2.9 ms; encode 3-6 ms with the numeric tables left out, 13.8 ms with them (the
+    copy's number cost; about 1.7 ms on world n);
+  - a call that reads: Asterion 24-39 ms, Kestrel II 16, Swiftlet 12 (as before);
+  - background reads over 180 s with 3 readings asked for every 30 s: 12 reads of 17-57 ms each, 354 ms in all
+    (0.033 ms a tick on average); the calls found readings 0.5-44.6 s old.
+- Test: tests/d24_batch187.lua (fails on main: no handler).
