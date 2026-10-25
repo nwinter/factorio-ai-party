@@ -46,7 +46,18 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
   local function r3(v) return math.floor(v * 1000 + 0.5) / 1000 end
-  local function at(x, y) return string.format('(%g,%g)', r1(x), r1(y)) end
+  -- (d25 batch206 QS) string.format('%g', v) for v a multiple of 0.1 (positions rounded to a tenth), by %d: %g costs
+  -- about 2 us a number in the game, %d 0.3
+  local function g1(v)
+    local n = math.floor(v * 10 + 0.5)
+    if n > -1000000 and n < 1000000 then
+      if n % 10 == 0 then return string.format('%d', n / 10) end
+      local a = n < 0 and -n or n
+      return string.format(n < 0 and '-%d.%d' or '%d.%d', math.floor(a / 10), a % 10)
+    end
+    return string.format('%g', v)
+  end
+  local function at(x, y) return '(' .. g1(r1(x)) .. ',' .. g1(r1(y)) .. ')' end
   local function store() local s = api.state(); s.asteroid_watch = s.asteroid_watch or {}; return s.asteroid_watch end
   -- the operator profiler's parts (profile_ticks): asteroid_watch.find, .project, .ammo
   local function timed(label, fn, ...) if api.timed then return api.timed(label, fn, ...) end return fn(...) end
@@ -139,11 +150,15 @@ return function(api)
     if steps >= M.WALK_STEPS then out.unfinished = true end
     return out
   end
+  local KEYS = {}  -- (d25 batch206 QS) the class texts by approach, made once (a read made one a record and hit)
   local function key(r)
     local pj = r.prj
     if not pj then return 'unknown' end
-    if pj.approach == 'clear' then return 'clear' end
-    return pj.approach .. (pj.crosses and '/crosses' or '/misses')
+    local a = pj.approach
+    if a == 'clear' then return 'clear' end
+    local t = KEYS[a]
+    if not t then t = {a .. '/crosses', a .. '/misses'}; KEYS[a] = t end
+    return pj.crosses and t[1] or t[2]
   end
   M.key = key
   local function region(hull, pos)
@@ -560,6 +575,7 @@ return function(api)
     local a, c = k:match('^(%a+)/(%a+)$')
     return string.format('%s, %s foundation', a, c == 'crosses' and 'crosses' or 'misses')
   end
+  local PASS = {}  -- (QS) the last result's pass: {job, tick, n, units (by name), names (in order)}
   function M.result(job, done, unpaged)
     local now = done and job.until_tick or game.tick
     local secs = math.max(0, now - job.start) / 60
@@ -575,14 +591,24 @@ return function(api)
       if not t then t = {name=n, seen=0, destroyed=0, hit=0, left_view=0, in_view=0, untracked=0}; names[n] = t end
       return t
     end
+    -- (d25 batch206 QS) one pass over the records: each one's class for the turrets' hits below, and the units by name
+    -- in this order for the page read in the same call (PASS)
+    local sampled = job.sampled or 0
+    local cls, units, order_n = {}, {}, {}
     for u, r in pairs(job.asts) do
       local k = key(r)
+      cls[u] = k
       local b = by[k]
       b.seen = b.seen + 1
       local out = r.out
-      if not out then out = (r.t >= (job.sampled or 0)) and 'in_view' or 'left_view' end
-      local nt = nrow(r.n)
+      if not out then out = r.t >= sampled and 'in_view' or 'left_view' end
+      local n = r.n
+      local nt = names[n]
+      if not nt then nt = {name=n, seen=0, destroyed=0, hit=0, left_view=0, in_view=0, untracked=0}; names[n] = nt end
       nt.seen, nt[out] = nt.seen + 1, nt[out] + 1
+      local g = units[n]
+      if not g then g = {}; units[n] = g; order_n[#order_n+1] = n end
+      g[#g+1] = u
       if out == 'destroyed' then
         b.destroyed = b.destroyed + 1
         b.destroyed_by = b.destroyed_by or {}
@@ -638,14 +664,16 @@ return function(api)
     -- turrets: their hits, damage and kills by the asteroid's class, ammunition used
     local rows, groups, gorder, used_by = {}, {}, {}, {}
     local fired, idle = 0, 0
+    PASS.job, PASS.tick, PASS.n, PASS.units, PASS.names = job, game.tick, job.nast, units, order_n
     for _, t in pairs(job.turrets) do
-      t.hits, t.dmg, t.kills = {}, {}, {}
+      local th, td, tk = {}, {}, {}
+      t.hits, t.dmg, t.kills = th, td, tk
       for u, h in pairs(t.ah) do
-        local r = job.asts[u]
-        local k = r and key(r) or 'untracked'
-        t.hits[k] = (t.hits[k] or 0) + h[1]
-        t.dmg[k] = (t.dmg[k] or 0) + h[2]
-        if h[3] > 0 then t.kills[k] = (t.kills[k] or 0) + h[3] end
+        local k = cls[u] or 'untracked'
+        th[k] = (th[k] or 0) + h[1]
+        td[k] = (td[k] or 0) + h[2]
+        local kh = h[3]
+        if kh > 0 then tk[k] = (tk[k] or 0) + kh end
       end
       local nh = sum(t.hits)
       local fired_any = nh > 0 or t.used > 0
@@ -814,11 +842,13 @@ return function(api)
     local out = {}
     if job.turrets then
       for _, t in pairs(job.turrets) do
+        local label  -- (QS) a turret's text made once a read, when one of the set is in its hits
         for u, h in pairs(t.ah) do
           if set[u] then
             local l = out[u]
             if not l then l = {}; out[u] = l end
-            l[#l+1] = {turret=t.name .. ' ' .. at(t.position.x, t.position.y), hits=h[1], damage=r1(h[2]), killed=h[3] > 0 or nil}
+            label = label or t.name .. ' ' .. at(t.position.x, t.position.y)
+            l[#l+1] = {turret=label, hits=h[1], damage=r1(h[2]), killed=h[3] > 0 or nil}
           end
         end
       end
@@ -856,6 +886,33 @@ return function(api)
     job.hitmap = map
     for _, r in pairs(job.asts) do r.queued = nil end
   end
+  -- (d25 batch206 QS) the tracked records of a name in the order the pages give them: first seen, then unit. job.asts
+  -- is filled as asteroids are first seen and pairs walks it in that order, so a group comes nearly sorted: only the
+  -- units first seen in the same read are sorted (a full sort when the order is not so). A done watch's groups are kept
+  -- (GROUPS, by watch and filter): its records no longer change.
+  local GROUPS = setmetatable({}, {__mode='k'})
+  local function order(job, g)
+    local asts = job.asts
+    local n = #g
+    for i = 2, n do
+      if asts[g[i - 1]].s0 > asts[g[i]].s0 then
+        table.sort(g, function(a, b) local ra, rb = asts[a], asts[b]; if ra.s0 ~= rb.s0 then return ra.s0 < rb.s0 end return a < b end)
+        return
+      end
+    end
+    local i = 1
+    while i <= n do
+      local s0, j = asts[g[i]].s0, i
+      while j < n and asts[g[j + 1]].s0 == s0 do j = j + 1 end
+      if j > i then
+        local run = {}
+        for k = i, j do run[#run+1] = g[k] end
+        table.sort(run)
+        for k = i, j do g[k] = run[k - i + 1] end
+      end
+      i = j + 1
+    end
+  end
   -- out: the result (a copy); the rows come from job.asts (running, or kept when done); a watch done before they were
   -- kept has its old trajectories (old)
   function M.page(out, job, pick, old)
@@ -869,14 +926,33 @@ return function(api)
       return out
     end
     -- one pass: the picked records by name; the names rarest first; only the groups the page reaches are sorted
-    local groups, names, total = {}, {}, 0
-    for u, r in pairs(job.asts) do
-      if matches(pick, r.n) then
-        local g = groups[r.n]
-        if not g then g = {}; groups[r.n] = g; names[#names+1] = r.n end
-        g[#g+1] = u
-        total = total + 1
+    local done = job.result ~= nil and job.turrets == nil
+    local fkey = pick.text or ''
+    local kept = done and GROUPS[job]
+    local groups, names, total, sorted
+    if kept and kept.key == fkey then groups, names, total, sorted = kept.groups, kept.names, kept.total, kept.sorted
+    elseif not done and PASS.job == job and PASS.tick == game.tick and PASS.n == job.nast then
+      -- the result's pass of this call: its units by name, in the same order
+      groups, names, total, sorted = {}, {}, 0, {}
+      for _, n in ipairs(PASS.names) do
+        if matches(pick, n) then local g = PASS.units[n]; groups[n] = g; names[#names+1] = n; total = total + #g end
       end
+      PASS.job, PASS.units, PASS.names = nil, nil, nil
+    else
+      groups, names, total, sorted = {}, {}, 0, {}
+      local ok_name = {}
+      for u, r in pairs(job.asts) do
+        local n = r.n
+        local ok = ok_name[n]
+        if ok == nil then ok = matches(pick, n); ok_name[n] = ok end
+        if ok then
+          local g = groups[n]
+          if not g then g = {}; groups[n] = g; names[#names+1] = n end
+          g[#g+1] = u
+          total = total + 1
+        end
+      end
+      if done then GROUPS[job] = {key=fkey, groups=groups, names=names, total=total, sorted=sorted} end
     end
     table.sort(names, function(a, b) local sa, sb = seen[a] or 0, seen[b] or 0; if sa ~= sb then return sa < sb end return a < b end)
     local pages = math.max(1, math.ceil(total / per))
@@ -885,7 +961,7 @@ return function(api)
     for _, n in ipairs(names) do
       local g = groups[n]
       if i + #g >= from and i < to then
-        table.sort(g, function(a, b) local ra, rb = job.asts[a], job.asts[b]; if ra.s0 ~= rb.s0 then return ra.s0 < rb.s0 end return a < b end)
+        if not sorted[n] then order(job, g); sorted[n] = true end
         for k = math.max(1, from - i), math.min(#g, to - i) do picked[#picked+1] = g[k] end
       end
       i = i + #g

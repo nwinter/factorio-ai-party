@@ -61,11 +61,22 @@ return function(api)
     memo.tick, memo.force, memo.ref, memo.src = tick, fname, force, out
     return out
   end
+  -- (d25 batch206 QS) a technology prototype's level and max_level, read once a name (a prototype read each call)
+  local PT = {}
+  local function proto_levels(t, name)
+    local v = PT[name]
+    if v == nil then
+      local pt = try(function() return t.prototype end)
+      v = pt and {level=pt.level, max_level=pt.max_level} or false
+      PT[name] = v
+    end
+    return v or nil
+  end
   function M.read_sources(force)
     local out = {}
     for name, effs in pairs(techs()) do
       local t = try(function() return force.technologies[name] end)
-      local pt = t and try(function() return t.prototype end)
+      local pt = t and proto_levels(t, name)
       local n = pt and M.levels(t, pt) or 0
       if n > 0 then
         local base = (name:gsub('%-%d+$', ''))

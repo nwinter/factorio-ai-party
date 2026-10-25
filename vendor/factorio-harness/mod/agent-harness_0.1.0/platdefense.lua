@@ -22,18 +22,45 @@ return function(api)
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
   local SIDES = {{0, -1, 'north'}, {1, 0, 'east'}, {0, 1, 'south'}, {-1, 0, 'west'}}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
-  local function at(q) return string.format('(%g,%g)', math.floor(q.x * 10 + 0.5) / 10, math.floor(q.y * 10 + 0.5) / 10) end
+  -- (d25 batch206 QS) what a read can keep: a turret prototype's attack parameters by name and a collector prototype's
+  -- front by name and facing (prototypes do not change in a game); and per platform surface the hull's sides with the
+  -- tile counts and turrets they were read from (hull_cached)
+  local PROTO, FRONT, HULL = {}, {}, {}
+  local function proto_of(t)
+    local name = t.name
+    local r = PROTO[name]
+    if not r then
+      local ap = try(function() return t.prototype.attack_parameters end) or {}
+      r = {range=ap.range or 0, min_range=ap.min_range or 0, turn=ap.turn_range or 1, cats=ap.ammo_categories or {}}
+      PROTO[name] = r
+    end
+    return r
+  end
+  local function get_ignore(t) return t.ignore_unprioritised_targets end
+  -- (d25 batch206 QS) string.format('%g', v) for v a multiple of 0.1 (positions rounded to a tenth), by %d: %g costs
+  -- about 2 us a number in the game, %d 0.3
+  local function g1(v)
+    local n = math.floor(v * 10 + 0.5)
+    if n > -1000000 and n < 1000000 then
+      if n % 10 == 0 then return string.format('%d', n / 10) end
+      local a = n < 0 and -n or n
+      return string.format(n < 0 and '-%d.%d' or '%d.%d', math.floor(a / 10), a % 10)
+    end
+    return string.format('%g', v)
+  end
+  local function at(q) return '(' .. g1(math.floor(q.x * 10 + 0.5) / 10) .. ',' .. g1(math.floor(q.y * 10 + 0.5) / 10) .. ')' end
   local function key(x, y) return (x + 32768) * 65536 + (y + 32768) end
   local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
   local SIZES = {'small', 'medium', 'big', 'huge'}
   local KINDS = {'metallic', 'carbonic', 'oxide', 'promethium'}
   -- what a turret engages: nil for every asteroid, else the set of names on its priority list
   local function engages(t)
-    if try(function() return t.ignore_unprioritised_targets end) ~= true then return nil end
+    local ok, ign = pcall(get_ignore, t)
+    if not ok or ign ~= true then return nil end
     local set = {}
     for i = 1, 64 do
-      local v = try(function() return t.get_priority_target(i) end)
-      if not v then break end
+      local okv, v = pcall(t.get_priority_target, i)
+      if not (okv and v) then break end
       set[v.name] = true
     end
     return set
@@ -96,7 +123,8 @@ return function(api)
     else armed = (try(function() local fb = t.fluidbox[1]; return fb and fb.amount end) or 0) > 0 end
     local only = engages(t)
     -- its arc (turn_range under a full turn): facing and half the arc in radians
-    local turn = try(function() return t.prototype.attack_parameters.turn_range end) or 1
+    local pr = proto_of(t)
+    local turn = pr.turn
     local dir = try(function() return t.direction end) or 0
     local face, half, arc
     if turn < 1 then
@@ -107,8 +135,7 @@ return function(api)
     for name in pairs(only or {}) do listed[#listed+1] = name end
     table.sort(listed)
     return {entity=t, name=t.name, type=t.type, position=t.position, face=face, half=half, arc=arc, facing=arc and (COMPASS[dir] or dir) or nil,
-      arc_degrees=arc and math.floor(turn * 3600 + 0.5) / 10 or nil, range=try(function() return t.prototype.attack_parameters.range end) or 0,
-      min_range=try(function() return t.prototype.attack_parameters.min_range end) or 0, only=only,
+      arc_degrees=arc and math.floor(turn * 3600 + 0.5) / 10 or nil, range=pr.range, min_range=pr.min_range, only=only,
       engages=only and (#listed > 0 and 'only ' .. table.concat(listed, ', ') .. ' (ignores the rest)' or 'nothing (ignores every target off its empty priority list)') or 'every asteroid',
       ammo=ammo, held_rows=rows, rounds=t.type == 'ammo-turret' and rounds or nil, empty=t.type == 'ammo-turret' and items == 0, armed=armed,
       unarmed=not armed and (t.type == 'ammo-turret' and 'no ammo' or t.type == 'electric-turret' and 'no energy' or 'no fluid') or nil, feed=feed or (t.type == 'ammo-turret' and 'nothing (by hand)' or t.type == 'electric-turret' and 'power' or 'pipe')}
@@ -148,6 +175,18 @@ return function(api)
     end
     return pos
   end
+  -- a built collector's front: its prototype's rule read once a name and facing (FRONT: the offset, or false for none)
+  local function collector_front(c)
+    local pos, dir = c.position, c.direction
+    local k = string.format('%s|%d', c.name, dir)
+    local off = FRONT[k]
+    if off == nil then
+      local f = front_of(c.prototype, {x=0, y=0}, dir)
+      off = (f.x ~= 0 or f.y ~= 0) and f or false
+      FRONT[k] = off
+    end
+    return off and {x=pos.x + off.x, y=pos.y + off.y} or pos
+  end
   -- the turrets whose range reaches q (past their minimum range, within their arc); outside: those whose range alone
   -- would reach it, with how far off their arc it lies
   local function covering(turrets, q)
@@ -173,12 +212,13 @@ return function(api)
   -- per size: covered when every kind of that size is engaged by one of list; else the kinds none engages. Tiles
   -- reached by the same turrets share one answer (memo, per read).
   local memo = {}
+  local IDS = {}  -- (QS) one buffer for the ids (a table a call was made for every edge tile)
   local function by_size(list, kinds)
-    local ids = {}
+    local ids = IDS
     -- (d21 batch72 AH2) each turret's id as text made once: a number turned into text costs about 8 µs in the game's Lua,
     -- and this ran for every edge tile (200 ms on a 15,357-tile hull)
     for i, t in ipairs(list) do local k = t.sid; if not k then k = string.format('%d', t.idx); t.sid = k end; ids[i] = k end
-    local k = table.concat(ids, ',')
+    local k = table.concat(ids, ',', 1, #list)
     if memo[k] then return memo[k] end
     local out = {}
     for _, size in ipairs(SIZES) do
@@ -324,6 +364,84 @@ return function(api)
     local sides = {}
     for _, t in ipairs(tiles) do edge_tile(set, grid, t.x, t.y, keep, kinds, sides) end
     return side_lines(sides, field, words_second, lines, prefix)
+  end
+  -- (d25 batch206 QS) the built hull's sides from its tiles' positions (xs, ys), as hull_sides gives them: the hull held as
+  -- an array over its box, a tile's four neighbours read by index (a table keyed by position rehashed as it grew, and
+  -- each tile's neighbours were four calls: 70 ms of Asterion's 22,015 tiles)
+  local function hull_sides_box(xs, ys, turrets, keep, kinds, field, words_second, lines)
+    local n = #xs
+    local x0, x1, y0, y1 = math.huge, -math.huge, math.huge, -math.huge
+    for i = 1, n do
+      local x, y = xs[i], ys[i]
+      if x < x0 then x0 = x end
+      if x > x1 then x1 = x end
+      if y < y0 then y0 = y end
+      if y > y1 then y1 = y end
+    end
+    local H, W = y1 - y0 + 3, x1 - x0 + 3
+    if n == 0 or W * H > 4 * n + 4096 then
+      local xy = {}
+      for i = 1, n do xy[i] = {x=xs[i], y=ys[i]} end
+      return hull_sides(xy, turrets, keep, kinds, field, words_second, lines)
+    end
+    local set = {}
+    for i = 1, W * H do set[i] = false end
+    -- (x, y) at (x - x0 + 1) * H + (y - y0 + 1) + 1: every neighbour of a tile is inside the box
+    for i = 1, n do set[(xs[i] - x0 + 1) * H + ys[i] - y0 + 2] = true end
+    local grid = reach_grid(turrets)
+    local sides = {}
+    local offs = {-1, H, 1, -H}  -- SIDES: north, east, south, west
+    for i = 1, n do
+      local x, y = xs[i], ys[i]
+      local k = (x - x0 + 1) * H + y - y0 + 2
+      if not (set[k - 1] and set[k + H] and set[k + 1] and set[k - H]) then
+        local m = edge_mask(grid, x, y, keep, kinds)
+        for d = 1, 4 do
+          if not set[k + offs[d]] then
+            local name = SIDES[d][3]
+            local sd = sides[name]
+            if not sd then sd = {edge=0, list={}}; sides[name] = sd end
+            sd.edge = sd.edge + 1
+            sd.list[sd.edge] = {x=x, y=y, m=m}
+          end
+        end
+      end
+    end
+    return side_lines(sides, field, words_second, lines)
+  end
+  -- (QS) the hull's sides kept per surface while what they come from is as it was: every foundation tile at the same
+  -- place (the find read again, its positions compared) and each turret's unit number, position, reach, arc, priority
+  -- list and whether it is armed now. Asterion's 22,015 tiles: about 23 ms checked (the find and its positions).
+  local FOUNDATION = 'space-platform-foundation'
+  local SIG = 9
+  local function hull_cached(s, turrets, all_armed, kinds, lines)
+    local sig = {}
+    for i, t in ipairs(turrets) do
+      local b = (i - 1) * SIG
+      sig[b + 1], sig[b + 2], sig[b + 3], sig[b + 4], sig[b + 5] = t.entity.unit_number or 0, t.position.x, t.position.y, t.range, t.min_range
+      sig[b + 6], sig[b + 7], sig[b + 8], sig[b + 9] = t.face or false, t.half or false, t.engages, all_armed or t.armed
+    end
+    local tiles = s.find_tiles_filtered{name=FOUNDATION, limit=MAX_TILES}
+    local n = #tiles
+    local xs, ys = {}, {}
+    for i = 1, n do local q = tiles[i].position; xs[i], ys[i] = q.x, q.y end
+    local id = s.index
+    local c = id and HULL[id]
+    local same = c ~= nil and c ~= false and c.n == n and c.kinds == #kinds and #c.sig == #sig
+    if same then for i = 1, #sig do if c.sig[i] ~= sig[i] then same = false; break end end end
+    if same then
+      local cx, cy = c.xs, c.ys
+      for i = 1, n do if cx[i] ~= xs[i] or cy[i] ~= ys[i] then same = false; break end end
+    end
+    if same then
+      for _, l in ipairs(c.lines) do lines[#lines+1] = l end
+      return c.rows
+    end
+    local own = {}
+    local rows = hull_sides_box(xs, ys, turrets, not all_armed and function(t) return t.armed end or nil, kinds, 'unarmed_only', 'more covered only by turrets not armed now', own)
+    if id then HULL[id] = {n=n, xs=xs, ys=ys, kinds=#kinds, sig=sig, rows=rows, lines=own} end
+    for _, l in ipairs(own) do lines[#lines+1] = l end
+    return rows
   end
   local function size_words(bs)
     local w = {}
@@ -729,7 +847,7 @@ return function(api)
     -- collectors' fronts
     local collectors = {}
     for _, c in ipairs(s.find_entities_filtered{type='asteroid-collector', force=force}) do
-      local front = front_of(c.prototype, c.position, c.direction)
+      local front = collector_front(c)
       local list, nearest, nd, outside = covering(turrets, front)
       local words = {}
       for i, t in ipairs(list) do if i <= 4 then words[i] = string.format('%s %s %s, engages %s, fed by %s', t.name, at(t.position), t.ammo, t.engages, t.feed) end end
@@ -759,12 +877,9 @@ return function(api)
       end
     end
     -- hull edges by side
-    local tiles = s.find_tiles_filtered{name='space-platform-foundation', limit=MAX_TILES}
-    local xy = {}
-    for i, t in ipairs(tiles) do xy[i] = t.position end
     local live_turrets, all_armed = {}, true
     for _, t in ipairs(turrets) do if t.armed then live_turrets[#live_turrets+1] = t else all_armed = false end end
-    local side_rows = hull_sides(xy, turrets, not all_armed and function(t) return t.armed end or nil, kinds, 'unarmed_only', 'more covered only by turrets not armed now', lines)
+    local side_rows = hull_cached(s, turrets, all_armed, kinds, lines)
     local planned = a.planned == true and M.planned(pl, s, force, turrets, kinds, lines) or nil
     local empty, hand, idle = {}, 0, {}
     for _, t in ipairs(turrets) do

@@ -10,11 +10,24 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local cache = {}
+  -- (d25 batch206 QS) a chest's kind by its name (a prototype read each was about 16 us; prototypes do not change in a
+  -- game), and each entity's count by a plain pcall (a closure made for every chest and crafter): Nauvis's 3716 chests
+  -- and 870 crafters read cold in about 25 ms on the private copy before
+  local MODES = {}
   local function mode_of(e)
     if e.type ~= 'logistic-container' then return 'plain' end
-    local m = try(function() return e.prototype.logistic_mode end)
-    if m == 'requester' or m == 'buffer' then return 'requesters' end
-    return 'network'
+    local name = e.name
+    local k = MODES[name]
+    if not k then
+      local m = try(function() return e.prototype.logistic_mode end)
+      k = (m == 'requester' or m == 'buffer') and 'requesters' or 'network'
+      MODES[name] = k
+    end
+    return k
+  end
+  local function count_in(e, item)
+    local ok, n = pcall(e.get_item_count, item)
+    return ok and n or 0
   end
   -- {plain, requesters, network (per network id), outputs}: each {count, places, list {pos, count}}.
   -- quality (d22 batch91 BA1): that quality alone (get_item_count(name) counts normal alone on 2.0.77)
@@ -28,7 +41,7 @@ return function(api)
     local chests = api.chests and try(function() return api.chests(force, surface) end)
     out.listed = chests ~= nil
     for _, e in ipairs(chests or {}) do
-      local n = e.valid and (try(function() return e.get_item_count(item) end) or 0) or 0
+      local n = e.valid and count_in(e, item) or 0
       if n > 0 then
         local k = mode_of(e)
         if k == 'network' then
@@ -45,8 +58,9 @@ return function(api)
       end
     end
     for _, e in ipairs(api.crafters and try(function() return api.crafters(force, surface) end) or {}) do
-      local inv = e.valid and try(function() return e.get_output_inventory() end)
-      local n = inv and (try(function() return inv.get_item_count(item) end) or 0) or 0
+      local ok, inv = false, nil
+      if e.valid then ok, inv = pcall(e.get_output_inventory) end
+      local n = ok and inv and count_in(inv, item) or 0
       if n > 0 then
         local g = out.outputs
         g.count = g.count + n; g.places = g.places + 1; g.list[#g.list+1] = {pos=e.position, count=n, name=e.name}
