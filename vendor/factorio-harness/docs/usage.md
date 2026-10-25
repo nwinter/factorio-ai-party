@@ -14570,6 +14570,25 @@ a new step and counted from the resume. It read freight's receipts, the last 16 
 - Tests: tests/d25_batch205.lua (run by tests/d25batch205.test.ts; fails on main: no landed_from, and with the
   branch's conditions the resumed wait counts from tick 320002); tests/conditions.lua takes the new saw text.
 
+QR2 (Astra #2338): a platform's latest flight watch read without starting one. `flight_watch {platform}` starts or
+replaces a watch, and only `{id}` read a full result; a queue step cannot know the id an earlier step's start returned.
+- `flight_watch {platform, read: true}`: the force's watch with the highest id kept on that platform (matched by the
+  platform's index, else by name for a platform gone), in full as `{id}` reads it, with `older` (the ids of older
+  watches kept on it, also at the end of line). A done one is marked read, as `{id}` marks it (it stops counting
+  against the limit and is kept 1 h). None kept: `{not_found: true, platform, line}`, not an error. It never starts,
+  replaces or ends a watch. `{id}`, `{}` and starts are unchanged.
+- flightwatch.lua M.check_read: read must be true and goes with platform alone (no id, clear, from, minutes or
+  replace); runtime.lua step_checks.flight_watch runs it at submit and in dry_run, and step_read_check checks the
+  platform exists. In a platform lane `{read: true}` takes the lane's platform (queue_lanes.lua, as a start does).
+- On the copy (18 watches kept, 13 of them on Asterion, the latest #1270): `{platform: "Asterion", read: true}`
+  returned #1270 (57 KB); Kestrel IVb, with none kept, returned not_found. A platform:Asterion lane ran
+  `{read: true}` and `{read: true, platform: "Kestrel IVb"}` as two steps, both ok; 18 watches were kept after. dry_run
+  took `{read: true}` in the Asterion lane and refused it in the remote lane (no platform), with minutes, with
+  read "yes" and with platform "Nope".
+- Cost on the copy, through dispatch, 3 runs each: read by platform 56.1, 47.4, 44.9 ms; `{id: 1270}` 46.5, 45.3,
+  46.1 ms (both build the same 56 KB row); not_found 2.4, 17.0, 2.5 ms.
+- Tests: tests/d25_batch205b.lua (run by tests/d25batch205b.test.ts; fails on main: the read started a watch).
+
 ## d25 batch201
 
 Engine facts below are from a copy of world n's 06:26 save (box time; tick 61469440), 2.0.77, under Rosetta.

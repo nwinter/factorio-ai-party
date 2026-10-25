@@ -8572,6 +8572,7 @@ M.preflight=M.preflight or {}
 -- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
+  flight_watch=function(a) M.flightwatch.check_read(a) end,  -- (d25 batch205 QR2) read: true with platform alone
   configure=function(a)
     if a.modules~=nil then M.modules.parse(a.modules) end
     assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')

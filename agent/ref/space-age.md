@@ -379,7 +379,10 @@
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
   the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it
   first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
-  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them with
+  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{platform, read:
+  true}` reads that platform's latest kept watch in full as `{id}` does (`older`: the ids of older ones kept on it), or
+  `not_found`, and never starts or replaces one (in a platform lane `{read: true}` reads the lane's platform; dry_run
+  checks it); `{}` lists them with
   `limit` (one watch a platform of the force), `counted` and `counting`: armed, watching, or done and not read; a done
   one stops counting once read, kept 1 h after. `replace: true` keeps the watch it replaces readable by `{id}`
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`

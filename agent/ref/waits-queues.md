@@ -120,7 +120,7 @@
   `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing.
   `lane: "remote"`: the remote lane (`./fh help space-age`; its `configure`, `circuit_set`, `circuit`, `wire`,
   `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do; `flight_watch` too); `lane: "platform:NAME"`: a remote lane of its own for that
-  platform (the same steps; a `flight_watch` start without `platform` or `id` watches that platform), apart from the remote lane and the other platforms' lanes; each queue call takes the same
+  platform (the same steps; a `flight_watch` start without `platform` or `id` watches that platform, and `{read: true}` reads its latest watch), apart from the remote lane and the other platforms' lanes; each queue call takes the same
   `lane`, and `queue_status`'s `lanes.platforms` lists them. A platform lane whose platform is no platform of ours,
   with no step running, is closed after 60 s, and its owner gets one tell with what it held. A queue step or standing order step that ends with you 8
   or more tiles from where it began is named in your next reply: `moved_by`
