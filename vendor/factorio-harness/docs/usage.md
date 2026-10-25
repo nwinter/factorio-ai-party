@@ -14176,3 +14176,49 @@ Fixed besides gates:
   `section_before` and `section_after` {index, group, active}. On the copy, Asterion: construction_requests false with
   section 16 active true switched on "Astra2238 production upgrade pickup", now section 15.
 
+## d24 batch182
+
+- QY1 (Astra #2044: "Gleba six breeders uptime ~104 base craft/min, 156 completions/min while supply made ~149/min.
+  Physical recipe 2 out plus 0.5 bonus, 1 seed returned => 260 gross/156 net. Does native production statistics or
+  supply made already subtract ignored seed?"; "recipe-only supply consumers missed egg disposal burners ... Please
+  expose these sinks"). Measured on a private copy of world n's shift70 save (tick 58595022), Gleba over 66 s (3967
+  ticks), a level script counting each egg a heating tower started to burn:
+  - six breeders (biochambers on pentapod-egg, +50%): 163 completions, 109 base crafts (completions, productivity bar
+    and craft progress at both ends), 54 productivity completions. Out 2 x 109 + 1 x 54 = 272; back in 109 (the
+    recipe's 1 egg, ignored_by_stats 1); net 163.
+  - the production statistics: made 163 (the net: the returned egg counts on neither side; a productivity
+    completion's 1 egg counts); used 166 = 138 agricultural science crafts (207 completions at +50%) + 28 eggs the
+    heating tower at (11.5,6.5) burned. Fuel burned counts as used.
+  - a heating tower burns max_energy_usage / effectivity: 666,667 / 2.5 = 266,667 J a tick, read tick by tick at full
+    power: 16 MW, 192 pentapod eggs a minute (5 MJ each). The game keeps no count per burner.
+  - completions count crafts finished (productivity's included), not items: each gives the recipe's products once, a
+    productivity completion the amount past ignored_by_productivity (1 pentapod-egg of 2).
+  - the recipes with ignored_by_stats items (prototypes on the copy): pentapod-egg (egg 1 in, 2 out, 1 each side
+    ignored), fish-breeding (raw-fish 2 in, 3 out, 2 ignored), kovarex-enrichment-process (uranium-235 40/41, 40
+    ignored; uranium-238 5 in, 2 out, 2 ignored), coal-liquefaction (heavy-oil 25 in, 90 out, 25 ignored), the
+    fluid barrels and their emptying (the barrel and the 50 fluid), fluoroketone-cooling (10 hot in, 10 cold out),
+    cryogenic-science-pack and quantum-processor (cold in, hot out: half the cold and all the hot ignored), and every
+    item recycled into itself (1 in, 0.25 out on average, 1 ignored each side).
+- uptime: a machine row and a recipe group of such a recipe carry `returned` [{item, out, in, returned, net,
+  statistics_made, statistics_used, line}], the line added to the row's and the group's line: "pentapod-egg: 254 out
+  (2 a craft, 1 a productivity completion) and 102 in (1 a craft), 102 of them returned (the 1 a craft it takes back
+  in), net 152; the production statistics count 152 made and 0 used of it for these crafts (ignored_by_stats: the
+  returned 1 a craft on neither side, so made is the net)" (a 60 s watch of the six breeders on the copy; the
+  statistics read 152 produced). `left_out` says completions are crafts, not items.
+- supply {item}: `returned` for a maker whose recipe gives or takes the item with ignored_by_stats: "the recipe
+  pentapod-egg on 6 machines (productivity +50%) gives 2 pentapod-egg a craft and 1 a productivity completion, and
+  takes 1 back in a craft; the production statistics count 1 a craft and 1 a productivity completion as made and 0 a
+  craft as used: the 1 it gives back is ignored_by_stats, on neither side, so made counts the net. From made 1515 in
+  the last 10 min: about 101 crafts/min, 252.5/min out, 101/min back in, net 151.5/min" (the rates only when that one
+  recipe makes all of it at one productivity: the machine's plus the recipe's research, capped). `used_by`: the
+  recipes taking it (each craft's ingredient past ignored_by_stats), the burners holding or burning it (heating
+  towers, boilers, burner generators, and machines or vehicles with it in a fuel slot: number, burning now, held,
+  rate at full power), turrets holding it (ammo), and "not counted in used: hatching into enemies (N of those read
+  within 5 min); what is carried off the surface (rockets, cargo pods, vehicles, characters)".
+- Cost: the new supply parts (returned_lines and used_by, 6 makers, 9 users, 1 burner) 0.18 ms a read on the copy;
+  uptime's returned 0.07 ms a row (0.014 ms for a recipe without, then kept per recipe); the fuel pass reads what a
+  burner burns once for each heating tower, boiler or burner generator and each entity holding the fuel (6 heating
+  towers: 0.003-0.007 ms). The same game reads on world n at 18:06 (saved first), one at a time: 1 heating tower and 1
+  breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
+  (unchanged: the scan).
+- Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
