@@ -136,6 +136,7 @@ def run(tmp, runs, bin_, state, *args, **env):
 
 
 def switches():
+    os.environ.pop("POG_HOURLY", None)  # (an operator's setting for a change is not this test's)
     tmp, runs, _, _ = setup()
     try:
         prev = os.path.join(runs, "shake11")
@@ -166,6 +167,18 @@ def switches():
         assert got["POG_VIEWER_ROUTE"] == ("0", "viewers-route.on"), got
         assert got["POG_BROKER"] == ("0", "switches.env") and got["POG_YOUTUBE"][0] == "@NickWinter", got
         assert got["POG_VIEWER_RELAY"] == ("0", "viewers-relay.on") and "POG_BOGUS" not in got, got
+        # (d25 batch197) the hourly piece: off unless switches.env, its running helper or the operator says on
+        assert "POG_HOURLY" not in got, got
+        argv[13] = "python3 -u tools/stream/hourly.py run --run-dir runs/shake11 --feed http://127.0.0.1:8788"
+        assert sc.switches(prev, ps=argv.get)["POG_HOURLY"] == ("1", "hourly.py running")
+        argv[13] = None
+        open(os.path.join(prev, "switches.env"), "a").write("POG_HOURLY=0\n")
+        assert sc.switches(prev, ps=argv.get)["POG_HOURLY"] == ("0", "switches.env")
+        os.environ["POG_HOURLY"] = "1"
+        try:
+            assert sc.switches(prev, ps=argv.get)["POG_HOURLY"] == ("1", "the environment")
+        finally:
+            del os.environ["POG_HOURLY"]
         # NEXT's end, as an ISO time to the minute.
         assert sc.next_shift(240, 6, now=0).startswith("1970-01-01T") or sc.next_shift(240, 6, now=0).startswith("1969-12-31T")
         print("switches: ok")

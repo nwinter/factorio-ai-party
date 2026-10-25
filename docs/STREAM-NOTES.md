@@ -1713,7 +1713,7 @@ a host prompt.
   half the exchanges.
 - Tests: tools/stream/test_hoststory.py (plain_tests).
 
-## What changed this hour (2026-10-25, d20 batch197 NP1-NP2)
+## What changed this hour (2026-10-25, d20 batch197 NP1-NP3)
 From the hosts proposal, idea E (Nick d23 and d25: the tour's depth on the normal stream). tools/stream/hourly.py
 writes one prepared piece an hour for the narrator channel.
 - NP1, the producer. `gather(run_dir, t0, t1)` turns the hour into numbered rows, each with its source and a weight:
@@ -1749,7 +1749,33 @@ writes one prepared piece an hour for the narrator channel.
 - `hourly.py dry-run --run-dir runs/RUN [--hours 4] [--from HH:MM] [--no-model]` writes the pieces for past hours
   into tools/stream/logs/hourly/: one JSON per piece (with its rows and targets) and RUN-pieces.md. Nothing airs.
   `--no-model` prints the rows only.
-- Tests: tools/stream/test_hourly.py.
+- What the verifier cannot see: a cause stated in words. The prompt says a cause comes from one row that states it
+  and that two rows are never joined by "because", "so" or "it answers" unless a row says the link. A d25 live piece
+  had said that a finished laser research "answers" the bow flaw Astra had named. Read the pieces for that.
+- NP3, airing: `hourly.py run --run-dir runs/RUN` is the stream's helper. One hour after it starts, and every hour
+  after that, it gathers the last hour, writes the piece and airs it as a one- or two-stop tour (tour.Tour). Each
+  stop is a look with cut_at, and its narration plays at the cut plus lead in the tour's narrator voice, the first
+  of el-brian and oa-fable that no host or agent speaks in. The hosts are hushed (the hush file) for the piece only.
+  - It waits while hourly.blocked() names something on air. That is a fresh attack, loss or death (an alert under
+    120 s old), a battle, an attack or an enemy group on air, or someone's look, follow, platform hold or host
+    view. A tour overlay, a replay playing, or tour.py's run file with a live pid also make it wait.
+  - It renders (tour.py prepare) only when it can air, then looks again. A piece not on air 10 minutes after it was
+    written is dropped (`expired`, with what it waited for).
+  - On air (Tour's new `interrupt` hook, looked at every 2 s): someone else's look or the host view ends the piece.
+    With one camera (POG_CAMS=1: no inset for an attack), a fresh attack, loss or death or a battle ends it too.
+    With more than one, the attack goes to the inset and the piece goes on. The camera count is `--cams`, else
+    POG_EXPECT_CAMS, else the snapshot's cameras.
+  - While it airs it writes tour.py's run file, so `tour.py stop` ends it and a tour started by hand waits.
+  - Logs: tools/stream/logs/hourly-START.jsonl (written, dropped, aired, expired, with costs), each piece's
+    tour-PIECE.jsonl, and the piece, its script and its clips in tools/stream/logs/hourly/.
+  - `--once`: one piece for the last hour now, then it exits. `--no-air`: write only.
+- The switch: POG_HOURLY=1 (default 0). start-team.sh starts the helper with it and writes it to switches.env, and
+  shift_change.py carries it. POG_HOURLY=1 in the operator's environment at a change turns it on (ENV_FIRST). Its
+  model is POG_HOURLY_MODEL (default anthropic/claude-opus-5.5).
+- Cost (d25): the piece's model call is $0.022-0.038 on Opus 5.5, and twice that when a draft is refused. The
+  narration's TTS is $0.039-0.048 (el-brian, ElevenLabs, 520-600 characters, about 40 s). So about $0.07-0.12 a
+  piece, and one piece an hour.
+- Tests: tools/stream/test_hourly.py; test_shift_change.py (the switch).
 
 ## Camera crops: the inset, and captures not hooked yet (2026-10-24, d24 batch136 PH2)
 - After the 21:05 shift change (shift66), cam3 read crop 0 at about 21:07, and the operator set it with crop_for.

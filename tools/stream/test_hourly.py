@@ -8,12 +8,19 @@
    unknown target, a number or name the facts lack, a fact whose number or name is not in its row, he or she for an
    agent who did not choose it, "we", advice, a long caption).
 3. write: a refused draft is written once more with the reason; refused twice, no piece.
+4. NP3 airing (tour.py's fake service and clock): blocked() names what comes first (a fresh attack, loss or death, a
+   battle, an enemy group, someone's look, follow, platform hold, host view, a tour overlay, a replay); a piece waits
+   and airs when the way is clear, rendered only then, with the hosts hushed for it alone; one blocked for 10 minutes
+   expires unrendered; with one camera a fresh attack ends it on air, with three it goes on; someone else's look ends
+   it; a tour already running makes it wait; a render that fails drops it.
 """
 import json, os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import hourly  # noqa: E402
+import tour  # noqa: E402
+import test_tour  # noqa: E402
 
 T1 = 1792926000.0  # the hour's end (a fixed epoch: no clock)
 T0 = T1 - 3600
@@ -247,10 +254,138 @@ def write_tests(m, facts):
     assert "> Lark is the newest" in md and "[" + out["facts"][0]["source"] + ": \"platform Lark" in md
 
 
+class Svc(test_tour.FakeService):
+    """tour.py's fake service with more of the snapshot: extra(now) -> fields (alerts, onair, look, ...)."""
+
+    def __init__(self, clock, extra=None):
+        super().__init__(clock, platforms=("Lark", "Weaver"))
+        self.extra = extra or (lambda now: {})
+
+    def state(self):
+        st = super().state()
+        st.update(self.extra(self.clock()))
+        return st
+
+
+def fake_render(calls, ok=True):
+    def render(script, d):
+        calls.append(time_of[0]())
+        if not ok:
+            return None
+        clips = {}
+        for s in json.load(open(script))["stops"]:
+            text = " ".join(s["narration"].split())
+            open(os.path.join(d, s["id"] + ".mp3"), "wb").write(b"ID3")
+            clips[s["id"]] = {"file": s["id"] + ".mp3", "hash": tour.clip_hash("el-brian", text), "duration": 20.0,
+                              "chars": len(text), "provider": "eleven"}
+        return {"voice": "el-brian", "clips": clips}
+    return render
+
+
+time_of = [None]
+
+
+def airing_tests(m, facts):
+    now = 5000.0
+    assert hourly.blocked({}, now) is None and hourly.blocked(None, now) is None
+    fresh = {"kind": "attack", "t": now - 30, "text": "Base under attack: laser turret"}
+    assert hourly.blocked({"alerts": [fresh]}, now) == "a fresh attack (Base under attack: laser turret)"
+    assert hourly.blocked({"alerts": [dict(fresh, t=now - hourly.URGENT_S - 1)]}, now) is None, "an old attack"
+    assert hourly.blocked({"alerts": [dict(fresh, kind="research")]}, now) is None
+    assert hourly.blocked({"alerts": [dict(fresh, kind="death", text="sol died")]}, now) == "a fresh death (sol died)"
+    assert hourly.blocked({"battle": {"key": "b"}}, now) == "a battle on air"
+    assert hourly.blocked({"onair": {"attack": {"x": 1}}}, now) == "an attack on air"
+    assert hourly.blocked({"onair": {"incoming": {"x": 1}}}, now) == "an enemy group followed on air"
+    assert hourly.blocked({"look": {"by": "operator"}}, now) == "a look on air (by operator)"
+    assert hourly.blocked({"follow": {"agent": "sol"}}, now) == "a follow on air"
+    assert hourly.blocked({"platform_hold": {"name": "Lark", "by": "operator"}}, now) == "a platform hold on air (by operator)"
+    assert hourly.blocked({"hostview": {"label": "Nick"}}, now) == "the host view on air"
+    assert hourly.blocked({"tour": [{"id": "x"}]}, now) == "a tour overlay on air"
+    assert hourly.blocked({"replay": {"playing": "c1"}}, now) == "a replay on air"
+    assert hourly.blocked({"replay": {"playing": None, "enabled": True}, "look": None, "onair": {"agent": "sol"}}, now) is None
+
+    good = json.loads(json.dumps(piece(m, GOOD, facts)))
+
+    def setup(extra=None, cams=None, ok=True, run_file=None):
+        d = tempfile.mkdtemp(prefix="hourly-air-")
+        clock = test_tour.Clock()
+        time_of[0] = clock
+        svc = Svc(clock, extra)
+        calls = []
+        a = hourly.Airing(svc, d, cams, clock=clock, sleep=clock.sleep, renderer=fake_render(calls, ok),
+                          hush_file=os.path.join(d, "hush.json"), stop_file=os.path.join(d, "stop"),
+                          run_file=run_file or os.path.join(d, "tour-run.json"), log_dir=d)
+        p = hourly.finish(good, m, "shift73", clock(), "model-x", [{"cost_usd": 0.03}])
+        return a, svc, clock, calls, p, d
+
+    hushes = []
+    a, svc, clock, calls, p, d = setup(lambda now: hushes.append(os.path.exists(os.path.join(a.hush_file))) or {})
+    res = a.air(p)
+    assert res["event"] == "aired" and res["aired"] == 1 and res["skipped"] == 0 and res["ended_early"] is None, res
+    assert calls == [1000.0] and res["waited_s"] == 0, "rendered once, at once"
+    looks = [c for c in svc.calls if c[1:3] == ("POST", "/look")]
+    assert len(looks) == 1 and looks[0][3]["platform"] == "Lark" and looks[0][3]["by"] == "tour"
+    clips = [c for c in svc.clips]
+    assert len(clips) == 1 and clips[0]["channel"] == "narrator" and clips[0]["tour"] == p["stops"][0]["id"]
+    assert any(hushes) and not os.path.exists(a.hush_file), "hushed while it airs, unhushed after"
+    assert not os.path.exists(a.run_file), "the run file only while it airs"
+    assert res["tts_usd"] == round(len(" ".join(GOOD.split())) * 0.08 / 1000, 4) and res["seconds"] == 20.0
+    rows = [json.loads(l) for l in open(os.path.join(d, f"tour-{p['id']}.jsonl"))]
+    assert [r["event"] for r in rows] == ["start", "aired", "end"], rows
+
+    # blocked for the first 100 s (a fresh loss), then clear: it waits, renders after, airs
+    a, svc, clock, calls, p, d = setup(lambda now: {"alerts": [{"kind": "loss", "t": 1000.0, "text": "8 lost"}]}
+                                       if now < 1100 else {})
+    res = a.air(p)
+    assert res["event"] == "aired" and res["waited_s"] == 105 and calls == [1105.0], (res, calls)
+
+    # blocked for 10 minutes: expired, never rendered, nothing sent
+    a, svc, clock, calls, p, d = setup(lambda now: {"look": {"by": "operator", "id": "op"}})
+    res = a.air(p)
+    assert res == {"event": "expired", "id": p["id"], "waited_s": 600, "why": "a look on air (by operator)",
+                   "age_s": 600}, res
+    assert calls == [] and not [c for c in svc.calls if c[2] in ("/look", "/audio")]
+
+    # one camera: an attack a few seconds into the piece ends it
+    def attack_at(t):
+        return lambda now: {"alerts": [{"kind": "attack", "t": t, "text": "Base under attack"}]} if now >= t else {}
+    a, svc, clock, calls, p, d = setup(attack_at(1010.0), cams=1)
+    res = a.air(p)
+    assert res["event"] == "aired" and res["ended_early"] == "a attack with one camera (Base under attack)", res
+    assert svc.cancelled and svc.look_hold is None and not os.path.exists(a.hush_file), "narration back, look and hush cleared"
+    assert clock() < 1000 + 20, "ended within seconds"
+    end = [json.loads(l) for l in open(os.path.join(d, f"tour-{p['id']}.jsonl"))][-1]
+    assert end["event"] == "end" and end["stopped"] and end["why"].startswith("a attack with one camera")
+    # three cameras: the attack goes to the inset, the piece goes on
+    a, svc, clock, calls, p, d = setup(attack_at(1010.0), cams=3)
+    res = a.air(p)
+    assert res["event"] == "aired" and res["ended_early"] is None and clock() > 1000 + 20, (res, clock())
+    # the snapshot's cameras count when --cams is not given
+    a, svc, clock, calls, p, d = setup(lambda now: dict(attack_at(1010.0)(now), cameras={"main": {}, "left": {}, "right": {}}))
+    assert a.air(p)["ended_early"] is None
+    # someone else's look ends it, whatever the cameras
+    a, svc, clock, calls, p, d = setup(lambda now: {"look": {"by": "operator", "id": "op", "until": now + 30}} if now >= 1012 else {},
+                                       cams=3)
+    res = a.air(p)
+    assert res["ended_early"] == "a look by operator took the camera", res
+    # a tour already running (its run file, a live pid): the piece waits for it
+    rf = os.path.join(tempfile.mkdtemp(), "tour-run.json")
+    json.dump({"pid": os.getpid(), "script": "x.json"}, open(rf, "w"))
+    a, svc, clock, calls, p, d = setup(run_file=rf)
+    res = a.air(p)
+    assert res["event"] == "expired" and res["why"] == f"a tour is running (pid {os.getpid()})" and calls == []
+    # no voice rendered it
+    a, svc, clock, calls, p, d = setup(ok=False)
+    assert a.air(p) == {"event": "dropped", "id": p["id"], "why": "no narrator voice rendered it"}
+    script = json.load(open(os.path.join(d, p["id"], "script.json")))
+    assert [s["id"] for s in script["stops"]] == [p["stops"][0]["id"]] and script["facts"] == p["facts"]
+
+
 def main():
     m, _ = gather_tests()
     facts = check_tests(m)
     write_tests(m, facts)
+    airing_tests(m, facts)
     print("test_hourly: ok")
 
 

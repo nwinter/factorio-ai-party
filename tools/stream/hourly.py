@@ -5,7 +5,6 @@ aired through tour.py's machinery (prepare/render, the hush file, looks with cut
 
   python3 tools/stream/hourly.py dry-run --run-dir runs/shift73 [--hours 4] [--from HH:MM] [--render]
   python3 tools/stream/hourly.py run --run-dir runs/RUN          # the stream's helper (POG_HOURLY=1, start-team.sh)
-  python3 tools/stream/hourly.py repeats [--hours 24]            # NP4: analyst lines the 2 h topic rule holds back
 
 NP1 the producer: gather() reads the hour from the run folder: scores.jsonl (rockets, research, lab use, entity and
 platform counts, first row of the hour against its last), chronicle.jsonl (research, deaths, platforms created, lost,
@@ -566,8 +565,11 @@ RULES = (
     "stop a camera target from the list and the part of the narration said over it.\n"
     "- Narrate a cause and a consequence: what happened, what led to it, what it leads to. Never a reading of numbers: "
     "at most three numbers in the whole piece, rounded as spoken (\"about three hundred\").\n"
-    "- A cause or a consequence must come from the rows (a row that says so, or an agent's own words). Never join two "
-    "changes by a cause no row gives: a ship's magazines are for asteroids in space, a planet's walls for its enemies.\n"
+    "- A cause or a consequence must come from ONE row that states it (an agent's own reason, the analyst's \"so\"). "
+    "Two rows are two separate facts: never join them with \"because\", \"so\", \"which is why\", \"it answers\" or "
+    "\"that is what\" unless one of them says the link. Wrong: a research finishing \"answers\" a flaw an agent named, "
+    "when no row ties them; a ship's magazines (for asteroids in space) explained by an attack on a planet's walls. "
+    "Say each change with its own reason, side by side.\n"
     "- Agents by their names, with the pronouns given (they/them when the list says so). The narrator is not on the "
     "team: no \"we\" or \"our\".\n"
     "- Facts only. Every number and every name you say (agents, ships, planets, items) must be in the claim of one of "
@@ -878,6 +880,223 @@ def dry_run(a):
     return 0
 
 
+# ---- airing (NP3) -------------------------------------------------------------------------------------------------
+def blocked(s, now):
+    """Why a piece cannot go on air now, or None: a fresh attack, loss or death, a battle or an enemy group on air,
+    the camera held by someone (a look, a follow, a platform hold, the host view), a tour or a replay on air."""
+    s = s or {}
+    for a in s.get("alerts") or []:
+        if isinstance(a, dict) and a.get("kind") in URGENT_KINDS and now - float(a.get("t") or 0) < URGENT_S:
+            return f"a fresh {a['kind']} ({str(a.get('text') or '')[:80]})"
+    on = s.get("onair") or {}
+    if s.get("battle") or on.get("battle"):
+        return "a battle on air"
+    if on.get("attack"):
+        return "an attack on air"
+    if on.get("incoming"):
+        return "an enemy group followed on air"
+    for key, what in (("look", "a look"), ("follow", "a follow"), ("platform_hold", "a platform hold"),
+                      ("hostview", "the host view"), ("tour", "a tour overlay")):
+        if s.get(key):
+            by = s[key].get("by") if isinstance(s[key], dict) else None
+            return f"{what} on air" + (f" (by {by})" if by else "")
+    if (s.get("replay") or {}).get("playing"):
+        return "a replay on air"
+    return None
+
+
+def other_tour(run_file):
+    """A tour running now (tour.py's run file with a live pid), else None."""
+    try:
+        with open(run_file) as f:
+            other = json.load(f)
+        os.kill(int(other["pid"]), 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return f"a tour is running (pid {other['pid']})"
+
+
+def script_for(p):
+    """The piece as a tour script (tools/stream/tour-FORMAT.md): its stops, facts kept for the operator."""
+    return {"stops": [{"id": s["id"], "target": s["target"], "caption": s["caption"], "narration": s["narration"]}
+                      for s in p["stops"]], "facts": p["facts"], "piece": p["id"]}
+
+
+def render(script_path, out, feed=FEED):
+    """tour.py prepare: every stop's clip in the tour's narrator voice (the first of tour.VOICES no host or agent
+    speaks in that renders them all). -> the manifest, or None."""
+    import tour
+    a = argparse.Namespace(script=script_path, out=out, voice=",".join(tour.VOICES), feed=feed)
+    return tour.read_manifest(out) if tour.prepare(a) == 0 else None
+
+
+def tts_spent(manifest):
+    """The clips' TTS list price in USD (voices.PRICE by the provider that rendered them)."""
+    import voices as V
+    total = 0.0
+    for c in (manifest or {}).get("clips", {}).values():
+        unit, rate = V.PRICE.get(c.get("provider") or V.provider_of(manifest.get("voice")), ("chars", 0.0))
+        total += rate * (c.get("chars") or 0) if unit == "chars" else rate * (c.get("duration") or 0) / 60
+    return round(total, 4)
+
+
+class Airing:
+    """One piece on the narrator channel (tour.Tour), rendered when it can air, dropped when it is too old."""
+
+    def __init__(self, svc, out=OUT_DIR, cams=None, clock=time.time, sleep=time.sleep, renderer=None, hush_file=None,
+                 stop_file=None, run_file=None, log_dir=LOG_DIR):
+        import tour
+        self.svc, self.out, self.cams, self.now, self.sleep = svc, out, cams, clock, sleep
+        self.renderer = renderer or (lambda script, d: render(script, d, getattr(svc, "base", FEED)))
+        self.hush_file, self.stop_file = hush_file or tour.HUSH_FILE, stop_file or tour.STOP_FILE
+        self.run_file, self.log_dir = run_file or tour.RUN_FILE, log_dir
+        self.started, self.ours, self.last_look = None, set(), -1e9
+
+    def cameras(self, st):
+        """How many camera clients: --cams (POG_EXPECT_CAMS), else the snapshot's cameras."""
+        return self.cams or max(1, len((st or {}).get("cameras") or {}))
+
+    def interrupt(self):
+        """Why to end the piece now (looked at every 2 s), else None. With one camera nothing else shows a fresh
+        attack, loss or death, so it ends the piece; with more, the attack is in the inset and the piece goes on.
+        Someone else's look or the host view taking the camera ends it with any count."""
+        now = self.now()
+        if now - self.last_look < 2:
+            return None
+        self.last_look = now
+        try:
+            st = self.svc.state()
+        except Exception:
+            return None
+        lk = st.get("look") or {}
+        if lk and lk.get("id") not in self.ours:
+            return f"a look by {lk.get('by') or 'someone'} took the camera"
+        if st.get("hostview"):
+            return "the host view took the camera"
+        if self.cameras(st) > 1:
+            return None
+        for a in st.get("alerts") or []:
+            if isinstance(a, dict) and a.get("kind") in URGENT_KINDS and float(a.get("t") or 0) > self.started:
+                return f"a {a['kind']} with one camera ({str(a.get('text') or '')[:80]})"
+        on = st.get("onair") or {}
+        if on.get("battle") or st.get("battle"):
+            return "a battle with one camera"
+        return None
+
+    def air(self, p):
+        """-> a log row: event aired (aired and skipped stops, ended early and why), expired (waited too long, and for
+        what) or dropped (no voice rendered it)."""
+        import tour
+        deadline = float(p["written"]) + MAX_AGE_S
+        d = os.path.join(self.out, p["id"])
+        os.makedirs(d, exist_ok=True)
+        script = os.path.join(d, "script.json")
+        with open(script, "w") as f:
+            json.dump(script_for(p), f, indent=1, ensure_ascii=False)
+        manifest, why, waited = None, None, 0.0
+        while True:
+            now = self.now()
+            if now >= deadline:
+                return {"event": "expired", "id": p["id"], "waited_s": round(waited), "why": why,
+                        "age_s": round(now - float(p["written"]))}
+            try:
+                st = self.svc.state()
+            except Exception as x:
+                st, why = None, f"the stream service does not answer ({type(x).__name__})"
+            else:
+                why = blocked(st, now) or other_tour(self.run_file)
+            if why:
+                step = min(WAIT_STEP_S, deadline - now)
+                self.sleep(step)
+                waited += step
+                continue
+            if manifest is None:  # rendered just in time: then look again, since rendering takes a few seconds
+                manifest = self.renderer(script, d)
+                if not manifest:
+                    return {"event": "dropped", "id": p["id"], "why": "no narrator voice rendered it"}
+                continue
+            break
+        rows = tour.checked(script_for(p)["stops"])
+        if any(s and s["narration"] and not tour.clip_for(manifest, d, s) for _, s, _ in rows):
+            return {"event": "dropped", "id": p["id"], "why": "a clip is missing after prepare"}
+        self.ours = {s["id"] for _, s, _ in rows if s}
+        self.started = self.now()
+        log_path = os.path.join(self.log_dir, f"tour-{p['id']}.jsonl")
+        t = tour.Tour(self.svc, rows, manifest, d, log_path, hush_file=self.hush_file, stop_file=self.stop_file,
+                      clock=self.now, sleep=self.sleep, interrupt=self.interrupt)
+        with open(self.run_file, "w") as f:
+            json.dump({"pid": os.getpid(), "script": script, "started": self.started, "log": log_path, "by": "hourly"}, f)
+        try:
+            aired, skipped = t.run(rows)
+        finally:
+            try:
+                os.remove(self.run_file)
+            except FileNotFoundError:
+                pass
+        return {"event": "aired", "id": p["id"], "aired": aired, "skipped": skipped, "waited_s": round(waited),
+                "age_s": round(self.started - float(p["written"])), "voice": manifest.get("voice"),
+                "seconds": round(sum(c.get("duration") or 0 for c in manifest["clips"].values()), 1),
+                "tts_usd": tts_spent(manifest), "ended_early": t.stop_why, "log": rel(log_path)}
+
+
+def record(path, row):
+    row = dict({"t": round(time.time(), 1), "at": time.strftime("%H:%M:%S")}, **row)
+    with open(path, "a") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def run(a):
+    """The stream's helper: a piece for the last hour every hour from its start (--once: one now), aired unless
+    --no-air."""
+    import tour
+    if not os.path.isfile(os.path.join(a.run_dir, "scores.jsonl")) and not a.once:
+        log(f"[hourly] {a.run_dir}: no scores.jsonl yet; the first piece is an hour from now")
+    if not openrouter_key():
+        log("[hourly] no OpenRouter key (OPENROUTER_API_KEY or the keychain's openrouter): not starting")
+        return 1
+    writer, svc = make_writer(a.model), tour.Service(a.feed)
+    airing = Airing(svc, a.out, a.cams or int(os.environ.get("POG_EXPECT_CAMS") or 0) or None)
+    os.makedirs(a.out, exist_ok=True)
+    path = os.path.join(LOG_DIR, time.strftime("hourly-%Y%m%d-%H%M%S.jsonl"))
+    run_name = os.path.basename(os.path.abspath(a.run_dir))
+    stop = []
+    signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
+    record(path, {"event": "start", "run": run_name, "model": a.model, "air": not a.no_air, "cams": airing.cams})
+    log(f"[hourly] {run_name}: one piece an hour ({a.model}), {'aired' if not a.no_air else 'not aired'}; log {path}")
+    next_at = time.time() + (0 if a.once else HOUR_S)
+    earlier = []
+    while not stop:
+        if time.time() < next_at:
+            time.sleep(min(30.0, next_at - time.time()))
+            continue
+        t1 = time.time()
+        m = gather(a.run_dir, t1 - HOUR_S, t1, a.logs, roster(a.feed, a.logs))
+        piece, attempts = write(m, writer, earlier)
+        if not piece:
+            row = {"event": "dropped", "why": "; ".join(str(x.get("why")) for x in attempts), "rows": len(m.rows),
+                   "cost_usd": round(sum(x.get("cost_usd") or 0 for x in attempts), 4)}
+            log(f"[hourly] {hhmm(t1 - HOUR_S)}-{hhmm(t1)}: dropped after {len(attempts)} drafts: {row['why']}")
+            record(path, row)
+        else:
+            p = finish(piece, m, run_name, time.time(), a.model, attempts)
+            with open(os.path.join(a.out, p["id"] + ".json"), "w") as f:
+                json.dump(dict(p, material=m.rows, targets=m.targets), f, indent=1, ensure_ascii=False)
+            record(path, {"event": "written", "id": p["id"], "words": p["words"], "cost_usd": p["cost_usd"],
+                          "drafts": len(attempts), "narration": " ".join(s["narration"] for s in p["stops"])})
+            log(f"[hourly] {p['id']}: {p['words']} words, ${p['cost_usd']:.4f}")
+            earlier = (earlier + [p])[-2:]
+            if not a.no_air:
+                res = airing.air(p)
+                record(path, res)
+                log(f"[hourly] {p['id']}: {res['event']}" + (f" ({res.get('why') or res.get('ended_early')})"
+                                                             if res.get("why") or res.get("ended_early") else ""))
+        if a.once:
+            break
+        next_at = max(next_at + HOUR_S, time.time() + 600)
+    record(path, {"event": "end"})
+    return 0
+
+
 def parser():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -890,12 +1109,21 @@ def parser():
     d.add_argument("--logs", default=LOG_DIR, help="the caster and analyst logs")
     d.add_argument("--feed", default=FEED, help="the stream service, for the agents' pronouns (else the caster logs)")
     d.add_argument("--out", default=OUT_DIR)
+    r = sub.add_parser("run", help="the stream's helper: a piece an hour, aired on the narrator channel")
+    r.add_argument("--run-dir", required=True)
+    r.add_argument("--model", default=MODEL, help="OpenRouter model id")
+    r.add_argument("--logs", default=LOG_DIR, help="the caster and analyst logs")
+    r.add_argument("--feed", default=FEED, help="the stream service")
+    r.add_argument("--out", default=OUT_DIR, help="the pieces, their scripts and clips")
+    r.add_argument("--cams", type=int, help="camera clients (default POG_EXPECT_CAMS, else the snapshot's cameras)")
+    r.add_argument("--once", action="store_true", help="one piece for the last hour now, then exit")
+    r.add_argument("--no-air", action="store_true", help="write the pieces only")
     return ap
 
 
 def main(argv=None):
     a = parser().parse_args(argv)
-    return {"dry-run": dry_run}[a.cmd](a)
+    return {"dry-run": dry_run, "run": run}[a.cmd](a)
 
 
 if __name__ == "__main__":
