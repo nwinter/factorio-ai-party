@@ -167,6 +167,29 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
    directors after the save, so game time moves only while agents play (the default is unchanged: the world keeps
    running, and with directors connected it does not auto-pause).
 
+### An interrupted start or a failed save (2026-10-24, d24 batch175 QR2, viewer Aurora)
+
+What carries lives in two places. In the save: the board, reminders and their acknowledgments, tells (unread until
+`chat_ack` or a tells read), each agent's chat read point, watches and their results, bots, pushed rests. On files:
+each agent's `notes.md`, `tools/` and `resting.json`, the run's `team-tools/`, the switches. `tools/test_shift_recovery.py`
+interrupts each step on files and stubs:
+- A start that died after its run directory was made (killed, a refused deploy, a resume refusal) is a run the next
+  start can resume from. A run where an agent made no request of its own (the launcher's `describe` and
+  `ground_rules` do not count) and left its notes as carried (`tools/full_tools.py played`) is not that agent's last
+  shift: `new-run.sh` takes its notes from the newest run up the resumed-from chain it played in (`full_tools.py
+  notes-from`; the carry line names that run); `full_tools.py carry` adds such a run's `tools/` files, then goes on up
+  the chain (a copy cut short mid-way); `quota_rest.py --carry` asks the next run up the chain for its rest. Before,
+  agents the start had not reached began with empty notes, and one it had reached began from a copy whose measured
+  section said "no requests".
+- `resume_guard.py` takes the last tick of the nearest run up the chain with a `stopped.json` or `scores.jsonl`
+  (before: "unknown", and any save was taken).
+- A stop where neither `game.server_save` nor `/server-save` went through (RCON down, the server hung): `stop_save.py
+  --failed` writes `stopped.json` with `via: failed` and no save (resume-save then takes only a save written after
+  it), stop-team leaves the world running and exits 3, and `shift-change.sh` refuses before it closes panes or starts
+  the next shift. Before, the world was stopped unsaved and the next shift took the newest autosave, up to 18 game
+  minutes older. Save the world (`python3 tools/pog.py --world n save`) and run the shift change again; a stop run
+  again with an earlier stop's record that saved keeps that record and goes on as before.
+
 ### Continuation in score, stream and analyst
 
 - Score: `pog.py score` reads `game.tick`, which goes on from the save; the new run's `scores.jsonl` starts there.
