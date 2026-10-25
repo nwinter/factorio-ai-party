@@ -1,6 +1,6 @@
 {
  "about": "Operator updates (site/updates.py, the /updates/ page; d23 batch119 CB4, viewer Aurora site:4349, site:4350). One row per change; edit by hand or with tools/operator_updates.py. status: planned | in progress | live | verified. dates: when it reached each status, Pacific time, YYYY-MM-DD HH:MM. requested_by: who asked, with ref = the site message id (site:NNNN, its text and the operator's replies come from runs/*/operator-inbox.jsonl and operator-replies.jsonl at build time) or the board item (#NNNN). replies: more site message ids whose operator replies concern this row. notices: deploys, restarts, rests and outages, shown apart from the changes.",
- "notices_checked": "2026-10-25 02:11",
+ "notices_checked": "2026-10-25 06:11",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
   {"id": "inserter-wait-full-hand", "title": "Inserters: set and read \"wait for full hand\"", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#1931"}], "status": "live", "dates": {"asked": "2026-10-22 16:55", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN2", "note": "configure sets it on inserters and their ghosts; inspect reads it."},
@@ -100,6 +100,7 @@
   {"t": "2026-10-24 18:03", "kind": "outage", "text": "The live page's state stopped updating 18:03-18:24 (and for under 15 s at 18:26 and 18:32): a new test stopped the site pusher. Fixed by batch185.", "affected": "site live page", "recovered": "2026-10-24 18:24"},
   {"t": "2026-10-24 21:14", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-24 21:14"},
   {"t": "2026-10-24 21:56", "kind": "shift", "text": "Shift 72 change began.", "affected": "stream and agents", "recovered": "2026-10-24 22:04"},
-  {"t": "2026-10-25 02:03", "kind": "shift", "text": "Shift 73 change began.", "affected": "stream and agents", "recovered": "2026-10-25 02:11"}
+  {"t": "2026-10-25 02:03", "kind": "shift", "text": "Shift 73 change began.", "affected": "stream and agents", "recovered": "2026-10-25 02:11"},
+  {"t": "2026-10-25 06:11", "kind": "shift", "text": "Shift 74 change began.", "affected": "stream and agents", "recovered": null}
  ]
 }
