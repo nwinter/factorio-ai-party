@@ -14263,3 +14263,31 @@ Fixed besides gates:
   breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
   (unchanged: the scan).
 - Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
+## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
+
+At tick 59185129 delivery watch #384 (3 asteroid-collector@legendary from Kestrel IVc to Aquilo's pad) warned
+`hub section 24 keeps asteroid-collector 1..1 at fulgora, so all above 1 goes down there`. Section 24 asks
+asteroid-collector@rare 1..1 from fulgora; the legendary row is section 23, 0..3 from nauvis. batch137's rule added
+every slot of the item by name.
+
+2.0.77 on a copy of world n's 20:42 save, Kestrel IVc paused at Fulgora (no pad there asks collectors):
+- 3 legendary and 3 rare put in the hub: the hub held 6 legendary (3 were there) and 1 rare; the 2 rare went to the
+  hub's trash and down.
+- A second section of asteroid-collector@rare 0..2 from fulgora: 5 rare went to 3 (the maxes of one quality add up).
+- A slot with a quality comparator (`≥ rare`): the game refuses a min there ("Can't specify non zero request with non
+  trivial item filter condition"); a max-only slot `≥ rare 0..1` sent all 6 legendary down and kept 1 rare, but beside
+  `= legendary 0..3` it kept 3 rare and 2 epic. Its rule was not found, so it is named and not forecast.
+
+freight.lua `hub_keeps_at` now keeps each row by quality as well (`q`, and `ranged` for a comparator slot), and
+`hub_gives(keep, item, held, want, off, q)` takes the quality held, or `{quality=count}`: a quality's rows send down
+all above their maxes; a quality no row names goes down as far as the pads ask. The section text names item@quality
+for a quality other than normal: `hub section 24 keeps asteroid-collector@rare 1..1 at fulgora`. Callers:
+- delivery_watch: the watched quality (none given: the hub's counts of each quality), at the destination and at the
+  stops before it. Watch 384's case gives no warning; a rare watch there gets `... with 3 asteroid-collector@rare in its
+  hub, before aquilo: hub section 24 keeps asteroid-collector@rare 1..1 at fulgora, so all above 1 goes down there`.
+- shipment's ready read and cargo conflict lines, and the freight stop lines (`expected down`), by the hub's counts
+  of each quality (`hub_counts(pl, true)`, `by_item`).
+- Without a quality the name-level rule is unchanged.
+
+Test: tests/d24_batch192.lua (fails on main: legendary under the rare max gave 3 down; the watch warned as #2264;
+shipment's ready read sent 6 down).
