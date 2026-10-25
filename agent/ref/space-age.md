@@ -338,7 +338,9 @@
   with room there, a pod landed with no pad, the platform paused away from the destination or not stopping there, a
   requester chest asking none of it. Stopped at the destination, paused or not (its hub sends pods down while paused),
   `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
-  watches; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the
+  watches in brief (id, item, quality rule, count, to, state, last confirmed stage and its age, received of count,
+  blockers and risks counted, deadline); `{id}` gives one watch's whole row (every field here), `{full: true}` every
+  whole row; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the
   platform stops at before the destination (pad, request, count, which stop) is a blocker while it is stopped there and
   in `risks` before (a pad request's import planet does not stop it; the hub's own request for the item keeps up to its
   max aboard, all with no max); a pod of it landing on another planet is in `diversions` (`diverted`: their sum).

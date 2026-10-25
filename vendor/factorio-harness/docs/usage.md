@@ -14059,3 +14059,30 @@ Fixed besides gates:
   each: platform_production {Asterion, explosives} main 2.0-2.7 ms, this branch 4.8-6.2 ms (the find of 55 crafting
   machines, each recipe's products, craftrate for the 4 that make it); {Asterion} without item 10.9-11.6 ms on both.
 - Test: tests/d24_batch171.lua (fails on main: inspect's line, no makers); tests/craftrate.lua takes the new line.
+
+## d24 batch184
+
+- QAA1 (operator 18:03: `delivery_watch {}` took 24.6 ms on world n as a reader, 6 watches, each line several hundred
+  characters). On a copy of world n's 18:11 save (3 watches, #355-#357) the list took 5.0-5.9 ms as Sol, 15 KB, each
+  row 3.6-4.2 KB encoded; profile_ticks: the reply's encode 4.4 ms a call, the dispatch 3.7 ms (each whole row and its
+  status text). The list now gives each watch in brief: {id, item, quality, counts, count, to {name, position, where},
+  from, state, last_confirmed, last_s, received, held, at_start, blockers (a count), risks (a count), deadline_tick,
+  line} with the line "delivery watch #355: 3000 agricultural-science-pack to cargo-landing-pad (52,54) on nauvis, open;
+  deadline in 21m55s; last confirmed stage landed, 13m38s ago; received 2000 of 3000; no blocker; every quality (no
+  quality given); delivery_watch {id: 355} gives the whole row", and a note saying so. `{id}` gives the whole row as
+  before, `{full: true}` every whole row (the list as it was). On the copy: the list 3.0-4.0 ms, 3.2 KB; full 5.9-7.0
+  ms, 15 KB; a small read as Sol (tells {limit: 1}) 1.9-2.6 ms, the reply's clock and team block. On world n one whole
+  row (`{id: 357}`, a peek) took 0.96 ms, 3.8 KB.
+- QAA2 (operator-todo d24 09:55: the stream service's flows read about 10 ms on world n, every 30 s): on the copy main's
+  FLOW_LUA took 46.7-53.5 ms; per surface about 23 ms in all (fulgora 5.8, nauvis 4.0, vulcanus 4.0, gleba 2.5, aquilo
+  1.0, the platforms 0.06-1.9 each) and table_to_json 34.6 ms for its 5.5 KB (41 items x 30 float counts).
+  - tools/stream/harness.py FLOW_LUA builds its reply as text, each count rounded to a whole number with
+    string.format("%d") (FLOW_JSON), and reads one part of the surfaces (SPLIT): the planets dealt out in turn (nauvis,
+    vulcanus, fulgora, gleba, aquilo to parts 0, 1, 2, 0, 1), a platform by its index mod parts.
+  - tools/stream/live.py reads one of 3 parts a poll, 10 s apart (poll_flows), so each part is read again every 30 s;
+    the panel's flows are the parts' sum (sum_flows), each part at most 30 s old; the labs' use (USED_FLOW_LUA) with
+    part 0, every 30 s as before. After a restart the panel has all the surfaces 20 s later.
+  - On the copy: a part 3.1-6.3 ms, all three in one read 9.9-12.3 ms. On world n, one read at a time: part 1 2.8, 5.7,
+    3.1, 3.3 ms; part 2 5.6 ms; part 0 6.3 ms; all three in one read 12.5 ms (once; over the 10 ms rule, see the report).
+- Tests: tests/d24_batch184.lua (fails on main: the list gave whole rows) and tools/stream/test_flow_parts.py (fails on
+  main: the reply went through table_to_json; FLOW_LUA run in a real Lua with mocked statistics, and live.py's polling).
