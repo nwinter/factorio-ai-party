@@ -82,7 +82,8 @@
   "shield_below":0.2}` wins. Hit under it, the action ends `retreated` and you walk back (guns on auto) or the vehicle
   is driven back (`last.retreated`: why, from, health). Hit with no action running (or mining, on a tour or waiting),
   your character walks away at once, to `to` or 24 tiles from the attacker, and a sleep wakes `damaged` saying where;
-  `idle: false` keeps it standing.
+  `idle: false` keeps it standing. A spidertron you send by `vehicle {go_to}` (or ride) is read every 30 ticks while
+  it has a route: under the limit, its route becomes `to` once (`team.spidertron_retreated`; `go_to` takes `retreat` too).
   Example: `./fh call retreat_guard --args '{"to":{"x":260,"y":-60},"health_below":0.5}'`
 - `kite {position?, radius?, min_distance?, max_distance?, range?, min_health?}`: fights enemy units within `radius`
   (default 32), keeping them 7 to 12 tiles off (`min_distance`, `max_distance`) and shooting structures within `range`

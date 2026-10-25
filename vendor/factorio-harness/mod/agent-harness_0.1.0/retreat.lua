@@ -69,10 +69,14 @@ return function(api)
     return string.format('to (%g,%g) at %s%s', cfg.to.x, cfg.to.y, table.concat(parts, ' or '), cfg.standing and ' (standing retreat_guard)' or '')
   end
   M.line = line
+  M.reading = reading
+  M.check_goal = api.check_goal
   -- Every 5 ticks: what triggers the retreat (why, from, health, shield, to), or nil.
   function M.check(p, action)
-    local cfg = action.retreat
-    local e = M.body(p, action)
+    return M.check_entity(M.body(p, action), action.retreat)
+  end
+  -- The same for one entity and a cfg {health_below, shield_below, h0, s0, to, standing} (a spidertron's guard too).
+  function M.check_entity(e, cfg)
     if not (cfg and e and e.valid) then return nil end
     local h, m, s, sm = reading(e)
     if not h then return nil end
@@ -97,9 +101,9 @@ return function(api)
   end
   M.schema = {
     retreat_guard={to='{x,y}: where to go back to',retreat_to='the same as to',health_below='0..1, default 0.4 when neither is given',shield_below='0..1 (the armor\'s, or the vehicle\'s grid when driving)',
-      clear='true: no standing retreat any more',
+      clear='true: no standing retreat any more (and no go_to retreat on the spidertrons you sent)',
       idle='true (default) or false: when hit with no action running, or during a mine, a walking tour, pickup, repair, construct or a wait (with its guns off), the character walks away at once: to to when set, else 24 tiles straight away from the attacker; false keeps it standing',
-      note='a standing retreat for move_to, shoot, kite and vehicle drive until cleared (a call\'s own retreat wins; retreat: false skips it); no arguments: shows it',
+      note='a standing retreat for move_to, shoot, kite, vehicle drive and the spidertrons you send by vehicle go_to or ride (its route replaced by one to to, read every 30 ticks) until cleared (a call\'s own retreat wins; retreat: false skips it); no arguments: shows it',
       returns='retreat_guard: what is set, or false; idle when set to false'},
   }
   function M.handlers.retreat_guard(p, a)

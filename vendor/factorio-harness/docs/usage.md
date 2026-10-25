@@ -14176,3 +14176,24 @@ Fixed besides gates:
   `section_before` and `section_after` {index, group, active}. On the copy, Asterion: construction_requests false with
   section 16 active true switched on "Astra2238 production upgrade pickup", now section 15.
 
+## d24 batch189 (viewer Aurora site:4814: retreat_guard for a spidertron)
+
+- QAE1: a spidertron sent by `vehicle {go_to}` is watched by a guard while it has a route: the go_to's own `retreat
+  {to, health_below?, shield_below?}` (or `retreat: false` for none), else its sender's standing `retreat_guard`, else
+  the standing guard of the agent riding it (driver, then passenger). `spiderroute.guard_tick` reads each such
+  spidertron every 30 ticks (none with no guard: no entity read). Its health, or its grid's shield, under the limit
+  and lower than when it was sent replaces its route by one to `to` (`autopilot_destination` nil, then
+  `add_autopilot_destination`, as a click on its remote), once until it is sent again. The go_to reply's `retreat`
+  says what watches it. The sender and the rider whose guard it was get `team.spidertron_retreated` [{spidertron,
+  unit_number, why, from, health, shield, to, replaced, route_line, guard, tick, refused?}] in their next reply, and
+  status `spidertrons` says it while the route lasts and for 10 minutes after. `retreat_guard {clear: true}` also drops
+  the go_to retreats of the spidertrons that agent sent (`spidertrons: "1 spidertron go_to retreat cleared"`). The
+  retreat point is checked as the guard's is (out of enemy reach on the agent's surface).
+- On a private copy of world n's shift71 save: Gleba spidertron #23117830, Grok's guard (to (60,40), health under 50%):
+  health set to 1200/3000 at tick 59046572 at (130.2,20); retreat at 59046589 (17 ticks), its 5 targets replaced by
+  (60,40), where it stood by 59046826. A go_to retreat on the shield (under 30%): 250 damage at 59046953, retreat at
+  59046979 (shield 72/300). Nauvis spidertron #27069154 ridden by Muse and sent by Opus (no guard): Muse's guard
+  (health under 60%) at 16 ticks; both heard it. After clear, health 900/3000 kept the route.
+- Cost (`profile_ticks` 20 s, the copy, one guarded spidertron walking): `spiderroute.guard_tick` 40 calls, 1.46 ms,
+  0.036 ms a call, worst second 0.09 ms.
+- Test: tests/d24_batch189.lua (fails on main: the go_to reply has no `retreat`).
