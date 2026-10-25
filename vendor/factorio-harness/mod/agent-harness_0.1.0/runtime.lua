@@ -133,7 +133,7 @@ M.claims=require('claims'){state=state,crafters=function(f,s) if M.census then r
   owner_surface=function(name)
     for _,a in ipairs(M.board.agents()) do
       if a.name==name then
-        local ok,w=pcall(M.where.place,a.index)
+        local ok,w=pcall(M.where.place,a.index,true)
         local key=ok and w and w.key
         return type(key)=='string' and not key:find('^pod:') and key or nil
       end
@@ -17032,11 +17032,12 @@ function handlers.lookahead(p,a) return M.lookahead.read(p,a) end
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
-  resting=function(index)
+  resting=function(index,bare)
     for _,a in ipairs(M.board.agents()) do
       if a.index==index then
         local r=M.rests.get(a.name)
         if not r then return nil end
+        if bare then return M.rests.label(r) end
         -- (d22 batch113 BW1) the alert groups that go to it while it rests, and who else hears them
         local ok,note=pcall(function() local q=M.lookup(index); return M.pushalerts and M.pushalerts.resting_note(a.name,q and q.force or game.forces.player) end)
         return M.rests.label(r)..(ok and note and '; '..note or '')
@@ -18978,7 +18979,7 @@ M.pushalerts=require('pushalerts'){rest_label=function(name) local r=M.rests.get
   negative_note=function(item,n) return M.circuits.negative_note(item,n) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
   status_name=function(e) return entity_status_names[e.status] end,
-  place=function(index) return M.where.place(index) end,targets=M.targets,
+  place=function(index) return M.where.place(index,true) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)
     local ok,more=pcall(M.lightning.alert_groups,force)
