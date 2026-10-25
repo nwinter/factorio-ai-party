@@ -47,7 +47,8 @@
   Example: `./fh call build --args '{"item":"transport-belt","direction":"east","builds":[{"position":{"x":10.5,"y":6.5}},{"position":{"x":11.5,"y":6.5}}]}'`
 - `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, clear_obstacles?, dry_run?}`: places ghosts, no items needed
   (`clear_obstacles: true`, on `build` too: trees and rocks in the footprints marked, those in reach mined by hand,
-  the call run again once they are gone; dry runs list them in `trees_rocks`)
+  the call run again once they are gone, never over another action running then; a queue step with wait ends with that
+  run again (queue_status active.continuation while pending), fails if it never runs; dry runs list them in `trees_rocks`)
   (a requester or buffer chest, or a machine on electricity, is watched: once robots build it in no logistic network,
   or with no pole or no power, your team block says so at once);
   entries `{name, position, direction?, recipe?, quality?}` with entry settings as `build`'s; `quality` is the entity's

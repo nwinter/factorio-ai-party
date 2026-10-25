@@ -15,6 +15,8 @@ return function(api)
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
   local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true,
     order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}
+  -- (d25 batch207 QT3) steps that can carry clear_obstacles
+  local CLEARS={build=true,place_ghosts=true}
   local function queue(index)
     local s=api.state()
     s[QUEUES]=s[QUEUES] or {}
@@ -288,6 +290,16 @@ return function(api)
     local head=not q.current and q.pending[1]
     local kept=head and head.action=='wait_ticks' and head.ends_tick and kept_line(head,q.paused) or nil
     local current=q.current
+    -- (QT3) a build or place_ghosts waiting on its clear_obstacles job or run again: continuation says which
+    local cont
+    if current and CLEARS[current.action] and api.clear_pending then
+      for i,each in pairs(api.state()[QUEUES] or {}) do if each==q then cont=api.clear_pending(i,current.action) end end
+    end
+    if cont then
+      local copy={}
+      for k,v in pairs(current) do copy[k]=v end
+      copy.continuation=cont; current=copy
+    end
     local waiting=current and current.action=='wait_until' and {condition=current.args,saw=current.saw,until_tick=current.until_tick} or nil
     if waiting and api.wait_info then
       api.wait_info(waiting,current)
@@ -689,6 +701,10 @@ return function(api)
       end
       -- (d22 batch112 BV1, Astra #1962: job-36447's build read interrupted with 4 tiles unplaced and nothing said why) what
       -- paused it, and for a build not requeued the entries its action had left
+      -- (QT3) a build or place_ghosts waiting on its clear_obstacles job: nothing of it built yet; the job and its run again
+      -- dropped (the marks stay) and the step requeued as it was, so the pause never leaves a run again behind it
+      local pend=not again and CLEARS[step.action] and api.clear_cancel and api.clear_cancel(index,step.action) or nil
+      if pend then again=true; resumed='requeued as it was: its clear_obstacles continuation was pending ('..pend..'); the job is dropped, the trees and rocks stay marked for deconstruction' end
       local left=not again and step.action=='build' and api.left_undone and api.left_undone(index) or nil
       record(q,step,false,{reason='interrupted',paused_by=why or (q.paused_why and q.paused_why.line),requeued=again or nil,resumed_from=resumed,
         left_undone=left,not_requeued=not again and (hold or left and string.format('not run again: %d entr%s left unbuilt (%s)',left.count,left.count==1 and 'y' or 'ies',left.line) or 'not run again') or nil})
@@ -1215,6 +1231,18 @@ return function(api)
               local result={accepted=step.result,outcome=outcome or 'completed',completion=completion}
               q.current=nil
               if step.action=='wait_ticks' and step.ends_tick then result.kept=kept_line(step) end
+              -- (d25 batch207 QT3, Sol #2351) a build or place_ghosts whose clear_obstacles job this step started: its end is
+              -- the step's (not run again: failed with why; run again: an instant reply stands for the completion; on the copy
+              -- the run again of 2 stone furnaces over 2 chimneys built at once, after the hand mining's construct row)
+              local ce=CLEARS[step.action] and type(step.result)=='table' and step.result.then_runs and api.clear_end and api.clear_end(index,step) or nil
+              if ce then
+                result.cleared=ce.text
+                if not ce.ok then success=false; result.reason=ce.text; result.outcome='not_run_again'
+                elseif type(ce.result)=='table' and (type(completion)~='table' or (completion.tick or 0)<ce.tick) then
+                  -- run again built at once (no timed action): its reply, not the hand mining's earlier row
+                  result.completion=ce.result; result.outcome='completed'; success=true
+                end
+              end
               local partial,nfailed=entries_failed(step,result)
               if partial then result.reason=partial; result.entries_failed=nfailed end
               if success and not partial and minimum(step,result) then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end

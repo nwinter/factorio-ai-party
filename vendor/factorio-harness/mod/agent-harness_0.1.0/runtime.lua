@@ -2375,7 +2375,7 @@ function handlers.describe(_,a)
   -- (d18 batch36 C1) clear_obstacles on build and place_ghosts (clearobs.lua)
   for _,name in ipairs({'build','place_ghosts'}) do
     local d=description.actions[name]
-    if d then d.clear_obstacles='optional true: the trees and rocks in the entries\' footprints are marked for deconstruction, those in reach mined by hand (a timed construct over them), the rest left to the construction robots; once all are gone the call runs again (watched 10 min; last.cleared); none in the way: the call runs at once (cleared says so); returns cleared, mining, robots, then_runs. The dry run lists them in trees_rocks' end
+    if d then d.clear_obstacles='optional true: the trees and rocks in the entries\' footprints are marked for deconstruction, those in reach mined by hand (a timed construct over them), the rest left to the construction robots; once all are gone the call runs again (watched 10 min; last.cleared), never over another action running then (not run: last.cleared says why); a queue step (wait true) runs until that run again ends, active.continuation naming what is pending, and fails when it is not run (watch over, refused, another action running); a pause drops the pending run again and requeues the step; none in the way: the call runs at once (cleared says so); returns cleared, mining, robots, then_runs. The dry run lists them in trees_rocks' end
   end
   description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, vehicle_fire (seated in a spidertron: its guns\' range, rockets loaded, and the enemies within range it fires at: targets, farthest, nearest, box), alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
@@ -16942,6 +16942,11 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
     if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
+    -- (d25 batch207 QT3, Sol #2351) a build or place_ghosts with clear_obstacles: its job and its run again pending
+    if (action=='build' or action=='place_ghosts') and M.clearobs then
+      local line,job=M.clearobs.pending(p.index,action)
+      if line then job.queued=true; return true end
+    end
     local now=timed[action] and state().active[p.index]
     -- (or a walk into reach that the call makes first: autowalk.lua)
     return now and (M.queue_waits(action,now.kind) or (now.then_call~=nil and now.then_call.action==action) or (action=='move_to' and now.then_move~=nil)) or false
@@ -16968,6 +16973,10 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
     return row
   end,
   moved_step=function(p,step,result) return M.moved_step(p,step,result) end,
+  -- (QT3) clear_obstacles for a build or place_ghosts step: how its job ended, its pending continuation, dropped on a pause
+  clear_end=function(index,step) return M.clearobs.ended(index,step.started_tick) end,
+  clear_pending=function(index,action) return (M.clearobs.pending(index,action)) end,
+  clear_cancel=function(index,action) return M.clearobs.cancel(index,action) end,
   outcome=function(p,action,step)
     local last=action=='shoot' and state().last_combat or action=='drop' and state().last_drop or timed[action] and state().last
     local row=last and last[p.index]
@@ -20615,6 +20624,8 @@ function M.tick_body(event)
       if okp and handlers[c.call.action] then ok,r=pcall(handlers[c.call.action],p,c.call.args) end
       local last=state().last and state().last[c.index]
       local now=state().active[c.index]
+      -- (QT3) clear_obstacles' run again: its reply kept for the queue step, and what it started is the step's
+      if c.clear then pcall(M.clearobs.ran,c.index,c.call.action,ok,ok and r or reason(r)); if ok and now and c.queued then now.queued=true end end
       local text=ok and (type(r)=='table' and (r.until_tick and string.format('%s started (until tick %d)',c.call.action,r.until_tick) or c.call.action..' ran') or tostring(r)) or (c.call.action..' refused: '..reason(r))
       if last then last.then_result=text end
       -- the action it started says so in its own last (finish)
