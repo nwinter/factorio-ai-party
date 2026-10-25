@@ -154,12 +154,26 @@ return function(api)
     end
     local force = p.force
     local nets, lines, roboports = {}, {}, false
-    for _, n in ipairs(networks(surface, force)) do
+    -- (d24 batch178 QU2, Sol #2062: on Asterion it said "no electric network of ours with a draw on platform-16") a
+    -- platform has no poles: its machines, panels and accumulators share one network (networks.platform_power, as the
+    -- plain power read finds it), read from the surface's statistics, with its capacity; pole networks there give the
+    -- same statistics, so they are no rows of their own
+    local plat = try(function() return surface.platform end)
+    local pp = plat and api.platform_power and api.platform_power(surface, force)
+    if pp and pp.network then
+      local use, total, made = {}, 0, 0
+      for _, c in ipairs(pp.consumers or {}) do use[#use+1] = {name=c.name, quality=c.quality, kw=c.kw}; total = total + c.kw end
+      for _, c in ipairs(pp.producers or {}) do made = made + c.kw end
+      -- the totals as the plain read gives them (the rows are rounded each)
+      total, made = pp.draw_kw or total, pp.production_kw or made
+      nets[#nets+1] = {id=pp.network, use=use, total=total, made=made, makers=pp.producers, capacity=pp.capacity_kw, platform=true}
+    end
+    for _, n in ipairs(pp and pp.network and {} or networks(surface, force)) do
       local stats = try(function() return n.pole.electric_network_statistics end)
       if stats then
         local use, total = flows(stats, 'input', try(function() return stats.input_counts end))
-        local _, made = flows(stats, 'output', try(function() return stats.output_counts end))
-        if total > 0 or made > 0 then nets[#nets+1] = {id=n.id, poles=n.poles, center=n.center, use=use, total=total, made=made} end
+        local makers, made = flows(stats, 'output', try(function() return stats.output_counts end))
+        if total > 0 or made > 0 then nets[#nets+1] = {id=n.id, poles=n.poles, center=n.center, use=use, total=total, made=made, makers=makers} end
       end
     end
     table.sort(nets, function(x, y) return x.total > y.total end)
@@ -174,11 +188,24 @@ return function(api)
         end
         if u.name == 'roboport' then roboports = true end
       end
-      rows[#rows+1] = {network=n.id, poles=n.poles, center=n.center and at(n.center) or nil, draw_kw=math.floor(n.total + 0.5), made_kw=math.floor(n.made + 0.5), by_cause=top}
-      lines[#lines+1] = string.format('electric network %d%s: draws %s, made %s (last 5 s): %s%s', n.id, n.center and ' near ' .. at(n.center) or '', mw(n.total), mw(n.made),
-        table.concat(parts, ', '), #n.use > TOP and string.format(', +%d more', #n.use - TOP) or '')
+      -- (QU2) what makes it, by name and quality, as what draws
+      local mparts, makers = {}, {}
+      for j, u in ipairs(n.makers or {}) do
+        if j <= TOP then
+          mparts[#mparts+1] = string.format('%s%s %s', u.name, u.quality and ' (' .. u.quality .. ')' or '', mw(u.kw))
+          makers[#makers+1] = {name=u.name, quality=u.quality, kw=math.floor(u.kw + 0.5)}
+        end
+      end
+      rows[#rows+1] = {network=n.id, poles=n.poles, center=n.center and at(n.center) or nil, draw_kw=math.floor(n.total + 0.5), made_kw=math.floor(n.made + 0.5), by_cause=top,
+        made_by=#makers > 0 and makers or nil, capacity_kw=n.capacity, platform_network=n.platform or nil}
+      lines[#lines+1] = string.format('electric network %d%s: draws %s, made %s%s (last 5 s): %s%s%s', n.id,
+        n.platform and ' (platform ' .. plat.name .. '\'s own network: its machines, panels and accumulators, no pole needed)' or n.center and ' near ' .. at(n.center) or '',
+        mw(n.total), mw(n.made), n.capacity and ', capacity ' .. mw(n.capacity) or '',
+        table.concat(parts, ', '), #n.use > TOP and string.format(', +%d more', #n.use - TOP) or '',
+        #mparts > 0 and '; made by ' .. table.concat(mparts, ', ') .. (#(n.makers or {}) > TOP and string.format(', +%d more', #n.makers - TOP) or '') or '')
     end
-    local out = {surface=surface.name, networks=rows, lines=#lines > 0 and lines or {'no electric network of ours with a draw on ' .. surface.name}}
+    local where = plat and string.format('platform %s (%s)', plat.name, surface.name) or surface.name
+    local out = {surface=surface.name, platform=plat and plat.name or nil, networks=rows, lines=#lines > 0 and lines or {'no electric network of ours with a draw on ' .. where}}
     if roboports or a.robots == true then
       local robots, rl = M.robots(surface, force)
       out.robots = #robots > 0 and robots or nil

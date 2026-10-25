@@ -194,7 +194,8 @@
   `radius`, default 96) lists the poles of that network whose loss alone would cut machines off from all generation,
   with how many machines and where (wires leaving the radius count as power). `by_cause: true` ranks each network's
   draw by entity name (last 5 s); when roboports draw, it adds the robots flying, charging and waiting, what the flying
-  ones draw, their trip lengths and the requesters with the most on the way. `platform` reads a platform's networks;
+  ones draw, their trip lengths and the requesters with the most on the way; on a platform it reads the platform's own
+  network (no pole needed), names the platform, and gives `made_by` and `capacity_kw`. `platform` reads a platform's networks;
   `surface` (a planet or platform name) reads that surface's networks by remote view, round a `position` or `area`
   there (needed there; `by_cause` reads all of them); the reply's `surface` names the one read. `power` is also an
   observe scope. Draw and production (also `platform_power` and `by_cause`) sum every quality, a row per name and

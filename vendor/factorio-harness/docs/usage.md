@@ -14041,3 +14041,28 @@ Fixed besides gates:
   each: platform_production {Asterion, explosives} main 2.0-2.7 ms, this branch 4.8-6.2 ms (the find of 55 crafting
   machines, each recipe's products, craftrate for the 4 that make it); {Asterion} without item 10.9-11.6 ms on both.
 - Test: tests/d24_batch171.lua (fails on main: inspect's line, no makers); tests/craftrate.lua takes the new line.
+
+## d24 batch178 (Sol #2063, #2062, #2052)
+
+- QU1: a queued `wait_ticks` step's `result.completion` is its own: `{kind: "wait_ticks", outcome: "completed", tick,
+  ticks, start_tick, end_tick, waited}`. Before, it was the character's last completion (on the private copy of world n's
+  save: job-2 `wait_ticks` read job-1 `move_to` "arrived"). Any other queued step's completion and outcome come from
+  the character's last completion only when it was written since the step began; a timed step that left none (a
+  refusal, an instant finish) has no completion and the outcome `completed`.
+- QU2: `power {platform, by_cause: true}` reads the platform's own network (networks.platform_grid: the surface's
+  statistics; the network and capacity from its generators, panels and accumulators, found by type), names the platform
+  (`platform`; "no electric network of ours with a draw on platform Asterion (platform-16)" when there is none), and
+  each network row has `made_by` (by name and quality) and, on a platform, `capacity_kw` and `platform_network`. On the
+  copy, Asterion: network 20579, draw 39,409 kW, made 39,409 kW, capacity 280,266 kW, consumers and producers the
+  same as the plain read's `platform_power`. Cost (`profile_ticks` part `powercause.read`, the copy): Swiftlet 0.5-0.7
+  ms, Asterion 2.0-2.2 ms (13.5-15.1 ms with platform_power's scan of all 8,429 entities). World n, the game reads of
+  the new path (typed find and statistics): Chalk 0.19 ms, Swiftlet 0.32 ms, Meridian-V 0.40 ms, Kestrel II 0.69 ms,
+  Asterion 1.51 ms.
+- QU3: `requests` `section` is an index as the sections were before the call, or a logistic group's name (the one
+  section in it; none or several refused, naming them). A `construction_requests` switch in the same call inserts or
+  removes the game's section at 1 and the manual sections keep their order: the section named is found again by its
+  place among them and written (`section_moved`: "section 15 (as the call found it) is section 16 after
+  construction_requests on switched the game's section in: the call wrote section 16"). A write's reply has
+  `section_before` and `section_after` {index, group, active}. On the copy, Asterion: construction_requests false with
+  section 16 active true switched on "Astra2238 production upgrade pickup", now section 15.
+
