@@ -14740,6 +14740,27 @@ replaces a watch, and only `{id}` read a full result; a queue step cannot know t
 - Cost on the copy, through dispatch, 3 runs each: read by platform 56.1, 47.4, 44.9 ms; `{id: 1270}` 46.5, 45.3,
   46.1 ms (both build the same 56 KB row); not_found 2.4, 17.0, 2.5 ms.
 - Tests: tests/d25_batch205b.lua (run by tests/d25batch205b.test.ts; fails on main: the read started a watch).
+- cp3 (operator, Astra at tick 62171636 on world n: Asterion's read returned #1265, start 60999441, while #1270 was the
+  return watch of trial180). Astra's `{id: 1270}` at tick 62172410 answered "no flight watch #1270": it was no longer
+  kept. #1270 was first read at tick 61921882 (the copy's save), and a read done watch is dropped KEEP_READ (216000
+  ticks, 1 h) after that read, at tick 62137882. #1269 was read at 61871523 and dropped at 62087523. #1234 to #1244
+  went by KEEP_DONE (16 read or replaced a force) as other watches were started. The cp2 read chose the highest id
+  among the kept watches, and #1265 was that one.
+  - On the copy with cp2: with the read ticks of #1269 and #1270 set back past KEEP_READ, the read returned #1265 and
+    named neither.
+  - The read now orders the platform's kept watches by `began_tick`, then by id. began_tick is the tick the watch
+    first began: the call for a from-now watch, the departure for a from-departure one. begin() keeps it as w.began.
+    A mixed split moves start_tick (#1265: began 60923271, start 60999441) and never began_tick. For a watch begun
+    before cp3: a from-now watch's set tick, else the first mixed part's from_tick, else start_tick. An armed watch
+    orders by its set tick.
+  - Each removal from the list (dropped KEEP_READ after its read, WAIT after a replace not read, past KEEP_DONE,
+    cleared, replaced while armed) is kept per platform (the last 4: id, set, began, ended, why, tick). The read
+    returns `dropped_newer` with those that began after the one it returns, and names them in line. Drops before the
+    deploy are not kept, so on world n #1270 is not named.
+  - On the copy with cp3: the read returned #1270 (began 61870733) while it was kept. With the read ticks set back, it
+    returned #1265 with dropped_newer #1270 and #1269 (began, ended, dropped at, "1h00m00s after its first read at
+    tick ...").
+  - Tests: tests/d25_batch205b.lua, section cp3 (fails on cp2: no began_tick, no dropped_newer).
 
 ## d25 batch201
 

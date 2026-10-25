@@ -67,3 +67,55 @@ fails(function() F.check_read({read=true,platform='Asterion',minutes=30}) end,'r
 fails(function() F.check_read({read=true,platform='Asterion',id=1}) end,'read: true takes platform only')
 F.check_read({platform='Asterion',minutes=30})
 print('d25_batch205b QR2 flight_watch read by platform: ok')
+
+-- cp3 (operator, Astra at tick 62171636: Asterion's read returned #1265 while #1270 had been read by id 1 h 7 min
+-- before and dropped 1 h after that read): the newest by the tick it first began, a split's moved start not counted,
+-- and newer watches no longer kept named.
+do
+  st={}
+  game.tick=100000
+  local F3=dofile('mod/agent-harness_0.1.0/flightwatch.lua'){state=function() return st end,who=function(q) return q.name end,
+    platform=function(q,name) for _,pl in ipairs(pls) do if pl.name==name then return pl end end error('no platform '..name) end,
+    hits=function() return {hits=0,damage=0,entities={},by={}} end}
+  local function run3(to) while game.tick<to do game.tick=game.tick+1; if F3.due(game.tick) then F3.tick(game.tick) end end end
+  -- #1 began at 100000 by sol; replaced (not read) by #2 (astra, a remote setter) at 100600
+  local w1=F3.call(p,{platform='Asterion'}).watch
+  game.tick=100600
+  local astra={name='astra',force=force,index=2}
+  local w2=F3.call(astra,{platform='Asterion',replace=true}).watch
+  eq(st.flightwatch.list[2].began,100600)
+  -- #1's window was split by an edit at 101000 (mixed.lua rebases it: its start moves, began does not)
+  local l1=st.flightwatch.list[1]
+  l1.start=101000; l1.mixed={parts={{from_tick=100000,to_tick=101000}},from_tick=101000,line='mixed'}
+  eq(F3.began(l1),100000,'a split keeps the first begin')
+  local r=F3.call(p,{platform='Asterion',read=true})
+  eq(r.watch.id,w2.id,'the newest by began, not by a split start'); eq(r.watch.began_tick,100600); eq(r.latest_by,'began_tick')
+  eq(r.older[1],w1.id)
+  -- a watch kept from before began existed: from-departure, start moved by a split; parts give the first window
+  l1.began=nil
+  eq(F3.began(l1),100000)
+  -- #2 ends and is read by id; KEEP_READ after the read it is dropped; the read names it and returns #1
+  local l2=st.flightwatch.list[2]
+  l2.state='done'; l2.ended=102000; l2.why='arrived at aquilo'
+  game.tick=102100
+  F3.call(astra,{id=w2.id})
+  eq(l2.read_tick,102100)
+  run3(102100+F3.KEEP_READ+60)
+  eq(#st.flightwatch.list,1,'#2 dropped 1 h after its read')
+  r=F3.call(astra,{platform='Asterion',read=true})
+  eq(r.watch.id,w1.id)
+  eq(r.dropped_newer[1].id,w2.id); eq(r.dropped_newer[1].began_tick,100600); eq(r.dropped_newer[1].end_tick,102000)
+  assert(r.line:find('newer on Asterion and no longer kept: #'..w2.id..' (began at tick 100600, ended at tick 102000) is no longer kept: dropped at tick ',1,true),r.line)
+  assert(r.line:find('1h00m00s after its first read at tick 102100',1,true),r.line)
+  -- cleared: not_found names the cleared one
+  F3.call(astra,{id=w1.id,clear=true})
+  r=F3.call(astra,{platform='Asterion',read=true})
+  eq(r.not_found,true); eq(#r.dropped_newer,2)
+  assert(r.line:find('cleared by astra',1,true),r.line)
+  -- an armed watch orders by its set tick
+  F3.call(p,{platform='Cinder',from='departure'})
+  game.tick=game.tick+10
+  r=F3.call(p,{platform='Cinder',read=true})
+  eq(r.watch.state,'armed'); eq(r.watch.began_tick,nil)
+end
+print('d25_batch205b cp3 latest by the tick it began, dropped ones named: ok')
