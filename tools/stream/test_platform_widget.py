@@ -20,8 +20,8 @@ import model  # noqa: E402
 from model import Model, platform_card  # noqa: E402
 
 KESTREL = {"name": "Kestrel", "at": "nauvis->vulcanus 48%", "state": "on_the_path", "speed": 1.0, "paused": True,
-           "defense": {"hub_health": "620/1000", "turrets": "5 gun-turrets: 4 empty, 1 low (under 10 rounds)",
-                       "ammo": "turrets hold 6 rounds, the hub firearm-magazine 920, piercing-rounds-magazine 40"},
+           "defense": {"hub_health": "620/1000", "turrets": "5 gun-turrets: 4 empty, 1 low (under 10 magazines: 6 (55 rounds))",
+                       "ammo": "turrets hold 6 magazines (55 rounds), the hub firearm-magazine 920, piercing-rounds-magazine 40"},
            "repair_packs": "repair-pack*12 repair-pack@uncommon*3", "damaged_count": 7,
            "hub_items": "space-science-pack*340 firearm-magazine*920 iron-plate*48 repair-pack*12 copper-cable*30 +4 more"}
 
@@ -45,6 +45,10 @@ def main():
                                                                      "ammo": "turrets hold 0 rounds, the hub no ammo"},
                           "repair_packs": "none"})
     assert none["guns"]["total"] == 0 and none["ammo"] == {"turrets": 0, "hub": 0} and none["repair"] == 0, none
+    # (d25 batch207 QT2) the unit named: magazines, rockets, ammo items; the old "rounds" text still reads
+    for text, n in (("turrets hold 16 rockets, the hub rocket 40", 16), ("turrets hold 9 ammo items, the hub no ammo", 9),
+                    ("turrets hold 0 magazines, the hub no ammo", 0)):
+        assert platform_card({"name": "U", "at": "nauvis", "defense": {"ammo": text}})["ammo"]["turrets"] == n, text
 
     # 2. the model
     t = time.time()
@@ -98,7 +102,7 @@ def main():
         if s.get("lost"):
             seen["lost"] = s["lost"][0]
     assert seen.get("drift_hits") and seen["drift_hits"]["guns"]["armed"] == 0 and seen["drift_hits"]["repair"] == 0, seen
-    assert seen.get("aboard") and seen["aboard"]["ammo"] == {"turrets": 240, "hub": 920} and \
+    assert seen.get("aboard") and seen["aboard"]["ammo"] == {"turrets": 46, "hub": 920} and \
         [c["item"] for c in seen["aboard"]["cargo"]] == ["space-science-pack", "metallic-asteroid-chunk", "iron-plate"]
     assert seen.get("lost") and seen["lost"]["name"] == "Shuttle" and seen["lost"]["cause"] == "medium metallic asteroids"
 

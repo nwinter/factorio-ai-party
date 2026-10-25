@@ -2796,7 +2796,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   mining, building or crafting by hand, the inventory) is refused with that list.
 - Aboard, `configure {platform, ...}` and `configure {surface, ...}` use remote view. `queue_submit`, `queue_repeat` and `queue_edit` accept plans whose steps, guards and repeat stop conditions are allowed aboard, including `wait_until {until:"platform_arrived", platform:"Sunward", location:"gleba"}` followed by `drop`. Each step's permission is checked again when it starts. `observe` without a scope returns the platform surroundings and `player.body:"none"`; health, character inventories and equipment are absent while there is no character.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
-  (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+  (under 10 magazines)`) and `ammo`, the ammo flow (`turrets hold 6 magazines (55 rounds), the hub firearm-magazine
+  920`). Counts are ammo items (magazines in gun turrets, rockets in rocket turrets); the rounds left beside them.
 - Every `platforms` row shows `hub_chunks`, the hub slots asteroid chunks take (Astra, shift14 22:50: a chunk backlog
   hid in the raw stock; a chunk stacks to 1): `asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)`.
   With `platform` set, and in `preflight` with `platform`:
@@ -4888,8 +4889,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   by medium-metallic-asteroid 3` (hits on our entities there since you were last told, your first look covering the
   last 10 minutes; at most once a game minute), `...: hits per minute rising, 30 in the last minute, 2 a minute over
   the 5 before` (10 or more and at least twice the earlier rate plus 5), `...: 1 of 2 gun-turrets empty, 1 low (under
-  10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920` (the ammo flow: rounds loaded in the turrets
-  against the ammo waiting in the hub), `...: no repair packs in the hub (...)` (while it was hit in the last 10
+  10 magazines: 4 (37 rounds)); turrets hold 4 magazines (37 rounds), the hub firearm-magazine 920` (the ammo flow:
+  magazines loaded in the turrets, with the rounds left in them, against the ammo waiting in the hub), `...: no repair packs in the hub (...)` (while it was hit in the last 10
   minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`, and when it flies under 5 km/s on a route
   on two reads 10 s apart (operator 10:53, Astra), which thrusters lack which input and the chain behind it: `platform
   Sunward (surface platform-1) flies at -10 km/s (under 5; backwards along its leg) on nauvis->gleba: thruster-fuel:
@@ -14943,3 +14944,30 @@ No argument or reply changed: every reply below was compared with main's at the 
   kept, and read again after a tile moved, a turret emptied or moved; a sparse hull; the watch's page order however
   its records come, and a done watch's groups per filter; elsewhere's kinds by name; census lists by force index;
   rounds text.
+## d25 batch207
+
+QT1 (Sol #2344): Kestrel IVb plan14's `pod_landed` wait for 750 uranium-rounds-magazine (since 62060809) was met at
+tick 62193645, the pod's on_cargo_pod_finished_descending, and its next step retired the endpoints at 62193647 while
+the hub's request still read the pods coming down. delivery_watch 469 saw the pod received at 62193727, 82 ticks later.
+on_cargo_pod_delivered_cargo comes about 80 ticks after finished_descending, and a landing pad holds the cargo the tick
+after it (batch179).
+- podlog.lua: a journey keeps `delivered`, the tick after on_cargo_pod_delivered_cargo (podlog.tick, the pad's read
+  after): the tick delivery_watch sees the pod gone. A sampled journey (no pod events forwarded) is delivered when
+  sampled gone. `delivered_since`: the first pod event this runtime saw.
+- `pod_landed` (M.landed_from) counts a pod at its delivery tick: delivered after the start counts (a pod landed
+  before the start and delivered after it too). A journey landed before `delivered_since` with no delivery tick counts
+  at its land tick.
+- saw: "N pods from P landed and delivered since ... (the last delivered at tick T, PAD on PLANET)", and "; K more
+  landed, cargo not delivered yet" while some are.
+
+QT2 (Sol #2345): platform low-ammo alerts said "3 low (under 10 rounds), turrets hold 396 rounds" for magazine counts
+(get_item_count: a part-used magazine is one item).
+- The threshold is 10 ammo items in a turret's ammo slots, unchanged; gun-turret, rocket-turret and railgun-turret
+  each take up to 10 from inserters (automated_ammo_count, 2.0.77 prototypes): a turret inserters fill holds 10 at
+  most, and one under 10 counts as low.
+- The platform alert, the `platforms` row's `defense` and the feed alert name the unit: magazines (gun turrets),
+  rockets (rocket turrets), else ammo items. Where the rounds are read (vehicles.inventory_rounds, batch202) the
+  totals and each low turret's count (up to 8) give the rounds left (tests/d25_batch207.lua): "3 low (under 10
+  magazines: 7 (68 rounds), 7 (70 rounds), 9 (88 rounds)); turrets hold 33 magazines (326 rounds)". A failed rounds
+  read gives the items alone.
+- The empty alert and the feed alert ("can reach under 20 magazines and nothing more comes") keep their tests.

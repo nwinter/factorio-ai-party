@@ -456,10 +456,10 @@ class MockSource:
             # the platforms read's defence and cargo (space.lua, platalerts.lua), as text
             hp = 860 if not i else max(120, 1000 - int((t - 100) * 6))
             p.update(defense={"hub_health": f"{hp}/1000",
-                              "turrets": "5 gun-turrets: 0 empty, 1 low (under 10 rounds)" if not i else
-                              "3 gun-turrets: 3 empty, 0 low (under 10 rounds)",
-                              "ammo": "turrets hold 240 rounds, the hub firearm-magazine 920" if not i else
-                              "turrets hold 0 rounds, the hub no ammo"},
+                              "turrets": "5 gun-turrets: 0 empty, 1 low (under 10 magazines: 6 (55 rounds))" if not i else
+                              "3 gun-turrets: 3 empty, 0 low (under 10 magazines)",
+                              "ammo": "turrets hold 46 magazines (455 rounds), the hub firearm-magazine 920" if not i else
+                              "turrets hold 0 magazines, the hub no ammo"},
                      repair_packs="repair-pack*12" if not i else "none", damaged_count=0 if not i else 4,
                      hub_items="space-science-pack*340 firearm-magazine*920 metallic-asteroid-chunk*61 iron-plate*48"
                      if not i else "space-platform-foundation*20")

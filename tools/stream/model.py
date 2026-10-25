@@ -330,11 +330,12 @@ def platform_place(p):
 
 
 # The harness's platform defence as text (space.lua platforms {platform}, platalerts.lua defense): "860/1000",
-# "5 gun-turrets: 4 empty, 0 low (under 10 rounds)", "turrets hold 120 rounds, the hub firearm-magazine 920, ...";
+# "5 gun-turrets: 4 empty, 0 low (under 10 magazines)", "turrets hold 12 magazines (115 rounds), the hub firearm-magazine
+# 920, ..." (the turrets' ammo items; before d25 batch207 the same count read "120 rounds");
 # hub_items and repair_packs as "name*count name@quality*count ... +N more".
 PLAT_HP = re.compile(r"^\s*(\d+)\s*/\s*(\d+)")
 PLAT_GUNS = re.compile(r"^(\d+)\s[^:]*:\s*(\d+) empty,\s*(\d+) low")
-PLAT_ROUNDS = re.compile(r"turrets hold (\d+) rounds?")
+PLAT_ROUNDS = re.compile(r"turrets hold (\d+) (?:rounds?|magazines|rockets|ammo items)")
 PLAT_STACK = re.compile(r"([a-z0-9][\w-]*)(?:@[\w-]+)?\*(\d+)")
 NOT_CARGO = re.compile(r"magazine|ammo|rounds|repair-pack|cannon-shell|rocket$|^rocket\b|railgun-ammo", re.I)
 STORY_CARGO = re.compile(r"science-pack$|egg$")

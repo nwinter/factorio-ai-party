@@ -19,7 +19,10 @@ return function(api)
   end
   local M = {}
   local SCAN_TICKS, KEEP_MINUTES, WORKERS, WORKER_TICKS = 600, 10, 3, 2 * 216000
-  local LOW_AMMO = 10            -- rounds in a turret's ammo slots
+  -- (d25 batch207 QT2, Sol #2345: "3 turrets low (under 10 rounds), turrets hold 396 rounds" counted magazines) ammo
+  -- items in a turret's ammo slots (get_item_count: a part-used magazine is one), as the empty, low and feed counts all
+  -- are; gun, rocket and railgun turrets each take up to 10 from inserters (automated_ammo_count, 2.0.77 prototypes).
+  local LOW_AMMO = 10
   local CLEAR = 2 * 3600         -- a condition told comes back as news only after this long clear (batch28 B2)
   local FEED_TICKS = 3600        -- the ammunition trace (ammofeed.lua) read again after 1 min
   local DAMAGE_GAP = 3600        -- hit lines at most once a minute per reader and platform
@@ -206,7 +209,7 @@ return function(api)
   end
 
   -- A platform's defence as the GUI shows it: its ammo turrets (empty, low,
-  -- rounds loaded), the ammo and repair packs in the hub, the hub's health.
+  -- ammo items loaded), the ammo and repair packs in the hub, the hub's health.
   -- (d22 batch110 BT1: on a copy of world n the background scans made 40 KB of garbage a call) a platform's ammo turrets
   -- kept with each one's ammo inventory and get_item_count while their count (count_entities_filtered: no entity
   -- objects) is the same and each is valid, as conditions.lua keeps a guard's; what each holds read live at each scan.
@@ -260,14 +263,14 @@ return function(api)
   end
   local function contents_of(inv) return inv.get_contents() end
   local function read(pl)
-    local sc = {tick=game.tick, turrets=0, empty=0, low=0, rounds=0, packs=0, hub_ammo={}}
+    local sc = {tick=game.tick, turrets=0, empty=0, low=0, items=0, packs=0, hub_ammo={}}
     local okt, kept = pcall(platform_turrets, pl)
     if not okt then kept = NONE end
     local cnt = kept.cnt
     for i, t in ipairs(kept.list) do
       local n = 0
       if cnt[i] then local okc, c = pcall(cnt[i]); n = okc and c or 0 end
-      sc.turrets = sc.turrets + 1; sc.rounds = sc.rounds + n
+      sc.turrets = sc.turrets + 1; sc.items = sc.items + n
       if n == 0 then sc.empty = sc.empty + 1; sc.empty_list = sc.empty_list or {}; if #sc.empty_list < 8 then sc.empty_list[#sc.empty_list+1] = t end
       elseif n < LOW_AMMO then sc.low = sc.low + 1 end
       if n < 2 * LOW_AMMO then sc.under = (sc.under or 0) + 1 end
@@ -365,19 +368,55 @@ return function(api)
     end
     return out
   end
-  -- Ammo flow: what the turrets hold against what waits in the hub.
-  local function ammo_text(sc)
+  -- (QT2) what the counts count: magazines in gun turrets, rockets in rocket turrets, else ammo items
+  local UNIT = {['gun-turret']='magazines', ['rocket-turret']='rockets'}
+  local function unit(sc) return UNIT[sc.turret_name or ''] or 'ammo items' end
+  M.unit = unit
+  -- (QT2) the turrets' rounds left read now (batch202 inventory_rounds: a part-used magazine's rounds), with each low
+  -- turret's items and rounds (up to 8); nil without the read or when one fails. mag: some ammo holds more than one round an item.
+  local MAGS = {}
+  local function rounds_now(pl)
+    if not api.inventory_rounds then return nil end
+    local okt, kept = pcall(platform_turrets, pl)
+    if not okt then return nil end
+    local out = {items=0, rounds=0, low={}}
+    for i = 1, #kept.list do
+      local inv = kept.inv[i]
+      local rows = {}
+      if inv then rows = try(function() return api.inventory_rounds(inv, MAGS) end); if not rows then return nil end end
+      local n, r = 0, 0
+      for _, x in ipairs(rows) do
+        n, r = n + x.count, r + x.rounds
+        if x.magazine_size > 1 then out.mag = true end
+      end
+      out.items, out.rounds = out.items + n, out.rounds + r
+      if n > 0 and n < LOW_AMMO and #out.low < 8 then out.low[#out.low+1] = {n=n, r=r} end
+    end
+    return out
+  end
+  M.rounds_now = rounds_now
+  -- Ammo flow: what the turrets hold against what waits in the hub; with live (rounds_now) the items and rounds read now.
+  local function ammo_text(sc, live)
     local hub = counts(sc.hub_ammo, 3)
-    return string.format('turrets hold %d rounds, the hub %s', sc.rounds, hub ~= '' and hub or 'no ammo')
+    local held = live and live.mag and string.format('%d %s (%d rounds)', live.items, unit(sc), live.rounds)
+      or string.format('%d %s', live and live.items or sc.items, unit(sc))
+    return string.format('turrets hold %s, the hub %s', held, hub ~= '' and hub or 'no ammo')
+  end
+  -- "3 low (under 10 magazines: 7 (68 rounds), 7 (70 rounds), 9 (88 rounds))"
+  local function low_text(sc, live)
+    local each = {}
+    for i, x in ipairs(live and live.low or {}) do each[i] = live.mag and string.format('%d (%d rounds)', x.n, x.r) or tostring(x.n) end
+    return string.format('%d low (under %d %s%s)', sc.low, LOW_AMMO, unit(sc), #each > 0 and ': ' .. table.concat(each, ', ') or '')
   end
   -- The platforms read's row (space.lua): fresh, not cached; (d21 batch72 AH1, Sol #1720) sampled_tick says so.
   function M.defense(pl)
     if not pl.surface then return nil end
     local sc = read(pl)
+    local live = sc.turrets > 0 and rounds_now(pl) or nil
     return {sampled_tick=sc.tick, hub_health=sc.health and sc.max and string.format('%d/%d', round(sc.health), round(sc.max)) or nil,
-      turrets=sc.turrets > 0 and string.format('%d %s%s: %d empty, %d low (under %d rounds)', sc.turrets, sc.turret_name,
-        sc.turrets == 1 and '' or 's', sc.empty, sc.low, LOW_AMMO) or 'none',
-      ammo=ammo_text(sc)}
+      turrets=sc.turrets > 0 and string.format('%d %s%s: %d empty, %s', sc.turrets, sc.turret_name,
+        sc.turrets == 1 and '' or 's', sc.empty, low_text(sc, live)) or 'none',
+      ammo=ammo_text(sc, live)}
   end
   -- (d21 batch72 AH1) the running totals of hits on a platform's entities by other forces (flightwatch.lua), or nil.
   function M.hits(pl)
@@ -625,13 +664,14 @@ return function(api)
         if level > 0 then
           if again(seen, 'turrets', sc.empty >= sc.turrets and 'all empty' or sc.empty > 0 and 'empty' or 'low') then
             local feeds = sc.empty > 0 and try(function() return M.empty_turrets(pl, sc) end) or {}
+            local live = rounds_now(pl)
             lines[#lines+1] = string.format('platform %s: %d of %d %s%s empty%s; %s%s', name, sc.empty, sc.turrets, sc.turret_name or 'turret', sc.turrets == 1 and '' or 's',
-              sc.low > 0 and string.format(', %d low (under %d rounds)', sc.low, LOW_AMMO) or '', ammo_text(sc), #feeds > 0 and '; ' .. table.concat(feeds, '; ') or '')
+              sc.low > 0 and ', ' .. low_text(sc, live) or '', ammo_text(sc, live), #feeds > 0 and '; ' .. table.concat(feeds, '; ') or '')
           end
         else clear(seen, 'turrets') end
         -- Feeds running dry while the platform's total looks enough (d17 batch13 B1, Kestrel: the bow turrets ran empty
         -- while hundreds of magazines sat on a rear loop): turrets with nothing more coming (no ammo on the way to them
-        -- and nothing that loads it) and under 20 rounds, while 20 or more aboard are stranded or in the hub. Read with
+        -- and nothing that loads it) and under 20 ammo items, while 20 or more aboard are stranded or in the hub. Read with
         -- the scan (ammofeed.lua), told once while it lasts (batch28 B2).
         -- (d17 batch23 A2: the trace cost 180 ms on Kestrel II and ran every scan) traced only while a turret holds
         -- under 2 * LOW_AMMO (none can starve otherwise), at most once a minute
@@ -656,9 +696,9 @@ return function(api)
           if #starving > 0 and spare >= 2 * LOW_AMMO then
             if again(seen, 'starving', 'on') then
               local first = starving[1]
-              lines[#lines+1] = string.format('platform %s: %d turret%s in (%g,%g)-(%g,%g) can reach under %d rounds and nothing more comes (%s %s: %s) while %d aboard can reach no turret%s; platform_defense {platform: "%s"} traces each feed',
-                name, #starving, #starving == 1 and '' or 's', x0, y0, x1, y1, 2 * LOW_AMMO, first.name, at(first.position),
-                #first.stops > 0 and first.stops[1] or first.gated and first.gated[1] or 'its feed is dry', spare,
+              lines[#lines+1] = string.format('platform %s: %d turret%s in (%g,%g)-(%g,%g) can reach under %d %s and nothing more comes (%s %s: %s) while %d %s aboard can reach no turret%s; platform_defense {platform: "%s"} traces each feed',
+                name, #starving, #starving == 1 and '' or 's', x0, y0, x1, y1, 2 * LOW_AMMO, unit(sc), first.name, at(first.position),
+                #first.stops > 0 and first.stops[1] or first.gated and first.gated[1] or 'its feed is dry', spare, unit(sc),
                 #tr.stranded_groups > 0 and ' (on belts: ' .. table.concat(tr.stranded_groups, '; ', 1, math.min(3, #tr.stranded_groups)) .. ')' or ' (in the hub, no inserter takes it toward a turret)', pl.name)
             end
           else clear(seen, 'starving') end

@@ -214,21 +214,21 @@ do
   game.tick=game.tick+600
   A.tick(game.tick)
   eq(plat_reads,1); eq(finds,1); eq(st.platform_alerts.by[4].scan.tick,game.tick)
-  eq(st.platform_alerts.by[4].scan.empty,1); eq(st.platform_alerts.by[4].scan.rounds,30); eq(st.platform_alerts.by[4].scan.packs,12)
+  eq(st.platform_alerts.by[4].scan.empty,1); eq(st.platform_alerts.by[4].scan.items,30); eq(st.platform_alerts.by[4].scan.packs,12)
   eq(st.platform_alerts.by[4].scan.hub_ammo['firearm-magazine'],200)
   -- the same turrets: no find, no inventory read; the rounds as they are now; the item types not read again
   local reads,tr=inv_reads,type_reads
   t1.n=5
   local d=A.defense(pl)
-  eq(d.turrets,'2 gun-turrets: 0 empty, 1 low (under 10 rounds)'); eq(finds,1); eq(inv_reads,reads); eq(type_reads,tr)
+  eq(d.turrets,'2 gun-turrets: 0 empty, 1 low (under 10 magazines)'); eq(finds,1); eq(inv_reads,reads); eq(type_reads,tr)
   -- one gone and one new (the count the same): found again
   t2.valid=false; turret(0)
   d=A.defense(pl)
-  eq(d.turrets,'2 gun-turrets: 1 empty, 1 low (under 10 rounds)'); eq(finds,2)
+  eq(d.turrets,'2 gun-turrets: 1 empty, 1 low (under 10 magazines)'); eq(finds,2)
   -- one more: found again
   turret(50)
   d=A.defense(pl)
-  eq(d.turrets,'3 gun-turrets: 1 empty, 1 low (under 10 rounds)'); eq(finds,3)
+  eq(d.turrets,'3 gun-turrets: 1 empty, 1 low (under 10 magazines)'); eq(finds,3)
   A.defense(pl); eq(finds,3)
   defines,prototypes=nil,nil
 end

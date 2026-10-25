@@ -45,7 +45,7 @@ do
   local c={['until']='pod_landed',platform='Ferry',item='firearm-magazine',at_least=750,since_tick=90000}
   C.validate(c)
   local met,saw=C.check(p,c,nil,{})
-  eq(met,false); eq(saw,'4 pods from Ferry landed since tick 90000 with 620 firearm-magazine (the last at tick 180800, landing pad (3,4) on aquilo)')
+  eq(met,false); eq(saw,'4 pods from Ferry landed and delivered since tick 90000 with 620 firearm-magazine (the last delivered at tick 180800, landing pad (3,4) on aquilo)')
   c.at_least=620; eq((C.check(p,c,nil,{})),true,'met at 620')
   local rare={['until']='pod_landed',platform='Ferry',item='firearm-magazine',quality='rare',at_least=70,since_tick=0}
   C.validate(rare)
@@ -55,7 +55,7 @@ do
   local rec={}
   game.tick=181000
   met,saw=C.check(p,{['until']='pod_landed',platform='Ferry'},nil,rec)
-  eq(met,false); eq(rec.pod_since,181000); eq(saw,'0 pods from Ferry landed since the wait began (tick 181000)')
+  eq(met,false); eq(rec.pod_since,181000); eq(saw,'0 pods from Ferry landed and delivered since the wait began (tick 181000)')
   game.tick=200000
   -- refused
   fails(function() C.validate({['until']='pod_landed',platform='Ferry',since_tick=200001}) end,'pod_landed since_tick is a whole game tick 0..now (200000)')
@@ -98,7 +98,7 @@ do
   tick(15)
   q=h.queue_status(players[1])
   local done=q.history[#q.history-1]
-  eq(done.action,'wait_until'); eq(done.result.outcome,'met'); has(done.result.saw,'2 pods from Ferry landed since the wait began (tick 300002) with 300 firearm-magazine')
+  eq(done.action,'wait_until'); eq(done.result.outcome,'met'); has(done.result.saw,'2 pods from Ferry landed and delivered since the wait began (tick 300002) with 300 firearm-magazine')
   -- a queue_submit with since_tick past the present is refused at submit and in dry_run
   fails(function() h.queue_submit(players[1],{steps={{action='wait_until',args={['until']='pod_landed',platform='Ferry',since_tick=game.tick+5}}}}) end,'since_tick is a whole game tick')
 end

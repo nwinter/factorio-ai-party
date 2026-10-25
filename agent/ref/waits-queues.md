@@ -10,7 +10,7 @@
   furnace or biochamber; `seconds` 1..3600; `item` optional: met when its input's first stack, of item or any,
   spoils or hatches within seconds; saw names it and the seconds left); `pod_landed` (`platform`, `item`?,
   `quality`? (with item: that quality only; default every quality), `at_least`?, `since_tick`?: pods sent down from it
-  that landed on any planet after `since_tick`, else since the wait's first check, by the pod ledger (`shipment
+  whose cargo a pad or the ground took on any planet after `since_tick` (about 80 ticks after the landing), else since the wait's first check, by the pod ledger (`shipment
   {ledger: true}` pods; its last 1000 journeys a planet; saw says when the ledger starts after since_tick); with `item`,
   how many of it; default 1; saw names the start tick; a held (`on_timeout: "hold"`) or requeued wait keeps its start;
   `drop_id: N` or `last_drop: true` (its latest drop when the wait begins): that one drop, met once it has landed; in

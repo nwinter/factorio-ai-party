@@ -155,10 +155,12 @@ return function(api)
     st.after[unit] = open
   end
   -- At a pad: its free slots after, and what it did not take (counted only when no slot is left); on the ground: the
-  -- cargo-pod-container it became.
-  local function after(st, open)
+  -- cargo-pod-container it became. (d25 batch207 QT1) delivered: this tick, the pad (or container) holding the cargo;
+  -- delivery_watch sees the pod gone on the same tick.
+  local function after(st, open, tick)
     local r = find(st, open)
     if not r then return end
+    r.delivered = tick
     local pad = open.pad
     if pad and pad.valid and r.items then
       local free, counts = pad_state(pad, r.items)
@@ -178,7 +180,7 @@ return function(api)
     local st = api.state().podlog
     local a = st and st.after or {}
     for unit, open in pairs(a) do
-      if tick > open.tick then a[unit] = nil; pcall(after, st, open) end
+      if tick > open.tick then a[unit] = nil; pcall(after, st, open, tick) end
     end
   end
   M.EVENTS = {}
@@ -192,6 +194,8 @@ return function(api)
     if not (n and pod and pod.valid) then return end
     local st = store()
     st.events = true
+    -- (QT1) journeys landed before this runtime kept delivery ticks count by their land tick (landed_from)
+    st.delivered_since = st.delivered_since or event.tick
     if n == 'on_cargo_pod_started_ascending' then M.sent(pod, {seen='event'}, event.tick)
     elseif n == 'on_cargo_pod_finished_ascending' then
       if not st.open[pod.unit_number] then M.sent(pod, {seen='event'}, event.tick) end
@@ -216,7 +220,7 @@ return function(api)
     local r = find(st, open)
     if open then st.open[unit] = nil; st.open_n = math.max(0, (st.open_n or 1) - 1) end
     if r and not r.landed then
-      r.landed, r.seen = tick, 'sampled'
+      r.landed, r.delivered, r.seen = tick, tick, 'sampled'
       if pad then r.dest = 'landing pad ' .. at(pad) end
     end
   end
@@ -242,27 +246,35 @@ return function(api)
     end
     return out
   end
-  -- (d25 batch205 QR1, Sol #2337) pods sent down from a platform that landed after since (land tick > since), on every
-  -- planet: pods, and with item how many of it (quality: that one; nil: every quality); last, the newest landed;
-  -- complete false when a planet's list is full and its oldest kept journey was sent after since (earlier ones dropped).
+  -- (d25 batch205 QR1, Sol #2337) pods sent down from a platform delivered after since, on every planet: pods, and with
+  -- item how many of it (quality: that one; nil: every quality); last, the newest delivered; complete false when a
+  -- planet's list is full and its oldest kept journey was sent after since (earlier ones dropped).
+  -- (d25 batch207 QT1, Sol #2344: plan14's 750 magazines counted at the land tick 62193645, delivery_watch saw the pod
+  -- received at 62193727) a pod counts at its delivery tick (r.delivered: the pad or container holds the cargo), about
+  -- 80 ticks after it lands; landing: pods landed after since whose cargo is not delivered yet. A journey that landed
+  -- before this runtime kept delivery ticks (delivered_since) counts at its land tick.
   function M.landed_from(platform, since, item, quality)
-    local out = {pods=0, items=0, complete=true}
+    local out = {pods=0, items=0, landing=0, complete=true}
     local key = item and (quality and quality ~= 'normal' and item .. '@' .. quality or item)
     local prefix = item and not quality and item .. '@' or nil
-    for planet, list in pairs(store().by) do
+    local st = store()
+    local old = st.delivered_since or math.huge
+    for planet, list in pairs(st.by) do
       if #list >= M.KEEP and list[1] and list[1].sent > since then out.complete = false; out.oldest = math.min(out.oldest or list[1].sent, list[1].sent) end
       for i = #list, 1, -1 do
         local r = list[i]
         if r.sent < since - M.OPEN_TICKS then break end
-        if not r.up and r.platform == platform and r.landed and r.landed > since then
+        local got = r.delivered or (r.landed and r.landed < old and r.landed)
+        if not r.up and r.platform == platform and r.landed and (got or r.landed) > since then
           local n = 1
           if item then
             n = 0
             for k, v in pairs(r.items or {}) do if k == key or (prefix and string.find(k, prefix, 1, true) == 1) then n = n + v end end
           end
-          if n > 0 then
+          if n > 0 and not got then out.landing = out.landing + 1
+          elseif n > 0 then
             out.pods, out.items = out.pods + 1, out.items + (item and n or 0)
-            if not out.last or r.landed > out.last.landed then out.last = {landed=r.landed, dest=r.dest, planet=planet, id=r.id} end
+            if not out.last or got > out.last.delivered then out.last = {landed=r.landed, delivered=got, dest=r.dest, planet=planet, id=r.id} end
           end
         end
       end
