@@ -14196,4 +14196,4 @@ Fixed besides gates:
   (health under 60%) at 16 ticks; both heard it. After clear, health 900/3000 kept the route.
 - Cost (`profile_ticks` 20 s, the copy, one guarded spidertron walking): `spiderroute.guard_tick` 40 calls, 1.46 ms,
   0.036 ms a call, worst second 0.09 ms.
-- Test: tests/d24_batch189.lua (fails on main: the go_to reply has no `retreat`).
+- Test: tests/d24_batch189.lua (fails on main: "attempt to call a nil value (field 'guard_tick')").
