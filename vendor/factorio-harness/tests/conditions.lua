@@ -226,13 +226,13 @@ do
   receipts[1]={tick=8000,kind='received',where='old pad',cargo={['rocket-fuel']=200}}
   C2.validate({['until']='pod_landed',platform='K2',item='rocket-fuel',at_least=400})
   local met,saw=C2.check(q,{['until']='pod_landed',platform='K2',item='rocket-fuel',at_least=400},nil,rec)
-  eq(met,false); eq(saw,'0 pods from K2 landed since the wait began with 0 rocket-fuel')
+  eq(met,false); eq(saw,'0 pods from K2 landed since the wait began (tick 9000) with 0 rocket-fuel')
   receipts[2]={tick=9100,kind='received',where='cargo-landing-pad (5.5,3.5) on nauvis',cargo={['rocket-fuel']=200}}
   receipts[3]={tick=9200,kind='gone',where='gone before leaving the platform',cargo={['rocket-fuel']=200}}
   receipts[4]={tick=9300,kind='landed',where='cargo-pod-container (40.5,2.5) on nauvis',cargo={['rocket-fuel']=200}}
   game.tick=9400
   met,saw=C2.check(q,{['until']='pod_landed',platform='K2',item='rocket-fuel',at_least=400},nil,rec)
-  eq(met,true); eq(saw,'2 pods from K2 landed since the wait began with 400 rocket-fuel (the last cargo-pod-container (40.5,2.5) on nauvis)')
+  eq(met,true); eq(saw,'2 pods from K2 landed since the wait began (tick 9000) with 400 rocket-fuel (the last cargo-pod-container (40.5,2.5) on nauvis)')
   eq(C2.check(q,{['until']='pod_landed',platform='K2'},nil,rec),true,'one pod at least')
   assert(not pcall(C2.validate,{['until']='pod_landed'}),'platform required')
 end
@@ -254,6 +254,6 @@ do
   eq(select(2,qc({['until']='item_count',platform='Petrel',item='quality-module-3',quality='any',at_least=1})):match('(%d+) in Petrel'),'17')
   assert(not pcall(C.validate,{['until']='item_count',platform='Petrel',item='quality-module-3',quality='shiny',at_least=1}),'unknown quality refused')
   local ok,err=pcall(C.validate,{['until']='ammo_below',count=5,quality='rare'})
-  assert(not ok and tostring(err):find('quality applies to item_count and platform_ammo_below only',1,true),tostring(err))
+  assert(not ok and tostring(err):find('quality applies to item_count, platform_ammo_below and pod_landed only',1,true),tostring(err))
 end
 print('conditions: ok')
