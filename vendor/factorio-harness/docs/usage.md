@@ -14059,6 +14059,50 @@ Fixed besides gates:
   each: platform_production {Asterion, explosives} main 2.0-2.7 ms, this branch 4.8-6.2 ms (the find of 55 crafting
   machines, each recipe's products, craftrate for the 4 that make it); {Asterion} without item 10.9-11.6 ms on both.
 - Test: tests/d24_batch171.lua (fails on main: inspect's line, no makers); tests/craftrate.lua takes the new line.
+## d24 batch179
+
+- QV1 (#1989 Astra: Gleba's native drops from Kestrel IVa never reached the ledger; #2024 Sol: receipts pruned before
+  the audit, pod ids gone after departure): one ledger of cargo pod journeys, both ways (podlog.lua), in storage.
+  - A journey: pod unit number, up or down, platform and its stop, planet, sent and landed ticks, destination (landing
+    pad (x,y), hub, ground (x,y) or the cargo-pod-container it became), items with quality (name@quality*count), a
+    drop's number and sender, a pad's free main and trash slots when the pod lands and the tick after it delivers, and
+    `ground`: what the full pad did not take.
+  - Kept per planet: 1000 journeys each, oldest dropped (about 170 bytes a journey serialized: about 170 KB a planet,
+    under 1 MB for five). On a copy of world n's 16:22 autosave Nauvis had about 7 journeys a minute, so about 2.4 h
+    there and more on the other planets. Kept after the platform leaves and after any watch completes.
+  - Event work only: control.lua forwards on_cargo_pod_started_ascending, finished_ascending, finished_descending and
+    delivered_cargo (a mod update: control.lua takes effect when the server restarts with it). A rocket's pod is
+    recorded from on_rocket_launch_ordered (forwarded since d18). A harness drop is recorded when drops.lua records it.
+  - Before the restart (no pod events reach the runtime): pods.lua's existing once-a-second read of the platforms at a
+    stop records each hub pod it sees and its going (sent and landed to the second, the planet's pad, no pad slots).
+    After the first pod event that read records nothing more.
+  - One tick of work after each delivery: the pad takes the pod's items (or spills them) the tick after
+    on_cargo_pod_delivered_cargo, so the free slots after are read then. The runtime's tick checks for a waiting
+    delivery (a table lookup) and does nothing else.
+- `shipment {ledger: true}` takes surface (default yours; with platform and no surface, every planet), direction (up,
+  down), platform, item (a name for any quality, name@quality for one), from_tick, to_tick (send ticks) and limit
+  (1..128, default 32): pods (oldest first, the newest limit of the matches), pods_total, pods_line. The launch and
+  drop lines (lines) stay, without the filters.
+- 2.0.77 facts (the copy):
+  - on_cargo_pod_started_ascending fires for a hub's pods (native and scripted drops), not for a rocket's pod. A rocket's
+    pod raises finished_ascending (launched_by_rocket true) on the planet, then finished_descending and
+    delivered_cargo on the platform.
+  - A native pod for a pad request names the pad as its station from the start; a drop (destination surface) names
+    the pad by finished_descending.
+  - delivered_cargo comes about 80 ticks after finished_descending and carries only cargo_pod, the pod already empty.
+    The pad's inventories change the tick after.
+  - A landing pad takes items in its 80 main slots, then its 20 trash slots (unrequested items, and amounts over a
+    request). With both full, the items land on the ground beside the pad as items on the ground, 1 per entity
+    (30 iron ore: 30 entities), and construction robots began collecting them about 2 s later.
+- Verified on that copy (old control.lua first, then the new one): a native pad request (20 pipe) from Cinder at
+  Gleba and a drop (50 iron ore) by sol, both in `shipment {ledger: true, platform: "Cinder"}` after Cinder left for
+  Nauvis, with pod numbers, ticks and the pad's slots; a drop into a full pad read `ground` 30, and 30 iron ore lay
+  beside the pad.
+- Cost on the copy (runs slower than world n): per event, mean 0.025-0.060 ms, max 0.16 ms (started_ascending
+  0.060/0.159, finished_descending 0.058/0.144, finished_ascending 0.025/0.079, delivered_cargo 0.027/0.041, launch
+  0.039/0.046, the read the tick after 0.028/0.060). About 60 pod events in 83 s on that save. A read with 5000
+  journeys stored: 2.6 ms for one row with an item filter, 8-12 ms for 32 rows (as sol, peek).
+- Test: tests/d24_batch179.lua (fails on main: no podlog.lua).
 
 ## d24 batch181
 

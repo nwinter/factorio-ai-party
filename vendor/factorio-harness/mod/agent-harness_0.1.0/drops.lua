@@ -190,6 +190,8 @@ return function(api)
     end
     s.list[#s.list+1] = r
     while #s.list > KEEP do table.remove(s.list, 1) end
+    -- (d24 batch179 QV1) the pod's journey in the pod ledger (podlog.lua) is this drop
+    if api.podlog and d.pod then pcall(api.podlog, d.pod, {kind='drop', by=r.by, drop=r.id}) end
     return r.id
   end
 
