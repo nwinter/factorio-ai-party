@@ -1713,6 +1713,44 @@ a host prompt.
   half the exchanges.
 - Tests: tools/stream/test_hoststory.py (plain_tests).
 
+## What changed this hour (2026-10-25, d20 batch197 NP1-NP2)
+From the hosts proposal, idea E (Nick d23 and d25: the tour's depth on the normal stream). tools/stream/hourly.py
+writes one prepared piece an hour for the narrator channel.
+- NP1, the producer. `gather(run_dir, t0, t1)` turns the hour into numbered rows, each with its source and a weight:
+  - scores.jsonl, the hour's first row against its last: rockets (against the hour before), research finished,
+    infinite levels, the labs' sets a minute and the tightest colour, entity counts, new and gone platforms, planets;
+  - chronicle.jsonl: research, deaths, platforms made, lost, renamed or deleted, a ship's first arrival at a planet
+    along the resumed-from chain, rockets by planet and cargo, the agents' chronicle entries;
+  - factory-digest.jsonl, efficiency.jsonl (machines working, machines built, the top maker);
+  - the analyst's points (tools/stream/logs/analyst-*.jsonl): one per topic or much the same text, the best 8;
+  - the agents' aloud lines (chat.jsonl, the last 2 each);
+  - plan.json's lines and goals set in the hour, in the hosts' plain English when host-plain.json has the rewrite;
+  - the attacks, losses and deaths the hosts called (tools/stream/logs/caster-*.jsonl).
+
+  Camera targets are our ships by name, a death's spot, and spots where science is made on each planet (the middle
+  of a science recipe's chart labels, kept only inside a building box of the chart index, as the tour build
+  checked). A target is a row too: where a ship was at the hour's end.
+- One model call (caster.LLMWriter on OpenRouter; default Opus 5.5 with reasoning at low effort, which batch196
+  found it needs; `--model anthropic/claude-sonnet-5.5` works too). The prompt gives the rows best weight first
+  (40 at most), the targets, the agents with the pronouns from the stream state (they/them when none), and the last
+  two pieces. It asks for the two or three changes that matter most, as one piece of 60-110 words in one or two
+  stops, with a cause and a consequence taken from the rows. The reply is JSON: changes, stops ({target, caption,
+  narration}), and facts ({claim, source row}).
+- NP2, the verifier, `check(piece, material)`:
+  - the tour build's checks: 60-110 words, captions of at most 60 characters, no dashes, known targets;
+  - every number the narration says (digits, and spelled out above ten) is in a fact's claim. A round figure may
+    be rounded honestly: within 10%, "over" up to 1.5 times, "nearly" or "under" down to 0.85;
+  - every name (agents, ships, planets; agents and planets in lower case too; any capitalised word mid-sentence) is
+    in a fact's claim;
+  - every number and name of a claim is in the row it names;
+  - he or she only for a named agent who chose it; no "we"; no advice (should, must, needs to, consider ...).
+
+  A refused piece is written once more with the reason. Refused again, it is dropped with a log line.
+- `hourly.py dry-run --run-dir runs/RUN [--hours 4] [--from HH:MM] [--no-model]` writes the pieces for past hours
+  into tools/stream/logs/hourly/: one JSON per piece (with its rows and targets) and RUN-pieces.md. Nothing airs.
+  `--no-model` prints the rows only.
+- Tests: tools/stream/test_hourly.py.
+
 ## Camera crops: the inset, and captures not hooked yet (2026-10-24, d24 batch136 PH2)
 - After the 21:05 shift change (shift66), cam3 read crop 0 at about 21:07, and the operator set it with crop_for.
 - **The change itself left all three cropped:**
