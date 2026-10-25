@@ -75,7 +75,8 @@
   {"id": "pusher-test-fix", "title": "Tests no longer stop the live site pusher", "area": "site", "requested_by": [{"name": "Aurora", "ref": "site:4796"}], "status": "live", "dates": {"live": "2026-10-24 18:56"}, "work": "batch185"},
   {"id": "spider-retreat", "title": "Retreat guards for spidertrons sent by remote", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4814"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch189"},
   {"id": "reminders-cost", "title": "Reminder reads under 10 ms on world n", "area": "harness", "requested_by": [], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch190"},
-  {"id": "spider-fight", "title": "A bounded fight action for spidertrons", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4818"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch191"}
+  {"id": "spider-fight", "title": "A bounded fight action for spidertrons", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4818"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch191"},
+  {"id": "retention-quality", "title": "A delivery watch's stop retention warning matches quality", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2264"}], "status": "in progress", "dates": {"in progress": "2026-10-24 21:14"}, "work": "batch192"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
