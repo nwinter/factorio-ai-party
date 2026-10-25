@@ -13449,6 +13449,8 @@ M.elsewhere=require('elsewhere'){chests=function(f,s) if M.census then return M.
 M.makersall=require('makersall'){burnt_line=function(e) return M.burnt.line(e) end,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
 M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
+-- (d24 batch179 QV1) every cargo pod's journey, up and down, per planet: shipment {ledger} pods (podlog.lua)
+M.podlog=require('podlog'){state=state}
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 M.railrun=require('railrun'){}  -- elevated rails and rail supports the game keeps (d20 batch69 AE1)
@@ -16854,7 +16856,7 @@ function handlers.research_done(p,a) return M.research.done(p,a) end
 function handlers.research_options(p,a) return M.research.options(p.force,a) end
 -- Where an item is stored, nearest first (stores.lua).
 -- Cargo pods on their way down from our platforms (pods.lua; Grok, shift13): followed from their platform's surface.
-M.pods=require('pods'){state=state}
+M.pods=require('pods'){state=state,podlog_sampled=function(pod,tick) return M.podlog.sampled(pod,tick) end,podlog_gone=function(unit,tick,pad) return M.podlog.gone(unit,tick,pad) end}
 -- Landed cargo pods on the ground (landed.lua; d17 pods, Nick 15:45): the pods read, status and the team block.
 M.landed=require('landed'){state=state,position=position}
 function handlers.pods(p,a) return M.landed.read(p,a) end
@@ -19010,7 +19012,7 @@ M.pushalerts=require('pushalerts'){rest_label=function(name) local r=M.rests.get
   alert_reader=function(force) return M.cameras.alert_reader(force, M.is_director) end}
 function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
-M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end}
+M.drops=require('drops'){state=state,podlog=function(pod,info) return M.podlog.sent(pod,info) end,integer=integer,who=M.board.who,resolve=M.board.resolve,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end}
 -- A pole's death that cut power (powercut.lua, round2120a): team.alerts and status alerts; scan rows' pole wires.
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
@@ -19024,13 +19026,13 @@ M.freight=require('freight'){delivered=function(info) if M.reminders then M.remi
 M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
   incoming=function(pl) return M.freight.incoming(pl) end}
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
-M.shipment=require('shipment'){freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
+M.shipment=require('shipment'){integer=integer,freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
   launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,
-  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end}
+  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end,podlog=function(f) return M.podlog.read(f) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- (d21 batch66 AB5, viewer Aurora) delivery_watch: a count of an item followed to a named consumer (delivwatch.lua)
 M.delivwatch=require('delivwatch'){state=state,who=function(p) return M.board.who(p) end,freight=M.freight,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
@@ -20202,7 +20204,8 @@ function M.tick_body(event)
   if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)
   if M.delivwatch then pcall(M.delivwatch.pod_tick,event.tick) end  -- (AB7) watched pods read each tick near landing; none followed: one lookup
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
-  if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
+  if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end
+  do local pa=state().podlog; if pa and pa.after and next(pa.after) then pcall(M.podlog.tick,event.tick) end end  -- (d24 batch179) a pod's delivery read the tick after (podlog.lua)  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
   if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks
@@ -20362,6 +20365,12 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d24 batch179 QV1) a cargo pod leaving, landing or delivering: the pod ledger (podlog.lua); faults are counted
+  if M.podlog.EVENTS[event.name] then
+    local ok,err=pcall(M.podlog.on_event,event)
+    if not ok then local s=state(); s.podlog_errors={count=((s.podlog_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+    return
+  end
   -- (d22 batch97 BG3) a chunk something was built in by hand, mined in or died in is marked for the chart (chart.lua)
   if M.chart and M.chart.events[event.name] then pcall(M.chart.mark,event) end
   -- (d23 batch123 CF2) a build, mine, death, ctrl-click or GUI change inside what a running watch measures (mixed.lua)
@@ -20404,6 +20413,7 @@ function M.on_event(event)
     -- (d18 batch39 B1, Astra: silo and shipment read as disagreeing; both name it, with the launch tick)
     local okl,lid=pcall(M.ledger.on_launch,event)
     event.harness_up=okl and lid or nil
+    pcall(M.podlog.on_launch,event)
     if M.freight then pcall(M.freight.on_launch,event) end
     local ok,err=pcall(M.silo.on_launch_ordered,event)
     if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end

@@ -576,12 +576,32 @@ return function(api)
     -- (d18 batch36 D3) the surface's cargo ledger: launches up and drops down in time order (ledger.lua)
     if a.ledger ~= nil then
       assert(a.ledger == true, 'ledger is true')
-      assert(a.platform == nil and a.item == nil and a.ready == nil, 'ledger takes surface only')
-      local surface = a.surface or p.surface.name
-      assert(type(surface) == 'string' and game.surfaces[surface], 'surface is a surface name')
-      local lines = api.ledger and api.ledger(surface) or {}
-      return {surface=surface, lines=#lines > 0 and lines or {'no launch from ' .. surface .. ' and no drop to it recorded'},
-        note='launches are recorded from when this runtime ran (64 a surface); drops as the drops read keeps them (the last 20 on every surface)'}
+      assert(a.ready == nil, 'ledger takes surface, direction, platform, item, from_tick, to_tick and limit')
+      -- (d24 batch179 QV1) the pod ledger (podlog.lua): every pod's journey, filtered
+      assert(a.direction == nil or a.direction == 'up' or a.direction == 'down', 'direction is up or down')
+      assert(a.platform == nil or type(a.platform) == 'string', 'platform is a platform name')
+      assert(a.item == nil or (type(a.item) == 'string' and prototypes.item[a.item:match('^([^@]+)')]), 'item is an item name (name@quality for one quality)')
+      local from = a.from_tick ~= nil and (api.integer and api.integer(a.from_tick, nil, 0, 2^40, 'from_tick') or a.from_tick) or nil
+      local to = a.to_tick ~= nil and (api.integer and api.integer(a.to_tick, nil, 0, 2^40, 'to_tick') or a.to_tick) or nil
+      local limit = a.limit ~= nil and (api.integer and api.integer(a.limit, nil, 1, 128, 'limit') or a.limit) or 32
+      local surface = a.surface or (a.platform == nil and p.surface.name) or nil
+      assert(surface == nil or (type(surface) == 'string' and game.surfaces[surface]), 'surface is a surface name')
+      local filtered = a.direction ~= nil or a.platform ~= nil or a.item ~= nil or from ~= nil or to ~= nil
+      local up
+      if a.direction == 'up' then up = true elseif a.direction == 'down' then up = false end
+      local rows, total = {}, 0
+      if api.podlog then rows, total = api.podlog({surfaces=surface and {[surface]=true} or nil, up=up, platform=a.platform, item=a.item, from=from, to=to, limit=limit}) end
+      local out = {surface=surface, pods=#rows > 0 and rows or nil, pods_total=total,
+        pods_line=string.format('%d pod journe%s%s recorded%s%s', total, total == 1 and 'y' or 'ys', surface and ' to and from ' .. surface or ' on every planet',
+          a.platform and ' with ' .. a.platform or '', total > #rows and string.format('; the newest %d here (limit)', #rows) or ''),
+        note='the pod ledger: every cargo pod sent up (a rocket) or down (a hub\'s pod: landing pad requests, hub trash, drops) since this runtime recorded them, '
+          .. 'the last 1000 on each planet, kept after the platform leaves; landing pad free slots are read as the pod lands and once it has delivered'}
+      if not filtered and surface then
+        local lines = api.ledger and api.ledger(surface) or {}
+        out.lines = #lines > 0 and lines or {'no launch from ' .. surface .. ' and no drop to it recorded'}
+        out.note = out.note .. '; lines: launches with what the platform asked (64 a surface) and the drops read\'s last 20 drops on every surface, with the pad\'s story'
+      end
+      return out
     end
     if a.ready ~= nil then
       assert(a.ready == true, 'ready is true')
@@ -682,8 +702,9 @@ return function(api)
     h.shipment_seen = st.seq
     return #out > 0 and out or nil
   end
-  M.schema = {shipment = {ledger='optional true, alone or with surface (default yours): the surface\'s cargo ledger in time order: each rocket launched up (up #id: the silo, the cargo, the platform and what its hub asked of the planet then, by automatic requests or by whom) and each drop down (drop #id: from which platform, the items, what the pad asked for them then, where the pod landed, what the pad held and what robots took from it in the 20 s after, the verdict); lines, note (what it cannot know)', surface='with ledger: a surface name',
-    platform='a platform name', item='or an item name: that item on every platform',
+  M.schema = {shipment = {ledger='optional true, alone or with surface (default yours): the surface\'s cargo ledger in time order: each rocket launched up (up #id: the silo, the cargo, the platform and what its hub asked of the planet then, by automatic requests or by whom) and each drop down (drop #id: from which platform, the items, what the pad asked for them then, where the pod landed, what the pad held and what robots took from it in the 20 s after, the verdict); lines, note (what it cannot know). And pods (d24 batch179): the pod ledger, every cargo pod sent up (a rocket) or down (a hub\'s pod for landing pad requests or hub trash, and drops) on that planet, the last 1000 a planet, kept after the platform leaves, oldest first: [{id, pod (unit number), direction, platform, stop, surface, sent_tick, landed_tick, destination (landing pad (x,y), hub, ground (x,y)), items (name@quality*count), by (a drop\'s sender), pad_free_before and pad_free_after (main and trash slots), ground (items the full pad did not take, on the ground beside it), line}], pods_total, pods_line; filters direction, platform, item, from_tick, to_tick, limit (lines only without them)', surface='with ledger: a surface name (default yours; with platform and no surface: every planet)',
+    direction='with ledger: up or down', from_tick='with ledger: journeys sent at or after this tick', to_tick='with ledger: journeys sent at or before this tick', limit='with ledger: 1..128 (default 32): the newest that many journeys',
+    platform='a platform name (with ledger: its journeys)', item='or an item name: that item on every platform (with ledger: journeys carrying it; name@quality for one quality)',
     ready='optional true, with platform: the freight readiness read for the planet it stops at (else the stop it flies to): its gate (a circuit wait with what the hub\'s wires read), the requests from there not delivered, each silo there (its rocket, automatic requests and why it waits: what the rocket holds against the payload it waits for, the request flag; the circuit and logistic conditions of inserters and loaders within 8 tiles with what each reads now), the landing pads there (free slots each; per item the hub would send down: count, slots, what the pads can take of it now). Returns {lines, planet, silos, down, pad_free_slots}',
     returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where); the platform\'s last 2 drops into a pad there with what the pad showed after (landed, then taken by construction robots: how many, the first orders they flew to; as the drops read\'s pad line); cargo conflict lines: an item the hub holds that the landing pads of two or more coming stops ask, each stop in the order reached with what its pads ask and hold, what goes down there and what is left aboard after it. rows [{platform, planet, item, direction up|down, state, ...; up rows: quality, comparator, custom_minimum, hub (what the hub holds of the qualities the request takes), picked_silo {name, position} (a silo whose automatic requests fill a rocket for this platform now)}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
   return M

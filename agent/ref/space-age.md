@@ -324,6 +324,11 @@
   inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
   hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
   minute.
+  `shipment {ledger: true, surface?, direction?, platform?, item?, from_tick?, to_tick?, limit?}`: the pod ledger, every
+  cargo pod sent up (a rocket) or down (a hub's pod for landing pad requests or hub trash, and drops) on a planet, the
+  last 1000 a planet, kept after the platform leaves: pod unit number, platform and its stop, sent and landed ticks,
+  where it landed (landing pad, hub, ground position), items with quality, a pad's free main and trash slots before
+  and after, and `ground`: what the full pad did not take (it lands on the ground beside the pad).
 - `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
