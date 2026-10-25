@@ -244,6 +244,10 @@
   asteroids once each. Each ammo turret's rounds (read every 15-60 ticks): `rounds_used` exact for gun turrets
   (`exact`); rocket turrets' a load and a shot can offset: `unsure_reads`, `rounds_used_most`. `platform_consumed`:
   the platform's consumed count per ammo item (item production statistics) beside the turrets' `turrets_used`.
+  Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
+  legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
+  restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
+  closed_by, line}] (at most 3, 3000 tracked asteroids together); `segment_start: <tick>` reads one in full.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in

@@ -20434,7 +20434,7 @@ function M.on_event(event)
   -- (d22 batch97 BG3) a chunk something was built in by hand, mined in or died in is marked for the chart (chart.lua)
   if M.chart and M.chart.events[event.name] then pcall(M.chart.mark,event) end
   -- (d23 batch123 CF2) a build, mine, death, ctrl-click or GUI change inside what a running watch measures (mixed.lua)
-  if M.mixed and M.mixed.events[event.name] then pcall(M.mixed.on_event,event) end
+  if M.mixed and M.mixed.events[event.name] then pcall(M.timed,'mixed.event',M.mixed.on_event,event) end  -- (d25 batch200) its own part in profile_ticks: a split closes a watch here
   -- The player log must never quarantine the runtime: its faults are counted.
   if M.players.events[event.name] then
     local ok,err=pcall(M.players.on_event,event)
@@ -20669,7 +20669,8 @@ end)()
     call=function(p,action,args) return handlers[action](p,args) end,flight_rebase=function(w,tick) return M.flightwatch.rebase(w,tick) end,
     read={uptime=function(job) return M.uptime.result(job,false) end,turret_tally=function(job) return M.turrettally.result(job,false) end,
       belt_flow=function(job) return M.beltsample.finish(job) end,collector_tally=function(job) return M.collectreach.result(job,false) end,
-      asteroid_watch=function(job) return M.asteroidwatch.result(job,false) end}}
+      asteroid_watch=function(job) return M.asteroidwatch.result(job,false) end},
+    close={asteroid_watch=function(job,new,tick,why) return M.asteroidwatch.close(job,new,tick,why) end}}
   local WATCH={uptime='uptime',turret_tally='turret_tally',belt_flow='belt_flow',
     platform_defense=function(a) return a.asteroids==true and 'asteroid_watch' or nil end,
     platform_supply=function(a) return a.collection==true and 'collector_tally' or nil end}

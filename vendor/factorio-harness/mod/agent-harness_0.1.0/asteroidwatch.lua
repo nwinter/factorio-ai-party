@@ -35,6 +35,10 @@ return function(api)
   M.MAX_ASTEROIDS, M.TRACK, M.POINTS, M.WALK_STEPS, M.WALK_BUDGET, M.CELL = 3000, 24, 16, 1200, 600, 8
   M.MAX_TURRETS, M.TURRET_ROWS, M.HIT_ROWS = 400, 64, 16
   M.PAGE, M.PAGE_MAX, M.NAMES_MAX, M.HIT_BY = 24, 100, 16, 3
+  -- (d25 batch200 QM1) the watches an edit closed (mixed.lua), kept on the watch that followed: at most SEGMENTS, and
+  -- their tracked asteroids together at most SEGMENT_RECORDS (the newest always kept). A done 120 s watch of 1501 tracked
+  -- asteroids on a copy of world n held 12026 tables (726 KB as JSON), so the segments hold at most about one full watch.
+  M.SEGMENTS, M.SEGMENT_RECORDS = 3, 3000
   local FOUNDATION = 'space-platform-foundation'
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -148,6 +152,25 @@ return function(api)
   local function radius_of(name)
     local b = try(function() return prototypes.entity[name].collision_box end)
     return b and math.max(math.abs(b.right_bottom.x), math.abs(b.left_top.x)) or 0.5
+  end
+  -- (QM1) a turret's reach: its prototype's attack range times its quality's range_multiplier (on a copy of world n an
+  -- uncommon gun turret hit asteroids 19.5 and 20.5 tiles off, a normal one none past 19), its prototype's minimum
+  -- range, and its turn range (a share of a full turn round its facing) when under a full turn; kept by name and quality
+  local RANGE = {}
+  local DIR = {}
+  for n, v in pairs(defines and defines.direction or {}) do DIR[v] = n end
+  local function range_of(e)
+    local q = try(function() return e.quality end)
+    local k = e.name .. '@' .. (q and q.name or 'normal')
+    local r = RANGE[k]
+    if r == nil then
+      local ap = try(function() return e.prototype.attack_parameters end) or {}
+      local m = q and try(function() return q.range_multiplier end) or 1
+      r = {range=ap.range and r1(ap.range * m), min=ap.min_range and ap.min_range > 0 and ap.min_range or nil,
+        turn=ap.turn_range and ap.turn_range < 1 and r3(ap.turn_range) or nil, quality=q and q.name or 'normal'}
+      RANGE[k] = r
+    end
+    return r
   end
   local function ammo_count(e)
     local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
@@ -638,7 +661,7 @@ return function(api)
         for k in pairs(t.items or {}) do items[#items+1] = k end
         for k in pairs(t.rk or {}) do if not (t.items or {})[k] then items[#items+1] = k end end
         table.sort(items)
-        rows[#rows+1] = {name=t.name, position=t.position, region=t.region, hits=t.hits, kills=t.kills, damage=r1(sum(t.dmg)),
+        rows[#rows+1] = {name=t.name, position=t.position, region=t.region, quality=t.quality, range=t.range, min_range=t.min_range, turn_range=t.turn_range, facing=t.facing, hits=t.hits, kills=t.kills, damage=r1(sum(t.dmg)),
           rounds_used=r3(t.used), ammo_used=r3(t.uitems or 0), ammo_loaded=t.loaded, rounds_start=t.r0 and r3(t.r0), rounds_end=t.rk and r3(sum(t.rk)),
           ammo=#items > 0 and table.concat(items, ', ') or nil, reads=t.reads, every=t.every, unsure_reads=t.unsure, exact=t.rk and (t.unsure or 0) == 0 or nil,
           rounds_used_most=(t.unsure or 0) > 0 and r3(t.used + (t.hidden or 0)) or nil,
@@ -744,6 +767,7 @@ return function(api)
   end
   function M.pick_args(a)
     local pick = {}
+    assert(a.segment_start == nil or (type(a.segment_start) == 'number' and a.segment_start == math.floor(a.segment_start)), 'segment_start: a segment\'s start tick (segments lists them)')
     if a.asteroid_names ~= nil then
       local v = a.asteroid_names
       if type(v) == 'string' then v = {v} end
@@ -900,6 +924,43 @@ return function(api)
     return out
   end
 
+  -- (QM1, Astra #2292: a laser destroyed mid-watch restarted it and only the summary line was left) mixed.lua closes
+  -- the watch at an edit it starts again after: the old watch is done at that tick with its full result and every
+  -- tracked asteroid's record (as a watch done at its end keeps them), and is kept on the new one (new.segments, the
+  -- oldest first, at most SEGMENTS), read by its start tick (segment_start). Returns the closed watch's result.
+  function M.close(job, new, tick, why)
+    job.until_tick = math.min(job.until_tick, tick)
+    job.result = M.result(job, true)
+    M.keep(job)
+    job.turrets, job.queue, job.tlist, job.cells, job.untr, job.dg, job.dl = nil, nil, nil, nil, nil, nil, nil
+    job.closed_by = why
+    local segs = job.segments or {}
+    job.segments = nil
+    segs[#segs+1] = job
+    local dropped, held = job.segments_dropped or 0, 0
+    job.segments_dropped = nil
+    for _, g in ipairs(segs) do held = held + (g.nast or 0) end
+    while #segs > 1 and (#segs > M.SEGMENTS or held > M.SEGMENT_RECORDS) do
+      held = held - (segs[1].nast or 0)
+      table.remove(segs, 1)
+      dropped = dropped + 1
+    end
+    if new then new.segments, new.segments_dropped = segs, dropped > 0 and dropped or nil end
+    job.result.segment_start = job.start
+    return job.result
+  end
+  -- the segments a watch keeps, for its reads
+  local function seg_rows(job)
+    if not job.segments or #job.segments == 0 then return nil end
+    local rows = {}
+    for i, g in ipairs(job.segments) do
+      rows[i] = {segment_start=g.start, end_tick=g.until_tick, seconds=r1((g.until_tick - g.start) / 60), closed_by=g.closed_by,
+        line=g.result and g.result.line}
+    end
+    return rows
+  end
+  M.SEG_NOTE = 'segments: the watches an edit on the platform (a turret built, destroyed, mined or configured; see mixed) closed before this one began, each with its full result and records: platform_defense {platform, asteroids: true, segment_start: its start tick} reads one (trajectory_page, trajectory_limit and asteroid_names as for the watch); at most ' .. M.SEGMENTS .. ', their tracked asteroids together at most ' .. M.SEGMENT_RECORDS .. ' (the newest always kept), the oldest dropped first (segments_dropped counts them)'
+
   function M.tick(tick)
     local all = api.state().asteroid_watch
     if not all then return end
@@ -924,15 +985,31 @@ return function(api)
       local job = store()[p.index]
       assert(job, 'no asteroid watch of yours yet: platform_defense {platform, asteroids: true, seconds: 10..1800} starts one')
       local pick = M.pick_args(a)
+      local segs = seg_rows(job)
+      if a.segment_start ~= nil then
+        local g
+        for _, x in ipairs(job.segments or {}) do if x.start == a.segment_start then g = x end end
+        local have = {}
+        for _, r in ipairs(segs or {}) do have[#have+1] = tostring(r.segment_start) end
+        assert(g, 'segment_start: no segment of your watch starts at tick ' .. tostring(a.segment_start) .. (#have > 0 and ' (kept: ' .. table.concat(have, ', ') .. ')' or ' (it keeps none)'))
+        local out = {}
+        for k, v in pairs(g.result) do out[k] = v end
+        out.segment = {segment_start=g.start, end_tick=g.until_tick, closed_by=g.closed_by}
+        out.segments_dropped, out.segments, out.segments_note = job.segments_dropped, segs, M.SEG_NOTE
+        return M.page(out, g, pick, g.result.trajectories)
+      end
       if job.result then
         job.read_tick = game.tick
         local out = {}
         for k, v in pairs(job.result) do out[k] = v end
+        out.segments_dropped, out.segments, out.segments_note = job.segments_dropped, segs, segs and M.SEG_NOTE or nil
         return M.page(out, job, pick, job.result.trajectories)
       end
-      return M.page(M.result(job, false, true), job, pick)
+      local out = M.result(job, false, true)
+      out.segments_dropped, out.segments, out.segments_note = job.segments_dropped, segs, segs and M.SEG_NOTE or nil
+      return M.page(out, job, pick)
     end
-    for _, k in ipairs({'asteroid_names', 'trajectory_page', 'trajectory_limit'}) do
+    for _, k in ipairs({'asteroid_names', 'trajectory_page', 'trajectory_limit', 'segment_start'}) do
       assert(a[k] == nil, k .. ' is for the read (platform_defense {platform, asteroids: true} without seconds)')
     end
     local seconds = a.seconds
@@ -952,8 +1029,10 @@ return function(api)
       local rk = e.type == 'ammo-turret' and rounds_of(e, {}) or nil
       local r0 = nil
       if rk then r0 = 0; for _, v in pairs(rk) do r0 = r0 + v end end
+      local rg = range_of(e)
       turrets[e.unit_number] = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, region=region(hull, e.position), used=0, loaded=0, ah={},
-        rk=rk, r0=r0, rt=game.tick, reads=0, unsure=0, items={}}
+        rk=rk, r0=r0, rt=game.tick, reads=0, unsure=0, items={}, quality=rg.quality, range=rg.range, min_range=rg.min, turn_range=rg.turn,
+        facing=rg.turn and DIR[e.direction] or nil}
     end
     local replaced = store()[p.index] and not store()[p.index].result
     local stats0 = M.consumed(q.force, s)
@@ -971,10 +1050,11 @@ return function(api)
     seconds='with asteroids: 10..1800, how long to watch',
     asteroid_names='optional, reading the watch (no seconds): 1..16 asteroid names, or patterns with * ("*promethium*"): only the tracked asteroids of those names in trajectories, and the untracked ones of them counted (trajectory_untracked)',
     trajectory_page='optional, reading the watch: 1.. the page of trajectories (trajectory_page {page, pages, per_page, total, returned, from, to, next, filter, order})',
-    trajectory_limit='optional, reading the watch: 1..100 trajectories a page (default 24)', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
+    trajectory_limit='optional, reading the watch: 1..100 trajectories a page (default 24)',
+    segment_start='optional, reading the watch: the start tick of a segment (segments): that closed watch\'s full read', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
     asteroids_returns='the start: hull (the box round its foundation), view, turrets, line; without seconds it reads it so far (watching) or done: asteroids (seen in view, every one), tracked (those followed one by one: the first tracked_cap seen), untracked (seen past the cap, each counted once), by_name [{name, seen, destroyed, hit, left_view, in_view, untracked}] (every asteroid, by name, the most seen first) and by_name_lines, scope (which totals cover which asteroids; asteroid chunks are not entities and not seen here), classes (the tracked ones) [{class (front|side|rear by where its straight line enters the hull\'s box, the platform facing north; /crosses or /misses: whether that line crosses foundation; clear: it never enters the box; unknown), seen, destroyed, hit, left_view, in_view}] and class_lines; '
       .. 'platform_hits and platform_hit_lines (what each asteroid that hit us hit, where, its damage, its approach and projection); turret_groups [{name, region (front|middle|rear third of the hull, west|east half), turrets, hits, kills (by class), damage, ammo_used}] and turret_group_lines (hits and kills on clear asteroids and on ones crossing no foundation); '
-      .. 'turrets (those that fired: name, position, region, hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
-      .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; drift_tiles_per_s; line; note. Read only'}
+      .. 'turrets (those that fired: name, position, region, quality, range (its prototype\'s times its quality\'s range_multiplier), min_range, turn_range and facing (when under a full turn), hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
+      .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; segments [{segment_start, end_tick, seconds, closed_by, line}] (the watches an edit on the platform closed before this one began, at most 3 and 3000 tracked asteroids together, each read in full with segment_start), segments_dropped and segments_note; drift_tiles_per_s; line; note. Read only'}
   return M
 end
