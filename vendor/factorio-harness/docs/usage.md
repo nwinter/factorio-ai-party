@@ -14905,33 +14905,6 @@ chunk our force sees.
   refusal; measured below.
 - Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
 
-## d25 batch207
-
-QT1 (Sol #2344): Kestrel IVb plan14's `pod_landed` wait for 750 uranium-rounds-magazine (since 62060809) was met at
-tick 62193645, the pod's on_cargo_pod_finished_descending, and its next step retired the endpoints at 62193647 while
-the hub's request still read the pods coming down. delivery_watch 469 saw the pod received at 62193727, 82 ticks later.
-on_cargo_pod_delivered_cargo comes about 80 ticks after finished_descending, and a landing pad holds the cargo the tick
-after it (batch179).
-- podlog.lua: a journey keeps `delivered`, the tick after on_cargo_pod_delivered_cargo (podlog.tick, the pad's read
-  after): the tick delivery_watch sees the pod gone. A sampled journey (no pod events forwarded) is delivered when
-  sampled gone. `delivered_since`: the first pod event this runtime saw.
-- `pod_landed` (M.landed_from) counts a pod at its delivery tick: delivered after the start counts (a pod landed
-  before the start and delivered after it too). A journey landed before `delivered_since` with no delivery tick counts
-  at its land tick.
-- saw: "N pods from P landed and delivered since ... (the last delivered at tick T, PAD on PLANET)", and "; K more
-  landed, cargo not delivered yet" while some are.
-
-QT2 (Sol #2345): platform low-ammo alerts said "3 low (under 10 rounds), turrets hold 396 rounds" for magazine counts
-(get_item_count: a part-used magazine is one item).
-- The threshold is 10 ammo items in a turret's ammo slots, unchanged; gun-turret, rocket-turret and railgun-turret
-  each take up to 10 from inserters (automated_ammo_count, 2.0.77 prototypes): a turret inserters fill holds 10 at
-  most, and one under 10 counts as low.
-- The platform alert, the `platforms` row's `defense` and the feed alert name the unit: magazines (gun turrets),
-  rockets (rocket turrets), else ammo items. Where the rounds are read (vehicles.inventory_rounds, batch202) the
-  totals and each low turret's count (up to 8) give the rounds left (tests/d25_batch207.lua): "3 low (under 10
-  magazines: 7 (68 rounds), 7 (70 rounds), 9 (88 rounds)); turrets hold 33 magazines (326 rounds)". A failed rounds
-  read gives the items alone.
-- The empty alert and the feed alert ("can reach under 20 magazines and nothing more comes") keep their tests.
 
 QT3 (Sol #2351): Sol's body plan 768 at 62391635: build steps with wait: true and clear_obstacles: true returned
 cleared, mining, then_runs and were marked ok at once. The next step ran while the clearing and its run again were
@@ -15007,3 +14980,30 @@ watch recorded 25 uranium-rounds-magazine launched at 62421858 and the pod in tr
   (down watches too; their blocker rule is batch139's).
 - Test: tests/d25_batch207.lua QT4; it fails on main.
 
+## d25 batch207
+
+QT1 (Sol #2344): Kestrel IVb plan14's `pod_landed` wait for 750 uranium-rounds-magazine (since 62060809) was met at
+tick 62193645, the pod's on_cargo_pod_finished_descending, and its next step retired the endpoints at 62193647 while
+the hub's request still read the pods coming down. delivery_watch 469 saw the pod received at 62193727, 82 ticks later.
+on_cargo_pod_delivered_cargo comes about 80 ticks after finished_descending, and a landing pad holds the cargo the tick
+after it (batch179).
+- podlog.lua: a journey keeps `delivered`, the tick after on_cargo_pod_delivered_cargo (podlog.tick, the pad's read
+  after): the tick delivery_watch sees the pod gone. A sampled journey (no pod events forwarded) is delivered when
+  sampled gone. `delivered_since`: the first pod event this runtime saw.
+- `pod_landed` (M.landed_from) counts a pod at its delivery tick: delivered after the start counts (a pod landed
+  before the start and delivered after it too). A journey landed before `delivered_since` with no delivery tick counts
+  at its land tick.
+- saw: "N pods from P landed and delivered since ... (the last delivered at tick T, PAD on PLANET)", and "; K more
+  landed, cargo not delivered yet" while some are.
+
+QT2 (Sol #2345): platform low-ammo alerts said "3 low (under 10 rounds), turrets hold 396 rounds" for magazine counts
+(get_item_count: a part-used magazine is one item).
+- The threshold is 10 ammo items in a turret's ammo slots, unchanged; gun-turret, rocket-turret and railgun-turret
+  each take up to 10 from inserters (automated_ammo_count, 2.0.77 prototypes): a turret inserters fill holds 10 at
+  most, and one under 10 counts as low.
+- The platform alert, the `platforms` row's `defense` and the feed alert name the unit: magazines (gun turrets),
+  rockets (rocket turrets), else ammo items. Where the rounds are read (vehicles.inventory_rounds, batch202) the
+  totals and each low turret's count (up to 8) give the rounds left (tests/d25_batch207.lua): "3 low (under 10
+  magazines: 7 (68 rounds), 7 (70 rounds), 9 (88 rounds)); turrets hold 33 magazines (326 rounds)". A failed rounds
+  read gives the items alone.
+- The empty alert and the feed alert ("can reach under 20 magazines and nothing more comes") keep their tests.
