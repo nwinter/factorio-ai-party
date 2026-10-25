@@ -14101,3 +14101,38 @@ Fixed besides gates:
   before that fast path); find 3.7-3.9 ms on both.
 - Tests: tests/d24_batch181.lua (fails on main); d22_batch82 and d23_batch133 take the new fields and line, their
   turret mocks live as a LuaInventory is (the watch keeps each turret's inventory).
+## d24 batch174
+
+- QQ1 (Luna #2242: danger counted unseen chunks, map and scan list charted entities; no read named the chunks out of
+  sight or the radar that would cover them): a new read, `sight {surface?, position? + radius? | area}`, sight.lua. A
+  new action rather than a danger or map form: danger's and map's replies stay as they are, and sight has its own cap.
+  - Each chunk the area touches: visible now (force.is_chunk_visible), charted only (is_chunk_charted), uncharted, in
+    chunk coordinates ("x,y"), grouped by source (visible) or by nearest radar and `outside` (the others), and `rows`
+    (runs per chunk row with the source). Up to 256 chunks a call (more is refused, naming the count); radius 16..240
+    tiles (default 128), so a square touches at most 16x16. Remote by surface (as danger: a position or area there
+    when the character stands elsewhere); a read (reads.sight), so it works aboard and moves nobody.
+  - Source of a visible chunk: the nearest working radar whose continuous scan covers it, else the nearest roboport,
+    cargo landing pad or spidertron covering it, else a radar not working. Not visible: the nearest radar and how many
+    chunks outside its scan (0: inside, that radar not working). The census pass's radar, roboport, pad and spidertron
+    lists (one whole-surface find each without them).
+- What gives sight, measured on a copy of world n's 15:47 save (Nauvis, a charted unlit area round chunk (16,-23), each
+  source alone, read after 300 ticks):
+  - radar: with power the square within get_max_distance_of_nearby_sector_revealed (3: 7x7) of its own chunk; without
+    power (status 54) none. On world n the radar at chunk (-5,-18) lights x -8..-2, y -21..-15.
+  - roboport, powered or not: 2 chunks (5x5), the same square at a chunk corner (the range is in chunks round its
+    chunk); cargo-landing-pad 4 (9x9); spidertron 2 (5x5; its chunk_exploration_radius reads 3).
+  - none: a character with no player (the bots' are such), a car or tank (empty; a car with a character driving too), and 37 other
+    types tried alone (every turret kind, foundry, furnace, lab, rocket silo, agricultural tower, drill, beacon,
+    pole, accumulator, solar panel, boiler, steam engine, nuclear and fusion reactors, fusion generator, chests, wall,
+    lamp, train stop, storage tank, lightning rod, heat pipe, pump, inserter, belt, pipe, land mine, combinators, speaker).
+  - no prototype field gives a roboport's or pad's range (radar_range nil; get_radar_range absent).
+  - after its source goes (a roboport destroyed) or stops (a radar's power cut) a chunk stays visible 563-594 ticks; a
+    radar's long-range scan lights single chunks now and then (one at (2,-18) on world n, one at (14,-20) on the copy).
+  - On world n, the lit chunks x -11..-9, y -20..-18 by the outpost at chunk (-9,-18) match its roboport (#11409071).
+- Cost (sight.lua's code run by RCON as a read, census lists from storage): world n, Nauvis, 25 chunks read 1.26-1.32
+  ms and encoded 0.10; 64 chunks read 2.2-8.5 ms (3 runs), encoded 0.4; 256 chunks at the base (76 sources) read 3.96,
+  encoded 1.58 (17.5 KB). On the copy (3-11x slower), inside the runtime: 256 chunks read 3.6-7.1 ms, 1024 read 8.3-9.4
+  and encoded 14-21 ms; hence the cap of 256. Number text by string.format and numeric group keys (tostring and .. on a
+  number cost 8 us each) took the list phase of 1024 chunks from 23-30 ms to 6-8 ms on the copy.
+- Test: tests/d24_batch174.lua (fails on main: no sight.lua). Docs: agent/ref/movement-combat.md and the index (the
+  waits-queues label without "standing" pays for `sight`: the codex core stays 21995 bytes).

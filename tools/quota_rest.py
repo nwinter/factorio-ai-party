@@ -88,10 +88,16 @@ def done(d):
 
 def previous(prev, name, now):
     """The previous run's rest of `name` that has not ended (pacing.resting: until ahead, no request of its own since
-    it began), or None."""
+    it began), or None. (d24 batch175 QR2) A run where `name` has no resting.json and did not play (full_tools.played:
+    a start killed before its rests were written) passes the question up its resumed-from chain."""
     if not prev:
         return None
-    return pacing.resting(os.path.join(prev, name), now)
+    import full_tools
+    for run in full_tools.chain(prev):
+        d = os.path.join(run, name)
+        if os.path.exists(os.path.join(d, pacing.REST)) or full_tools.played(run, name):
+            return pacing.resting(d, now)
+    return None
 
 
 def at_limit(rd, team, brief_path=None, now=None, dry=False, prev=None):
