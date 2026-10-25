@@ -330,7 +330,7 @@ local function inserter(name,pos)
     prototype={name=name,type='inserter',fast_replaceable_group='inserter',collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}},
       mineable_properties={products={{type='item',name=name,amount=1}}}},
     bounding_box={left_top={x=pos.x-0.15,y=pos.y-0.15},right_bottom={x=pos.x+0.15,y=pos.y+0.15}}}
-  e.get_filter=function(i) return set[i] and {name=set[i]} or nil end
+  e.get_filter=function(i) return set[i] and {name=set[i],quality='normal',comparator='='} or nil end  -- as 2.0.77 reads a name alone
   e.set_filter=function(i,f) set[i]=type(f)=='table' and f.name or f end
   e.get_control_behavior=function() return next(cb,nil)~='type' and cb or (cb.circuit_enable_disable~=nil and cb or nil) end
   e.get_or_create_control_behavior=function() return cb end
