@@ -98,7 +98,7 @@
   `dry_run: true` lists hub cargo, entities besides the hub, ghosts, foundation tiles, characters aboard and cargo pods
   on their way. One not empty or occupied is refused unless `confirm` is its name; `cancel: true` cancels a scheduled one.
   Example: `./fh call platform_delete --args '{"platform":"Bastion","dry_run":true}'`
-- `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
+- `platform_endurance {platform, route?, forecast?, pessimistic?, design?, progress?, fresh?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
   hub slots free, power, solar power at the stops, and the asteroid chunks made a minute (the collectors' catch and the crushers' returns); `fuel_outlook`: one line
   of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
@@ -133,6 +133,15 @@
   those only), none for an asteroid no turret targets; lines per ammunition and asteroid (`forecast_targets`); `pessimistic:
   {speed, dwell_s}` slows the legs and adds time at each stop.
   Example: `./fh call platform_endurance --args '{"platform":"Wayfarer","route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}'`
+  With forecast, `basis` says what the forecast assumes, and `forecast_model` counts asteroids by the hull's box. They
+  spawn on a line 72 tiles ahead of the box, across its width + 96, not its height. Per km flown: 0.0100 x (width + 116)
+  x each kind's spawn chance; this is fitted on test platforms with no schedule, and ships flying on a schedule met 1.2
+  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same for a hull
+  not built yet, read only, on this platform's route and turrets. `progress: {from, to}` cuts each leg to that part of
+  its connection. Each leg gives asteroids by kind, a 600 s window's, and shots per ammunition; `estimated` lists what
+  is not modelled.
+  A reading of the same arguments is kept and answered for 60 s, with `reading` {tick, age_s, fresh}; while asked
+  for, it is read again in the background every 45 s. `fresh: true` reads now.
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
