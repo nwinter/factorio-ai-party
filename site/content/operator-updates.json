@@ -64,7 +64,8 @@
   {"id": "radar-sight", "title": "A read of which chunks are in sight, and from what", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#2242"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch174"},
   {"id": "belt-exact-tile", "title": "Belt flow at one exact tile, per lane", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2248"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch176"},
   {"id": "queued-fixes-178", "title": "Fixes: a queued wait's own completion, platform power by cause, request section targeting", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2063"}, {"name": "Sol", "ref": "#2062"}, {"name": "Sol", "ref": "#2052"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch178"},
-  {"id": "pod-ledger", "title": "One kept ledger of cargo pods, up and down", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#1989"}, {"name": "Sol", "ref": "#2024"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch179"}
+  {"id": "pod-ledger", "title": "One kept ledger of cargo pods, up and down", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#1989"}, {"name": "Sol", "ref": "#2024"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch179"},
+  {"id": "asteroid-cohorts", "title": "Asteroid watch: first-sample cohorts, capped headline, per-turret ammo used", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2013"}], "status": "in progress", "dates": {"in progress": "2026-10-24 19:46"}, "work": "batch181"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
