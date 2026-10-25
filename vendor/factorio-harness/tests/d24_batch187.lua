@@ -1,6 +1,6 @@
 -- d24 batch187 QAC1: platform_endurance answers the last complete reading of the same arguments (in storage) for 60 s
 -- with its age; a reading asked for within 3 minutes is read again in the background once 45 s old, one a second at
--- most; without detail the numeric tables whose figures the lines carry are left out.
+-- most. The reply keeps every field.
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m and m..': ' or '')..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,part) assert(type(s)=='string' and s:find(part,1,true),tostring(s)..' lacks '..part) end
@@ -22,14 +22,11 @@ local p={index=1}
 -- the first call reads; the next within 60 s is answered from it, with its age
 local r=E.handler(p,{platform='Asterion',forecast=true})
 eq(reads,1); eq(r.n,1); eq(r.reading.fresh,true); eq(r.reading.age_s,0); has(r.reading.note,'read in this call')
-eq(r.forecast_damage,nil); eq(r.forecast_targets,nil); eq(r.resources[1].by_place,nil); eq(r.resources[1].ingredient_limited,nil); eq(r.resources[1].stock,5)
-eq(r.forecast_model.legs[1].asteroids,nil); eq(r.forecast_model.legs[1].total,2); has(r.detail_note,'come with detail: true')
+eq(r.forecast_damage[1].shots,1); eq(r.resources[1].by_place.hub,5); eq(r.forecast_model.legs[1].asteroids.x,2)
 game.tick=1000+1800
 r=E.handler(p,{platform='Asterion',forecast=true})
 eq(reads,1); eq(r.n,1); eq(r.reading.fresh,false); eq(r.reading.age_s,30); eq(r.reading.tick,1000); has(r.reading.note,'the reading of 30 s ago')
--- detail: the tables, from the same reading; the stored reading is not changed by the reply
-r=E.handler(p,{platform='Asterion',forecast=true,detail=true})
-eq(reads,1); eq(r.forecast_damage[1].shots,1); eq(r.resources[1].by_place.hub,5); eq(r.forecast_model.legs[1].asteroids.x,2); eq(r.detail_note,nil)
+-- the stored reading is not changed by what is added to a reply
 r.extra=true; eq(storage.endurance_readings[next(storage.endurance_readings)].reply.extra,nil)
 -- other arguments are another reading; fresh reads again
 r=E.handler(p,{platform='Asterion'}); eq(reads,2); eq(r.reading.fresh,true)
@@ -59,6 +56,5 @@ game.tick=game.tick+2700+(17-(game.tick+2700)%60)
 E.tick(game.tick)
 local left=0; for _,e in pairs(storage.endurance_readings) do if e.platform=='Swiftlet' then left=left+1 end end
 eq(left,0)
-fails(function() E.handler(p,{platform='Asterion',detail='yes'}) end,'detail is true or false')
 fails(function() E.handler(p,{platform='Asterion',fresh=1}) end,'fresh is true or false')
 print('d24_batch187: ok')

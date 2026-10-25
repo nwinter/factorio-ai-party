@@ -679,9 +679,8 @@ return function(api)
   -- every peer holds it) and answered for REFRESH ticks with its age; an older or missing one is read again in the call.
   -- A reading asked for within ASKED ticks is read again in the background (M.tick) once it is LEAD ticks old, at most
   -- one a second, so calls find it under REFRESH old: each such read costs one tick what one call cost before.
-  -- Of a reply's cost on the copy, encoding took 12-15 ms for Asterion's 422 numbers (helpers.table_to_json about 38
-  -- us a number, a string 0.2 us), so the numeric tables whose figures the lines carry (forecast_damage,
-  -- forecast_targets, the model's asteroids by kind, resources' by_place and ingredient_limited) come with detail: true.
+  -- The reply's encode (control.lua) is not changed: Asterion's 422 numbers took 12-15 ms on the copy, where a number
+  -- costs about 38 us, and about 1.7 ms on world n at its 3.9 us a number (d24 batch166 cp3).
   M.REFRESH, M.KEEP, M.MAX, M.ASKED, M.LEAD = 3600, 10 * 3600, 12, 3 * 3600, 2700
   local function sig(v)
     if type(v) ~= 'table' then return tostring(v) end
@@ -710,35 +709,15 @@ return function(api)
     if ok then pick.reply, pick.tick, pick.background = r, tick, (pick.background or 0) + 1
     else store[pick_key] = nil end
   end
-  local function slim(r, detail)
+  -- a shallow copy, so the reply's own fields (the dispatch adds some) stay out of the kept reading
+  local function copy(r)
     local out = {}
     for k, v in pairs(r) do out[k] = v end
-    if detail then return out end
-    out.forecast_damage, out.forecast_targets = nil, nil
-    if r.forecast_model then
-      local m = {}
-      for k, v in pairs(r.forecast_model) do m[k] = v end
-      m.legs = {}
-      for i, l in ipairs(r.forecast_model.legs or {}) do
-        m.legs[i] = {from=l.from, to=l.to, km=l.km, minutes=l.minutes, total=l.total, on_path=l.on_path, total_per_600s=l.total_per_600s, shots=l.shots, line=l.line, none=l.none}
-      end
-      out.forecast_model = m
-    end
-    if r.resources then
-      out.resources = {}
-      for i, row in ipairs(r.resources) do
-        local c = {}
-        for k, v in pairs(row) do c[k] = v end
-        c.by_place, c.ingredient_limited = nil, nil
-        out.resources[i] = c
-      end
-    end
     return out
   end
   function M.handler(p, a)
-    assert(a.detail == nil or type(a.detail) == 'boolean', 'detail is true or false')
     assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh is true or false')
-    if a.design ~= nil then return slim(M.read(p, a), a.detail) end
+    if a.design ~= nil then return M.read(p, a) end
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
     local key = tostring(pl.index) .. sig({route=a.route, forecast=a.forecast, pessimistic=a.pessimistic, progress=a.progress})
@@ -754,7 +733,7 @@ return function(api)
       fresh = true
       if store then
         local args = {}
-        for k, v in pairs(a) do if k ~= 'detail' and k ~= 'fresh' then args[k] = v end end
+        for k, v in pairs(a) do if k ~= 'fresh' then args[k] = v end end
         store[key] = {tick=game.tick, reply=r, platform=pl.name, player=p.index, args=args, asked=game.tick}
         -- the oldest dropped past MAX kept, and any older than KEEP
         local list = {}
@@ -764,16 +743,14 @@ return function(api)
       end
       age = 0
     end
-    local out = slim(r, a.detail)
+    local out = copy(r)
     out.reading = {tick=fresh and game.tick or hit.tick, age_s=math.floor(age / 6 + 0.5) / 10, fresh=fresh or false, refresh_s=M.REFRESH / 60,
       note=fresh and string.format('read in this call; while asked for, it is read again in the background every %d s', M.LEAD / 60)
         or string.format('the reading of %g s ago for these arguments (read again in the background every %d s while asked for, answered up to %d s old): fresh: true reads again now', math.floor(age / 6 + 0.5) / 10, M.LEAD / 60, M.REFRESH / 60)}
-    if not a.detail then out.detail_note = 'forecast_damage, forecast_targets, the model\'s asteroids by kind and resources\' by_place and ingredient_limited come with detail: true (their figures are in the lines)' end
     return out
   end
   M.schema = {platform_endurance = {forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
     design='optional {width, height | tiles, mass?, speed, ammo?}: a hull not built yet, read only (nothing built, placed or imported), on the platform\'s route with its turrets\' ammunition and settings (or ammo: up to 8 names) and our bonuses: width and height in tiles, or tiles (up to 256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; speed km/s as the GUI shows it; mass is said and not used (the speed is given; asteroids come per km). Returns design, legs [{from, to, part {f0, f1}, km, minutes, asteroids {kind: count}, total, per_600s, total_per_600s, shots {ammo: shots}}], basis (the spawn line, the count rule and its fit, distance not time, width, speed, progress, shots), estimated (what is not modelled exactly), ammo, lines; a light read: no rates, stock or production read',
-    detail='optional true: the numeric tables whose figures the lines carry (forecast_damage, forecast_targets, forecast_model legs\' asteroids and per_600s by kind, resources\' by_place and ingredient_limited); without it they are left out (a number is about 38 us to encode)',
     fresh='optional true: read again now; without it a reading of the same arguments under 60 s old is answered (reading {tick, age_s, fresh, refresh_s, note})',
     progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',
     pessimistic='with forecast: {speed: 0.1..1 (a share of the speed read: slower, longer legs), dwell_s: 0..36000 (extra time at each stop at the stopped rate)}',
