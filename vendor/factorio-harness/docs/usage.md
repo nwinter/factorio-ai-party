@@ -15072,3 +15072,28 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Test: tests/d25_batch208b.lua (tests/d25batch208b.test.ts). It fails on main. tests/d25_batch199.lua,
   tests/entryset.lua and mod/tests/runtime_test.lua now expect the storage chest's settings with bar and the named
   entity.
+
+## d25 batch209 (QV1, Astra #2361: turret range at its quality)
+- A turret's range is its prototype's attack range times its quality's range_multiplier (2.0.77: uncommon 1.1, rare
+  1.2, epic 1.3, legendary 1.5); its minimum range is the prototype's at every quality. Measured on a copy of world n
+  (d25 13:03 save), a turret of ours and an enemy gun turret as target past its prototype's range, 240-300 ticks:
+  gun 23 tiles, laser 31, rocket 45, railgun 50 (powered), tesla 38, flamethrower 38: the legendary turret destroyed
+  the target and the normal one did not fire; legendary rocket, flamethrower and railgun turrets fired at 18, 7.5 and
+  4.5 tiles (inside 1.5 times their minimum range), a legendary railgun not at 2.5. ammorate's note said an electric
+  turret's quality left its range unchanged; corrected (and agent/ref/space-age.md).
+- platform_defense: turret rows give `quality`, `range` (at the quality) and `base_range` (the prototype's); the
+  collectors, the hull's sides, the lines (nearest ... past its range) and the planned read use the range at the
+  quality; a turret above normal is named with it in the lines (`rare laser-turret (-46,-50)`). Planned ghosts: the
+  quality the ghost builds. The asteroid watch's turret rows add `base_range` (their `range` was already at the
+  quality, batch200). The route damage and platform_endurance's forecast use no range (unchanged).
+- inspect of a turret (built or ghost): `range`, `base_range`, `min_range` (platdefense.lua `M.reach`).
+- defense (areas' cover) and flamers (the arc's reach) on planets, danger's egg-site cover (its find now 60 tiles, a
+  legendary railgun's range) and damagelog's "its range R" use the range at the quality. Not changed: census's base
+  map turret circles (prototype range; no turret above normal on a planet of world n's 13:03 save), artillery.
+- Cost: the quality is read once per turret unit number (an entity's quality never changes; the unit number was read
+  for the hull's check already) and the multiplier once per quality. On the copy, Asterion's full read by part, main
+  and this runtime alternating, 8 calls each: turret reads 7.5-8.5 and 7.3-7.5 ms, collectors 3.4 and 3.2-3.7, hull
+  (kept) 29.6-35.9 and 28.5-30.7. The rows add 64 numbers on a 64-row page (Asterion 1536 -> 1600; about 0.25 ms of
+  JSON on world n) and the watch's rows one a turret that fired (1335 -> 1363). No tick work added: damagelog reads
+  the cause's range only for a new row (on_entity_damaged: main 61 and 60 us a call in two windows, this runtime 58; profile_ticks 60 s each; census.step 399 and 796 ms on main, 799 here: the pass's phase).
+- Test: tests/d25_batch209.lua. It fails on main.

@@ -176,6 +176,13 @@ return function(api)
   -- uncommon gun turret hit asteroids 19.5 and 20.5 tiles off, a normal one none past 19), its prototype's minimum
   -- range, and its turn range (a share of a full turn round its facing) when under a full turn; kept by name and quality
   local RANGE = {}
+  -- (d25 batch209 QV1) a turret prototype's attack range by name (the rows' base_range)
+  local BASE = {}
+  local function base_of(name)
+    local b = BASE[name]
+    if b == nil then b = try(function() return prototypes.entity[name].attack_parameters.range end) or false; BASE[name] = b end
+    return b or nil
+  end
   local DIR = {}
   for n, v in pairs(defines and defines.direction or {}) do DIR[v] = n end
   local function range_of(e)
@@ -693,7 +700,7 @@ return function(api)
         for k in pairs(t.items or {}) do items[#items+1] = k end
         for k in pairs(t.rk or {}) do if not (t.items or {})[k] then items[#items+1] = k end end
         table.sort(items)
-        rows[#rows+1] = {name=t.name, position=t.position, region=t.region, quality=t.quality, range=t.range, min_range=t.min_range, turn_range=t.turn_range, facing=t.facing, hits=t.hits, kills=t.kills, damage=r1(sum(t.dmg)),
+        rows[#rows+1] = {name=t.name, position=t.position, region=t.region, quality=t.quality, range=t.range, base_range=base_of(t.name), min_range=t.min_range, turn_range=t.turn_range, facing=t.facing, hits=t.hits, kills=t.kills, damage=r1(sum(t.dmg)),
           rounds_used=r3(t.used), ammo_used=r3(t.uitems or 0), ammo_loaded=t.loaded, rounds_start=t.r0 and r3(t.r0), rounds_end=t.rk and r3(sum(t.rk)),
           ammo=#items > 0 and table.concat(items, ', ') or nil, reads=t.reads, every=t.every, unsure_reads=t.unsure, exact=t.rk and (t.unsure or 0) == 0 or nil,
           rounds_used_most=(t.unsure or 0) > 0 and r3(t.used + (t.hidden or 0)) or nil,
@@ -1134,7 +1141,7 @@ return function(api)
     segment_start='optional, reading the watch: the start tick of a segment (segments): that closed watch\'s full read', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
     asteroids_returns='the start: hull (the box round its foundation), view, turrets, line; without seconds it reads it so far (watching) or done: asteroids (seen in view, every one), tracked (those followed one by one: the first tracked_cap seen), untracked (seen past the cap, each counted once), by_name [{name, seen, destroyed, hit, left_view, in_view, untracked}] (every asteroid, by name, the most seen first) and by_name_lines, scope (which totals cover which asteroids; asteroid chunks are not entities and not seen here), classes (the tracked ones) [{class (front|side|rear by where its straight line enters the hull\'s box, the platform facing north; /crosses or /misses: whether that line crosses foundation; clear: it never enters the box; unknown), seen, destroyed, hit, left_view, in_view}] and class_lines; '
       .. 'platform_hits and platform_hit_lines (what each asteroid that hit us hit, where, its damage, its approach and projection); turret_groups [{name, region (front|middle|rear third of the hull, west|east half), turrets, hits, kills (by class), damage, ammo_used}] and turret_group_lines (hits and kills on clear asteroids and on ones crossing no foundation); '
-      .. 'turrets (those that fired: name, position, region, quality, range (its prototype\'s times its quality\'s range_multiplier), min_range, turn_range and facing (when under a full turn), hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
+      .. 'turrets (those that fired: name, position, region, quality, range (its prototype\'s times its quality\'s range_multiplier), base_range (its prototype\'s), min_range, turn_range and facing (when under a full turn), hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
       .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; segments [{segment_start, end_tick, seconds, closed_by, line}] (the watches an edit on the platform closed before this one began, at most 3 and 3000 tracked asteroids together, each read in full with segment_start), segments_dropped and segments_note; drift_tiles_per_s; line; note. Read only'}
   return M
 end

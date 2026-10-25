@@ -57,6 +57,22 @@ return function(api)
     local m=math.floor(ticks/3600)
     return m<1 and math.floor(ticks/60)..'s ago' or m..'m ago'
   end
+  -- (d25 batch209 QV1) a turret's range is its prototype's times its quality's range_multiplier (uncommon 1.1, rare
+  -- 1.2, epic 1.3, legendary 1.5; measured on a copy of world n for gun, laser, rocket, railgun, tesla and flamethrower
+  -- turrets); the minimum range is the prototype's at every quality
+  local mults={}
+  local function qmult(e)
+    local qo=e.quality
+    local q=qo and qo.name or 'normal'
+    if q=='normal' then return 1 end
+    local m=mults[q]
+    if not m then
+      local ok,v=pcall(function() return prototypes.quality[q].range_multiplier end)
+      m=ok and type(v)=='number' and v or 1
+      mults[q]=m
+    end
+    return m
+  end
   local ranges={}
   local function range(e)
     local r=ranges[e.name]
@@ -65,7 +81,8 @@ return function(api)
       r=ok and type(v)=='number' and v or 18
       ranges[e.name]=r
     end
-    return r
+    local m=qmult(e)
+    return m==1 and r or math.floor(r*m*10+0.5)/10
   end
   -- A flamer's oil: all it holds, its own buffer too, of the fluids it fires, and its fluidboxes' volume plus that
   -- buffer (flameroil.lua; not get_capacity, which in 2.0 is the whole connected segment's: 66700 on a flamer line,
@@ -673,7 +690,7 @@ return function(api)
           if amount<1 then dry=dry+1 elseif cap and amount/cap<LOW_OIL then low=low+1 end
           oiled[#oiled+1]={amount=amount,fluid=fluid,position=e.position}
           local kinds,count,nearest,nd={},0,nil,nil
-          local reach=g.range+FIRE_MARGIN
+          local reach=math.floor((g.range*qmult(e)+FIRE_MARGIN)*10+0.5)/10
           for _,b in pairs(s.find_entities_filtered{force=force,position=e.position,radius=reach}) do
             if b.valid and not SKIP[b.type] and not (b.position.x==e.position.x and b.position.y==e.position.y) and burnable(b) then
               local dx,dy=b.position.x-e.position.x,b.position.y-e.position.y
@@ -692,7 +709,7 @@ return function(api)
             fluid=fluid,nearest=nearest and {name=nearest.name,position={x=nearest.position.x,y=nearest.position.y},distance=round(nd)} or nil,
             line=string.format('%s (%g,%g) facing %s, oil %s: %s',e.name,e.position.x,e.position.y,dir,oil_text,
               count==0 and 'none of our burnable buildings in its arc'
-              or string.format('%d of our burnable buildings in its arc within %d tiles: %s (nearest %s (%g,%g), %d tiles)',count,reach,counted(kinds,4),
+              or string.format('%d of our burnable buildings in its arc within %g tiles: %s (nearest %s (%g,%g), %d tiles)',count,reach,counted(kinds,4),
                 nearest.name,nearest.position.x,nearest.position.y,round(nd)))}
         end
       end

@@ -45,14 +45,25 @@ return function(api)
   end
   -- The turrets of ours whose range covers pos (d17 batch22 B1, Luna: hatch timers ran out with the defense gone): gun
   -- and rocket turrets with ammunition, laser turrets with power, flamethrowers with fluid, against those in range
-  -- without; one find within LOOK tiles. {ready, idle, by (name = n), line}.
-  local LOOK = 40
+  -- without; one find within LOOK tiles. {ready, idle, by (name = n), line}. (d25 batch209 QV1) A turret's range is its
+  -- prototype's times its quality's range_multiplier (legendary 1.5: a legendary railgun turret 60 tiles).
+  local LOOK = 60
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
+  local BASE, QM = {}, {}
+  local function turret_range(t)
+    local b = BASE[t.name]
+    if not b then b = try(function() return t.prototype.attack_parameters.range end) or 18; BASE[t.name] = b end
+    local q = try(function() return t.quality.name end) or 'normal'
+    if q == 'normal' then return b end
+    local m = QM[q]
+    if not m then m = try(function() return prototypes.quality[q].range_multiplier end) or 1; QM[q] = m end
+    return b * m
+  end
   function M.coverage(surface, force, pos)
-    local list = try(function() return surface.find_entities_filtered{position=pos, radius=LOOK, type=TURRETS, force=force, limit=64} end) or {}
+    local list = try(function() return surface.find_entities_filtered{position=pos, radius=LOOK, type=TURRETS, force=force, limit=128} end) or {}
     local ready, idle, by = 0, 0, {}
     for _, t in ipairs(list) do
-      local range = try(function() return t.prototype.attack_parameters.range end) or 18
+      local range = turret_range(t)
       if t.valid and dist(t.position, pos) <= range then
         local ok
         if t.type == 'ammo-turret' then ok = try(function() return not t.get_inventory(defines.inventory.turret_ammo).is_empty() end)
