@@ -2583,6 +2583,11 @@ return function(api)
     out.research = api.research_lines and api.research_lines(p, h) or nil
     if api.watch then pcall(api.watch, p) end
     out.alerts = alert_lines(p, h, losses)
+    -- A spidertron's guard sent it back (spiderroute.lua; d24 batch189 QAE1): why, from, health, shield, the new route.
+    if api.spider_retreats then
+      local ok, list = pcall(api.spider_retreats, p, h)
+      out.spidertron_retreated = ok and list or nil
+    end
     -- Labs, the limiting pack and its first short step, power and boilers (scienceline.lua): at most every 5 min, when changed.
     if api.science_line then
       local ok, line = pcall(api.science_line, p, h)
