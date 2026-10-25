@@ -1770,6 +1770,19 @@ bow shot (`bow_turn`):
   command sent): `{player 1, position (0, -43.6), zoom 0.53, surface platform-16}`. The operator's manual look for Caleb
   at 14:55 was (0, -40) at zoom 0.45.
 - `python3 tools/stream/test_bowcam.py`.
+- (d24 batch188 QAD1, viewer Caleb 19:15: "when showing Asterion's bow can you zoom out enough to see the asteroids
+  in range?") With the guns read (the platform view's `guns`, model.gun_reach: each turret +- its range), the bow shot
+  also fits the reach: the space ahead (`bow_ahead` of the frame) covers the reach's top plus 4 tiles
+  (BOW_REACH_MARGIN), the frame its width plus 4 a side, centred on the bow and the reach together; the zoom is the
+  smallest of that and the bow's own, at least 0.3, floored to the hundredth. Without guns, as before.
+  - World n's Asterion at 19:30 (114 turrets: 23 railguns, range 40; 26 rocket, 36; 20 rare lasers, 28.8; 45 guns, 18
+    and 19.8): the reach is x -88.5..88.5, top y -82.5, 32.5 tiles ahead of the bow's edge (y -50); it needs 36.5
+    tiles ahead and 185 across. The mock's leg carries guns with that box.
+  - On the live layout (layout.json's main crop, view_frac 0.658): before 0.35 (38.9 tiles ahead, 112.8 across),
+    now 0.30 (45.3 ahead, 131.6 across): the reach's top is in frame, the outer 23 tiles each side of the railguns'
+    reach are not (0.21 would fit them; 0.3 is the floor). With the whole width (view_frac 1, as the batch170 dry run
+    had it, and the trio's 0.999): before 0.53 (25.7 ahead, 113 across), now 0.32 (42.5 ahead, 187.5 across: all of
+    it).
 
 ## Verified
 
