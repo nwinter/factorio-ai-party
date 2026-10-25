@@ -1200,9 +1200,17 @@ return function(api)
             local waiting=step.action=='wait_ticks' and game.tick<step.until_tick or
               step.action~='wait_ticks' and api.busy(p,step.action)
             if not waiting then
-              local outcome=step.action~='wait_ticks' and api.outcome and api.outcome(p,step.action) or nil
+              -- (d24 batch178 QU1, Sol #2063: a queued wait_ticks reported an older move_to's completion) a wait_ticks
+              -- step's completion is its own; another step's is the character's last only when written since the step
+              -- began (api.completion and api.outcome take the step)
+              local outcome=step.action~='wait_ticks' and api.outcome and api.outcome(p,step.action,step) or nil
               local success=not outcome or SUCCESS[outcome]==true
-              local result={accepted=step.result,outcome=outcome or 'completed',completion=api.completion and api.completion(p,step.action)}
+              local completion
+              if step.action=='wait_ticks' then
+                completion={kind='wait_ticks',outcome='completed',tick=game.tick,ticks=step.args.ticks,start_tick=step.started_tick,
+                  end_tick=step.until_tick,waited=step.started_tick and game.tick-step.started_tick or nil}
+              else completion=api.completion and api.completion(p,step.action,step) end
+              local result={accepted=step.result,outcome=outcome or 'completed',completion=completion}
               q.current=nil
               if step.action=='wait_ticks' and step.ends_tick then result.kept=kept_line(step) end
               local partial,nfailed=entries_failed(step,result)

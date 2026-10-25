@@ -193,7 +193,7 @@ do
   local force={name='player',worker_robots_speed_modifier=1.75,logistic_networks={nauvis={ln}}}
   local P=dofile('mod/agent-harness_0.1.0/powercause.lua'){pole_map=function() return {[2]={pole=pole,poles=10,sx=0,sy=0,surface='nauvis',force='player'}} end}
   local r=P.read({surface={name='nauvis'},force=force},{})
-  eq(r.lines[1],'electric network 2 near (0,0): draws 75.0 MW, made 81.0 MW (last 5 s): roboport 55.0 MW (73%), assembling-machine-2 20.0 MW (27%)')
+  eq(r.lines[1],'electric network 2 near (0,0): draws 75.0 MW, made 81.0 MW (last 5 s): roboport 55.0 MW (73%), assembling-machine-2 20.0 MW (27%); made by steam-engine 81.0 MW')
   has(r.lines[2],'logistic network 7 (1 roboports, near (1,1)): 3000 logistic robots, 1 flying, 2000 idle; 50 construction robots, 0 busy; 2 charging, 1 waiting to charge. A flying logistic robot draws about 44 kW (8.25 tiles/s with our speed research)')
   has(r.lines[2],'trips (1 sampled): 40 tiles on average, the longest 40, 100% to requesters; most on its way to: requester-chest (40,0): 100 coming (iron-plate 100)')
   defines,prototypes=nil,nil

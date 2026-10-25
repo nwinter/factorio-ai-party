@@ -163,7 +163,9 @@
   given. `from: false` (or `""`) drops it; the game stores `nauvis` for a hub request with no import planet, a new
   slot's too, and `stored` says so (16 new slots set with none read back `from nauvis`, platforms at Fulgora among
   them). Such a request keeps its stock only at Nauvis. A `set` without `section` edits the slot of the section that already requests the item (`sections_note`
-  names a shared group or a second section). `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what
+  names a shared group or a second section). `section` is an index as the sections are before the call (a
+  `construction_requests` switch in the same call moves the game's section; `section_moved` says where the named one
+  is now) or a logistic group's name; a write's reply has `section_before` and `section_after` {index, group, active}. `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what
   you hold; a personal `max` under what you hold is refused without `force: true` (the game trashes the rest). With
   `surface` (a planet) and `position` it acts there by remote view where our force sees the chunk.
   `trash_unrequested: true` sets the trash-unrequested switch of a requester or buffer chest, a hub or your own
