@@ -22,6 +22,21 @@ from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
 from waitcard import WaitFeed
 
+FLOW_PARTS = 3  # (d24 batch184 QAA2) the flows read in three parts of the surfaces, one a poll
+
+
+def sum_flows(parts):
+    """{item: 30 counts}: the parts' series summed bucket by bucket (each part's own surfaces)."""
+    out = {}
+    for flows in parts:
+        for item, series in (flows or {}).items():
+            if not isinstance(series, list):
+                continue
+            have = out.setdefault(item, [0] * len(series))
+            for i, c in enumerate(series[:len(have)]):
+                have[i] += c
+    return out
+
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
 PROGRESS_EVERY = 120  # (d22 batch75 AK11) seconds between board_progress reads
@@ -94,6 +109,10 @@ class LiveSource:
         self.profiles_mode = profiles
         self.flow_every = flow_every
         self.next_flow = 0
+        # (d24 batch184 QAA2) the flows read a third of the surfaces a poll, flow_every / FLOW_PARTS apart: each part is
+        # read again every flow_every; the panel's figures are the parts' sum
+        self.flow_part = 0
+        self.flow_parts = {}  # part -> {item: 30 counts}
         self.chat_since = 0
         self.status_share = status_share
         self.status_cache = {}
@@ -267,6 +286,24 @@ class LiveSource:
         self.rr = (self.rr + n) % len(names)
         return pick
 
+    def poll_flows(self, obs, errors, now):
+        """(d24 batch184 QAA2) one part of the surfaces' flows when its time came (each part every flow_every), and the
+        parts' sum as obs["flows"]; the labs' use with the first part (every flow_every)."""
+        if now < self.next_flow:
+            return
+        self.next_flow = now + self.flow_every / FLOW_PARTS
+        part, self.flow_part = self.flow_part, (self.flow_part + 1) % FLOW_PARTS
+        try:
+            self.flow_parts[part] = self.h.flows(SPARK_ITEMS, part, FLOW_PARTS)
+            obs["flows"] = sum_flows(self.flow_parts.values())
+        except Exception as e:
+            errors["flows"] = str(e)
+        if part == 0:  # the labs' use of each pack over the last hour: the science per minute series (3.1 ms on world n)
+            try:
+                obs["used_flows"] = self.h.used_flows(SCIENCE)
+            except Exception as e:
+                errors["used_flows"] = str(e)
+
     def observe(self):
         if self.caps is None and time.time() >= self.next_probe:
             self.probe()
@@ -300,16 +337,7 @@ class LiveSource:
             obs["connected_players"] = ex.get("connected") if isinstance(ex.get("connected"), list) else []
         except Exception as e:
             errors["extras"] = str(e)
-        if time.time() >= self.next_flow:
-            self.next_flow = time.time() + self.flow_every
-            try:
-                obs["flows"] = self.h.flows(SPARK_ITEMS)
-            except Exception as e:
-                errors["flows"] = str(e)
-            try:  # the labs' use of each pack over the last hour: the science per minute series (3.1 ms on world n)
-                obs["used_flows"] = self.h.used_flows(SCIENCE)
-            except Exception as e:
-                errors["used_flows"] = str(e)
+        self.poll_flows(obs, errors, time.time())
         if time.time() >= self.next_basemap:
             self.next_basemap = time.time() + self.basemap_every
             ore = time.time() >= self.next_ore
