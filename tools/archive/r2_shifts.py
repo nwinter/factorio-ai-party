@@ -16,9 +16,10 @@ Per shift, in order (a shift with a receipt in --receipts is skipped):
    (tools/shift_video.py's rule).
 3. The upload with tools/archive/r2_put.py's plan and put to BUCKET/RUN/full/: segments first, playlists last. The
    rate is measured every --window seconds; --jobs starts at 4 and rises by 2 while the rate is under 80% of
-   --max-mbps (150), never past --jobs-max, and stops rising once the cap is reached (a window over the cap takes
-   one job off). Before each window the stream's health is read (tools/obs.py stream-status): with skipped frames
-   rising or congestion over 0, no new puts start until two reads in a row are clean; the pauses go in the receipt.
+   --max-mbps (150), never past --jobs-max (8: each put is a node process; 16 took the Mac's load to 168), and
+   stops rising once the cap is reached (a window over the cap takes one job off). Before each window the stream's
+   health is read (tools/obs.py stream-status): with skipped frames rising or congestion over 0, no new puts start
+   until two reads in a row are clean; the pauses go in the receipt.
 4. The check: a HEAD of every object at the public r2.dev URL, its Content-Length against the local file's size; a
    missing or different one is put again and checked again; then RUN/full/receipt.json goes up and is checked too,
    and the same receipt is written to --receipts/RUN.json.
@@ -490,7 +491,7 @@ def main():
     ap.add_argument("--bucket", default="pog-archive")
     ap.add_argument("--max-mbps", type=float, default=150.0)
     ap.add_argument("--jobs", type=int, default=4)
-    ap.add_argument("--jobs-max", type=int, default=16)
+    ap.add_argument("--jobs-max", type=int, default=8)
     ap.add_argument("--window", type=float, default=30.0)
     ap.add_argument("--max-local-gb", type=float, default=25.0)
     ap.add_argument("--margin-gb", type=float, default=10.0)
