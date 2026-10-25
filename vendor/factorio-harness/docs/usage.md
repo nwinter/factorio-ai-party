@@ -14416,6 +14416,71 @@ chunk our force sees.
 - A bare `vehicle {position}` of a far vehicle was refused as "position names the vehicle for enter: true ...; nothing
   is done"; it is now the out-of-sight refusal with the remote read. What is allowed is unchanged.
 - Cost: one find (position, radius 2.5, car and spider-vehicle, our force) and the remote form's checks, only on the
-  refusal; measured below.
+  refusal. On a copy of world n (LuaProfiler, under Rosetta) the hint's game reads took 0.003-0.027 ms, and a whole
+  refused call 0.40-0.42 ms with it against 0.35-0.40 ms at an empty spot.
 - Test: tests/d24_batch193.lua (fails on main: the refusal ends at "move_to within 30 tiles first)").
 
+
+## d25 batch201
+
+Engine facts below are from a copy of world n's 06:26 save (box time; tick 61469440), 2.0.77, under Rosetta.
+
+QN1 (Astra #2302): uptime on rocket silos. Two Aquilo silos read 19 completions in 600 s while the surface's
+statistics counted 879 rocket parts.
+- A silo's products_finished counts rockets. On the copy it went up by one in the tick rocket_parts went 50 -> 0
+  (create_rocket). The silo built parts through every launch phase, and a full productivity bar added its part to
+  rocket_parts. Over 9466 ticks the two silos' finished x 50 + rocket_parts rose 113 + 160, and Aquilo's rocket-part
+  produced rose 273. The count never drops at a launch.
+- uptime now counts a silo's completions as rocket parts: finished rockets x rocket_parts_required + rocket_parts (as
+  silo.lua's parts made). Crafts come from them and the productivity bar as for other machines. Each silo row has
+  `completions_are`, and the baseline says "N rocket parts so far".
+- `silo_statistics {item, surface, silos, silos_made, statistics_produced, line}`: the watched silos' parts beside the
+  surface's production statistics of the item over the watch (read at the start and at each read).
+- On the copy (branch runtime, 120 s, both silos): 47 + 46 completions, "the 2 watched silos made 93 in 120s; the
+  production statistics on aquilo counted 93 produced". A watch begun before the deploy keeps the game's count and
+  says its completions are rockets.
+
+QN2 (Astra #2315): an output that refuses ingredients. Asterion's explosives plant held 10 explosives and no coal; its
+input inserter waited for space; output_stop said it lacks coal and crafts when it arrives; trace named the right lane
+full of sulfur as coal's jam while coal sat on the left lane.
+- Engine fact: an inserter puts no ingredient into an assembling machine that holds amount x (1 + ceil(1.166 x crafts
+  a second)) of an item product, the count from which an idle machine reads full_output. A fast inserter fed from a
+  chest into machines with their output set beforehand and their input empty:
+  - gears in an assembler 2: inserted at 2, not at 3;
+  - gears in an assembler 3: inserted at 3, not at 4;
+  - explosives in a chemical plant: inserted at 2, not at 4.
+  The inserter reads waiting_for_space_in_destination. The machine crafts on with what it holds.
+- In Astra's layout on the copy (a belt with coal on the left lane and the right lane backed up with sulfur, the plant
+  holding 10 explosives and 1 sulfur, its output inserter blocked by a full chest), the inserter waited at 10, 7 and 4
+  explosives, and put in coal once the output fell to 1.
+- output_stop: `refuses_ingredients {product, held, from, line, waiting}`. In full_output with an ingredient short,
+  the line now ends: "it lacks coal 0 (a craft takes 1), and inserters put no ingredient into it while it holds 2
+  crafts' worth of a product or more (explosives 10; below 4 they do); waiting for space in it: fast-inserter
+  (-7.5,48.5)". idle_full_output says it too. Item products only (fluids not measured).
+- trace back: a feeder waiting for space in a machine that refuses says "it waits for space in chemical-plant: ...".
+  No lane jam is named for an item that sits on a lane the inserter picks from. With the item on neither lane, the jam
+  is named as before.
+- Cost on the copy (LuaProfiler, 100 calls, 3 runs): output_stop's read on the blocked plant 0.077-0.114 ms, its
+  waiting-inserter find 0.021-0.031 ms of that; trace's extra read 0.022-0.037 ms and its two lane counts 0.002 ms.
+
+QN3 (Sol #2328): supply's residual. Nauvis agricultural science held 2801 then 2934, made 0, used 572: -705, read
+"spoiled, or carried off the surface".
+- The residual is signed: held then + made + landed - used - sent up - held now. landed and sent_up are that item's
+  cargo pods over the same interval, from the pod log (podlog.lua): landed by land tick, rockets by send tick, every
+  quality. `uncounted` keeps the statistics-only figure (then + made - used - now), signed.
+- `residual_means` gives each sign's meaning:
+  - above 0: more left the stock than these count; spoiling (no count of it in the game's statistics) or what left
+    the surface uncounted can be it;
+  - below 0: more came in than these count (what arrived uncounted).
+  No residual is named spoiling. dependency, fuelbudget and packaudit quote the residual with its meaning.
+- `pods_complete` is false when the pod log's oldest kept journey (1000 a planet) is after the interval began.
+- Engine fact: a lab's pack counts as used in the production statistics in the tick its last durability is drawn,
+  when the held count drops (a lab on the copy: held 10 -> 9 and used 0 -> 1 in the same tick, 7 times).
+- On the copy (with the repo's control.lua, which forwards pod events): over 1.1 min, made 0, used 250, held 2615
+  then 3368 now, 1000 landed in 1 pod: residual -3, where the statistics alone leave -1003.
+  - With the copy's older control.lua (no pod events), the pod log counted none: residual -165 over 1.2 min. That
+    matched Weaver's hub over Nauvis going from 388 to 223 (165 down).
+- Cost of the pod count on the copy: 0.010-0.036 ms over 1 min, 0.098 ms over 60 min (the walk stops 10 minutes before
+  the interval).
+- Tests: tests/d25_batch201.lua (QN1 to QN3, run by tests/d25batch201.test.ts) and a section in tests/trace.lua; each
+  fails on main. Changed: tests/outputstop.lua and tests/d22_batch122b.lua (the new lines).
