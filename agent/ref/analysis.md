@@ -56,6 +56,14 @@
   limits it to that area; `compact: true`: lines only (flow, where, makers, the stopped makers and users by position,
   the chests holding most), about a fifth of the full reply; `all_stopped: true`: every maker and user not working,
   grouped by cluster with every position. Example: `./fh call supply --args '{"item":"advanced-circuit","near":{"x":0,"y":0},"radius":64}'`
+- What the production statistics count: made is what crafts put out past each product's ignored_by_stats (a
+  productivity completion's extra whole); used is each craft's ingredients past their ignored_by_stats, fuel burned and
+  ammo fired, never spoiling, hatching or what leaves the surface. A recipe that gives back what it takes (pentapod-egg:
+  1 egg in, 2 out, 1 more a productivity completion; barrels, kovarex, fish breeding) has the returned amount on
+  neither side, so made is the net (Gleba, six breeders at +50% over 66 s: 109 crafts and 54 productivity completions,
+  272 out, 109 back in, statistics made 163). Completions count crafts finished, not items. uptime's `returned` (rows,
+  groups) and supply's `returned` give out, back in, net and what the statistics count; supply's `used_by` lists the
+  recipes, the burners holding or burning it (rate at full power), turrets holding it, and what used leaves out.
 - `bottleneck {item, per_min?, all_stopped?, surface?}` (or `area`, `positions`): follows a shortage down its ingredient
   chain to where it starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved
   maker, the nearest chest within 64 tiles holding what it lacks and one `transfer` call that carries it there.

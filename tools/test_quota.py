@@ -100,6 +100,9 @@ def agy_loop():
         subprocess.run(["bash", os.path.join(ROOT, "tools", "launch-agent.sh"), "--agy-loop", ws, "gemini-x", "200000",
                         prompt], check=True)
         env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"], FAKE_DIR=d, POG_AGY_LOGS=logs,
+                   # (d24 batch186) the live pacing files never: brief and pace file in the temp folder, no rest push
+                   POG_AGY_PACE="off", POG_AGY_BRIEF=os.path.join(d, "brief.json"), POG_AGY_PACE_FILE=os.path.join(d, "pace.json"),
+                   POG_REST_PUSH="off", POG_TEST="1",
                    POG_AGY_SLACK="0", POG_AGY_MIN_WAIT="1", POG_AGY_RETRY_WAIT="0")
         t0 = time.time()
         r = subprocess.run([os.path.join(ws, ".agy-loop.sh")], env=env, capture_output=True, text=True, timeout=60)
@@ -176,6 +179,9 @@ def agy_turn_timeout():
         subprocess.run(["bash", launch, "--agy-loop", ws, "gemini-x", "100000",
                         prompt], check=True, env=dict(os.environ, POG_AGY_TURN_S="4"))
         env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"], FAKE_DIR=d, POG_AGY_LOGS=logs,
+                   # (d24 batch186) the live pacing files never: brief and pace file in the temp folder, no rest push
+                   POG_AGY_PACE="off", POG_AGY_BRIEF=os.path.join(d, "brief.json"), POG_AGY_PACE_FILE=os.path.join(d, "pace.json"),
+                   POG_REST_PUSH="off", POG_TEST="1",
                    POG_AGY_SLACK="0", POG_AGY_MIN_WAIT="1", POG_AGY_RETRY_WAIT="0", POG_AGY_TOKENS_CMD=tokens)
         r = subprocess.run([os.path.join(ws, ".agy-loop.sh")], env=env, capture_output=True, text=True, timeout=90)
         assert r.returncode == 0, r.stderr

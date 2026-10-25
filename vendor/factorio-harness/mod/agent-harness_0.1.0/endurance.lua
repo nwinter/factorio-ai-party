@@ -197,12 +197,58 @@ return function(api)
     ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
     return ammomodel_
   end
+  -- (d24 batch183 QZ1, Sol #2055) design {width, height | tiles, mass?, speed, ammo?} and progress {from, to}.
+  local function tiles_box(list)
+    assert(type(list) == 'table' and #list >= 1 and #list <= 256, 'design.tiles is a list of 1..256 tiles or areas: "x0..x1,y0..y1", "x,y" or {x,y}')
+    local x0, y0, x1, y1
+    local function add(ax, ay, bx, by)
+      x0, y0 = math.min(x0 or ax, ax), math.min(y0 or ay, ay)
+      x1, y1 = math.max(x1 or bx, bx), math.max(y1 or by, by)
+    end
+    for _, t in ipairs(list) do
+      if type(t) == 'string' then
+        local a1, a2, b1, b2 = t:match('^%s*(%-?%d+)%.%.(%-?%d+)%s*,%s*(%-?%d+)%.%.(%-?%d+)%s*$')
+        if a1 then add(math.min(a1, a2) + 0, math.min(b1, b2) + 0, math.max(a1, a2) + 0, math.max(b1, b2) + 0)
+        else
+          local x, y = t:match('^%s*(%-?[%d.]+)%s*,%s*(%-?[%d.]+)%s*$')
+          assert(x, 'design.tiles: "' .. t .. '" is not "x0..x1,y0..y1" or "x,y"')
+          add(math.floor(x + 0), math.floor(y + 0), math.floor(x + 0), math.floor(y + 0))
+        end
+      else
+        local x, y = type(t) == 'table' and (t.x or t[1]), type(t) == 'table' and (t.y or t[2])
+        assert(type(x) == 'number' and type(y) == 'number', 'design.tiles: each is "x0..x1,y0..y1", "x,y" or {x,y}')
+        add(math.floor(x), math.floor(y), math.floor(x), math.floor(y))
+      end
+    end
+    return x1 - x0 + 1, y1 - y0 + 1, string.format('the tiles\' box x %d..%d, y %d..%d', x0, x1, y0, y1)
+  end
+  local function check_progress(pr)
+    if pr == nil then return nil end
+    assert(type(pr) == 'table' and type(pr.from) == 'number' and type(pr.to) == 'number' and pr.from >= 0 and pr.to <= 1 and pr.from < pr.to,
+      'progress is {from, to}: 0 <= from < to <= 1, the part of each leg\'s connection, the way it is flown')
+    return {pr.from, pr.to}
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
+    local design = a.design
+    if design ~= nil then
+      assert(type(design) == 'table', 'design is {width, height | tiles, mass?, speed, ammo?}')
+      assert(type(design.speed) == 'number' and design.speed > 0 and design.speed <= 10000, 'design.speed is km/s, above 0 (as the platform GUI shows it)')
+      assert(design.tiles == nil or design.width == nil, 'design: give width (and height) or tiles, not both')
+      if design.tiles == nil then
+        assert(type(design.width) == 'number' and design.width >= 1 and design.width <= 2000, 'design.width is tiles, 1..2000 (or give tiles)')
+        assert(design.height == nil or (type(design.height) == 'number' and design.height >= 1), 'design.height is tiles')
+      end
+      assert(design.mass == nil or (type(design.mass) == 'number' and design.mass > 0), 'design.mass is a number above 0')
+      assert(design.ammo == nil or (type(design.ammo) == 'table' and #design.ammo <= 8), 'design.ammo is a list of up to 8 ammunition names')
+      for _, n in ipairs(design.ammo or {}) do assert(type(n) == 'string' and prototypes.item[n] and prototypes.item[n].type == 'ammo', 'design.ammo: ' .. tostring(n) .. ' is not an ammunition') end
+    end
+    local progress = check_progress(a.progress)
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
     local stops, route_by = route_of(pl, a.route)
-    local v, v_by = speed(pl)
+    local v, v_by
+    if not design then v, v_by = speed(pl) end
     -- Legs: from where it is (the rest of the leg it flies), then stop to stop.
     local legs, total_km = {}, 0
     local leg_now = api.leg and api.leg(pl)
@@ -249,8 +295,22 @@ return function(api)
       end
       from = to
     end
+    if design then
+      -- the design: its box and speed in place of the platform's; nothing else of the platform read but its route, its
+      -- turrets' ammunition and our bonuses (a light read)
+      v, v_by = design.speed * 60, 'the design\'s'
+    end
     local total_min = v and v > 0 and total_km / v or nil
     for _, l in ipairs(legs) do l.minutes = v and v > 0 and l.km and round(l.km / v, 1) or nil end
+    if design then
+      routeammo = routeammo or require('routeammo'){segments=api.segments, ammorate=api.ammorate, damages=api.ammo_damages}
+      local w, h, from = design.width, design.height, 'the design\'s width'
+      if design.tiles then w, h, from = tiles_box(design.tiles) end
+      local m = routeammo.model(pl, legs, {width=w, width_from=from, height=h, speed=v, speed_from='the design\'s', mass=design.mass, progress=progress, ammo=design.ammo})
+      return {platform=pl.name, design={width=w, height=h, speed_km_s=design.speed, mass=design.mass, from=from}, route=route_by, route_note=route_note, legs=m.legs,
+        total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil, basis=m.basis, estimated=m.estimated, ammo=m.ammo, lines=m.lines,
+        note='read only: nothing built, placed or imported; the route is the platform\'s (route or its schedule), the shots its turrets\' ammunition and settings and our bonuses'}
+    end
     -- Rates and stock.
     local items_stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
     local fluid_stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
@@ -564,7 +624,8 @@ return function(api)
     table.sort(chunks)
     -- forecast (E11, routeammo.lua): per leg, the asteroids its connection spawns, shots per asteroid of each ammunition
     -- aboard, and the use scaled from the legs flown; pessimistic {speed, dwell_s}.
-    local forecast, forecast_damage, forecast_coverage, forecast_targets
+    local forecast, forecast_damage, forecast_coverage, forecast_targets, forecast_model, forecast_basis
+    assert(progress == nil or a.forecast, 'progress goes with forecast: true or design')
     if a.forecast then
       assert(a.forecast == true, 'forecast is true')
       local pe = a.pessimistic
@@ -579,7 +640,15 @@ return function(api)
         local item = prototypes.item[row.name]
         if item and item.type == 'ammo' then ammo[#ammo+1] = row end
       end
-      forecast, forecast_damage, forecast_coverage, forecast_targets = routeammo.forecast(pl, legs, ammo, pe, model)
+      local fo = {}
+      for k, x in pairs(pe or {}) do fo[k] = x end
+      fo.progress = progress
+      forecast, forecast_damage, forecast_coverage, forecast_targets = routeammo.forecast(pl, legs, ammo, fo, model)
+      -- (QZ1) what the forecast assumes, and the spawn model with the platform's own box and speed (design gives the same
+      -- with another)
+      local g = api.geometry and try(function() return api.geometry(pl) end) or {}
+      forecast_model = routeammo.model(pl, legs, {width=g.width, width_from='the platform\'s foundation, x extent', speed=v, speed_from=v_by, progress=progress})
+      forecast_basis = routeammo.basis(fo, v_by)
     end
     local legs_text = {}
     for _, l in ipairs(legs) do
@@ -601,12 +670,91 @@ return function(api)
       forecast_damage=forecast_damage and #forecast_damage > 0 and forecast_damage or nil,
       forecast_coverage=forecast_coverage and #forecast_coverage > 0 and forecast_coverage or nil,
       forecast_targets=forecast_targets and #forecast_targets.ammo > 0 and forecast_targets or nil,
+      basis=forecast_basis, forecast_model=forecast_model and {basis=forecast_model.basis, estimated=forecast_model.estimated, legs=forecast_model.legs, ammo=forecast_model.ammo, lines=forecast_model.lines} or nil,
       chunks_made=#chunks > 0 and chunks or nil,
       note='rates: flying, the platform\'s production statistics over the last 10 minutes (on a leg younger than that, the last 5 or 1 minute within the leg, and ammunition from the leg\'s own counts); stopped, the last finished leg\'s for ammunition (rate_from), else the flight rate is unknown and nothing is projected; a rate that changes on the way (fights near a planet, thrust) changes the projection'}
   end
+  -- (d24 batch187 QAC1: Asterion's forecast took 30-50 ms on a copy of world n, 66 ms once on world n for Kestrel IVb;
+  -- agents call it) The last complete reading of a platform for the same arguments is kept in storage (plain data, as
+  -- every peer holds it) and answered for REFRESH ticks with its age; an older or missing one is read again in the call.
+  -- A reading asked for within ASKED ticks is read again in the background (M.tick) once it is LEAD ticks old, at most
+  -- one a second, so calls find it under REFRESH old: each such read costs one tick what one call cost before.
+  -- The reply's encode (control.lua) is not changed: Asterion's 422 numbers took 12-15 ms on the copy, where a number
+  -- costs about 38 us, and about 1.7 ms on world n at its 3.9 us a number (d24 batch166 cp3).
+  M.REFRESH, M.KEEP, M.MAX, M.ASKED, M.LEAD = 3600, 10 * 3600, 12, 3 * 3600, 2700
+  local function sig(v)
+    if type(v) ~= 'table' then return tostring(v) end
+    local keys = {}
+    for k in pairs(v) do keys[#keys+1] = tostring(k) end
+    table.sort(keys)
+    local parts = {}
+    for _, k in ipairs(keys) do parts[#parts+1] = k .. '=' .. sig(v[k] == nil and v[tonumber(k)] or v[k]) end
+    return '{' .. table.concat(parts, ',') .. '}'
+  end
+  -- The background read: every 60 ticks, the oldest reading asked for within ASKED and LEAD or more old, read again
+  -- as its caller asked it; one that fails (its caller gone, the platform gone) is dropped.
+  function M.tick(tick)
+    if tick % 60 ~= 17 then return end
+    local s = api.state and api.state()
+    local store = s and s.endurance_readings
+    if not store then return end
+    local pick, pick_key
+    for k, e in pairs(store) do
+      if tick - (e.asked or 0) <= M.ASKED and tick - e.tick >= M.LEAD and (not pick or e.tick < pick.tick) then pick, pick_key = e, k end
+    end
+    if not pick then return end
+    local p = api.player_of and api.player_of(pick.player)
+    local ok, r = false, nil
+    if p then ok, r = pcall(M.read, p, pick.args) end
+    if ok then pick.reply, pick.tick, pick.background = r, tick, (pick.background or 0) + 1
+    else store[pick_key] = nil end
+  end
+  -- a shallow copy, so the reply's own fields (the dispatch adds some) stay out of the kept reading
+  local function copy(r)
+    local out = {}
+    for k, v in pairs(r) do out[k] = v end
+    return out
+  end
+  function M.handler(p, a)
+    assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh is true or false')
+    if a.design ~= nil then return M.read(p, a) end
+    assert(type(a.platform) == 'string', 'platform is required (a platform name)')
+    local pl = api.platform(p, a.platform)
+    local key = tostring(pl.index) .. sig({route=a.route, forecast=a.forecast, pessimistic=a.pessimistic, progress=a.progress})
+    local s = api.state and api.state()
+    local store = s and (function() s.endurance_readings = s.endurance_readings or {}; return s.endurance_readings end)()
+    local hit = store and not a.fresh and store[key]
+    if hit then hit.asked = game.tick end
+    local age = hit and game.tick - hit.tick
+    local r, fresh
+    if hit and age >= 0 and age < M.REFRESH then r = hit.reply
+    else
+      r = M.read(p, a)
+      fresh = true
+      if store then
+        local args = {}
+        for k, v in pairs(a) do if k ~= 'fresh' then args[k] = v end end
+        store[key] = {tick=game.tick, reply=r, platform=pl.name, player=p.index, args=args, asked=game.tick}
+        -- the oldest dropped past MAX kept, and any older than KEEP
+        local list = {}
+        for k, e in pairs(store) do if game.tick - e.tick > M.KEEP then store[k] = nil else list[#list+1] = {k=k, t=e.tick} end end
+        table.sort(list, function(x, y) return x.t > y.t end)
+        for i = M.MAX + 1, #list do store[list[i].k] = nil end
+      end
+      age = 0
+    end
+    local out = copy(r)
+    out.reading = {tick=fresh and game.tick or hit.tick, age_s=math.floor(age / 6 + 0.5) / 10, fresh=fresh or false, refresh_s=M.REFRESH / 60,
+      note=fresh and string.format('read in this call; while asked for, it is read again in the background every %d s', M.LEAD / 60)
+        or string.format('the reading of %g s ago for these arguments (read again in the background every %d s while asked for, answered up to %d s old): fresh: true reads again now', math.floor(age / 6 + 0.5) / 10, M.LEAD / 60, M.REFRESH / 60)}
+    return out
+  end
   M.schema = {platform_endurance = {forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
+    design='optional {width, height | tiles, mass?, speed, ammo?}: a hull not built yet, read only (nothing built, placed or imported), on the platform\'s route with its turrets\' ammunition and settings (or ammo: up to 8 names) and our bonuses: width and height in tiles, or tiles (up to 256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; speed km/s as the GUI shows it; mass is said and not used (the speed is given; asteroids come per km). Returns design, legs [{from, to, part {f0, f1}, km, minutes, asteroids {kind: count}, total, per_600s, total_per_600s, shots {ammo: shots}}], basis (the spawn line, the count rule and its fit, distance not time, width, speed, progress, shots), estimated (what is not modelled exactly), ammo, lines; a light read: no rates, stock or production read',
+    fresh='optional true: read again now; without it a reading of the same arguments under 60 s old is answered (reading {tick, age_s, fresh, refresh_s, note})',
+    progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',
     pessimistic='with forecast: {speed: 0.1..1 (a share of the speed read: slower, longer legs), dwell_s: 0..36000 (extra time at each stop at the stopped rate)}',
     platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks, made and used a minute over the last minute, and flying whether each lasts the rest of the leg at the speed now; its owners get a team alert when one runs out before the leg ends, with how long since the platform left its stop and the engine\'s last 60 and 180 s side by side: each fluid used and made a minute, the thrusters\' tanks at start and end, and the seconds of each sample spent at the stop before it left); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (flying: this leg\'s own once its last 60 s are all in the leg and not rising (their mean), the last leg\'s while it speeds up and is under 90% of it, else its speed now, each said; stopped: the last finished leg\'s average; the fuel outlook, the legs\' minutes and the forecast use it), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min, share, shared {product: share}, other_use_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now; an ingredient two products draw on split by their make rates, other machines\' use of it taken off first), received (on rockets launched to it and not arrived, counted once), binds (which limit sets what is made over the route: the stock, the make rate or an ingredient; flight, departure, forecast and preflight\'s ammo_rates count the same way), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_made (asteroid chunks made a minute: the production statistics, the collectors\' catch and the crushers\' returns), lines; read only'}}
+    returns='with forecast: basis (what the forecast assumes: legs, asteroids, use, box, speed, progress) and forecast_model (the asteroids and shots by the spawn rule with the platform\'s own width and speed, as design gives them); fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks, made and used a minute over the last minute, and flying whether each lasts the rest of the leg at the speed now; its owners get a team alert when one runs out before the leg ends, with how long since the platform left its stop and the engine\'s last 60 and 180 s side by side: each fluid used and made a minute, the thrusters\' tanks at start and end, and the seconds of each sample spent at the stop before it left); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (flying: this leg\'s own once its last 60 s are all in the leg and not rising (their mean), the last leg\'s while it speeds up and is under 90% of it, else its speed now, each said; stopped: the last finished leg\'s average; the fuel outlook, the legs\' minutes and the forecast use it), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min, share, shared {product: share}, other_use_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now; an ingredient two products draw on split by their make rates, other machines\' use of it taken off first), received (on rockets launched to it and not arrived, counted once), binds (which limit sets what is made over the route: the stock, the make rate or an ingredient; flight, departure, forecast and preflight\'s ammo_rates count the same way), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_made (asteroid chunks made a minute: the production statistics, the collectors\' catch and the crushers\' returns), lines; read only'}}
   return M
 end

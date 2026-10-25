@@ -129,7 +129,18 @@ def payload_tests():
 
 def build_tests():
     with tempfile.TemporaryDirectory() as d:
-        subprocess.run([sys.executable, os.path.join(SITE, "build.py"), "--out", d], check=True, capture_output=True)
+        # (d24 batch186) its own runs folder: the gate runs this in the live checkout, where the repo's runs/ is the live
+        # run's and the build's stats caches landed in its shift folders; POG_TEST=1 makes build.py refuse the repo's
+        runs = os.path.join(d, "runs-src")
+        os.makedirs(runs)
+        out = os.path.join(d, "out")
+        r = subprocess.run([sys.executable, os.path.join(SITE, "build.py"), "--out", out, "--runs-dir", runs],
+                           capture_output=True, text=True, env=dict(os.environ, POG_TEST="1"))
+        assert r.returncode == 0, r.stdout + r.stderr
+        r = subprocess.run([sys.executable, os.path.join(SITE, "build.py"), "--out", out], capture_output=True, text=True,
+                           env=dict(os.environ, POG_TEST="1"))
+        assert r.returncode != 0 and "POG_TEST=1: build.py needs --runs-dir" in r.stdout + r.stderr, r.stdout + r.stderr
+        d = out
         r = subprocess.run([sys.executable, os.path.join(SITE, "check.py"), d], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
         home = open(os.path.join(d, "index.html")).read()

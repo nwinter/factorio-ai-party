@@ -12,6 +12,7 @@
 No RCON and no live quota data: send_operator is replaced, the briefs are fixtures, POG_REST_PUSH=off for the CLI.
 """
 import json
+import testsafe  # noqa: E402  (d24 batch186: what a test runs a repo script with)
 import os
 import subprocess
 import sys
@@ -141,7 +142,7 @@ def start_team():
         open(team, "w").write(TEAM)
         qb = os.path.join(tmp, "brief.json")
         json.dump(brief(time.time()), open(qb, "w"))
-        env = dict(os.environ, POG_DRY_RUN="1", POG_TEAM_FILE=team, POG_CASTER="0", POG_ANALYST="0", POG_OBS="0",
+        env = testsafe.env(POG_DRY_RUN="1", POG_TEAM_FILE=team, POG_CASTER="0", POG_ANALYST="0", POG_OBS="0",
                    POG_QUOTA_BRIEF=qb, POG_QUOTA_BURN=os.path.join(tmp, "no-burn.tsv"))
         env.pop("POG_RESUME", None)
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "restdry-test", "10"], env=env,

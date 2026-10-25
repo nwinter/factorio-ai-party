@@ -14,6 +14,9 @@ PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27
 
 class Rcon:
     def __init__(self, host, port, password, timeout=15):
+        # (d24 batch186) a test run (POG_TEST=1) talks only to its own fake servers, never a world's port
+        if os.environ.get("POG_TEST") == "1" and int(port) in PORTS.values():
+            raise SystemExit(f"POG_TEST=1: no RCON to port {port} (a world's) in a test run")
         self.sock = socket.create_connection((host, port), timeout=timeout)
         self.next_id = 1
         if self._request(3, password)[0] == -1:

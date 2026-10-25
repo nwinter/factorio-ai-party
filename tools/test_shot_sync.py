@@ -3,6 +3,7 @@
 folder. A director client's script-output\\pog\\WS\\NAME.png must land in RUN/WS/shots/NAME.png and leave the box,
 and a file is only copied once it was listed on an earlier pass. python3 tools/test_shot_sync.py"""
 import json, os
+import testsafe  # noqa: E402  (d24 batch186: what a test runs a repo script with)
 import shutil
 import subprocess
 import sys
@@ -36,8 +37,10 @@ FAKE_SCP = r'''#!/usr/bin/env python3
 import os, shutil, sys
 box = os.environ["FAKEBOX"]
 src, dst = [a for a in sys.argv[1:] if a != "-q"]
-assert src.startswith("pogwin:D:/pog/inst/"), src
-shutil.copyfile(os.path.join(box, src[len("pogwin:D:/pog/inst/"):]), dst)
+# (d24 batch186) the box as POG_WIN_HOST names it: a made-up host in a test run
+host = os.environ["POG_WIN_HOST"] + ":D:/pog/inst/"
+assert src.startswith(host), src
+shutil.copyfile(os.path.join(box, src[len(host):]), dst)
 '''
 
 
@@ -77,7 +80,7 @@ def wrapper():
         fh = os.path.join(tmp, "bin", "fh")
         open(fh, "w").write(FAKE_FH)
         os.chmod(fh, 0o755)
-        env = dict(os.environ, POG_WS="grok", POG_BOT="grok")
+        env = testsafe.env(POG_WS="grok", POG_BOT="grok")
         ws = subprocess.run(["bash", os.path.join(tmp, "tools", "new-run.sh"), "t1", "n", "grok", "60"], env=env,
                             capture_output=True, text=True, check=True).stdout.strip()
         assert ws.endswith("runs/t1/grok"), ws
@@ -125,7 +128,7 @@ def main():
         open(os.path.join(out, "grok", "look-1-2.png"), "wb").write(b"PNG1")
         open(os.path.join(out, "nobody", "x.png"), "wb").write(b"PNG2")
         open(os.path.join(out, "old.png"), "wb").write(b"PNG3")  # no workspace folder: left alone
-        env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"], FAKEBOX=box)
+        env = testsafe.env(PATH=bindir + os.pathsep + os.environ["PATH"], FAKEBOX=box, POG_WIN_HOST="invalid.test")
         proc = subprocess.Popen(["bash", SYNC, run, "n-client-cam1", "n-client-cam2"], env=env)
         try:
             # First pass lists it; it is copied on the second pass (about a second later).

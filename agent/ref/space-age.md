@@ -98,7 +98,7 @@
   `dry_run: true` lists hub cargo, entities besides the hub, ghosts, foundation tiles, characters aboard and cargo pods
   on their way. One not empty or occupied is refused unless `confirm` is its name; `cancel: true` cancels a scheduled one.
   Example: `./fh call platform_delete --args '{"platform":"Bastion","dry_run":true}'`
-- `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
+- `platform_endurance {platform, route?, forecast?, pessimistic?, design?, progress?, fresh?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
   hub slots free, power, solar power at the stops, and the asteroid chunks made a minute (the collectors' catch and the crushers' returns); `fuel_outlook`: one line
   of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
@@ -133,6 +133,15 @@
   those only), none for an asteroid no turret targets; lines per ammunition and asteroid (`forecast_targets`); `pessimistic:
   {speed, dwell_s}` slows the legs and adds time at each stop.
   Example: `./fh call platform_endurance --args '{"platform":"Wayfarer","route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}'`
+  With forecast, `basis` says what the forecast assumes, and `forecast_model` counts asteroids by the hull's box. They
+  spawn on a line 72 tiles ahead of the box, across its width + 96, not its height. Per km flown: 0.0100 x (width + 116)
+  x each kind's spawn chance; this is fitted on test platforms with no schedule, and ships flying on a schedule met 1.2
+  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same for a hull
+  not built yet, read only, on this platform's route and turrets. `progress: {from, to}` cuts each leg to that part of
+  its connection. Each leg gives asteroids by kind, a 600 s window's, and shots per ammunition; `estimated` lists what
+  is not modelled.
+  A reading of the same arguments is kept and answered for 60 s, with `reading` {tick, age_s, fresh}; while asked
+  for, it is read again in the background every 45 s. `fresh: true` reads now.
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
@@ -231,6 +240,12 @@
   (one a second) for the first 24 tracked only. Reading it: `asteroid_names: ["*promethium*"]` (1..16 names or
   patterns with *), `trajectory_page`, `trajectory_limit` (1..100); `trajectory_untracked` counts a picked name's
   asteroids past the 3000, which have no record.
+  `by_name` also splits `in_first_sample` (in view at the first read) from `later`: `later_fragments` (first seen
+  where an asteroid that breaks into that name died just before: by name, place and time, as no game event links
+  them) and `later_other`. Past the cap the line says from what second (`capped_at_s`); `untracked` counts unique
+  asteroids once each. Each ammo turret's rounds (read every 15-60 ticks): `rounds_used` exact for gun turrets
+  (`exact`); rocket turrets' a load and a shot can offset: `unsure_reads`, `rounds_used_most`. `platform_consumed`:
+  the platform's consumed count per ammo item (item production statistics) beside the turrets' `turrets_used`.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
@@ -338,7 +353,9 @@
   with room there, a pod landed with no pad, the platform paused away from the destination or not stopping there, a
   requester chest asking none of it. Stopped at the destination, paused or not (its hub sends pods down while paused),
   `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
-  watches; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the
+  watches in brief (id, item, quality rule, count, to, state, last confirmed stage and its age, received of count,
+  blockers and risks counted, deadline); `{id}` gives one watch's whole row (every field here), `{full: true}` every
+  whole row; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the
   platform stops at before the destination (pad, request, count, which stop) is a blocker while it is stopped there and
   in `risks` before (a pad request's import planet does not stop it; the hub's own request for the item keeps up to its
   max aboard, all with no max); a pod of it landing on another planet is in `diversions` (`diverted`: their sum).
