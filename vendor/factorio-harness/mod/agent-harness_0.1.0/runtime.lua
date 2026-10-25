@@ -14220,13 +14220,13 @@ function handlers.spider_kite(p,a)
       error(string.format('%s #%d: %s runs spider_kite with it',spider.name,spider.unit_number,b and b.name or pl and pl.name or 'another agent'),0)
     end
   end
-  -- (QAE1, batch189) a retreat its guard started holds its route
+  -- (QAE1, batch189) a retreat its guard started holds its route until re-armed
   local sr=state().spiderroute
-  local t=sr and sr.spiders[spider.unit_number]
+  local lock=sr and sr.locks and sr.locks[spider.unit_number]
   local route=M.spiderroute.route(spider)
-  if t and t.retreated and #route>0 then
-    error(string.format('%s #%d walks its retreat route (%s): its guard fired; spider_kite would replace that route',spider.name,spider.unit_number,
-      t.retreated.why or 'retreat'),0)
+  if lock then
+    error(string.format('spidertron #%d is held on its retreat (%s: %s; its route became %s): spider_kite is refused until re-armed; retreat_guard {to, health_below} again, retreat_guard {clear: true}, or a go_to with its own retreat re-arms it',
+      spider.unit_number,lock.rec.guard or 'its guard',lock.rec.why or 'retreat',lock.rec.route_line or '?'),0)
   end
   local g=(state().retreat_guards or {})[p.index]
   local action=M.spiderkite.plan(p,a,spider,how,g and g.to and g or nil)

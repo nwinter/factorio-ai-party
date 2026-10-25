@@ -137,7 +137,7 @@ return function(api)
     -- (d24 batch191) each straight leg read for water its legs cannot cross; paths round it requested (spiderpath.lua)
     if a.go_to ~= nil and #r > 0 and api.path then
       local ok, lines = pcall(api.path.plan, spider, r, {owner='route', by=by})
-      if ok and lines then out.water = {crossing=lines, note='paths round the water were requested: the route becomes them when they come (a tick or so), said in your next reply'} end
+      if ok and lines then out.water = {crossing=lines, note='paths round the water were requested: the route becomes them when they come (often within this call), said once in team alerts (this reply or a later one)'} end
     end
     return out
   end
@@ -280,11 +280,19 @@ return function(api)
     end)
     if not ok then refused = 'the game refused the destination ' .. at(cfg.to) .. ': ' .. tostring(err) end
     local r = route(e)
+    -- (d24 batch191 addendum) the retreat leg over water its legs cannot cross: a path round it, as go_to's; its own
+    -- re-route and shore recovery once more on this route
+    local water
+    if not refused and api.path then
+      local okp, lines = pcall(api.path.plan, e, {cfg.to}, {owner='route', by=t.by})
+      if okp and lines then water = lines[1] .. ': a path round the water was requested (the route becomes it when it comes)' end
+    end
+    t.rerouted, t.recovered = nil, nil
     local parts = {}
     for i, d in ipairs(before) do parts[i] = at(d) end
     local rec = {spidertron=e.name, unit_number=unit, why=info.why, from=info.from, health=info.health, shield=info.shield, to=cfg.to,
       replaced=parts, route_line=route_line(r), refused=refused, guard=cfg.standing and (cfg.rider and cfg.rider .. '\'s standing retreat_guard (riding it)' or 'standing retreat_guard') or 'the go_to\'s retreat',
-      tick=game.tick}
+      tick=game.tick, water=water}
     t.retreated = rec
     if #r > 0 then
       t.pos, t.near, t.moved, t.stalled, t.target = {x=e.position.x, y=e.position.y}, dist(e.position, r[1]), game.tick, nil, {x=r[1].x, y=r[1].y}
@@ -341,7 +349,7 @@ return function(api)
   local function retreat_text(rec)
     local held = store().locks and store().locks[rec.unit_number]
     return string.format('retreated %s ago (%s: %s) from %s, health %s%s; its route became %s%s%s', ago(game.tick - rec.tick), rec.guard, rec.why, at(rec.from), rec.health,
-      rec.shield and ', shield ' .. rec.shield or '', rec.route_line, rec.refused and '; ' .. rec.refused or '',
+      rec.shield and ', shield ' .. rec.shield or '', rec.route_line, rec.refused and '; ' .. rec.refused or rec.water and '; ' .. rec.water or '',
       held and held.rec == rec and '; held: go_to and clear refused until re-armed' or '')
   end
   -- Every SAMPLE ticks: each spidertron sent by go_to.

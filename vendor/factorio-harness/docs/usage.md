@@ -14308,12 +14308,14 @@ Water (spiderpath.lua, the addendum), for `spider_kite`'s legs back to `position
 `LuaSurface.request_path` with that layer only and a 2x2 box (it walks over buildings and trees, as legs do); the path
 comes back thinned to points 12 tiles apart (each straight piece read again) and the route goes through them. go_to's
 reply says `water` {crossing, note}; the route change and a failed path (`the pathfinder found no path round the water
-to (x,y) (the target itself is on water)`) come in the sender's next reply. A body standing over the water at a shore
+to (x,y) (the target itself is on water)`) are said once in the sender's team alerts (the path often comes back
+within the go_to call, so in its own reply). batch189's retreat route goes round water the same way (its retreat record
+and status say `water`), and spider_kite is refused on a spidertron held on its retreat. A body standing over the water at a shore
 starts its path from the nearest dry tile. No progress (go_to: 10 s, now read as 1 tile nearer than its nearest, so a
 sway at a shore is no progress; spider_kite: 2 s): re-routed once (a path round the water, or spider_kite turned 60
 degrees), then with water within 16 tiles ahead shore recovery (its route goes first to the dry tile nearest the target
 on rings 4..24 tiles round it), then the stall line / `stalled`. A go_to route of more than 8 points reads as the first 4
-and the last 2. batch189's spidertron retreat route takes the same helper once that branch is merged.
+and the last 2.
 
 Engine facts (2.0.77, a copy of world n's 20:12 autosave):
 - `add_autopilot_destination` walks the straight line, about 0.22 tiles a tick; no waypoints are added and nothing paths

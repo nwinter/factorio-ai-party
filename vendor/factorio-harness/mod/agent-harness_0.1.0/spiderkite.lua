@@ -375,7 +375,7 @@ return function(api)
       local ok, out = pcall(spider_set, spider, {go_to=action.back}, by)
       if ok then
         last.retreat = string.format('its route became %s (%s); its guns stay on%s', out.route_line, action.back_standing and 'your standing retreat_guard\'s to' or 'retreat',
-          out.water and '; ' .. out.water.crossing[1] .. ': a path round the water was requested (said in your next reply)' or '')
+          out.water and '; ' .. out.water.crossing[1] .. ': a path round the water was requested (the route change is said once in team alerts)' or '')
         return
       end
       last.retreat = 'the route to ' .. at(action.back) .. ' was refused: ' .. tostring(out)

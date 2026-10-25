@@ -226,7 +226,7 @@
   10 s (where it stands, for how long, and what its legs cannot stand on in the straight line ahead), also said once in
   your next reply and listed in status `spidertrons`. Its legs stand on no water, lava or space tile and step across
   14 tiles of it at most: a straight leg over more than 12 gets a path round it (reply `water`; the route becomes the
-  path when it comes, said in your next reply). No progress for 10 s with water ahead: one re-route, then shore
+  path when it comes, said once in team alerts). No progress for 10 s with water ahead: one re-route, then shore
   recovery (first to the dry tile nearest its target within 24 tiles), then `stalled`.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or

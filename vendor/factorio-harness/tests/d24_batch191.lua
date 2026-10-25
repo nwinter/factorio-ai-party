@@ -225,4 +225,18 @@ local first=spider.autopilot_destinations[1]; assert(first.x<10,'the shore: '..f
 ticks(R.STALL+60)
 lines=R.lines({name='sol'},{spiderroute_seen=seen})
 assert(lines and lines[1]:find('no progress toward',1,true) and lines[1]:find('vehicle {go_to, mode: "replace"} sets a new one',1,true),lines and lines[1])
+-- 12. batch189's retreat route (its guard fired) over water: a path round it requested; the reply's retreat says so,
+-- and its re-route and shore recovery run again on that route.
+wx1,wx2,wy=10,40,30
+sd.position={x=0,y=0}; spider.autopilot_destination=nil
+storage.spiderroute.locks=nil
+R.set(spider,{go_to={x=-20,y=0}},'sol',7,false)
+local tr=storage.spiderroute.spiders[7101]; tr.rerouted, tr.recovered = true, true
+local before=#requests
+R.retreat(spider,7101,tr,{to={x=60,y=0},standing=true},{why='health 30% under 40%',from={x=0,y=0},health='30%'})
+eq(#requests,before+1); eq(requests[#requests].goal.x,60)
+assert(tr.retreated.water and tr.retreated.water:find('crosses 31 tiles of deepwater',1,true),tr.retreated.water)
+eq(tr.rerouted,nil); eq(tr.recovered,nil)
+P.on_path({id=500+#requests,path=path},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end)
+assert(#spider.autopilot_destinations>4,'the retreat goes round')
 print('d24_batch191: ok')
