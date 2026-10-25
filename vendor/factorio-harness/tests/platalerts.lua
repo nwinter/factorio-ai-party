@@ -125,20 +125,20 @@ eq(has(alerts(astra),' hit '),S..' hit 2 times, 80 damage, last 1s ago: gun-turr
 -- clear (batch28 B2, Luna: alerts that repeat).
 hub_ammo=920
 t1.rounds=0; t2.rounds=4; jump(601)
-eq(has(alerts(sol),'turrets empty'),S..': 1 of 2 gun-turrets empty, 1 low (under 10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920')
+eq(has(alerts(sol),'turrets empty'),S..': 1 of 2 gun-turrets empty, 1 low (under 10 magazines); turrets hold 4 magazines, the hub firearm-magazine 920')
 jump(601); eq(has(alerts(sol),'turrets empty'),nil)
 t2.rounds=0; jump(601)
-eq(has(alerts(sol),'turrets empty'),S..': 2 of 2 gun-turrets empty; turrets hold 0 rounds, the hub firearm-magazine 920')
+eq(has(alerts(sol),'turrets empty'),S..': 2 of 2 gun-turrets empty; turrets hold 0 magazines, the hub firearm-magazine 920')
 -- lasting: not told again, however long
 jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
 jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
 -- The platforms read: the same defence for every platform, fresh.
 local prow=sol('platforms',{compact=false}).platforms[1]
-eq(prow.defense.hub_health,'1000/1000'); eq(prow.defense.turrets,'2 gun-turrets: 2 empty, 0 low (under 10 rounds)')
-eq(prow.defense.ammo,'turrets hold 0 rounds, the hub firearm-magazine 920'); eq(prow.repair_packs,'repair-pack*5')
+eq(prow.defense.hub_health,'1000/1000'); eq(prow.defense.turrets,'2 gun-turrets: 2 empty, 0 low (under 10 magazines)')
+eq(prow.defense.ammo,'turrets hold 0 magazines, the hub firearm-magazine 920'); eq(prow.repair_packs,'repair-pack*5')
 hub_ammo=0
 t1.rounds,t2.rounds=50,50
-eq(sol('platforms',{compact=false}).platforms[1].defense.ammo,'turrets hold 100 rounds, the hub no ammo')
+eq(sol('platforms',{compact=false}).platforms[1].defense.ammo,'turrets hold 100 magazines, the hub no ammo')
 
 -- No repair packs while it takes hits.
 packs=0; hit(hub,10); jump(601)

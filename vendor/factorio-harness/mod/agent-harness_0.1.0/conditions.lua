@@ -922,8 +922,10 @@ return function(api)
       if api.pods_landed then
         local r=api.pods_landed(c.platform,since,c.item,c.quality~='any' and c.quality or nil)
         local have=c.item and r.items or r.pods
-        return have>=want,string.format('%d pod%s from %s landed %s%s%s%s',r.pods,r.pods==1 and '' or 's',c.platform,from,
-          what and string.format(' with %d %s',r.items,what) or '',r.last and string.format(' (the last at tick %d, %s on %s)',r.last.landed,tostring(r.last.dest or 'where not read'),r.last.planet) or '',
+        -- (d25 batch207 QT1, Sol #2344) a pod counts once its cargo is delivered (about 80 ticks after it lands)
+        return have>=want,string.format('%d pod%s from %s landed and delivered %s%s%s%s%s',r.pods,r.pods==1 and '' or 's',c.platform,from,
+          what and string.format(' with %d %s',r.items,what) or '',r.last and string.format(' (the last delivered at tick %d, %s on %s)',r.last.delivered or r.last.landed,tostring(r.last.dest or 'where not read'),r.last.planet) or '',
+          (r.landing or 0)>0 and string.format('; %d more landed, cargo not delivered yet',r.landing) or '',
           r.complete and '' or string.format('; the pod ledger keeps journeys sent from tick %d on: pods landed before that are not counted',r.oldest or 0)),
           estimate and {value=have,scope='pods:'..c.platform..':'..tostring(what)} or nil
       end
