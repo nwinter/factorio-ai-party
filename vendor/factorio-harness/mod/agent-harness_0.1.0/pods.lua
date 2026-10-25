@@ -51,7 +51,11 @@ return function(api)
     local list = store()
     local n = 0
     for unit, r in pairs(list) do
-      if not (r.pod and r.pod.valid) or tick - r.start > KEEP then list[unit] = nil else n = n + 1 end
+      if not (r.pod and r.pod.valid) or tick - r.start > KEEP then
+        -- (d24 batch179 QV1) gone: landed, for the pod ledger while no pod event reaches it (podlog.lua)
+        if api.podlog_gone and not (r.pod and r.pod.valid) then pcall(api.podlog_gone, unit, tick, r.pad) end
+        list[unit] = nil
+      else n = n + 1 end
     end
     for _, f in pairs(game.forces) do
       for _, pl in pairs(try(function() return f.platforms end) or {}) do
@@ -68,6 +72,7 @@ return function(api)
                 if not pad then pad = planet_pad(f, to); guessed = pad and true or nil end
                 list[unit] = {pod=pod, platform=pl.name, force=f.name, to=to, pad=pad, guessed=guessed, items=contents(pod), start=tick}
                 n = n + 1
+                if api.podlog_sampled then pcall(api.podlog_sampled, pod, tick) end
               end
             elseif r then
               if not r.items then r.items = contents(pod) end
