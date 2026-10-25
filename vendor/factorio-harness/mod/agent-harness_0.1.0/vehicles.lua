@@ -1135,11 +1135,13 @@ return function(api)
   end
   -- "firearm-magazine*10 (95 rounds)" (rounds named where a magazine holds more than one), quality after @ when not
   -- normal; nil for none
+  -- (d25 batch206 QS) whole counts as text by string.format (number .. text costs about 8 us in the game, %d 0.3 us)
+  local function int_text(v) if v == math.floor(v) and v > -1e15 and v < 1e15 then return string.format('%d', v) end return v .. '' end
   function M.rounds_text(rows)
     local parts = {}
     for i, r in ipairs(rows) do
-      parts[i] = r.name .. (r.quality ~= 'normal' and '@' .. r.quality or '') .. '*' .. r.count
-        .. (r.magazine_size > 1 and ' (' .. r.rounds .. ' rounds)' or '')
+      parts[i] = r.name .. (r.quality ~= 'normal' and '@' .. r.quality or '') .. '*' .. int_text(r.count)
+        .. (r.magazine_size > 1 and ' (' .. int_text(r.rounds) .. ' rounds)' or '')
     end
     return #parts > 0 and table.concat(parts, ' ') or nil
   end
