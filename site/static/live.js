@@ -1181,17 +1181,32 @@
     return splitStates(j.states).map(function (st) { var m = /^(\S+) (\S+)(.*)$/.exec(st) || []; return { who: m[1], state: m[2], rest: m[3] }; });
   }
   // (d22 batch99 BI3) waiting or open: a recipient's line waits, or an ack left it open or deferred (batch94 BD1);
-  // finished: a one-time job done, or every recipient's state done or acknowledged
+  // finished: a job that is off, done or with every recipient's state done or acknowledged.
+  // (d24 batch177 QT1, viewer Aurora 17:20: "#151 is enabled every 20m but hidden from Active and labelled done despite
+  // its next run") an enabled job is active: done belongs to a run (the recipients' states), not to a job that is on
   var REM_WAITING = { pending: 1, overdue: 1, open: 1, deferred: 1, 'acknowledged,': 1 };
+  function remDone(j) { return !!j.done && !j.enabled; }
   function remIs(j, f) {
-    if (f === 'active') return !!j.enabled && !j.done;
+    if (f === 'active') return !!j.enabled;
     if (f === 'overdue') return remStates(j).some(function (x) { return x.state === 'overdue'; });
-    if (f === 'waiting') return !j.done && remStates(j).some(function (x) { return REM_WAITING[x.state]; });
+    if (f === 'waiting') return !remDone(j) && remStates(j).some(function (x) { return REM_WAITING[x.state]; });
     if (f === 'finished') {
+      if (j.enabled) return false;
       var st = remStates(j);
       return !!j.done || (st.length > 0 && st.every(function (x) { return x.state === 'done' || x.state === 'acknowledged'; }));
     }
     return true;
+  }
+  // (QT1) the schedule apart from the last run: "Schedule: every 20m00s, next in 18 min" (off, or done for a one-time job
+  // that ran), and the recipients' states as the last run's, with when it ran
+  function remScheduleText(j) {
+    var due = j.enabled ? (j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : 'on') : remDone(j) ? 'done' : 'off';
+    return 'Schedule: ' + [j.cadence, due].filter(Boolean).join(', ');
+  }
+  function remRunLabel(j, tick) {
+    if (j.last_fired_tick == null) return remStates(j).every(function (x) { return x.state === 'scheduled'; }) ? 'Not run yet:' : 'Last run:';
+    var age = tick != null && tick >= j.last_fired_tick ? ' ' + ago((tick - j.last_fired_tick) / 60) : '';
+    return 'Last run' + age + ':';
   }
   // (d20 batch70 AF2, viewer Aurora: "show each recipient's latest result") each recipient's latest: acknowledged when,
   // with what (by the backup for them), or waiting how long with the runs missed; and the backup, named.
@@ -1242,17 +1257,18 @@
     remPage = Math.min(remPage, pages - 1);
     var pagerRem = opened ? pager('rem', remPage, list.length) : '';
     if (opened) list = list.slice(remPage * PAGE, remPage * PAGE + PAGE);
+    var tick = rem.tick != null ? rem.tick : lastState && lastState.tick;  // the game tick the jobs were read at
     var rows = list.map(function (j) {
       var o = byName[j.agent] || {};
-      var due = j.done ? 'done' : !j.enabled ? 'off' : j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : '';
       var states = remStates(j).map(function (x) {
         var who = byName[x.who] || {};
         return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '')) + '</span>';
       }).join(' ');
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
-        esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted">' + esc([j.cadence, due].filter(Boolean).join(', ')) + '</span>' +
+        esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted rem-schedule">' + esc(remScheduleText(j)) + '</span>' +
         (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result' + (j.result_age_s != null ? ' ' + ago(j.result_age_s) : '') + ':') : '') +
-        evidenceHtml('rem' + j.id, j) + (states ? '<br>' + states : '') + remLatestHtml(j, byName) + '</span></li>';
+        evidenceHtml('rem' + j.id, j) + (states ? '<br><span class="fx-muted small rem-run">' + esc(remRunLabel(j, tick)) + '</span> ' + states : '') +
+        remLatestHtml(j, byName) + '</span></li>';
     }).join('');
     var filters = !opened ? '' : '<div class="rem-filters" role="group" aria-label="Show reminders">' + REM_FILTERS.map(function (f) {
       var n = jobs.filter(function (j) { return remIs(j, f[0]); }).length;
