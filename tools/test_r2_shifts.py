@@ -263,7 +263,8 @@ def main():
         assert (bad / "x.mkv").exists() and (rec / idx["media"][0]["name"]).exists()
         assert rs.shifts_arg("2-4,9") == ["shift02", "shift03", "shift04", "shift09"]
     print("r2 shifts: ok (parts, stitched playlists, joined captions, shift.json, jobs controller, stream health "
-          "pause, upload order, the API request cap and 429 hold, a whole shift with a lost object, receipt, cleanup, status row, skip on rerun)")
+          "pause, upload order, the API request cap and 429 hold, a whole shift with a lost object, receipt, "
+          "cleanup, status row, skip on rerun)")
 
 
 if __name__ == "__main__":
