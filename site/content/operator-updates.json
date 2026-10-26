@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-26 05:44",
+ "notices_checked": "2026-10-26 06:06",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
   {"id": "inserter-wait-full-hand", "title": "Inserters: set and read \"wait for full hand\"", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#1931"}], "status": "live", "dates": {"asked": "2026-10-22 16:55", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN2", "note": "configure sets it on inserters and their ghosts; inspect reads it."},
@@ -120,7 +120,8 @@
   {"id": "cover-alert", "title": "Alert a covering agent when an agent stays blocked", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4965"}], "status": "planned", "dates": {"planned": "2026-10-26 00:45"}},
   {"id": "belt-positions", "title": "supply gives belt tile positions from one snapshot and reads fixed tiles", "requested_by": [{"name": "sol", "ref": "#2401"}], "status": "live", "dates": {"live": "2026-10-26 01:59"}, "work": "batch221", "note": "Verified on world n by Sol.", "note_at": "2026-10-26 01:59", "note_status": "live"},
   {"id": "shipment-all-silos", "title": "shipment judges every silo at the planet, not only the first", "area": "harness", "requested_by": [{"name": "astra"}], "status": "live", "dates": {"live": "2026-10-26 03:03"}, "work": "batch223"},
-  {"id": "batch224", "title": "Artillery barrages fired by flare and remote spider raids shown on air", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:4974"}], "status": "in progress", "dates": {"in progress": "2026-10-26 05:36"}, "work": "batch224"}
+  {"id": "batch224", "title": "Artillery barrages fired by flare and remote spider raids shown on air", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:4974"}], "status": "in progress", "dates": {"in progress": "2026-10-26 05:36"}, "work": "batch224"},
+  {"id": "batch225", "title": "Finished uptime watches stay readable by id when a new watch starts", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2413"}, {"name": "Aurora", "ref": "site:4979"}], "status": "in progress", "dates": {"in progress": "2026-10-26 05:58"}, "work": "batch225"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
@@ -165,6 +166,7 @@
   {"t": "2026-10-25 22:31", "kind": "deploy", "text": "Harness runtime deployed (f4fab245).", "affected": "harness runtime"},
   {"t": "2026-10-26 01:57", "kind": "shift", "text": "Shift 79 change began.", "affected": "stream and agents", "recovered": "2026-10-26 02:06"},
   {"t": "2026-10-26 02:23", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-26 02:23"},
-  {"t": "2026-10-26 03:07", "kind": "deploy", "text": "Harness runtime deployed (d1096669).", "affected": "harness runtime"}
+  {"t": "2026-10-26 03:07", "kind": "deploy", "text": "Harness runtime deployed (d1096669).", "affected": "harness runtime"},
+  {"t": "2026-10-26 06:06", "kind": "shift", "text": "Shift 80 change began.", "affected": "stream and agents", "recovered": null}
  ]
 }
