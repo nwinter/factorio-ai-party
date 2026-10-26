@@ -112,6 +112,9 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   a shell from artillery_live is judged arty_pre before it lands; the shot holds while the barrage's shells land there
   (or are flared by the same agent), up to arty_max, its frame on the impacts due next; arty_gap counts from its end.
   A remote vehicle walking, firing or near a fight keeps its agent active and on the vehicle while that lasts.
+- A remote vehicle where it is (d26 batch232 VC, viewer Aurora site:5020; ONECAM vehicle_ahead, vehicle_glide): the
+  service's live read of the vehicles (harness VEHICLES_LUA) places it; the view aims ahead and glides at least at its
+  speed; a unit belongs to the agent who called it last; a vehicle/character switch keeps the story's dwell.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -445,7 +448,13 @@ ONECAM = {
     # fight_near of it keeps its agent active (not still, not looping, the move or fight boost) and on the vehicle
     # while that lasts, from a read up to vehicle_keep old.
     "vehicle_keep": 600.0,
-    "vehicle_speed": 45.0,  # km/h: a go_to reply has no speed (shift79 reads: 46-50 while walking)
+    "vehicle_speed": 47.5,  # km/h: a go_to reply has no speed (spidertron 27069154's reads, shifts 79-80: 46-50 while
+                            # walking, 47.5 the median; batch232, was 45)
+    # (d26 batch232 VC, viewer Aurora site:5020) The service reads the vehicles' positions every poll (work.VehicleFeed
+    # live rows). The view aims vehicle_ahead s on and glides there at no less than vehicle_glide x the vehicle's speed:
+    # shift80 09:27:05-46 each step glided at 9-10 tiles/s behind a spider walking 13 and the frame fell 130 tiles back.
+    "vehicle_ahead": 1.0,
+    "vehicle_glide": 1.2,
     "vehicle_flip": 20.0,   # an agent's shot switched between vehicle and character at most this often (replay 02:18:51)
 }
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
@@ -685,7 +694,7 @@ class OneCam(Director):
             with open(self.log_path, "a") as f:
                 f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
                                     "slot": "program", "reason": f"cut to {slot}: {reason}",
-                                    "target": cur and {k: cur[k] for k in ("agents", "zoom") if k in cur}}) + "\n")
+                                    "target": cur and {k: cur[k] for k in ("agents", "zoom", "vehicle") if k in cur}}) + "\n")
         who = "+".join(cur["agents"]) if cur and cur.get("agents") else (cur or {}).get("subject", "-")
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot}: {who}  <- {reason}", flush=True)
 
@@ -700,7 +709,7 @@ class OneCam(Director):
             with open(self.log_path, "a") as f:
                 f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
                                     "slot": "program", "reason": f"move {slot['slot']}: {reason}",
-                                    "target": {k: target[k] for k in ("agents", "zoom") if k in target}}) + "\n")
+                                    "target": {k: target[k] for k in ("agents", "zoom", "vehicle") if k in target}}) + "\n")
         who = "+".join(target.get("agents") or []) or target.get("subject", "-")
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot['slot']}: {who}  <- {reason} "
               f"(one client: moved)", flush=True)
@@ -1037,7 +1046,10 @@ class OneCam(Director):
             why = str(k).replace("_", " ")
         v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else None
         was = self.vehicle_was.get(n)
-        if v and v.get("target") and (not was or was.get("target") != v["target"]) and now - v.get("t", 0) < cfg["vehicle_stale"]:
+        # (batch232) a new call by the agent with a target, not the live read's next waypoint
+        if v and v.get("target") and (not was or was.get("seen_t", was.get("t")) != v.get("seen_t", v.get("t"))) and \
+                (v.get("cmd_target") or v.get("target")) != (was or {}).get("cmd_target", (was or {}).get("target")) and \
+                now - v.get("seen_t", v.get("t", 0)) < cfg["vehicle_stale"]:
             why = why or f"{v.get('vehicle') or 'vehicle'} by remote view"
         if v:
             self.vehicle_was[n] = v
@@ -1103,9 +1115,9 @@ class OneCam(Director):
         v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else None
         if not v or not isinstance(v.get("position"), dict):
             return None
-        age = now - v.get("t", -1e9)
-        if age > self.cfg["vehicle_keep"]:
+        if now - v.get("seen_t", v.get("t", -1e9)) > self.cfg["vehicle_keep"]:  # (the agent's own last call)
             return None
+        age = now - v.get("t", -1e9)  # (batch232: the position's, a live read's)
         spot, going = self.vehicle_where(v, now)
         if self.fight_fresh(dict(spot, surface=surface_of(a)), now):
             return "fighting"
@@ -1113,10 +1125,11 @@ class OneCam(Director):
             return "walking"
         return None
 
-    def vehicle_spot(self, a, now, held=False):
-        """Where the agent's vehicle by remote view is now, as {x, y, surface, label}; None when it drives none, the
-        read is stale (vehicle_stale; held: twice that for a shot already on the vehicle; batch224: vehicle_keep while
-        it walks, fires or fights, vehicle_activity) or the vehicle is near its character."""
+    def vehicle_spot(self, a, now, held=False, ahead=0.0):
+        """Where the agent's vehicle by remote view is now (or `ahead` s on), as {x, y, surface, label}; None when it
+        drives none, the agent's last call to it is stale (vehicle_stale; held: twice that for a shot already on the
+        vehicle; batch224: vehicle_keep while it walks, fires or fights, vehicle_activity) or the vehicle is near its
+        character. (batch232) Where it is: the service's live read when there is one, else the agent's reply led on."""
         if not a or not a.get("position"):
             return None
         cfg, spot, label = self.cfg, None, None
@@ -1127,8 +1140,9 @@ class OneCam(Director):
             spot = {"x": float(m.group(1)), "y": float(m.group(2))}
             label = drive.split(" at ", 1)[0].replace("-", " ")
         v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else None
-        if not spot and v and isinstance(v.get("position"), dict) and now - v.get("t", -1e9) <= stale:
-            spot, label = self.vehicle_where(v, now)[0], str(v.get("vehicle") or "vehicle").replace("-", " ")
+        if not spot and v and isinstance(v.get("position"), dict) and now - v.get("seen_t", v.get("t", -1e9)) <= stale and \
+                now - v.get("t", -1e9) <= cfg["vehicle_keep"]:
+            spot, label = self.vehicle_where(v, now + ahead)[0], str(v.get("vehicle") or "vehicle").replace("-", " ")
         if not spot or dist(spot, a["position"]) < cfg["vehicle_near"]:
             return None
         who = a.get("display_name") or a["name"]
@@ -1405,7 +1419,10 @@ class OneCam(Director):
                 (self.state.get(self.pending["slot"]) or {}).get("subject") != self.fol)):
             self.pending = None
         if self.pending and self.ready(self.pending["slot"], now):
+            since = self.pending.get("since")
             self.cut(self.pending["slot"], self.pending["reason"], now)
+            if since is not None:
+                self.onair_since = since  # (batch232) a swap: the story's own start
         if self.inset and now >= self.inset["until"]:
             if self.inset.get("why") == "attention":
                 self.last_attn = now
@@ -2385,7 +2402,7 @@ class OneCam(Director):
             return
         target = {k: v for k, v in cur.items() if k != "jump"}
         target.update(position={"x": round(cx, 1), "y": round(cy, 1)}, zoom=z, exact_zoom=True,
-                      glide=round(max(0.5, min(2.0, d / 60.0)), 2))
+                      glide=round(max(2.0, d / 1.5), 2))  # (batch232: tiles/s, as cameras.lua reads it; was 0.5-2)
         shot["center"], shot["moved"] = {"x": cx, "y": cy}, now
         self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
 
@@ -3681,11 +3698,17 @@ class OneCam(Director):
                 self.vehicle_swapped[subj] = now
                 return True
             p = cur.get("position") or {}
-            d = dist(spot, p) if p else 1e9
+            lead = self.cfg["vehicle_ahead"]
+            ahead = self.vehicle_spot(a, now, held=True, ahead=lead) or spot
+            d = dist(ahead, p) if p else 1e9
             if d >= self.cfg["reframe_tiles"] and now - cur.get("sent", 0) >= 1.0:
+                # (batch232) aimed lead s on, at no less than vehicle_glide x its speed: the view keeps up with it
+                v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else {}
+                kmh = v.get("speed") if isinstance(v.get("speed"), (int, float)) else (
+                    self.cfg["vehicle_speed"] if v.get("target") else 0.0)
                 target = {k: v for k, v in cur.items() if k != "jump"}
-                target.update(position={"x": spot["x"], "y": spot["y"]}, vehicle=spot["label"],
-                              glide=round(max(0.5, min(60.0, d / 1.5)), 2))
+                target.update(position={"x": ahead["x"], "y": ahead["y"]}, vehicle=spot["label"],
+                              glide=round(max(1.0, min(200.0, max(d / lead, self.cfg["vehicle_glide"] * kmh / 3.6))), 2))
                 self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
             return True
         if spot and self.mode != "trio" and not flip:
@@ -3699,12 +3722,14 @@ class OneCam(Director):
         cut once it is there, as any cut; one client: moved on air."""
         if self.pending:
             return
+        since = self.onair_since  # (batch232) the same story goes on: its dwell is not started again
         nxt = self.next_slot()
         if not nxt:
             self.retarget(target, reason, {}, now)
+            self.onair_since = since
             return
         self.frame_on(nxt, target, f"standby: {reason}", {}, now)
-        self.pending = {"slot": nxt["slot"], "reason": reason}
+        self.pending = {"slot": nxt["slot"], "reason": reason, "since": since}
 
     def keep(self, cur, by_name, now):
         """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big
