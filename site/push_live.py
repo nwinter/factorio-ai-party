@@ -132,6 +132,34 @@ def public_threats(incoming, big):
     return out or None
 
 
+VEHICLE_KEYS = ("unit_number", "name", "type", "surface", "age_s", "visible", "unseen", "driver", "remote", "sent_by",
+                "sent_age_s", "route_targets")
+VEHICLES_MAX = 64
+
+
+def public_vehicles(v):
+    """(d26 batch233 VM, viewer Aurora site:5019: "Could vehicle maps start with Spidertrons? ... Show ID, position age,
+    controller and destination.") our vehicles where our force last saw them (model.vehicles_snapshot, from the census's
+    vehicles read every 10 s): {rows: [{unit_number, name, type, surface, position, age_s (how old the position is),
+    visible (its chunk in sight when read), unseen (never seen by the read: no position), driver (the agent in its driver
+    seat, or "a player"), remote (the agent driving it by remote view), sent_by and sent_age_s (the agent that last sent
+    it a route by remote view, and when), destination, route_targets}], total, read_age_s}, at most VEHICLES_MAX rows;
+    None before a read or with none."""
+    if not isinstance(v, dict) or not isinstance(v.get("rows"), list) or not v["rows"]:
+        return None
+    rows = []
+    for r in v["rows"][:VEHICLES_MAX]:
+        if not isinstance(r, dict) or not isinstance(r.get("unit_number"), int):
+            continue
+        row = {k: r[k] for k in VEHICLE_KEYS if r.get(k) is not None}
+        for k in ("position", "destination", "remote_target"):
+            p = r.get(k)
+            if isinstance(p, dict) and all(isinstance(p.get(c), (int, float)) for c in "xy"):
+                row[k] = {"x": round(p["x"], 1), "y": round(p["y"], 1)}
+        rows.append(row)
+    return {"rows": rows, "total": v.get("total") or len(rows), "read_age_s": v.get("read_age_s")} if rows else None
+
+
 CLOUD_KEYS = ("surface", "label", "pollutant", "chunks", "max", "total", "age_s")
 CLOUD_CELLS = 6000  # cells across all surfaces (about 14 bytes each; the state is at most 256 KB), most polluted kept
 
@@ -743,6 +771,9 @@ def public_state(s):
     threats = public_threats(s.get("incoming"), s.get("big_enemies"))
     if threats:
         out["threats"] = threats
+    vehicles = public_vehicles(s.get("vehicles"))
+    if vehicles:
+        out["vehicles"] = vehicles
     yt = public_youtube(s.get("viewers"), hidden_now())
     if yt:
         out["youtube_chat"] = yt

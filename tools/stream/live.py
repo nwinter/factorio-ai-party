@@ -206,6 +206,9 @@ class LiveSource:
         self.planet_every = 60.0
         self.next_planet = 0
         self.planet_turn = 0
+        # (d26 batch233 VM) our vehicles where our force last saw them (census.lua vehicles), the live map's vehicles layer
+        self.vehicles_every = 10.0
+        self.next_vehicles = 0
         self.platform_detail = {}
         self.platform_views = {}
         # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
@@ -379,6 +382,14 @@ class LiveSource:
                         obs["planet_map"] = m
             except Exception as e:
                 errors["planet_map"] = str(e)
+        if time.time() >= self.next_vehicles:
+            self.next_vehicles = time.time() + self.vehicles_every
+            try:
+                v = self.h.census_vehicles()
+                if v is not None:
+                    obs["vehicles"] = dict(v, t=time.time())
+            except Exception as e:
+                errors["vehicles"] = str(e)
 
         profiles = {}
         if self.use_profiles:

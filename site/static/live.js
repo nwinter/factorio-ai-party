@@ -766,6 +766,7 @@
       planet_list: Array.isArray(s.planets) ? s.planets : null, net_list: Array.isArray(s.net_maps) ? s.net_maps : null, gone: keepUp(s),
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
       threats: s.threats || null,  // (d22 batch97 BG3) enemy groups on their way, demolishers near ours
+      vehicles: s.vehicles || null,  // (d26 batch233 VM) our spidertrons, tanks and cars where our force last saw them
       chart: chartData(s),  // (BG3) the chart's cells and labels, published with the site
       clouds: kl.clouds, home_held: kl.home_held, clouds_held: kl.clouds_held };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
