@@ -14473,6 +14473,13 @@ spiderroute.lua):
   counting; up to 3 times (30 tiles nearer its target counts afresh), each said in team alerts and the reply's
   `recovery`; then the stall line with the recoveries tried and `no_path`. The reply has `path` while one is asked.
 - Legs on the copy: straight deepwater strips of 12, 14 and 16 tiles were crossed, 18 not (batch191 read 14 and 16).
+- cp2 (navigation review, operator 14:13): a spidertron sent by go_to whose route ends within 4 tiles of its last target
+  says so to its sender once in team alerts (`spidertron #N arrived at (x,y) (its route ended at (x,y))`); spider_kite's
+  shore recovery takes a spot with room whose straight line its legs walk (it had picked spots across the water); a
+  car (prototype `tank_driving` false: it turns only while it rolls) creeps forward while it turns sharply, where a
+  tank turns on the spot (on the copy a car at rest facing away from its path ended `blocked`, "nothing that
+  collides", within 5 s); a drive's `unreachable` says what the target itself is on (a tile the vehicle cannot drive
+  on, or ground it can with every way to it closed).
 
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 

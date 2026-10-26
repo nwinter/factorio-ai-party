@@ -189,14 +189,17 @@ return function(api)
     end
     return false
   end
-  -- The tile its legs stand on nearest the target, on rings round pos (4..24 tiles, 16 directions); nil when none.
+  -- The tile its legs stand on nearest the target, on rings round pos (4..24 tiles, 16 directions), with room for the box
+  -- and a straight line its legs walk; nil when none (spider_kite's shore recovery).
   function M.shore(surface, pos, target)
     local best, bd
     for r = 4, 24, 4 do
       for k = 0, 15 do
         local a = k * math.pi / 8
         local q = {x=math.floor(pos.x + r * math.cos(a)) + 0.5, y=math.floor(pos.y + r * math.sin(a)) + 0.5}
-        if not wet(surface, q.x, q.y) then
+        -- (d26 batch243) with room for a path's box, and a straight line its legs walk (d26: (77.5,314.5) and
+        -- (74.5,337.5), across water from where it stood, stalled again 1 tile from it)
+        if M.clear(surface, q) and not M.segment(surface, pos, q) then
           local d = dist(q, target)
           if not bd or d < bd then best, bd = q, d end
         end
