@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-25 21:40",
+ "notices_checked": "2026-10-25 22:31",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
   {"id": "inserter-wait-full-hand", "title": "Inserters: set and read \"wait for full hand\"", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#1931"}], "status": "live", "dates": {"asked": "2026-10-22 16:55", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN2", "note": "configure sets it on inserters and their ghosts; inspect reads it."},
@@ -146,6 +146,7 @@
   {"t": "2026-10-25 19:19", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 19:19"},
   {"t": "2026-10-25 19:43", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 19:43"},
   {"t": "2026-10-25 20:34", "kind": "deploy", "text": "Harness runtime deployed (d0f319f2).", "affected": "harness runtime"},
-  {"t": "2026-10-25 21:40", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 21:40"}
+  {"t": "2026-10-25 21:40", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 21:40"},
+  {"t": "2026-10-25 22:31", "kind": "deploy", "text": "Harness runtime deployed (f4fab245).", "affected": "harness runtime"}
  ]
 }
