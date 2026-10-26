@@ -15715,3 +15715,52 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   within 10 s), and `read_tick`: the tick it was read (compact keeps both). For existing callers nothing else changed:
   the reuse (10 s, the same key) and `as_of`'s text are as before.
 - Test: tests/d26_batch230.lua (in lua.test.ts), failing on main.
+
+## d26 batch231 (RG, Astra #2427: a request cap below a departure gate)
+- Case (runs/shift80/astra/journal.jsonl): Kestrel II waited at Fulgora (stop 1) with `item_count
+  low-density-structure >= 3500` among its waits and section 2 `low-density-structure 3500..3500 from fulgora`. A
+  remote-lane plan submitted at 66523549 (its dry run at 66523494 accepted it) ran at 66620993: three
+  `wait_until item_count` steps, then `requests` section 2 `1000..2100 from fulgora`, section 21 off, then
+  `platform_schedule {stop: 1, wait: [...]}` without the low-density-structure wait. The hub sent 1400 down to
+  Fulgora, and the schedule step was refused: `nothing changed: its new waits at stop 1 (fulgora), where it waits,
+  hold now: ...; go: true makes the edit anyway`. The ship stayed on a wait it could no longer meet.
+- The game, on a private copy of world n's 07:47 save (tick 66651206), maxes lowered by script:
+  - Stopped: Kestrel IVc at Fulgora, iron-plate `0..2000 from fulgora` with 5857 held. The next tick 1000 (its 10
+    trash slots) were in the trash; cargo pods took the trash down a load at a time; the hub held 2000 after 120 ticks
+    and the trash was empty by 2340 ticks. All 3857 went down.
+  - In flight: Kestrel II (fulgora->aquilo), low-density-structure maxes 500 (fulgora) + 1000 (nauvis) with 3500
+    held. The next tick 450 were in the trash (9 of its 10 slots free, 50 a stack); the other 3050 stayed in the
+    hub, unchanged 2346 ticks later.
+  - Every hub there had 10 trash slots.
+- requests (the write and `dry_run: true`) on a platform hub: `waits_unmet`, a line for each `item_count` wait (`>=`,
+  `>`, `=`) of the stop it waits at and of its next stop (in flight: the stop it flies to) whose number the new maxes
+  from that stop's planet (added up, the sections that are on) leave unreached, when the change altered that max:
+  `low-density-structure: stop 1 (fulgora), where it waits now, waits for item_count low-density-structure >= 3500;
+  its requests from fulgora would keep at most 2100 there (were 3500), so that wait cannot hold while it is there
+  (the hub holds 3500 now)`; a stop whose waits are joined by or says another group can send it on. A max from another
+  planet keeps nothing at that stop (KEEP_RULE), so no line for it.
+- `sends_down` in flight: only what the trash has room for goes now (`get_insertable_count` on the hub's trash):
+  `2000 over its max 1500: 450 go to the hub's trash now (the room its trash has) and down to aquilo at its next stop,
+  asked or not; 1550 stay in the hub while it flies`. Stopped, over a max from another planet: `at most N (its 10 trash
+  slots) go to the hub's trash once it flies ...; the rest stays in the hub while it flies`. KEEP_RULE says both, with
+  the copy's numbers. The stopped case (all over the stop's max goes down there) is as before.
+- queue_submit `dry_run: true`: `world_checks`, read now, each step as if it ran now (the steps before it are not
+  applied; `world_checks_note` gives the tick):
+  - each `platform_schedule` step as the call reads it before it changes anything (space.lua schedule_check):
+    `refused if it ran now:` with the call's own refusal (no schedule, a stop or current out of range, the stop's
+    waits, keep_leg flying no leg or its destination not in the stops, current on the stop it waits at or flies to,
+    an edit that makes it leave at once without `go: true`, and every refusal of the arguments alone), and `when it
+    runs:` what a refusal then turns on (whether it waits at that stop and the new waits hold then; the current stop
+    then; the leg it flies then; a schedule change fails when the platform still reads no_schedule or no_path 300 ticks
+    after it). The call's argument checks are one function (arg_checks) run first by the call and by the check: a bad
+    `paused` with `stops` is now refused before the stops are written.
+  - the first 4 `requests` steps on a platform as their dry run: their `waits_unmet` and `sends_down` lines (each about
+    5 ms on the copy; past 4 named, not read).
+  - Checked on the copy: 15 platform_schedule argument and state cases, each step's `refused if it ran now:` text the
+    same as the direct call's refusal (Kestrel IVc at Fulgora). Astra's shape (a requests step lowering holmium-plate
+    to 600 at Fulgora, then a stop 2 waits edit whose waits held) read: `step 2 (requests Kestrel IVc): if it ran now:
+    holmium-plate: stop 2 (fulgora), where it waits now, waits for item_count holmium-plate >= 1000; its requests from
+    fulgora would keep at most 600 there ...` and `step 3 (platform_schedule Kestrel IVc stop 2): refused if it ran
+    now: nothing changed: its new waits at stop 2 (fulgora), where it waits, hold now: ...`.
+  - Cost on the copy: that 5-step dry run 9-12 ms against 1.6-3.0 ms for a 1-step plan with nothing to check.
+- Test: tests/d26_batch231.lua (in lua.test.ts), failing on main.

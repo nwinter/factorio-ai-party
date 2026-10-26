@@ -120,7 +120,10 @@
   that moves fewer than asked (a full target) succeeds short; `min_moved: N` fails it below N moved. A transfer,
   collect, feed, rearm or refuel step with a position and no `walk` runs with `walk: true`: it walks into reach from
   any distance, with move_to's enemy checks (`walk: false` keeps it from walking; standing orders keep `max_walk`). `guards` (up to 8
-  `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing.
+  `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing;
+  `world_checks` reads each `platform_schedule` step as the call reads it now (`refused if it ran now:` the call's own
+  refusal, e.g. new waits holding now without `go: true`; `when it runs:` what a refusal then turns on) and the first 4
+  `requests` steps on a platform as their dry run (`waits_unmet`, `sends_down`), with the steps before each not applied.
   `lane: "remote"`: the remote lane (`./fh help space-age`; its `configure`, `circuit_set`, `circuit`, `wire`,
   `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do; `flight_watch` too); `lane: "platform:NAME"`: a remote lane of its own for that
   platform (the same steps; a `flight_watch` start without `platform` or `id` watches that platform, and `{read: true}` reads its latest watch), apart from the remote lane and the other platforms' lanes; each queue call takes the same
