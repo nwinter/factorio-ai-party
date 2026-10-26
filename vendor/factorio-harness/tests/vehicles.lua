@@ -298,6 +298,21 @@ eq(last.arrive_rule,'arrived: stopped within 3 tiles of the target')
 eq(last.path_extended,'the engine\'s path ended 4.0 tiles from the target (its goal radius); driven on straight to it')
 eq(last.path_length,30)
 assert(car.position.x>127,car.position.x)
+-- (d26 batch243 review, copy) facing away from its path at rest: a car (tank_driving false) creeps forward while it
+-- turns (it turns only while it rolls; on the copy it stood until blocked); one that turns on the spot does not
+for _,td in ipairs({false,true}) do
+  asked={}
+  local name0=car.name
+  car.name=td and 'test-tank-driving' or 'test-car-driving'; car.prototype.tank_driving=td
+  car.position={x=127,y=20}; car.orientation=0.75; car.speed=0
+  astra('vehicle',{drive={x=160,y=20}})
+  runtime.on_event{name=10,id=900+#asked,path={{position={x=127,y=20}},{position={x=160,y=20}}}}
+  drive_ticks(1)
+  eq(car.riding_state.acceleration,td and defines.riding.acceleration.nothing or defines.riding.acceleration.accelerating,'tank_driving '..tostring(td))
+  car.name=name0
+end
+car.prototype.tank_driving=nil
+car.position={x=127,y=20}; car.orientation=0.25; car.speed=0
 -- Stuck on the way: backs up once with a fresh path, then ends blocked naming what is in front.
 asked={}
 r=astra('vehicle',{drive={x=140,y=20}})
@@ -329,6 +344,20 @@ runtime.on_event{name=10,id=905}
 drive_ticks(1)
 last=astra('status').last
 eq(last.outcome,'unreachable'); eq(last.why,'no path for the car (1.4 by 2.0 tiles) to (100,90)')
+-- (d26 batch243 review) the target's own ground in the reason: a tile it cannot drive on, else ground it can
+do
+  local V=runtime.vehicles
+  local get=surface.get_tile
+  for _,w in ipairs({true,false}) do
+    surface.get_tile=function() return {name=w and 'deepwater' or 'grass-1',collides_with=function(l) return w and l=='player' end} end
+    local nav={position={x=100,y=90},path_level=#V.plans(car),vehicle_entity=car}
+    V.next_plan({index=1},nav)
+    eq(nav.path_state,'unreachable')
+    eq(nav.why,'no path for the car (1.4 by 2.0 tiles) to (100,90)'..(w and ' (the target itself is on deepwater, which it cannot drive on)'
+      or ' (the target is on ground it can drive on: water, cliffs or buildings close every way to it)'))
+  end
+  surface.get_tile=get
+end
 fails(function() astra('vehicle',{drive={x=1,y=1},pathfind='yes'}) end,'pathfind must be true or false')
 fails(function() astra('vehicle',{drive={x=1,y=1},reverse=1}) end,'reverse must be true or false')
 -- Units are no block (Astra, shift10 04:10: a drive into an attack group ended

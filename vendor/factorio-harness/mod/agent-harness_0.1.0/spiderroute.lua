@@ -403,9 +403,14 @@ return function(api)
       local r = e and e.valid and route(e) or {}
       if #r == 0 then
         st.spiders[unit] = nil
-        if e and e.valid and t.stalled then event(string.format('spidertron #%d at %s: its route is empty now', unit, at(e.position)), t.by, unit) end
+        -- (d26 batch243 review) its arrival said to the sender: a go_to replied at once and nothing said it got there
+        local last = t.last_target
+        if e and e.valid and last and not t.stalled and dist(e.position, last) <= 4 then
+          event(string.format('spidertron #%d arrived at %s (its route ended at %s)', unit, at(e.position), at(last)), t.by, unit)
+        elseif e and e.valid and t.stalled then event(string.format('spidertron #%d at %s: its route is empty now', unit, at(e.position)), t.by, unit) end
       else
         local pos = e.position
+        t.last_target = {x=r[#r].x, y=r[#r].y}
         local near = dist(pos, r[1])
         local target_moved = math.abs(r[1].x - t.target.x) + math.abs(r[1].y - t.target.y) > 0.01
         -- (d24 batch191) progress: nearer its target than it has been (a body swaying at a shore comes no nearer than
