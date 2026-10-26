@@ -35,7 +35,11 @@
   most 54000 ticks (`extended` says so). The team alerts say when a platform stops at or leaves your planet.
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
 - `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
-  waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
+  waits for its starter pack, which a silo holding it in its rocket cargo launches on its own. A rocket holding a
+  starter pack launches the tick it is ready, whatever the silo's switches, to the first made of our platforms waiting
+  for one at that planet; a launch in the tick it is loaded (`load_silo` with `launch`) goes to the platform it names.
+  The reply's `starter_queue`, the platforms read and a silo with a pack aboard name the platforms waiting there,
+  with how long each has waited, and which one the pack goes to.
 - `platform_schedule {platform, stops, current?, keep_leg?, paused?}`, `{platform, next: true}` or `{platform, stop, wait?, unloading?, go?}`: each stop `{station, wait: [...], unloading?}` (the reply's `launch_needs`: a silo at an item-waiting stop whose rocket parts lack
   what the hub holds); a wait is `{type,
   ticks?, condition?, compare: "and"|"or"}` (kinds mixed need compare on each wait past the first; or `wait:

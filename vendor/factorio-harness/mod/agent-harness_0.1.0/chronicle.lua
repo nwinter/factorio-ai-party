@@ -161,6 +161,8 @@ return function(api)
         local planet = try(function() return x.pl.space_location.name end)
         M.event('platform_created', {platform=x.name, force=x.force, at=planet, where=w.text,
           by=c.creators and c.creators[index] or nil})
+        -- (d26 batch229 SP) when it was made, within this second (starterpack.lua)
+        if api.platform_made then pcall(api.platform_made, x.pl, game.tick) end
         c.seen[index] = {name=x.name, force=x.force}
       else
         -- A rename (platform_rename, or the GUI): the stream follows the ship's history to its new name
@@ -174,6 +176,7 @@ return function(api)
     for index, x in pairs(c.seen) do
       if not now[index] then
         M.event('platform_deleted', {platform=x.name, force=x.force})
+        if api.platform_gone then pcall(api.platform_gone, index) end
         c.seen[index] = nil
       end
     end

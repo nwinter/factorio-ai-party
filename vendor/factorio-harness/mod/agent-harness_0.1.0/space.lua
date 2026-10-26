@@ -1818,6 +1818,11 @@ return function(api)
         if #new>0 then parts[#parts+1]='new blockers: '..table.concat(new,' | ') end
         if same>0 then parts[#parts+1]=string.format('%d blocker%s as in your last compact read',same,same==1 and '' or 's') end
         lines[#lines+1]=table.concat(parts,'; ')
+      elseif pl.valid and (a.platform==nil or pl.name==a.platform) and pl.state==defines.space_platform_state.waiting_for_starter_pack then
+        -- (d26 batch229 SP) a platform with no surface yet waits for its starter pack: how long, and where it is in the
+        -- game's order
+        local sp=api.starterpack and api.starterpack()
+        lines[#lines+1]=pl.name..': '..(sp and try(function() return sp.row_line(pl) end) or 'waiting for its starter pack')
       end
     end
     return {compact=true,lines=lines}
@@ -1866,6 +1871,7 @@ return function(api)
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) and (not want or want[pl.index]) then
         local row={name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,
+          starter_pack=pl.state==defines.space_platform_state.waiting_for_starter_pack and api.starterpack and try(function() return api.starterpack().row_line(pl) end) or nil,
           schedule=W('schedule') and schedule_text(pl) or nil,waiting=W('waiting') and try(function() return M.waiting_line(pl) end) or nil,stops=W('stops') and try(function() return M.stops(pl) end) or nil,departure=W('departure') and api.departure and try(function() return api.departure(pl.name,deps) end) or nil,deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
           weight=pl.weight and math.floor(pl.weight/1000) or nil}
         -- (d19 batch46 3) the latest edit of each setting: stops, paused, a request's minimum payload (min_payload)
@@ -1983,7 +1989,12 @@ return function(api)
     local pl=p.force.create_space_platform{name=a.name,planet=planet,starter_pack=pack}
     assert(pl,'the game refused to create a platform')
     if api.chronicle_created then pcall(api.chronicle_created,pl,p.name) end  -- who made it (chronicle.lua)
-    return {name=pl.name,state=platform_states[pl.state],planet=planet,
+    -- (d26 batch229 SP, Sol: Loom's pack went to Aethera, waiting at Vulcanus since 89h) the others waiting there, and
+    -- which one the game sends a pack to
+    local sp=api.starterpack and api.starterpack()
+    if sp then pcall(sp.made,pl,game.tick) end
+    local queue=sp and try(function() return sp.queue_line(p.force,planet,2) end)
+    return {name=pl.name,state=platform_states[pl.state],planet=planet,starter_queue=queue,
       next='a rocket silo on '..planet..' with a '..pack..' in its rocket cargo (transfer item='..pack..', inventory rocket_silo_rocket) launches it on its own once the rocket is ready'}
   end
   -- Records: {station=planet, wait={{type,ticks?,compare?}}}; the game's
@@ -2732,13 +2743,18 @@ return function(api)
       assert(type(a.auto_requests)=='boolean','auto_requests must be boolean')
       assert(a.force==nil or type(a.force)=='boolean','force must be true or false')
       -- (d17 batch32 A1) refused while the rocket holds cargo no platform above asks for, unless force
-      if a.auto_requests and not silo.use_transitional_requests and not a.force and api.trash_risk then
-        local risk=api.trash_risk(silo,p.force)
-        if risk and risk.lost then
-          error(string.format('automatic requests stay off: %s. Launch it first (launch {position, platform}), take it out (transfer {position, direction: to_player, inventory: cargo}), or force: true to switch them on anyway',risk.line),0)
-        end
+      local risk=a.auto_requests and not silo.use_transitional_requests and api.trash_risk and api.trash_risk(silo,p.force)
+      if risk and risk.lost and not a.force then
+        error(string.format('automatic requests stay off: %s. Launch it first (launch {position, platform}), take it out (transfer {position, direction: to_player, inventory: cargo}), or force: true to switch them on anyway',risk.line),0)
       end
-      local loaded=a.auto_requests and not silo.use_transitional_requests and top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
+      local rinv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
+      -- (d26 batch229 SP) a starter pack while a platform of ours waits here stays aboard (settings.starter_pack: where it goes)
+      if risk and risk.starter_pack then
+        local rest={}
+        for _,c in ipairs(rinv.get_contents()) do if not api.starterpack().is_pack(c.name) then rest[#rest+1]=c end end
+        rinv={get_contents=function() return rest end}
+      end
+      local loaded=a.auto_requests and not silo.use_transitional_requests and top_items(rinv,8)
       local was=silo.use_transitional_requests and 'on' or 'off'
       silo.use_transitional_requests=a.auto_requests
       -- (d19 batch46 3) who switched it, when, before and after (editlog.lua; the silo's reads show it)
@@ -2852,8 +2868,14 @@ return function(api)
     -- spoiled_percent (A11, Grok): each spoilable item's spoiled share by count, at the top of the reply
     local spoiled,went_up
     if api.fresh_percent then pcall(function() spoiled,went_up=api.fresh_percent(silo.get_inventory(defines.inventory.rocket_silo_rocket)) end) end
+    -- (d26 batch229 SP) a starter pack aboard: what this launch does with it (the copy, 2.0.77)
+    local sp=api.starterpack and api.starterpack()
+    local packs=sp and sp.packs_in(silo.get_inventory(defines.inventory.rocket_silo_rocket))
+    if packs then
+      packs=packs..(destination.space_platform and ' starts '..pl.name or destination.station and ' goes to '..pl.name..'\'s hub as cargo' or ' is lost in orbit')
+    end
     if not silo.launch_rocket(destination,rider) then error(refused(silo,pl,destination),0) end
-    return {launched=true,to=to,cargo=cargo or 'empty',spoiled_percent=spoiled,went_up=went_up,freshness=fresh,hub_full=hub_note,riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
+    return {launched=true,to=to,starter_pack=packs,cargo=cargo or 'empty',spoiled_percent=spoiled,went_up=went_up,freshness=fresh,hub_full=hub_note,riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
       auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}
   end
   -- The hub's drop slots: items from the hub inventory go down to the planet
