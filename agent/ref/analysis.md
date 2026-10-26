@@ -302,6 +302,7 @@
   line. The reply gives `started_tick`,
   `to_tick` (the end, or now), `sampled_tick`, `samples`, `page`, `pages`, `machines_total`, `matched`. On a copy of
   world n Sol's 20-machine Asterion watch read 13.5 KB for page 1 and 3.0 KB for page 2.
+  A new watch keeps your last one done, readable by its id (`kept`: at most 4, 96 machines; `kept_dropped` says why).
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock
   line: `measuring uptime@TICK/AGENT`; the sleep line and `sleep_check` name it with its scope, end tick and latest sample; it
   runs in the background, and your actions meanwhile do not end it); one late, stalled, invalid or done with its final
