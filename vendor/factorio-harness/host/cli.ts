@@ -1487,7 +1487,7 @@ async function main() {
       // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
       // runs as 'gather' too.
       const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' ? ['feed'] : action === 'load_silo' ? ['feed','gather']
-        : action === 'vehicle' ? ['drive'] : action === 'use_item' ? ['clear_cliffs'] : [action];
+        : action === 'vehicle' ? ['drive','spider_go'] : action === 'use_item' ? ['clear_cliffs'] : [action];  // (d26 batch247) a waited go_to
       // A walk into reach that the call makes first (autowalk.lua) runs as a move_to naming the call (walking_for).
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind) || active.walking_for === action);
       if (!explicit && status.ok && stillRunning) {

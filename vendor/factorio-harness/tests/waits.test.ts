@@ -215,7 +215,8 @@ test('vehicle go_to --wait sends wait: true and waits for arrived; a plain go_to
         : {tick:100,ok:true,result:{route_line:'1 target: (30,4)'}};
     }
     polls++;
-    if(polls<3)return {tick:100+polls,ok:true,result:{active:{kind:'spider_go',until_tick:18100},last:{kind:'feed',outcome:'fed',tick:90}}};
+    // the runtime: a call that replaced a running spider_go records it ended (replaced) in the same tick
+    if(polls<3)return {tick:100+polls,ok:true,result:{active:{kind:'spider_go',until_tick:18100},last:{kind:'spider_go',outcome:'replaced',tick:100}}};
     return {tick:200,ok:true,result:{active:false,last:{kind:'spider_go',outcome:'arrived',tick:150,why:'arrived at (29.6,4) (its route ended at (30,4))'}}};
   },async port=>{
     const waited=JSON.parse((await cli(port,['call','vehicle','--args','{"remote":true,"vehicle":7001,"go_to":{"x":30,"y":4}}','--wait'])).stdout);

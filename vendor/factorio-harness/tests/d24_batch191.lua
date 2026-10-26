@@ -162,8 +162,14 @@ for k=1,3 do
   eq(requests[#requests].start.x,q.x,'its path asked from the back-off spot'); eq(requests[#requests].goal.x,100)
 end
 assert(a.tried:find('; backed off to (',1,true) and a.tried:find('asked again for a path round the water to (100,0) from there',1,true),a.tried)
+-- its last request answered with no path (and no hops: the water reaches x 200): said with the stall (last.no_path)
+local nr=#requests
+P.on_path({id=500+nr},function(rec,plan,sp,pts,notes) K.routed(a,plan,sp,pts,notes) end)
+for k=nr+1,#requests do P.on_path({id=500+k},function(rec,plan,sp,pts,notes) K.routed(a,plan,sp,pts,notes) end) end
+assert(a.no_path and a.no_path:find('found no path round the water to (100,0)',1,true),tostring(a.no_path))
 eq(run(a,K.STALL+10),'stalled'); assert(a.why:find('no progress toward ',1,true) and a.why:find('re-routed once',1,true) and a.why:find('(recovery 3 of 3)',1,true),a.why)
-last={}; K.finish(a,'stalled',last,function() end,'sol'); eq(last.recovery,a.tried)
+assert(a.why:find('found no path round the water',1,true),a.why)
+last={}; K.finish(a,'stalled',last,function() end,'sol'); eq(last.recovery,a.tried); eq(last.no_path,a.no_path)
 wx1,wx2=nil,nil
 
 -- 9. spiderpath: a run of more than GAP tiles blocks a straight line (14 crossed on the copy, 16 did not).

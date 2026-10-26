@@ -131,9 +131,17 @@ return function(api)
     local ok, lines = pcall(P.plan, spider, {action.dest}, {owner='kite', index=action.index})
     if ok and lines then action.water = lines[1]; return lines[1] end
   end
-  function M.routed(action, plan, spider, pts)
+  function M.routed(action, plan, spider, pts, notes)
     if not (action and action.kind == 'spider_kite' and action.spider == spider and action.dest) then return end
-    if dist(plan.targets[1], action.dest) > 3 then return end
+    -- a back-off's plan was asked toward the target it backed off from (action.base): its route goes on there
+    if dist(plan.targets[1], action.dest) > 3 then
+      if not (action.base and dist(plan.targets[1], action.base) <= 3) then return end
+      action.dest = {x=action.base.x, y=action.base.y}
+    end
+    -- (d26 batch247 NV2) no path found: said with the stall (last.no_path)
+    local found = false
+    for _, seg in pairs(plan.segs or {}) do if type(seg) == 'table' then found = true end end
+    action.no_path = not found and notes and #notes > 0 and table.concat(notes, '; ') or nil
     if api.path.write(spider, pts) then return end
     action.route_pts = pts
     action.writes = action.writes + 1
@@ -349,7 +357,8 @@ return function(api)
         action.tried = 're-routed once (its route turned 60 degrees)'
       else give_up = true end
       if give_up then
-        action.why = string.format('no progress toward %s for %d s from %s; %s', at(ref), math.floor((tick - action.since) / 60), at(pos), action.tried or 'nothing tried')
+        action.why = string.format('no progress toward %s for %d s from %s; %s%s', at(ref), math.floor((tick - action.since) / 60), at(pos), action.tried or 'nothing tried',
+          action.no_path and '; ' .. action.no_path or '')
         action.stalled_at = {x=pos.x, y=pos.y}
         halt(spider, action)
         return 'stalled'
@@ -387,7 +396,7 @@ return function(api)
     if next(action.kills_by) then last.kills_by = action.kills_by end
     last.enemies_left = action.seen
     last.turns = action.turned > 0 and action.turned or nil
-    last.recovery, last.water, last.routed = action.tried, action.water, action.routed
+    last.recovery, last.water, last.routed, last.no_path = action.tried, action.water, action.routed, action.no_path
     last.route_writes = action.writes
     local spider = action.spider
     if not (spider and spider.valid) then last.ammo_left = 0; return end
