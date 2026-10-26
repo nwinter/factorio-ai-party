@@ -148,18 +148,22 @@ eq(run(a,10),nil); eq(a.mode,'to position'); eq(spider.autopilot_destinations[1]
 sd.position={x=28,y=0}
 eq(run(a,10),'clear'); assert(a.why:find('no enemies left within 40 tiles',1,true))
 
--- 8. No progress: re-routed once (no water on the line: turned 60 degrees), then with water ahead the shore toward the
--- target, then stalled; the reply says what was tried.
+-- 8. No progress: re-routed once (no water on the line: turned 60 degrees); then (d26 batch247 NV2) with water ahead
+-- it backs off and asks again for a path, as go_to does, up to 3 times; then stalled; the reply says what was tried.
 sd.position={x=0,y=0}; spider.autopilot_destination=nil
 a=K.plan(p,{position={x=100,y=0}},spider,'remote'); K.start(a)
 eq(run(a,10),nil)
 eq(run(a,K.STALL+10),nil); assert(a.tried=='re-routed once (its route turned 60 degrees)',a.tried)
 q=spider.autopilot_destinations[1]; assert(q.y>50,'turned: '..q.x..','..q.y)
 wx1,wx2=6,200  -- water ahead of it, all the way
-eq(run(a,K.STALL+10),nil); assert(a.tried:find('; shore recovery: to (',1,true),a.tried)
-q=spider.autopilot_destinations[1]; assert(q.x<6,'on dry ground: '..q.x)
-eq(run(a,K.STALL+10),'stalled'); assert(a.why:find('no progress toward (100,0) for ',1,true) and a.why:find('re-routed once',1,true),a.why)
-last={}; K.finish(a,'stalled',last,function() end,'sol'); eq(last.recovery,a.tried); eq(last.turns,2)
+for k=1,3 do
+  eq(run(a,K.STALL+10),nil); assert(a.tried:find('(recovery '..k..' of 3)',1,true),a.tried)
+  q=spider.autopilot_destinations[1]; assert(q.x<6,'backed off onto dry ground: '..q.x)
+  eq(requests[#requests].start.x,q.x,'its path asked from the back-off spot'); eq(requests[#requests].goal.x,100)
+end
+assert(a.tried:find('; backed off to (',1,true) and a.tried:find('asked again for a path round the water to (100,0) from there',1,true),a.tried)
+eq(run(a,K.STALL+10),'stalled'); assert(a.why:find('no progress toward ',1,true) and a.why:find('re-routed once',1,true) and a.why:find('(recovery 3 of 3)',1,true),a.why)
+last={}; K.finish(a,'stalled',last,function() end,'sol'); eq(last.recovery,a.tried)
 wx1,wx2=nil,nil
 
 -- 9. spiderpath: a run of more than GAP tiles blocks a straight line (14 crossed on the copy, 16 did not).
