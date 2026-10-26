@@ -473,7 +473,7 @@ return function(api)
     -- wakes it; a tell with wake: true does, each time (tells.lua).
     -- (d26 batch238, viewer Aurora 11:50) woke_by: which item woke it {kind, seq, from, viewer?, source?}, so a script
     -- can stop at its own safe point (batch234: Opus's hold.py slept again on every tell for 19 min)
-    if record.told_wake then out.tell = record.told_wake; out.woke_by = {kind='tell', from=record.told_by}; return 'told' end
+    if record.told_wake then out.tell = record.told_wake; out.woke_by = {from=record.told_by, kind='tell'}; return 'told' end
     local box = record.wake_messages ~= false and api.state().mentions and api.state().mentions[p.index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
