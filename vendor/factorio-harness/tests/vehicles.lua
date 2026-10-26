@@ -198,6 +198,19 @@ spider.position={x=10,y=4}; advance(61)
 assert(has((astra('status',{}).team or {}).alerts,'spidertron #7001 moves again: at (10,4) toward (90,4)'),'moves again said')
 astra('vehicle',{position={x=10,y=4},clear=true}); advance(61)
 eq(astra('status',{}).spidertrons,nil,'an empty route: no longer listed')
+-- (d26 batch247 NV1, viewer Aurora 14:13) go_to with wait: true (fh --wait sends it) is a timed action that ends
+-- arrived when its route ends at its target; a plain go_to replies at once (no until_tick, no action)
+r=astra('vehicle',{position={x=10,y=4},go_to={x=30,y=4}}); eq(r.until_tick,nil); assert(not astra('status',{}).active)
+r=astra('vehicle',{position={x=10,y=4},go_to={x=30,y=4},wait=true})
+assert(r.until_tick and r.waiting:find('until it arrives',1,true),tostring(r.waiting))
+eq(astra('status',{}).active.kind,'spider_go')
+advance(61)
+eq(astra('status',{}).active.kind,'spider_go','walking: still waiting')
+spider.position={x=29.6,y=4}; spider.autopilot_destination=nil   -- the game: there, its route done
+advance(130)
+local done=astra('status',{}).last
+eq(done.kind,'spider_go'); eq(done.outcome,'arrived'); eq(done.why,'arrived at (29.6,4) (its route ended at (30,4))'); eq(done.spidertron,'spidertron #7001')
+fails(function() astra('vehicle',{position={x=29.6,y=4},go_to={x=50,y=4},wait=true,ticks=10}) end,'ticks')
 
 -- Drive a car to a position: steer, ease off, stop; the step simulates the car.
 local function physics()

@@ -1973,6 +1973,9 @@ async function main() {
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     args = normalizeWaitArgs(action, args);
+    // (d26 batch247 NV1) vehicle go_to --wait: the runtime runs it as a timed action (wait: true) that ends arrived,
+    // stalled or unreachable; a plain go_to replies at once
+    if (wait && action === 'vehicle' && args.go_to !== undefined && args.wait === undefined && !bridged) args = {...args, wait:true};
     // (d19 batch42 A1, batch43 A1) a say or tell over 500 bytes goes as numbered parts cut at sentence ends
     // (host/saysplit.ts); a confession or chronicle entry over its limit is refused (batch43 A3: the runtime cut them
     // without a word)
@@ -2104,6 +2107,9 @@ async function main() {
         // collect {wait_ticks | keep_taking}: standing at a machine, taking its products as they come (collectwait)
         || (action === 'collect' && (args.wait_ticks !== undefined || args.keep_taking !== undefined) && reply.result?.until_tick !== undefined)
         || (action === 'vehicle' && args.drive !== undefined)
+        // (d26 batch247 NV1) a spidertron's go_to sent with wait: true (the CLI sends it with --wait): until it arrives,
+        // stalls or is unreachable
+        || (action === 'vehicle' && args.go_to !== undefined && reply.result?.until_tick !== undefined)
         // drop full: pods past the free hatches go as each hatch frees up (space.lua).
         || (action === 'drop' && reply.result?.until_tick !== undefined)
         // cliff explosives thrown by hand: each lands before the next (clear_cliffs; use_item cliff-explosives runs it;

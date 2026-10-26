@@ -405,9 +405,15 @@ return function(api)
         st.spiders[unit] = nil
         -- (d26 batch243 review) its arrival said to the sender: a go_to replied at once and nothing said it got there
         local last = t.last_target
-        if e and e.valid and last and not t.stalled and dist(e.position, last) <= 4 then
+        local arrived = e and e.valid and last and not t.stalled and dist(e.position, last) <= 4
+        if arrived then
           event(string.format('spidertron #%d arrived at %s (its route ended at %s)', unit, at(e.position), at(last)), t.by, unit)
         elseif e and e.valid and t.stalled then event(string.format('spidertron #%d at %s: its route is empty now', unit, at(e.position)), t.by, unit) end
+        -- (d26 batch247 NV1) how its route ended, for a waited go_to (watch)
+        if e and e.valid then
+          st.done = st.done or {}
+          st.done[unit] = {tick=game.tick, arrived=arrived or false, at={x=e.position.x, y=e.position.y}, target=last, set_tick=t.tick}
+        end
       else
         local pos = e.position
         t.last_target = {x=r[#r].x, y=r[#r].y}
@@ -461,6 +467,65 @@ return function(api)
         end
       end
     end
+  end
+  -- (d26 batch247 NV1, viewer Aurora 14:13: "go_to --wait and an arrival outcome") a waited go_to (vehicle {go_to,
+  -- wait: true}, fh --wait): its outcome from the route this go_to set, read with the samples (M.tick every 60 ticks):
+  -- arrived (its route ended within 4 tiles of its last target); stalled (the stall line, after the recoveries);
+  -- unreachable (stalled with no path found, or a target on water with no tile its legs stand on near it);
+  -- route_changed (another go_to or clear, or a player, set its route); retreated (its guard sent it back);
+  -- route_emptied (its route ended elsewhere); destroyed. nil while it walks.
+  function M.watch(action)
+    local e = action.spider
+    if not (e and e.valid) then return 'destroyed' end
+    local st = store()
+    local done = st.done and st.done[action.unit]
+    if done and done.set_tick == action.set_tick then
+      action.done = done
+      return done.arrived and 'arrived' or 'route_emptied'
+    end
+    local t = st.spiders[action.unit]
+    if not t then return nil end
+    if t.tick ~= action.set_tick then return 'route_changed' end
+    if t.retreated then return 'retreated' end
+    if t.stalled then return (t.no_path or action.unlanded) and 'unreachable' or 'stalled' end
+    return nil
+  end
+  -- The waited go_to's last: where it stands, its route, what it did, and why it ended.
+  function M.finish(action, outcome, last)
+    local e = action.spider
+    last.spidertron = string.format('spidertron #%d', action.unit)
+    last.target = action.target
+    if action.landed then last.landed = action.landed end
+    if not (e and e.valid) then last.why = 'the spidertron is gone'; return end
+    last.position = {x=e.position.x, y=e.position.y}
+    local t = store().spiders[action.unit]
+    local f = M.facts(e)
+    last.route_line = f.route_line
+    if t and t.tick == action.set_tick then
+      if t.tries and #t.tries > 0 then last.recovery = t.tries end
+      if t.no_path then last.no_path = t.no_path end
+    end
+    local d = action.done
+    if outcome == 'arrived' and d then
+      last.why = string.format('arrived at %s (its route ended at %s)', at(d.at), at(d.target or action.target))
+    elseif outcome == 'stalled' or outcome == 'unreachable' then
+      last.why = (f.stalled and f.stalled.line or 'no progress') .. (last.recovery and string.format('; %d recover%s tried', #last.recovery, #last.recovery == 1 and 'y' or 'ies') or '')
+        .. (last.no_path and '; ' .. last.no_path or '') .. (outcome == 'unreachable' and action.unlanded and '; ' .. action.unlanded or '')
+    elseif outcome == 'route_changed' then
+      last.why = 'its route was set again (another go_to or clear, or a player): ' .. f.route_line
+    elseif outcome == 'retreated' then
+      last.why = t and t.retreated and retreat_text(t.retreated) or 'it retreated'
+    elseif outcome == 'route_emptied' and d then
+      last.why = string.format('its route ended at %s, %.0f tiles from %s', at(d.at), d.target and dist(d.at, d.target) or 0, at(d.target or action.target))
+    elseif outcome == 'timed_out' then
+      last.why = string.format('still walking after %d s: %s (its route goes on; vehicle {remote, vehicle} reads it)', math.floor((game.tick - action.start_tick) / 60), f.route_line)
+    end
+  end
+  -- The waited go_to in status (active): where it is and its route.
+  function M.go_line(action)
+    local e = action.spider
+    if not (e and e.valid) then return nil end
+    return string.format('spidertron #%d at %s: %s', action.unit, at(e.position), M.facts(e).route_line)
   end
   -- The lines for the agent who sent a spidertron (team alerts), once each.
   function M.lines(p, h)

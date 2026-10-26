@@ -231,6 +231,8 @@
   last across from land. A target on water ends at the dry spot nearest it (reply `landed`). Within 3 tiles of water,
   no progress for 3 s and no path being asked: it backs off and asks again (alerts, reply `recovery`), up to 3 times,
   then `stalled`; reply `path` while one is asked, `no_path` when none was found. Its arrival is said once in team alerts.
+  `fh call vehicle --wait` with go_to waits: last.outcome `arrived`, `stalled`, `unreachable`, `route_changed`,
+  `retreated`, `route_emptied`, `destroyed` or `timed_out` (`ticks`, default 18000), with `why`.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.

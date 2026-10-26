@@ -18,6 +18,7 @@ return function(api)
       pathfind='with drive: default true; false steers straight at the target',
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
       avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
+      wait='with go_to: true runs it as a timed action (fh --wait waits for it): last.outcome arrived, stalled (the stall line with its recoveries), unreachable (no path found or a target on water with no tile its legs stand on near it), route_changed, retreated, route_emptied, destroyed or timed_out; last has position, route_line, recovery, no_path, why. fh call vehicle --wait with go_to sends it',
       go_to='{x,y}, or a list of 1..16: a spidertron walks there by itself (the one at position in sight, the one you are in, or with remote: true the one vehicle names, by remote view in a chunk our force sees). mode "replace" (the default, as a click on its remote): the route becomes these targets; "append" (as a shift-click): they go at the end. Returns route (the targets queued, in order), route_line, replaced (the targets it had); a target its legs cannot reach (deep water, cliffs on the straight line) keeps it standing with the target kept: a stall (spiderroute.lua) is said in your next reply once 10 s pass with no progress, and in status spidertrons',
       mode='with go_to: "replace" (default) or "append". (d22 batch101 BK1) go_to appended before: replace is the default as a click on the remote replaces the route; a call to a spidertron with no route left does the same either way',
       clear='true: empty the spidertron\'s route (it stops where it is); with go_to the route becomes go_to',
@@ -27,7 +28,7 @@ return function(api)
       vehicle='with remote: the car or tank (drive), or the spidertron (go_to, the targeting switches), by unit_number or {x,y} (any tile of it)',
       combat='with drive, seated as the gunner: true or a radius 1..36: the guns fire at the nearest enemy in range for the whole drive, as shoot auto does, and stop with it; last.shots (rounds fired), last.ammo_used, last.kills and kills_by_name (refused with remote)',
       retreat='with drive: optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): when the vehicle\'s health or its grid\'s shield falls under it during the drive, the drive ends retreated and the vehicle is driven back to `to` at once (guns on when seated); false: not even the standing retreat_guard. With go_to the same for the spidertron while it has a route (else the standing retreat_guard of its sender, else of the agent riding it), read every 30 ticks: under it and lower than when sent, its route is replaced by one to `to` (as a click on its remote), then held: go_to and clear on it refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat); a sleep wakes and a direct wait ends (spidertron_retreated); the reply\'s retreat says what watches it; team.spidertron_retreated {why, from, health, shield, to, replaced, route_line, guard} in your next reply, and status spidertrons',
-      ticks='with drive', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
+      ticks='with drive (1..36000, default 3600), or with go_to and wait (60..54000, default 18000)', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
   local TYPES = {}
   for t in pairs(SEATED) do TYPES[#TYPES+1] = t end
@@ -323,6 +324,22 @@ return function(api)
           out.note = 'it has no fuel and will not walk: transfer fuel into it (rocket-fuel, nuclear-fuel, ...)'
         end
       end)
+      -- (d26 batch247 NV1) wait: true (fh --wait): a timed action that ends arrived, stalled, unreachable, route_changed,
+      -- retreated, route_emptied, destroyed or timed_out (spiderroute.lua watch); without it the go_to replies at once
+      if a.wait then
+        local route = out.route or {}
+        if #route > 0 then
+          local ticks = api.integer(a.ticks, 18000, 60, 54000, 'ticks (60..54000)')
+          local unlanded
+          for _, l in ipairs(out.landed or {}) do if l:find('no tile its legs stand on', 1, true) then unlanded = l end end
+          local action = {kind='spider_go', spider=spider, unit=spider.unit_number, set_tick=game.tick, start_tick=game.tick,
+            until_tick=game.tick + ticks, target={x=route[#route].x, y=route[#route].y}, landed=out.landed, unlanded=unlanded,
+            remote=a.remote or nil}
+          api.start(p, action)
+          out.until_tick = action.until_tick
+          out.waiting = 'until it arrives, stalls (after its recoveries), is unreachable, its route is set again, it retreats or ' .. math.floor(ticks / 60) .. ' s pass'
+        end
+      end
       return out
     end
     if a.drive then

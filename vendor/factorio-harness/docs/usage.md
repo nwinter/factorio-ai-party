@@ -14481,6 +14481,16 @@ spiderroute.lua):
   collides", within 5 s); a drive's `unreachable` says what the target itself is on (a tile the vehicle cannot drive
   on, or ground it can with every way to it closed).
 
+## d26 batch247 (NV, viewer Aurora 14:13: the navigation items from batch243's review)
+
+- NV1: `vehicle {go_to, wait: true}` (`fh call vehicle --wait` with go_to sends it) runs as a timed action, kind
+  `spider_go`, read after the route's samples (every 60 ticks). It ends `arrived` (its route ended within 4 tiles of
+  its last target), `stalled` (the stall line after its recoveries), `unreachable` (stalled with no path found, or a
+  target on water with no tile its legs stand on near it), `route_changed` (another go_to or clear, or a player),
+  `retreated` (its guard), `route_emptied` (its route ended elsewhere), `destroyed` or `timed_out` (`ticks` 60..54000,
+  default 18000; the walk goes on). last: spidertron, position, target, route_line, recovery, no_path, landed, why.
+  Status `active.spider_go` says where it is. A plain go_to replies at once, as before. A queue step waits for it.
+
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 
 At tick 59185129 delivery watch #384 (3 asteroid-collector@legendary from Kestrel IVc to Aquilo's pad) warned
