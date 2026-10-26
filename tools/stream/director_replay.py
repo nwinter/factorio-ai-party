@@ -35,11 +35,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import airtime  # noqa: E402
+import work as work_here  # noqa: E402  (batch240: this checkout's DidFeed rules, the replay's input whatever --rules)
 
 WALK_TPS = 13.7  # tiles a second (46 tiles in 201 ticks, Grok's ag-watch-walk, shift77 queue history)
 ACT_S = 8.0
 BODY = airtime.FRESH | airtime.WALKS | {"craft", "insert", "take", "transfer", "feed", "fuel", "configure", "rotate",
                                         "pickup", "gather", "research"}
+# (batch240) requests done within the request: the live read never shows them as the character's running action
+# (status replies of shifts 80-81 name only move_to, gather, wait_until, construct, clear_cliffs, pickup and mine)
+INSTANT = {"build", "place", "place_ghosts", "paste", "blueprint_place", "deconstruct", "load_silo", "launch", "vehicle",
+           "insert", "take", "transfer", "feed", "fuel", "configure", "rotate", "research", "craft"}
 SLOTS = [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2}, {"slot": "cam3", "player": 3}]
 COOLDOWN_S = 200 / 60.0  # artillery-wagon-cannon cooldown (2.0.77 base item.lua)
 SHELL_TPS = 60.0         # a shell flies 1 tile a tick (artycam.lua)
@@ -225,6 +230,52 @@ def surface_air_of(log_rows, t0, t1):
     return out
 
 
+CUT_RE = re.compile(r"(cut to|move) (\S+?): (.*)")
+TIMED_MAX = 180.0  # s: a timed shot replayed at most this long (the log's next cut ends it sooner)
+
+
+def timed_shots(log_rows, t0, t1, own_quiet=False):
+    """(batch240) The log's timed shots in [t0, t1]: every program cut to a shot that neither follows an agent nor shows
+    its vehicle (platform visits, work, departures and bows, the base map, tours, cues, segments, looks, threats), from
+    the cut to the next one: [{t, until, label, position, surface, zoom, quiet}]. quiet: the director's own quiet view
+    (a "quiet KIND: ..." row just before it). own_quiet (the replay has the run's chart: its own tours and quiet
+    views): the log's quiet views and tours are left out."""
+    rows = sorted((r for r in log_rows if isinstance(r.get("t"), (int, float))), key=lambda r: r["t"])
+    last, quiet_t, cuts = {}, -1e9, []
+    for r in rows:
+        slot, reason = r.get("slot"), str(r.get("reason") or "")
+        if slot == "program":
+            if reason.startswith("quiet "):
+                quiet_t = r["t"]
+            m = CUT_RE.match(reason)
+            if m:
+                cuts.append((r["t"], last.get(m.group(2)), m.group(3), r["t"] - quiet_t <= 3.0))
+        elif reason != "reframe" and not reason.startswith("zoom"):
+            last[slot] = r
+    out = []
+    for i, (t, row, label, quiet) in enumerate(cuts):
+        end = cuts[i + 1][0] if i + 1 < len(cuts) else t1
+        cmd, tgt = (row or {}).get("cmd") or {}, (row or {}).get("target") or {}
+        if not (t0 <= t < t1) or cmd.get("follow") or tgt.get("vehicle") or not isinstance(cmd.get("position"), dict):
+            continue
+        if own_quiet and (quiet or label.startswith("tour:")):
+            continue
+        out.append({"t": t, "until": min(end, t + TIMED_MAX), "label": label, "position": cmd["position"],
+                    "surface": cmd.get("surface") or "nauvis", "zoom": float(cmd.get("zoom") or 1.0), "quiet": quiet})
+    return out
+
+
+def quiet_story(d, snap, now):
+    """(batch240) The replay's story is quiet as onecam.quiet_now says (its subject still or looping quiet_story on air,
+    nobody else newsworthy or moving), the platform and map guards aside."""
+    cur = d.state.get(d.onair) or {}
+    subj, cfg = cur.get("subject"), d.cfg
+    names = [a["name"] for a in snap["agents"]]
+    if subj not in names or now - d.onair_since < cfg["quiet_story"] or d.stale_s(subj, now) < cfg["quiet_story"]:
+        return False
+    return not any(n != subj and (d.newsworthy(n, now) or d.stale_s(n, now) < cfg["moving_s"]) for n in names)
+
+
 def fights_of(js):
     """[fight]: the attacks the journals' team blocks report, each {key, kind, text, first, last, position}."""
     out = {}
@@ -355,11 +406,27 @@ class World:
         self.agents = {n: model.Agent(n, {}) for n in js}
         self.idx = {n: 0 for n in js}
         self.active, self.act_until, self.last_req = {}, {}, {}
+        # (batch240) a running action lasts while the replies' clocks say the character was busy (not idle): the live
+        # read shows it all that time; ACT_S after the request when no clock covers it
+        self.busy = {}
+        for name, j in js.items():
+            spans = []
+            for rt, action, args, res, ok in j.requests:
+                c = work_here.CLOCK_RE.search((res or {}).get("clock") or "") if isinstance((res or {}).get("clock"), str) else None
+                if c:
+                    span, idle = work_here.seconds(c.group(1)), work_here.seconds(c.group(2))
+                    if span > 0 and idle < work_here.IDLE_FRAC * span:
+                        spans.append((rt - span, rt))
+            self.busy[name] = airtime.merge(spans)
         import work
         self.vehicles = work.VehicleFeed()
         self.rows = {n: j.vehicle_rows for n, j in js.items()}
         self.row_i = {n: 0 for n in js}
         self.tick = None
+        self.polled = {}  # (batch240) name -> (t, position, walking): the latest poll's read
+        self.work, self.did = work_here, {}  # (batch240) name -> its latest build-like request (work.DidFeed's row)
+        self.work_did_keep = work_here.DID_KEEP
+        self.clocks = work_here.ClockFeed()  # (batch240) the replies' clocks, as live.py's WorkFeed reads them
 
     def position(self, name, t):
         j = self.js[name]
@@ -400,7 +467,14 @@ class World:
                 self.last_req[name] = rt
                 if action in ("say", "chat"):
                     ag.bump(2.0, rt)
-                if ok and action in BODY:
+                c = self.work.CLOCK_RE.search((res or {}).get("clock") or "") if isinstance((res or {}).get("clock"), str) else None
+                if c:  # (batch240) what live.py's ClockFeed reads (the reply comes with the request here)
+                    self.clocks.note(name, rt, self.work.seconds(c.group(1)), self.work.seconds(c.group(2)))
+                if ok and self.work.did_kind(action, args, res):  # (batch240) what live.py's DidFeed reads
+                    plat, where = self.work.target_of(args)
+                    self.did[name] = {"action": action, "t": rt, "position": where,
+                                      "platform": plat if isinstance(plat, str) else None}
+                if ok and action in BODY and action not in INSTANT:
                     self.active[name], self.act_until[name] = action, rt + ACT_S
                 elif ok and action == "sleep":
                     secs = args.get("seconds") if isinstance(args.get("seconds"), (int, float)) else 30
@@ -414,14 +488,28 @@ class World:
                 k += 1
             self.row_i[name] = k
             vehicle = self.vehicles.current(name, t)
+            did = self.did.get(name)
+            did = did if did and t - did["t"] <= self.work_did_keep else None
             if self.vehicle_interest:
                 was, ag.remote_vehicle = ag.remote_vehicle, vehicle
                 self.model.vehicle_interest(ag, was, t)
-            pos, walking = self.position(name, t)
-            active = walking or (self.active.get(name) if t < self.act_until.get(name, 0) else False)
-            if active and active != ag.active:
+                if hasattr(self.model, "did_interest"):  # (batch240)
+                    was, ag.did = ag.did, did
+                    self.model.did_interest(ag, was, t)
+            got = self.polled.get(name)
+            if not got or t - got[0] >= POLL_S:  # (batch240) positions as the service reads them, once a poll
+                got = self.polled[name] = (t,) + tuple(self.position(name, t))
+            pos, walking = got[1], got[2]
+            running = self.active.get(name) if self.active.get(name) not in (None, "sleep") else None
+            active = walking or (self.active.get(name) if t < self.act_until.get(name, 0) else False) or \
+                (running if running and airtime.in_spans(self.busy[name], t) else False)
+            # (batch240) a walk loop runs in the harness's queue, no request of the agent's, and a sleep is no action:
+            # they keep no interest up (Grok's 4 h loop of shift80, with 58 sleeps, scored 1.7 on average live, 7.0
+            # here with the bumps; batch232: Opus's interest decayed live while it slept between its vehicle calls)
+            looped = (any(a <= t < b for a, b, _ in j.loops) and not t < self.act_until.get(name, 0)) or active == "sleep"
+            if active and active != ag.active and not looped:
                 ag.bump(self.model.ACTION_WEIGHT.get(active, 1.0), t)
-            if active:
+            if active and not looped:
                 ag.bump(0.04 * self.model.ACTION_WEIGHT.get(active, 1.0), t)
             ag.active = active
             ag.decay(t)
@@ -431,7 +519,7 @@ class World:
                         "activity": "acting" if active else "thinking" if thinking else "idle",
                         "active": active, "interest": round(ag.interest, 2),
                         "plan": {"kind": active} if active else None, "combat": False, "travel": None,
-                        "remote_vehicle": vehicle})
+                        "remote_vehicle": vehicle, "did": did, "idle_s": self.clocks.current(name, t)})
         snap = {"agents": [a for a in out if a["position"]], "alerts": [], "tick": self.tick,
                 "fights": [dict(f, last=min(f["last"], t)) for f in self.fights if f["first"] <= t <= f["last"] + 240]}
         i = bisect.bisect_right([x[0] for x in self.shells], t)
@@ -450,6 +538,7 @@ def load_rules(rules, tmp):
             with open(os.path.join(tmp, f), "w") as out:
                 out.write(src)
         sys.path.insert(0, tmp)
+        sys.modules.pop("work", None)  # (batch240: airtime loaded this checkout's; World takes main's VehicleFeed)
     return importlib.import_module("onecam")
 
 
@@ -467,10 +556,11 @@ def clock_t(day_t, hhmm):
 
 
 def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0, t0=None, t1=None, fights=False,
-           shells=None, vehicles="journal", surface_from=None):
+           shells=None, vehicles="journal", surface_from=None, timed=False):
     log_rows = log_rows_of(log_path)
     t0 = log_rows[0]["t"] if t0 is None else t0
     t1 = log_rows[-1]["t"] if t1 is None else t1
+    shots = timed_shots(log_rows, t0, t1, own_quiet=bool(chart)) if timed else []
     js = airtime.journals(runs)
     js = {n: j for n, j in js.items() if any(t0 - 3600 <= q[0] <= t1 for q in j.requests)}
     with tempfile.TemporaryDirectory() as tmp:
@@ -497,9 +587,21 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
             d.set_tours(basetour.Tours(chart))
         t = t0
         import contextlib, io
+        k, seg = 0, None
         with contextlib.redirect_stdout(io.StringIO()):
             while t < t1:
-                d.step(world.snapshot(t), now=t)
+                snap = world.snapshot(t)
+                while k < len(shots) and shots[k]["t"] <= t:  # (batch240) the log's timed shot starts: a segment
+                    sh, k = shots[k], k + 1
+                    if sh["quiet"] and not quiet_story(d, snap, t):
+                        continue  # a quiet view only where the replayed story is quiet too
+                    seg = {"id": f"timed-{k}", "label": sh["label"], "zoom": sh["zoom"], "until": sh["until"],
+                           "position": sh["position"], "surface": sh["surface"], "exact_zoom": True}
+                    if sh["quiet"]:
+                        d.last_quiet, d.after_quiet = t, True
+                if seg and t >= seg["until"]:
+                    seg = None
+                d.step(snap, now=t, segment=seg)
                 t += step
     return log_rows, js, (t0, t1)
 
@@ -518,6 +620,8 @@ def main(argv=None):
                     help="live: the service's vehicle position reads, modelled from the journals' replies (batch232)")
     ap.add_argument("--surface-from", nargs="+", help="director logs before --from: the planets' air time a restart "
                     "now keeps (surface-air.json), seeded from their last surface_window (batch232)")
+    ap.add_argument("--timed", action="store_true", help="the log's timed shots (platforms, map, tours, cues, segments, "
+                    "looks, threats) replayed at their times as segments; its quiet views where the replay is quiet too")
     ap.add_argument("--from", dest="t_from", help="HH:MM local (the first log's day)")
     ap.add_argument("--to", dest="t_to", help="HH:MM local")
     ap.add_argument("--json", action="store_true")
@@ -527,7 +631,7 @@ def main(argv=None):
     t0 = clock_t(first, a.t_from) if a.t_from else None
     t1 = clock_t(first, a.t_to) if a.t_to else None
     _, js, (t0, t1) = replay(a.log, a.runs, out, a.cams, a.rules, a.chart, t0=t0, t1=t1, fights=a.fights,
-                             shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from)
+                             shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from, timed=a.timed)
     rows = list(airtime.rows_of(out))
     m = airtime.measure(rows, js, t0, t1)
     m.update(log=" ".join(os.path.basename(x) for x in a.log), rules=a.rules, cams=a.cams, replay_log=out,

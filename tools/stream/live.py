@@ -476,6 +476,8 @@ class LiveSource:
                 a["repeats"] = self.work.repeats.current(a["name"], now)
                 # (d26 batch222 CD) its vehicle by remote view, from its journal's vehicle replies (onecam follows it)
                 a["remote_vehicle"] = self.work.vehicles.current(a["name"], now)
+                a["did"] = self.work.did.current(a["name"], now)  # (d26 batch240) its latest build, paste, silo load ...
+                a["idle_s"] = self.work.clocks.current(a["name"], now)  # (batch240) its character idle so long, by its clocks
 
         for a in obs["agents"]:
             a["wait"] = self.waits.current(a["name"], obs.get("tick") or 0, time.time())

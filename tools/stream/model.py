@@ -42,6 +42,7 @@ ACTION_WEIGHT = {
 # sent spidertron 27069154 on seven legs from 10:21:32 while its character slept between calls: its interest halved
 # every 75 s from 10:22:45 and it never aired.
 VEHICLE_WEIGHT = 3.0
+DID_WEIGHT = 3.0  # (batch240) a paste, ghosts, deconstruction or silo load, as a build
 SCIENCE = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
            "production-science-pack", "utility-science-pack", "space-science-pack",
            # Space Age: one pack per planet, then promethium from the edge of the system
@@ -744,6 +745,8 @@ class Agent:
         self.queues = None
         self.repeats = None
         self.remote_vehicle = None  # (d26 batch222 CD) its vehicle by remote view (work.VehicleFeed), for onecam
+        self.did = None  # (d26 batch240 IA) its latest build, paste, deconstruction or silo load (work.DidFeed), for onecam
+        self.idle_s = None  # (batch240) seconds its character has stood idle by its own clocks (work.ClockFeed), for onecam
 
     def bump(self, amount, now):
         self.decay(now)
@@ -761,6 +764,16 @@ def vehicle_target(v):
         return None
     t = v.get("cmd_target", v.get("target"))
     return (t.get("x"), t.get("y")) if isinstance(t, dict) else None
+
+
+def did_interest(ag, was, now):
+    """(batch240 IA) A new build, paste, deconstruction or silo load in the agent's journal (work.DidFeed) bumps its
+    interest as the action would if the live read saw it (ACTION_WEIGHT; DID_WEIGHT for the kinds it lacks): those are
+    done within the request, so the read never shows them."""
+    d = ag.did if isinstance(ag.did, dict) else None
+    if d and d.get("t") != (was or {}).get("t"):
+        ag.bump(ACTION_WEIGHT.get(d.get("action"), DID_WEIGHT), now)
+        ag.last_activity_t = now
 
 
 def vehicle_interest(ag, was, now):
@@ -1215,6 +1228,11 @@ class Model:
             if key in a:
                 setattr(ag, key, a[key] or None)
         vehicle_interest(ag, was_vehicle, now)
+        if "idle_s" in a:
+            ag.idle_s = a["idle_s"]
+        if "did" in a:
+            was_did, ag.did = ag.did, a["did"] or None
+            did_interest(ag, was_did, now)
         if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
             rest = a["resting"] if isinstance(a["resting"], dict) else None
             if rest and (not ag.resting or ag.resting.get("until") != rest.get("until")):
@@ -2790,7 +2808,7 @@ class Model:
                 "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
                 # hurt | fighting | guard | None, and who hit it or what it shoots at (combat_state)
                 "combat_state": ag.combat_state, "combat_info": ag.combat_info or None,
-                "vehicle_fire": ag.vehicle_fire, "remote_vehicle": ag.remote_vehicle,
+                "vehicle_fire": ag.vehicle_fire, "remote_vehicle": ag.remote_vehicle, "did": ag.did, "idle_s": ag.idle_s,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,
