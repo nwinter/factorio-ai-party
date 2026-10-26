@@ -8629,6 +8629,7 @@ M.preflight=M.preflight or {}
 M.step_checks={
   flight_watch=function(a) M.flightwatch.check_read(a) end,  -- (d25 batch205 QR2) read: true with platform alone
   uptime=function(a) M.uptime.check_read(a) end,  -- (d25 batch214 QZ1) read: true in pages, never a new watch
+  reservations=function(a) M.reservations.check_point(a) end,  -- (d25 batch217 QAB1) position, from, radius, sweep
   configure=function(a)
     if a.modules~=nil then M.modules.parse(a.modules) end
     assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')
@@ -18931,8 +18932,8 @@ function M.personal_unfilled_lines(p)
 end
 M.reqchest=require('reqchest'){}
 -- A logistic network's reservations, read only (reservations.lua; Luna 06:20).
-M.reservations=require('reservations'){}
-function handlers.reservations(p,a) return M.reservations.read(p,a) end
+M.reservations=require('reservations'){state=state}
+function handlers.reservations(p,a) return M.timed('reservations.read',M.reservations.read,p,a) end  -- (d25 batch217) a part of its own in profile_ticks
 -- outpost {area | position}: one queued tour that rebuilds ghosts, rearms turrets and wires cut-off poles (outpost.lua).
 M.outpost=require('outpost'){position=position,integer=integer,submit=function(p,a) return handlers.queue_submit(p,a) end}
 -- A silo load staged in one plan: takes from several chests, hand crafts of what is short, the load (stage.lua; d17
@@ -20884,6 +20885,7 @@ function M.tick_body(event)
     if not okb then local s=state();s.belt_memory_error={tick=event.tick,error=tostring(errb)} end
   end
   M.orders.tick()
+  do local rs=state().robot_sweeps; if rs and rs.active then local ok,err=pcall(M.timed,'reservations.tick',M.reservations.tick); if not ok then rs.error={tick=event.tick,error=tostring(err)} end end end  -- (d25 batch217 QAB1) a sweep's step
   local okr,errr=pcall(M.timed,'reminders.tick',M.reminders.tick)
   if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
