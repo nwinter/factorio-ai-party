@@ -7,7 +7,9 @@
   a surface's `complete` changed or a file gone: deployed;
 - a site refresh holding the lock: this round waits (its lock left alone); one whose pid is gone is taken over;
 - a failed deploy: the next round deploys again with nothing new;
-- POG_TEST=1 without POG_WRANGLER: never the live wrangler.
+- POG_TEST=1 without POG_WRANGLER: never the live wrangler;
+- (cp2) a round every 5 minutes (POG_CHART_DEPLOY_EVERY tunes it), none while the 1-minute load average is over 3 x the
+  cores.
 """
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -44,8 +46,10 @@ def main():
         out = run / "chart" / "out"
         st, rn, clock = {}, Runner(), iter(range(0, 10000, 7)).__next__
 
+        busy = [1.0]
+
         def once():
-            return chart_deploy.run_once(run, dist, st, wrangler=["wr"], runner=rn, clock=clock)
+            return chart_deploy.run_once(run, dist, st, wrangler=["wr"], runner=rn, clock=clock, load=lambda: (busy[0], 0, 0), cores=lambda: 8)
 
         def index(v, complete=True):
             (out / "index.json").write_text(json.dumps({"v": v, "surfaces": {"nauvis": {"cells": {"0,0": [v, 1, 2, 3]}, "complete": complete}}}))
@@ -101,11 +105,23 @@ def main():
         line = once()
         check("and the next round deploys again with nothing new", len(rn.calls) == 7 and line.endswith("s") and "0 files new" in line, line)
         check("then nothing to do", once() is None and len(rn.calls) == 7)
+        (out / "nauvis" / "0_0.png").write_bytes(b"png-f")
+        busy[0] = 24.5
+        line = once()
+        check("(cp2) the 1-minute load average over 3 x the cores: the round waits, said once", line == "waiting: load average 24.5 over 3 x 8 cores"
+              and once() is None and len(rn.calls) == 7, line)
+        busy[0] = 24.0
+        line = once()
+        check("at 3 x the cores: the round goes, its files and bytes logged", len(rn.calls) == 8 and line.startswith("v57 (shift81): 1 files new or changed, 5 bytes"), line)
+        check("(cp2) a round every 5 minutes by default", chart_deploy.EVERY == 300 or os.environ.get("POG_CHART_DEPLOY_EVERY"), chart_deploy.EVERY)
+        r = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import chart_deploy; print(chart_deploy.EVERY)", str(SITE)],
+                           env=dict(os.environ, POG_CHART_DEPLOY_EVERY="90"), capture_output=True, text=True, timeout=30)
+        check("POG_CHART_DEPLOY_EVERY tunes it", r.stdout.strip() == "90.0", r.stdout + r.stderr)
         (out / "nauvis" / "0_0.png").write_bytes(b"png-e")
         os.environ.pop("POG_WRANGLER", None)
         os.environ["POG_TEST"] = "1"
-        line = chart_deploy.run_once(run, dist, st, runner=rn, clock=clock)
-        check("POG_TEST=1 without POG_WRANGLER: no deploy (a test never deploys the site)", len(rn.calls) == 7 and "deploy refused" in line, line)
+        line = chart_deploy.run_once(run, dist, st, runner=rn, clock=clock, load=lambda: (0.5, 0, 0), cores=lambda: 8)
+        check("POG_TEST=1 without POG_WRANGLER: no deploy (a test never deploys the site)", len(rn.calls) == 8 and "deploy refused" in line, line)
     if fails:
         sys.exit(f"chart deploy: {fails} failed")
     print("chart deploy: ok (the run's changed cells deployed under the refresh's lock, into a build production has; the index alone is not)")

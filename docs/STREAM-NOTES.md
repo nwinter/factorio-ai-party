@@ -1447,7 +1447,7 @@ at 1 px a tile in the game's map colours, from the harness's `chart` operator re
   rail type by direction, read on the private copy with LuaEntity.get_rail_end); runs/RUN/chart/out/SURFACE/CX_CY.png
   and .labels.json (recipes, stop names), out/index.json (each cell's version, its chunks' oldest and newest read
   tick, and the box round our buildings). site/build.py publishes out/ under /live/chart/ (docs/LIVE-API.md), and
-  (d26 batch241) site/chart_deploy.py deploys it alone every 2 minutes when its cells changed. A new run's out/ starts
+  (d26 batch241) site/chart_deploy.py deploys it alone every 5 minutes when its cells changed. A new run's out/ starts
   as a copy of the run it resumed from's (its version goes on, `complete` kept, no cell drawn again for the copy).
 - On the d22 copy of world n the first pass of Nauvis (3,251 chunks), Vulcanus (916) and Asterion (91) took 1,178
   reads; its cells: Nauvis 30 (568 KB), Vulcanus 12 (388 KB), Asterion 4 (24 KB). A cell draws in about 70 ms.

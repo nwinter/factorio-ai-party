@@ -106,7 +106,8 @@ in `runs/PREV/site-refresh.log`; a failure never blocks the shift (`POG_SITE_REF
 runs it every hour (`runs/RUN/site-hourly.log`; `POG_SITE_HOURLY=0` or `POG_PUSH_LIVE=0` turns it off), with the chart the
 stream service draws (`runs/RUN/chart/out/`, published under `/live/chart/` by `site/chartpub.py`). (d26 batch241) Between
 builds, `site/chart_deploy.py` (started by start-team too, `runs/RUN/chart-deploy.log`; `POG_CHART_DEPLOY=0` turns it
-off) deploys the chart alone every 2 minutes when its cells changed: it swaps the run's chart into `site/dist/live/chart/`
+off) deploys the chart alone every 5 minutes (`POG_CHART_DEPLOY_EVERY` seconds; a round waits while the 1-minute load
+average is over 3 times the cores) when its cells changed, logging each deploy's files and bytes: it swaps the run's chart into `site/dist/live/chart/`
 under the same lock and deploys `site/dist` to production, only while `site/dist.deployed` says that build is the one
 production has (site-refresh writes it after its production deploy and removes it when a build starts). A chart update
 uploaded 2 files (42 KB) after 150 s and 25 files (473 KB) after 45 minutes; a deploy takes about 22 s (2.7 s CPU). Two refreshes never run at once: the second waits for the first's lock (`$TMPDIR/pog-site-refresh.lock`,

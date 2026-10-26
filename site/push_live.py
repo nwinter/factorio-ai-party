@@ -831,7 +831,7 @@ def site_chart(site_url, now=None, opener=urllib.request.urlopen):
     """(d22 batch97 BG3) the chart the deployed site has (site/build.py publishes runs/RUN/chart/out/ under /live/chart/):
     {v, tick, surfaces, complete} from its index.json (surfaces: those with cells; complete: those whose first pass is
     done, every charted chunk read; cp7), read at most every minute (site/chart_deploy.py deploys a changed chart within
-    two); the last one stays when a read fails (a 404:
+    five); the last one stays when a read fails (a 404:
     none published yet). The page fetches the index again when v changes."""
     now = time.time() if now is None else now
     if site_url and (_chart["t"] is None or now - _chart["t"] >= CHART_EVERY):

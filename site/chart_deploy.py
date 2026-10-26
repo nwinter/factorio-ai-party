@@ -4,7 +4,8 @@ map kept one chart version for 25-31 min at a time, and shift79's v6401 for 50 m
 stream service drew a new version every few seconds). The chart reached the site only with a whole site build
 (tools/site-refresh.sh: hourly, at a shift change and when the operator deploys), each about 90 s of build and checks.
 
-Every EVERY seconds, under the site refresh's lock (the same one; a refresh going on: this round is skipped), when the
+Every EVERY seconds (5 minutes; POG_CHART_DEPLOY_EVERY), unless the Mac's 1-minute load average is over 3 times its
+cores, under the site refresh's lock (the same one; a refresh going on: this round is skipped), when the
 run's chart (runs/RUN/chart/out/) has a cell or labels file the site's does not have, or a file gone, or a surface's
 `complete` changed: puts the chart into the build production has (site/dist/live/chart/, swapped in whole; a build is
 production's while site/dist.deployed exists, which tools/site-refresh.sh writes after its production deploy) and
@@ -13,7 +14,7 @@ deploys that build to production (wrangler pages deploy, branch main). Most vers
 costs the changed cells. push_live reads the deployed index every minute and sends its version; the page fetches the
 cells whose version changed.
 
-    python3 site/chart_deploy.py runs/RUN                 # every 120 s (tools/start-team.sh starts it)
+    python3 site/chart_deploy.py runs/RUN                 # every 300 s (tools/start-team.sh starts it)
     python3 site/chart_deploy.py runs/RUN --once --no-deploy
 
 Stubs for tests: POG_WRANGLER (the deploy command, split on spaces; default npx wrangler), POG_SITE_OUT (the build),
@@ -23,7 +24,11 @@ from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
 REPO = SITE.parent
-EVERY = 120.0
+# (cp2, operator) a round every 5 minutes (POG_CHART_DEPLOY_EVERY seconds): at most 12 production deploys an hour, each
+# 22 s and 157 MB to hash the 139 MB build on a Mac that is often loaded; a round waits while the 1-minute load average
+# is over LOAD_PER_CORE times the cores
+EVERY = float(os.environ.get("POG_CHART_DEPLOY_EVERY") or 300)
+LOAD_PER_CORE = 3.0
 PROJECT = "player-of-games"
 
 
@@ -97,7 +102,8 @@ def stage(src, dist):
     shutil.rmtree(old, ignore_errors=True)
 
 
-def run_once(run_dir, dist, st, deploy=True, wrangler=None, runner=subprocess.run, clock=time.time):
+def run_once(run_dir, dist, st, deploy=True, wrangler=None, runner=subprocess.run, clock=time.time,
+             load=os.getloadavg, cores=os.cpu_count):
     """One round; the log line, or None when there is nothing to say. st (kept between rounds): pending, a chart staged
     into the build and not deployed (a failed deploy: the next round deploys it again); said, the last waiting line
     (said once)."""
@@ -112,6 +118,10 @@ def run_once(run_dir, dist, st, deploy=True, wrangler=None, runner=subprocess.ru
             return None
         st["said"] = line
         return line
+    n = cores() or 1
+    one = load()[0]
+    if one > LOAD_PER_CORE * n:
+        return once(f"waiting: load average {one:.1f} over {LOAD_PER_CORE:g} x {n} cores")
     if not (dist / "index.html").is_file() or not Path(str(dist) + ".deployed").is_file():
         return once(f"waiting: {dist} is not a build production has (tools/site-refresh.sh makes one)")
     lock = lock_path()
