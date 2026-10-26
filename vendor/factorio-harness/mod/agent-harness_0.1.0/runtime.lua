@@ -9974,6 +9974,8 @@ local function transfer_one(p,a,pos,e)
     out.freshness=okl and lines or nil
   end
   if rocket then out.rocket_weight=space.rocket_weight(e); out.weight_limited=rocket.limited end
+  -- (d26 batch229 SP, Sol: the pack for Loom went to Aethera) a starter pack into the rocket: the platform it goes to
+  if moved>0 and a.direction=='to_entity' and e.type=='rocket-silo' and a.item and M.starterpack.is_pack(a.item) then out.starter_pack=M.silo.starter_line(e) end
   -- A rocket-part ingredient put into the rocket's cargo says where it went and where the recipe takes it from.
   if moved>0 and a.item and a.direction=='to_entity' and e.type=='rocket-silo' and (named or inferred)=='rocket_silo_rocket' then
     local names,recipe=M.silo.ingredients(e)
@@ -14062,13 +14064,15 @@ function M.cargo_eta(p,a,rockets)
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
-M.silo=require('silo'){editlog=function() return M.editlog end,spoil=function() return M.spoil end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
+-- (d26 batch229 SP) platforms waiting for a starter pack: the game's order and how long each has waited (starterpack.lua)
+M.starterpack=require('starterpack'){state=state}
+M.silo=require('silo'){starterpack=function() return M.starterpack end,editlog=function() return M.editlog end,spoil=function() return M.spoil end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){trash=M.trash,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){trash=M.trash,starter_line=function(e) return M.silo.starter_line(e) end,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -19752,7 +19756,7 @@ end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}
 -- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
-M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight and M.freight.where(pl) end,
+M.chronicle=require('chronicle'){state=state,platform_made=function(pl,t) return M.starterpack.made(pl,t) end,platform_gone=function(i) return M.starterpack.forget(i) end,where=function(pl) return M.freight and M.freight.where(pl) end,
   owner=function(c) return M.character_owner(c) end}
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 -- Urgent alerts that end every sleep and direct wait (Nick, d15 06:17; urgent.lua), and until=alert's filter.
@@ -19771,7 +19775,7 @@ M.platwait=require('platwait'){state=state}
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
 space=space_module{made=function(t) return M.made.mark(t) end,floor_read=function(pl) return M.flightwatch.floor_read(pl) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
-  plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+  plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,starterpack=function() return M.starterpack end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -20777,7 +20781,7 @@ function M.tick_body(event)
   if M.delivwatch then pcall(M.delivwatch.pod_tick,event.tick) end  -- (AB7) watched pods read each tick near landing; none followed: one lookup
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
-  do local pa=state().podlog; if pa and pa.after and next(pa.after) then pcall(M.timed,'podlog.tick',M.podlog.tick,event.tick) end end  -- (d24 batch179) a pod's delivery read the tick after (podlog.lua)
+  do local pa=state().podlog; if pa and ((pa.after and next(pa.after)) or (event.tick%M.podlog.SWEEP==0 and pa.open and next(pa.open))) then pcall(M.timed,'podlog.tick',M.podlog.tick,event.tick) end end  -- (d24 batch179) a pod's delivery read the tick after; (d26 batch229) once a second, journeys whose pod is gone (podlog.lua)
   if event.tick%60==17 and state().endurance_readings then pcall(M.timed,'endurance.refresh',M.endurance.tick,event.tick) end  -- (batch195) drops batch187's kept platform_endurance readings once; none are kept now
   if M.beltsample and state().belt_flow then pcall(M.timed,'beltsample.tick',M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
