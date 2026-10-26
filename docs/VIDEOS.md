@@ -238,3 +238,25 @@ review.md, the cut MP4s). Its parts, each a CLI of its own:
 
 `python3 tools/test_clip_library.py` checks the catalogue and the maker on the same made-up shift (no ffmpeg, no
 network).
+
+## Whole shifts on R2 (batch211: tools/archive/r2_shifts.py)
+
+    python3 tools/archive/r2_shifts.py shift01 [shift02 ...]      # or --shifts 2-69; --dry-run prints the plan
+
+One shift at a time: the index (archive.py, the run's offsets copied in, no clip cut), the encode at nice 19 with
+hls.py's ladder into `/Volumes/Extreme SSD/pog-hls/RUN/full/`, the upload to `RUN/full/` at or under 150 Mbit/s
+(jobs rise from 4 while the measured rate is under 80% of the cap, never past 16, and stop rising at the cap; puts
+pause while `tools/obs.py stream-status` shows skipped frames rising or congestion), a HEAD of every object at the
+public URL against its local size, then `RUN/full/receipt.json` in R2 and in `~/code/pog-operator/r2-receipts/`,
+the local folder removed and the shift's row in `~/code/pog-operator/r2-status-d25.md` marked complete. A shift
+with a receipt is skipped; an encode with its encode.json is reused; an interrupted upload puts only what is missing.
+
+- Keys: `RUN/full/master.m3u8`, `RUN/full/{1080,540}/index.m3u8` and `pNN/{init.mp4,segNNNN.m4s}` (one `pNN` per
+  recording; the rung playlist plays them back to back with a discontinuity), `captions.vtt` (on the joined video),
+  `shift.json` (the index cut to the shift plus `parts`: [video s, wall t, seconds, name]; no local paths),
+  `encode.json`, `receipt.json` (objects, bytes, the masters used, the duration covered, the time).
+- Watch: https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev/player/index.html?src=../RUN/full/master.m3u8&data=../RUN/full/shift.json&vtt=../RUN/full/captions.vtt
+  (the player maps the video's time to wall time through `parts`).
+
+`python3 tools/test_r2_shifts.py`: a made-up shift with two recordings, a fake runner, r2_put and HEAD (no ffmpeg,
+network or clock).

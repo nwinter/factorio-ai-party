@@ -127,7 +127,20 @@ const pct = (t) => `${Math.max(0, Math.min(100, (t - D.t0) / span * 100))}%`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const nameOf = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const colorOf = (who) => COLORS[(who || "").toLowerCase().split(" ")[0]] || "var(--shot)";
-const now = () => D.t0 + (video.currentTime || 0);
+// a whole shift from several recordings (batch211 shift.json): parts = [[video s, wall t, seconds, name]] back to back
+const toWall = (v) => {
+  if (!D.parts) return D.t0 + v;
+  let p = D.parts[0];
+  for (const x of D.parts) if (x[0] <= v) p = x;
+  return p[1] + Math.min(v - p[0], p[2]);
+};
+const toVideo = (t) => {
+  if (!D.parts) return t - D.t0;
+  for (const p of D.parts) if (t < p[1] + p[2]) return p[0] + Math.max(0, t - p[1]);
+  const l = D.parts[D.parts.length - 1];
+  return l[0] + l[2];
+};
+const now = () => toWall(video.currentTime || 0);
 
 function lane(name, build) {
   const row = document.createElement("div");
@@ -188,7 +201,7 @@ function at(rows, t) { let r = null; for (const x of rows) { if (x[0] <= t) r = 
 
 function render() {
   const t = now();
-  $("clock").textContent = `${fmtWall(t)} PDT · ${fmtRel(t - D.t0)} into the sample`;
+  $("clock").textContent = `${fmtWall(t)} PDT · ${fmtRel(t - D.t0)} into the video`;
   const track = document.querySelector(".lane .track");
   if (track) {
     const off = track.offsetLeft;
@@ -216,7 +229,7 @@ function render() {
   $("chat").innerHTML = lines.map((c) => `<li class="${c.kind}"><span class="who" style="color:${c.kind === "agent" ? colorOf(c.who) : "var(--viewer)"}">${esc(c.kind === "agent" ? nameOf(c.who) : c.who)}</span><span class="ago">${fmtRel(t - c.t)} ago</span><div>${esc(c.text.length > 220 ? c.text.slice(0, 219) + "…" : c.text)}</div></li>`).join("");
 }
 
-function seekWall(t) { video.currentTime = Math.max(0, Math.min(span, t - D.t0)); render(); }
+function seekWall(t) { video.currentTime = Math.max(0, toVideo(Math.min(D.t1, t))); render(); }
 function jump(dir) {
   const t = now();
   const list = dir > 0 ? events.filter((e) => e.t > t + 1) : events.filter((e) => e.t < t - 3).reverse();
