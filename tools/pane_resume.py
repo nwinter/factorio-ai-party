@@ -444,14 +444,14 @@ class Resumer:
             return None
         n = ep["tries"] + 1
         esc = ""
-        if DIALOGS.search(screen):
+        if DIALOGS.search("\n".join(screen.splitlines()[-STOP_TAIL:])):   # a dialog sits at the bottom
             if self.dry:
                 esc = "esc (dry run) for the dialog on top; "
             else:
                 self.panes.keys(pane, "esc")
                 self.pause(0.5)
                 screen = self.panes.read(pane) or ""
-                if DIALOGS.search(screen):
+                if DIALOGS.search("\n".join(screen.splitlines()[-STOP_TAIL:])):
                     ep["t"] = now
                     if "dialog" in ep["logged"]:
                         return None

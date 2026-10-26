@@ -254,6 +254,11 @@ def other_clis():
         run.poll(run.resumer(dry=True), T0, T0 + IDLE)
         check(pane.typed == [] and pane.keys == [] and run.rows[0]["dry_run"]
               and "dry run: would type" in run.rows[0]["line"], "dry run: nothing pressed or typed")
+    with tempfile.TemporaryDirectory() as tmp:
+        pane = Pane("codex", "• Read the Security setup notes.\n" + "• line\n" * 50 + SOL_STOP)
+        run = Run(tmp, [("sol", pane)])
+        run.poll(run.resumer(), T0, T0 + IDLE)
+        check(pane.keys == [] and len(pane.typed) == 1, "a dialog's words far up in the history: no esc, one message")
     src = open(os.path.join(ROOT, "tools", "idle_nudge.py")).read()
     check("idle_s=n.idle_s" in src, "idle_nudge passes its --idle-min")
 
