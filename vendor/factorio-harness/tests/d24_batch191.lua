@@ -194,7 +194,7 @@ eq(P.on_path({id=999},function() error('not ours') end),false)
 wx1,wx2=nil,nil
 
 -- 11. vehicle {go_to} (spiderroute.lua): a target over water gets paths; when in, the route goes round and its sender
--- reads it; no progress with water ahead: re-routed once, then the shore, then the stall line.
+-- reads it; no progress with water ahead: (d26 batch243) backed off and asked again 3 times, then the stall line.
 local R=dofile('mod/agent-harness_0.1.0/spiderroute.lua'){state=state,position=position,who=function(x) return x.name end,path=P}
 wx1,wx2=10,40
 requests={}
@@ -206,25 +206,41 @@ P.on_path({id=500+#requests,path=path},function(rec,plan,sp,pts,notes) R.routed(
 assert(#spider.autopilot_destinations>4)
 local lines=R.lines({name='sol'},{})
 assert(lines and lines[1]:find('its route goes round the water now: ',1,true),lines and lines[1])
--- no path at all (a target on water): said, the route kept straight
-R.set(spider,{go_to={x=30,y=0}},'sol')
+-- (d26 batch243) a target on water ends at the dry spot nearest it; no path: asked again from spots its legs step to
+-- (island escape), none either: said, the route kept straight to that spot
+local r2=R.set(spider,{go_to={x=30,y=0}},'sol')
+assert(r2.landed and r2.landed[1]:find('the target (30,0) is on water: the route ends at (41.5,0.5), the nearest spot its legs stand on',1,true),r2.landed and r2.landed[1])
+eq(r2.route_line,'1 target: (41.5,0.5)')
+local asked=#requests
 P.on_path({id=500+#requests},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end)
+local hops=#requests-asked; assert(hops>=1 and hops<=P.HOPS,'hops '..hops)
+for k=1,hops do P.on_path({id=500+asked+k},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end) end
 lines=R.lines({name='sol'},{spiderroute_seen=storage.spiderroute.eseq-1})
-assert(lines[1]:find('the pathfinder found no path round the water to (30,0) (the target itself is on water); its route stays 1 target: (30,0)',1,true),lines[1])
--- standing at the water's edge: 10 s, a path requested once; 10 s more, the shore; 10 s more, the stall line
+assert(lines[1]:find('the pathfinder found no path round the water to (41.5,0.5); asked again from '..hops..' spot',1,true) and lines[1]:find('its route stays 1 target: (41.5,0.5)',1,true),lines[1])
+-- standing 2 tiles from the water (within WATER_NEAR) with no path being asked: 3 s, it backs off and asks again (3 times), then the stall line
 sd.position={x=8,y=0}
 local seen=storage.spiderroute.eseq
 local function ticks(n) for _=1,n,60 do game.tick=game.tick+60; R.tick() end end
-ticks(R.STALL+60)
+local function answer() local n=#requests; P.on_path({id=500+n},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end); for k=n+1,#requests do P.on_path({id=500+k},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end) end end
+ticks(R.STALL_WATER+60)
 lines=R.lines({name='sol'},{spiderroute_seen=seen}); seen=storage.spiderroute.eseq
-assert(lines and lines[1]:find('no progress toward (30,0) for 10s at (8,0); re-routed once: (8,0) -> (30,0) crosses',1,true),lines and lines[1])
+assert(lines and lines[1]:find('stalled (8,0), ',1,true) and lines[1]:find('with no path being asked: backed off to (',1,true) and lines[1]:find('(recovery 1 of 3)',1,true),lines and lines[1])
+local first=spider.autopilot_destinations[1]; assert(first.x<8,'backed off west: '..first.x)
+answer()
+eq(R.facts(spider).recovery[1],storage.spiderroute.spiders[7101].tries[1])
+-- the game: it reaches the back-off spot (the route's first point is done) and walks to the water's edge again
+local function again() table.remove(spider.autopilot_destinations,1); sd.position={x=8,y=0} end
+for k=2,3 do
+  again(); ticks(R.STALL_WATER+120)
+  lines=R.lines({name='sol'},{spiderroute_seen=seen}); seen=storage.spiderroute.eseq
+  assert(lines and lines[#lines]:find('(recovery '..k..' of 3)',1,true),lines and lines[#lines])
+  answer()
+end
+eq(#storage.spiderroute.spiders[7101].tries,3)
+again()
 ticks(R.STALL+60)
-lines=R.lines({name='sol'},{spiderroute_seen=seen}); seen=storage.spiderroute.eseq
-assert(lines and lines[1]:find('shore recovery: its route goes first to (',1,true),lines and lines[1])
-local first=spider.autopilot_destinations[1]; assert(first.x<10,'the shore: '..first.x)
-ticks(R.STALL+60)
-lines=R.lines({name='sol'},{spiderroute_seen=seen})
-assert(lines and lines[1]:find('no progress toward',1,true) and lines[1]:find('vehicle {go_to, mode: "replace"} sets a new one',1,true),lines and lines[1])
+lines=R.lines({name='sol'},{spiderroute_seen=storage.spiderroute.eseq-1})
+assert(lines and lines[#lines]:find('no progress toward',1,true) and lines[#lines]:find('3 recoveries tried',1,true) and lines[#lines]:find('vehicle {go_to, mode: "replace"} sets a new one',1,true),lines and lines[#lines])
 -- 12. batch189's retreat route (its guard fired) over water: a path round it requested; the reply's retreat says so,
 -- and its re-route and shore recovery run again on that route.
 wx1,wx2,wy=10,40,30

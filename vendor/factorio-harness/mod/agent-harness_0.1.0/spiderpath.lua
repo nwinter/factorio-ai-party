@@ -11,10 +11,19 @@
 --   BOX box; the path comes back thinned to points SPACING tiles apart along it (each straight leg read again, the
 --   path's own points kept where one is blocked), and the route becomes the targets with those points between;
 -- - shore(surface, pos, target): the tile its legs stand on nearest the target, on rings 4..24 tiles round pos.
+-- (d26 batch243 SR, viewer Aurora 13:42: spidertron #27069154 stood 1 tile from water at (78,339) for 8 min while every
+-- path round it came back "found no path") a path request from a start or to a goal whose box touches water finds
+-- none, a goal on water none, and a start on a patch the box cannot leave (an island to the pathfinder that legs step
+-- off) none; so:
+-- - dry(surface, q, rmax): the nearest point within rmax tiles whose BOX box holds no water: starts and goals move there;
+-- - a failed path is asked again from up to HOPS dry spots its legs can step to across water (a straight line with no
+--   run of over GAP tiles), nearest the goal first; the first path that comes wins, with that spot first (island escape);
+-- - a path over MAX_POINTS points is thinned again at twice the spacing (it was "no path" before).
 -- The callers say what was done; facts only.
 return function(api)
   local M = {}
   M.GAP, M.SPACING, M.BOX, M.MAX_POINTS = 12, 12, 1, 120
+  M.HOPS, M.HOP_MIN, M.DRY_START, M.DRY_GOAL = 4, 4, 8, 24
   local water = {}  -- tile name -> has water_tile (prototype facts: the same on every peer)
   local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x * 10 + 0.5) / 10, math.floor(q.y * 10 + 0.5) / 10) end
@@ -56,13 +65,14 @@ return function(api)
   end
   -- The path's points SPACING tiles apart (and its end), each straight leg read again: a blocked leg keeps the path's
   -- own points between. nil when over MAX_POINTS.
-  function M.thin(surface, path)
+  function M.thin(surface, path, spacing)
+    spacing = spacing or M.SPACING
     local pts = {}
     for i, w in ipairs(path) do pts[i] = w.position end
     local keep, last, acc = {}, 1, 0
     for i = 2, #pts do
       acc = acc + dist(pts[i - 1], pts[i])
-      if acc >= M.SPACING or i == #pts then
+      if acc >= spacing or i == #pts then
         if M.segment(surface, pts[last], pts[i]) then
           for j = last + 1, i do keep[#keep + 1] = {x=pts[j].x, y=pts[j].y} end
         else
@@ -71,14 +81,78 @@ return function(api)
         last, acc = i, 0
       end
     end
-    if #keep > M.MAX_POINTS then return nil end
+    if #keep > M.MAX_POINTS then
+      -- (d26 batch243) a long detour: twice the spacing, up to 4 times; a blocked leg still keeps the path's own points
+      if spacing < M.SPACING * 16 then return M.thin(surface, path, spacing * 2) end
+      return nil
+    end
     return keep
   end
-  -- Water within n tiles on the line pos -> q (a shore ahead).
+  -- (d26 batch243) the BOX box round q holds no tile its legs cannot stand on
+  function M.clear(surface, q)
+    local b = M.BOX
+    for x = math.floor(q.x - b), math.floor(q.x + b - 0.001) do
+      for y = math.floor(q.y - b), math.floor(q.y + b - 0.001) do
+        if wet(surface, x + 0.5, y + 0.5) then return false end
+      end
+    end
+    return true
+  end
+  -- The nearest point within rmax tiles of q (q itself first, then rings 1 tile apart, 8 points per tile of radius)
+  -- whose box holds no water; nil when none.
+  function M.dry(surface, q, rmax)
+    if M.clear(surface, q) then return {x=q.x, y=q.y} end
+    for r = 1, rmax or M.DRY_GOAL do
+      local n = 8 * r
+      for k = 0, n - 1 do
+        local a = 2 * math.pi * k / n
+        local c = {x=math.floor(q.x + r * math.cos(a)) + 0.5, y=math.floor(q.y + r * math.sin(a)) + 0.5}
+        if M.clear(surface, c) then return c end
+      end
+    end
+    return nil
+  end
+  -- (d26 batch243) a back-off spot: 3..8 tiles from pos straight away from q (back the way it came) with room for the
+  -- box, else the nearest spot with room at least 3 tiles away; nil when none.
+  function M.back(surface, pos, q)
+    local d = dist(pos, q)
+    if d > 0.01 then
+      local ux, uy = (pos.x - q.x) / d, (pos.y - q.y) / d
+      for k = 3, 8 do
+        local c = {x=math.floor(pos.x + ux * k) + 0.5, y=math.floor(pos.y + uy * k) + 0.5}
+        if M.clear(surface, c) then return c end
+      end
+    end
+    for r = 3, 8 do
+      for k = 0, 8 * r - 1 do
+        local a = 2 * math.pi * k / (8 * r)
+        local c = {x=math.floor(pos.x + r * math.cos(a)) + 0.5, y=math.floor(pos.y + r * math.sin(a)) + 0.5}
+        if M.clear(surface, c) then return c end
+      end
+    end
+    return nil
+  end
+  -- Island escape: up to HOPS dry spots from `from` its legs step to on a straight line (no run over GAP tiles of water),
+  -- HOP_MIN..GAP + 4 tiles away, nearest the goal first.
+  function M.hops(surface, from, goal)
+    local cands = {}
+    for r = M.HOP_MIN, M.GAP + 4, 4 do
+      for k = 0, 15 do
+        local a = k * math.pi / 8
+        local c = {x=math.floor(from.x + r * math.cos(a)) + 0.5, y=math.floor(from.y + r * math.sin(a)) + 0.5}
+        if M.clear(surface, c) and not M.segment(surface, from, c) then cands[#cands + 1] = {q=c, d=dist(c, goal)} end
+      end
+    end
+    table.sort(cands, function(a, b) return a.d < b.d end)
+    local out = {}
+    for i = 1, math.min(M.HOPS, #cands) do out[i] = cands[i].q end
+    return out
+  end
+  -- Water within n tiles on the line pos -> q (a shore ahead): how many tiles ahead (a number), else false.
   function M.water_ahead(surface, pos, q, n)
     local d = dist(pos, q)
     for k = 1, math.min(math.floor(d), n or M.GAP + 4) do
-      if wet(surface, pos.x + (q.x - pos.x) * k / d, pos.y + (q.y - pos.y) * k / d) then return true end
+      if wet(surface, pos.x + (q.x - pos.x) * k / d, pos.y + (q.y - pos.y) * k / d) then return k end
     end
     return false
   end
@@ -104,49 +178,74 @@ return function(api)
     st.req[id] = rec
     return id
   end
-  -- Each segment from the spidertron through targets; the blocked ones' paths requested. rec: {owner, unit, by, index}
-  -- (owner 'route': plan's own route write when every path is in; 'kite': spiderkite.lua's). -> lines (nil: none
-  -- blocked), and the plan stored for the results.
+  -- Pending path requests for a spidertron's plan (a stall waits for them instead of recovering).
+  function M.pending(unit)
+    local st = api.state().spiderpaths
+    return st and st.plans[unit] ~= nil or false
+  end
+  -- Each segment from the spidertron (or rec.from) through targets; the blocked ones' paths requested, from and to
+  -- spots with room for the box (dry). rec: {owner, unit, by, index, from?} (owner 'route': plan's own route write
+  -- when every path is in; 'kite': spiderkite.lua's). -> lines (nil: none blocked), and the plan stored for the results.
   function M.plan(spider, targets, rec)
     local st = store()
-    local lines, segs, pending = {}, {}, 0
-    local from = spider.position
+    local surface = spider.surface
+    local lines, segs, wait, starts, goals = {}, {}, {}, {}, {}
+    local from = rec.from or spider.position
+    local pending = 0
     st.seq = st.seq + 1
     for i, q in ipairs(targets) do
-      local b = M.segment(spider.surface, from, q)
+      local b = M.segment(surface, from, q)
       if b then
         lines[#lines + 1] = b.line
-        -- a path from a tile with water finds none: a body over the water at a shore starts from the nearest dry tile
-        local start = from
-        if i == 1 and wet(spider.surface, from.x, from.y) then start = M.shore(spider.surface, from, from) or from end
-        local ok = pcall(M.request, spider.surface, spider.force, start, q, {owner=rec.owner, unit=spider.unit_number, seq=st.seq, seg=i, index=rec.index})
-        if ok then pending = pending + 1; segs[i] = 'pending' else segs[i] = false end
+        -- (d26 batch243) a start or goal whose box touches water gets no path: the nearest spot with room for it
+        starts[i] = M.dry(surface, from, M.DRY_START) or from
+        goals[i] = M.dry(surface, q, M.DRY_GOAL) or q
+        local ok = pcall(M.request, surface, spider.force, starts[i], goals[i], {owner=rec.owner, unit=spider.unit_number, seq=st.seq, seg=i, index=rec.index})
+        if ok then pending = pending + 1; segs[i] = 'pending'; wait[i] = 1 else segs[i] = false end
       end
       from = q
     end
     if #lines == 0 then st.plans[spider.unit_number] = nil; return nil end
     local copy = {}
     for i, q in ipairs(targets) do copy[i] = {x=q.x, y=q.y} end
-    st.plans[spider.unit_number] = {seq=st.seq, targets=copy, segs=segs, pending=pending, by=rec.by, owner=rec.owner, tick=game.tick}
+    st.plans[spider.unit_number] = {seq=st.seq, targets=copy, segs=segs, wait=wait, starts=starts, goals=goals, hops={}, pending=pending,
+      by=rec.by, owner=rec.owner, tick=game.tick, via=rec.from and {x=rec.from.x, y=rec.from.y} or nil}
     return lines
   end
-  -- The route a plan gives: each target, with a found path's points before it.
+  -- A target on water ends at the dry spot nearest it (its legs stand nowhere on it). -> the point, and a note or nil.
+  function M.landing(surface, q)
+    if not wet(surface, q.x, q.y) then return q, nil end
+    local d = M.dry(surface, q, M.DRY_GOAL)
+    if not d then return q, nil end
+    return d, string.format('the target %s is on water: the route ends at %s, the nearest spot its legs stand on', at(q), at(d))
+  end
+  -- The route a plan gives: (its back-off spot,) each target (on water: the dry spot nearest it), with a found path's
+  -- points before it.
   local function assemble(plan, surface)
     local out, notes = {}, {}
+    if plan.via then out[1] = plan.via end
     for i, q in ipairs(plan.targets) do
       local seg = plan.segs[i]
+      local final, landed = M.landing(surface, q)
+      if landed then notes[#notes + 1] = landed end
       if type(seg) == 'table' then
+        if plan.hopped and plan.hopped[i] then notes[#notes + 1] = string.format('no path from where it stands (land its box cannot leave): its legs step first to %s across the water, and the path goes on from there', at(plan.hopped[i])) end
         for _, w in ipairs(seg) do out[#out + 1] = w end
-        if #seg == 0 or dist(seg[#seg], q) > 1 then out[#out + 1] = q end
+        if #seg == 0 or dist(seg[#seg], final) > 1 then out[#out + 1] = final end
       else
-        if seg == false then notes[#notes + 1] = 'the pathfinder found no path round the water to ' .. at(q) .. (wet(surface, q.x, q.y) and ' (the target itself is on water)' or '') end
-        out[#out + 1] = q
+        if seg == false then
+          local tried = plan.hops[i] and plan.hops[i] > 0 and string.format('; asked again from %d spot%s its legs step to across the water: none either', plan.hops[i], plan.hops[i] == 1 and '' or 's') or ''
+          notes[#notes + 1] = 'the pathfinder found no path round the water to ' .. at(q) .. (wet(surface, q.x, q.y) and ' (the target itself is on water)' or '') .. tried
+        end
+        out[#out + 1] = final
       end
     end
     return out, notes
   end
+  M.assemble = assemble
   -- on_script_path_request_finished: true when the id is ours. Calls back route(rec, plan, points, notes) once a
-  -- plan's last path is in (owner 'route' writes the route itself and calls back with it written).
+  -- plan's last path is in (owner 'route' writes the route itself and calls back with it written). (d26 batch243) a
+  -- segment with no path is asked again from up to HOPS spots its legs step to (island escape); the first path wins.
   function M.on_path(event, done)
     local st = api.state().spiderpaths
     local rec = st and st.req[event.id]
@@ -156,9 +255,29 @@ return function(api)
     if not plan or plan.seq ~= rec.seq then return true end  -- a later plan replaced it
     local spider = game.get_entity_by_unit_number(rec.unit)
     if not (spider and spider.valid) then st.plans[rec.unit] = nil; return true end
-    local pts = event.path and M.thin(spider.surface, event.path)
-    plan.segs[rec.seg] = pts or false
+    local i = rec.seg
+    plan.wait = plan.wait or {}
+    plan.wait[i] = (plan.wait[i] or 1) - 1
     plan.pending = plan.pending - 1
+    if type(plan.segs[i]) ~= 'table' then
+      local pts = event.path and M.thin(spider.surface, event.path)
+      if pts then
+        if rec.hop then
+          table.insert(pts, 1, {x=rec.hop.x, y=rec.hop.y})
+          plan.hopped = plan.hopped or {}
+          plan.hopped[i] = rec.hop
+        end
+        plan.segs[i] = pts
+      elseif not rec.hop and not plan.hops[i] and plan.goals and plan.goals[i] then
+        local hs = M.hops(spider.surface, plan.starts[i], plan.goals[i])
+        plan.hops[i] = 0
+        for _, h in ipairs(hs) do
+          local ok = pcall(M.request, spider.surface, spider.force, h, plan.goals[i], {owner=rec.owner, unit=rec.unit, seq=rec.seq, seg=i, index=rec.index, hop=h})
+          if ok then plan.hops[i] = plan.hops[i] + 1; plan.wait[i] = plan.wait[i] + 1; plan.pending = plan.pending + 1 end
+        end
+      end
+      if type(plan.segs[i]) ~= 'table' and plan.wait[i] <= 0 then plan.segs[i] = false end
+    end
     if plan.pending > 0 then return true end
     st.plans[rec.unit] = nil
     local route, notes = assemble(plan, spider.surface)
