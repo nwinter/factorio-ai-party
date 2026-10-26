@@ -184,11 +184,21 @@ return function(api)
       covered = string.format('within %d tiles of %s on %s', radius, at({x=math.floor(centre.x), y=math.floor(centre.y)}), s.name)
       where = string.format('position: [%g,%g], radius: %d', math.floor(centre.x * 10 + 0.5) / 10, math.floor(centre.y * 10 + 0.5) / 10, radius)
     end
+    -- (d25 batch216 QAA2, Astra 20:59: name "space-platform-foundation" was refused "Unknown entity name") the game's
+    -- ghost_name filter takes entity names only (2.0.77); a tile's name finds the tile ghosts and keeps those of it
+    local tile_name
     if a.name ~= nil then
       assert(type(a.name) == 'string', 'name is the ghost\'s entity or tile name')
-      filter.ghost_name = a.name
+      if try(function() return prototypes.entity[a.name] end) then filter.ghost_name = a.name
+      elseif try(function() return prototypes.tile[a.name] end) then filter.type, tile_name = 'tile-ghost', a.name
+      else error('name: no entity or tile is named ' .. a.name, 0) end
     end
     local found = s.find_entities_filtered(filter)
+    if tile_name then
+      local keep = {}
+      for _, g in ipairs(found) do if try(function() return g.ghost_name end) == tile_name then keep[#keep+1] = g end end
+      found = keep
+    end
     -- (d17 batch18 B3, Astra: three critical builds waited 10 min with 100+ idle robots; robots held spare poles with
     -- nowhere to put them) Each ghost's robot: the flying construction robot of its network with an order on it anywhere
     -- in its queue, read once a network (unit number -> robot and the order's place in its queue).
@@ -401,7 +411,7 @@ return function(api)
         #ghosts, place, net.network_id, item, holds, table.concat(lines, '; '))}
   end
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
-    area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',
+    area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile (a tile name, e.g. space-platform-foundation, reads its tile ghosts)',
     limit='1..64 ghosts a page (default 24)', page='1.. the next ghosts, nearest first',
     returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held, placed (who placed it, when, through which request, as inspect gives it)}] nearest first, with lines: each ghost, what places it, and whether robots can build it (in transit: a construction robot with an order on it carries its item, how far off; robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM and no robot carries one to it; its network has no idle construction robot; on a space platform, where the hub builds: no foundation under it or a foundation ghost first, the hub holds ITEM or none and whether its requests ask for it: hub_holds, hub_requests, no_foundation, foundation_ghosts), in_transit {position, distance, count, order}, and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
   return M

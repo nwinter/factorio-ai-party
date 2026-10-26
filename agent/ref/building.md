@@ -94,7 +94,8 @@
   Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
-  covers it; its network holds none and no robot carries one; no idle robot); `page` for more. On a space platform the
+  covers it; its network holds none and no robot carries one; no idle robot); `page` for more. `name` is an entity's or a
+  tile's (`space-platform-foundation`: its tile ghosts). On a space platform the
   hub builds from its inventory, with no roboport: each ghost says what holds it (no foundation under it, a foundation
   ghost built first, foundation where its tile rules need empty space, the hub's count of its item and whether a hub
   request asks for it). The floor is the game's: an asteroid collector needs foundation under its two rear rows and
