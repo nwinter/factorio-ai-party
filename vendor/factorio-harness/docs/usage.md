@@ -15901,6 +15901,54 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - cp2 (shift81 10:20-10:27, Opus off air): model.py bumps an agent's interest when it sends its remote vehicle to a new
   target (as a build), and keeps a little alive while it walks; onecam.py keeps the planets' air time in
   runs/RUN/surface-air.json across a restart (it began empty at each shift: Aquilo and Fulgora agents x2.5).
+
+## d26 batch242 (HP, Astra #2454: heat network preview)
+- Case (runs/shift81/astra/journal.jsonl, 20:03-20:10Z): an Aquilo beacon retrofit crossed a dense heat trunk.
+  deconstruct of the heat pipes in (11,3)-(14,6) named 815 cut-off parts only after marking; rerouting took several
+  inspect reads; moving the heating tower from (3.5,3.5) to (-16.5,23.5) took the only heater of the water pipe at
+  (3.5,1.5).
+- `heat_budget {remove?: [{x,y}], remove_area?: {left_top, right_bottom}, remove_names?, build?: [{name, position,
+  direction}], surface?}` (no position): a preview, nothing removed or built (heating.lua M.preview):
+  - `before`, `after`: the heat networks touching the changes, each "N parts (by name), K heat sources, first at
+    (x,y)". Built parts link by the engine's heat_neighbours (walked from the changes, at most 4000 parts); planned ones
+    by their heat connection points (dryrun.lua heat_points). A heat source is a reactor (nuclear reactor, heating
+    tower) or a heat interface.
+  - `unheated`: each network that had a source and has none after, with its heat users (heat exchangers and other
+    entities with a heat energy source).
+  - `freeze` (a planet with entities_require_heating): each entity with heating_energy in `freeze_box` (the removals
+    and the cut-off parts, at most 64 across round the changes; the 200 nearest the changes read) that a heater at
+    30 C or more touches now and none in a network with a source would after; `freeze_rule` with each one's
+    heating_energy from the game's data and M.RULE; `freeze_unread` says what was not read.
+  - `paths`: for each unheated network (at most 4), up to 3 shortest heat-pipe runs over free tiles (nothing built,
+    planned or ghosted there, nor a removed entity's tiles; a tile a heat pipe can stand on) in `path_box` (the
+    changes with 24 tiles round them, at most 64 across) to a tile joining a network with a source: tile count, start,
+    end, the tiles; at most 2000 tiles searched a read; else `none` with what was searched.
+  - `connections`: each removed or planned heat entity's connection tiles against the border it warms.
+- The game, on a private copy of world n's 13:07 save (tick 67569165, Aquilo, Astra's layout before the tower moved):
+  - connection points: heat pipe and heat interface on 4 sides; heating tower (3x3) at (0,-1) N, (1,0) E, (0,1) S,
+    (-1,0) W only (the middle tile of each side); nuclear reactor 12; heat exchanger one at (0,0.5) S. The connection
+    model against the engine's heat_neighbours over 873 heat entities in (-40,-40)-(50,40): 868 alike, the other 5 at
+    the read's edge (their neighbours outside it).
+  - freezing: 418 entities with heating_energy in (-30,-30)-(40,30): 417 frozen or not as the rule says (a heat pipe
+    or reactor at 30 C or more touching, a side or a corner), 67 of them warmed through a corner only, none frozen; the
+    other, a programmable speaker at (31.5,19.5), read cold and not frozen.
+  - Astra's cases as previews: the pipes in (11,3)-(14,6): 4 networks cut off, 14 + 195 + 1 + 605 = 815 parts (as
+    deconstruct said), 308 freezing in the box read. The tower move with a beacon at (3.5,3.5) and a tower at
+    (-16.5,23.5): `pipe (3.5,1.5): heated now by heating-tower (3.5,3.5) (675 C); after: no heater at 30 C or more in a
+    component with a heat source touches it`; the planned tower joins at (-16.5,21.5) (-14.5,23.5) (-16.5,25.5)
+    (-18.5,23.5).
+- Cost on the copy (profile parts heat.*, a call each, 5 calls): Astra's network of 1005 parts (1003 heat pipes, a
+  heating tower, a heat exchanger):
+  - 7 removals (her pipes): 31-36 ms a call: heat.walk 4.8, heat.points 5.3, heat.components 2.6, heat.freeze 8.6,
+    heat.paths 7.6, the rest (summaries, lines, the team block) about 5;
+  - 3 removals and 2 builds (the tower move): 30-32 ms: walk 4.3, points 4.1, components 2.2, freeze 8.2, paths 7.0;
+  - 20 removals (every heat pipe in (8,0)-(14,6), 5 networks cut off): 33-37 ms: walk 5.3, points 5.8, components
+    2.7, freeze 9.0, paths 6.6;
+  - one planned heat pipe on Nauvis (nothing to walk): 3.1-3.5 ms.
+  The walk is about 4.5-5 us a part (at most 4000: about 20 ms); each part under 10 ms on Astra's network; the
+  whole read in one tick. Earlier forms of this read were 92-127 ms (a find round each cut-off heater, a path box
+  of 128) and 40 ms; the bounds above came from those.
+- Test: tests/d26_batch242.lua (in lua.test.ts), failing on main (no preview).
 ## d26 batch240 (IA: idle air and late builds; batch237 findings 1 and 3)
 - Host only (tools/stream; docs/STREAM-NOTES.md "Idle air and late builds"): no runtime change, no new game read. The
   stream service reads two more things from the journals it already tails: each agent's latest build, paste,
@@ -15912,3 +15960,20 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - airtime.py and vx_review.py count no dry run or settings-only launch as a fresh event.
 - director_replay.py `--timed`: the log's timed shots replayed at their times (with `--chart`, its own quiet views).
 - Test: tools/stream/test_idlecam.py.
+- cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
+  the copy): smaller defaults, the flags unchanged.
+  - The walk gives the components before as it goes (no second pass); positions and connection points are read only
+    for the walked parts a find in the path box returns; a network's line says "a part at (x,y)" (one read).
+  - freeze: only removals take heat away, so `freeze_box` is the removals with 12 tiles round them, at most 32 across;
+    its heaters from one find there (a heater of a network the changes do not touch: as it is now); the 60 entities
+    nearest a removal read (by the 8-tile cells the removals are in), the rest counted in `freeze_unread`.
+  - paths: `path_box` the changes with 12 tiles round them, at most 32 across; 600 tiles searched a read; 2 unheated
+    networks searched (`paths_unread` counts the rest), 3 paths each.
+  - On the copy (5 calls each; the Mac shared with another engineer's copy, load average 17-25):
+    - Astra's pipe removal (7 removals, 1005-part network): 18-19 ms a call (the first 29): heat.walk 4.7, heat.freeze
+      4.2, heat.points 2.4, heat.paths 2.4, heat.components 1.3, the team block 2.1;
+    - the tower move (3 removals, 2 builds): 17-20 ms: walk 3.8, freeze 3.9, points 1.8, paths 1.9, components 1.2;
+    - 20 removals (5 networks cut off): 19-23 ms: walk 3.9, freeze 3.4, points 2.5, paths 3.2, components 1.3;
+    - one planned heat pipe on Nauvis: 2.7-3.2 ms.
+    The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
+    the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
