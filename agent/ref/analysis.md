@@ -22,7 +22,7 @@
   a mined or pumped step names its drills or pumps, their states (working, output full, no resource left) and what
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
-- `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?, makers?, consumers?}`: `makers: "all"`: every machine
+- `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?, makers?, consumers?, stock?}`: `makers: "all"`: every machine
   making it on the surface, nearest first, 24 a call (`from`), each with status and why, rate (as inspect's: a product
   exempt from productivity, an egg breeder's returned egg, gets none; `net_per_min` when it goes back in), inputs
   against one craft and what it feeds. `consumers: "all"`: every machine whose recipe takes it (status, its take a minute now and at full
@@ -56,7 +56,12 @@
   then and now, cargo pods landed and sent up in rockets over the same interval (the pod log), and the `residual`
   (signed: above 0 more left the stock than these count, which spoiling or what left uncounted can be; below 0 more came
   in uncounted; the game's statistics count no spoiling).
-  `where` counts fuel slots and stacks on the ground too. `as_of` says whether a total is live or reused, and its age. `near` with `radius` (up to 512, default 64)
+  `where` counts fuel slots and stacks on the ground too. A read is kept 10 s: the same read within them is reused;
+  `read` says `fresh` or `reused`, `read_tick` the tick it was read, `as_of` its age. `stock: true` (whole surface): the
+  item's count there by place, read now and never reused: `total`, `where` and `places` (`{label: count}`, as `where`
+  gives), `read_tick`, `next_tick`; one read a 5 s for your same surface and item (sooner: refused, with the next tick);
+  a platform of at most 10000 buildings, a planet of at most 2500 (by the census); no belt lines, networks or
+  machines. `near` with `radius` (up to 512, default 64)
   limits it to that area; `compact: true`: lines only (flow, where, makers, the stopped makers and users by position,
   the chests holding most), about a fifth of the full reply; `all_stopped: true`: every maker and user not working,
   grouped by cluster with every position. Example: `./fh call supply --args '{"item":"advanced-circuit","near":{"x":0,"y":0},"radius":64}'`

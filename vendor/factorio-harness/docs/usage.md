@@ -15666,3 +15666,52 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   66-76 KB.
 - Tests: tests/d26_batch225.lua (in lua.test.ts), failing on main; tests/d25_batch215.lua now expects uptime@1000 to
   name two watches (Astra's earlier one is kept).
+
+## d26 batch230 (SF, Sol #2425: fresh stock snapshots at 5 s)
+- Cause: supply keeps a read 10 s (supply.lua M.reuse, REUSE_TICKS 600). Sol's recorder read
+  `supply {surface: "platform-16", item: "explosives", belt_positions: true}` (Asterion) every 5 s, so every other
+  frame was the read before: 7 unique of 13 at 66415490..66419090.
+- The supply read's cost, on a private copy of world n's 07:31 save (each read uncached; a measuring copy with the
+  reuse off):
+  - Asterion (platform-16; 7460 buildings in the census, 7716 entities found): 34-40 ms a call (the first 84), reply
+    8.9 KB. Profile parts a read: supply.scan 23.7 ms (supply.find 4.6, supply.belts 8.3, supply.inserters 1.0,
+    supply.crafters 0.4, sorting the found entities by type ~9), the rest of the read (belt lines and positions, machines,
+    lines) ~8.6, board.team 1.7,
+    platalerts.lines 0.7, encode 0.45.
+  - Nauvis, the same item: 184-204 ms a call, reply 6.2 KB. supply.scan 179 ms (supply.find 33, supply.stock 55,
+    supply.chests 19, supply.requesters 11, supply.inserters 9, supply.belts 9, supply.robots 5, supply.crafters 4).
+  - So a fresh supply read every 5 s (a `fresh: true`) would cost 35 ms each on Asterion: the lean stock read instead.
+- `supply {item, stock: true}` (whole surface): the item's count there by place, read now and never reused: `stock`
+  true, `read` "fresh", `read_tick`, `as_of`, `total`, `where` (the same text as supply's `where`) and `places`
+  (`{label: count}` for the places holding it: belts, requester chests, ..., machine outputs, users' inputs, inserter
+  hands, robots, fuel slots, on the ground, characters), `counted`, `next_tick`.
+  - The counts are the supply scan's own (opts.stock leaves out spots, spoilage, logistic networks, chests' orphan
+    requests, belt tiles and inserter targets), so the same total and places as `where`. On the copy at one tick:
+    stock and supply both `2732: belts 2650, machine outputs 24, users' inputs 42, inserter hands 16`, and again at
+    66384739 (2731). Normal quality, as `where`; on the ground from the ground watch's last pass, as `where`. In-orbit
+    hubs and placed vehicles are not added (supply's text adds them after `where`'s total).
+  - One read an agent a 5 s (300 ticks) for the same surface and item: sooner is refused, `stock: one read a 5 s for
+    the same surface and item; yours of explosives on platform-16 was at tick N; the next from tick N+300 (in 5.0 s)`.
+    A refused call takes no read. Another agent or item reads now.
+  - Size: a platform of at most 10000 buildings and a planet of at most 2500, by the census's count of the surface
+    (census.lua M.surface_buildings: the snapshot types, ours); a planet the census has not counted yet is refused, a
+    platform not counted is read. Refusal: `stock reads a platform of at most 10000 buildings, a planet of at most
+    2500; the census counts 49944 on nauvis. supply {item, surface} reads it (reused within 10 s)`.
+  - Not with near, radius, belt_positions, belt_tiles, all_stopped, makers, consumers, from, requesters or split; not
+    for a fluid. compact leaves a stock reply as it is.
+  - On a platform the stock read finds each group of types apart (a find per group): on Asterion the finds cost what
+    one does and the 9 ms of sorting one find's entities by type is left out. On a planet a find per group cost
+    1.6-2.2 times one find (Vulcanus 39-43 ms against 25), so planets keep the one find.
+- Cost of a stock read on the copy (a call, reply blocks included; five agents at one paused tick):
+  - Asterion 16-20 ms (the supply read at the same tick: 34.9 ms, 9.0 KB). Parts a read: supply.scan 14.1 ms
+    (supply.find 7.2, supply.belts 5.8, supply.crafters 0.33, supply.inserters 0.30), board.team 2.5,
+    platalerts.lines 0.9, encode 0.27. Reply: the stock fields 0.7 KB, 0.9-1.4 KB with clock and team lines.
+  - platform-4 (1509 buildings): 5.1-5.8 ms. Aquilo (587): 6.4-6.5 ms (supply 15.9). Fulgora (3836): 21-25 ms
+    (supply 32). Gleba (4265): 19-20 ms (supply 22). Nauvis (49944): about 60 ms of reads (find 34, belts 18,
+    robots 3, hands 2, chests 2; probe), refused. Fit: platforms about 2.3 ms + 1.9 us a building, planets 3.9 ms +
+    4.5 us: the caps are about 21 ms and 15 ms.
+  - At 5 s on Asterion: 17 ms every 5 s, against the supply read's 35 ms every 10 s the recorder costs now.
+- Every supply reply (the plain read and `requesters`) now says `read`: "fresh" (read now) or "reused" (the same read
+  within 10 s), and `read_tick`: the tick it was read (compact keeps both). For existing callers nothing else changed:
+  the reuse (10 s, the same key) and `as_of`'s text are as before.
+- Test: tests/d26_batch230.lua (in lua.test.ts), failing on main.
