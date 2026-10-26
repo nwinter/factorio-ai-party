@@ -188,10 +188,14 @@
     request from another planet keeps nothing there: Cinder at Nauvis sent all 85 foundation down under `50..inf from
     fulgora`, while Swift at Nauvis kept 501 magazines under `500..2000 from nauvis`. A change of what its requests keep
     gives `sends_down`: per item, what they would keep and kept by planet, and how many go down to which stop's pads
-    (where it waits first, then its schedule's) or stay aboard. All the hub holds over its max for an item (the maxes
-    of its active requests for it added up) goes to its trash within a second, in flight too, and down at the first
-    stop, asked or not: Meridian-V flying to Nauvis with bioflux `20..30 from gleba` sent its 150 over 30 down at
-    Nauvis. Each quality is its own item there: a request's max and a landing pad's ask are for their own quality, and
+    (where it waits first, then its schedule's) or stay aboard. What the hub holds over its max for an item (the maxes
+    of its active requests for it added up) goes to its trash (10 slots) within a second, and down at the first stop,
+    asked or not: Meridian-V flying to Nauvis with bioflux `20..30 from gleba` sent its 150 over 30 down at Nauvis. In
+    flight only what the trash has room for goes; the rest stays in the hub while it flies (Kestrel II, 2000
+    low-density-structure over its max: 450 went). Stopped, the trash goes down a load at a time until the hub holds
+    the max. `waits_unmet`: an `item_count` wait of the stop it waits at, or its next stop, that the new maxes from
+    that stop's planet leave below its number (the stop, the wait, the max there, what the hub holds), as the hub keeps
+    no more than those maxes there. Each quality is its own item there: a request's max and a landing pad's ask are for their own quality, and
     `sends_down` names `item@quality` for one other than normal. Kestrel IVc at Fulgora kept its 4 normal and 3
     legendary asteroid collectors under `asteroid-collector@rare 0..1 from fulgora`; Fulgora's pad asking 2 normal took
     2 normal and none of the legendary. An item a request names with a quality comparator is named in `sends_down`, not
@@ -200,7 +204,7 @@
     `change_made` (what it changed) and `reply_failed` (the error). `keep: ["firearm-magazine",
     "asteroid-collector@legendary"]` keeps those requested up to the count held of that quality (a name alone: normal;
     with the dropped request's import planet and min payload). `dry_run: true`
-    changes nothing and replies with the sections, `stored` and `sends_down` the change would make; on a requester,
+    changes nothing and replies with the sections, `stored`, `sends_down` and `waits_unmet` the change would make; on a requester,
     a buffer chest or yourself, `robot_dispatch`: the logistic robots' trips for what it would ask beyond what it holds
     (from the chest the network would take each from; how many at once, from where, how far, past which enemies).
   - Sections and groups, as the logistics GUI: `add_section: true` adds a manual section (`set`, `clear`, `active` in
