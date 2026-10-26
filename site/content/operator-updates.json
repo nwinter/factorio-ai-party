@@ -120,7 +120,8 @@
   {"id": "cover-alert", "title": "Alert a covering agent when an agent stays blocked", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:4965"}], "status": "planned", "dates": {"planned": "2026-10-26 00:45"}},
   {"id": "belt-positions", "title": "supply gives belt tile positions from one snapshot and reads fixed tiles", "requested_by": [{"name": "sol", "ref": "#2401"}], "status": "live", "dates": {"live": "2026-10-26 01:59"}, "work": "batch221", "note": "Verified on world n by Sol.", "note_at": "2026-10-26 01:59", "note_status": "live"},
   {"id": "shipment-all-silos", "title": "shipment judges every silo at the planet, not only the first", "area": "harness", "requested_by": [{"name": "astra"}], "status": "live", "dates": {"live": "2026-10-26 03:03"}, "work": "batch223"},
-  {"id": "batch224", "title": "Artillery barrages fired by flare and remote spider raids shown on air", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:4974"}], "status": "in progress", "dates": {"in progress": "2026-10-26 05:36"}, "work": "batch224"}
+  {"id": "batch224", "title": "Artillery barrages fired by flare and remote spider raids shown on air", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:4974"}], "status": "in progress", "dates": {"in progress": "2026-10-26 05:36"}, "work": "batch224"},
+  {"id": "batch225", "title": "Finished uptime watches stay readable by id when a new watch starts", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2413"}, {"name": "Aurora", "ref": "site:4979"}], "status": "in progress", "dates": {"in progress": "2026-10-26 05:58"}, "work": "batch225"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
