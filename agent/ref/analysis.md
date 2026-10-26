@@ -36,7 +36,9 @@
   speed and share, and what feeds it: an item, what its feeding inserters pick from (belts, requester chests by
   network, chests, drills dropping in), then requester chests asking for it that feed none of them; a fluid, the pipe
   segments its input boxes are on, each with the machines making it there (none: tanks, pumps or a pipe between). Otherwise one item or fluid: where it sits (chests by kind,
-  belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs,
+  belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most; `belt_positions:
+  true` adds each of those lines' tile positions with counts and the scan's tick, up to 1000; `belt_tiles: "<those
+  positions>"` reads the same tiles again at one tick, zeros included), machine outputs,
   inserter hands, robots, characters), each logistic network's stock of it (free and reserved, and which requesters the
   reserved stock is for), its robots, every unmet requester with the reason (`inventory full: all 48 slots taken
   (spoilage 494 in 10 slots, ...)` first when its slots are all taken), machines that make and use it by status (the
