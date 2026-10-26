@@ -8627,6 +8627,7 @@ M.preflight=M.preflight or {}
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
   flight_watch=function(a) M.flightwatch.check_read(a) end,  -- (d25 batch205 QR2) read: true with platform alone
+  uptime=function(a) M.uptime.check_read(a) end,  -- (d25 batch214 QZ1) read: true in pages, never a new watch
   configure=function(a)
     if a.modules~=nil then M.modules.parse(a.modules) end
     assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')
@@ -8708,7 +8709,7 @@ M.step_ranges={
   platform_defense={{'seconds',watch_range('asteroidwatch'),when=function(a) return a.asteroids==true end},
     {'trajectory_limit',1,100,when=function(a) return a.asteroids==true end}},
   platform_supply={{'seconds',watch_range('collectreach'),when=function(a) return a.collection==true end}},
-  uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},
+  uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},  -- (d25 batch214 QZ1) read's page and page_size: step_checks (uptime.check_read)
   turret_tally={{'seconds',watch_range('turrettally'),when=starts('turrettally')}},
   belt_flow={{'seconds',watch_range('beltsample'),when=function(a) return a.position~=nil end}},
   signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.position~=nil or a.seconds~=nil end}},
@@ -16365,7 +16366,7 @@ M.beltsample=require('beltsample'){state=state,reason=function(v) return M.measu
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
 M.uptime=require('uptime'){state=state,reason=function(v) return M.measures.reason(v) end,timed=M.timed,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
-  status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end,productivity_now=function(e,r) return M.craftrate.productivity_now(e,r) end}
+  status_name=function(e) return M.machine_status(e) end,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end,productivity_now=function(e,r) return M.craftrate.productivity_now(e,r) end}
 function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_tally (turrettally.lua, d20 batch60 V3, Astra #1521): turrets' kills and damage dealt over a window; inspect's too.
 M.turrettally=require('turrettally'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
