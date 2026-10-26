@@ -469,7 +469,7 @@ class Director:
         self.state[name] = target
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
-                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom") if k in target},
+                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle") if k in target},
                  "cmd": body, "result": result, "scores": dict(top)}
         if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
             entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})
