@@ -2061,6 +2061,35 @@ on-air client against that path):
 - Main's 1-camera replay log names no vehicle in its rows, so vehicle_framing cannot score it.
 - Tests: tools/stream/test_vehcam.py (fails on main's onecam: 8 of 79 s in frame with the same live reads).
 
+### Opus off air in shift81 10:20-10:27 (batch232 cp2)
+
+Operator 10:30 (viewer Aurora 10:25): the shift81 service started at 10:19:45 (main, batch224, not batch232). Opus
+called spidertron 27069154 28 times from 10:21:32 (seven legs of about 250 tiles, each walked in 16-20 s, a new go_to
+every 30-35 s; from 10:25:07 it stood stalled at (-1655,-504.5) with its target) and never aired.
+- VehicleFeed was not the cause: Opus's calls came after the start, and the director scored Opus from 10:21:22.
+- At 10:22:45 Opus led (10.19, Astra 5.19); a cue inset (an urgent shot) went up, at 10:22:58 the program resumed Sol's
+  story (on air before it), and at 10:23:01 the stand-still rule passed Sol's story to Luna ("luna moving", 7.48
+  against Opus 6.94); the fresh rule, which comes first, was inside cut_spacing after the resume.
+- From there Opus fell: 6.7 at 10:23:02, 3.1 at 10:24:14, 1.9 at 10:25:58, out of the top five by 10:26:18. Its
+  interest halved every 75 s (model.HALF_LIFE) with nothing to bump it: its character slept between calls, and a
+  vehicle call was no action to model.py.
+- The surface balance: its air history lives in memory and the restart emptied it, so after surface_warmup every planet
+  but Nauvis stood at 0% of its 21%: Astra (Aquilo) and Gemini (Fulgora) x2.5, Opus and Luna (Nauvis) x0.65. Without
+  the factor, 10:24:14 read Luna 8.5, Opus 4.7, Astra 3.8: the decay decided it, the balance widened it.
+
+cp2:
+- model.py: a new target for an agent's remote vehicle (a go_to or drive with a target other than the last) bumps its
+  interest VEHICLE_WEIGHT (3, as a build); while the vehicle walks (a read under 30 s with speed) 0.04 of that a poll,
+  as sustained work. A read of the same route, or a live read's next waypoint, is no new target.
+- onecam.py: the planets' air time (surface_air, the last surface_window) is written to runs/RUN/surface-air.json
+  every 60 s and read back at a restart, through the resumed-from chain. Seeded from shift80's last 30 minutes, 10:19:46
+  would have started at Aquilo 11%, Fulgora 5%: Astra x1.7 and Gemini x2.1 instead of x2.5.
+- Replayed 10:19:46-10:30 (--fights; the replay has no platform shots, cues, departures or base map, which held the
+  live program 10:21:25-10:22:58 and 10:24:51-10:26:00, and its interest model is its own, so even main's rules air Opus
+  there): main 3.2 min of Opus, spider in frame 42.5 of 192 s; cp2 (live reads, the bump, the seed) 4.5 min, 268 of
+  273 s; one camera 3.2 -> 4.0 min, 43 of 90 -> 235 of 237 s. The seed changed no decision in this replay.
+- Tests: tools/stream/test_vehcam.py 8 and 9.
+
 ## A viewer-experience review each shift (2026-10-26, d26 batch237 VX, viewer Aurora site:5029-5030)
 - `python3 tools/stream/vx_review.py runs/RUN [--from HH:MM --to HH:MM]` reads one run's logs (journals, chronicle,
   audio-played, push-live, stream-service.log, and the director, caster, hourly and tour-hourly logs of that run's
