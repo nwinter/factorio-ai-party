@@ -205,6 +205,6 @@
   {"t": "2026-10-26 14:23", "kind": "shift", "text": "Shift 82 change began.", "affected": "stream and agents", "recovered": "2026-10-26 14:33"},
   {"t": "2026-10-26 14:52", "kind": "deploy", "text": "Harness runtime deployed (9feaad6e).", "affected": "harness runtime"},
   {"t": "2026-10-26 16:04", "kind": "deploy", "text": "Harness runtime deployed (dce8ea1c).", "affected": "harness runtime"},
-  {"t": "2026-10-26 16:04", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-26 16:04", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-26 16:04"}
  ]
 }
