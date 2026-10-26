@@ -15706,6 +15706,66 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   thousands of chunks, each with a path search).
 - Test: tests/d26_batch226.lua (in lua.test.ts), failing on main (in flight, inferred 203 against 43 taken).
 
+## d26 batch229 (SP, Sol, operator request 973: a starter pack loaded for Loom went to Aethera)
+- What happened: Sol made Loom at Vulcanus (66287441) and put a starter pack in silo (14.5,140.5)'s rocket
+  (66352248). Aethera (index 16) had waited there for a pack since 89h11m; Loom is index 48. The rocket launched on its
+  own when ready (66355476) and its pod started Aethera. The ledger then read pod 46268167 "vulcanus to nil, in flight":
+  the pod named no station, and it raised on_cargo_pod_delivered_cargo with no on_cargo_pod_finished_descending, so
+  `delivered` took it out of the open journeys with no landing. In the 07:31 save it was the only row of the last 1000
+  per planet with no destination still in flight (the other unlanded rows were pods sent in the last 35 s).
+- The game's rule (the copy of world n's 07:31 save, 2.0.77; test platforms at Nauvis and a silo with both switches
+  off unless named):
+  - A rocket holding a starter pack launches on its own the tick it is ready (the next tick when it is ready already),
+    whatever the silo's automatic requests and send to orbit automatically, while one of our platforms waits for a pack
+    at that planet (waiting_for_starter_pack). It goes to the waiting one with the lowest index: 53 over 54 and 55, 56
+    over 57, 57 over 58, 60 over 62. Indices are never reused (a deleted platform's index stayed free), so that is the
+    one made first.
+  - A launch ordered in the tick the pack goes in comes first: a platform named gets it (61 over 60), orbit loses it
+    (the pod is gone after its ascent, no delivery, the platform still waits), no destination sends it back down to
+    the planet's landing pad. load_silo with launch loads and launches in one tick; a launch call after a transfer
+    finds the rocket gone.
+  - With none waiting the pack stays aboard; automatic requests switched on then move it to the trash slots. With one
+    waiting, automatic requests switched on keep it aboard and it launches to that platform when ready (the platform
+    reads starter_pack_requested first). Silos with automatic requests and packs in their network claim waiting
+    platforms on their own (the copy's Nauvis silos started three test platforms).
+  - A starter pack pod: on_rocket_launch_ordered with destination space_platform (the platform), then
+    on_cargo_pod_finished_ascending about 1650 ticks later; in that tick the platform turns paused with its hub built
+    and on_cargo_pod_delivered_cargo fires (the destination now reads invalid); the pod is invalid the next tick. No
+    on_cargo_pod_finished_descending.
+  - game.get_entity_by_unit_number finds no cargo pod in 2.0.77 (every pod on every surface, any state, read nil).
+- podlog.lua: an up pod with destination space_platform names that platform ("vulcanus to Aethera (its starter
+  pack)", `starter_pack`), one to orbit reads "to orbit". A delivery with no landing closes the journey as landed then
+  (a starter pack: "landed in platform X (its starter pack: the platform starts, its hub built)"); a row kept before
+  this with `delivered` and no landing (#20903) reads landed at that tick. Each open journey keeps its pod; once a
+  second (SWEEP 60, only while one is open) a journey whose pod is invalid closes: "pod gone by tick T, Ns after it
+  was sent, no landing recorded", with "(a pod sent to orbit is removed there with its cargo)" or, for a starter pack
+  whose platform has no hub, "X reads <state>"; one whose platform has its hub reads landed. A journey opened before
+  this runtime (no pod kept) takes its pod from its next pod event, else ends as before after OPEN_TICKS.
+- starterpack.lua: the tick each platform was made (platform_create, the chronicle's once-a-second look; platforms
+  made before from the chronicle's kept platform_created events, else "made before tick N"), the platforms waiting at
+  a planet in the game's order, with how long each has waited. Lines:
+  - platform_create: `starter_queue` when 2 or more of ours wait at that planet (names, ages, which one a pack goes to).
+  - a transfer of a pack into a rocket, load_silo, the silo read and settings (configure, launch): `starter_pack`
+    "the rocket holds space-platform-starter-pack*1, which launches on its own once the rocket is ready, whatever the
+    silo's switches, to Aethera (waiting ...), the first made of ours waiting for one at vulcanus; also waiting: ...",
+    or with none waiting "it stays aboard (automatic requests on: the trash slots)".
+  - launch with a pack aboard: `starter_pack` "<pack> starts Loom", "goes to X's hub as cargo" or "is lost in orbit".
+  - platforms: a waiting platform has no surface, so the compact read left it out; it now has a line (and a full row
+    `starter_pack`): where it waits, how long, and which of ours waiting there gets the next pack.
+- Step 3, the refusal at 66352254 ("...that no platform stopped above asks this planet for... the game moves it into
+  the silo's trash slots"): wrong while a platform of ours waits there. silo.trash_risk keeps a pack out of the lost
+  cargo then (`starter_pack` on the risk, the line says where it goes), so launch {auto_requests: true} and load_silo's
+  restore of automatic requests go ahead, and cargo_to_trash leaves the pack out. With none waiting it is refused as
+  before.
+- Cost (profile_ticks 60 s on the copy, the save's runtime then this one, 5-6 journeys open): podlog.tick ran 7 times
+  for 0.29 ms in all before, 68 times for 1.56 ms after (at most 0.12 ms in a game second): the sweep adds about
+  0.02 ms a second.
+- Checked through fh on the copy: Loom's compact line and full row, platform_create's starter_queue, the silo read and
+  launch {auto_requests: true} with a pack in a rising rocket (switched on, settings.starter_pack names T229s), the
+  pod's ledger row ("nauvis to T229s (its starter pack) ... landed in platform T229s ..."), row #20903, and Sol's
+  transfer of a pack into silo (14.5,140.5) naming Loom.
+- Docs: agent/ref/space-age.md (platform_create).
+- Tests: tests/d26_batch229.lua (in lua.test.ts).
 ## d26 batch230 (SF, Sol #2425: fresh stock snapshots at 5 s)
 - Cause: supply keeps a read 10 s (supply.lua M.reuse, REUSE_TICKS 600). Sol's recorder read
   `supply {surface: "platform-16", item: "explosives", belt_positions: true}` (Asterion) every 5 s, so every other
