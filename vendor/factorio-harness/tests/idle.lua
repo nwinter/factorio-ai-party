@@ -309,7 +309,7 @@ do
   S.turret_tally[ai]={start=tick,until_tick=tick+60*120,next_tick=tick+60,seconds=120,samples=1,
     turrets={{e=t1,name='gun-turret',position={x=1.5,y=2.5},quality='normal',k0=3,d0=30,k1=3,d1=30,rising=0},
       {e=t2,name='gun-turret',position={x=3.5,y=2.5},quality='normal',k0=5,d0=50,k1=5,d1=50,rising=0}},reason='astra asked for the east wall tally'}
-  local id='turret_tally@'..tick
+  local id='turret_tally@'..tick..'/astra'  -- (d25 batch215 QZ3) its owner named
   -- (operator d21 13:18) the watch's end, that actions meanwhile do not end it, and the agent's own reasons, as given
   fails(function() astra('sleep',{seconds=300,reason=string.rep('x',201)}) end,'reason: up to 200 characters')
   local sl=astra('sleep',{seconds=300,reason='  waiting on the tally before I move the wall\n'})
@@ -323,7 +323,7 @@ do
   eq(r.standing_s,0,'measuring is not standing'); eq(r.measuring,id); eq(r.stand_ended.why,'measuring '..id)
   eq(#r.measures,1); eq(r.measures[1].state,'running'); eq(r.measures[1].id,id); eq(r.measures[1].end_tick,tick-3600+7200)
   assert(r.measures[1].line:find('; latest 0 s ago: 1 of 2 turrets with a change, kills +1',1,true),r.measures[1].line)
-  assert(r.counted.text:find(', measuring %d+%% %(turret_tally@%d+%)'),r.counted.text)
+  assert(r.counted.text:find(', measuring %d+%% %(turret_tally@%d+/astra%)'),r.counted.text)
   local clock=astra('status').clock
   assert(clock:find('character idle 0s of it (0%), measuring '..id..' for 1m0',1,true),clock)
   -- ended: standing again; its final not read is flagged until turret_tally {} reads it
@@ -348,7 +348,7 @@ do
   S.uptime[ai].until_tick=now+60*100; S.uptime[ai].sampled=now-60*15
   r=report('astra'); eq(r.measuring,nil,'stalled is not work'); by={}; for _,m in ipairs(r.measures) do by[m.kind]=m end
   eq(by.uptime.state,'stalled')
-  S.uptime[ai].sampled=now; eq(report('astra').measuring,'uptime@'..(now-12000),'sampled again: running')
+  S.uptime[ai].sampled=now; eq(report('astra').measuring,'uptime@'..(now-12000)..'/astra','sampled again: running')
   S.uptime[ai]=nil
   S.belt_flow=S.belt_flow or {}
   S.belt_flow[ai]={start=now,until_tick=now+600,next_tick=now+1e9,every=4,samples=3,sampled=now,all_gone=true,

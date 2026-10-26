@@ -15265,3 +15265,27 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     fields; this runtime refused each, and each live call refused with its own message.
 - Tests: tests/d25_batch214.lua (QZ1) and tests/d25_batch214b.lua (QZ2), both failing on main; tests/d25_batch208.lua
   now has a pick mode and counts a chain's steps.
+
+## d25 batch215 (QZ3, Sol #2388: uptime ids collided across agents)
+- Cause: a watch's id was `KIND@START_TICK` (measures.lua). Sol's 13-machine and Astra's 41-machine uptime watches
+  began on tick 63906911 (both aligned to trial 205), so both were `uptime@63906911`, and batch214's read by id gave
+  the reader's own first.
+- Ids: `measures.id(kind, job, index)` gives `KIND@START_TICK/AGENT` (the owner's name, board.who), kept on the watch
+  (`job.id`) once the name is known; a watch begun before this runtime gets it on its first read. Every measures kind
+  uses it: uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch (status work, the idle
+  count's `measuring`, the sleep line, sleep_check, flags). signal_watch's own replies and uptime's start reply give
+  it (`api.watch_id`). With no owner name known, `KIND@START_TICK`, not kept.
+- uptime read: `agent` (a name; `@` and `pog-` dropped, any case) reads that agent's watch; `id`
+  `uptime@START_TICK/AGENT` reads that one; `uptime@START_TICK` reads the one watch begun on that tick, and two or more
+  are refused with each id and its machine count named, the reader's own among them. An id or agent with no match is
+  refused with the kept watches named. `id` and `agent` without `read: true` are refused (the call, submit and
+  dry_run: uptime.check_read). id: up to 96 characters; agent: 1..64.
+- Not affected: flight_watch (`flight#N`) and delivery_watch (`#N`) number their watches from one counter each
+  (state().flightwatch.seq, delivwatch.seq) shared by every agent; launch watches and ghost tallies give no id.
+- Cost: idle_tick asked measures.running every tick for every agent, and it built `kind .. '@' .. job.start` for each
+  agent with a running watch. On the copy that took 7.0 µs a call; reading the kept id takes 0.02 µs, and making it the
+  first time 0.41 µs. With Sol and Astra running watches on the copy, that is about 14 µs a tick less.
+- On the copy (world n's 19:46 save, tick 63953710): the runtime on world n read Sol's 13 machines for
+  `uptime@63906911`; this runtime refused it naming `uptime@63906911/astra (41 machines), uptime@63906911/sol (13
+  machines)` (0.36 ms with the dispatch), and as sol `agent: 'astra'` read page 3 of 3 (machines 33-41 of 41).
+- Test: tests/d25_batch215.lua (tests/d25batch215.test.ts), failing on main.

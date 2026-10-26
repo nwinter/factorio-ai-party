@@ -128,7 +128,7 @@ return function(api)
     end
     if job.gaps_more then gap_lines[#gap_lines+1] = string.format('%d more gaps not kept', job.gaps_more) end
     if job.gone then gap_lines[#gap_lines+1] = string.format('tick %d: %s; the watch ended there', job.gone_tick, job.gone) end
-    local out = {watching=not done or nil, done=done or nil, id='signal_watch@' .. job.start, scope=job.scope,
+    local out = {watching=not done or nil, done=done or nil, id=job.id or string.format('signal_watch@%d', job.start), scope=job.scope,
       entity={name=job.name, position=job.position}, surface=job.surface_name, platform=job.platform, wire=job.key,
       network_id=job.network_id, start_tick=job.start, end_tick=job.until_tick, seconds=job.seconds, every_ticks=M.SAMPLE,
       samples=job.samples, missed=job.missed > 0 and job.missed or nil, last_tick=job.sampled,
@@ -142,7 +142,10 @@ return function(api)
   end
   M.NOTE = 'each sample is the network\'s own count of each signal (get_signal: 0 when absent), as a player hovering over that wire sees it, every 60 ticks; '
     .. 'a value held for less than 60 ticks can fall between two samples; min and max give the first tick each was seen'
-  local function finish(job, tick)
+  -- (d25 batch215 QZ3) the watch's id, its owner named (measures.id): signal_watch@START_TICK/AGENT
+  local function ident(job, index) if api.watch_id and index then api.watch_id('signal_watch', job, index) end end
+  local function finish(job, tick, index)
+    ident(job, index)
     gap_close(job, tick)
     job.result = M.result(job, true)
     job.e = nil
@@ -150,10 +153,10 @@ return function(api)
   function M.tick(tick)
     local all = api.state().signal_watch
     if not all then return end
-    for _, job in pairs(all) do
+    for index, job in pairs(all) do
       if not job.result and tick >= job.next_tick then
         M.sample(job, tick)
-        if job.gone or tick >= job.until_tick then finish(job, tick)
+        if job.gone or tick >= job.until_tick then finish(job, tick, index)
         else job.next_tick = math.min(tick + M.SAMPLE, job.until_tick) end
       end
     end
@@ -165,6 +168,7 @@ return function(api)
         'position, wire, signals and seconds start a watch; signal_watch {} reads yours')
       local job = store()[p.index]
       assert(job, 'no signal watch of yours yet: signal_watch {position, surface | platform, wire, side?, signals, seconds} starts one')
+      ident(job, p.index)
       if job.result then job.read_tick = game.tick; return job.result end
       return M.result(job, false)
     end
@@ -195,11 +199,12 @@ return function(api)
     local old = store()[p.index]
     local replaced = old and string.format('your earlier signal watch (%s, %s) was replaced', old.scope or '?', old.result and 'done' or 'still running')
     store()[p.index] = job
+    ident(job, p.index)
     M.sample(job, game.tick)
     job.next_tick = game.tick + M.SAMPLE
     local now = {}
     for i, pk in ipairs(picks) do now[i] = string.format('%s %s', pk.text, tostring(job.stats[i].c1 or '?')) end
-    return {watching=true, id='signal_watch@' .. job.start, scope=job.scope, network_id=job.network_id, start_tick=job.start,
+    return {watching=true, id=job.id or string.format('signal_watch@%d', job.start), scope=job.scope, network_id=job.network_id, start_tick=job.start,
       end_tick=job.until_tick, every_ticks=M.SAMPLE, now=table.concat(now, ', '), replaced=replaced,
       line=string.format('watching %s for %d s, a sample every %d ticks until tick %d: signal_watch {} reads it so far, and in full once done; now %s',
         job.scope, seconds, M.SAMPLE, job.until_tick, table.concat(now, ', '))}

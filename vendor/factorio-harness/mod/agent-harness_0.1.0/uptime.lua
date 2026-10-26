@@ -783,14 +783,20 @@ return function(api)
   -- with no world at submit and in dry_run (runtime.lua step_checks, step_ranges) as here.
   M.PAGE_MAX = M.MAX
   M.READ_NOT = {'seconds', 'area', 'items', 'position', 'surface', 'platform', 'recipe', 'quality', 'reason'}
+  M.ID_LEN, M.AGENT_LEN = 96, 64
   M.MATCH = 2   -- a position picks the machine whose centre is nearest, within this many tiles on each axis
   function M.check_read(a)
-    if a.read == nil then return end
+    if a.read == nil then
+      assert(a.id == nil and a.agent == nil, 'id and agent go with read: true (uptime {read: true, id}); uptime {} reads yours whole')
+      return
+    end
     assert(a.read == true, 'read: true reads a watch in pages (uptime {} reads yours whole)')
     for _, k in ipairs(M.READ_NOT) do
-      assert(a[k] == nil, string.format('read: true takes id, positions, page, page_size and details; %s goes with a new watch', k))
+      assert(a[k] == nil, string.format('read: true takes id, agent, positions, page, page_size and details; %s goes with a new watch', k))
     end
-    assert(a.id == nil or type(a.id) == 'string' and a.id:match('^uptime@%d+$'), 'id: a watch\'s id as status work gives it, "uptime@START_TICK"')
+    assert(a.id == nil or type(a.id) == 'string' and #a.id <= M.ID_LEN and (a.id:match('^uptime@%d+$') or a.id:match('^uptime@%d+/[^%s/]+$')),
+      'id: a watch\'s id as status work gives it, "uptime@START_TICK/AGENT" (or "uptime@START_TICK" when one watch began on that tick)')
+    assert(a.agent == nil or type(a.agent) == 'string' and #a.agent >= 1 and #a.agent <= M.AGENT_LEN, 'agent: an agent\'s name, up to ' .. M.AGENT_LEN .. ' characters: that agent\'s watch')
     local function whole(k, lo, hi)
       local v = a[k]
       assert(v == nil or type(v) == 'number' and v == math.floor(v) and v >= lo and v <= hi, string.format('%s: %d..%d', k, lo, hi))
@@ -805,25 +811,48 @@ return function(api)
       end
     end
   end
-  -- The watch read: yours, or the one with that id (yours first, else any agent's); its owner's index.
-  local function find(p, id)
+  -- (d25 batch215 QZ3, Sol #2388: Sol's 13-machine and Astra's 41-machine watches began on tick 63906911, and its id
+  -- gave Sol's own) The watch read: yours; by id (uptime@START_TICK/AGENT, measures.id) any agent's; by agent that
+  -- agent's. An id with no agent reads the one watch begun on that tick, and two or more are refused, each named.
+  local function norm(n) return (n:lower():gsub('^@', ''):gsub('^pog%-', '')) end
+  local function id_of(job, i) return api.watch_id and api.watch_id('uptime', job, i) or string.format('uptime@%d', job.start) end
+  local function find(p, a)
     local all = store()
-    if not id then return all[p.index], p.index end
-    local mine = all[p.index]
-    if mine and 'uptime@' .. mine.start == id then return mine, p.index end
-    local found, at_i
+    if a.id == nil and a.agent == nil then return all[p.index], p.index end
+    local tick, who
+    if a.id then
+      local t, w = a.id:match('^uptime@(%d+)/?(.*)$')
+      tick, who = tonumber(t), w ~= '' and norm(w) or nil
+    end
+    local want = a.agent and norm(a.agent)
+    local hits, kept = {}, {}
     for i, job in pairs(all) do
-      if type(job) == 'table' and job.start and 'uptime@' .. job.start == id then
-        assert(not found, string.format('%s: two watches began at that tick; read your own with uptime {read: true}', id))
-        found, at_i = job, i
+      if type(job) == 'table' and job.start then
+        local name = api.who_index and api.who_index(i)
+        local r = {job=job, i=i, id=id_of(job, i), n=#(job.machines or {})}
+        kept[#kept+1] = r
+        if (not tick or job.start == tick) and (not who or name and norm(name) == who) and (not want or name and norm(name) == want) then hits[#hits+1] = r end
       end
     end
-    return found, at_i
+    local function names(list)
+      table.sort(list, function(x, y) return x.id < y.id end)
+      local out = {}
+      for _, r in ipairs(list) do out[#out+1] = string.format('%s (%d machine%s)', r.id, r.n, r.n == 1 and '' or 's') end
+      return table.concat(out, ', ')
+    end
+    if #hits > 1 then
+      error(string.format('%s: %d watches began on tick %d: %s; give one of these ids, or agent', a.id, #hits, tick, names(hits)), 0)
+    end
+    if #hits == 0 then
+      local what = a.id and a.agent and a.id .. ' of agent ' .. a.agent or a.id or 'of agent ' .. a.agent
+      error(string.format('no uptime watch %s is kept; kept: %s', what, #kept > 0 and names(kept) or 'none'), 0)
+    end
+    return hits[1].job, hits[1].i
   end
   function M.read(p, a)
     M.check_read(a)
-    local job, owner = find(p, a.id)
-    assert(job, a.id and string.format('no uptime watch %s is kept (status {brief: true, work: true} lists yours)', a.id) or 'no uptime watch yet: uptime {positions, seconds?}')
+    local job, owner = find(p, a)
+    assert(job, 'no uptime watch yet: uptime {positions, seconds?}')
     local done = job.result ~= nil
     if done and owner == p.index then job.read_tick = job.read_tick or game.tick end
     local to = done and (job.ended_tick or job.until_tick) or game.tick
@@ -865,7 +894,7 @@ return function(api)
       rows[#rows+1] = row
     end
     local who = owner ~= p.index and api.who_index and api.who_index(owner) or nil
-    local id = 'uptime@' .. job.start
+    local id = id_of(job, owner)
     local out = {read=true, id=id, agent=who, done=done or nil, watching=not done or nil, started_tick=job.start, until_tick=job.until_tick, to_tick=to,
       sampled_tick=job.sampled, samples=job.samples, every_ticks=M.EVERY, seconds=math.floor(secs + 0.5), of_seconds=job.seconds,
       machines_total=#job.machines, matched=#picked, page=page, pages=pages, page_size=size, machines=rows, lines=a.details and lines or nil,
@@ -879,6 +908,7 @@ return function(api)
   end
   function M.handler(p, a)
     if a.read ~= nil then return M.read(p, a) end
+    M.check_read(a)
     if a.positions == nil and a.position == nil and a.area == nil and a.items == nil then
       -- (d20 batch62 X2, Sol #1529) the watch so far is read where it was started: surface and platform go with a new watch
       assert(a.surface == nil and a.platform == nil, 'surface and platform go with positions, position, area or items (a new watch there); uptime {} reads your watch where it began')
@@ -954,7 +984,7 @@ return function(api)
       elseif m.parts then lines[#lines+1] = string.format('%s %s %s: %d rocket parts so far (finished rockets x the parts a rocket takes, plus those of the one building; productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0)
       else lines[#lines+1] = string.format('%s %s %s: %d completions so far (the game\'s count, productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0) end
     end
-    return {watching=true, seconds=seconds, machines=#machines, baseline=lines, items_recent=flows_line, replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
+    return {watching=true, id=id_of(job, p.index), seconds=seconds, machines=#machines, baseline=lines, items_recent=flows_line, replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
       line=#machines == 0 and string.format('watching the production statistics of %d item%s for %ds: uptime {} reads them so far, and in full once done', #a.items, #a.items == 1 and '' or 's', seconds)
         or string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)}
   end
@@ -962,9 +992,10 @@ return function(api)
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
     items='optional 1..8 items, a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch)',
     seconds='optional 10..3600 (default 600): how long to watch',
-    read='true: read a watch in pages without starting or replacing it (yours; with id any agent\'s): read, id, agent (another\'s), done or watching, started_tick, until_tick, to_tick (the end, or now), sampled_tick (its last sample), samples, seconds, machines_total, matched, page, pages, page_size, machines (the page\'s rows as uptime {} gives them, with index (its place in the watch) and short_counts {ingredient: {samples, least, need, first_tick, last_tick}}; line only with details), lines (with details), not_found, line; a queue step and dry_run check it',
-    id='with read: a watch\'s id as status work gives it, "uptime@START_TICK"', page='with read: 1.. (default 1)', page_size='with read: 1..16 machines a page (default 16)',
+    read='true: read a watch in pages without starting or replacing it (yours; with id or agent any agent\'s): read, id, agent (another\'s), done or watching, started_tick, until_tick, to_tick (the end, or now), sampled_tick (its last sample), samples, seconds, machines_total, matched, page, pages, page_size, machines (the page\'s rows as uptime {} gives them, with index (its place in the watch) and short_counts {ingredient: {samples, least, need, first_tick, last_tick}}; line only with details), lines (with details), not_found, line; a queue step and dry_run check it',
+    id='with read: a watch\'s id as the start and status work give it, "uptime@START_TICK/AGENT"; "uptime@START_TICK" reads the one watch begun on that tick (two or more: refused, each id named)',
+    agent='with read: an agent\'s name: that agent\'s watch (with id, the id must be its)', page='with read: 1.. (default 1)', page_size='with read: 1..16 machines a page (default 16)',
     details='with read: true adds each row\'s line and lines', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see). Read only'}}
+    returns='a watch, one an agent (a new one replaces it): the start returns id, baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see). Read only'}}
   return M
 end
