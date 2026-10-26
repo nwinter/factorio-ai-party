@@ -19,6 +19,10 @@ spider walking 13 tiles/s, led at 45 km/h from Opus's two replies; it fell about
 6. The barrage frame's glide is a speed in tiles/s (cameras.lua), at least 2.
 7. director_replay.py: the vehicle path model (any agent's replies; never past the next reply on its route) and
    vehicle_framing on a log.
+8. (cp2, shift81 10:20-10:27: Opus never aired) model.py: a new target for an agent's remote vehicle bumps its interest
+   VEHICLE_WEIGHT, a read of the same route does not; a walking vehicle keeps a little alive.
+9. (cp2) The planets' air time is kept in runs/RUN/surface-air.json and read back at a restart (and from the run it
+   resumed from), so the balance does not start every planet at 0%; director_replay --surface-from seeds it.
 """
 import os, sys, tempfile
 
@@ -242,6 +246,73 @@ def replay_model():
     print("7. director_replay: the vehicle path model and vehicle_framing: ok")
 
 
+def interest():
+    import model
+    ag = model.Agent("opus", {})
+    ag.interest, ag.interest_t = 1.0, T0
+    row = {"vehicle": "spidertron", "unit_number": UNIT, "position": {"x": -158.5, "y": -540.7}, "speed": None,
+           "target": {"x": -600, "y": -560}, "t": T0}
+    m = model.Model.__new__(model.Model)
+    was, ag.remote_vehicle = ag.remote_vehicle, row
+    model.vehicle_interest(ag, was, T0)
+    assert abs(ag.interest - (1.0 + model.VEHICLE_WEIGHT)) < 1e-6, ag.interest
+    # a read of the same route 16 s on (walking): no new bump, a little kept alive
+    read = dict(row, position={"x": -329.5, "y": -548.5}, speed=46, t=T0 + 16)
+    before = ag.interest * 0.5 ** (16 / model.HALF_LIFE)
+    was, ag.remote_vehicle = ag.remote_vehicle, read
+    model.vehicle_interest(ag, was, T0 + 16)
+    assert abs(ag.interest - (before + 0.04 * model.VEHICLE_WEIGHT)) < 1e-6, (ag.interest, before)
+    # a live read's next waypoint is not a new target (cmd_target stays)
+    live = dict(read, target={"x": -500, "y": -555}, cmd_target={"x": -600, "y": -560}, speed=0, t=T0 + 17)
+    was, ag.remote_vehicle = ag.remote_vehicle, live
+    v0 = ag.interest * 0.5 ** (1 / model.HALF_LIFE)
+    model.vehicle_interest(ag, was, T0 + 17)
+    ag.decay(T0 + 17)
+    assert abs(ag.interest - v0) < 1e-6
+    # the next leg: a new target
+    nxt = dict(row, target={"x": -850, "y": -560}, t=T0 + 46)
+    was, ag.remote_vehicle = ag.remote_vehicle, nxt
+    v0 = ag.interest * 0.5 ** (29 / model.HALF_LIFE)
+    model.vehicle_interest(ag, was, T0 + 46)
+    assert abs(ag.interest - (v0 + model.VEHICLE_WEIGHT)) < 1e-6
+    assert m is not None and "vehicle_interest(ag, was_vehicle, now)" in open(os.path.join(HERE, "model.py")).read()
+    print("8. a new target for the remote vehicle bumps its agent's interest; a read of the same route does not: ok")
+
+
+def surface_air():
+    import json, shutil, time
+    root = tempfile.mkdtemp()
+    prev, run = os.path.join(root, "shift80"), os.path.join(root, "shift81")
+    os.makedirs(prev)
+    os.makedirs(run)
+    open(os.path.join(run, "resumed-from"), "w").write("shift80\n")
+    now = time.time()
+    d = OneCam(SLOTS[:1], lambda body: {"ok": True}, None, trio=False, map_every=0, platform_every=0)
+    d.set_surface_memory(os.path.join(prev, "surface-seen.json"))
+    d.surface_air = [(now - 600 + k, "aquilo" if k % 3 else "nauvis", 1.0) for k in range(300)]
+    d.save_surface_air(now)
+    saved = json.load(open(os.path.join(prev, "surface-air.json")))["air"]
+    assert len(saved) == 300 and saved[1][1] == "aquilo"
+    d.save_surface_air(now + 10)  # (at most every AIR_SAVE_S)
+    # the next shift's service: read back through resumed-from, the old part of the window left out
+    json.dump({"air": saved + [[now - 4000, "fulgora", 1.0]]}, open(os.path.join(prev, "surface-air.json"), "w"))
+    e = OneCam(SLOTS[:1], lambda body: {"ok": True}, None, trio=False, map_every=0, platform_every=0)
+    e.set_surface_memory(os.path.join(run, "surface-seen.json"))
+    assert len(e.surface_air) == 300 and all(s != "fulgora" for _, s, _ in e.surface_air), len(e.surface_air)
+    share = e.surface_shares(now)
+    assert abs(share["aquilo"] - 2 / 3) < 0.01, share
+    shutil.rmtree(root, True)
+    # the replay's seed: what the program showed, from a log
+    log = [{"t": 100.0, "slot": "main", "reason": "standby: astra", "target": {"agents": ["astra"]}, "cmd": {"follow": "astra"},
+            "result": {"camera": {"surface": "aquilo"}}},
+           {"t": 100.0, "slot": "program", "reason": "cut to main: initial"},
+           {"t": 160.0, "slot": "cam2", "reason": "standby: opus", "cmd": {"follow": "opus"}, "result": {"camera": {"surface": "nauvis"}}},
+           {"t": 160.0, "slot": "program", "reason": "cut to cam2: x"}]
+    air = director_replay.surface_air_of(log, 100.0, 200.0)
+    assert sum(1 for a in air if a[1] == "aquilo") == 60 and sum(1 for a in air if a[1] == "nauvis") == 40, air[:3]
+    print("9. the planets' air time kept across a restart (and the run it resumed from); the replay's seed: ok")
+
+
 def main():
     feed_rows()
     harness_read()
@@ -251,6 +322,8 @@ def main():
     standing()
     barrage_glide()
     replay_model()
+    interest()
+    surface_air()
     print("vehcam: ok (a remote spidertron framed where it is, out and back, at 1 and 3 cameras; the hand-off between "
           "agents; the live read)")
 

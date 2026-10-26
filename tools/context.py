@@ -447,6 +447,15 @@ def operator_unseen(d, state):
 INBOX_MAX, INBOX_LINE = 10, 300
 
 
+def reply_clock(at):
+    """A journal line's UTC time ("2026-10-26T16:22:59.199Z") as local HH:MM:SS, or None."""
+    try:
+        utc = calendar.timegm(time.strptime(str(at)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return None
+    return time.strftime("%H:%M:%S", time.localtime(utc))
+
+
 def inbox_unseen(d, state, payload):
     """Mentions and tells that fh replies carried since this hook last looked (the journal from state["inbox_offset"])
     and that this tool call's output did not show, as context lines, or None (Sonnet, shift08: its replies went to
@@ -463,12 +472,13 @@ def inbox_unseen(d, state, payload):
     with open(path, "rb") as f:
         f.seek(max(start, size - 3_000_000))
         lines = f.read().decode("utf-8", "replace").splitlines()
-    found = []
+    found, when = [], {}
     for line in lines:
         if '"team"' not in line or ('"mentions"' not in line and '"tells"' not in line):
             continue
         try:
-            team = ((json.loads(line).get("response") or {}).get("result") or {}).get("team") or {}
+            entry = json.loads(line)
+            team = ((entry.get("response") or {}).get("result") or {}).get("team") or {}
         except ValueError:
             continue
         for kind in ("mentions", "tells"):
@@ -476,6 +486,7 @@ def inbox_unseen(d, state, payload):
                 # The operator's tells come as OPERATOR: lines (operator_unseen).
                 if isinstance(t, str) and (kind, t) not in found and not t.startswith(("operator, ", "operator to ")):
                     found.append((kind, t))
+                    when[(kind, t)] = reply_clock(entry.get("at"))
     if not found:
         return None
     def strings(v):
@@ -497,10 +508,14 @@ def inbox_unseen(d, state, payload):
     unseen = [(k, t) for k, t in found if not seen(t)]
     if not unseen:
         return None
-    out = [f"{'MENTION' if k == 'mentions' else 'TELL'}: {t if len(t) <= INBOX_LINE else t[:INBOX_LINE] + ' [...]'}"
-           for k, t in unseen[:INBOX_MAX]]
+    # (d26 batch234, viewer Aurora site:5021) the newest when there are more: Opus's 19-min script call carried 21, and
+    # the first 10 left out tell 92032 and Aurora's @mention, the two newest. Ages count from the reply that carried
+    # them, so its clock time goes with each (that tell read "0s ago" 3 min later).
+    out = []
     if len(unseen) > INBOX_MAX:
-        out.append(f"+{len(unseen) - INBOX_MAX} more: ./fh tells and ./fh call chat list them")
+        out.append(f"+{len(unseen) - INBOX_MAX} earlier: ./fh tells and ./fh call chat list them")
+    out += [f"{'MENTION' if k == 'mentions' else 'TELL'}{' (reply ' + when[(k, t)] + ')' if when.get((k, t)) else ''}: "
+            f"{t if len(t) <= INBOX_LINE else t[:INBOX_LINE] + ' [...]'}" for k, t in unseen[-INBOX_MAX:]]
     state["inbox_shown"] = state.get("inbox_shown", 0) + len(unseen)
     return "\n".join(out) + ("\n(From your fh replies' team block since your last tool call; this tool call's output "
                              "did not show them. Shown here once.)")

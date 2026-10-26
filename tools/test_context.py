@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CTX = os.path.join(ROOT, "tools", "context.py")
@@ -157,7 +158,15 @@ def main():
         assert post() == "", "operator tells come as OPERATOR: lines"
         reply({"tells": [f"grok, 1s ago: t{i}" for i in range(12)]})
         ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
-        assert "TELL: grok, 1s ago: t9\n+2 more: ./fh tells and ./fh call chat list them\n" in ctx, ctx
+        # (d26 batch234) the newest 10 when there are more: an urgent tell comes last
+        assert ctx.startswith("+2 earlier: ./fh tells and ./fh call chat list them\nTELL: grok, 1s ago: t2\n"), ctx
+        assert "TELL: grok, 1s ago: t11\n(From" in ctx and "t1\n" not in ctx, ctx
+        with open(journal, "a") as f:   # the reply's clock time: the age counts from it
+            f.write(json.dumps({"at": "2026-10-26T16:22:59.199Z", "response": {"ok": True, "result": {"team": {
+                "tells": ["astra, 0s ago: outing NOW"]}}}}) + "\n")
+        local = time.strftime("%H:%M:%S", time.localtime(1793031779))
+        assert json.loads(post())["hookSpecificOutput"]["additionalContext"].startswith(
+            f"TELL (reply {local}): astra, 0s ago: outing NOW\n"), local
         assert "post-tool:inbox" in log_events(d), log_events(d)
 
     with tempfile.TemporaryDirectory() as d:   # the repo-wide Grok hooks also see sessions outside agent workspaces
