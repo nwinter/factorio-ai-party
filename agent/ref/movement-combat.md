@@ -97,8 +97,8 @@
   its legs moved by route targets as its remote sets them, read every 10 ticks: a unit nearer than `min_distance` (16):
   a route away from the group out to `max_distance` (28; its rockets reach 36); a unit within the band: it stands; no
   unit near and a nest beyond `range` (34): toward it; none left within `radius` (40): back to `position`, then
-  `clear`. A leg over wide water goes round it. No progress for 2 s: re-routed once, then shore recovery, then
-  `stalled`. Outcomes `clear`, `low_health` (0.4), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
+  `clear`. A leg over wide water goes round it. No progress for 2 s with water ahead: it backs off and asks again for a
+  path (up to 3 times; with no water ahead, turned 60 degrees once), then `stalled` (`last.recovery`). Outcomes `clear`, `low_health` (0.4), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
   `stalled`, `route_changed`, `out_of_coverage`, `destroyed`, `timed_out` (3600). On a low end with `retreat` {x,y}
   (default your retreat_guard's `to`) its route goes there, guns on. Its go_to route is replaced at the start.
   `--wait` reports `why`, kills, `kills_by`, `ammo_used`, `ammo_left`, `spidertron` (where, health, shield),

@@ -829,6 +829,13 @@ return function(api)
   -- Braking, tiles per tick per tick, read on a private copy (2.0.77): a tank 0.0016 (17 tiles from 0.236 a tick),
   -- a car 0.0055 (18 tiles from 0.45); anything else as a tank.
   local function decel(v) return v.name == 'car' and 0.0055 or 0.0016 end
+  -- (d26 batch247 NV3) back-offs, each with a fresh path, before a drive ends blocked
+  M.BACKOFFS = 2
+  function M.backs_text(backs)
+    local parts = {}
+    for i, b in ipairs(backs or {}) do parts[i] = string.format('(%.1f,%.1f)', b.at.x, b.at.y) end
+    return (#parts == 1 and 'once from ' or #parts .. ' times, from ') .. table.concat(parts, ' and ')
+  end
   M.decel = decel
   -- The nearest of our entities in the vehicle's way over its next `reach` tiles (ahead, or behind with back), and
   -- the gap from its end to that entity's box. Our characters count (not the vehicle's own seats); ghosts, remnants
@@ -1100,24 +1107,29 @@ return function(api)
       return nil
     end
     -- On a path: neither moving nor turning for 1.5 s, it backs up 1 s with the
-    -- wheel turned toward the path and asks again; the second time it is blocked.
+    -- wheel turned toward the path and asks again; (d26 batch247 NV3) twice, each with a fresh path (ours spared as
+    -- always); the third time it is blocked. (Copy, batch243: a car's first new path past a wall of ours placed across
+    -- its route still touched the wall.)
     if action.still < 90 then return nil end
     action.still = 0
     local side = back and 'behind' or 'in front'
-    if not action.backed then
-      action.backed = {at={x=v.position.x, y=v.position.y}, front=M.in_front(v, v.surface, back), side=side}
+    action.backs = action.backs or {}
+    if #action.backs < M.BACKOFFS then
+      local b = {at={x=v.position.x, y=v.position.y}, front=M.in_front(v, v.surface, back), side=side}
+      action.backs[#action.backs + 1] = b
+      action.backed = action.backed or b
       action.backing = {until_tick=game.tick + 60, turn=diff > 0 and R.direction.right or R.direction.left}
       return nil
     end
     ride(R.acceleration.nothing, R.direction.straight)
     local h = action.held_by
     if h and h.valid and game.tick - (action.held_tick or 0) <= 100 then
-      action.why = string.format('stopped at (%.1f,%.1f) to spare our %s (a drive pushes only through enemy units), again after backing off once from (%.1f,%.1f)',
-        v.position.x, v.position.y, at(h), action.backed.at.x, action.backed.at.y)
+      action.why = string.format('stopped at (%.1f,%.1f) to spare our %s (a drive pushes only through enemy units), again after backing off %s',
+        v.position.x, v.position.y, at(h), M.backs_text(action.backs))
       return 'blocked'
     end
-    action.why = string.format('stuck at (%.1f,%.1f) again after backing off once from (%.1f,%.1f); %s: %s', v.position.x, v.position.y,
-      action.backed.at.x, action.backed.at.y, side, M.in_front(v, v.surface, back))
+    action.why = string.format('stuck at (%.1f,%.1f) again after backing off %s; %s: %s', v.position.x, v.position.y,
+      M.backs_text(action.backs), side, M.in_front(v, v.surface, back))
     return 'blocked'
   end
   -- Vehicle guns (2.0): a car, tank or spidertron fires its selected gun

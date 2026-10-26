@@ -641,7 +641,12 @@ local function finish(index, outcome)
         last.stopped_short=string.format('%.1f tiles from (%g,%g): the %s\'s turning room fits no closer (our entities or obstacles around it)',
           nav.short_of,action.target.x,action.target.y,action.vehicle and action.vehicle.valid and action.vehicle.name or 'vehicle')
       end
-      if action.backed then last.backed_up=string.format('stuck at (%.1f,%.1f) (%s: %s): backed off and asked for a new path',action.backed.at.x,action.backed.at.y,action.backed.side or 'in front',action.backed.front) end
+      if action.backed then
+        -- (d26 batch247 NV3) each back-off (up to 2), where it stuck and what was there
+        local parts={}
+        for _,b in ipairs(action.backs or {action.backed}) do parts[#parts+1]=string.format('stuck at (%.1f,%.1f) (%s: %s): backed off and asked for a new path',b.at.x,b.at.y,b.side or 'in front',b.front) end
+        last.backed_up=table.concat(parts,'; then ')
+      end
       M.avoid.report(last,nav)
     end
     last.why=last.why or action.why

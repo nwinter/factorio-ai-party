@@ -14490,6 +14490,13 @@ spiderroute.lua):
   `retreated` (its guard), `route_emptied` (its route ended elsewhere), `destroyed` or `timed_out` (`ticks` 60..54000,
   default 18000; the walk goes on). last: spidertron, position, target, route_line, recovery, no_path, landed, why.
   Status `active.spider_go` says where it is. A plain go_to replies at once, as before. A queue step waits for it.
+- NV2: spider_kite's no progress (2 s) with water ahead is go_to's recovery: it backs off to the newest spot of its
+  trail 3 tiles or more back (else straight back from its target) and asks again for a path from there, any water on
+  the line counting (island hops included), up to 3 times, each in `last.recovery`; with no water ahead its route is
+  turned 60 degrees once (as before); then `stalled`. It no longer picks a shore spot.
+- NV3: a car's or tank's drive stuck on its path (neither moving nor turning for 1.5 s) backs up 1 s and asks for a
+  fresh path twice (was once), ours spared as always; the third stall is `blocked`, naming both back-offs
+  (`last.backed_up`: each, joined by "; then ").
 
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 
