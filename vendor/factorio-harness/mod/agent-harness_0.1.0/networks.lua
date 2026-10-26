@@ -2290,8 +2290,9 @@ return function(api)
       if inv then
         local parts = {}
         for _, name in ipairs(names) do
-          local n = try(function() return inv.get_item_count(name) end) or 0
-          if n > 0 then parts[#parts+1] = name .. ' ' .. n end
+          -- (d26 batch249 R10) fuel of every quality burns: counted so, the qualities named when any is above normal
+          local n, by = qflow.held(inv, name)
+          if n > 0 then parts[#parts+1] = name .. ' ' .. qflow.text(n, by) end
         end
         if #parts > 0 then chests[#chests+1] = {text=string.format('%s %s %s', e.name, at(e.position.x, e.position.y), table.concat(parts, ', ')), d=dist(e.position)} end
       end
@@ -2303,7 +2304,7 @@ return function(api)
       for i = 1, e.valid and (try(function() return e.get_max_transport_line_index() end) or 0) or 0 do
         local line = try(function() return e.get_transport_line(i) end)
         for _, name in ipairs(names) do
-          local n = line and try(function() return line.get_item_count(name) end) or 0
+          local n = line and try(function() return line.get_item_count{name=name} end) or 0
           if n > 0 then belts.by[name] = (belts.by[name] or 0) + n; held = held + n end
         end
       end

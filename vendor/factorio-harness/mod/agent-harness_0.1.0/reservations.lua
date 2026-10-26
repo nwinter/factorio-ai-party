@@ -396,11 +396,14 @@ return function(api)
         for _, f in ipairs(try(function() return pt.filters end) or {}) do
           local name = name_of(f.name)
           if name and (not item or name == item) and (f.count or 0) > 0 then
-            local held = inv and try(function() return inv.get_item_count(name) end) or 0
+            -- (d26 batch249 R10) what it holds of the quality it asks for (none named: every quality)
+            local q = f.quality
+            if q ~= nil and type(q) ~= 'string' then q = try(function() return q.name end) end
+            local held = inv and try(function() return inv.get_item_count(q and {name=name, quality=q} or {name=name}) end) or 0
             local short = math.max(0, f.count - held - (coming[name] or 0))
             if short > 0 or (coming[name] or 0) > 0 then
               local full = room(e, name) == false
-              rows[#rows+1] = {name=name, ask=f.count, held=held, coming=coming[name] or 0, short=short, full=full}
+              rows[#rows+1] = {name=q and q ~= 'normal' and name .. '@' .. q or name, ask=f.count, held=held, coming=coming[name] or 0, short=short, full=full}
             end
           end
         end

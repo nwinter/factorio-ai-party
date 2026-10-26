@@ -19,11 +19,10 @@ return function(api)
   local TYPES = {}
   for t in pairs(KIND) do TYPES[#TYPES+1] = t end
   table.sort(TYPES)
-  local function count_in(e, item)
-    -- (d19 batch44 A1) no closure a call: 1987 holders a Nauvis call
-    local ok, n = pcall(e.get_item_count, item)
-    return ok and type(n) == 'number' and n or 0
-  end
+  -- (d26 batch249 R10) every quality, and by (qflow.held) when any of it is above normal; the bare name counted normal
+  -- only. (d19 batch44 A1) no closure a call: 1987 holders a Nauvis call
+  local function count_in(e, item) return qflow.held(e, item) end
+  local ANY = {name=nil}
   -- How many of a spoilable item in an entity's inventories spoil within `ticks` (d17 batch12 C7, Grok: yumako mash read
   -- 559, then 167 minutes later; a total read as a reserve): each stack's own spoil tick.
   M.SOON_TICKS, M.SOON_PLACES = 7200, 400
@@ -98,7 +97,8 @@ return function(api)
         for _, r in ipairs(ok and robots or {}) do
           if read >= M.MAX_ROBOTS then capped = true; break end
           read = read + 1
-          local okc, k = pcall(function() return r.get_inventory(cargo).get_item_count(item) end)
+          ANY.name = item
+          local okc, k = pcall(function() return r.get_inventory(cargo).get_item_count(ANY) end)
           if okc and type(k) == 'number' and k > 0 then n = n + k; carrying = carrying + 1 end
         end
       end
@@ -268,17 +268,20 @@ return function(api)
     idx = okx and idx or nil
     local holders = idx and idx.holders or surface.find_entities_filtered{force=p.force, type=TYPES}
     local ent_of = {}
+    local acc = {}
     for _, e in ipairs(holders) do
-      local n = count_in(e, item)
+      local n, by = count_in(e, item)
       if n > 0 then
+        qflow.add(acc, n, by)
         local kind = KIND[e.type] or 'other'
         add(kind, n)
         -- what of it sits in the module slots (a machine, beacon, drill or lab)
         local mods = (kind == 'machine' or kind == 'beacon' or kind == 'drill' or kind == 'lab') and
           (pcall(function() return e.get_module_inventory() end) and e.get_module_inventory()) or nil
-        local in_mods = mods and select(2, pcall(function() return mods.get_item_count(item) end)) or 0
+        ANY.name = item
+        local in_mods = mods and select(2, pcall(function() return mods.get_item_count(ANY) end)) or 0
         if type(in_mods) ~= 'number' then in_mods = 0 end
-        places[#places+1] = {kind=kind, entity=e.name, position={x=e.position.x, y=e.position.y}, count=n,
+        places[#places+1] = {kind=kind, entity=e.name, position={x=e.position.x, y=e.position.y}, count=n, qualities=qflow.label(by),
           in_module_slots=in_mods > 0 and in_mods or nil, distance=dist(e.position)}
         ent_of[places[#places]] = e
         if in_mods > 0 then totals.module_slots = (totals.module_slots or 0) + in_mods; totals[kind] = totals[kind] - in_mods end
@@ -288,10 +291,10 @@ return function(api)
     local seen_pod = {}
     for _, pl in ipairs(places) do seen_pod[pl.entity .. '@' .. pl.position.x .. ',' .. pl.position.y] = true end
     for _, e in ipairs(idx and {} or surface.find_entities_filtered{name='cargo-pod-container'}) do
-      local n = count_in(e, item)
+      local n, by = count_in(e, item)
       if n > 0 and not seen_pod[e.name .. '@' .. e.position.x .. ',' .. e.position.y] then
-        add('pod', n)
-        places[#places+1] = {kind='pod', entity=e.name, position={x=e.position.x, y=e.position.y}, count=n, distance=dist(e.position)}
+        add('pod', n); qflow.add(acc, n, by)
+        places[#places+1] = {kind='pod', entity=e.name, position={x=e.position.x, y=e.position.y}, count=n, qualities=qflow.label(by), distance=dist(e.position)}
       end
     end
     -- Belts and inserter hands: totals only (thousands of segments).
@@ -299,7 +302,8 @@ return function(api)
     for _, e in ipairs(idx and {} or surface.find_entities_filtered{force=p.force, type=BELTS}) do
       local ok, lines = pcall(function() return e.get_max_transport_line_index() end)
       for i = 1, ok and lines or 0 do
-        local ok2, n = pcall(function() return e.get_transport_line(i).get_item_count(item) end)
+        ANY.name = item
+        local ok2, n = pcall(function() return e.get_transport_line(i).get_item_count(ANY) end)
         if ok2 and type(n) == 'number' then on_belts = on_belts + n end
       end
     end
@@ -320,10 +324,10 @@ return function(api)
     for _, ag in ipairs(api.agents()) do
       local c = api.character(ag.index)
       if c and c.valid and c.surface == surface then
-        local n = count_in(c, item)
+        local n, by = count_in(c, item)
         if n > 0 then
-          add('characters', n)
-          places[#places+1] = {kind='character', agent=ag.name, position={x=c.position.x, y=c.position.y}, count=n,
+          add('characters', n); qflow.add(acc, n, by)
+          places[#places+1] = {kind='character', agent=ag.name, position={x=c.position.x, y=c.position.y}, count=n, qualities=qflow.label(by),
             distance=dist(c.position)}
           ent_of[places[#places]] = c
         end
@@ -407,7 +411,8 @@ return function(api)
       kinds_line=#words > 0 and string.format('%d %s: %s', total, item, table.concat(words, ', ')) or nil, sort=a.sort or 'largest', page=page,
       pages=math.max(1, math.ceil(#places / limit)),
       spoils_within_2_min=soon, spoil_note=soon and string.format('%d of the %d spoil within 2 minutes (chests, machines and the like; belts, hands and robot cargo not read)', soon, total) or nil,
-      robot_cargo=okr and robot_n > 0 and string.format('%d carried by %d robot%s now', robot_n, carriers, carriers == 1 and '' or 's') or nil, robot_note=robot_note}
+      robot_cargo=okr and robot_n > 0 and string.format('%d carried by %d robot%s now', robot_n, carriers, carriers == 1 and '' or 's') or nil, robot_note=robot_note,
+      qualities=qflow.by_of(acc) and qflow.label(qflow.by_of(acc)) .. ' in the places (counts are of every quality; belts, inserter hands and robot cargo not split)' or nil}
     local first = (page - 1) * limit + 1
     for i, e in ipairs(places) do
       if i >= first and i < first + limit then out.places[#out.places+1] = e elseif i >= first + limit then out.more = out.more + 1 end

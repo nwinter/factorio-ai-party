@@ -62,6 +62,12 @@ has(r.rollback.played[2].waiting[1],'none of its four side neighbours')
 eq(r.rollback.fill[1],'10..13,2..7'); eq(r.rollback.remove[1],'9..9,4..4')
 local again=PP.read({},{platform='Tern',phases={{fill='9,4'},{remove=r.rollback.fill}}})
 eq(again.phases[2].went,24)
+-- (d26 batch249 R10) a hub holding only rare foundation: the same plan (2.0.77: {name} alone counts every quality, the
+-- bare name normal only, which read 0 here)
+hub.get_item_count=function(q) if type(q)=='table' and q.name=='space-platform-foundation' and (q.quality==nil or q.quality=='rare') then return 500 end return 0 end
+local rare=PP.read({},{platform='Tern',phases={{fill='9,4'},{remove=r.rollback.fill}}})
+eq(rare.phases[1].line,again.phases[1].line); eq(rare.phases[2].went,24)
+hub.get_item_count=function() return 500 end
 
 -- a tile that stands under an entity waits naming it; a removal that leaves floor joined only by a corner cuts it off
 -- (10,9) east of the main floor's corner tile (9,9), and (10,10) under it, joined to the floor only through (10,9)

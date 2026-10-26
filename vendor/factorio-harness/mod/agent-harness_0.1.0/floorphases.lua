@@ -88,7 +88,8 @@ return function(api)
       near={{box[1] - MARGIN, box[2] - MARGIN}, {box[3] + MARGIN + 1, box[4] + MARGIN + 1}},
       thr_area={{box[1] - 16, box[2] - 90}, {box[3] + 17, box[4] + 1}}, init=1}
     m.area_cost = math.max(1, math.floor((box[3] - box[1] + 2 * MARGIN + 1) * (box[4] - box[2] + 2 * MARGIN + 1) / 250))
-    m.stock = hub and try(function() return hub.get_item_count(FOUNDATION) end) or 0
+    -- (d26 batch249 R10) every quality ({name} alone; the bare name counts normal only in 2.0.77)
+    m.stock = hub and try(function() return hub.get_item_count{name=FOUNDATION} end) or 0
     m.room = hub and TC.room(hub, FOUNDATION) or math.huge
     return m
   end
@@ -162,7 +163,7 @@ return function(api)
       for i, run in ipairs(r) do if i <= 4 then firsts[i] = at(run[1][1], run[1][2]) end end
       return string.format('building it would split the empty space beside it: %s meet only through it', table.concat(firsts, ' and '))
     end
-    if m.stock <= 0 then return 'the hub holds no ' .. FOUNDATION end
+    if m.stock <= 0 then return 'the hub holds no ' .. FOUNDATION .. ' (of any quality)' end
     return nil
   end
   -- How many runs of empty space round (x,y): blocks of empty places round the ring of 8 that hold a side (as

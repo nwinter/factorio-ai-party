@@ -2427,7 +2427,7 @@ p.character.prototype.crafting_categories={crafting=true}
 prototypes.entity=prototypes.entity or {}
 prototypes.entity['assembling-machine-2']={name='assembling-machine-2',crafting_categories={crafting=true},get_crafting_speed=function() return 0.75 end}
 local crafted=call('craft',{recipes={{recipe='iron-gear-wheel',count=3},{recipe='rocket'},{recipe='iron-gear-wheel',count=2},{recipe='pipe',count=1}}})
-eq(crafted.started['iron-gear-wheel'],5); eq(crafted.started.pipe,nil); assert(crafted.nothing_queued.pipe:find('^nothing was queued for pipe: '),crafted.nothing_queued.pipe); eq(crafted.errors.rocket,'recipe is unavailable')
+eq(crafted.started['iron-gear-wheel'],5); eq(crafted.started.pipe,nil); assert(crafted.nothing_queued.pipe:find('^nothing was queued for pipe: '),crafted.nothing_queued.pipe); eq(crafted.errors.rocket,'recipe is unavailable: rocket is not unlocked yet')
 -- Crafts land in the inventory as each finishes (operator 08:01): moved 0 now, timed says when, the line now.
 eq(crafted.moved,0); assert(crafted.timed:find('^crafts land in your inventory as each finishes'),crafted.timed)
 eq(crafted.no_assembler,nil); eq(crafted.blocks,nil) -- no assembler unlocked, short queue

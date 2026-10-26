@@ -122,6 +122,8 @@ fails(function() grok('vehicle',{position={x=3,y=0},enter=true}) end,'car is ful
 fails(function() astra('move_to',{position={x=10,y=10}}) end,'vehicle {exit: true} gets out')
 fails(function() astra('mine',{position={x=10,y=10}}) end,'vehicle {exit: true} gets out')
 eq(astra('say',{text='driving!'}).seq~=nil,true)
+-- (d26 batch249 R6: Opus 7 refusals in shift71) chat_ack is chat: it acts on no character
+eq(astra('chat_ack',{seq='all'}).unanswered,'none')
 eq(astra('vehicle',{}).vehicle.seat,'driver')
 eq(astra('status').position~=nil,true)
 fails(function() astra('vehicle',{position={x=3,y=0},enter=true}) end,'already in a vehicle')

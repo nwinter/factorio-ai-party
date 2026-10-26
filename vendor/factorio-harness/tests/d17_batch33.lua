@@ -153,7 +153,7 @@ print('d17_batch33 A5 a ghost\'s ammo request in place: ok')
 do
   defines={inventory={robot_cargo=1}}
   local S=dofile('mod/agent-harness_0.1.0/stores.lua'){agents=function() return {} end}
-  local function robot(name,n) return {get_inventory=function() return {get_item_count=function(i) return i==name and n or 0 end} end} end
+  local function robot(name,n) return {get_inventory=function() return {get_item_count=function(i) return (type(i)=='table' and (i.quality or 'normal')=='normal' and i.name or i)==name and n or 0 end} end} end
   local net={logistic_robots={robot('pentapod-egg',1),robot('iron-plate',4)},construction_robots={robot('pentapod-egg',2)}}
   local force={logistic_networks={gleba={net}}}
   local n,carrying,read,capped=S.robot_cargo(force,{name='gleba'},'pentapod-egg')
