@@ -15912,3 +15912,15 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - airtime.py and vx_review.py count no dry run or settings-only launch as a fresh event.
 - director_replay.py `--timed`: the log's timed shots replayed at their times (with `--chart`, its own quiet views).
 - Test: tools/stream/test_idlecam.py.
+
+## d26 batch245 (MB: battles, enemy groups and walk loops; shift81's review)
+- Host only (tools/stream; docs/STREAM-NOTES.md "Battles, enemy groups and walk loops"): no runtime change, no new game
+  read (the director now reads the status queues the service already polls). Agents read nothing new.
+- onecam.py: every attack on our buildings, vehicles or agents on a planet is a battle on air within seconds unless an
+  operator look holds the camera (battle_all; a tour's look gives way, the hourly piece ends); against flapping a fight
+  elsewhere follows on at the battle's end, the same area resumes within 90 s, a repeat within 300 s with nothing
+  lost is its inset; a spidertron's fight is its vehicle shot. A group not followed goes in the inset until contact;
+  group rows in the director log keep its place. A repeating body queue walking is a loop (loop_queue).
+- vx_review.py counts a threat the program framed as on air (insets apart); director_replay.py `--fights` reads
+  current alert texts.
+- Test: tools/stream/test_battlecam.py.

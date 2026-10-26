@@ -2898,6 +2898,7 @@ class Model:
                 # hurt | fighting | guard | None, and who hit it or what it shoots at (combat_state)
                 "combat_state": ag.combat_state, "combat_info": ag.combat_info or None,
                 "vehicle_fire": ag.vehicle_fire, "remote_vehicle": ag.remote_vehicle, "did": ag.did, "idle_s": ag.idle_s,
+                "queues": ag.queues,  # (batch245) the status read's queue lanes: a repeating walk is a loop (onecam)
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,

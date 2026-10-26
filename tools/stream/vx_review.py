@@ -13,7 +13,9 @@ or network read. It writes RUN/vx-review.md and RUN/vx-review.json (or into --ou
 Five parts, each with numbers and examples with times (Pacific):
 1. missed action: the journals' fresh visible requests (airtime.py FRESH: builds, vehicle outings, artillery,
    launches, ...), platforms made (the chronicle), the director's own threat sightings (battles, losses, attacks) and
-   departures; each on air at once (within ONCE_S), late, or missed (not on air within airtime.MISS_S);
+   departures; each on air at once (within ONCE_S), late, or missed (not on air within airtime.MISS_S); (batch245) a
+   threat is on air when the director took it or the program's camera stood within FRAME_TILES of its spot; one shown
+   only in the inset is still missed (counted apart), a battle's repeat the director gave its inset is by design;
 2. idle airtime: airtime.py's idle and walk-loop minutes by agent, minutes with no shot, and repeated shots (one
    aired again within REPEAT_S after something else);
 3. narration: the caster's cue-to-line time, the lag from a chronicle event to the line that names it, an agent's
@@ -25,7 +27,7 @@ Five parts, each with numbers and examples with times (Pacific):
    review's own run time.
 Times in the logs are epoch seconds (journals: UTC ISO); the service log's HH:MM:SS are Pacific on the run's days.
 """
-import argparse, datetime, json, os, re, statistics, sys, time
+import argparse, datetime, json, math, os, re, statistics, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -40,6 +42,9 @@ except Exception:  # no tz database: the machine's local time (the Mac runs on P
     PACIFIC = None
 
 ONCE_S = 30.0         # on air this soon after the event: at once
+FRAME_TILES = 60.0    # (batch245) a threat's spot this close to the program's camera: on air (onecam fight_near 40 + a
+                      # chunk's half: live.py reports an attacked chunk by its centre)
+AREA_RE = re.compile(r"area:(-?[\d.]+),(-?[\d.]+)")
 REPEAT_S = 900.0      # the same shot again this soon, after something else: a repeat
 STEP = 1.0            # the program sampled every STEP seconds
 EXAMPLES = 5
@@ -153,8 +158,58 @@ class Program:
         # insets: a client set to an inset shot ("inset departure: ...", "inset: Base under attack ..."): on the screen
         # beside the program, which airtime.program() does not follow
         self.insets = [(r["t"], {"reason": r.get("reason"), "agents": list((r.get("target") or {}).get("agents") or []),
-                                 "follow": (r.get("cmd") or {}).get("follow")})
-                       for r in self.rows if r.get("slot") != "program" and str(r.get("reason") or "").startswith("inset")]
+                                 "follow": (r.get("cmd") or {}).get("follow"), "spot": self.spot_of(r)})
+                       for r in self.rows if r.get("slot") != "program" and
+                       re.match(r"(inset|group inset|enemy inset)\b", str(r.get("reason") or ""))]
+        # (batch245) where each client's camera was: its command results, in time order
+        self.spots = {}
+        for r in self.rows:
+            sp = self.spot_of(r)
+            if sp and r.get("slot") != "program":
+                self.spots.setdefault(r["slot"], ([], []))
+                self.spots[r["slot"]][0].append(r["t"])
+                self.spots[r["slot"]][1].append(sp)
+
+    @staticmethod
+    def spot_of(r):
+        c = (r.get("result") or {}).get("camera") or {}
+        p = c.get("position")
+        if not isinstance(p, dict) or p.get("x") is None:
+            return None
+        return {"x": p["x"], "y": p["y"], "surface": c.get("surface") or "nauvis"}
+
+    def spot(self, t):
+        """(batch245) Where the program's camera was at t: the on-air client's latest command result."""
+        cl = self.shot(t).get("client")
+        ts, sps = self.spots.get(cl, ([], []))
+        lo, hi = 0, len(ts)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if ts[mid] <= t:
+                lo = mid + 1
+            else:
+                hi = mid
+        return sps[lo - 1] if lo else None
+
+    def framed(self, t, pos, within=airtime.MISS_S):
+        """(batch245) Seconds from t to the first time the program's camera stood within FRAME_TILES of pos (None)."""
+        s = t
+        while s <= t + within:
+            sp = self.spot(s)
+            if sp and sp["surface"] == pos["surface"] and math.hypot(sp["x"] - pos["x"], sp["y"] - pos["y"]) <= FRAME_TILES:
+                return s - t
+            s += STEP
+        return None
+
+    def inset_of(self, t, key, pos, within=airtime.MISS_S):
+        """(batch245) Seconds from t to an inset naming the threat or framing its spot (None)."""
+        for it, sh in self.insets:
+            if t - 2 <= it <= t + within:
+                sp = sh.get("spot")
+                if (key and key in str(sh.get("reason") or "")) or (pos and sp and sp["surface"] == pos["surface"] and
+                                                                 math.hypot(sp["x"] - pos["x"], sp["y"] - pos["y"]) <= FRAME_TILES):
+                    return max(0.0, it - t)
+        return None
 
     def span(self):
         return (self.rows[0]["t"], self.rows[-1]["t"]) if self.rows else (None, None)
@@ -211,9 +266,15 @@ def events(js, chronicle, director_rows, t0, t1):
         if e is None:
             kind = str(th.get("threat") or "")
             cat = "loss" if "loss" in kind or key.startswith("loss:") else "battle" if "battle" in kind else "attack" if "attack" in kind else "enemy group"
-            e = seen[key] = {"t": t, "cat": cat, "who": None, "what": f"{kind} {key}", "taken": None, "decisions": []}
+            m = AREA_RE.match(key)
+            w = th.get("where") or {}  # (batch245) a group's place
+            pos = {"x": float(m.group(1)), "y": float(m.group(2)), "surface": "nauvis"} if m else \
+                dict(w["position"], surface=w.get("surface") or "nauvis") if isinstance(w.get("position"), dict) else None
+            e = seen[key] = {"t": t, "cat": cat, "who": None, "what": f"{kind} {key}", "taken": None, "decisions": [],
+                             "key": key.split("@")[0], "pos": pos, "whys": []}
             out.append(e)
         e["decisions"].append(th.get("decision"))
+        e["whys"].append(str(th.get("why") or ""))
         if th.get("decision") == "take" and e["taken"] is None:
             e["taken"] = t - e["t"]
     for r in director_rows:
@@ -230,8 +291,18 @@ def coverage(prog, evs, t1):
     """Each event: delay to air (None: missed), by category: n, at once, late, missed, median delay, examples."""
     cats = {}
     for e in evs:
-        if "taken" in e:  # a threat: on air when the director took it
+        if "taken" in e:  # a threat: on air when the director took it, or (batch245) the program framed its spot
             d = e["taken"]
+            if d is None and e.get("pos"):
+                d = prog.framed(e["t"], e["pos"])
+            if d is None and all(w.startswith("repeat:") for w in e["whys"]):
+                c = cats.setdefault(e["cat"], {"n": 0, "at_once": 0, "late": 0, "missed": 0, "delays": [], "missed_examples": [], "late_examples": []})
+                c["n"] += 1  # (batch245) a repeat of a battle aired lately: its inset, by design
+                c["not_shown_by_design"] = c.get("not_shown_by_design", 0) + 1
+                continue
+            if d is None and prog.inset_of(e["t"], e.get("key"), e.get("pos")) is not None:
+                c = cats.setdefault(e["cat"], {"n": 0, "at_once": 0, "late": 0, "missed": 0, "delays": [], "missed_examples": [], "late_examples": []})
+                c["inset_only"] = c.get("inset_only", 0) + 1  # beside the program, not on it: still counted missed
         elif "decision" in e and e["decision"] == "none":
             e["delay"] = None  # the director chose not to show it (routine): counted apart, not as missed
             c = cats.setdefault(e["cat"], {"n": 0, "at_once": 0, "late": 0, "missed": 0, "delays": [], "missed_examples": [], "late_examples": []})
@@ -283,7 +354,8 @@ def idle(prog, js, t0, t1):
     seen, rep_s, rep = {}, 0.0, {}
     for t, key, dur in shots:
         view = key[0] and str(key[0]).startswith("@") or not re.match(r"(standby|back to|attention)\b", key[1])
-        if key[0] and view and key in seen and t - seen[key] <= REPEAT_S:
+        news = key[0] == "@battle" or re.match(r"battle\b", key[1])  # (batch245) another battle is news, not a repeat
+        if key[0] and view and not news and key in seen and t - seen[key] <= REPEAT_S:
             rep_s += dur
             rep.setdefault(key, [0, 0.0, t])
             rep[key][0] += 1
@@ -617,10 +689,11 @@ def markdown(r):
     for x in r["findings"]:
         L.append(f"- **{x['area']}** ({x['minutes']} min): {x['what']}")
         L += [f"  - {e}" for e in x["examples"][:3]]
-    L += ["", "## 1. Missed action", "", "| Kind | Events | At once | Late | Missed | Not shown by design | Median to air (s) |",
+    L += ["", "## 1. Missed action", "", "| Kind | Events | At once | Late | Missed (of them in the inset) | Not shown by design | Median to air (s) |",
           "|---|---|---|---|---|---|---|"]
     for cat, v in sorted(r["missed_action"].items(), key=lambda kv: -kv[1]["n"]):
-        L.append(f"| {cat} | {v['n']} | {v['at_once']} | {v['late']} | {v['missed']} | {v.get('not_shown_by_design', 0)} | {v['median_delay_s']} |")
+        ins = f" ({v['inset_only']})" if v.get("inset_only") else ""
+        L.append(f"| {cat} | {v['n']} | {v['at_once']} | {v['late']} | {v['missed']}{ins} | {v.get('not_shown_by_design', 0)} | {v['median_delay_s']} |")
     rk = r["rockets"]
     L += ["", f"Rockets launched: {rk['launches']} ({', '.join(f'{k} {v}' for k, v in rk['by_surface'].items()) or 'none'}); "
           "the director has no launch shot, so they are not counted as missed.", "",

@@ -133,6 +133,7 @@ def outranked():
     d.step(snap(team(), [shell(key="g", eta=150)], read_at=t + 1), t + 1)
     assert d.artys[-1][1:3] == ("drop", "an operator look"), d.artys
     d.set_look(None, t + 2)
+    t += 60  # (batch245: the fight above is a battle, on until it has been quiet battle_after)
     seg = {"id": 9, "label": "Rocket launch", "zoom": 0.5, "until": t + 60, "position": {"x": 5, "y": 5}, "surface": "nauvis"}
     d.step(snap(team(), [shell(key="h", eta=150)], read_at=t + 3), t + 3, seg)
     assert d.artys[-1][1:3] == ("drop", "a segment"), d.artys
