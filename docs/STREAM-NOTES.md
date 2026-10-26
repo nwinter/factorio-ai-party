@@ -2217,10 +2217,10 @@ vehicle_settle 3 s):
   moving on again is news ("spidertron on its way again").
 - The clocks' idle seconds count from when the agent's vehicle last walked, fought or fired.
 Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rules -> these; aired):
-- cuts to a vehicle shot whose frame was off the vehicle (over half a frame): 6 of 21 -> 1 of 16 (aired 5 of 14);
-  vehicle shots on a vehicle that had not moved 4 tiles in 20 s: 762 -> 405 s (aired 608); vehicle shots while it
-  moved: 492 -> 531 s.
-- shift81 10:20-14:23: off-frame cuts 26 of 46 -> 2 of 43; stuck air 948 -> 901 s; Opus on air 37.9 -> 31.0 min; idle
+- cuts to a vehicle shot whose frame was off the vehicle (over half a frame): 7 of 18 -> 1 of 15 (aired 5 of 14);
+  vehicle shots on a vehicle that had not moved 4 tiles in 20 s: 761 -> 405 s (aired 608); vehicle shots while it
+  moved: 530 -> 531 s.
+- shift81 10:20-14:23: off-frame cuts 26 of 52 -> 2 of 43; stuck air 1448 -> 901 s; Opus on air 37.9 -> 31.0 min; idle
   21.5% -> 25.5% (the review counts a stuck spider as Opus acting: its calls); builds 10/8/4 -> 9/12/1 (path
   differences: a trio at 12:22:32, other "all stale" picks).
 - Test: tools/stream/test_spidershot.py.
