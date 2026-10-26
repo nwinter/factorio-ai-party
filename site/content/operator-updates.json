@@ -127,7 +127,8 @@
   {"id": "batch229", "title": "Starter packs: the pod log closes their rows, and agents are told which waiting platform gets one", "area": "harness", "requested_by": [{"name": "Sol"}], "status": "in progress", "dates": {"asked": "2026-10-26 07:30", "in progress": "2026-10-26 07:46"}, "work": "batch229"},
   {"id": "batch231", "title": "Request caps: warn when a new max breaks a ship's departure condition or sends cargo to trash", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2427"}], "status": "live", "dates": {"in progress": "2026-10-26 08:44", "live": "2026-10-26 09:43"}, "work": "batch231"},
   {"id": "batch232", "title": "Remote spidertrons framed where they are, walking out and back, and handed between agents", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:5020"}], "status": "in progress", "dates": {"in progress": "2026-10-26 09:59"}, "work": "batch232"},
-  {"id": "batch234", "title": "Trace of Opus's delay on an urgent request, and faster urgent hand-offs", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:5021"}], "status": "in progress", "dates": {"in progress": "2026-10-26 09:59"}, "work": "batch234"}
+  {"id": "batch234", "title": "Trace of Opus's delay on an urgent request, and faster urgent hand-offs", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:5021"}], "status": "in progress", "dates": {"in progress": "2026-10-26 09:59"}, "work": "batch234"},
+  {"id": "batch235", "title": "Updates backlog: priority, owner and next review on every open row, reviewed on a schedule", "area": "site", "requested_by": [{"name": "Aurora", "ref": "site:5022"}], "status": "in progress", "dates": {"in progress": "2026-10-26 10:24"}, "work": "batch235"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
