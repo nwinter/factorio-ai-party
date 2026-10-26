@@ -278,11 +278,12 @@ test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',a
     await cli(port,['wait','--until','item_count coal>=5','--max','120'],'compact');
     const json=JSON.parse((await cli(port,['wait','--until','tell','--max','60'])).stdout);
     assert.equal(json.result.line,"woke: told after 4 s (astra: coal please); your next reply's team block has the rest");
-    await assert.rejects(cli(port,['wait','--until','tell','--max','901']),(error:any)=>/1\.\.900/.test(error.stdout));
+    // (d26 batch238 SC) more than 900 waits 900 and says so
+    assert.equal(JSON.parse((await cli(port,['wait','--until','tell','--max','901'])).stdout).result.corrected,'asked 901 s; capped at the 900 s maximum');
   });
   const sleeps=seen.filter(r=>r.action==='sleep');
   assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition,r.args.peek]),[
-    [30,undefined,true],[600,{until:'alert'},true],[300,{until:'alert',kinds:['low_power','starved']},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true]]);
+    [30,undefined,true],[600,{until:'alert'},true],[300,{until:'alert',kinds:['low_power','starved']},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true],[900,undefined,true]]);
   const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'the team block waits for the next reply');
 });
 test('fh wait/sleep --until A|B: whichever holds first (Grok: alert|platform_arrived NAME was a client_error; Muse: the first chest to fill)',async()=>{
@@ -327,6 +328,8 @@ test('fh wait --max S waits for the action to end, at most S s; at once when idl
     polls=10;
     const idle=JSON.parse((await cli(port,['wait','--until','idle','--max','5'])).stdout);
     assert.equal(idle.result.idle,true);
+    // (d26 batch238 SC) more than 900 waits at most 900 and says so
+    assert.equal(JSON.parse((await cli(port,['wait','--max','901'])).stdout).result.corrected,'asked 901 s; capped at the 900 s maximum');
   });
   await engine(()=>({ok:true,tick:5,result:{active:{kind:'mine',until_tick:99999}}}),async port=>{
     const started=Date.now();
@@ -337,7 +340,6 @@ test('fh wait --max S waits for the action to end, at most S s; at once when idl
       return true;
     });
     assert(Date.now()-started<15000,'it gave up after about 1 s');
-    await assert.rejects(cli(port,['wait','--max','901']),(error:any)=>/1\.\.900/.test(error.stdout));
   });
 });
 test('fh wait with nothing running: the last action ended before the previous call is not the wait\'s, exit 0',async()=>{

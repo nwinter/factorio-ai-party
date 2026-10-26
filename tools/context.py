@@ -14,7 +14,8 @@ Hook events: pre-compact and post-compact log to DIR/context.log (post-compact a
 DIR/compactions.md; --mark leaves a marker so the next post-tool hook re-injects notes.md, for harnesses without
 a SessionStart "compact" hook). session-compact prints notes.md for a SessionStart(compact) hook. post-tool
 re-injects notes.md after a marked compaction and, with --at N (Claude), warns once per context window when the
-transcript is within reach of the compaction point so the agent updates notes.md first. pre-compact with
+transcript is within reach of the compaction point so the agent updates notes.md first. post-tool and pre-tool (Grok,
+Muse; Claude Code's is tools/permit.py) record each tool call's end and start for tools/toolcall.py. pre-compact with
 --skip-late S --at N (Claude) blocks an automatic compaction in the last S seconds before DIR/deadline.txt.
 """
 import calendar
@@ -25,6 +26,9 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import toolcall  # noqa: E402
+
 NOTES_CAP = 7000          # characters of notes.md injected after a compaction (the playbook asks for under 6 KB)
 # Log lines injected after a compaction (the playbook keeps ~10). Haiku's Log reached 39 lines in shake4 and Claude Code
 # also re-attaches notes.md as a recently read file, so each compaction carried the whole Log twice and the floor
@@ -119,6 +123,7 @@ def setup(kind, model, d):
             "PreCompact": [{"hooks": [hook_cmd("pre-compact")]}],
             "PostCompact": [{"hooks": [hook_cmd("post-compact", "--mark")]}],
             "SessionStart": [{"matcher": "compact", "hooks": [hook_cmd("session-compact")]}],
+            "PreToolUse": [{"hooks": [hook_cmd("pre-tool")]}],
             "PostToolUse": [{"hooks": [hook_cmd("post-tool")]}],
         }})
     # agy: no threshold or compaction hooks; .agy-loop.sh starts a fresh conversation past compact_at (agy-tokens).
@@ -451,23 +456,19 @@ def reply_clock(at):
     return time.strftime("%H:%M:%S", time.localtime(utc))
 
 
-def inbox_unseen(d, state, payload):
-    """Mentions and tells that fh replies carried since this hook last looked (the journal from state["inbox_offset"])
-    and that this tool call's output did not show, as context lines, or None (Sonnet, shift08: its replies went to
-    /dev/null for 2h20m, so the team block's mentions and tells never reached the model). Each is shown once."""
-    path = os.path.join(d, "journal.jsonl")
+def team_items(path, start):
+    """[(kind, text, reply clock)] for each mention and tell the journal's replies carried from byte `start` on (its last
+    3 MB at most), in order, and the journal's size."""
     try:
         size = os.path.getsize(path)
     except OSError:
-        return None
-    start = state.get("inbox_offset")
-    state["inbox_offset"] = size
-    if start is None or size <= start:
-        return None   # the first look starts here; a journal that shrank starts again
+        return [], None
+    if size <= start:
+        return [], size
     with open(path, "rb") as f:
         f.seek(max(start, size - 3_000_000))
         lines = f.read().decode("utf-8", "replace").splitlines()
-    found, when = [], {}
+    found = []
     for line in lines:
         if '"team"' not in line or ('"mentions"' not in line and '"tells"' not in line):
             continue
@@ -479,10 +480,69 @@ def inbox_unseen(d, state, payload):
         for kind in ("mentions", "tells"):
             for t in team.get(kind) or []:
                 # The operator's tells come as OPERATOR: lines (operator_unseen).
-                if isinstance(t, str) and (kind, t) not in found and not t.startswith(("operator, ", "operator to ")):
-                    found.append((kind, t))
-                    when[(kind, t)] = reply_clock(entry.get("at"))
-    if not found:
+                # An unread list's heading ("1 unread tell (chat_ack ...):") is no message.
+                if isinstance(t, str) and not t.startswith(("operator, ", "operator to ")) and not HEADING.match(t):
+                    found.append((kind, t, reply_clock(entry.get("at"))))
+    return found, size
+
+
+HEADING = re.compile(r"^\d+ unread (tell|mention)s? \(")
+AGE = re.compile(r"^.*?(?: \d+[smh]? ago| waiting \d+[smh]?\w*): ")
+
+
+def message_key(text):
+    """The message itself, after "<age> ago: " or an unread line's "waiting 3s: " (the age differs between replies, and
+    an unread tell comes again as "unread #92045 astra (on Aquilo), waiting 3s: ...", cut with "...")."""
+    return AGE.sub("", text, count=1)[:60]
+
+
+def previous_workspace(d):
+    """runs/PREV/AGENT for a workspace runs/RUN/AGENT whose run names PREV in resumed-from, or None."""
+    run = os.path.dirname(os.path.abspath(d))
+    try:
+        prev = open(os.path.join(run, "resumed-from")).readline().strip()
+    except OSError:
+        return None
+    other = os.path.join(os.path.dirname(run), prev, os.path.basename(os.path.abspath(d)))
+    return other if prev and os.path.isdir(other) else None
+
+
+def carried_unseen(d):
+    """(d26 batch238, viewer Aurora 11:50: "keep unseen messages unread, including across restart") the previous run's
+    mentions and tells its model never saw: its journal past its own hook's offset (a shift that ended inside a long
+    tool call). Taken once: that workspace's state then says carried_to and its offset moves to its journal's end."""
+    prev = previous_workspace(d)
+    if not prev:
+        return []
+    path = os.path.join(prev, STATE)
+    try:
+        state = json.load(open(path))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(state.get("inbox_offset"), int) or state.get("carried_to"):
+        return []   # its hooks never looked (no record of what its model saw), or already carried
+    found, size = team_items(os.path.join(prev, "journal.jsonl"), state["inbox_offset"])
+    run = os.path.basename(os.path.dirname(os.path.abspath(prev)))
+    state["inbox_offset"] = size or state["inbox_offset"]
+    state["carried_to"] = os.path.basename(os.path.dirname(os.path.abspath(d)))
+    write_json(path, state)
+    return [(k, t, f"{c}, {run}" if c else run) for k, t, c in found]
+
+
+def inbox_unseen(d, state, payload):
+    """Mentions and tells that fh replies carried since this hook last looked (the journal from state["inbox_offset"])
+    and that this tool call's output did not show, as context lines, or None (Sonnet, shift08: its replies went to
+    /dev/null for 2h20m, so the team block's mentions and tells never reached the model). Each is shown once.
+
+    (d26 batch238, viewer Aurora 11:50) What the model saw is this state, apart from the harness's read marks: a
+    script's chat_ack (Opus's hold.py, batch234) marks tells read in the game, not here. A new workspace looks from its
+    journal's start, and its first look also takes the previous run's items its model never saw (carried_unseen)."""
+    first = state.get("inbox_offset") is None
+    carried = carried_unseen(d) if first else []
+    found, size = team_items(os.path.join(d, "journal.jsonl"), state.get("inbox_offset") or 0)
+    if size is not None:
+        state["inbox_offset"] = size
+    if size is None and not carried:
         return None
     def strings(v):
         if isinstance(v, str):
@@ -496,24 +556,27 @@ def inbox_unseen(d, state, payload):
     shown = "\n".join(strings(payload.get("tool_response")))
 
     def seen(text):
-        # The message itself, after "<age> ago: " (the age a reply prints may differ from the journal's).
-        body = text.split(" ago: ", 1)[1] if " ago: " in text else text
-        needle = body[:80]
+        needle = message_key(text)
         return needle in shown or json.dumps(needle, ensure_ascii=False)[1:-1] in shown
-    unseen = [(k, t) for k, t in found if not seen(t)]
+    # Newest first, each message once (its newest delivery: a re-delivered unread tell or a peek and the read after it)
+    unseen, keys = [], set()
+    for k, t, c in reversed(carried + found):
+        key = (k, message_key(t))
+        if key not in keys and not seen(t):
+            keys.add(key)
+            unseen.append((k, t, c))
     if not unseen:
         return None
     # (d26 batch234, viewer Aurora site:5021) the newest when there are more: Opus's 19-min script call carried 21, and
     # the first 10 left out tell 92032 and Aurora's @mention, the two newest. Ages count from the reply that carried
-    # them, so its clock time goes with each (that tell read "0s ago" 3 min later).
-    out = []
+    # them, so its clock time goes with each (that tell read "0s ago" 3 min later). (batch238) newest first.
+    out = [f"{'MENTION' if k == 'mentions' else 'TELL'}{' (reply ' + c + ')' if c else ''}: "
+           f"{t if len(t) <= INBOX_LINE else t[:INBOX_LINE] + ' [...]'}" for k, t, c in unseen[:INBOX_MAX]]
     if len(unseen) > INBOX_MAX:
         out.append(f"+{len(unseen) - INBOX_MAX} earlier: ./fh tells and ./fh call chat list them")
-    out += [f"{'MENTION' if k == 'mentions' else 'TELL'}{' (reply ' + when[(k, t)] + ')' if when.get((k, t)) else ''}: "
-            f"{t if len(t) <= INBOX_LINE else t[:INBOX_LINE] + ' [...]'}" for k, t in unseen[-INBOX_MAX:]]
     state["inbox_shown"] = state.get("inbox_shown", 0) + len(unseen)
-    return "\n".join(out) + ("\n(From your fh replies' team block since your last tool call; this tool call's output "
-                             "did not show them. Shown here once.)")
+    return "\n".join(out) + ("\n(From your fh replies' team block since your last tool call, newest first; this tool "
+                             "call's output did not show them. Shown here once.)")
 
 
 def hook(event, args):
@@ -572,8 +635,17 @@ def hook(event, args):
         save()
         log(source=payload.get("source"))
         print(brief(d, "Your context was just compacted."))
+    elif event == "pre-tool":   # (d26 batch238 BT) Grok, Muse; Claude Code's PreToolUse is tools/permit.py
+        try:
+            toolcall.started(d, payload)
+        except OSError:
+            pass
     elif event == "post-tool":
         context = None
+        try:
+            toolcall.ended(d, payload)
+        except OSError:
+            pass
         if "hooks_seen" not in state:
             state["hooks_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")   # shows the workspace hooks load (smoke tests)
             save()

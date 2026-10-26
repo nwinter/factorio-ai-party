@@ -22,9 +22,11 @@ from collections import OrderedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pog  # noqa: E402
+import toolcall  # noqa: E402
 
 HARNESS = re.compile(r'/silent-command rcon\.print\(remote\.call\("agent_harness", "dispatch", \[(=*)\[\n(.*)\]\1\]\)\)', re.S)
 ACTION = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+BOT = re.compile(r"[a-z][a-z0-9_-]{0,15}")
 MAX_REQUEST = 1048576
 
 
@@ -109,6 +111,28 @@ def with_note(text, note):
     return json.dumps(obj, ensure_ascii=False)
 
 
+def with_tool_calls(text, req, run_dir, now=None):
+    """(d26 batch238 BT) a tell's reply with in_tool_call: one line for each addressee whose model has been inside one
+    tool call a minute or more (tools/toolcall.py, from its CLI's tool hooks). batch234: Astra's three tells to Opus each
+    read "waking them if asleep" while Opus's model sat 15-19 min in one Bash call that acked them unread."""
+    if req.get("action") != "tell" or not run_dir:
+        return text
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return text
+    result = obj.get("result") if isinstance(obj, dict) and obj.get("ok") else None
+    names = result.get("to") if isinstance(result, dict) else None
+    if not isinstance(names, list):
+        return text
+    facts = [f for n in names if isinstance(n, str) and BOT.fullmatch(n)
+             for f in [toolcall.fact(n, os.path.join(run_dir, n), now)] if f]
+    if not facts:
+        return text
+    result["in_tool_call"] = facts
+    return json.dumps(obj, ensure_ascii=False)
+
+
 def hms(t):
     return time.strftime("%H:%M:%S", time.localtime(t))
 
@@ -143,8 +167,9 @@ def peer(conn):
 
 
 class Broker:
-    def __init__(self, port, password, log_path=None, host="127.0.0.1", rcon_timeout=60, group=None, uids=None):
+    def __init__(self, port, password, log_path=None, host="127.0.0.1", rcon_timeout=60, group=None, uids=None, run_dir=None):
         self.port, self.password, self.host, self.rcon_timeout = port, password, host, rcon_timeout
+        self.run_dir = run_dir        # runs/RUN: the agents' workspaces (serve: the socket folder's parent)
         self.log_path, self.lock = log_path, threading.Lock()
         # Agents as other macOS users (docs/LAUNCH-NOTES.md): the sockets' group, and each bot's own uid if known.
         self.group, self.uids = group, uids or {}
@@ -268,7 +293,7 @@ class Broker:
                                              + (f"the game answered it from its own record (tick {tick}, now {now_tick}): it was applied then and not again now"
                                                 if tick < now_tick else "the game had no record of it (never applied, or applied and then rolled back): it ran now"))
                         broker.count(bot, "forwarded")
-                        self.reply({"ok": True, "text": text})
+                        self.reply({"ok": True, "text": with_tool_calls(text, req, broker.run_dir)})
                 finally:
                     if rcon is not None:
                         try:
@@ -284,6 +309,8 @@ class Broker:
 
     def serve(self, directory, bots):
         os.makedirs(directory, exist_ok=True)
+        if self.run_dir is None:
+            self.run_dir = os.path.dirname(os.path.abspath(directory))
         gid = None
         if self.group:
             import grp
@@ -353,7 +380,7 @@ def main():
     ap.add_argument("bots", nargs="+")
     a = ap.parse_args()
     for b in a.bots:
-        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,15}", b):
+        if not BOT.fullmatch(b):
             raise SystemExit(f"not a bot name: {b}")
     uids = {k: int(v) for k, v in (u.split("=", 1) for u in a.uid)}
     port = a.port or pog.PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])

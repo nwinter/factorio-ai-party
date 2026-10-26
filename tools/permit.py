@@ -13,9 +13,13 @@ in Claude Code's sandbox.
   tools/permit.py --check CMD    prints allow or pass (tests)
 """
 import json
+import os
 import re
 import shlex
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolcall  # noqa: E402
 
 PROGRAMS = {"./fh", "./shot", "sleep", "echo", "printf", "date", "cat", "grep", "head", "tail", "python3", "jq",
             "wc", "sort", "uniq", "rg", "ls", "true", "false", "test", "["}
@@ -75,6 +79,18 @@ def decide(command):
     return not expect_target
 
 
+def record(payload):
+    """(d26 batch238 BT) the call's start in an agent workspace, for a sender's "one tool call running since" fact
+    (tools/toolcall.py; tools/context.py hook post-tool records its end)."""
+    d = payload.get("cwd") or ""
+    if not os.path.exists(os.path.join(d, toolcall.MARKER)):
+        return
+    try:
+        toolcall.started(d, payload)
+    except OSError:
+        pass
+
+
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--check":
         print("allow" if decide(sys.argv[2]) else "pass")
@@ -85,6 +101,7 @@ def main():
         return
     if payload.get("tool_name") != "Bash":
         return
+    record(payload)
     command = (payload.get("tool_input") or {}).get("command") or ""
     if command and decide(command):
         print(json.dumps({"hookSpecificOutput": {
