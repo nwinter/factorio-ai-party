@@ -410,6 +410,17 @@
   laser-turret at every quality; a rare one refills 255.6 kJ a tick, 3 ticks after a shot), energy least, at the start
   and now; samples, runs and `longest_below_samples` below a shot's energy; `kills` and `damage` dealt over the watch
   (its tooltip's counts, as `turret_tally` reads). A watch begun before the harness read lasers has no `lasers`.
+  `ammunition` (each window, and each `mixed.parts` entry with its `repair_packs_used`): what the platform's item
+  production statistics count consumed (a turret's shots count there) of uranium-rounds-magazine, firearm-magazine,
+  piercing-rounds-magazine, rocket, explosive-rocket and railgun-ammo, by quality (`used: {item: {quality: n}}`,
+  `total`), from `from_tick` to `to_tick`, the window's own start and end. After a split, `ammunition_watch` counts from
+  the tick the watch began. `replace: true` (with none counting, the platform's newest kept watch done) starts
+  `ammunition_chain`: from the first replaced watch's start to this one's end, `watches` its ids, gaps between two
+  watches included. `ammunition_boundaries` names what no window counts or what falls between two samples, each with
+  its ticks and use: `departure` (between the last sample that read it stopped and the first that read it flying,
+  before the watch began), `arrival` (between the last sample that read it flying and the end, counted in the last
+  window), `between` (a replaced watch's end to the next one's start, counted in the chain only), `start` (a watch
+  begun in flight). A watch begun before the harness read ammunition says `ammunition used ?`.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and

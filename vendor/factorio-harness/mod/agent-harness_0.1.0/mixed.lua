@@ -156,7 +156,10 @@ return function(api)
       if k > M.PART_LINES then lines[#lines+1] = string.format('+%d more', #read.lines - M.PART_LINES); break end
       lines[k] = l
     end
-    return {from_tick=from, to_tick=to, line=type(read) == 'table' and (read.line or read.note) or nil, lines=#lines > 0 and lines or nil}
+    -- (d25 batch212 QX1) a flight watch's part keeps its ammunition and repair packs used, read at from and to
+    local fw = type(read) == 'table' and read or {}
+    return {from_tick=from, to_tick=to, line=type(read) == 'table' and (read.line or read.note) or nil, lines=#lines > 0 and lines or nil,
+      ammunition=fw.ammunition, repair_packs_used=fw.repair_packs_used}
   end
   local function summary(mx)
     local e = mx.edits[1]
