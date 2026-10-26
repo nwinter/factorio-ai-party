@@ -170,6 +170,7 @@
   {"t": "2026-10-26 03:07", "kind": "deploy", "text": "Harness runtime deployed (d1096669).", "affected": "harness runtime"},
   {"t": "2026-10-26 06:06", "kind": "shift", "text": "Shift 80 change began.", "affected": "stream and agents", "recovered": "2026-10-26 06:16"},
   {"t": "2026-10-26 06:38", "kind": "deploy", "text": "Harness runtime deployed (0979b435).", "affected": "harness runtime"},
-  {"t": "2026-10-26 07:24", "kind": "deploy", "text": "Harness runtime deployed (9173b206).", "affected": "harness runtime"}
+  {"t": "2026-10-26 07:24", "kind": "deploy", "text": "Harness runtime deployed (9173b206).", "affected": "harness runtime"},
+  {"t": "2026-10-26 07:24", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
  ]
 }
