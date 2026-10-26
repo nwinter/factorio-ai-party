@@ -15293,3 +15293,38 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   `uptime@63906911`; this runtime refused it naming `uptime@63906911/astra (41 machines), uptime@63906911/sol (13
   machines)` (0.36 ms with the dispatch), and as sol `agent: 'astra'` read page 3 of 3 (machines 33-41 of 41).
 - Test: tests/d25_batch215.lua (tests/d25batch215.test.ts), failing on main.
+
+## d25 batch218 (QAC1, Sol #2393: logistics free-stock checks by item@quality)
+- Cause: networks.lua's deliveries_wait read each stuck request's free supply with `get_supply_counts(name)`. A name
+  alone is normal quality in 2.0.77 (on a copy of world n's 20:51 save, network 22 on Vulcanus: `electronic-circuit`
+  and `{name, quality='normal'}` both 53597; uncommon and rare 0; `get_contents` lists each quality apart). Sol's
+  requesters at (59.5,52.5) and (52.5,52.5) ask rare and uncommon circuits, steel, carbide and concrete, so the alert
+  set them against the normal stock. On the copy the deployed runtime gave Sol's alert word for word ("7 requests ...
+  (electronic-circuit 53707, steel-plate 14456, tungsten-carbide 4301, ...)"); this runtime gives none there.
+- deliveries_wait: each request's free count at its quality (`{name, quality}` when not normal), each item@quality
+  read once a view; the alert names item@quality (`electronic-circuit@rare 12`).
+- The networks read and line: requests, short, unfilled and holds by item@quality (`requesters ask
+  electronic-circuit@rare 60 (60 short)`; rows `{name, quality?, ...}`, `unfilled_items` keyed item@quality). What
+  robots already carry to a requester (`targeted_items_deliver`, whose rows carry quality) counts against the request
+  of that quality only: 50 normal on the way no longer fill a request for 50 rare.
+- Construction backlog (construction_wait and its cause): a ghost's item at the ghost's quality, an upgrade's at the
+  target's (on the copy robots left a rare assembling-machine-2 ghost unbuilt with 5 normal ones in storage and built
+  it as rare once one rare was there); the cause names `assembling-machine-3@rare` missing.
+- Look-ahead (`stock falling to zero ...`): the network samples are by item@quality, so a falling rare stock is not
+  hidden by normal stock. Samples taken before this runtime (by name) are not compared with new ones: up to 30 min
+  after the deploy the line says `under 30 min of network samples yet`.
+- gates and the off_by_condition alert: a logistic condition's item read at its signal's quality (on the copy an
+  inserter's `iron-plate@uncommon > 0` stayed false with 100 normal plates in its network and turned true at 5
+  uncommon). gates names `iron-plate@uncommon`, counts the reserved pickups of that quality; the alert says
+  `(iron-plate@epic 0 now)`.
+- Checked, unchanged: logistics_audit (already by quality), supply (normal requests against normal stock), the
+  conditions' item_count (already by quality), silo and personal reads (by quality). Fuel, ammo and science-pack
+  network reads (fuelhours, turretammo, labs, research, seeds, launchneed, packaudit, ghostlist's network_holds)
+  still count normal by name.
+- Cost (network 22: 257 requester points, 511 filters, 9 of them not normal, 130 contents rows): the view's row
+  for that network on the copy, main's and this networks.lua loaded side by side and alternated (10 rows a sample):
+  medians 3.5-4.4 ms each, paired branch/main ratios 0.98-1.09 across runs (the copy's noise is larger than any
+  difference). A counted loop of the same code on a mock of that size (local Lua): the row 389-410 us against main's
+  397-419; the stock sample (every 5 game minutes, all networks) 16-17 us against 14. Engine reads: the same or
+  fewer (one supply read per item@quality).
+- Test: tests/d25_batch218.lua (fails on main in each part).

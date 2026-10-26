@@ -86,6 +86,13 @@ eq(r.unfilled_items['electronic-circuit@rare'],200); eq(r.unfilled_items['electr
 assert(r.line:find('requesters ask electronic-circuit@rare 200 (200 short), electronic-circuit@uncommon 100 (100 short)',1,true),r.line)
 assert(r.line:find('holds electronic-circuit 53287',1,true),r.line)
 
+-- 1b. What is on the way counts at the request's quality (targeted_items_deliver rows carry it): 50 normal gears
+-- flying to a chest that asks 50 rare leave the 50 rare short.
+ln.requester_points[3]={owner={unit_number=704,position={x=30.5,y=52.5},get_item_count=function() return 0 end},
+  filters={{name='iron-gear-wheel',quality='rare',count=50}},targeted_items_deliver={{name='iron-gear-wheel',quality='normal',count=50}}}
+r=row()
+for _,a in ipairs(r.requests) do if a.name=='iron-gear-wheel' then eq(a.short,50,'normal gears on the way do not fill a rare request'); eq(a.quality,'rare') end end
+ln.requester_points[3]=nil
 -- 2. 12 rare circuits come free: the alert names item@quality and the free count of that quality.
 free['electronic-circuit@rare']=12
 r=row()
