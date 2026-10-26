@@ -49,7 +49,9 @@ holds the nudge until it ends when it began less than idle_min after the agent's
 the nudges' tells reached nothing) When a rest's until passes, tools/pane_resume.py types one continue message into
 the agent's pane (Grok: Try Again in its limit dialog; the agy loop resumes itself), never mid-turn, logs it here and in
 nudges.jsonl, and ends the rest; a CLI still at its limit screen a minute later is logged once and tried again at the
-next nudge. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
+next nudge. (d25 batch220 QAE1, Sol's Codex stopped on "Selected model is at capacity" 23:25-23:55) A CLI whose pane
+shows a provider error and no turn running for --idle-min gets one message from the same module (a promo or setup
+dialog on top gets one esc first), at most once per 20 min. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
 fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
 team (on request) and exits; --dry-run logs without sending.
 """
@@ -781,7 +783,7 @@ def main():
         f"grace {a.grace_min} min, deadline {time.strftime('%H:%M', time.localtime(n.deadline)) if n.deadline else '?'}"
         + (" (dry run)" if a.dry_run else ""))
     # (d25 batch213) the panes are read in a dry run too; nothing is typed there
-    resumer = Resumer(a.run, HerdrPanes(), n.every_s, n.deadline, a.dry_run) if os.path.isfile(
+    resumer = Resumer(a.run, HerdrPanes(), n.every_s, n.deadline, a.dry_run, idle_s=n.idle_s) if os.path.isfile(
         os.path.join(a.run, "panes.txt")) else None
     while True:
         now = time.time()

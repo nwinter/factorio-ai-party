@@ -15321,6 +15321,42 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Test: tools/test_pane_resume.py, with fake panes and fixed times. It replays shift76's Muse screen and also covers
   mid-turn panes, Grok's dialog (Enter never on Buy more credits), Claude, Codex, agy, a dry run and the deadline. It
   fails on main (no tools/pane_resume.py). Under POG_TEST=1, HerdrPanes refuses (docs/TESTS-LIVE.md).
+## d25 batch220 (QAE1, operator 23:58: an agent CLI stopped on a provider error is resumed in its pane)
+- Shift78: Sol's Codex turn ended at 23:28:16 with "Selected model is at capacity. Please try a different model."
+  (its session log: task_complete with codex_error_info server_overloaded). A "Set up security for Daybreak mode"
+  dialog sat on top (1 Set up security, esc dismiss). The operator pressed esc and prompted it at 23:54:06; Sol resumed.
+  tools/supervise.sh logged "skip nudge (status idle): last request Ns ago, working" every 80 s from 23:29 to 23:53:
+  Sol's journal holds a platform_defense request every 20 s from 23:28 to 23:54 (a loop that ran on while the CLI
+  was stopped).
+- tools/pane_resume.py, at each tools/idle_nudge.py poll, for an agent with no resting.json (a rest is batch213's
+  rule) and not agy: a provider stop is a line in the pane's last 40 lines after the last message typed here that
+  matches its CLI's STOP texts, with no turn running on the screen ("esc to interrupt", "[stop]"), herdr not reading
+  the pane working (claude, codex, grok), and no usage-limit text (LIMIT; batch213's) or Grok limit dialog. The
+  journal is not read for this rule.
+- After a provider stop has shown for --idle-min (the nudge time, 10 min) in a row: a known promo or setup dialog on
+  the screen's last 40 lines (DIALOGS: Codex's "Set up security", "Security setup", "Codex just got an upgrade", "Approaching rate
+  limits") gets one `esc`, and no option in it is chosen. A dialog still up after the esc is logged once and nothing is
+  typed. Then one message: "Operator (automatic): your last turn stopped on a provider error: <the line>; continue
+  from your tells and notes."
+- A minute later: a turn running or herdr reading it working is logged as resumed. A provider stop after the message
+  is logged once per stop ("keeps failing"), and it tries again at most once per 20 min (RETRY_S) while the stop
+  stays. No stop and no turn after the message ends the episode (logged).
+- STOP texts (from the binaries): Codex 0.164.0 "at capacity", "rate limit", "stream error", "stream disconnected",
+  "Reconnecting", "high demand", "Server overloaded", "Internal server error", "exceeded retry limit", "unexpected
+  status"; Claude Code 2.1.310 "API Error" (not "API Error: Request was aborted", an interrupt), "Overloaded", "high
+  load", "temporarily limiting requests", "Request timed out", "Connection error"; Grok 1.0.70 "Rate limited", "The
+  service is busy", "Service unavailable", "Something went wrong on our side", "did not complete successfully",
+  "Connection failed", "No response from the model", "temporarily overloaded", "stopped responding", "temporarily
+  unavailable", "timed out or was interrupted", "Reconnecting"; Muse 1.4.13 "model failed", "provider error", "turn
+  failed", "rate limited", "Server overloaded", "server error", "connection failed", "stream error", "stopped before
+  reaching the model". Codex's "rate limit reminders" dialog lines are not a stop.
+- Logs: rows {"resume": true, "provider_stop": true, "action": typed | not_typed | dialog_up | still_stopped |
+  resumed | no_stop, "stop": the line} in runs/RUN/nudges.jsonl and "resume NAME: provider stop ..." lines in
+  idle-nudge.log. --dry-run presses and types nothing.
+- Test: tools/test_pane_resume_stop.py (fake panes, fixed times, no game reads): Sol's screen and dialog with a
+  background loop's journal, a stop that keeps failing, the cases that are not a stop, Claude, Grok and Muse stops, a
+  dialog esc does not close, a dry run. It fails on main (Resumer has no idle_s and no provider-stop rule).
+
 ## d25 batch214 (QZ1, Sol #2379: uptime rows in pages; QZ2, Astra #2380: limits dry_run missed)
 - QZ1. Sol's 600 s Asterion watch of 20 machines gave `machine_rows` as text above 16 (uptime.ROWS: 64 rows of 15
   fields took 23 ms to encode on a copy), so the coal and sulfur shortage counters of each machine could not be compared.
