@@ -111,6 +111,21 @@ return function(api)
     l[#l+1] = {id=w.id, index=w.index, force=w.force, set=w.set, began=M.began(w), ended=w.ended, why=why, tick=tick or game.tick}
     while #l > M.DROPPED_KEEP do table.remove(l, 1) end
   end
+  -- (d26 batch248 R8: six reads by id in shifts 69-80 got a bare "no flight watch #N") an id no longer on the list: what
+  -- the dropped records keep of it (its platform, began, ended, when and why it was dropped), or that none had it.
+  local function missing(st, id, force)
+    local head = 'no flight watch #' .. tostring(id)
+    for key, l in pairs(st.dropped or {}) do
+      for _, d in ipairs(l) do
+        if d.id == id and d.force == force then
+          return string.format('%s: #%d on %s (began %s, ended %s) is no longer kept: dropped at tick %d (%s ago), %s', head, d.id, key,
+            d.began and 'at tick ' .. d.began or 'never', d.ended and 'at tick ' .. d.ended or 'never', d.tick, secs(game.tick - d.tick), d.why)
+        end
+      end
+    end
+    if id > (st.seq or 0) or id < 1 then return string.format('%s: none set with that number (the last set is #%d)', head, st.seq or 0) end
+    return string.format('%s: set and since dropped, before the last %d dropped on its platform kept', head, M.DROPPED_KEEP)
+  end
   local function push(w, text)
     local st = store()
     st.eseq = st.eseq + 1
@@ -1253,7 +1268,7 @@ return function(api)
           return {watch=r, line=r.line}
         end
       end
-      error('no flight watch #' .. tostring(a.id), 0)
+      error(missing(st, a.id, p.force.name), 0)
     end
     if a.platform == nil then
       local rows, lines = {}, {}

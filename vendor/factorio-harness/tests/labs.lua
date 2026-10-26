@@ -38,12 +38,15 @@ end}
 local tech={name='logistics',research_unit_ingredients={{name=red,amount=1},{name=green,amount=1}},research_unit_count=100,research_unit_energy=600}
 local force={current_research=tech,research_progress=0.25,laboratory_speed_modifier=0}
 local p={position={x=0,y=0},surface=surface,force=force}
+surface.name='nauvis'
+game={tick=0,surfaces={nauvis=surface}}
 local L=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
   status_name=function(e) return names[e.status] end}
 local r=L.view(p,{})
 -- 75 units left x 10 s each at 1 working lab: 750 s.
 eq(r.research,'logistics 25% needs automation+logistic, eta 12m30s at 1 working labs')
-eq(r.labs,'4 in 2 groups')
+eq(r.labs,'4 in 2 groups within 96 tiles of (0,0)')
+eq(r.research_labs,'1 of 4 labs of ours working, every surface (nauvis 1 of 4): research counts them all; the groups below are the labs within 96 tiles of (0,0) on nauvis')
 eq(#r.groups,2)
 has(r.groups[1],'labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2)')
 has(r.groups[1],'feeders: 3 inserters (1 lab-to-lab)')

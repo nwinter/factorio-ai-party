@@ -83,7 +83,11 @@ eq(wholes,2,'a whole-surface find per planet, the first time'); assert(crafter_f
 assert(took<=200,'the first job: a step every 4 ticks: '..took)
 eq(asked,'nauvis','power on the surface with the most labs')
 assert(crafter_types['mining-drill'] and crafter_types['offshore-pump'] and crafter_types['assembling-machine'],'the miners in the same finds (Grok 04:55)')
+-- (d26 batch248 R7) the line says when it was read: the job's start to its end
+local function bare(t) return t and (t:gsub(' %(read [^)]*%):', ':', 1)) end
 local line=S.lines(p,h)
+eq(line:match('^science on nauvis %((read [^)]*)%):'),'read '..math.floor(took/60)..'s ago')
+line=bare(line)
 eq(line,'science on nauvis: research plastics-2 41%; labs 12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, '
   ..'made 12/min, used 30/min; first short step plastic-bar: 4 of 4 working, made 30/min, used 52/min '
   ..'(chemical-science-pack > advanced-circuit > plastic-bar); power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); '
@@ -105,13 +109,13 @@ power.fed=13; power.low=0; power.low_min=nil
 crafter_finds=0
 run(18000); S.lines(p,h); finish()
 assert(crafter_finds>0,'the crafters walked for the idle check')
-eq(S.lines(p,h),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
+eq(bare(S.lines(p,h)),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
   ..'power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 13 with fuel at their feeders')
 -- 4b. A feed chest falling at its 10-minute rate (Haiku, 12:20): the one with the fewest minutes left on the boilers
 -- part; told again as it falls under 20, 10 and 5 min, not for each minute.
 power.feed={min=12,line='requester-chest (10,39) 50 coal, uses 4.0/min over 10 min, 12 min left'}
 run(18000); S.lines(p,h); finish()
-eq(S.lines(p,h),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
+eq(bare(S.lines(p,h)),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
   ..'power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 13 with fuel at their feeders; '
   ..'feed chest requester-chest (10,39) 50 coal, uses 4.0/min over 10 min, 12 min left')
 power.feed={min=11,line='requester-chest (10,39) 46 coal, uses 4.0/min over 10 min, 11 min left'}

@@ -11423,7 +11423,11 @@ function feeding.recipe_of(e)
   if e.type=='furnace' then
     local okp,prev=pcall(function() return e.previous_recipe end)
     local name=okp and prev and prev.name
-    return type(name)=='table' and name.name or name
+    if name~=nil and type(name)~='string' then
+      local okn,n=pcall(function() return name.name end)
+      name=okn and n or nil
+    end
+    return type(name)=='string' and name or nil
   end
 end
 -- What a burner's fuel slots hold: {name=count}, or nil when empty (or no burner).
@@ -11528,7 +11532,11 @@ function feeding.wants(p,e,a)
     if not recipe and e.type=='furnace' then
       local okp,prev=pcall(function() return e.previous_recipe end)
       local name=okp and prev and prev.name
-      name=type(name)=='table' and name.name or name
+      if name~=nil and type(name)~='string' then
+        local okn,n=pcall(function() return name.name end)
+        name=okn and n or nil
+      end
+      if type(name)~='string' then name=nil end
       recipe=name and prototypes.recipe and prototypes.recipe[name] or nil
     end
     for _,ing in ipairs(recipe and recipe.ingredients or {}) do
@@ -18974,7 +18982,7 @@ function handlers.assembler_batch(p,a) return M.batch.run(p,a) end
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
 M.trace=require('trace'){refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
-M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
+M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,
   wait_for_full_hand=function(e) return M.details.wait_for_full_hand(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply,spoil=M.spoil}
 function handlers.labs(p,a) return M.labs.view(p,a) end

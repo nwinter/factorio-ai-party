@@ -27,6 +27,11 @@ return function(api)
     s.science_line = s.science_line or {}
     return s.science_line
   end
+  local function ago(ticks)
+    local sec = math.floor(ticks / 60)
+    if sec >= 3600 then return string.format('%dh%02dm', math.floor(sec / 3600), math.floor(sec / 60) % 60) end
+    return sec >= 60 and string.format('%dm%02ds', math.floor(sec / 60), sec % 60) or sec .. 's'
+  end
   local function mw(kw) return kw >= 1000 and string.format('%.1f MW', kw / 1000) or string.format('%d kW', math.floor(kw + 0.5)) end
 
   local function start(f)
@@ -250,7 +255,7 @@ return function(api)
     else
       local text, key = compose(job, f)
       local s = store()
-      s[job.force] = {tick=game.tick, text=text, key=key}
+      s[job.force] = {tick=game.tick, start=job.start, text=text, key=key}
       -- The labs' state for the research-stalled alert (research.lua): which packs how many labs hold none of.
       local lab = job.labs[job.surface] or {n=0, working=0, lack={}}
       local st = api.state()
@@ -298,7 +303,12 @@ return function(api)
     local told = h.science
     if told and (game.tick - told.tick < PUSH_TICKS or told.key == c.key) then return nil end
     h.science = {tick=game.tick, key=c.key}
-    return c.text
+    -- (d26 batch248 R7, Sol shift79 11:04Z: "Old sleep science10working was stale versus live labs"; Luna shift73: "still
+    -- reports 7/26 working, stale machine snapshot") when its facts were read: the job's start (the labs first) to its end.
+    if not c.start then return c.text end
+    local from, to = game.tick - c.start, game.tick - c.tick
+    local when = from - to >= 60 and string.format('read %s to %s ago', ago(from), ago(to)) or string.format('read %s ago', ago(to))
+    return (c.text:gsub('^(science on [^:]+):', '%1 (' .. when .. '):', 1))
   end
   return M
 end

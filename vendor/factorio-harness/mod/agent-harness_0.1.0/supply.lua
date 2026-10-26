@@ -1782,7 +1782,8 @@ return function(api)
     for _, e in ipairs(list) do
       local r = e.valid and (try(function() return e.get_recipe() end) or (e.type == 'furnace' and try(function() return e.previous_recipe end)))
       if r and not try(function() return r.ingredients end) then
-        local rn = type(r.name) == 'table' and r.name.name or try(function() return r.name end)
+        local rn = try(function() return r.name end)
+        if rn and type(rn) ~= 'string' then rn = try(function() return rn.name end) end
         r = rn and prototypes.recipe[rn] or nil
       end
       local amount = 0

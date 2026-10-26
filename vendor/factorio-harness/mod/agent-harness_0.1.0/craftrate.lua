@@ -12,7 +12,8 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
   local function num(v) return string.format('%g', r1(v)) end
-  local function name_of(x) return type(x) == 'table' and x.name or x end
+  -- (d26 batch248 R3) an idle furnace's previous_recipe.name is a LuaRecipePrototype (userdata in 2.0.77), not a table
+  local function name_of(x) if type(x) == 'string' then return x end return x and try(function() return x.name end) end
   -- One product's average yield per craft, and the part productivity applies to.
   local function yield(p)
     local amount = p.amount or (((p.amount_min or 0) + (p.amount_max or p.amount_min or 0)) / 2)
