@@ -15786,3 +15786,7 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   age on to the snapshot; site/push_live.py `public_vehicles` sends `vehicles` (docs/LIVE-API.md); site/static/mapview.js
   draws the Vehicles layer (Team group). A runtime without the part answers nothing and the layer reads "not read".
 - Tests: tests/d26_batch233.lua (in lua.test.ts), site/test_vehicles.py; both fail on main.
+- cp2: cars and tanks too (VEHICLE_TYPES `spider-vehicle`, `car`; a tank is type car): no route, so `destination` is the
+  remote drive's target when an agent drives it by remote view. On world n (module probe after a save, d26 ~10:50):
+  0.388, 0.318, 0.258 ms for its 10 (7 tanks and 3 spidertrons on Nauvis and Gleba; one spidertron sent by Opus to
+  (-1632,-605)). The map draws a car or tank as a dot, a spidertron as a square.

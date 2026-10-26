@@ -30,7 +30,11 @@ READ = {"ready": True, "part": "vehicles", "tick": 66924930, "vehicles_total": 3
     {"unit_number": 27069154, "name": "spidertron", "type": "spider-vehicle", "surface": "nauvis", "age_s": 300,
      "seen_tick": 66906930, "position": {"x": -158.5, "y": -540.7000000000000455}, "visible": False},
     {"unit_number": 27069155, "name": "spidertron", "type": "spider-vehicle", "surface": "nauvis", "unseen": True,
-     "visible": False}]}
+     "visible": False},
+    # (cp2) a tank driven by remote view: its drive's target is its destination
+    {"unit_number": 311799, "name": "tank", "type": "car", "surface": "nauvis", "age_s": 0, "seen_tick": 66924930,
+     "position": {"x": -140, "y": -450}, "visible": True, "remote": "luna", "remote_target": {"x": -80, "y": -450},
+     "destination": {"x": -80, "y": -450}}]}
 
 JS = r"""
 global.window = global;
@@ -85,7 +89,7 @@ def main():
     v = h.vehicles()
     check("harness.vehicles asks the census for part vehicles as an operator read", 'part = "vehicles"' in h.asked[0]
           and 'action = "census"' in h.asked[0] and "operator = true" in h.asked[0], h.asked[0][:400])
-    check("harness.vehicles: tick, rows, total", v["tick"] == 66924930 and len(v["rows"]) == 4 and v["total"] == 3, v)
+    check("harness.vehicles: tick, rows, total", v["tick"] == 66924930 and len(v["rows"]) == 5 and v["total"] == 3, v)
     check("harness.vehicles: an empty list written as {} reads as no rows",
           FakeHarness(dict(READ, vehicles={}, vehicles_total=0)).vehicles()["rows"] == [])
     check("harness.vehicles: none from a runtime without the part (the read prints {})", FakeHarness({}).vehicles() is None)
@@ -94,7 +98,7 @@ def main():
     check("model: no vehicles before a read", m.vehicles_snapshot(1000.0) is None)
     m.ingest({"vehicles": dict(v, t=1000.0)}, now=1000.0)
     s = m.vehicles_snapshot(1012.0)
-    a, b, c, u = s["rows"]
+    a, b, c, u, tank = s["rows"]
     check("model: positions rounded, ages counted on to the snapshot (12 s later)",
           a["position"] == {"x": -148.4, "y": -543.1} and a["age_s"] == 12 and c["age_s"] == 312 and s["read_age_s"] == 12, s)
     check("model: the route's sender and its age (7200 ticks before the read, then 12 s)", a["sent_by"] == "opus" and a["sent_age_s"] == 132, a)
@@ -106,7 +110,7 @@ def main():
     check("model: the snapshot carries vehicles", snap.get("vehicles", {}).get("total") == 3, snap.get("vehicles"))
 
     pv = push_live.public_vehicles(s)
-    check("push_live: the rows with their facts", len(pv["rows"]) == 4 and pv["rows"][0]["destination"] == {"x": -60.2, "y": -300.5}
+    check("push_live: the rows with their facts", len(pv["rows"]) == 5 and pv["rows"][0]["destination"] == {"x": -60.2, "y": -300.5}
           and pv["total"] == 3 and pv["read_age_s"] == 12, pv)
     check("push_live: only the listed keys", all(set(r) <= set(push_live.VEHICLE_KEYS) | {"position", "destination", "remote_target"}
                                                 for r in pv["rows"]), pv)
@@ -127,7 +131,12 @@ def main():
     o = json.loads(r.stdout)
     n, g = o["nauvis"], o["gleba"]
     check("the layer is listed, on by default, in the Team group", o["layer"] and o["group"] == ["team"], o)
-    check("Nauvis: its two with a position (the unseen one is not drawn)", n["n"] == 2 and len(n["marks"]) == 2, n)
+    check("Nauvis: its two spidertrons with a position and the tank (the unseen one is not drawn)", n["n"] == 3 and len(n["marks"]) == 3, n)
+    check("the tank: a dot, with its dashed line to its drive's target", n["marks"][2]["car"] and not n["marks"][0]["car"]
+          and n["marks"][2]["tx"] is not None, n["marks"])
+    check("hover: the tank, driven by remote view",
+          any(t.startswith("Tank 311799 · x -140, y -450 · Nauvis · seen 12 s ago (in sight) · driven by Luna by remote view · to x -80, y -450")
+              for t in n["hits"]), n["hits"])
     check("the first has its dashed line to its destination; the one out of sight is grey",
           n["marks"][0]["tx"] is not None and n["marks"][0]["seen"] and n["marks"][1]["tx"] is None and not n["marks"][1]["seen"], n["marks"])
     hover = [t for t in n["hits"] if t.startswith("Spidertron 23036938")]
@@ -140,8 +149,8 @@ def main():
     check("off: nothing drawn", o["off"]["marks"] == [], o["off"])
     check("far away: pinned to the edge, no line, its distance from the base", all(mk["tx"] is None for mk in o["far"]["marks"])
           and any("tiles from the base" in t for t in o["far"]["hits"] if t.startswith("Spidertron")), o["far"])
-    check("its toggle says none or not read", o["none"].startswith("none: no spidertron of ours on Nauvis") and o["unread"].startswith("not read"), o)
-    check("painted: a square each", o["painted"] >= 4, o["painted"])
+    check("its toggle says none or not read", o["none"].startswith("none: no vehicle of ours on Nauvis") and o["unread"].startswith("not read"), o)
+    check("painted: a square each spidertron", o["painted"] >= 4, o["painted"])
     print("vehicles: ok")
 
 

@@ -350,7 +350,7 @@
     var th = data.threats || {}, here = function (x) { return x && ok(x.position) && (x.surface || 'nauvis') === surface; };
     d.groups = (Array.isArray(th.incoming) ? th.incoming : []).filter(here);
     d.big = (Array.isArray(th.big) ? th.big : []).filter(here);
-    // (d26 batch233 VM, viewer Aurora site:5019) our spidertrons where our force last saw them (push_live's vehicles: the
+    // (d26 batch233 VM, viewer Aurora site:5019) our vehicles (spidertrons; cp2 cars and tanks) where our force last saw them (push_live's vehicles: the
     // census's read every 10 s), on the surface shown; the agents' names as the page shows them
     var vh = data.vehicles && Array.isArray(data.vehicles.rows) ? data.vehicles : null;
     d.vehiclesRead = !!vh;
@@ -758,7 +758,7 @@
     }));
     sc.vehicles = !on.vehicles ? [] : d.vehicles.map(function (x) {
       var at = spot(x.position), pinned = at !== x.position, t = ok(x.destination) ? x.destination : null;
-      var m = { x: px(at.x), y: py(at.y), tx: t && !pinned ? px(t.x) : null, ty: t && !pinned ? py(t.y) : null, seen: x.visible === true };
+      var m = { x: px(at.x), y: py(at.y), tx: t && !pinned ? px(t.x) : null, ty: t && !pinned ? py(t.y) : null, seen: x.visible === true, car: x.type === 'car' };
       sc.hits.push({ x: m.x, y: m.y, r: 9, text: vehicleText(d, x) + (pinned ? ' · ' + d.dist(x.position) + ' tiles from the base' : '') });
       return m;
     });
@@ -1014,7 +1014,8 @@
       if (t.big) { ctx.fillStyle = '#ff7a1a'; circle(ctx, t.x, t.y, 6); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#ff7a1a'; ctx.lineWidth = 1.5; circle(ctx, t.x, t.y, 10); ctx.stroke(); }
       else { ctx.fillStyle = '#ff5a44'; ctx.beginPath(); ctx.moveTo(t.x, t.y - 6); ctx.lineTo(t.x + 6, t.y); ctx.lineTo(t.x, t.y + 6); ctx.lineTo(t.x - 6, t.y); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     });
-    // (VM) a vehicle: a dashed line to its destination, a blue square (grey where the position is from out of sight)
+    // (VM) a vehicle: a dashed line to its destination, a blue square for a spidertron, a blue dot for a car or tank (cp2)
+    // (grey where the position is from out of sight)
     (sc.vehicles || []).forEach(function (t) {
       if (t.tx != null) {
         ctx.setLineDash([4, 3]); ctx.strokeStyle = 'rgba(79, 195, 247, .8)'; ctx.lineWidth = 1.5;
@@ -1022,7 +1023,8 @@
         ctx.strokeStyle = 'rgba(79, 195, 247, .9)'; ctx.lineWidth = 1.5; circle(ctx, t.tx, t.ty, 3); ctx.stroke();
       }
       ctx.fillStyle = t.seen ? C.vehicle : C.unknown; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-      ctx.fillRect(t.x - 5, t.y - 5, 10, 10); ctx.strokeRect(t.x - 5, t.y - 5, 10, 10);
+      if (t.car) { circle(ctx, t.x, t.y, 5.5); ctx.fill(); ctx.stroke(); }
+      else { ctx.fillRect(t.x - 5, t.y - 5, 10, 10); ctx.strokeRect(t.x - 5, t.y - 5, 10, 10); }
       ctx.fillStyle = '#000'; ctx.fillRect(t.x - 1.5, t.y - 1.5, 3, 3);
     });
     sc.pins.forEach(function (p) {
@@ -1310,7 +1312,7 @@
       : 'not read: no chart published yet';
     if (k === 'threats') return 'none: no enemy group on its way and no demolisher near ours on ' + where + ' now (read every 2-10 s)';
     if (k === 'agents') return 'none: no agent on ' + where + ' now';
-    if (k === 'vehicles') return d.vehiclesRead ? 'none: no spidertron of ours on ' + where + ' in the last read (every 10 s)' : 'not read: no vehicle read in the live state yet';
+    if (k === 'vehicles') return d.vehiclesRead ? 'none: no vehicle of ours on ' + where + ' in the last read (every 10 s)' : 'not read: no vehicle read in the live state yet';
     if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
     return 'none on ' + where + ' now';
   }
@@ -1442,7 +1444,7 @@
     if (d.fights.length && on.alerts) h += '<li><i class="mv-fight"></i>Fights</li>';
     if (d.groups.length && on.threats) h += '<li><i class="mv-group"></i>Enemies on their way (a dashed line to their target)</li>';
     if (d.big.length && on.threats) h += '<li><i class="mv-big"></i>Demolishers near ours</li>';
-    if (d.vehicles.length && on.vehicles) h += '<li><i class="mv-vehicle"></i>Spidertrons (a dashed line to the destination; grey: last seen out of sight)</li>';
+    if (d.vehicles.length && on.vehicles) h += '<li><i class="mv-vehicle"></i>Vehicles: spidertrons (square), tanks and cars (dot); a dashed line to the destination; grey: last seen out of sight</li>';
     var box = this.root.querySelector('.mapview-legend');
     if (box.dataset.sig !== h) { box.dataset.sig = h; box.innerHTML = h ? '<ul class="mm-legend">' + h + '</ul>' : ''; }
   };

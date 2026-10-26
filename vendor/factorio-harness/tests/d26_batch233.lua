@@ -24,16 +24,21 @@ local c=spider(27069154,nauvis,-358.5,-540.7)
 a.autopilot_destinations={{position={x=-60.25,y=-300.5}},{position={x=10,y=10}},{position={x=20,y=20}}}
 local riding={valid=true,unit_number=777,type='character'}
 b.get_driver=function() return riding end
-local st={census={done={start=4000,tick=4900,walked={[1]=true,[4]=true},by_type={[1]={['spider-vehicle']={a,c}},[4]={['spider-vehicle']={b},car={}}}}},
+-- (cp2) a tank: type car, no autopilot; driven by remote view
+local tank={valid=true,unit_number=311799,name='tank',type='car',surface=nauvis,position={x=-140,y=-150},get_driver=function() return nil end}
+visible['nauvis:-5,-5']=true
+local st={census={done={start=4000,tick=4900,walked={[1]=true,[4]=true},by_type={[1]={['spider-vehicle']={a,c},car={tank}},[4]={['spider-vehicle']={b},car={}}}}},
   spiderroute={spiders={[23036938]={by='opus',tick=4400}}}}
 local api={state=function() return st end,timed=function(_,f,...) return f(...) end,
-  vehicle_people=function() return {by_character={[777]='astra'},remote={}} end}
+  vehicle_people=function() return {by_character={[777]='astra'},remote={[311799]={name='luna',target={x=-40,y=-150}}}} end}
 local C=dofile('mod/agent-harness_0.1.0/census.lua')(api)
 -- a and b in sight, c out of sight and never seen
 visible['nauvis:-5,-17']=true; visible['gleba:2,0']=true
 local r=C.read({part='vehicles'})
-eq(r.ready,true); eq(r.part,'vehicles'); eq(r.tick,5000); eq(r.vehicles_total,3); eq(#r.vehicles,3)
-local v1,v2,v3=r.vehicles[1],r.vehicles[2],r.vehicles[3]
+eq(r.ready,true); eq(r.part,'vehicles'); eq(r.tick,5000); eq(r.vehicles_total,4); eq(#r.vehicles,4)
+local tk=r.vehicles[1]
+eq(tk.unit_number,311799); eq(tk.type,'car'); eq(tk.remote,'luna'); eq(tk.destination.x,-40,'its drive target'); eq(tk.route_targets,nil)
+local v1,v2,v3=r.vehicles[2],r.vehicles[3],r.vehicles[4]
 eq(v1.unit_number,23036938); eq(v1.surface,'nauvis'); eq(v1.position.x,-148.4); eq(v1.position.y,-543.1)
 eq(v1.age_s,0); eq(v1.seen_tick,5000); eq(v1.visible,true); eq(v1.driver,nil)
 eq(v1.sent_by,'opus'); eq(v1.sent_tick,4400)
@@ -46,17 +51,17 @@ game.tick=5000+600
 a.position={x=-100,y=-400}
 visible={['nauvis:-12,-17']=true}
 r=C.read({part='vehicles'})
-eq(r.vehicles[1].position.x,-148.4,'the last position seen'); eq(r.vehicles[1].age_s,10); eq(r.vehicles[1].visible,false)
-eq(r.vehicles[3].position.x,-358.5); eq(r.vehicles[3].age_s,0); eq(r.vehicles[3].unseen,nil)
+eq(r.vehicles[2].position.x,-148.4,'the last position seen'); eq(r.vehicles[2].age_s,10); eq(r.vehicles[2].visible,false)
+eq(r.vehicles[4].position.x,-358.5); eq(r.vehicles[4].age_s,0); eq(r.vehicles[4].unseen,nil)
 -- a human in the seat, a remote drive, and a vehicle gone
 b.get_driver=function() return {valid=true,unit_number=999} end
 api.vehicle_people=function() return {by_character={},remote={[23117830]={name='luna',target={x=5.04,y=6}}}} end
 c.valid=false
 r=C.read({part='vehicles'})
-eq(#r.vehicles,2); eq(r.vehicles[2].driver,'a player'); eq(r.vehicles[2].remote,'luna'); eq(r.vehicles[2].remote_target.x,5)
+eq(#r.vehicles,3); eq(r.vehicles[3].driver,'a player'); eq(r.vehicles[3].remote,'luna'); eq(r.vehicles[3].remote_target.x,5)
 -- before a pass: not ready; the part is named in the refusal
 st.census.done=nil
 eq(C.read({part='vehicles'}).ready,false)
 fails(function() C.read({part='cars'}) end,'part must be extras, snapshot, machines, basemap, planets or vehicles')
-eq(C.VEHICLE_TYPES[1],'spider-vehicle')
+eq(C.VEHICLE_TYPES[1],'spider-vehicle'); eq(C.VEHICLE_TYPES[2],'car')
 print('d26_batch233 VM census vehicles: ok')

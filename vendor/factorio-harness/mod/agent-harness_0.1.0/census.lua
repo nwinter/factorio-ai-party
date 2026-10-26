@@ -900,7 +900,8 @@ return function(api)
   -- (api.vehicle_people), who last sent it a route by remote view and when (spiderroute.lua); its destination (the first
   -- target of its route) and how many targets the route holds. One never seen since the census began keeping them:
   -- unseen, no position. Reads the kept entities only (no find); writes only the last-seen table.
-  local VEHICLE_TYPES, VEHICLES_MAX = {'spider-vehicle'}, 64
+  -- (cp2) cars and tanks too (type car): a remote drive's target is their destination
+  local VEHICLE_TYPES, VEHICLES_MAX = {'spider-vehicle', 'car'}, 64
   M.VEHICLE_TYPES, M.VEHICLES_MAX = VEHICLE_TYPES, VEHICLES_MAX
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
   local function vehicles(d)
@@ -944,7 +945,8 @@ return function(api)
               if sent and sent.by then row.sent_by, row.sent_tick = sent.by, sent.tick end
               local dests = try(function() return e.autopilot_destinations end) or {}
               local first = dests[1] and (dests[1].position or dests[1]) or try(function() return e.autopilot_destination end)
-              if first and first.x then row.destination, row.route_targets = {x=r1(first.x), y=r1(first.y)}, math.max(#dests, 1) end
+              if first and first.x then row.destination, row.route_targets = {x=r1(first.x), y=r1(first.y)}, math.max(#dests, 1)
+              elseif row.remote_target then row.destination = row.remote_target end
               rows[#rows+1] = row
             end
           end
