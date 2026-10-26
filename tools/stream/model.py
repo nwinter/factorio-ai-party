@@ -738,6 +738,7 @@ class Agent:
         self.watches = None
         self.queues = None
         self.repeats = None
+        self.remote_vehicle = None  # (d26 batch222 CD) its vehicle by remote view (work.VehicleFeed), for onecam
 
     def bump(self, amount, now):
         self.decay(now)
@@ -1181,7 +1182,7 @@ class Model:
             ag.notes_job = a["notes_job"]
         if "notes_job_t" in a:
             ag.notes_job_t = a["notes_job_t"]
-        for key in ("watches", "queues", "repeats"):
+        for key in ("watches", "queues", "repeats", "remote_vehicle"):
             if key in a:
                 setattr(ag, key, a[key] or None)
         if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
@@ -2759,7 +2760,7 @@ class Model:
                 "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
                 # hurt | fighting | guard | None, and who hit it or what it shoots at (combat_state)
                 "combat_state": ag.combat_state, "combat_info": ag.combat_info or None,
-                "vehicle_fire": ag.vehicle_fire,
+                "vehicle_fire": ag.vehicle_fire, "remote_vehicle": ag.remote_vehicle,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,
