@@ -17163,7 +17163,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   takes=function(action,key) return M.takes(action,key) end,
-  simulate=function(p,items) return M.rocketload.simulate(p,items) end,
+  simulate=function(p,items) return M.rocketload.simulate(p,items) end,world_checks=function(p,items) return space.world_checks(p,items) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
     if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
