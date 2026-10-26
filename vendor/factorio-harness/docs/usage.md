@@ -15565,3 +15565,20 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   - belt_positions: 5 groups, 238-248 positions, 4.4 KB of JSON; the reply 3.0 KB without, 7.5 KB with;
   - belt_tiles: 109 tiles (group 1) 2.1 ms, 238 tiles 5.0 ms, 1000 tiles 19.8 ms; 2.0 KB, 3.9 KB, 16.9 KB.
 - Test: tests/d26_batch221.lua (in lua.test.ts), failing on main.
+
+## d26 batch222 (CD: the camera director; viewers Aurora 20:09, site:4851, site:4876-4879, Caleb d25 base tours)
+- Host only (tools/stream; docs/STREAM-NOTES.md "Loops, fresh events, base tours, remote vehicles"): no runtime
+  change and no new game read (status `active.remote` was read already; live.py PLAN_KEYS passes it on).
+- Measured today (tools/stream/airtime.py, the d25 director logs against the shifts' journals, 1347 minutes): an idle
+  character or a walk loop on air 67.2% (Grok's queue_repeat ag-watch-walk 32.3%), 30 of 84 fresh events never on
+  air, 0.85 cuts a minute.
+- onecam.py: a short walk loop's score halves a minute and it counts as standing still; fresh events (a new kind of
+  visible work, a big action, a remote vehicle's new target, new ground) and pieces placed score up, and a fresh agent
+  takes a stale story after still_min; with every story stale, a quiet view (a base tour, a platform visit, the base
+  map) and then the best lively agent; an agent's vehicle by remote view is shown where it is. Host view, operator
+  looks, follows and platform holds, tour.py and the hourly piece keep their priority. 1, 2 and 3 cameras.
+- basetour.py: a planet's base tour from the run's chart (machine labels, chart-checked frames, a camera move);
+  work.VehicleFeed: each agent's vehicle by remote view from its journal's vehicle replies.
+- Replayed (tools/stream/director_replay.py, main's rules -> these): 19:43-21:40 idle or loop 81.1% -> 47.0%, loop
+  68.7% -> 1.3%, fresh missed 4 of 8 -> 0, cuts 0.53 -> 0.72 a minute; at 1 and 2 cameras the same within 2.5 points.
+- Test: tools/stream/test_freshcam.py.

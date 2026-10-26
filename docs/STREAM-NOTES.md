@@ -1912,6 +1912,25 @@ Gleba and Fulgora by hand with POST /look and a camera move).
   actions, idle and interest as model.py makes them) and stepped through main's rules and these, measured the same
   way. No alerts, platforms, segments or cues are replayed, so it compares the rules on the same input, not the
   program that aired.
+- Today's director as it aired (the d25 logs, 02:07 to d26 00:44, 1347 minutes; shifts 73-78): an idle character or a
+  walk loop on air 67.2% of the time (idle 34.9%, loop 32.3%: Grok's ag-watch-walk from 14:38); 30 of 84 fresh events
+  never on air; 0.85 cuts a minute. 19:43-21:40 (Aurora's 20:09): 81.5% (loop 76.4%, Grok 88.8 of 116 minutes), 6 of
+  8 fresh events missed, 1.02 cuts a minute.
+- Replayed, main's rules -> these (3 cameras unless said; idle or loop share on air; fresh events missed, median
+  delay to air; cuts a minute):
+
+  | log | idle + loop | loop | fresh missed | median delay | cuts/min |
+  |---|---|---|---|---|---|
+  | 19:43-21:40 | 81.1% -> 47.0% | 68.7% -> 1.3% | 4 of 8 -> 0 | 41.5 -> 0 s | 0.53 -> 0.72 |
+  | the same, 2 cameras | 82.3% -> 49.2% | 70.0% -> 1.3% | 3 -> 0 | 68 -> 0 s | 0.58 -> 0.78 |
+  | the same, 1 camera | 81.6% -> 48.3% | 69.9% -> 1.3% | 2 -> 0 | 45.5 -> 0 s | 0.59 -> 0.79 |
+  | 14:30-18:35 | 86.5% -> 52.9% | 68.5% -> 0.7% | 8 of 15 -> 0 | 58 -> 6 s | 0.44 -> 0.73 |
+  | 06:15-10:18 (all reading) | 76.6% -> 61.4% | 0 -> 0 | 1 of 13 -> 0 | 3.5 -> 8 s | 0.39 -> 0.74 |
+  | 21:52-01:46 | 82.6% -> 38.6% | 74.0% -> 0.7% | 2 of 5 -> 0 | 49 -> 45 s | 0.44 -> 0.75 |
+
+  Base tours took 16-21% of the air time in these replays (about 45 tours of each planet over the 14.0 hours); the
+  replays have no platforms or base map, which share the quiet rotation live. The rest of the idle share is stories
+  of agents reading (the morning's agents made a status, observe or sleep request with the character idle).
 - Not done: no frontier views (the edge of the charted ground); tours of platforms are the existing visits.
 - `python3 tools/stream/test_freshcam.py`.
 
