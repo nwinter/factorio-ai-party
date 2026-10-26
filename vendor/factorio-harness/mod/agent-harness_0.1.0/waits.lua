@@ -48,7 +48,7 @@ return function(api)
       reason='optional text, up to 200 characters (fh sleep --reason): your own reason to wait; while_asleep, sleep_check and the operator\'s idle check show it as given',
       orders='optional false: no standing order starts while this sleep runs (one already running goes on; orders_pause {seconds} holds them for a set time)',wake_on_orders='boolean default false: a standing order\'s round finishing or stalling ends the sleep too (by default only your own plan\'s does; the order keeps running)',
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), an urgent alert (urgent, see wake_on_urgent), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. a spidertron you sent or ride retreating (spidertron_retreated: the line); sleep_check reports woke=damaged|died|respawned|spidertron_retreated|urgent|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
-    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), waited_now (woken by anything else than its condition: each waited condition as it reads now, met or not and its value, and for a platform where it is and its latest launch up with its age), board_held (wake_on_board: false), personal_requests (a sleep that ends before its time: your personal requests still unfilled, each "item: hold N of M (K on the way); why"), slept_s, health/lost when damaged, urgent (the urgent alert), alert (the alert that woke an until=alert sleep), mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep), wait_estimates (current ETA/rate basis or no_estimate for each condition), idle_s (character idle seconds in this wait), wait_line (one line)'},
+    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), waited_now (woken by anything else than its condition: each waited condition as it reads now, met or not and its value, and for a platform where it is and its latest launch up with its age), board_held (wake_on_board: false), personal_requests (a sleep that ends before its time: your personal requests still unfilled, each "item: hold N of M (K on the way); why"), slept_s, health/lost when damaged, urgent (the urgent alert), alert (the alert that woke an until=alert sleep), mention, tell, woke_by (told|mentioned: {kind tell|mention, seq, from, viewer?, source?}, the item that woke it), board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep), wait_estimates (current ETA/rate basis or no_estimate for each condition), idle_s (character idle seconds in this wait), wait_line (one line)'},
   }
   local function sleeps()
     local s = api.state()
@@ -191,7 +191,7 @@ return function(api)
     if api.wait_info then api.wait_info(out,record) end
     sleeps()[p.index] = record
     local reply={while_asleep=out.while_asleep,
-      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, urgent=out.urgent, alert=out.alert, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue, queue_lane=out.queue_lane, remote_queue_steps=out.remote_queue_steps}
+      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, urgent=out.urgent, alert=out.alert, mention=out.mention, tell=out.tell, woke_by=out.woke_by, board=out.board, queue=out.queue, queue_lane=out.queue_lane, remote_queue_steps=out.remote_queue_steps}
     return api.wait_info and api.wait_info(reply,record) or reply
   end
   -- A sleep no message ends (wake_on_messages: false), for tells.lua: {kind, until_tick}, and its wake by a tell.
@@ -205,6 +205,7 @@ return function(api)
   function M.wake_deaf(index, from)
     if not M.deaf(index, from) then return false end
     sleeps()[index].told_wake = from .. ' (a tell with wake: true)'
+    sleeps()[index].told_by = from
     return true
   end
   function M.handlers.sleep(p, a)
@@ -470,12 +471,15 @@ return function(api)
     end
     -- wake_on_messages: false (Grok, Sonnet: woken 6-15 times an hour while waiting for a ship): no tell or mention
     -- wakes it; a tell with wake: true does, each time (tells.lua).
-    if record.told_wake then out.tell = record.told_wake; return 'told' end
+    -- (d26 batch238, viewer Aurora 11:50) woke_by: which item woke it {kind, seq, from, viewer?, source?}, so a script
+    -- can stop at its own safe point (batch234: Opus's hold.py slept again on every tell for 19 min)
+    if record.told_wake then out.tell = record.told_wake; out.woke_by = {kind='tell', from=record.told_by}; return 'told' end
     local box = record.wake_messages ~= false and api.state().mentions and api.state().mentions[p.index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
       -- A viewer's @mention waits for the next reply, waking only a sleep that asked (wake_on_viewers).
       if m.tick >= record.start_tick and not m.fyi and (record.wake_viewers or not m.viewer) and (not api.wakes or api.wakes(m, record.wake_filter)) then
+        out.woke_by = {kind=m.tell and 'tell' or 'mention', seq=m.tell or m.seq, from=m.from, viewer=m.viewer or nil, source=m.source}
         if m.tell then
           out.tell = string.format('%s: %s', m.from, m.text)
           return 'told'

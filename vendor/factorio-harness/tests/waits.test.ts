@@ -362,6 +362,20 @@ test('fh call sleep SECONDS is seconds through the same blocking sleep; more wor
   await assert.rejects(cli(1,['call','sleep','300','--args','{"seconds":60}']),(error:any)=>/sleep seconds given twice \(300 and --args seconds 60\)/.test(error.stdout));
   await assert.rejects(cli(1,['call','sleep','0']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
 });
+test('the wake line names the item that woke it, for a script to match (d26 batch238, viewer Aurora 11:50)',async()=>{
+  let checks=0;
+  await engine(request=>{
+    if(request.action==='sleep'){checks=0;return {ok:true,result:{sleeping_s:request.args.seconds,until_tick:1801}};}
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1}:{slept_s:32,woke:'told',tell:'astra: Aurora24423 asks actual outing NOW',
+      woke_by:{kind:'tell',seq:92032,from:'astra'}}};
+  },async port=>{
+    const {stdout}=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'wait','--until','tell','--max','240'],
+      {env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    assert.match(stdout,/^woke: told after 32 s \(astra: Aurora24423 asks actual outing NOW\); woke_by: tell #92032 from astra;/);
+    assert.deepEqual(JSON.parse((await cli(port,['sleep','240'])).stdout).result.woke_by,{kind:'tell',seq:92032,from:'astra'});
+  });
+});
 test('a sleep or wait over 900 s runs 900 and says so (d26 batch238 SC: hold.py asked 1150 and looped on the refusal)',async()=>{
   for (const [args,said] of [[['sleep','1150'],'asked 1150 s; slept the 900 s maximum'],
     [['call','sleep','1150'],'asked 1150 s; slept the 900 s maximum'],
