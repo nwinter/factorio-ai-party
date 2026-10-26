@@ -141,12 +141,13 @@ def main():
         def post(stdout=""):
             return run("hook", "post-tool", stdin=json.dumps({"cwd": d, "tool_response": {"stdout": stdout, "stderr": ""}}))
         reply({"tells": ["astra, 1s ago: old news"]})
-        assert post() == "", "the first look starts at the journal's end"
+        # (d26 batch238) a new workspace's first look reads its journal from the start (its first replies' items too)
+        assert json.loads(post())["hookSpecificOutput"]["additionalContext"].startswith("TELL: astra, 1s ago: old news\n")
         reply({"mentions": ["from @sonnet, 3s ago: @sonnet the copper line is down"], "tells": ["astra, 2s ago: need 40 plates"]})
         ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
-        assert ctx == ("MENTION: from @sonnet, 3s ago: @sonnet the copper line is down\nTELL: astra, 2s ago: need 40 plates\n"
-                       "(From your fh replies' team block since your last tool call; this tool call's output did not show "
-                       "them. Shown here once.)"), ctx
+        assert ctx == ("TELL: astra, 2s ago: need 40 plates\nMENTION: from @sonnet, 3s ago: @sonnet the copper line is down\n"
+                       "(From your fh replies' team block since your last tool call, newest first; this tool call's output "
+                       "did not show them. Shown here once.)"), ctx
         assert post() == "", "once"
         # Shown in the output (the age may read differently there): not repeated.
         reply({"tells": ["luna, 0s ago: belts at (3,4) done", "sol, 0s ago: coal \"low\""]})
@@ -158,9 +159,9 @@ def main():
         assert post() == "", "operator tells come as OPERATOR: lines"
         reply({"tells": [f"grok, 1s ago: t{i}" for i in range(12)]})
         ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
-        # (d26 batch234) the newest 10 when there are more: an urgent tell comes last
-        assert ctx.startswith("+2 earlier: ./fh tells and ./fh call chat list them\nTELL: grok, 1s ago: t2\n"), ctx
-        assert "TELL: grok, 1s ago: t11\n(From" in ctx and "t1\n" not in ctx, ctx
+        # (d26 batch234, batch238) the newest 10 when there are more, newest first: an urgent tell comes first
+        assert ctx.startswith("TELL: grok, 1s ago: t11\nTELL: grok, 1s ago: t10\n"), ctx
+        assert "TELL: grok, 1s ago: t2\n+2 earlier: ./fh tells and ./fh call chat list them\n(From" in ctx and "t1\n" not in ctx, ctx
         with open(journal, "a") as f:   # the reply's clock time: the age counts from it
             f.write(json.dumps({"at": "2026-10-26T16:22:59.199Z", "response": {"ok": True, "result": {"team": {
                 "tells": ["astra, 0s ago: outing NOW"]}}}}) + "\n")
