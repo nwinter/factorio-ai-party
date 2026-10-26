@@ -307,10 +307,16 @@
   records your own reason to wait; it is shown back as given, and the operator's idle check shows it.
   An edit inside what a running watch measures (a measured entity configured, rotated, wired, fed by hand, built or
   removed; a feeding inserter, drill, loader or beacon built, removed or configured; a turret, collector or feed aboard
-  a watched platform) splits it at the edit. The read up to the edit stays in `mixed.parts` (an asteroid watch keeps
-  that watch whole: `segments`, read with `segment_start`), `mixed.edits` names each
-  edit, and the watch starts again from the edit to its end tick (it ends at the edit when that start is refused or a
+  a watched platform) splits it at the edit, whoever makes it (another agent's configure step included). The read up to
+  the edit stays in `mixed.parts` (its line and lines, the last 3 parts), `mixed.edits` names each edit, and the watch
+  starts again from the edit to its end tick under a new id (it ends at the edit when that start is refused or a
   measured entity went). Its read, its watch row and one alert to you say so. Robot and platform builds are not seen.
+  A platform's departure, turn or arrival is no edit: it splits no uptime watch.
+  An uptime or asteroid watch keeps the closed window whole as a segment (`segments`: id, segment_start, ended_tick,
+  closed_by): the old id or `segment_start` reads it as a done watch, its counts to the edit (`uptime {read: true, id:
+  "uptime@START/AGENT"}`, in pages; `platform_defense {platform, asteroids: true, segment_start}`). An uptime watch keeps
+  at most 4 segments and 128 machines in them, the first window always (the second oldest goes first); a second edit
+  on the tick of a split keeps no part.
 - `pipe_gaps {from, to, via?}` or `{line}` (`surface`: those pipes on another planet by remote view): a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
