@@ -15929,6 +15929,19 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   baseline reads "foundation tiles of NAME destroyed since tick T".
 - When met, saw names up to 8 tiles and `+N more`; a fired guard keeps the rows {x, y, seen, after, rebuilt} as its
   evidence in the queue history.
+- On a copy of world n (_autosave12, tick 68001021, Asterion flying, 212 foundation in its hub), a platform-lane
+  guard on luna's queue; each tile destroyed by script as the game does it (set_tiles to empty space, a foundation tile
+  ghost of ours with no last user) at Asterion's bare edge x=49:
+  - (49,-55) at 68002041: fired at 68002050, "ghost first seen at tick 68002050 (lost after tick 68001990), not rebuilt
+    yet"; the hub rebuilt it by 68002161;
+  - the queue paused (queue_pause), (49,-56) destroyed at 68002431, rebuilt by the hub at 68002495, queue_resume at
+    68002731: fired at 68002740, "lost and rebuilt between reads (after tick 68002410), rebuilt at tick 68002495";
+  - with a guard armed, luna's place_ghosts of a foundation tile at (50,-57) (built by the hub) and deconstruct of the
+    tile (49,-58) (taken up by the hub): no fire over 600 ticks; a strike at (49,-57) then fired it 39 ticks later with
+    that one tile.
+- Cost on the copy (profile_ticks, 600 ticks, one guard armed, one strike): flightwatch.loss_scan 60 calls 8.85 ms, 10
+  of them a find over Asterion's surface (about 0.9 ms a find, once a second a platform while checked; the rest return
+  at once); flightwatch.built_tile 0.18 ms an event (flight_watch's own work included).
 - Test: tests/d26_batch246.lua (in lua.test.ts), failing on main (no such condition).
 
 ## d26 batch242 (HP, Astra #2454: heat network preview)
