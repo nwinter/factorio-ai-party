@@ -146,6 +146,13 @@ for _,c in ipairs(ranges) do
   has(refused(function() runtime.step_range_check(action,args(lo-1)) end),key..' '..(lo-1)..' is outside '..lo..'..'..hi)
   runtime.step_range_check(action,args(lo)); runtime.step_range_check(action,args(hi))
 end
+-- a mode's own ticks: one entity mined, picked up in reach or repaired, 1..600; the other modes 1..36000
+has(refused(function() runtime.step_range_check('mine',{position=P,ticks=601}) end),'ticks 601 is outside 1..600')
+runtime.step_range_check('mine',{tiles=true,position=P,ticks=36000})
+has(refused(function() runtime.step_range_check('pickup',{ticks=601}) end),'ticks 601 is outside 1..600')
+runtime.step_range_check('pickup',{radius=8,ticks=36000})
+has(refused(function() runtime.step_range_check('repair',{ticks=601}) end),'ticks 601 is outside 1..600')
+runtime.step_range_check('repair',{positions={P},ticks=36000})
 -- true, false or a {distance} keep going to the action
 runtime.step_range_check('move_to',{avoid_enemies=true}); runtime.step_range_check('move_to',{avoid_enemies={distance=40}})
 -- a mode's own: power's radius 1..64, with fragile 8..512; shipment's limit with ledger; vehicle's with drive

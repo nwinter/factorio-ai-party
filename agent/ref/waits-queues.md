@@ -106,7 +106,8 @@
   step's numeric arguments are checked against the ranges its action takes when it runs (`seconds 3600 is outside
   10..1800 (a whole number), what platform_defense takes when it runs`), in `dry_run` too, and its text and list
   arguments against the lengths it takes when it runs (`reason: up to 200 characters (214 given), what uptime takes
-  when it runs`; `positions has 65 entries, outside 1..64, what scan takes when it runs`). A
+  when it runs`; `positions has 65 entries, outside 1..64, what scan takes when it runs`; `items has 9 entries,
+  outside 1..8, what uptime takes when it runs`). A
   plan that pauses on a step failing in its first 10 s is a line in your team block at once. `start: false` stages
   the steps: the lane is paused and held in the same call (an active step stopped and requeued), whatever its state
   was, until `queue_resume`; `state` in every reply says running, paused or held.

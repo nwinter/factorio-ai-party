@@ -291,6 +291,13 @@
   totals by recipe (`groups`), `left_out`; a rocket silo's completions are rocket parts, with `silo_statistics` (the
   surface's production statistics of them over the watch); rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
   name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
+  `uptime {read: true, page?, page_size?, positions?, id?, details?}` reads a watch in pages of rows (16 a page by
+  default, at most 16) and never starts or replaces one: each row as `uptime {}` gives it, with `index` (its place in
+  the watch) and `short_counts` {ingredient: {samples, least, need, first_tick, last_tick}}; `positions` picks the
+  watch's machines (the nearest centre within 2 tiles; `not_found` names the rest); `id` (`uptime@START_TICK`, as
+  status work names it) reads any agent's watch; `details: true` adds each row's line. The reply gives `started_tick`,
+  `to_tick` (the end, or now), `sampled_tick`, `samples`, `page`, `pages`, `machines_total`, `matched`. On a copy of
+  world n Sol's 20-machine Asterion watch read 13.5 KB for page 1 and 3.0 KB for page 2.
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock
   line: `measuring uptime@TICK`; the sleep line and `sleep_check` name it with its scope, end tick and latest sample; it
   runs in the background, and your actions meanwhile do not end it); one late, stalled, invalid or done with its final

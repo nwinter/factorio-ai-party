@@ -8762,6 +8762,11 @@ M.step_ranges={
 table.insert(M.step_ranges.move_to,{'avoid_enemies',0,32,whole=false})
 table.insert(M.step_ranges.recover,{'avoid_enemies',0,32,whole=false})
 table.insert(M.step_ranges.refuel,{'from_radius',1,128})
+-- (QZ2) a mode's own ticks beside the widest: one entity mined, one pickup in reach, one entity repaired take 1..600
+-- (MAX_TICKS); tiles, an area, positions or items take the 1..36000 already listed
+table.insert(M.step_ranges.mine,{'ticks',1,MAX_TICKS,when=function(a) return a.tiles==nil end})
+table.insert(M.step_ranges.pickup,{'ticks',1,MAX_TICKS,when=function(a) return a.area==nil and a.radius==nil and a.position==nil and a.items==nil end})
+table.insert(M.step_ranges.repair,{'ticks',1,MAX_TICKS,when=function(a) return a.positions==nil and a.area==nil end})
 function M.step_range_check(action,a)
   for _,r in ipairs(M.step_ranges[action] or {}) do
     local v=a[r[1]]
