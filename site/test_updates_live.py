@@ -194,6 +194,7 @@ const fs = require('fs');
         count: document.querySelector('[data-group-head="in progress"] .upd-n').textContent,
         liveCount: document.querySelector('[data-group-head="live"] .upd-n').textContent,
         checked: document.getElementById('upd-checked').textContent,
+        backlog: document.getElementById('upd-backlog').textContent,
         notices: document.getElementById('upd-notices').textContent };
     });
   } finally { await b.close(); }
@@ -226,6 +227,7 @@ def browser_checks(data):
         nxt["updates"][0]["note"] = "Now the newest note."
         nxt["notices"].append({"t": "2026-10-24 11:44", "kind": "deploy", "text": "Runtime deployed (def).", "affected": "harness runtime"})
         nxt["notices_checked"] = "2026-10-24 11:50"
+        nxt["backlog_reviewed"] = "2026-10-24 11:52"  # (batch235) the backlog line comes in with the recheck
         nfull = updates.updates_json(nxt, ASKS, {}, esc, built=updates.when("2026-10-24 11:55"))
         assert nfull["stamp"] != full["stamp"]
         (root / "next.json").write_text(json.dumps(nfull))
@@ -258,6 +260,7 @@ def browser_checks(data):
     assert abs(a["top"] - bf["top"]) <= 2 and a["y"] > bf["y"], (bf, a)  # the row stays put: the window moved down with the rows added
     assert a["url"] == "?area=site", a
     assert a["checked"] == "Status notices checked through Sat 24 Oct 11:50." and "Runtime deployed (def)." in a["notices"], a
+    assert a["backlog"].startswith("Backlog last reviewed Sat 24 Oct 11:52; "), a
     assert a["note"].startswith("Rechecked ") and a["note"].endswith(": 2 new, 1 changed (marked)."), a
 
 

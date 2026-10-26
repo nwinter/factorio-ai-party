@@ -121,6 +121,8 @@
       if (j.counts) document.getElementById('upd-counts').innerHTML = j.counts;
       if (j.updated) document.getElementById('upd-updated').textContent = j.updated;
       if (j.checked) document.getElementById('upd-checked').textContent = j.checked;
+      var backlog = document.getElementById('upd-backlog');  // (batch235) when the backlog was last reviewed, rows open
+      if (j.backlog && backlog) backlog.textContent = j.backlog;
       var notices = document.getElementById('upd-notices');
       if (j.notices && notices && notices.outerHTML !== j.notices) notices.outerHTML = j.notices;
       built = j.built || built; root.setAttribute('data-built', built);
