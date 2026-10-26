@@ -2092,6 +2092,23 @@ cp2:
   273 s; one camera 3.2 -> 4.0 min, 43 of 90 -> 235 of 237 s. The seed changed no decision in this replay.
 - Tests: tools/stream/test_vehcam.py 8 and 9.
 
+## A viewer-experience review each shift (2026-10-26, d26 batch237 VX, viewer Aurora site:5029-5030)
+- `python3 tools/stream/vx_review.py runs/RUN [--from HH:MM --to HH:MM]` reads one run's logs (journals, chronicle,
+  audio-played, push-live, stream-service.log, and the director, caster, hourly and tour-hourly logs of that run's
+  stream service) and writes runs/RUN/vx-review.md and vx-review.json. No game read, no connection; about 6 s for a
+  4-hour shift.
+- Missed action: the journals' fresh visible requests (airtime.py FRESH), platforms made, the director's threat rows
+  (battles, losses) and departure rows; each on air at once (30 s), late, missed (not within 10 min), or not shown by
+  the director's choice (a routine departure). An inset counts as on air.
+- Idle airtime: airtime.py's idle and walk-loop minutes by agent; minutes with no shot; views aired again within 15 min.
+- Narration: cue to line, a chronicle event to the caster line naming its platform, an agent's chat to its voice, the
+  audio queue's wait, clips cut short or skipped, word-for-word repeats, a "New space platform" cue for a platform the
+  run did not make.
+- Data clarity: push failures, gaps, a frozen tick, the pushed chart's version standing over 15 min, pushes with no
+  terrain frames, chart surfaces without cells, base-map frames, the Updates page's open rows due for review.
+- Cost: the stream service's slow game reads and errors, the caster's spend.
+- Shift80 (06:11-10:15) and shift81 (10:19-10:58): the findings are in the operator's report-d20-batch237.md.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
