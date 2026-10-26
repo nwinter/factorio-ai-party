@@ -390,7 +390,18 @@
 - `reservations {network, item?, surface?}` (read only): what robots have reserved to pick up at each provider and
   storage chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no
   room when every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are
-  idle, orders to a chest with no room for the item). Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
+  idle, orders to a chest with no room for the item); its robots are the network's first 1024 in the air. Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
+- `reservations {position, from?, radius?, item?, surface?}` (read only): one requester, buffer, provider or storage
+  chest or landing pad. `on_the_way` and `reserved_for_pickup` are its own counts (every robot); a landing pad's
+  request from platforms in orbit is `from_orbit` (no robot brings it). The logistic robots in the air within `radius`
+  (8..128, default 64) of it, and with `from` within radius of that point and 32 tiles either side of the line
+  between, with an order to deliver there or pick up there: `routes` (robots, items, source, destination, state:
+  flying to pick it up at its source, carrying it (a robot that has picked up keeps no source), flying to pick it up
+  here) and `robots` (each one's position); `not_found_*`: what its counts hold and the robots read do not (on robots
+  outside what was read); up to 1024 robots read. `sweep: true` reads every logistic robot of its network in the air
+  instead, across ticks (Nauvis's network: 42 columns, about 77 ticks); the reply gives its number, and
+  `reservations {sweep: N}` reads it, with the chest's counts at the sweep's start and end. Example:
+  `./fh call reservations --args '{"position":{"x":-269.5,"y":486.5},"from":{"x":52,"y":54},"item":"bioflux","surface":"nauvis"}'`
 - `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?, charging?}` (read only; default: the network where you stand):
   `charging: true`: the network's roboports with the most robots waiting to charge, then charging, each as its own
   GUI shows it (`limit` 1..20, default 5): position, waiting, charging, its charging slots, energy; with the network's
