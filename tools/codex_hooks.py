@@ -14,6 +14,9 @@ the hook's current hash. An untrusted hook is skipped without a word (codex exec
 "modified" and is skipped too. Trust in the workspace's own config or a -c override does not count. The hash is the
 one Codex reports (`codex app-server` hooks/list, currentHash); it covers the handler, not the path. setup trusts only
 hooks whose command is one this file writes, and drops the entries of other runs' workspaces (one shift's at a time).
+tools/launch-agent.sh runs setup for each Codex agent when POG_CODEX_HOOKS=1 (start-team's switch, off by default:
+it writes into the routes' config.toml in Nick's home). When trust cannot be recorded, setup removes the file: an
+untrusted hook stops Codex's TUI at a "Hooks need review" dialog before the first turn.
 """
 import json
 import os

@@ -16,6 +16,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.dont_write_bytecode = True
 import codex_hooks  # noqa: E402
+import shift_change  # noqa: E402
+import testsafe  # noqa: E402
 import toolcall  # noqa: E402
 
 T0 = 1793057198.5   # d26 16:26:38 PDT, the scratch session's sleep 75
@@ -232,12 +234,32 @@ exit 0
 """)
         os.chmod(os.path.join(bin_dir, "herdr"), 0o755)
         r = subprocess.run([os.path.join(ROOT, "tools", "clear-prompts.sh"), "5", "w2Y:pZ1", d], capture_output=True,
-                           text=True, timeout=30, env=dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"]))
+                           text=True, timeout=30, env=testsafe.env(PATH=bin_dir + os.pathsep + os.environ["PATH"]))
         assert r.stdout == "w2Y:pZ1 hooks-untrusted\n", r
         assert open(log).read().splitlines()[-1] == "pane send-text w2Y:pZ1 3", open(log).read()
     finally:
         shutil.rmtree(base)
     print("prompts: ok")
+
+
+def switch():
+    """POG_CODEX_HOOKS (off by default) carries to the next shift like the other switches; set at a change, it wins."""
+    launch = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
+    assert 'if [ "${POG_CODEX_HOOKS:-0}" = 1 ]; then' in launch and launch.index("POG_CODEX_HOOKS") < launch.index("codex_hooks.py")
+    assert '"POG_CODEX_HOOKS=${POG_CODEX_HOOKS:-0}"' in open(os.path.join(ROOT, "tools", "start-team.sh")).read()
+    rundir = tempfile.mkdtemp()
+    old = os.environ.pop("POG_CODEX_HOOKS", None)
+    try:
+        open(os.path.join(rundir, "switches.env"), "w").write("POG_BROKER=1\nPOG_CODEX_HOOKS=1\n")
+        assert shift_change.switches(rundir)["POG_CODEX_HOOKS"] == ("1", "switches.env")
+        os.environ["POG_CODEX_HOOKS"] = "0"
+        assert shift_change.switches(rundir)["POG_CODEX_HOOKS"] == ("0", "the environment")
+    finally:
+        os.environ.pop("POG_CODEX_HOOKS", None)
+        if old is not None:
+            os.environ["POG_CODEX_HOOKS"] = old
+        shutil.rmtree(rundir)
+    print("switch: ok")
 
 
 def main():
@@ -246,6 +268,7 @@ def main():
     edit()
     record()
     prompts()
+    switch()
     print("ok")
 
 

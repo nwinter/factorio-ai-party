@@ -4962,7 +4962,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   call running since 09:07:08 (15 min); tells reach it when it ends` (d26 batch238: Claude Code, Grok and Muse record
   each call with their tool hooks, tools/toolcall.py; a call that is only an `fh sleep` or `fh wait` ends on the tell
   and is left out; batch250: Codex too, each shell command, from the workspace's `.codex/hooks.json` that
-  tools/codex_hooks.py writes and trusts; agy records none). `wake` and `fyi`
+  tools/codex_hooks.py writes and trusts at launch when start-team runs with `POG_CODEX_HOOKS=1`; agy records none). `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
