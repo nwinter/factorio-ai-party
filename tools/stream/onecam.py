@@ -457,6 +457,7 @@ ONECAM = {
     "vehicle_glide": 1.2,
     "vehicle_flip": 20.0,   # an agent's shot switched between vehicle and character at most this often (replay 02:18:51)
 }
+AIR_FILE, AIR_SAVE_S = "surface-air.json", 60.0  # (batch232) the planets' air time kept across a restart
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
 DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
 BIG = {"construct": 4, "build_path": 8, "build_blueprint": 4, "blueprint": 4}  # kind -> pieces that make it big
@@ -561,6 +562,7 @@ class OneCam(Director):
         self.surface_ticks = {}    # surface -> game tick an agent first stood there (surface-seen.json, kept)
         self.surface_known = set()  # planets the run reached before ticks were kept (space-memory.json): not new
         self.surface_memory = None  # runs/RUN/surface-seen.json (set_surface_memory)
+        self.air_saved = -1e9      # (batch232) when surface-air.json was last written
         self.game_tick = None      # the snapshot's game tick
         self.mode = "onecam"   # or "trio"
         self.mode_since = None  # None: since the start (self.started)
@@ -1228,7 +1230,17 @@ class OneCam(Director):
         the chain) is not new."""
         self.surface_memory = path
         name, folder = os.path.basename(path), os.path.dirname(os.path.abspath(path))
+        air, cut = [], time.time() - self.cfg["surface_window"]
         for _ in range(20):  # this run, then the runs it resumed from
+            # (d26 batch232 VC2) the planets' air time of the last surface_window, as the service before saved it: a
+            # restart (each shift change) began with none, so after surface_warmup every planet but Nauvis was short of
+            # its share (shift81 10:22-10:26: Aquilo and Fulgora agents x2.5, Opus and Luna on Nauvis x0.65)
+            try:
+                with open(os.path.join(folder, AIR_FILE)) as f:
+                    air += [tuple(e) for e in (json.load(f) or {}).get("air") or []
+                            if isinstance(e, list) and len(e) == 3 and isinstance(e[0], (int, float)) and e[0] >= cut]
+            except (OSError, ValueError, AttributeError):
+                pass
             try:
                 with open(os.path.join(folder, name)) as f:
                     for s, t in (json.load(f) or {}).items():
@@ -1247,6 +1259,24 @@ class OneCam(Director):
             except (OSError, IndexError):
                 break
             folder = os.path.join(os.path.dirname(folder), prev)
+        seen = {round(e[0], 1) for e in self.surface_air}
+        for e in sorted(set(air)):
+            if round(e[0], 1) not in seen:
+                self.surface_air.append((float(e[0]), str(e[1]), float(e[2])))
+        self.surface_air.sort()
+
+    def save_surface_air(self, now):
+        """(batch232) The planets' air time of the last surface_window, next to surface-seen.json, every AIR_SAVE_S."""
+        if not self.surface_memory or now - self.air_saved < AIR_SAVE_S:
+            return
+        self.air_saved = now
+        path = os.path.join(os.path.dirname(os.path.abspath(self.surface_memory)), AIR_FILE)
+        try:
+            with open(path + ".tmp", "w") as f:
+                json.dump({"air": [[round(t, 1), s, round(dt, 2)] for t, s, dt in self.surface_air]}, f)
+            os.replace(path + ".tmp", path)
+        except OSError as e:
+            print(f"[director] surface air not saved: {e}", flush=True)
 
     def save_surface_memory(self):
         if not self.surface_memory:
@@ -1290,6 +1320,7 @@ class OneCam(Director):
         cut = now - self.cfg["surface_window"]
         while self.surface_air and self.surface_air[0][0] < cut:
             self.surface_air.pop(0)
+        self.save_surface_air(now)
 
     def surface_shares(self, now):
         total = {}

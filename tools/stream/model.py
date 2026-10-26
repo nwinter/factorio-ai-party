@@ -37,6 +37,11 @@ ACTION_WEIGHT = {
     "attack": 6.0, "shoot": 6.0, "kite": 6.0, "research": 2.0, "wait_until": 0.2, "wait": 0.2,
     "guard": 0.3,  # a shoot with nothing in range (combat_state)
 }
+# (d26 batch232 VC2, viewer Aurora 10:25) A remote vehicle sent to a new target (go_to, drive by remote view) counts as an
+# action of its agent, as a build does; while it walks, its interest is kept up as sustained work's. In shift81 Opus
+# sent spidertron 27069154 on seven legs from 10:21:32 while its character slept between calls: its interest halved
+# every 75 s from 10:22:45 and it never aired.
+VEHICLE_WEIGHT = 3.0
 SCIENCE = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
            "production-science-pack", "utility-science-pack", "space-science-pack",
            # Space Age: one pack per planet, then promethium from the edge of the system
@@ -750,6 +755,29 @@ class Agent:
         self.interest_t = now
 
 
+def vehicle_target(v):
+    """The target an agent gave its remote vehicle (a live read's next waypoint is not one), or None."""
+    if not isinstance(v, dict):
+        return None
+    t = v.get("cmd_target", v.get("target"))
+    return (t.get("x"), t.get("y")) if isinstance(t, dict) else None
+
+
+def vehicle_interest(ag, was, now):
+    """(batch232 VC2) A new target for the agent's remote vehicle bumps its interest VEHICLE_WEIGHT; a vehicle walking (a
+    read under 30 s with speed) keeps a little alive, as sustained work does."""
+    v = ag.remote_vehicle if isinstance(ag.remote_vehicle, dict) else None
+    if not v:
+        return
+    target = vehicle_target(v)
+    if target and target != vehicle_target(was):
+        ag.bump(VEHICLE_WEIGHT, now)
+        ag.last_activity_t = now
+    if (v.get("speed") or 0) > 0 and now - (v.get("t") or 0) <= 30:
+        ag.bump(0.04 * VEHICLE_WEIGHT, now)
+        ag.last_activity_t = now
+
+
 PROJECTS_SHOWN_MAX = 8  # (d22 batch75 AK11) projects worked on or blocked the board card shows before "show all"
 
 class Model:
@@ -1182,9 +1210,11 @@ class Model:
             ag.notes_job = a["notes_job"]
         if "notes_job_t" in a:
             ag.notes_job_t = a["notes_job_t"]
+        was_vehicle = ag.remote_vehicle
         for key in ("watches", "queues", "repeats", "remote_vehicle"):
             if key in a:
                 setattr(ag, key, a[key] or None)
+        vehicle_interest(ag, was_vehicle, now)
         if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
             rest = a["resting"] if isinstance(a["resting"], dict) else None
             if rest and (not ag.resting or ag.resting.get("until") != rest.get("until")):

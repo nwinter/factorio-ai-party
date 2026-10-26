@@ -15773,3 +15773,6 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   agent's own call; the barrage frame's glide is a speed in tiles/s.
 - Replayed 09:20-09:30 (director_replay.py --vehicles live): spider in frame 46.5 of 148 s on main, 236 of 237 s here.
 - Test: tools/stream/test_vehcam.py.
+- cp2 (shift81 10:20-10:27, Opus off air): model.py bumps an agent's interest when it sends its remote vehicle to a new
+  target (as a build), and keeps a little alive while it walks; onecam.py keeps the planets' air time in
+  runs/RUN/surface-air.json across a restart (it began empty at each shift: Aquilo and Fulgora agents x2.5).
