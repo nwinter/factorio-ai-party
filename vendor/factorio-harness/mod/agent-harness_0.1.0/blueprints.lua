@@ -1862,6 +1862,6 @@ return function(api)
   end
   -- (d25 batch208 QU1) the lengths above, for a queue step's check (runtime.lua step_lengths); not an action
   H.limits={NAME=MAX_NAME,DESCRIPTION=MAX_DESCRIPTION,STRING=MAX_STRING,REASON=MAX_REASON,NOTE=MAX_NOTE,
-    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,entry_name=entry_name}
+    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,entry_name=entry_name,LIBRARY=MAX_LIBRARY}
   return H
 end

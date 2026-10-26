@@ -110,7 +110,7 @@ runtime.step_length_check('refuel',{positions=places(128),from={x=0,y=0}})
 runtime.step_length_check('refuel',{positions=places(128),dry_run=true})
 -- every entry, from its own constants: one past the limit refused, the limit itself not
 local modes={{},{wait_ticks=60},{asteroids=true,seconds=600},{collection=true,seconds=600},{position={x=0,y=0}},{positions={{x=0,y=0}}},
-  {dry_run=true},{from={x=0,y=0}},{area={left_top={x=0,y=0},right_bottom={x=8,y=8}}},{tiles=true},{status='current'}}
+  {dry_run=true},{from={x=0,y=0}},{area={left_top={x=0,y=0},right_bottom={x=8,y=8}}},{tiles=true},{status='current'},{pick=true}}
 local function set(a,key,v)
   local parts={} for k in key:gmatch('[^.]+') do parts[#parts+1]=k end
   local t=a
@@ -124,7 +124,8 @@ for action,list in pairs(runtime.step_lengths) do
     local lo,hi=r[2],r[3]
     if type(lo)=='function' then lo=lo() end
     if type(hi)=='function' then hi=hi() end
-    local function value(len) if r.list then local t={} for i=1,len do t[i]='x'..i end return t end return string.rep('x',len) end
+    -- (d25 batch214 QZ2) a count of chests in all of a chain's steps: one take of one chest a step
+    local function value(len) if r.list then local t={} for i=1,len do t[i]=r.counts and {take={x=i,y=0},item='coal'} or 'x'..i end return t end return string.rep('x',len) end
     local function args(len)
       for _,m in ipairs(modes) do
         local a={} for k,v in pairs(m) do a[k]=v end
@@ -135,7 +136,7 @@ for action,list in pairs(runtime.step_lengths) do
     end
     if not r.check then
       local over=refused(function() runtime.step_length_check(action,args(hi+1)) end)
-      has(over,r[1]..' '..(r.list and 'has '..(hi+1)..' entries' or 'is '..(hi+1)..' characters')..', outside '..lo..'..'..hi..', what '..action..' takes when it runs')
+      has(over,r[1]..' '..(r.counts and 'has '..(hi+1)..' '..r.counts or r.list and 'has '..(hi+1)..' entries' or 'is '..(hi+1)..' characters')..', outside '..lo..'..'..hi..', what '..action..' takes when it runs')
       runtime.step_length_check(action,args(math.max(hi,lo)))
       if lo>=1 then has(refused(function() runtime.step_length_check(action,args(lo-1)) end),'outside '..lo..'..'..hi) end
       checked=checked+1

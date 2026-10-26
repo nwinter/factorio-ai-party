@@ -8,6 +8,15 @@
 return function(api)
   local M = {}
   M.MAX_LEGS = 32
+  -- (d25 batch214 QZ2) the chests in all a chain's steps, as plan counts its legs (a queue step's check too)
+  function M.count_legs(steps)
+    local n = 0
+    for _, st in ipairs(type(steps) == 'table' and steps or {}) do
+      local list = type(st) == 'table' and (st.take or st.give)
+      if type(list) == 'table' then n = n + ((list.x ~= nil or list[1] == nil and next(list) ~= nil) and 1 or #list) end
+    end
+    return n
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   -- places and legs from the steps; refused with the shape when a step is not one.

@@ -2393,6 +2393,7 @@ function handlers.describe(_,a)
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
   description.actions.inspect.surface='optional planet or surface name: inspect there by remote view (a visible chunk)'
+  description.actions.inspect.name='with area or radius: an entity name or a list of 1..16: those entities there (an entity name given in types counts as one); a queue step and dry_run check the count'  -- (d25 batch214 QZ2)
   description.actions.inspect.note=description.actions.inspect.note..'; circuit (an entity with circuit settings or wires): enable/logistic conditions as text with _met, disabled, logistic_reads (the logistic network the condition reads, whose logistic area holds the entity\'s centre, with its count of the item; none: never met, and the nearest roboport area\'s distance), '..
     'settings and off (switches, modes, signals by the names circuit_set takes), a combinator\'s settings and output, wires per color (red, green, copper; '..
     'a combinator\'s red_input ... green_output, a power switch\'s copper_left/right) with each far end {entity, position, side}, networks {id, signals} (the signals on each now)'
@@ -8738,7 +8739,29 @@ M.step_ranges={
   platform_rearm={{'ammo_below',1,10000}},players={{'minutes',1,240}},robot_losses={{'minutes',1,900}},
   research_done={{'limit',1,50}},sight={{'radius',16,240}},tells={{'limit',1,100}},turret_feeds={{'count',1,1000}},
   cargo={{'limit',1,32}},
+  -- (d25 batch214 QZ2) the ranges dry_run took past their end, as each handler checks them (its integer() bounds;
+  -- a constant where the module has one)
+  scan={{'limit',1,1024},{'radius',1,64},{'page',function() return 1,math.ceil(1024/M.SCAN_PAGE) end}},
+  nearest={{'limit',1,64},{'radius',1,128}},inspect={{'radius',1,64}},stock={{'limit',1,64},{'radius',1,1024}},
+  map={{'radius',32,1024},{'limit',1,256}},recipes={{'limit',1,256}},technologies={{'limit',1,256}},
+  shipment={{'limit',1,128,when=function(a) return a.ledger==true end}},damage_log={{'radius',1,64}},grid={{'radius',1,64}},
+  artillery={{'radius',1,4096}},alerts_digest={{'limit',1,64}},danger={{'radius',8,128},{'quiet_s',10,3600}},
+  power={{'radius',1,64,when=function(a) return a.fragile~=true end},{'radius',8,512,when=function(a) return a.fragile==true end},{'limit',1,256}},
+  belt_upgrade={{'tiles',1,512}},blueprint_list={{'limit',function() return 1,M.bplimits.LIBRARY end},{'from',function() return 1,M.bplimits.LIBRARY end}},
+  sleep={{'seconds',function() return 1,math.floor(M.waits.MAX_TICKS/60) end}},flight_watch={{'minutes',function() return 1,M.flightwatch.MAX_MIN end}},
+  craft={{'count',1,1000}},construct={{'ticks',1,216000}},build_path={{'ticks',1,36000}},clear_cliffs={{'ticks',1,36000}},
+  assembler_batch={{'count',1,10000}},heat_budget={{'add_pipes',0,5000}},outpost={{'radius',4,128}},
+  drill_sites={{'limit',1,16},{'radius',2,24}},supply={{'radius',1,512}},trace={{'radius',1,512}},
+  spider_kite={{'radius',8,64},{'ticks',1,36000},{'ammo_below',1,100000}},
+  delivery_watch={{'count',1,1000000,when=function(a) return a.item~=nil end}},
+  belt_route={{'avoid_enemies',0,32,whole=false}},
+  where_is={{'limit',1,50}},
+  vehicle={{'ticks',1,36000,when=function(a) return a.drive~=nil end},{'avoid_enemies',0,32,whole=false,when=function(a) return a.drive~=nil end}},
 }
+-- (QZ2) beside their own ranges: avoid_enemies as a margin in tiles (move_to, recover), refuel's from_radius
+table.insert(M.step_ranges.move_to,{'avoid_enemies',0,32,whole=false})
+table.insert(M.step_ranges.recover,{'avoid_enemies',0,32,whole=false})
+table.insert(M.step_ranges.refuel,{'from_radius',1,128})
 function M.step_range_check(action,a)
   for _,r in ipairs(M.step_ranges[action] or {}) do
     local v=a[r[1]]
@@ -8778,18 +8801,23 @@ M.step_lengths={
     {'names',1,of('platdefense','PICK_NAMES'),list=true,one=true,when=function(a) return not asteroids(a) end},
     {'positions',1,of('platdefense','PICK_POSITIONS'),list=true,when=function(a) return not asteroids(a) end}},
   platform_supply={{'reason',check=reason_check,when=function(a) return a.collection==true and a.seconds~=nil end}},
-  uptime={{'reason',check=reason_check,when=starts('uptime')},{'positions',1,of('uptime','MAX'),list=true,when=function(a) return a.items==nil end}},
+  uptime={{'reason',check=reason_check,when=starts('uptime')},{'positions',1,of('uptime','MAX'),list=true,when=function(a) return a.items==nil end},
+    {'items',1,of('uptime','ITEMS'),list=true,when=starts('uptime')}},  -- (d25 batch214 QZ2, Astra #2380: 9 items passed dry_run)
   turret_tally={{'reason',check=reason_check,when=starts('turrettally')},{'positions',1,of('turrettally','MAX'),list=true}},
   belt_flow={{'reason',check=reason_check,when=function(a) return a.position~=nil end}},
   signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil end},
     {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true}},
-  sleep={{'reason',check=reason_check}},
   scan={{'positions',1,own('POSITIONS_MAX'),list=true},{'name',0,own('NAMES_MAX'),list=true},{'type',0,own('NAMES_MAX'),list=true},
     {'fields',0,own('NAMES_MAX'),list=true}},
   nearest={{'name',1,own('NAMES_MAX'),list=true},{'type',1,own('NAMES_MAX'),list=true}},
+  -- (d25 batch214 QZ2) lists a call takes that dry_run took past their limit
+  recipes={{'name',1,own('LIST_NAMES'),list=true,one=true}},technologies={{'name',1,own('LIST_NAMES'),list=true,one=true}},
+  platforms={{'fields',check=function(v) M.field_list(v) end}},status={{'fields',check=function(v) M.field_list(v) end}},
+  sleep={{'reason',check=reason_check},{'condition',check=function(v) M.waits.members(v) end}},
   stock={{'items',1,own('NAMES_MAX'),list=true}},
-  inspect={{'positions',1,own('INSPECT_POSITIONS'),list=true},{'fields',1,own('NAMES_MAX'),list=true},
-    {'types',1,own('TYPES_MAX'),list=true,when=function(a) return a.area~=nil or a.radius~=nil end}},
+  inspect={{'positions',1,own('INSPECT_POSITIONS'),list=true},{'fields',check=function(v) M.field_list(v) end},
+    {'types',1,own('TYPES_MAX'),list=true,when=function(a) return a.area~=nil or a.radius~=nil end},
+    {'name',1,own('TYPES_MAX'),list=true,one=true,when=function(a) return a.area~=nil or a.radius~=nil end}},
   move_to={{'via',1,own('VIA_MAX'),list=true}},
   repair={{'positions',1,own('MAX_REPAIR'),list=true}},
   craft={{'recipes',1,own('CRAFT_RECIPES'),list=true}},
@@ -8805,8 +8833,11 @@ M.step_lengths={
     end},{'types',1,own('TYPES_MAX'),list=true},
     {'positions',1,own('POSITIONS_MAX'),list=true,when=walking},{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry}},
   collect={{'types',1,own('TYPES_MAX'),list=true},{'positions',1,own('POSITIONS_MAX'),list=true,when=walking},
+    {'items',1,own('ITEMS_MAX'),list=true,when=function(a) return a.pick~=nil end},
     {'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry},{'take_back',1,own('TAKE_BACK'),list=true,when=function(a) return a.wait_ticks~=nil end}},
   transfer={{'positions',1,own('POSITIONS_MAX'),list=true,when=walking},{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry},
+    {'items',1,own('ITEMS_MAX'),list=true,when=function(a) return a.pick~=nil end},{'via',1,own('VIA_POINTS'),list=true},
+    {'steps',1,of('transferchain','MAX_LEGS'),list=true,counts='chests in all its steps',count=function(a,list) return M.transferchain.count_legs(list) end},
     {'types',1,own('TYPES_MAX'),list=true,when=function(a) return a.area~=nil end}},
   refuel={{'positions',1,own('TOUR_DRY_RUN'),list=true,when=dry},
     {'positions',1,of('fuelround','POSITIONS'),list=true,when=function(a) return walking(a) and fuel_round(a) end},
@@ -8879,7 +8910,7 @@ function M.step_length_check(action,a)
         local list=r.one and type(v)=='string' and {v} or v
         if type(list)=='table' and (#list>0 or next(list)==nil) then
           local n=r.count and r.count(a,list) or #list
-          if n<lo or n>hi then refuse(string.format('has %d %s%s',n,n==1 and 'entry' or 'entries',n~=#list and ' (item counts too)' or '')) end
+          if n<lo or n>hi then refuse(r.counts and string.format('has %d %s',n,r.counts) or string.format('has %d %s%s',n,n==1 and 'entry' or 'entries',n~=#list and ' (item counts too)' or '')) end
           if r.each then
             local elo,ehi=r.each[1],r.each[2]
             if type(ehi)=='function' then ehi=ehi() end
@@ -19256,11 +19287,16 @@ local function field_known(action,name)
   end
   return words[name]==true or words[head]==true
 end
-function M.project(out,fields,action)
+-- (d25 batch214 QZ2) fields as names: a list, or one string with | or , (a queue step's check too, step_lengths)
+function M.field_list(fields)
   local list={}
   if type(fields)=='string' then for f in fields:gmatch('[^|,%s]+') do list[#list+1]=f end
   elseif type(fields)=='table' then for _,f in ipairs(fields) do assert(type(f)=='string','fields are names (strings)'); list[#list+1]=f end end
   assert(#list>=1 and #list<=M.NAMES_MAX,'fields: 1..'..M.NAMES_MAX..' names')
+  return list
+end
+function M.project(out,fields,action)
+  local list=M.field_list(fields)
   if type(out)~='table' then return out end
   local rowkey
   for _,k in ipairs(M.FIELD_ROWS) do if type(out[k])=='table' and type(out[k][1])=='table' then rowkey=k; break end end
