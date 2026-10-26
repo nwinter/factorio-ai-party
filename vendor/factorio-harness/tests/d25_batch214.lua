@@ -87,7 +87,7 @@ eq(job.read_tick,game.tick)
 eq(f2.machines[4].completions,ms[20].products_finished,'its final completions')
 eq(job.result,fin,'the final result is unchanged')
 -- refused with no world, as at submit and in dry_run
-has(refused(function() U.check_read({read=true,seconds=60}) end),'read: true takes id, agent, positions, page, page_size and details; seconds goes with a new watch')
+has(refused(function() U.check_read({read=true,seconds=60}) end),'read: true takes id, agent, segment_start, positions, page, page_size and details; seconds goes with a new watch')
 has(refused(function() U.check_read({read=true,page_size=17}) end),'page_size: 1..16')
 has(refused(function() U.check_read({read=true,page=0}) end),'page: 1..64')
 has(refused(function() U.check_read({read=true,id='1000'}) end),'id: a watch\'s id as status work gives it, "uptime@START_TICK/AGENT"')

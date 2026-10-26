@@ -77,8 +77,8 @@ st.uptime[3]=nil
 has(refused(function() U.check_read({read=true,agent=5}) end),'agent: an agent\'s name')
 has(refused(function() U.check_read({read=true,id='uptime@1000/'}) end),'"uptime@START_TICK/AGENT"')
 has(refused(function() U.check_read({read=true,id='uptime@1000/a/b'}) end),'"uptime@START_TICK/AGENT"')
-has(refused(function() U.check_read({id='uptime@1000/sol'}) end),'id and agent go with read: true')
-has(refused(function() U.handler(sol,{agent='astra'}) end),'id and agent go with read: true')
+has(refused(function() U.check_read({id='uptime@1000/sol'}) end),'id, agent and segment_start go with read: true')
+has(refused(function() U.handler(sol,{agent='astra'}) end),'id, agent and segment_start go with read: true')
 U.check_read({read=true,id='uptime@1000/astra',agent='astra'})
 print('d25_batch215 QZ3 uptime ids and agent: ok')
 
@@ -189,7 +189,7 @@ eq(w[1].id,'uptime@1900/astra')
 local function plan(steps) return function() return runtime.dispatch{action='queue_submit',args={dry_run=true,steps=steps},bot='sol'} end end
 local function check(fn) local ok,err=pcall(fn); return ok and 'ok' or tostring(err) end
 has(check(plan({{action='uptime',args={read=true,agent=7}}})),'steps[1] (uptime): args: agent: an agent\'s name')
-has(check(plan({{action='uptime',args={id='uptime@1900/astra'}}})),'id and agent go with read: true')
+has(check(plan({{action='uptime',args={id='uptime@1900/astra'}}})),'id, agent and segment_start go with read: true')
 eq(check(plan({{action='uptime',args={read=true,agent='astra',page=2}}})),'ok')
 end
 print('d25_batch215 QZ3 runtime and queue checks: ok')

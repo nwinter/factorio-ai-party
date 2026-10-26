@@ -15473,3 +15473,30 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   - Sol's requester had nothing on the way in this save.
 - Unchanged: `reservations {network}` and where_is (their robot reads stay the first 1024).
 - Test: tests/d25_batch217.lua (tests/d25batch217.test.ts), failing on main.
+
+## d25 batch219 (QAD1, Sol #2394 / Astra 21:36: an uptime watch's earlier part lost after a split)
+- Cause: no leg change. At tick 64293983 Astra's platform-lane queue configured modules on the chemical plant
+  (-5.5,64.5) and the cryogenic plant (-14.5,56.5) of Sol's 13-machine watch. mixed.lua split the watch at the first
+  edit and again at the second, on the same tick: the second kept a part of no ticks. With more edits after it, the
+  window from 64263843 left mixed.parts (the last 3 parts, lines only), and `uptime@64263843/sol` was no watch to
+  read. A platform's departure, turn or arrival splits nothing (mixed.lua has no platform state event).
+- Change:
+  - uptime.close (mixed.lua `api.close.uptime`, as asteroid_watch's since batch200): the closed watch is done at the
+    edit with its final (machines' counts frozen there: `m.e` let go), kept whole on the new watch as a segment
+    (`new.segments`). At most SEGMENTS 4 and SEGMENT_MACHINES 128 machines together; past that the second oldest
+    goes (the first window is kept), and `segments_dropped` counts them.
+  - Reads: `uptime {read: true, id}` finds a segment by its id (the old `uptime@START/AGENT`), or `segment_start` on
+    the watch read, in pages as a done watch, with `segment` {segment_start, ended_tick, closed_by, of}. `uptime {}`
+    and the watch's paged read list `segments` [{id, segment_start, ended_tick, seconds, samples, machines,
+    closed_by}] and segments_note. A segment's read does not mark the watch read.
+  - mixed.lua: a split of a window begun on the edit's own tick starts it again with no part and no segment, the
+    segments carried on.
+  - `segment_start` is checked with no world (uptime.check_read: the call, a queue step, dry_run).
+- On the copy (world n's 21:27 save, tick 64276968, before Sol's watch split), Astra's two configure calls on one tick:
+  - The live runtime kept parts 64263843-64276928 and 64276928-64276928 and refused `uptime@64263843/sol`.
+  - This runtime kept one part and the segment 64263843-64276968 (13 machines, 219 samples). `uptime {read: true,
+    id: "uptime@64263843/sol"}` read it in 4 pages (14.8 KB for 4 rows), the same with `segment_start`.
+  - The configure calls took 26.1 and 14.6 ms before, 28.9 and 11.8 ms after (one run each, both splitting Sol's
+    and Astra's watches; the close makes the final of each).
+  - No tick work: the close runs inside the edit.
+- Test: tests/d25_batch219.lua (tests/d25batch219.test.ts), failing on main.

@@ -21190,7 +21190,7 @@ end)()
     read={uptime=function(job) return M.uptime.result(job,false) end,turret_tally=function(job) return M.turrettally.result(job,false) end,
       belt_flow=function(job) return M.beltsample.finish(job) end,collector_tally=function(job) return M.collectreach.result(job,false) end,
       asteroid_watch=function(job) return M.asteroidwatch.result(job,false) end},
-    close={asteroid_watch=function(job,new,tick,why) return M.asteroidwatch.close(job,new,tick,why) end}}
+    close={asteroid_watch=function(job,new,tick,why) return M.asteroidwatch.close(job,new,tick,why) end,uptime=function(job,new,tick,why) return M.uptime.close(job,new,tick,why) end}}
   local WATCH={uptime='uptime',turret_tally='turret_tally',belt_flow='belt_flow',
     platform_defense=function(a) return a.asteroids==true and 'asteroid_watch' or nil end,
     platform_supply=function(a) return a.collection==true and 'collector_tally' or nil end}

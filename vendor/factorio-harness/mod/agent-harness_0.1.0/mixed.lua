@@ -13,7 +13,8 @@
 --   on_gui_opened/on_gui_closed with a recipe or module change between them). Not seen: a construction robot's build or a
 --   platform's own build (control.lua forwards no event of them), a circuit's own changes;
 -- - what happens: the watch's read up to the edit is kept (mixed.parts: from, to, its line and lines; an asteroid_watch
---   keeps the whole closed watch as a segment, read by segment_start), and the watch
+--   and an uptime watch keep the whole closed watch as a segment, read by segment_start; a window begun on the edit's
+--   own tick keeps no part), and the watch
 --   starts again from the edit tick with the same arguments to its end tick (flight_watch: its counts begun again, to
 --   its arrival or limit); when that start is refused (too few seconds left, the call refused), or an entity it
 --   measures was mined or destroyed, the watch ends at the edit and its final is that part. mixed.edits names each
@@ -165,6 +166,7 @@ return function(api)
     local e = mx.edits[1]
     return string.format('mixed: %d edit%s during the window, the first at tick %d (%s, %s); %s', #mx.edits, #mx.edits == 1 and '' or 's',
       e.tick, e.text, e.how, mx.ended and 'the watch ended at the edit (' .. mx.ended .. '): its final is the part before it'
+        or #mx.parts == 0 and string.format('this window runs from tick %d', mx.from_tick)
         or string.format('the read up to tick %d is kept apart (mixed.parts); this window runs from tick %d', mx.parts[#mx.parts].to_tick, mx.from_tick))
   end
   local function merged(old, rec)
@@ -206,8 +208,13 @@ return function(api)
       new = api.state()[kind][entry.index]
       if not ok or new == job then why, new = 'the new start was refused: ' .. tostring(err), nil end
     end
-    if new then
-      -- (d25 batch200 QM1) a kind that keeps the whole closed watch (api.close: asteroid_watch's segments) reads it so
+    if new and job.start == tick then
+      -- (d25 batch219 QAD1: two configure steps of one queue on one tick split Sol's uptime watch twice, and the second
+      -- kept a part of no ticks, one of the 3 kept) a window begun on this tick holds nothing: begun again, no part
+      new.segments, new.segments_dropped = job.segments, job.segments_dropped
+      mx.from_tick, new.call, new.mixed = tick, job.call, mx
+    elseif new then
+      -- (d25 batch200 QM1) a kind that keeps the whole closed watch (api.close: asteroid_watch's and uptime's segments) reads it so
       local close = api.close and api.close[kind]
       local okr, before = false, nil
       if close then okr, before = pcall(close, job, new, tick, rec.text) end
