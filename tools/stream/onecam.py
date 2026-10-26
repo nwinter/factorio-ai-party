@@ -115,6 +115,11 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 - A remote vehicle where it is (d26 batch232 VC, viewer Aurora site:5020; ONECAM vehicle_ahead, vehicle_glide): the
   service's live read of the vehicles (harness VEHICLES_LUA) places it; the view aims ahead and glides at least at its
   speed; a unit belongs to the agent who called it last; a vehicle/character switch keeps the story's dwell.
+- Builds and idle air (d26 batch240 IA; ONECAM did_hold, did_zoom, fresh_min, quiet_min, quiet_story, quiet_gap): an
+  agent's build, paste, deconstruction or silo load from its journal (`did`, work.DidFeed) is a fresh event and an act,
+  its spot the shot when away from the character; its clocks' idle seconds (`idle_s`, work.ClockFeed) make it still.
+  Back from an urgent or timed shot, fresh news first and no story standing still while another acts; the surface
+  bonus only for an agent doing something; a quiet view gives way to fresh news.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -430,8 +435,9 @@ ONECAM = {
     # stale (or the best one). Nothing urgent, held, pinned, framed or fighting meanwhile; host and operator looks,
     # follows, platform holds, tours and the hourly piece (a look) come first. tour_every: a tour about this often
     # anyway (tour_first after the start), as the base map's map_every.
-    "quiet_story": 90.0,
-    "quiet_gap": 150.0,
+    # (batch240 IA: 90 and 150 until d26; shift80's replay: idle or loop air 50.7% -> 43.3%, repeats 11.8 -> 15.3 min)
+    "quiet_story": 60.0,
+    "quiet_gap": 120.0,
     "tour_every": 1800.0,
     "tour_first": 900.0,
     "quiet_platform_hold": 25.0,
@@ -455,6 +461,13 @@ ONECAM = {
     # shift80 09:27:05-46 each step glided at 9-10 tiles/s behind a spider walking 13 and the frame fell 130 tiles back.
     "vehicle_ahead": 1.0,
     "vehicle_glide": 1.2,
+    # (d26 batch240 IA) a build, paste, deconstruction or silo load in the agent's journal (work.DidFeed): the live read
+    # never shows these (done within the request). It is a fresh event; away from its character (vehicle_near), the
+    # agent's shot is where it landed while it is did_hold old. In shift80 4 of 16 new builds aired at once (75 s median).
+    "did_hold": 45.0,
+    "did_zoom": 0.9,
+    "fresh_min": 20.0,      # a fresh agent takes over a stale story on air this long (was still_min, 60 s)
+    "quiet_min": 8.0,       # a quiet view gives way to a fresh agent after this long
     "vehicle_flip": 20.0,   # an agent's shot switched between vehicle and character at most this often (replay 02:18:51)
 }
 AIR_FILE, AIR_SAVE_S = "surface-air.json", 60.0  # (batch232) the planets' air time kept across a restart
@@ -463,6 +476,10 @@ DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "tr
 BIG = {"construct": 4, "build_path": 8, "build_blueprint": 4, "blueprint": 4}  # kind -> pieces that make it big
 # (batch222) kinds whose start is news (fresh_window): visible work, not a walk, a craft or a read
 FRESH_KINDS = (VISIBLE | {"place_ghosts", "paste", "blueprint_place", "deconstruct", "launch", "load_silo", "vehicle"}) - WALK - DULL
+DID_TEXT = {"place_ghosts": "ghosts placed", "paste": "a blueprint pasted", "blueprint_place": "a blueprint pasted",
+            "build_blueprint": "building a blueprint", "blueprint": "building a blueprint", "build": "building",
+            "place": "building", "build_path": "building a path", "construct": "building", "deconstruct":
+            "marked for deconstruction", "load_silo": "loading a rocket", "launch": "launching a rocket", "mine": "mining"}
 
 
 def plan_kind(a):
@@ -515,6 +532,7 @@ def onair_info(snap, cams):
     plat = main.get("platform")  # {name, why (visit, departure, work, operator, follow), label, agent?}
     doing = main.get("follow") or ("in battle" if main.get("battle") and name else "") or (f"working on {plat['name']}" if plat and name else
                                    main["vehicle"].split(" · ", 1)[-1] if main.get("vehicle") and name else
+                                   main["did"].split(" · ", 1)[-1] if main.get("did") and name else
                                    onair_doing(snap, name) if name else "")
     if plat and plat.get("why") == "follow":
         doing = " · ".join(x for x in (main.get("follow"), f"aboard {plat['name']}") if x)
@@ -534,7 +552,7 @@ def onair_info(snap, cams):
             # a pollution or spore cloud on Factorio's map (onecam cloud shot): {surface, label, why}
             "cloud": main.get("cloud"),
             # (batch222) a base tour on air {surface, label, machines}; the vehicle by remote view the agent on air drives
-            "tour": main.get("tour"), "vehicle": main.get("vehicle")}
+            "tour": main.get("tour"), "vehicle": main.get("vehicle"), "did": main.get("did")}
 
 
 class OneCam(Director):
@@ -696,7 +714,7 @@ class OneCam(Director):
             with open(self.log_path, "a") as f:
                 f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
                                     "slot": "program", "reason": f"cut to {slot}: {reason}",
-                                    "target": cur and {k: cur[k] for k in ("agents", "zoom", "vehicle") if k in cur}}) + "\n")
+                                    "target": cur and {k: cur[k] for k in ("agents", "zoom", "vehicle", "did") if k in cur}}) + "\n")
         who = "+".join(cur["agents"]) if cur and cur.get("agents") else (cur or {}).get("subject", "-")
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot}: {who}  <- {reason}", flush=True)
 
@@ -711,7 +729,7 @@ class OneCam(Director):
             with open(self.log_path, "a") as f:
                 f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
                                     "slot": "program", "reason": f"move {slot['slot']}: {reason}",
-                                    "target": {k: target[k] for k in ("agents", "zoom", "vehicle") if k in target}}) + "\n")
+                                    "target": {k: target[k] for k in ("agents", "zoom", "vehicle", "did") if k in target}}) + "\n")
         who = "+".join(target.get("agents") or []) or target.get("subject", "-")
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot['slot']}: {who}  <- {reason} "
               f"(one client: moved)", flush=True)
@@ -963,6 +981,12 @@ class OneCam(Director):
                 m["pos"] = p
             if acting:
                 m["moved"] = now
+            d = self.did_row(a, now)  # (batch240) a build of its own just now: it acted, whatever the read showed
+            if d and d["t"] > m["moved"]:
+                m["moved"] = min(now, d["t"])
+            idle = a.get("idle_s")  # (batch240) its own clocks say its character stood this long: still, whatever moved
+            if isinstance(idle, (int, float)) and idle > 0 and not acting and not (d and now - d["t"] < idle):
+                m["moved"] = min(m["moved"], now - idle)
             big = big_plan(a)
             if a["name"] in self.was_big and not big:
                 self.plan_end[a["name"]] = now
@@ -1043,6 +1067,12 @@ class OneCam(Director):
             if now - seen.get(k, -1e9) >= cfg["fresh_window"] and seen.get("@", 0) > 0:
                 why = str(k).replace("_", " ")
             seen[k] = now
+        d = self.did_row(a, now)  # (batch240) the journal's build, paste, deconstruction or silo load, once each
+        if d and d["t"] > seen.get("@did", -1e9):
+            seen["@did"] = d["t"]
+            if now - seen.get(d["action"], -1e9) >= cfg["fresh_window"] and seen.get("@", 0) > 0:
+                why = DID_TEXT.get(d["action"], d["action"].replace("_", " "))
+            seen[d["action"]] = now
         seen["@"] = seen.get("@", 0) + 1  # (the first look at an agent is no news: what it did before is unknown)
         if new_big and not why:
             why = str(k).replace("_", " ")
@@ -1150,13 +1180,38 @@ class OneCam(Director):
         who = a.get("display_name") or a["name"]
         return dict(spot, surface=surface_of(a), label=f"{who} · {label} by remote view")
 
+    def did_row(self, a, now):
+        """(batch240) The agent's latest build, paste, deconstruction or silo load (work.DidFeed) while did_hold old,
+        on its own surface; None for one on a platform (maybe_work shows those)."""
+        d = a.get("did") if a and isinstance(a.get("did"), dict) else None
+        if not d or d.get("platform") or not isinstance(d.get("t"), (int, float)) or now - d["t"] > self.cfg["did_hold"]:
+            return None
+        return d
+
+    def did_spot(self, a, now):
+        """(batch240) Where that request landed when it is away from the character (vehicle_near or more): {x, y,
+        surface, label}, else None (Astra's ghosts of shift81 went 176-214 tiles from where she stood)."""
+        d = self.did_row(a, now)
+        p = d.get("position") if d else None
+        if not isinstance(p, dict) or not a.get("position") or dist(p, a["position"]) < self.cfg["vehicle_near"]:
+            return None
+        who = a.get("display_name") or a["name"]
+        return {"x": float(p["x"]), "y": float(p["y"]), "surface": surface_of(a),
+                "label": f"{who} · {DID_TEXT.get(d['action'], d['action'].replace('_', ' '))}"}
+
     def body_shot(self, name, by_name, zoom, now, fit=None):
-        """The shot of an agent: its character followed, or (batch222) its vehicle by remote view."""
+        """The shot of an agent: its character followed, or (batch222) its vehicle by remote view, or (batch240) where
+        its latest build landed away from it."""
         spot = self.vehicle_spot(by_name.get(name), now)
         if spot:
             z = self.cfg["vehicle_zoom"]
             return {"agents": [name], "subject": name, "position": {"x": spot["x"], "y": spot["y"]},
                     "surface": spot["surface"], "zoom": z, "solo_zoom": z, "vehicle": spot["label"]}
+        spot = self.did_spot(by_name.get(name), now)
+        if spot:
+            z = self.cfg["did_zoom"]
+            return {"agents": [name], "subject": name, "position": {"x": spot["x"], "y": spot["y"]},
+                    "surface": spot["surface"], "zoom": z, "solo_zoom": z, "did": spot["label"]}
         shot = {"agents": [name], "follow": name, "zoom": zoom, "solo_zoom": zoom, "subject": name}
         if fit:
             shot.update(exact_zoom=True, plan_fit=fit)
@@ -1359,7 +1414,10 @@ class OneCam(Director):
             if n not in scored:
                 continue
             if s in short:
-                out[n] = round(1.0 + cfg["surface_bonus"] * (short[s] - share.get(s, 0.0)) / short[s], 3)
+                # (batch240 IA) for an agent doing something to see: a character standing there is no more of that
+                # planet to watch (shift80: Astra on Aquilo x1.6-2.5 standing, 25.9 min of idle air)
+                if self.stale_s(n, now) < cfg["still_cut"] or self.newsworthy(n, now):
+                    out[n] = round(1.0 + cfg["surface_bonus"] * (short[s] - share.get(s, 0.0)) / short[s], 3)
             elif s == "nauvis" and short:
                 out[n] = round(1.0 - cfg["nauvis_penalty"], 3)
         self.surface_log = {"share": {s: round(100 * v) for s, v in sorted(share.items())},
@@ -3576,7 +3634,12 @@ class OneCam(Director):
                 self.fight_fresh(cur.get("position"), now):
             cur["until"] = now + 1  # the fight on air is still reported: stay until it has been quiet fight_quiet
         if cur and cur.get("subject") in HOLDS and now < cur.get("until", 0):
-            return
+            # (batch240 IA) a quiet view gives way to fresh news once it has been up quiet_min
+            if not (self.after_quiet and cur.get("subject") in ("@tour", "@map", "@platform") and
+                    now - self.onair_since >= self.cfg["quiet_min"] and
+                    any(self.newsworthy(n, now) for n in ranked if n not in self.still_block or now >= self.still_block[n])):
+                return
+            cur["until"] = now
         if cur and cur.get("subject") in scores and now - cur.get("attack_t", -1e9) < self.cfg["fight_hold_max"] and \
                 (now < cur.get("hold_until", 0) or (cur.get("hold_until") and self.fighting(cur["subject"], by_name, now))):
             self.keep(cur, by_name, now)  # the agent on air in its fight: no "back to" while it goes on
@@ -3601,12 +3664,27 @@ class OneCam(Director):
         cand = others[0] if others else None
         want = None
         resumed = None
+        need_reason = None  # (batch240) why a need cut went where it did, when not the plain need_why
+        dropped = None      # (batch240) the story an urgent shot cut, not taken up again (direct's need branch)
         if need:
             r, self.resume = self.resume, None
             lively = [n for n in ranked if n not in inset_agents and
                       (self.stale_s(n, now) < self.cfg["still_cut"] or self.newsworthy(n, now))]
             if r and self.after_quiet and self.stale_s(r["subject"], now) >= self.cfg["still_cut"]:
                 r = None  # (batch222) a quiet view cut a stale story: not back to it, to the best lively agent
+            # (batch240 IA) back from any urgent or timed shot: fresh news first, unless the story it cut has its own or
+            # a big action or fight going on; and not to a story standing still while another agent acts (shift80: 51.8
+            # of 125 idle minutes came back that way, 20.1 of them with an agent acting that scored as high)
+            fresh = [n for n in lively if self.newsworthy(n, now)]
+            dropped = r.get("dropped") if r else None
+            if r and not dropped:
+                rs = r["subject"]
+                busy = self.newsworthy(rs, now) or (rs in by_name and (big_plan(by_name[rs]) or self.fighting(rs, by_name, now)))
+                if not busy and (any(n != rs for n in fresh) or
+                                 self.stale_s(rs, now) >= self.cfg["still_cut"] and any(n != rs for n in lively)):
+                    dropped = rs
+            if dropped:
+                self.resume, r = dict(r, dropped=dropped), None  # kept so until the cut (the standby frames first)
             if r and r["subject"] in scores and r["subject"] not in inset_agents and \
                     subj in (None, "@attack", "@segment", "@map", "@platform", "@battle", "@incoming", "@work", "@look",
                              "@tour") and \
@@ -3615,8 +3693,13 @@ class OneCam(Director):
                 self.resume = r  # kept until the cut back happens
             elif floor_reason and others:
                 want = others[0]  # a new planet under its floor: its best-scoring agent
-            elif self.after_quiet and lively:
+            elif fresh and (dropped or not r):
+                want = fresh[0]  # (batch240)
+                need_reason = f"{want} fresh: {self.fresh[want][1]}" + (f" ({dropped} still {int(self.stale_s(dropped, now))} s)" if dropped else "")
+            elif (self.after_quiet or dropped) and lively:
                 want = lively[0]
+                if dropped:
+                    need_reason = f"{want} moving ({dropped} still {int(self.stale_s(dropped, now))} s)"
             else:
                 want = ranked[0] if ranked else None
             if want is None:
@@ -3648,7 +3731,7 @@ class OneCam(Director):
             fresh = [n for n in others if self.newsworthy(n, now)]
             if not want and not holding and fresh and now - self.last_program_cut >= cfg["cut_spacing"] and \
                     (held >= cfg["onair_dwell"] and scores[fresh[0]] >= scores[subj] * cfg["fresh_ratio"] or
-                     stale and held >= cfg["still_min"]):
+                     stale and held >= cfg["fresh_min"]):  # (batch240: was still_min)
                 want = cand = fresh[0]
                 why = f"{plan_kind(by_name[want])} ahead" if big_plan(by_name[want]) else f"fresh: {self.fresh[want][1]}"
                 reason = f"{subj} {'on a loop' if looping else 'still'} {int(still)} s; {want} {why}" if stale else \
@@ -3676,17 +3759,21 @@ class OneCam(Director):
             z = fit or self.zoom_for(by_name[lead], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
             shot = self.body_shot(lead, by_name, z, now, fit)  # (batch222) or its vehicle by remote view
             if not t or t.get("subject") != lead or abs(t["zoom"] - shot["zoom"]) >= self.cfg["zoom_delta"] or \
-                    bool(t.get("vehicle")) != bool(shot.get("vehicle")):
-                keep_framed = t and t.get("subject") == lead and bool(t.get("vehicle")) == bool(shot.get("vehicle"))
+                    bool(t.get("vehicle")) != bool(shot.get("vehicle")) or t.get("did") != shot.get("did"):
+                keep_framed = t and t.get("subject") == lead and bool(t.get("vehicle")) == bool(shot.get("vehicle")) and \
+                    t.get("did") == shot.get("did")
                 shot.update(jump=True, since=now, framed=t["framed"] if keep_framed else now)
                 self.apply(nxt, shot, f"standby: {lead}" + (f" ({plan_kind(by_name[lead])} bounds)" if fit else "") +
-                           (f" ({shot['vehicle']})" if shot.get("vehicle") else ""), scores, now, quiet=True)
+                           (f" ({shot['vehicle']})" if shot.get("vehicle") else "") +
+                           (f" ({shot['did']})" if shot.get("did") else ""), scores, now, quiet=True)
         if want and nxt and self.state[nxt["slot"]].get("subject") == want and self.ready(nxt["slot"], now):
             self.cut(nxt["slot"], reason if not need else self.resumed_why(resumed) if resumed else floor_reason if floor_reason
-                     and self.balance_surface(by_name.get(want)) == due["surface"] else
+                     and self.balance_surface(by_name.get(want)) == due["surface"] else need_reason or
                      self.need_why(subj, want) + self.surface_note(want, by_name), now)
             self.want[nxt["slot"]] = (self.state[nxt["slot"]]["zoom"], now)
             self.after_quiet = False
+            if need and dropped:
+                self.resume = None
             if resumed:
                 self.resume = None
                 self.onair_since = max(resumed["since"], now - self.cfg["onair_dwell"] + self.cfg["resume_min"])
@@ -3695,10 +3782,12 @@ class OneCam(Director):
             z = fit or self.zoom_for(by_name[want], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
             shot = self.body_shot(want, by_name, z, now, fit)
             why = reason if not need else self.resumed_why(resumed) if resumed else floor_reason if floor_reason \
-                and self.balance_surface(by_name.get(want)) == due["surface"] else \
+                and self.balance_surface(by_name.get(want)) == due["surface"] else need_reason or \
                 self.need_why(subj, want) + self.surface_note(want, by_name)
             self.retarget(shot, why, scores, now)
             self.after_quiet = False
+            if need and dropped:
+                self.resume = None
             if resumed:
                 self.resume = None
                 self.onair_since = max(resumed["since"], now - self.cfg["onair_dwell"] + self.cfg["resume_min"])
@@ -3748,6 +3837,33 @@ class OneCam(Director):
             return True
         return False
 
+    def keep_did(self, cur, by_name, now):
+        """(batch240) The agent on air built away from its character (did_spot): the view where that landed while it is
+        did_hold old, a newer one's when it builds elsewhere; then back to the character. True when it handled the shot."""
+        subj = cur["subject"]
+        a = by_name.get(subj)
+        spot = self.did_spot(a, now)
+        flip = now - self.vehicle_swapped.get(subj, -1e9) < self.cfg["vehicle_flip"]
+        if cur.get("did"):
+            p = cur.get("position") or {}
+            same = spot and p and dist(spot, p) < self.cfg["reframe_tiles"]
+            if same or flip or self.mode == "trio":
+                return True
+            if spot:
+                shot, why = self.body_shot(subj, by_name, self.cfg["solo_zoom"], now), f"build: {spot['label']}"
+            else:
+                z = self.zoom_for(a, self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+                shot = {"agents": [subj], "follow": subj, "zoom": z, "solo_zoom": z, "subject": subj}
+                why = f"{subj}: back to the character (its build is {int(self.cfg['did_hold'])} s old)"
+            self.swap(shot, why, now)
+            self.vehicle_swapped[subj] = now
+            return True
+        if spot and self.mode != "trio" and not flip and not cur.get("vehicle"):
+            self.swap(self.body_shot(subj, by_name, self.cfg["solo_zoom"], now), f"build: {spot['label']}", now)
+            self.vehicle_swapped[subj] = now
+            return True
+        return False
+
     def swap(self, target, reason, now):
         """(batch222) The same subject in another shot (its vehicle, or its character again): framed on a standby and
         cut once it is there, as any cut; one client: moved on air."""
@@ -3765,7 +3881,7 @@ class OneCam(Director):
     def keep(self, cur, by_name, now):
         """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big
         action with bounds runs, the zoom fits them."""
-        if self.keep_vehicle(cur, by_name, now):
+        if self.keep_vehicle(cur, by_name, now) or self.keep_did(cur, by_name, now):
             return
         subj = cur["subject"]
         # (BC2) its spidertron fires: framed to its farthest target while it does, then back to the activity's zoom
@@ -3868,6 +3984,8 @@ class OneCam(Director):
                 row["tour"] = t["tour"]  # (batch222) a base tour: {surface, label, machines}
             if t.get("vehicle"):
                 row["vehicle"] = t["vehicle"]  # (batch222) "Opus · spidertron by remote view": its vehicle, not its body
+            if t.get("did"):
+                row["did"] = t["did"]  # (batch240) "Astra · ghosts placed": where its build landed, not its body
             f = self.follow
             if key == "main" and f and f["label"] and now < f["until"] and f["agent"] in (t.get("agents") or []):
                 row["follow"] = f["label"]  # the on-air card: "Following Sol · Sol vs the Demolisher"
