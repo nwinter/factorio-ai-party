@@ -171,25 +171,43 @@ def main():
         assert all(n == 0 for ok, n in calls[:4]), calls  # nothing went up while paused
         assert len(res["pauses"]) == 1 and res["objects"] == 6 and not res["failed"], res
         # the API's request limit: at most 30 puts in any 10 s, and a 429 holds new puts for a minute
+        class Fixed:
+            t = 100.0
+
+            def __call__(self):
+                return self.t
+        fixed = Fixed()
+        pacer = rs.Pacer(3.0, fixed)
+        for _ in range(30):
+            assert pacer.room()
+            pacer.sent()
+        assert not pacer.room()
+        fixed.t = 109.9
+        assert not pacer.room()
+        fixed.t = 110.0
+        assert pacer.room()
+        pacer.hold(60)
+        fixed.t = 169.9
+        assert not pacer.room()
+        fixed.t = 170.0
+        assert pacer.room()
         many = tmp / "many"
-        for i in range(80):
+        for i in range(8):
             (many / "1080").mkdir(parents=True, exist_ok=True)
             (many / "1080" / f"seg{i:04d}.m4s").write_bytes(b"x")
         clock, stamps = Clock(), []
 
         def stamped(item):
             stamps.append((clock.t, item[1]))
-            if item[1].endswith("seg0040.m4s"):
+            if item[1].endswith("seg0003.m4s"):
                 return item[1], 1, ["Failed to fetch ... - 429: Too Many Requests;"]
             return item[1], 0, []
-        res = rs.upload(r2_put.plan(many, "s/full"), stamped, jobs=8, jobs_max=8, clock=clock, sleep=lambda s: None,
-                        log=lambda *x: 0)
-        times = [t for t, _ in stamps]
-        assert all(sum(1 for u in times if t - 10 < u <= t) <= 30 for t in times), times
-        t429 = next(t for t, k in stamps if k.endswith("seg0040.m4s"))
-        later = [t for t, k in stamps if t > t429 + 1]
-        assert later and min(later) >= t429 + 60, (t429, later[:3])
-        assert res["too_many_requests"] == 1 and res["failed"] == ["s/full/1080/seg0040.m4s"], res
+        res = rs.upload(r2_put.plan(many, "s/full"), stamped, jobs=1, jobs_max=1, clock=clock,
+                        sleep=lambda s: None, log=lambda *x: 0)
+        t429 = next(t for t, k in stamps if k.endswith("seg0003.m4s"))
+        later = [t for t, k in stamps if t > t429]
+        assert len(later) == 4 and min(later) >= t429 + 60, (t429, later)
+        assert res["too_many_requests"] == 1 and res["failed"] == ["s/full/1080/seg0003.m4s"], res
         # a whole shift
         hls_root = tmp / "pog-hls"
         hls_root.mkdir()

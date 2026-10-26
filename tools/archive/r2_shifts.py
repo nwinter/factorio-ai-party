@@ -189,14 +189,17 @@ def encode(index, ps, out, runner=subprocess.run, clock=time.time, log=print):
 
 # ---------------------------------------------------------------- upload
 
+def rank(item):
+    """0 segments, init files and data; 1 the rung and part playlists; 2 master.m3u8."""
+    key = item[1]
+    if key.endswith("/master.m3u8"):
+        return 2
+    return 1 if key.endswith(".m3u8") else 0
+
+
 def order(items):
-    """Segments and init files first, then the rung playlists, then master.m3u8: a player that finds a playlist
-    finds its segments."""
-    def rank(it):
-        key = it[1]
-        if key.endswith("/master.m3u8"):
-            return 2
-        return 1 if key.endswith(".m3u8") else 0
+    """Segments and init files first, then the rung playlists, then master.m3u8 (upload starts a rank only when the
+    one before it is done): a player that finds a playlist finds its segments."""
     return sorted(items, key=lambda it: (rank(it), it[1]))
 
 
@@ -246,6 +249,26 @@ def next_jobs(jobs, mbps, max_mbps, jobs_max, capped):
     return jobs, capped or mbps >= 0.8 * max_mbps
 
 
+class Pacer:
+    """At most max_obj_s puts a second over each 10 s, and none during a hold (after a 429)."""
+
+    def __init__(self, max_obj_s, clock):
+        self.max_obj_s, self.clock = max_obj_s, clock
+        self.times, self.until = deque(), 0.0
+
+    def room(self):
+        now = self.clock()
+        while self.times and self.times[0] <= now - 10:
+            self.times.popleft()
+        return now >= self.until and len(self.times) < self.max_obj_s * 10
+
+    def sent(self):
+        self.times.append(self.clock())
+
+    def hold(self, seconds):
+        self.until = self.clock() + seconds
+
+
 def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, health=None, clock=time.time,
            sleep=time.sleep, log=print, max_obj_s=3.0):
     """Put every item, `jobs` at a time, the rate held at or under max_mbps and at most max_obj_s puts a second
@@ -260,13 +283,7 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
     failed, pauses, trace = [], [], []
     running = {}
     paused_since, clean = None, 0
-    sent, hold_until, n429 = deque(), 0.0, 0
-
-    def room():
-        now = clock()
-        while sent and sent[0] < now - 10:
-            sent.popleft()
-        return now >= hold_until and len(sent) < max_obj_s * 10
+    pacer, n429 = Pacer(max_obj_s, clock), 0
 
     def gate():
         nonlocal paused_since, clean
@@ -288,9 +305,10 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
     open_gate = gate()
     with ThreadPoolExecutor(jobs_max) as ex:
         while todo or running:
-            while open_gate and todo and len(running) < jobs and room():
+            while (open_gate and todo and len(running) < jobs and pacer.room()
+                   and all(rank(r) >= rank(todo[0]) for r in running.values())):
                 it = todo.pop(0)
-                sent.append(clock())
+                pacer.sent()
                 running[ex.submit(putter, it)] = it
             if running:
                 fin, _ = wait(list(running), timeout=1.0, return_when=FIRST_COMPLETED)
@@ -302,7 +320,7 @@ def upload(items, putter, max_mbps=150.0, jobs=4, jobs_max=16, window=30.0, heal
                         log(f"  failed {key}: {err}")
                         if "429" in " ".join(err):
                             n429 += 1
-                            hold_until = clock() + 60
+                            pacer.hold(60)
                     else:
                         bytes_win += it[0].stat().st_size
                         done_bytes += it[0].stat().st_size
