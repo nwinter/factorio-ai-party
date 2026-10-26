@@ -20569,13 +20569,13 @@ function M.tick_action(index,action,event)
     if outcome then finish(index,outcome) end
   elseif action.kind=='spider_kite' then
     if event.tick>=action.next_scan then
-      local outcome=M.spiderkite.tick(action,event.tick)
+      local outcome=M.timed('spiderkite.tick',M.spiderkite.tick,action,event.tick)  -- (d26 batch247) its own part in profile_ticks
       if outcome then finish(index,outcome) end
     end
   elseif action.kind=='spider_go' then
     -- (d26 batch247 NV1) a waited go_to: read after the route's samples (spiderroute.tick at tick%60==37)
     if event.tick%60==38 then
-      local outcome=M.spiderroute.watch(action)
+      local outcome=M.timed('spiderroute.watch',M.spiderroute.watch,action)
       if outcome then finish(index,outcome) end
     end
   elseif action.kind=='drive' then
