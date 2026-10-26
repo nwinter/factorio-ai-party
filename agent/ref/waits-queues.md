@@ -115,8 +115,11 @@
   restarts an absolute-goal step, `append` waits behind this round, `next` runs the new steps once right after the
   active step (which goes on) and keeps the loop. `mode: "replace"` stops the active step of any plan (a running
   `load_silo` too); `mode: "pending"` replaces only the pending steps. `on_fail`: `abort` pauses, `skip` goes on (it
-  acquires nothing), `goto:<label>` jumps to that pending label. A `place_ghosts` or `build` step with failed entries
-  fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies. A transfer step
+  acquires nothing), `goto:<label>` jumps to the first pending step with that label: a later step of the same list, or
+  one pending behind it (mode `next`, `ahead`); a guard's `goto` to any step of the plan, the steps pending, the loop
+  or a guard's steps. queue_submit, its dry run, queue_repeat, queue_edit and order_set refuse a goto that names no
+  such step, with the step's path, the label and the labels there are. A `place_ghosts` or `build` step with failed
+  entries fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies. A transfer step
   that moves fewer than asked (a full target) succeeds short; `min_moved: N` fails it below N moved. A transfer,
   collect, feed, rearm or refuel step with a position and no `walk` runs with `walk: true`: it walks into reach from
   any distance, with move_to's enemy checks (`walk: false` keeps it from walking; standing orders keep `max_walk`). `guards` (up to 8

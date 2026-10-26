@@ -159,6 +159,124 @@ return function(api)
     end
     return out
   end
+  -- (d26 batch251 GL, Sol #2466: queue_submit and its dry run took on_fail goto:missing-label, and an Asterion draft
+  -- at tick 68087211 passed with step 11's goto:sink-source-stop on no step; a goto that finds no pending step of its
+  -- label pauses the queue) Goto targets, checked as jump resolves them: the pending steps only, the first of that
+  -- label. A step's on_fail goto:L continues at a step labelled L after it in its own list, or in the steps pending
+  -- behind that list (mode ahead and next); a step before it has run by then, and a loop's next round is put pending
+  -- only once the round is empty. A guard's goto takes the steps pending when it fires: any step of the plan, of the
+  -- steps pending behind it, of the loop, or of a guard's own steps (pending once that guard fires). Nothing is left
+  -- to run time: a label a later edit or submit would bring is not counted.
+  local function goto_of(step) local f=step and step.on_fail; return type(f)=='string' and f:match('^goto:(.+)$') or nil end
+  local function where_of(path,i,step)
+    return string.format('%s[%d] (%s%s)',path,i,tostring(step.action),step.label and string.format(', label %q',step.label) or '')
+  end
+  local function label_text(list) return #list>0 and table.concat(list,', ') or 'none' end
+  -- The steps of list whose on_fail goto finds no label after it (behind: the steps pending after the list), as
+  -- {i, label}.
+  local function unresolved(list,behind)
+    local after,out={},{}
+    for _,s in ipairs(behind or {}) do if s.label then after[s.label]=true end end
+    for i=#list,1,-1 do
+      local s=list[i]
+      local l=goto_of(s)
+      if l and not after[l] then table.insert(out,1,{i=i,label=l}) end
+      if s.label then after[s.label]=true end
+    end
+    return out
+  end
+  -- The labels of the lists, each once, in order.
+  local function labels_in(lists)
+    local seen,out={},{}
+    for _,list in ipairs(lists) do
+      for _,s in ipairs(list or {}) do if s.label and not seen[s.label] then seen[s.label]=true; out[#out+1]=s.label end end
+    end
+    return out,seen
+  end
+  local function step_problem(name,list,behind,u,behind_text)
+    local after={}
+    for j=u.i+1,#list do after[#after+1]=list[j] end
+    local names=labels_in({after,behind or {}})
+    local before
+    for j=1,u.i-1 do if list[j].label==u.label then before=before or name(j) end end
+    return string.format('%s: on_fail goto:%s names no step after it (a goto continues at the first pending step of that label after the failed one): %s; labels after it%s: %s',
+      name(u.i),u.label,before and string.format('%s is on %s, before it, which has run by then',u.label,before) or u.label..' labels no step of the plan',
+      behind_text or '',label_text(names))
+  end
+  local function guard_problem(path,label,names,gnames)
+    return string.format('%s: goto %s names no step of the queue (a guard\'s goto continues at the first pending step of that label when it fires); labels of the plan, the steps pending and the loop: %s%s',
+      path,label,label_text(names),#gnames>0 and '; of the guards\' steps: '..table.concat(gnames,', ') or '')
+  end
+  -- A plan's gotos (queue_submit and its dry run, queue_repeat, order_set): items; o.behind, the steps pending behind
+  -- them; o.kept and o.loop, the steps that stay pending and the loop (for guards); o.kept_guards and o.guards, the
+  -- guards kept and the new ones. Refuses every unresolved one at once, each with its step path, label and the labels
+  -- there are.
+  local function check_gotos(items,o)
+    o=o or {}
+    local problems={}
+    local behind=o.behind or {}
+    local function gpath(i) return o.guard_path and o.guard_path(i) or 'guards['..i..']' end
+    for _,u in ipairs(unresolved(items,behind)) do
+      problems[#problems+1]=step_problem(function(j) return where_of(o.path or 'steps',j,items[j]) end,items,behind,u,#behind>0 and ' (with the steps pending behind them)' or nil)
+    end
+    local gsteps={}
+    for i,g in ipairs(o.guards or {}) do
+      for _,u in ipairs(g.steps and unresolved(g.steps) or {}) do
+        problems[#problems+1]=step_problem(function(j) return where_of(gpath(i)..'.steps',j,g.steps[j]) end,g.steps,nil,u)
+      end
+    end
+    for _,g in ipairs(o.kept_guards or {}) do gsteps[#gsteps+1]=g.steps or {} end
+    for _,g in ipairs(o.guards or {}) do gsteps[#gsteps+1]=g.steps or {} end
+    local names,seen=labels_in({items,o.kept or {},o.loop or {}})
+    local gnames,gseen=labels_in(gsteps)
+    for i,g in ipairs(o.guards or {}) do
+      local l=g['goto']
+      if l and not seen[l] and not gseen[l] then problems[#problems+1]=guard_problem(gpath(i),l,names,gnames) end
+    end
+    if #problems>0 then error(table.concat(problems,' | '),0) end
+  end
+  M.check_gotos=check_gotos
+  -- queue_edit (steps inserted, removed or moved; guards added, replaced or removed): the queue as it would be after the
+  -- edit (np: its pending steps, gs: its guards) refused when a goto that found its label before finds none after, or
+  -- an inserted step's or a new guard's finds none (items: the steps inserted, by their place in the call's steps).
+  local function edit_gotos(q,np,gs,items)
+    local function with_current(pending) local l={} if q.current then l[1]=q.current end for _,st in ipairs(pending) do l[#l+1]=st end return l end
+    local before,after=with_current(q.pending),with_current(np)
+    local was={}
+    for _,u in ipairs(unresolved(before)) do was[before[u.i]]=true end
+    local inserted={}
+    for i,st in ipairs(items or {}) do inserted[st]=i end
+    local off=q.current and 1 or 0
+    local function name(j)
+      local st=after[j]
+      if inserted[st] then return where_of('steps',inserted[st],st) end
+      if j==1 and q.current then return string.format('the active step %s (%s)',tostring(st.id),tostring(st.action)) end
+      return string.format('pending[%d] %s (%s%s)',j-off,tostring(st.id),tostring(st.action),st.label and string.format(', label %q',st.label) or '')
+    end
+    local problems={}
+    for _,u in ipairs(unresolved(after)) do
+      if not was[after[u.i]] then problems[#problems+1]=step_problem(name,after,nil,u,' once edited') end
+    end
+    local function reach(pending,guards_list)
+      local gsl={}
+      for _,g in ipairs(guards_list or {}) do gsl[#gsl+1]=g.steps or {} end
+      local names,seen=labels_in({pending,q.loop or {}})
+      local gnames,gseen=labels_in(gsl)
+      return seen,gseen,names,gnames
+    end
+    local b1,b2=reach(q.pending,q.guards)
+    local a1,a2,names,gnames=reach(np,gs)
+    local old={}
+    for _,g in ipairs(q.guards or {}) do old[g]=true end
+    for _,g in ipairs(gs or {}) do
+      local l=g['goto']
+      local new=not old[g]
+      if l and not (a1[l] or a2[l]) and (new or b1[l] or b2[l]) then
+        problems[#problems+1]=guard_problem((g.id or 'a new guard')..(new and ' (new)' or ' after this edit'),l,names,gnames)
+      end
+    end
+    if #problems>0 then error(table.concat(problems,' | '),0) end
+  end
   -- (d20 batch54 N9, Sol #1427: changing one guard took a full-plan replace, which ran the plan's first step again,
   -- paused the queue 14 min with no guard and reset the guards' baselines) Each guard has an id (guard-N, by queue)
   -- and set_tick; queue_edit guards adds, removes or replaces guards by id, and a guard left as it was keeps its own
@@ -838,7 +956,8 @@ return function(api)
   function M.validate(a)
     local items,corrected=steps(a)
     assert(#items<=MAX_PENDING,'queue capacity exceeded')
-    guards(a)
+    -- (d26 batch251 GL) an order's steps run alone in the queue: their gotos within them
+    check_gotos(items,{guards=guards(a)})
     local size=total(items)
     assert(size<=MAX_BYTES,'queue argument byte budget exceeded')
     return size,items,corrected
@@ -884,6 +1003,47 @@ return function(api)
     out.staged=staged
     return out
   end
+  -- (d26 batch251 GL) what a submit checks against the queue, the dry run the same (memory queue-check-sweep: their
+  -- limits agree): the mode, a repeating plan's refusal, capacity, bytes, guards, and every goto (check_gotos) against
+  -- the steps that can be pending when it runs. q: the lane's queue, or an empty one (a dry run on a queue never used).
+  local function submit_checks(q,a,items,new_guards)
+    revision(q,a)
+    assert(a.mode==nil or a.mode=='append' or a.mode=='replace' or a.mode=='ahead' or a.mode=='pending' or a.mode=='next','mode must be append, replace, ahead, next or pending')
+    if a.mode=='pending' then
+      assert(not q.loop,'mode="pending" replaces the pending steps of an ordinary plan; this queue repeats ("'..tostring(q.name or 'unnamed repeating plan')..'"): replace or ahead')
+      assert(#items<=MAX_PENDING,'queue capacity exceeded')
+      assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
+      assert(#(q.guards or {})+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
+      check_gotos(items,{kept_guards=q.guards,guards=new_guards})
+      return
+    end
+    local loop=q.loop and (q.name or 'unnamed repeating plan')
+    local active=q.current and (q.current.id..' '..q.current.action) or 'between rounds'
+    if loop and #items>0 and a.mode==nil then
+      error('queue_submit queued nothing: repeating job "'..loop..'" ('..active..'); mode="replace" stops its active step and removes the loop; mode="ahead" runs before its remaining steps (restarts an active absolute-goal step); mode="append" waits behind the current round',0)
+    end
+    if a.mode=='ahead' and q.current then
+      assert(RESTARTABLE[q.current.action] or q.current.action=='wait_ticks','mode="ahead" cannot restart active '..q.current.action..'; mode="replace" stops it and replaces the repeating plan')
+    end
+    local replacing=a.mode=='replace'
+    local extra=a.mode=='ahead' and q.current and 1 or 0
+    assert((replacing and 0 or #q.pending)+#items+extra<=MAX_PENDING,'queue capacity exceeded')
+    assert((replacing and 0 or total(q.pending))+total(items)+(extra>0 and bytes(q.current,0) or 0)<=MAX_BYTES,'queue argument byte budget exceeded')
+    assert((replacing and 0 or #(q.guards or {}))+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
+    -- the steps pending behind the new ones: ahead puts them before the pending steps (and the active step, restarted
+    -- after them), next before the pending steps; append and replace after
+    local behind={}
+    if a.mode=='ahead' or a.mode=='next' then
+      if a.mode=='ahead' and q.current then behind[1]=q.current end
+      for _,st in ipairs(q.pending) do behind[#behind+1]=st end
+    end
+    local kept={}
+    if not replacing then
+      if q.current and a.mode=='ahead' then kept[1]=q.current end
+      for _,st in ipairs(q.pending) do kept[#kept+1]=st end
+    end
+    check_gotos(items,{behind=behind,kept=kept,loop=not replacing and q.loop or nil,kept_guards=not replacing and q.guards or nil,guards=new_guards})
+  end
   function M.handlers.queue_submit(p,a)
     setting(p,a)
     assert(a.start==nil or type(a.start)=='boolean','start must be true or false')
@@ -892,8 +1052,9 @@ return function(api)
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
     if a.dry_run then
       local items,corrected=steps(a,p)
-      guards(a,p)
+      local new_guards=guards(a,p)
       assert(#items<=MAX_PENDING,'queue capacity exceeded')
+      submit_checks((api.state()[QUEUES] or {})[p.index] or {pending={},guards={},revision=0},a,items,new_guards)
       local out={dry_run=true,queued=false,steps=#items}
       if api.simulate then
         local ok,sim=pcall(api.simulate,p,items)
@@ -913,14 +1074,10 @@ return function(api)
     local q=queue(p.index); revision(q,a)
     local items,corrected=steps(a,p)
     local new_guards=guards(a,p)
-    assert(a.mode==nil or a.mode=='append' or a.mode=='replace' or a.mode=='ahead' or a.mode=='pending' or a.mode=='next','mode must be append, replace, ahead, next or pending')
+    submit_checks(q,a,items,new_guards)
     -- pending (Astra, d15 09:20: change what comes next while a load_silo runs): the pending steps are replaced, the
     -- active step and the guards stay; into a repeating plan it refuses (replace or ahead say what happens to the loop).
     if a.mode=='pending' then
-      assert(not q.loop,'mode="pending" replaces the pending steps of an ordinary plan; this queue repeats ("'..tostring(q.name or 'unnamed repeating plan')..'"): replace or ahead')
-      assert(#items<=MAX_PENDING,'queue capacity exceeded')
-      assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
-      assert(#(q.guards or {})+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
       preempt(p,q)
       assign(q,items)
       for _,step in ipairs(items) do step.plan=q.plan_seq end
@@ -936,17 +1093,7 @@ return function(api)
     end
     local loop=q.loop and (q.name or 'unnamed repeating plan')
     local active=q.current and (q.current.id..' '..q.current.action) or 'between rounds'
-    if loop and #items>0 and a.mode==nil then
-      error('queue_submit queued nothing: repeating job "'..loop..'" ('..active..'); mode="replace" stops its active step and removes the loop; mode="ahead" runs before its remaining steps (restarts an active absolute-goal step); mode="append" waits behind the current round',0)
-    end
-    if a.mode=='ahead' and q.current then
-      assert(RESTARTABLE[q.current.action] or q.current.action=='wait_ticks','mode="ahead" cannot restart active '..q.current.action..'; mode="replace" stops it and replaces the repeating plan')
-    end
     local replacing=a.mode=='replace'
-    local extra=a.mode=='ahead' and q.current and 1 or 0
-    assert((replacing and 0 or #q.pending)+#items+extra<=MAX_PENDING,'queue capacity exceeded')
-    assert((replacing and 0 or total(q.pending))+total(items)+(extra>0 and bytes(q.current,0) or 0)<=MAX_BYTES,'queue argument byte budget exceeded')
-    assert((replacing and 0 or #(q.guards or {}))+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     preempt(p,q)
     if (replacing and loop) or a.mode=='ahead' then api.stop(p); M.pause(p.index,'queue_submit mode='..tostring(a.mode))
     elseif replacing and q.current then
@@ -981,6 +1128,8 @@ return function(api)
     local q=queue(p.index); revision(q,a)
     local items,corrected=steps(a,p)
     assert(#items>0,'repeating plan must not be empty')
+    -- (d26 batch251 GL) a round's gotos within the round (the next round is put pending once it is empty)
+    check_gotos(items)
     assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     local interval=a.interval_ticks or 1800
     assert(type(interval)=='number' and interval==math.floor(interval) and interval>=60 and interval<=36000,'interval_ticks must be 60..36000')
@@ -1049,6 +1198,16 @@ return function(api)
     assert(#(q.guards or {})-#remove+#added<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     local new_by={}
     for i,r in ipairs(replace) do new_by[r.id]=swapped[i] end
+    -- (d26 batch251 GL) the new guards' gotos and steps, and the kept guards' gotos, against the queue after the edit
+    local after={}
+    for _,g in ipairs(q.guards or {}) do
+      if new_by[g.id] then after[#after+1]=new_by[g.id]; new_by[g.id].id=g.id
+      elseif status[g.id]~='removed' then after[#after+1]=g end
+    end
+    for _,g in ipairs(added) do after[#after+1]=g end
+    for i,g in ipairs(swapped) do check_gotos({},{guards={{steps=g.steps}},guard_path=function() return 'guards.replace['..i..']' end}) end
+    for i,g in ipairs(added) do check_gotos({},{guards={{steps=g.steps}},guard_path=function() return 'guards.add['..i..']' end}) end
+    edit_gotos(q,q.pending,after)
     local list={}
     for _,g in ipairs(q.guards or {}) do
       if new_by[g.id] then list[#list+1]=add_guard(q,new_by[g.id],g.id)
@@ -1096,8 +1255,12 @@ return function(api)
         assert(a.steps==nil and a.remove==nil,'to moves the step; steps and remove go without to')
         assert(type(a.to)=='number' and a.to==math.floor(a.to) and a.to>=1 and a.to<=#q.pending,'to is a pending place 1..'..#q.pending)
         local current=q.current
-        local step=table.remove(q.pending,at)
-        table.insert(q.pending,a.to,step)
+        local np={}
+        for _,st in ipairs(q.pending) do np[#np+1]=st end
+        local step=table.remove(np,at)
+        table.insert(np,a.to,step)
+        edit_gotos(q,np,q.guards)
+        q.pending=np
         q.revision=q.revision+1
         local out=snapshot(q,RECENT)
         out.active_step=active_line(p,q,current)
@@ -1123,10 +1286,14 @@ return function(api)
     local size=total(q.pending)+total(items)
     for n=index,index+remove-1 do size=size-bytes(q.pending[n],0) end
     assert(size<=MAX_BYTES,'queue argument byte budget exceeded')
+    local np={}
+    for k=1,index-1 do np[#np+1]=q.pending[k] end
+    for _,st in ipairs(items) do np[#np+1]=st end
+    for k=index+remove,#q.pending do np[#np+1]=q.pending[k] end
+    edit_gotos(q,np,q.guards,items)
     assign(q,items)
     for _,step in ipairs(items) do step.plan=q.plan_seq end
-    for _=1,remove do table.remove(q.pending,index) end
-    for n=#items,1,-1 do table.insert(q.pending,index,items[n]) end
+    q.pending=np
     q.revision=q.revision+1
     local out=with(snapshot(q,RECENT),corrected)
     out.active_step=active_line(p,q,current)
@@ -1394,7 +1561,7 @@ return function(api)
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
-    step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
+    step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it; the label is on a later step of the list, or a step pending behind it with mode next or ahead: a submit and its dry run refuse one on no such step); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan',max=MAX_GUARDS}
   }
   return M

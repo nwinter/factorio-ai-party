@@ -111,7 +111,7 @@ local base={state=function() return s end,player=function() return p end,handler
 local make=require('scheduler')
 local q=require('queue_lanes'){scheduler=make(base),factory=make,base=base,is_read=function() return false end}
 local cond={['until']='platform_ammo_below',platform='Asterion',item='rocket',count=200}
-local r=q.handlers.queue_submit(p,{lane='platform:Asterion',dry_run=true,steps={{action='wait_until',args=cond}},guards={{when=cond,['goto']='home'}}})
-eq(r.steps,1)
+local r=q.handlers.queue_submit(p,{lane='platform:Asterion',dry_run=true,steps={{action='wait_until',args=cond},{action='wait_ticks',args={ticks=60},label='home'}},guards={{when=cond,['goto']='home'}}})
+eq(r.steps,2)
 eq(q.handlers.queue_submit(p,{lane='remote',dry_run=true,steps={{action='wait_until',args=cond}}}).steps,1)
 print('d22_batch117 BZ1 platform_ammo_below: ok')
