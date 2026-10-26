@@ -1360,6 +1360,25 @@ class Model:
             if isinstance(obs.get(feed), list) and not obs[feed]:
                 self.feeds_live.add(feed)
 
+    # (d26 batch236 OC, viewer Aurora 10:39: "Opus's shift15 confession c72 reappears beside fresh speech after startup.
+    # Could old confessions stay dated history, without appearing or being voiced as new shift messages?") At shift81's
+    # start the confessions read returned the runtime's kept ones, c71-c75 (shift15-16: no agent has confessed since);
+    # backlog_old marked them history, but they went into the chat window beside the new shift's lines, and the
+    # overlay, which reads no history mark, showed them as current. A backlog line from before the current shift
+    # (run["shift"]["start"]; its time from its tick, tick_time) is left out of the live feeds: the site's history and
+    # search keep it with its shift and date (site/agents.py, site/search.py). One the backlog has before the game tick
+    # is known cannot be dated: left out too. Lines from earlier in this shift stay as history (BU1).
+    def before_shift(self, m, feed):
+        """True for a backlog line of `feed` from before the current shift's start, or one not datable yet."""
+        if feed in self.feeds_live:
+            return False
+        start = (self.run.get("shift") or {}).get("start")
+        if not isinstance(start, (int, float)):
+            return False
+        if not (isinstance(m.get("tick"), (int, float)) and self.tick):
+            return True
+        return self.tick_time(m["tick"]) < start
+
     def _restore(self, entry, m, feed):
         """Mark a backlog line history with its own time (backlog_old); True when it did."""
         if not self.backlog_old(m, feed):
@@ -1435,6 +1454,8 @@ class Model:
         if key in self.chat_seen:
             return
         self.chat_seen.add(key)
+        if self.before_shift(c, "confessions"):
+            return
         sender = self._match_sender(c.get("from", ""))
         entry = {"seq": f"c{c.get('seq')}", "tick": c.get("tick"), "from": c.get("from"), "agent": sender,
                  "text": c.get("text", ""), "t": c.get("t", now), "confess": True, "lane": "talk"}
@@ -1452,6 +1473,8 @@ class Model:
         if key in self.chat_seen:
             return
         self.chat_seen.add(key)
+        if self.before_shift(t, "tells"):
+            return
         sender = self._match_sender(t.get("from", ""))
         to = t.get("to")
         names = ["team"] if to == "team" else [n for n in (to or []) if isinstance(n, str)]
@@ -1472,6 +1495,8 @@ class Model:
         if key in self.chat_seen:
             return
         self.chat_seen.add(key)
+        if self.before_shift(r, "operator_requests"):
+            return
         sender = self._match_sender(r.get("agent", ""))
         text = r.get("text", "")
         entry = {"seq": f"o{r.get('seq')}", "tick": r.get("tick"), "from": r.get("agent"), "agent": sender,
@@ -1616,6 +1641,8 @@ class Model:
             return  # notes and operator bookkeeping are noise on stream
         if kind == "plan":
             return  # plan edits show as the plan line itself (board_snapshot)
+        if self.before_shift(e, "board_events"):  # (OC) the item cache above is kept; the event is not shown
+            return
         agent = self._who(e.get("by"))
         restored = self.backlog_old(e, "board_events")  # (BU1) a restart's replay of the kept events
         t = self.tick_time(e["tick"]) if restored else e.get("t", now)

@@ -452,6 +452,12 @@ status, with its reply count inline after it ("· 2 replies", a link to the firs
 Details and the list's scroll (the line at its top and that line's offset, or the end) are kept when the list is
 rebuilt and across a reload, in this tab's sessionStorage (`chatDetails`, `chatScroll`; a kept place waits up to 15 s
 for its line to arrive and gives way when the reader scrolls).
+(d26 batch236 OC, viewer Aurora 10:39: "Opus's shift15 confession c72 reappears beside fresh speech after startup")
+After a stream service start, the harness's kept confessions, tells, operator requests and board events come back in
+its first reads. One from before the current shift (`shift.start`; its time from its game tick) goes into no live
+feed: not `chat`, `operator_requests` or `board.events`, not the overlay, never voiced. The site's history and search
+keep it with its shift and date. One from earlier in the current shift stays in the feeds marked `history`, with its
+own time, as before. The overlay shows no `history` line and no replayed board event.
 
 The Operator names the line it answers with `tools/opreply.py` (d20 batch65 AA2, viewer Aurora 04:28: "Could replies
 keep the original question ID through delivery, split parts and history?"; shift50's 04:20 two-line artillery answer

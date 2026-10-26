@@ -582,10 +582,12 @@
     const pins = window.pogChat && window.pogChat.viewerPins ? window.pogChat.viewerPins(s) : [];
     const pinnedKeys = new Set(pins.flatMap((p) => p.keys || []));
     renderPins(s, pins);
-    const talk = all.filter((m) => !m.tell && ((m.lane || "talk") === "talk" || m.lane === "notice" || m.lane === "operator")).slice(-10)
+    // (d26 batch236 OC, viewer Aurora 10:39) a line read again at a stream restart (model.py history) is not current:
+    // the overlay shows none of them (the site's live feed keeps them, marked history)
+    const talk = all.filter((m) => !m.tell && !m.history && ((m.lane || "talk") === "talk" || m.lane === "notice" || m.lane === "operator")).slice(-10)
       .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }))
       .filter((it) => !pinnedKeys.has(it.key));
-    const tells = (window.pogChat ? window.pogChat.foldTells(all.filter((m) => m.tell)) : []).slice(-6)
+    const tells = (window.pogChat ? window.pogChat.foldTells(all.filter((m) => m.tell && !m.history)) : []).slice(-6)
       .map((g) => ({ g, t: g.t || s.now, key: g.key }));
     const viewers = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-4)
       .map((v) => ({ v, t: v.t || s.now, key: "v:" + String(v.id || v.seq) }))
@@ -744,7 +746,7 @@
     // the team plan's goals (board_plan) take the top line while there are any
     const plan = b.plan && b.plan.goals ? b.plan : null;
     const rows = 3 - cl.length - (plan ? 1 : 0); // 160 px panel: three lines between the header and the claims row
-    const events = (b.events || []).slice(-rows);
+    const events = (b.events || []).filter((e) => !e.history).slice(-rows);  // (OC) a restart's replayed events are not shown as new
     const keys = new Set();
     for (const e of events) {
       const key = "e" + (e.seq ?? e.tick + ":" + e.id + ":" + e.verb);
