@@ -2224,6 +2224,17 @@ Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rul
   21.5% -> 25.5% (the review counts a stuck spider as Opus acting: its calls); builds 10/8/4 -> 9/12/1 (path
   differences: a trio at 12:22:32, other "all stale" picks).
 - Test: tools/stream/test_spidershot.py.
+- (cp3, viewer Aurora 16:30: "On Opus's south scout after 16:13 PDT, the camera kept trailing until the spider left
+  frame") director-20261026-160451.jsonl against Opus's journal: 16:13-16:26 the spider shot was on air 547 s, the
+  spider in frame 311 s. It walked pathed routes (waypoints about 12 tiles apart); the live read names only the next
+  waypoint, and the lead stopped there ("at most to the target"), so the aim sat on the last read plus at most 12
+  tiles and moved only when a read came (every 3.1 s, median): the spider ran 30-100 tiles ahead and out of the
+  15-tile half height. Not the glide (36-38 tiles/s, the view reached each aim in about a second) nor the inner-box
+  cap (a replay without it: the same 95.7%). work.VehicleFeed keeps each reply's remaining route; the lead goes on
+  along it from the read's waypoint, round the turns.
+  In frame (replay, --vehicles live; cp2's rules -> cp3's): 16:13-16:26 424 of 504 s -> 483 of 505 (aired 311 of 547);
+  14:29-15:15 629 of 654 -> 640 of 654 (aired 852 of 954). The rest: starts before the first moving read, and the
+  journal model's own jumps when a reply shows another path.
 
 ## Verified
 
