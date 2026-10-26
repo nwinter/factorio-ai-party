@@ -732,8 +732,11 @@ def main():
             time.sleep(max(0.2, a.poll - (time.time() - t)))
 
     # Artillery shells in flight (onecam maybe_artillery; viewer Foobator 12:48): the harness's artillery_live read on
-    # its own pace (every half second while a piece is loaded with targets in range, else 10 s), since a shell is up
-    # under 4 s and the main poll comes every few seconds; a new shell wakes the ticker at once.
+    # its own pace (`every`: 0.2 s while a team flare is kept or a shell's second sighting is due, 0.5 s while a piece is
+    # loaded with targets in range, else 10 s),
+    # since a shell is up under 4 s and the main poll comes every few seconds; a new shell wakes the ticker at once.
+    # (batch224 AY) A flare request in a journal (WorkFeed.flare_at) cuts the 10 s wait short, so a barrage's first
+    # shells are read too.
     arty = {"res": None}
     wake = threading.Event()
 
@@ -748,7 +751,7 @@ def main():
                     res["read_at"] = time.time()
                     with lock:
                         arty["res"] = res
-                    every = max(0.5, float(res.get("every") or 10.0))
+                    every = max(0.1, float(res.get("every") or 10.0))
                     new = [x["key"] for x in res.get("shells") or [] if x.get("key") and x["key"] not in seen]
                     if new:
                         seen.update(new)
@@ -758,7 +761,12 @@ def main():
                 except Exception as e:
                     print(f"[artillery] read failed: {type(e).__name__}: {e}", flush=True)
                     every = 30.0
-            time.sleep(every)
+            read_t = time.time()
+            work = getattr(source, "work", None)
+            while time.time() - read_t < every:
+                time.sleep(min(0.5, every))
+                if every <= 10.0 and work is not None and getattr(work, "flare_at", 0.0) > read_t:
+                    break
 
     page_version = static_version()
 
