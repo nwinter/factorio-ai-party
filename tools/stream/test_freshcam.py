@@ -246,11 +246,12 @@ def vehicles():
         assert d.vehicle_spot(dict(opus, position={"x": 0, "y": 0}), v["t"] + 0.75)["x"] == -224.7  # 10 tiles on
         assert d.public(now + 2)["main"]["vehicle"] == shot["vehicle"]
         # a later read further on: the view moves with it (a glide on the same client, no cut)
-        v2 = dict(v, position={"x": -250.0, "y": -544.5}, t=now + 3, speed=0, target={"x": -260, "y": -545})
+        # (batch245: a read still inside the frame's inner box holds the frame; this one is past it)
+        v2 = dict(v, position={"x": -270.0, "y": -544.5}, t=now + 3, speed=0, target={"x": -280, "y": -545})
         opus["remote_vehicle"] = v2
         n = len(d.cuts)
         d.step(snap([opus]), now + 4)
-        assert abs(d.state[d.onair]["position"]["x"] + 250) < 0.01 and len(d.cuts) == n and sent[-1].get("speed"), sent[-1]
+        assert abs(d.state[d.onair]["position"]["x"] + 270) < 0.01 and len(d.cuts) == n and sent[-1].get("speed"), sent[-1]
         # the reads stop: twice vehicle_stale on, back to the character (a standby framed first, then the cut)
         late = now + 4 + 2 * d.cfg["vehicle_stale"] + 1
         for k in range(4):
