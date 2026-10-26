@@ -588,7 +588,8 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
     with tempfile.TemporaryDirectory() as tmp:
         onecam = load_rules(rules, tmp)
         world = World(js, log_rows, fights_of(js) if fights else None, flare_shells(js) if shells == "flares" else None,
-                      live=vehicles == "live", vehicle_interest=rules == "here")
+                      live=vehicles == "live", vehicle_interest=True)  # (batch245: main has model.py's bumps since
+        # batch232 and 240; "here" only gave main's replays no vehicle or build interest, shift81: 26.4% vs 21.5% idle)
 
         def send(body):
             return {"ok": True, "camera": {"move": {"start_tick": 0}} if body.get("move") else {}}

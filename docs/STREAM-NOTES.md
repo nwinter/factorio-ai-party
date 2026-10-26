@@ -2181,14 +2181,49 @@ Changes (onecam.py):
   ago") and reports a fight until 30 s after its last hit, as live.py reports the chunk; a walk loop's queue repeats.
 Replay (--timed --chart --fights --vehicles live; main's rules -> these):
 - shift81 10:20-14:23: battles at once/late/missed 0/0/5 -> 4/1/0 (the late one waited 43 s while the first spider
-  battle was on); idle or loop 33.3% -> 21.5% (aired 35.5%): the loop rule alone 23.1%, the battle rule alone 26.8%;
-  Grok on air 23.6 -> 0.7 min, tours 32.5 -> 41.5 min; cuts 1.57 -> 1.63 a minute. Builds and deconstructions move by
+  battle was on); idle or loop 28.1% -> 21.5% (aired 35.5%): the loop rule alone 23.1%, the battle rule alone 26.8%;
+  Grok on air 19.2 -> 0.7 min, tours 33.9 -> 41.5 min; cuts 1.57 -> 1.63 a minute. Builds and deconstructions move by
   one either way (path differences: a trio instead of a cut, another "all stale" pick).
-- shift81 13:37-14:23 replayed alone: 50.3% -> 39.8% (aired 49.9%), Grok's loop 8.1 -> 1.1 min; no battle in it.
+- shift81 13:37-14:23 replayed alone: 47.2% -> 39.8% (aired 49.9%), Grok's loop 8.1 -> 1.1 min; no battle in it.
 - shift79 02:03-06:05 (65 fight episodes): battles at once 0 -> 29, 25 repeats only in the inset, 9 fights elsewhere
-  ended while another battle was on air; battle shots 28.3 of 242 min; idle 43.0% -> 32.4%.
+  ended while another battle was on air; battle shots 28.3 of 242 min; idle 41.4% -> 32.4%; 2 of 8 builds late
+  (median 3 -> 12 s).
+- director_replay.py gave model.py's vehicle and build interest bumps only with `--rules here` (from batch232, when
+  main lacked them): main's replays since batch240 ran without them (shift81: 26.4% where the same rules give 21.5%).
+  Both rule sets get them now.
 - Groups are not replayed (logs before batch245 have no group positions); the inset rule is tested.
 - Test: tools/stream/test_battlecam.py.
+
+## A remote vehicle's shot: framed before the cut, smooth, stuck scenes short (2026-10-26, d26 batch245 SP)
+Viewer Aurora 14:53: "In shift82, Opus's spider shot panned without catching it before a cut." The director log and
+Opus's journal: 14:59:32 a platform visit took the program from the spider shot on main; main stayed where it was
+(off air, no reframe) while the spider walked on; 14:59:54 "back to opus" cut to main 236 tiles behind it and the view
+panned on air; 15:00:00 a quiet view took it ("opus still 1779 s": Opus's clocks call the character idle while it
+drives, and batch240 counts a character standing from its clocks once the vehicle stops). Also: 14:41:56-14:45:39 the
+spider was stuck at (73, -620) and 14:46:11-14:56:04 at (151, -554) while Opus kept calling it every 16 s; a read with
+speed and no progress made the aim run 30 tiles ahead and snap back (14:41:57-14:42:01; six such reversals in the
+hour); the stuck scene held the program up to 176 s at a time.
+Changes (onecam.py; ONECAM vehicle_stuck 20 s, vehicle_progress 4 tiles, vehicle_still_box 0.7, vehicle_obs 12 s,
+vehicle_settle 3 s):
+- A standby on a vehicle shot follows the vehicle off air (jumps) and is framed anew, waiting ready_s, when it is more
+  than a frame off: the cut shows the vehicle.
+- Dwell counts only while the vehicle is in the frame (onair_since held back while it is out).
+- The lead is no faster than the last two live reads saw it go (no lead and no "walking" on a read with speed and no
+  progress) and at most vehicle_still_box of the half frame ahead; a stop inside that box keeps the frame still, and
+  the way back after a stop the aim ran past is a settle over vehicle_settle.
+- Stuck: a vehicle that has not moved vehicle_progress tiles in vehicle_stuck s, not fighting or firing (a fight or
+  fire is the recovery or combat that keeps it): its shot has served its dwell, its agent scores and counts as
+  standing from when it stopped, a quiet view may come vehicle_stuck after the last, and a call to it is no news;
+  moving on again is news ("spidertron on its way again").
+- The clocks' idle seconds count from when the agent's vehicle last walked, fought or fired.
+Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rules -> these; aired):
+- cuts to a vehicle shot whose frame was off the vehicle (over half a frame): 6 of 21 -> 1 of 16 (aired 5 of 14);
+  vehicle shots on a vehicle that had not moved 4 tiles in 20 s: 762 -> 405 s (aired 608); vehicle shots while it
+  moved: 492 -> 531 s.
+- shift81 10:20-14:23: off-frame cuts 26 of 46 -> 2 of 43; stuck air 948 -> 901 s; Opus on air 37.9 -> 31.0 min; idle
+  21.5% -> 25.5% (the review counts a stuck spider as Opus acting: its calls); builds 10/8/4 -> 9/12/1 (path
+  differences: a trio at 12:22:32, other "all stale" picks).
+- Test: tools/stream/test_spidershot.py.
 
 ## Verified
 

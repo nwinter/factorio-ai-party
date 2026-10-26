@@ -15972,6 +15972,11 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - vx_review.py counts a threat the program framed as on air (insets apart); director_replay.py `--fights` reads
   current alert texts.
 - Test: tools/stream/test_battlecam.py.
+- Checkpoint 2 (SP, viewer Aurora 14:53: the spider shot): a vehicle shot's standby follows the vehicle and frames it
+  before the cut; dwell counts while it is in the frame; the lead follows what the live reads saw (a stuck spider's read
+  with speed leads nowhere) and stays inside the frame's inner box, a stop inside it holds the frame; a vehicle stuck
+  20 s with no fight or fire has served its dwell and counts as standing, moving on again is news. director_replay.py
+  gives both rule sets the vehicle and build interest bumps. Test: tools/stream/test_spidershot.py.
 - cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
   the copy): smaller defaults, the flags unchanged.
   - The walk gives the components before as it goes (no second pass); positions and connection points are read only

@@ -125,6 +125,10 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   look holds the camera (a spidertron's is its vehicle shot); fights elsewhere follow on, the same area resumes or,
   repeated with nothing lost, is an inset; a group not followed is the inset until contact; a repeating queue's walk
   is a loop whatever its size.
+- A remote vehicle's shot (d26 batch245 SP; ONECAM vehicle_stuck, vehicle_progress, vehicle_still_box, vehicle_obs,
+  vehicle_settle): framed on its standby before the cut, dwell counted while it is in the frame, the lead no faster
+  than the reads saw it go and inside the frame's inner box, a stop inside that box holds the frame; a vehicle stuck
+  vehicle_stuck s (no fight, no fire) has served its dwell and counts as standing; moving on again is news.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -499,6 +503,20 @@ ONECAM = {
     # shift80 09:27:05-46 each step glided at 9-10 tiles/s behind a spider walking 13 and the frame fell 130 tiles back.
     "vehicle_ahead": 1.0,
     "vehicle_glide": 1.2,
+    # (d26 batch245 SP, viewer Aurora 14:53: "Opus's spider shot panned without catching it before a cut ... frame the
+    # vehicle promptly, then track smoothly and start dwell once it is visible ... Shorten an unchanged stuck scene
+    # unless recovery or combat is active, and return when progress resumes") shift82 14:59:54: the standby kept a frame
+    # 230 tiles behind the spider for 20 s and the cut panned on air; 14:41:57-14:42:01 the aim ran 30 tiles ahead of a
+    # stuck spider whose read said it walked, then snapped back. A standby on a vehicle shot follows the vehicle (off
+    # air) and is framed anew when it was far off; dwell counts only while the vehicle is in the frame; the lead is no
+    # faster than the live reads saw it go (vehicle_obs); a stopped vehicle inside vehicle_still_box of the frame keeps
+    # the frame still; a vehicle that has not moved vehicle_progress tiles in vehicle_stuck s, not fighting or firing,
+    # is stuck: its shot has served its dwell, it counts as standing, a quiet view may come; moving again is news.
+    "vehicle_stuck": 20.0,
+    "vehicle_progress": 4.0,
+    "vehicle_still_box": 0.7,
+    "vehicle_obs": 12.0,    # live reads this recent give its seen speed
+    "vehicle_settle": 3.0,  # s: the frame's way back after a stop the aim ran past (the vehicle still in the frame)
     # (d26 batch240 IA) a build, paste, deconstruction or silo load in the agent's journal (work.DidFeed): the live read
     # never shows these (done within the request). It is a fresh event; away from its character (vehicle_near), the
     # agent's shot is where it landed while it is did_hold old. In shift80 4 of 16 new builds aired at once (75 s median).
@@ -705,6 +723,10 @@ class OneCam(Director):
         self.vehicle_was = {}  # name -> the remote vehicle row last seen (a new target is a fresh event)
         self.vehicle_act = {}  # (batch224) name -> its vehicle's activity at the last step (vehicle_activity)
         self.vehicle_swapped = {}  # (batch224) name -> when keep_vehicle last switched its shot (vehicle_flip)
+        self.vehicle_seen = {}  # (batch245) unit -> [(t, x, y)] of its live reads (vehicle_obs)
+        self.vehicle_anchor = {}  # (batch245) name -> [x, y, since, resumed]: where its vehicle has stood since
+        self.vehicle_act_t = {}  # (batch245) name -> when its vehicle last walked, fought or fired
+        self.vehicle_resumed = {}  # (batch245) name -> when its vehicle moved on after standing stuck (news)
         self.tours = None      # basetour.Tours (serve.py set_tours), or None: no base tours
         self.toured = {}       # surface -> when its tour last went on air
         self.last_tour = None
@@ -739,6 +761,12 @@ class OneCam(Director):
 
     def onair_frac(self):
         return self.cfg["trio_frac"] if self.mode == "trio" else self.cfg["view_frac"]
+
+    def frame_half(self, zoom):
+        """(batch245) Half the on-air frame in tiles at this game zoom (a shot's game_zoom): (across, down)."""
+        from director import CLIENT
+        tile = 32.0 * max(0.01, zoom)
+        return CLIENT[0] / tile / 2 * self.onair_frac(), CLIENT[1] / tile / 2
 
     def cut(self, slot, reason, now):
         if slot == self.onair:
@@ -1013,9 +1041,19 @@ class OneCam(Director):
         for a in agents:
             m = self.motion.get(a["name"])
             p = a.get("position")
-            acting = a.get("combat") or plan_kind(a) in VISIBLE or self.vehicle_activity(a, now)  # (batch224 VS)
+            stood = self.track_vehicle(a, now)  # (batch245) its vehicle's reads and where it has stood
+            vact = self.vehicle_activity(a, now)
+            stuck = stood >= self.cfg["vehicle_stuck"] and vact not in ("fighting", "firing")
+            if stuck:
+                vact = None  # (batch245) its read may say it walks: it has not moved, standing since it stopped
+                self.vehicle_act_t[a["name"]] = min(self.vehicle_act_t.get(a["name"], now), now - stood)
+            elif vact:
+                self.vehicle_act_t[a["name"]] = now
+            acting = a.get("combat") or plan_kind(a) in VISIBLE or vact  # (batch224 VS)
             if m is None:
                 self.motion[a["name"]] = m = {"pos": p, "still_since": now, "moved": now}
+            if stuck and not acting:
+                m["moved"] = min(m["moved"], now - stood)
             if p and m["pos"] and dist(p, m["pos"]) >= self.cfg["still_moved"]:
                 m["pos"], m["moved"] = p, now
             elif p and not m["pos"]:
@@ -1027,7 +1065,9 @@ class OneCam(Director):
                 m["moved"] = min(now, d["t"])
             idle = a.get("idle_s")  # (batch240) its own clocks say its character stood this long: still, whatever moved
             if isinstance(idle, (int, float)) and idle > 0 and not acting and not (d and now - d["t"] < idle):
-                m["moved"] = min(m["moved"], now - idle)
+                # (batch245) not before its vehicle last walked: shift82 15:00:00 "opus still 1779 s" 6 s after its
+                # spidertron stopped (Opus's clocks count the character, idle while it drives by remote view)
+                m["moved"] = min(m["moved"], max(now - idle, self.vehicle_act_t.get(a["name"], -1e9)))
             big = big_plan(a)
             if a["name"] in self.was_big and not big:
                 self.plan_end[a["name"]] = now
@@ -1123,10 +1163,13 @@ class OneCam(Director):
         # (batch232) a new call by the agent with a target, not the live read's next waypoint
         if v and v.get("target") and (not was or was.get("seen_t", was.get("t")) != v.get("seen_t", v.get("t"))) and \
                 (v.get("cmd_target") or v.get("target")) != (was or {}).get("cmd_target", (was or {}).get("target")) and \
-                now - v.get("seen_t", v.get("t", 0)) < cfg["vehicle_stale"]:
-            why = why or f"{v.get('vehicle') or 'vehicle'} by remote view"
+                now - v.get("seen_t", v.get("t", 0)) < cfg["vehicle_stale"] and not self.vehicle_stuck_s(n, now):
+            why = why or f"{v.get('vehicle') or 'vehicle'} by remote view"  # (batch245: a call to a stuck one is no news)
         if v:
             self.vehicle_was[n] = v
+        res = self.vehicle_resumed.pop(n, None)
+        if res is not None:  # (batch245) its vehicle moves again after standing stuck
+            why = why or f"{(v or {}).get('vehicle') or 'vehicle'} on its way again"
         act = self.vehicle_activity(a, now)  # (batch224 VS) its vehicle starts firing or fighting: news
         if act in ("fighting", "firing") and self.vehicle_act.get(n) not in ("fighting", "firing"):
             why = why or f"{(v or a.get('vehicle_fire') or {}).get('vehicle') or 'vehicle'} {act}"
@@ -1167,7 +1210,10 @@ class OneCam(Director):
         goal, speed = v.get("target"), v.get("speed")
         if speed is None and goal:
             speed = self.cfg["vehicle_speed"]
-        if not goal or not isinstance(speed, (int, float)) or speed <= 0:
+        seen = self.seen_speed(v, now) if v.get("live") else None
+        if seen is not None and isinstance(speed, (int, float)):
+            speed = min(speed, seen * 1.25 + 1.0)  # (batch245) no faster than the live reads saw it go (a stuck spider)
+        if not goal or not isinstance(speed, (int, float)) or speed <= 0 or (seen is not None and speed < 4.0):
             return spot, False
         d = math.hypot(goal["x"] - spot["x"], goal["y"] - spot["y"])
         go = min(d, speed / 3.6 * max(0.0, now - v.get("t", now)))
@@ -1175,6 +1221,46 @@ class OneCam(Director):
             return spot, False
         return {"x": round(spot["x"] + (goal["x"] - spot["x"]) * go / d, 1),
                 "y": round(spot["y"] + (goal["y"] - spot["y"]) * go / d, 1)}, d - go > 1.0
+
+    def seen_speed(self, v, now):
+        """(batch245) km/h between its last two live reads within vehicle_obs, or None."""
+        tr = self.vehicle_seen.get(v.get("unit_number")) or []
+        tr = [q for q in tr if now - q[0] <= self.cfg["vehicle_obs"]]
+        if len(tr) < 2 or tr[-1][0] - tr[-2][0] <= 0:
+            return None
+        (t0, x0, y0), (t1, x1, y1) = tr[-2], tr[-1]
+        return math.hypot(x1 - x0, y1 - y0) / (t1 - t0) * 3.6
+
+    def track_vehicle(self, a, now):
+        """(batch245) Its vehicle's live reads (seen speed) and where it has stood; -> seconds it has stood still past
+        vehicle_progress tiles (0: moving, or none). Moving again after vehicle_stuck is a fresh event."""
+        n = a["name"]
+        v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else None
+        if not v or not isinstance(v.get("position"), dict) or self.vehicle_spot(a, now, held=True) is None:
+            self.vehicle_anchor.pop(n, None)
+            return 0.0
+        if v.get("live") and v.get("unit_number") is not None:
+            tr = self.vehicle_seen.setdefault(v["unit_number"], [])
+            if not tr or tr[-1][0] != v.get("t"):
+                tr.append((v.get("t", now), float(v["position"]["x"]), float(v["position"]["y"])))
+                del tr[:-4]
+        here = self.vehicle_where(v, now)[0]  # (where it is led to: a reply's go_to walks on between reads)
+        x, y = here["x"], here["y"]
+        an = self.vehicle_anchor.get(n)
+        if not an or math.hypot(x - an[0], y - an[1]) >= self.cfg["vehicle_progress"]:
+            if an and now - an[2] >= self.cfg["vehicle_stuck"]:
+                self.vehicle_resumed[n] = now  # progress again: news (track_fresh)
+            self.vehicle_anchor[n] = [x, y, now]
+            return 0.0
+        return now - an[2]
+
+    def vehicle_stuck_s(self, name, now):
+        """(batch245) Seconds its vehicle has stood unchanged past vehicle_stuck, not fighting or firing (else 0)."""
+        an = self.vehicle_anchor.get(name)
+        if not an or now - an[2] < self.cfg["vehicle_stuck"] or \
+                self.vehicle_activity(getattr(self, "agents_now", {}).get(name), now) in ("fighting", "firing"):
+            return 0.0
+        return now - an[2]
 
     def vehicle_activity(self, a, now):
         """(batch224 VS) What the agent's vehicle does now that counts as action: "firing" (status vehicle_fire, seated:
@@ -1195,7 +1281,8 @@ class OneCam(Director):
         spot, going = self.vehicle_where(v, now)
         if self.fight_fresh(dict(spot, surface=surface_of(a)), now):
             return "fighting"
-        if going or (age <= self.cfg["vehicle_stale"] and (v.get("speed") or 0) > 0):
+        seen = self.seen_speed(v, now) if v.get("live") else None  # (batch245: a stuck spider's read has speed)
+        if going or (age <= self.cfg["vehicle_stale"] and (v.get("speed") or 0) > 0 and (seen is None or seen >= 4.0)):
             return "walking"
         return None
 
@@ -1273,6 +1360,8 @@ class OneCam(Director):
                 f = cfg["fight_boost"]  # under attack or shooting (batch224: or its vehicle is): a strong pick
             elif big_plan(a):
                 f = cfg["plan_boost"]
+            elif vehicle and self.vehicle_stuck_s(n, now):
+                f = cfg["still_factor"]  # (batch245) its vehicle stands stuck: like a character standing there
             elif vehicle:
                 f = cfg["move_boost"]  # (batch222) its vehicle by remote view moves: shown where it is
             elif k in DULL:
@@ -2826,7 +2915,11 @@ class OneCam(Director):
                 any(now - self.fight_t(f) < cfg["fight_quiet"] for f in self.fight_list):
             return None
         stale = self.stale_s(subj, now)
-        if stale < cfg["quiet_story"] or now - self.onair_since < cfg["quiet_story"]:
+        need = cfg["quiet_story"]
+        if cur.get("vehicle") and self.vehicle_stuck_s(subj, now):
+            need = cfg["vehicle_stuck"]  # (batch245) a stuck vehicle's unchanged scene: sooner
+            stale = max(stale, self.vehicle_stuck_s(subj, now))
+        if stale < need or now - self.onair_since < need:
             return None
         for n in scores:
             if n != subj and (self.newsworthy(n, now) or self.stale_s(n, now) < cfg["moving_s"]):
@@ -2845,8 +2938,10 @@ class OneCam(Director):
     def maybe_quiet(self, by_name, scores, now, segment=None):
         """Quiet time (module doc): the quiet view shown longest ago of a base tour, a platform visit, the base map."""
         cfg = self.cfg
-        if now - self.last_quiet < cfg["quiet_gap"] or self.pending or self.trio_pending or self.hold_layout:
-            return
+        cur = self.state.get(self.onair) or {}
+        gap = cfg["vehicle_stuck"] if cur.get("vehicle") and self.vehicle_stuck_s(cur.get("subject"), now) else cfg["quiet_gap"]
+        if now - self.last_quiet < gap or self.pending or self.trio_pending or self.hold_layout:
+            return  # (batch245: a stuck vehicle's scene waits no quiet_gap)
         why = self.quiet_now(by_name, scores, now, segment)
         if not why:
             return
@@ -3883,6 +3978,10 @@ class OneCam(Director):
             if want is None:
                 return
         else:
+            cur_v = self.state.get(self.onair) or {}
+            if cur_v.get("vehicle") and self.vehicle_stuck_s(subj, now) and not cur_v.get("stuck"):
+                cur_v["stuck"] = True  # (batch245 SP) a stuck vehicle's unchanged scene has served its dwell
+                self.onair_since = min(self.onair_since, now - self.cfg["onair_dwell"])
             held = now - self.onair_since
             cfg = self.cfg
             holding = (big_plan(by_name[subj]) and held < cfg["plan_hold"]) or \
@@ -3936,10 +4035,15 @@ class OneCam(Director):
             fit = self.plan_zoom(by_name[lead])  # framed on its action's bounds ahead of the cut
             z = fit or self.zoom_for(by_name[lead], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
             shot = self.body_shot(lead, by_name, z, now, fit)  # (batch222) or its vehicle by remote view
+            # (batch245 SP) a standby on a vehicle follows it off air; far off (shift82 14:59:54: 230 tiles after 20 s
+            # unmoved), it is framed anew before the cut
+            off = dist(t["position"], shot["position"]) if t and t.get("vehicle") and shot.get("vehicle") and \
+                t.get("position") else 0.0
             if not t or t.get("subject") != lead or abs(t["zoom"] - shot["zoom"]) >= self.cfg["zoom_delta"] or \
-                    bool(t.get("vehicle")) != bool(shot.get("vehicle")) or t.get("did") != shot.get("did"):
+                    bool(t.get("vehicle")) != bool(shot.get("vehicle")) or t.get("did") != shot.get("did") or \
+                    off >= self.cfg["reframe_tiles"]:
                 keep_framed = t and t.get("subject") == lead and bool(t.get("vehicle")) == bool(shot.get("vehicle")) and \
-                    t.get("did") == shot.get("did")
+                    t.get("did") == shot.get("did") and off <= min(self.frame_half(t.get("game_zoom") or shot["zoom"]))
                 shot.update(jump=True, since=now, framed=t["framed"] if keep_framed else now)
                 self.apply(nxt, shot, f"standby: {lead}" + (f" ({plan_kind(by_name[lead])} bounds)" if fit else "") +
                            (f" ({shot['vehicle']})" if shot.get("vehicle") else "") +
@@ -3998,15 +4102,39 @@ class OneCam(Director):
             p = cur.get("position") or {}
             lead = self.cfg["vehicle_ahead"]
             ahead = self.vehicle_spot(a, now, held=True, ahead=lead) or spot
+            hw, hh = self.frame_half(cur.get("game_zoom") or cur["zoom"])  # (the zoom the game was sent)
+            box = self.cfg["vehicle_still_box"]
+            far, cap = dist(ahead, spot), box * min(hw, hh)
+            if far > cap:  # (batch245) the aim at most the inner box ahead: at a stop the vehicle is still in the box
+                ahead = dict(ahead, x=round(spot["x"] + (ahead["x"] - spot["x"]) * cap / far, 1),
+                             y=round(spot["y"] + (ahead["y"] - spot["y"]) * cap / far, 1))
             d = dist(ahead, p) if p else 1e9
+            inside = bool(p) and abs(spot["x"] - p["x"]) <= hw and abs(spot["y"] - p["y"]) <= hh
+            if cur is self.state.get(self.onair):
+                # (batch245) dwell counts while the vehicle is in the frame: held back while the view catches up
+                last = cur.get("frame_t", now)
+                if not inside:
+                    self.onair_since = min(now, self.onair_since + max(0.0, now - last))
+                cur["frame_t"] = now
+            v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else {}
+            if inside and not self.vehicle_where(v, now)[1] and abs(spot["x"] - p["x"]) <= hw * box and \
+                    abs(spot["y"] - p["y"]) <= hh * box and self.vehicle_activity(a, now) != "walking":
+                return True  # (batch245) stopped well inside the frame: the frame stays (no snap back at a stop)
             if d >= self.cfg["reframe_tiles"] and now - cur.get("sent", 0) >= 1.0:
                 # (batch232) aimed lead s on, at no less than vehicle_glide x its speed: the view keeps up with it
                 v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else {}
                 kmh = v.get("speed") if isinstance(v.get("speed"), (int, float)) else (
                     self.cfg["vehicle_speed"] if v.get("target") else 0.0)
+                glide = max(d / lead, self.cfg["vehicle_glide"] * kmh / 3.6)
+                mv, last = (ahead["x"] - p["x"], ahead["y"] - p["y"]) if p else (0.0, 0.0), cur.get("vmove")
+                near = bool(p) and abs(spot["x"] - p["x"]) <= 1.5 * hw and abs(spot["y"] - p["y"]) <= 1.5 * hh
+                if near and last and mv[0] * last[0] + mv[1] * last[1] < 0:
+                    # (batch245) back after a stop the aim ran past (up to a poll's walk): a settle, quicker when the
+                    # vehicle is at the frame's edge
+                    glide = d / self.cfg["vehicle_settle"] * (1.0 if inside else 2.0)
                 target = {k: v for k, v in cur.items() if k != "jump"}
-                target.update(position={"x": ahead["x"], "y": ahead["y"]}, vehicle=spot["label"],
-                              glide=round(max(1.0, min(200.0, max(d / lead, self.cfg["vehicle_glide"] * kmh / 3.6))), 2))
+                target.update(position={"x": ahead["x"], "y": ahead["y"]}, vehicle=spot["label"], vmove=mv,
+                              glide=round(max(1.0, min(200.0, glide)), 2))
                 self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
             return True
         if spot and self.mode != "trio" and not flip:
