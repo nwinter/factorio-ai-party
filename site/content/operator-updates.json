@@ -124,7 +124,8 @@
   {"id": "batch225", "title": "Finished uptime watches stay readable by id when a new watch starts", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2413"}, {"name": "Aurora", "ref": "site:4979"}], "status": "live", "dates": {"in progress": "2026-10-26 05:58", "live": "2026-10-26 06:58"}, "work": "batch225"},
   {"id": "batch226", "title": "Collector tally: no misleading inferred catch counts while a ship flies", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2423"}], "status": "in progress", "dates": {"in progress": "2026-10-26 07:01"}, "work": "batch226"},
   {"id": "batch230", "title": "Fresh stock snapshots every 5 s, opt-in, for timed trials", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2425"}], "status": "live", "dates": {"in progress": "2026-10-26 07:46", "live": "2026-10-26 08:37"}, "work": "batch230"},
-  {"id": "batch229", "title": "Starter packs: the pod log closes their rows, and agents are told which waiting platform gets one", "area": "harness", "requested_by": [{"name": "Sol"}], "status": "in progress", "dates": {"asked": "2026-10-26 07:30", "in progress": "2026-10-26 07:46"}, "work": "batch229"}
+  {"id": "batch229", "title": "Starter packs: the pod log closes their rows, and agents are told which waiting platform gets one", "area": "harness", "requested_by": [{"name": "Sol"}], "status": "in progress", "dates": {"asked": "2026-10-26 07:30", "in progress": "2026-10-26 07:46"}, "work": "batch229"},
+  {"id": "batch231", "title": "Request caps: warn when a new max breaks a ship's departure condition or sends cargo to trash", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2427"}], "status": "in progress", "dates": {"in progress": "2026-10-26 08:44"}, "work": "batch231"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
