@@ -65,7 +65,8 @@ has(refused(function() U.handler(luna,{read=true}) end),'no uptime watch yet')
 game.tick=1500
 eq(U.handler(astra,{positions=at(14,20),seconds=60}).id,'uptime@1500/astra')
 eq(U.handler(sol,{read=true,id='uptime@1500'}).agent,'astra')
-eq(U.handler(astra,{read=true,id='uptime@1000'}).id,'uptime@1000/sol')
+-- (d26 batch225 QR) Astra's watch from 1000 is kept, so the tick form is two watches again
+has(refused(function() U.handler(astra,{read=true,id='uptime@1000'}) end),'2 watches began on tick 1000: uptime@1000/astra (41 machines), uptime@1000/sol (13 machines)')
 -- a watch begun before this runtime (no id kept): named on its first read, the same id after
 st.uptime[1].id=nil
 eq(Ms.card(1)[1].id,'uptime@1000/sol'); eq(st.uptime[1].id,'uptime@1000/sol')

@@ -864,18 +864,26 @@ return function(api)
       tick, who = tonumber(t), w ~= '' and norm(w) or nil
     end
     local want = a.agent and norm(a.agent)
-    local hits, kept = {}, {}
+    local hits, kept, gone = {}, {}, {}
     for i, job in pairs(all) do
       if type(job) == 'table' and job.start then
         local name = api.who_index and api.who_index(i)
-        -- (QAD1) a watch and the segments it keeps
-        local list = {job}
-        for _, g in ipairs(job.segments or {}) do list[#list+1] = g end
-        for _, w in ipairs(list) do
-          local r = {job=w, i=i, id=id_of(w, i), n=#(w.machines or {}), of=w ~= job and job or nil}
+        local mine = (not who or name and norm(name) == who) and (not want or name and norm(name) == want)
+        -- (QAD1) a watch and the segments it keeps; (QR) the agent's kept watches and their segments
+        local list = {{job}}
+        for _, g in ipairs(job.segments or {}) do list[#list+1] = {g, job} end
+        for _, k in ipairs(job.kept or {}) do
+          list[#list+1] = {k, nil, job}
+          for _, g in ipairs(k.segments or {}) do list[#list+1] = {g, k} end
+        end
+        for _, x in ipairs(list) do
+          local w = x[1]
+          local r = {job=w, i=i, id=id_of(w, i), n=#(w.machines or {}), of=x[2], by=x[3]}
           kept[#kept+1] = r
-          if (not tick or w.start == tick) and (not who or name and norm(name) == who) and (not want or name and norm(name) == want)
-            and (tick or w == job) then hits[#hits+1] = r end
+          if (not tick or w.start == tick) and mine and (tick or w == job) then hits[#hits+1] = r end
+        end
+        for _, d in ipairs(job.kept_dropped or {}) do
+          if tick and d.start == tick and mine then gone[#gone+1] = d end
         end
       end
     end
@@ -890,13 +898,83 @@ return function(api)
     end
     if #hits == 0 then
       local what = a.id and a.agent and a.id .. ' of agent ' .. a.agent or a.id or 'of agent ' .. a.agent
+      local d = gone[#gone]
+      if d then
+        error(string.format('uptime watch %s (%d machine%s) was dropped at tick %d, when %s began: %s; kept: %s', d.id, d.machines, d.machines == 1 and '' or 's',
+          d.tick, d.by, d.why, #kept > 0 and names(kept) or 'none'), 0)
+      end
       error(string.format('no uptime watch %s is kept; kept: %s', what, #kept > 0 and names(kept) or 'none'), 0)
     end
-    return hits[1].job, hits[1].i, hits[1].of
+    return hits[1].job, hits[1].i, hits[1].of, hits[1].by
+  end
+  -- (d26 batch225 QR, Sol #2413: Astra's 41-machine uptime@65848202/astra could not be read once Astra began
+  -- uptime@65920807, and Sol needed its shortage timing) a new watch keeps the agent's previous one as a done watch:
+  -- finished at that tick as close does if it was still running, its entity refs let go, never sampled again, read by
+  -- its id. new.kept (oldest first) carries those kept before. At most KEPT, their machines (their segments' included)
+  -- together at most KEPT_MACHINES; past that the oldest goes (the newest is always kept), each drop logged on
+  -- new.kept_dropped (the last DROPPED) so a read of its id says when and why. A watch begun on the same tick holds
+  -- nothing and is not kept. A split (mixed.lua, old.splitting) carries the kept ones on; close keeps the old one as a
+  -- segment.
+  M.KEPT, M.KEPT_MACHINES, M.DROPPED = 4, 96, 8
+  local function held(w)
+    local n = #(w.machines or {})
+    for _, g in ipairs(w.segments or {}) do n = n + #(g.machines or {}) end
+    return n
+  end
+  function M.keep(old, new, i, tick)
+    if type(old) ~= 'table' or not old.start then return nil end
+    local kept, log = old.kept or {}, old.kept_dropped or {}
+    old.kept, old.kept_dropped = nil, nil
+    new.kept, new.kept_dropped = #kept > 0 and kept or nil, #log > 0 and log or nil
+    if old.splitting or old.start == tick then return nil end
+    if not old.result then
+      old.result = M.result(old, true)
+      old.ended_tick, old.next_tick = tick, math.huge
+      old.closed_by = string.format('finished %ds early: a new watch began', math.floor((old.until_tick - tick) / 60 + 0.5))
+    end
+    for _, m in ipairs(old.machines or {}) do m.e = nil end
+    -- its final's lines and rows are what a page read makes again from its machines (45% of a 41-machine watch's 52 KB
+    -- serpent line on the copy): left out; groups, flows, research and silo figures stay
+    old.result.lines, old.result.machines, old.result.group_lines = nil, nil, nil
+    old.ended_tick = old.ended_tick or old.until_tick
+    old.id, old.kept_tick = id_of(old, i), tick
+    kept[#kept+1] = old
+    local n, out = 0, {}
+    for _, w in ipairs(kept) do n = n + held(w) end
+    while #kept > 1 and (#kept > M.KEPT or n > M.KEPT_MACHINES) do
+      local why = #kept > M.KEPT and string.format('more than %d watches kept', M.KEPT) or string.format('the kept watches\' machines over %d', M.KEPT_MACHINES)
+      local w = table.remove(kept, 1)
+      n = n - held(w)
+      local d = {id=id_of(w, i), start=w.start, ended_tick=w.ended_tick, machines=held(w), tick=tick, by=id_of(new, i), why=why}
+      out[#out+1], log[#log+1] = d, d
+    end
+    while #log > M.DROPPED do table.remove(log, 1) end
+    new.kept, new.kept_dropped = kept, #log > 0 and log or nil
+    return out
+  end
+  -- The watches an agent's watch keeps, and those dropped, for its reads.
+  function M.kept_rows(job, i)
+    local rows, gone
+    for k, w in ipairs(job.kept or {}) do
+      rows = rows or {}
+      rows[k] = {id=id_of(w, i), started_tick=w.start, ended_tick=w.ended_tick, seconds=math.floor(((w.ended_tick or w.until_tick) - w.start) / 60 + 0.5), samples=w.samples,
+        machines=#(w.machines or {}), segments=w.segments and #w.segments > 0 and #w.segments or nil, closed_by=w.closed_by, kept_tick=w.kept_tick}
+    end
+    for k, d in ipairs(job.kept_dropped or {}) do
+      gone = gone or {}
+      gone[k] = {id=d.id, machines=d.machines, dropped_tick=d.tick, by=d.by, why=d.why}
+    end
+    return rows, gone
+  end
+  M.KEPT_NOTE = 'kept: your earlier watches, each done (one still running finished when the next began), read by uptime {read: true, id} in pages; at most ' .. M.KEPT .. ', their machines (their segments\' included) together at most ' .. M.KEPT_MACHINES .. '; past that the oldest goes first (the newest is always kept); kept_dropped lists the last ' .. M.DROPPED .. ' dropped, with when and why'
+  local function kept_text(rows)
+    local out = {}
+    for _, r in ipairs(rows or {}) do out[#out+1] = string.format('%s (%d machine%s)', r.id, r.machines, r.machines == 1 and '' or 's') end
+    return table.concat(out, ', ')
   end
   function M.read(p, a)
     M.check_read(a)
-    local job, owner, of = find(p, a)
+    local job, owner, of, by = find(p, a)
     assert(job, 'no uptime watch yet: uptime {positions, seconds?}')
     if a.segment_start ~= nil and not of then
       local g, have = nil, {}
@@ -953,8 +1031,14 @@ return function(api)
     -- (QAD1) a segment: the window an edit closed, done there; a watch: the segments it keeps
     if of then out.segment = {segment_start=job.start, ended_tick=job.ended_tick, closed_by=job.closed_by, of=id_of(of, owner)}; out.done, out.watching = true, nil
     else out.segments, out.segments_dropped = M.segment_rows(job, owner), job.segments_dropped; out.segments_note = out.segments and M.SEG_NOTE or nil end
+    -- (QR) a kept watch: done, kept since the next began; the watch now: the ones it keeps
+    if by then out.kept_watch = {kept_tick=job.kept_tick, ended_tick=job.ended_tick, closed_by=job.closed_by, by=id_of(by, owner)}
+    elseif not of then out.kept, out.kept_dropped = M.kept_rows(job, owner); out.kept_note = (out.kept or out.kept_dropped) and M.KEPT_NOTE or nil end
+    local state = of and string.format('closed at tick %d by %s, kept on %s', job.ended_tick, tostring(job.closed_by), out.segment.of)
+      or by and string.format('done at tick %d%s; kept since %s began', job.ended_tick, job.closed_by and ', ' .. job.closed_by or '', out.kept_watch.by)
+      or done and 'done' or 'watching'
     out.line = string.format('uptime %s %s%s (%s, %d samples to tick %s): page %d of %d, machines %d-%d of %d%s%s',
-      of and 'segment' or 'watch', id, who and ' of ' .. who or '', of and string.format('closed at tick %d by %s, kept on %s', job.ended_tick, tostring(job.closed_by), out.segment.of) or done and 'done' or 'watching', job.samples, tostring(job.sampled), page, pages, #rows > 0 and (page - 1) * size + 1 or 0, (page - 1) * size + #rows, #picked,
+      of and 'segment' or 'watch', id, who and ' of ' .. who or '', state, job.samples, tostring(job.sampled), page, pages, #rows > 0 and (page - 1) * size + 1 or 0, (page - 1) * size + #rows, #picked,
       a.positions and string.format(' picked by positions from its %d', #job.machines) or '',
       #not_found > 0 and string.format('; %d position%s no machine of it (within %d tiles)', #not_found, #not_found == 1 and ' matches' or 's match', M.MATCH) or '')
     if page > pages then out.line = out.line .. string.format('; page %d is past the last (%d)', page, pages) end
@@ -971,10 +1055,12 @@ return function(api)
       if job.result then job.read_tick = game.tick end  -- its final read (measures.lua)
       local r = job.result or M.result(job, false)
       local segs = M.segment_rows(job, p.index)
-      if not segs then return r end
+      local kept, gone = M.kept_rows(job, p.index)
+      if not segs and not kept and not gone then return r end
       local out = {}
       for k, v in pairs(r) do out[k] = v end
-      out.segments, out.segments_dropped, out.segments_note = segs, job.segments_dropped, M.SEG_NOTE
+      if segs then out.segments, out.segments_dropped, out.segments_note = segs, job.segments_dropped, M.SEG_NOTE end
+      if kept or gone then out.kept, out.kept_dropped, out.kept_note = kept, gone, M.KEPT_NOTE end
       return out
     end
     local seconds = a.seconds == nil and 600 or a.seconds
@@ -1032,6 +1118,8 @@ return function(api)
         if n then job.silo_stats = {force=q.force.name, surface=q.surface.name, item=m.recipe, n0=n} end
       end
     end
+    local old = store()[p.index]
+    local dropped = M.keep(old, job, p.index, game.tick)
     store()[p.index] = job
     timed('uptime.sample', M.sample, job)
     job.next_tick = next_at(job)
@@ -1044,19 +1132,28 @@ return function(api)
       elseif m.parts then lines[#lines+1] = string.format('%s %s %s: %d rocket parts so far (finished rockets x the parts a rocket takes, plus those of the one building; productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0)
       else lines[#lines+1] = string.format('%s %s %s: %d completions so far (the game\'s count, productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0) end
     end
-    return {watching=true, id=id_of(job, p.index), seconds=seconds, machines=#machines, baseline=lines, items_recent=flows_line, replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
-      line=#machines == 0 and string.format('watching the production statistics of %d item%s for %ds: uptime {} reads them so far, and in full once done', #a.items, #a.items == 1 and '' or 's', seconds)
-        or string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)}
+    -- (QR) what is kept and what this start dropped
+    local kept = M.kept_rows(job, p.index)
+    local was = kept and old and kept[#kept].id == id_of(old, p.index) and kept[#kept].id or nil
+    local line = #machines == 0 and string.format('watching the production statistics of %d item%s for %ds: uptime {} reads them so far, and in full once done', #a.items, #a.items == 1 and '' or 's', seconds)
+      or string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)
+    if kept then line = line .. '; kept, read by uptime {read: true, id}: ' .. kept_text(kept) end
+    local gone = {}
+    for _, d in ipairs(dropped or {}) do gone[#gone+1] = {id=d.id, machines=d.machines, why=d.why} end
+    if #gone > 0 then line = line .. '; dropped: ' .. kept_text(gone) .. ' (' .. gone[1].why .. ')' end
+    return {watching=true, id=id_of(job, p.index), seconds=seconds, machines=#machines, baseline=lines, items_recent=flows_line,
+      replaced=replaced and was and string.format('your earlier watch, still running, was finished at this tick and kept as %s', was) or replaced and 'your earlier watch, still running, was replaced' or nil,
+      kept=kept, dropped=#gone > 0 and gone or nil, kept_note=kept and M.KEPT_NOTE or nil, line=line}
   end
   M.schema = {uptime = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', positions='1..64 crafting machines or labs {x,y} (an assembler, furnace, chemical plant, biochamber, lab, biolab, ...; in sight or by remote view); with read: true, the machines of the watch to read (each the nearest centre within 2 tiles)', position='or one',
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
     items='optional 1..8 items, a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch)',
     seconds='optional 10..3600 (default 600): how long to watch',
-    read='true: read a watch in pages without starting or replacing it (yours; with id or agent any agent\'s): read, id, agent (another\'s), done or watching, started_tick, until_tick, to_tick (the end, or now), sampled_tick (its last sample), samples, seconds, machines_total, matched, page, pages, page_size, machines (the page\'s rows as uptime {} gives them, with index (its place in the watch) and short_counts {ingredient: {samples, least, need, first_tick, last_tick}}; line only with details), lines (with details), not_found, segment (reading a segment: segment_start, ended_tick, closed_by, of: the watch keeping it) or segments, line; a queue step and dry_run check it',
+    read='true: read a watch in pages without starting or replacing it (yours; with id or agent any agent\'s): read, id, agent (another\'s), done or watching, started_tick, until_tick, to_tick (the end, or now), sampled_tick (its last sample), samples, seconds, machines_total, matched, page, pages, page_size, machines (the page\'s rows as uptime {} gives them, with index (its place in the watch) and short_counts {ingredient: {samples, least, need, first_tick, last_tick}}; line only with details), lines (with details), not_found, segment (reading a segment: segment_start, ended_tick, closed_by, of: the watch keeping it) or segments, kept_watch (reading a kept watch: kept_tick, ended_tick, closed_by, by: the watch begun then) or kept and kept_dropped, line; a queue step and dry_run check it',
     id='with read: a watch\'s id as the start and status work give it, "uptime@START_TICK/AGENT"; "uptime@START_TICK" reads the one watch begun on that tick (two or more: refused, each id named)',
     agent='with read: an agent\'s name: that agent\'s watch (with id, the id must be its)',
     segment_start='with read: the start tick of a segment the watch keeps (segments lists them; its id reads it too): that closed window, done at the edit, in pages', page='with read: 1.. (default 1)', page_size='with read: 1..16 machines a page (default 16)',
     details='with read: true adds each row\'s line and lines', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one replaces it): the start returns id, baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see); segments [{id, segment_start, ended_tick, seconds, samples, machines, closed_by}] (the windows an edit to what it measures closed before this one began, each kept whole: uptime {read: true, id} reads one), segments_dropped, segments_note. Read only'}}
+    returns='a watch, one an agent (a new one keeps the last one done, readable by its id): the start returns id, baseline (each machine\'s completions so far), kept, dropped (what that start dropped) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see); segments [{id, segment_start, ended_tick, seconds, samples, machines, closed_by}] (the windows an edit to what it measures closed before this one began, each kept whole: uptime {read: true, id} reads one), segments_dropped, segments_note; kept [{id, started_tick, ended_tick, seconds, samples, machines, segments, closed_by, kept_tick}] (your earlier watches, each done: uptime {read: true, id} reads one), kept_dropped [{id, machines, dropped_tick, by, why}], kept_note. Read only'}}
   return M
 end
