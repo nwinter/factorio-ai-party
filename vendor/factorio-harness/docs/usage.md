@@ -15609,3 +15609,26 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Replayed (tools/stream/director_replay.py, main's rules -> these): 19:43-21:40 idle or loop 81.1% -> 47.0%, loop
   68.7% -> 1.3%, fresh missed 4 of 8 -> 0, cuts 0.53 -> 0.72 a minute; at 1 and 2 cameras the same within 2.5 points.
 - Test: tools/stream/test_freshcam.py.
+## d26 batch225 (QR, Sol #2413: a finished uptime watch unreadable once its agent began another)
+- Cause: the uptime store held one watch an agent; a new start overwrote it, done or not. Astra's 41-machine
+  uptime@65848202/astra could not be read once Astra began uptime@65920807.
+- uptime.lua `M.keep`: a new watch keeps the agent's previous one as a done watch. One still running is finished at
+  that tick as `close` does (its final made, `closed_by` "finished Ns early: a new watch began"). Its entity refs are
+  dropped and it is never sampled (the tick walks the store's watches only). Its final keeps groups, flows, research
+  and silo figures; its lines and rows are left out, since a page read makes them again from its machines.
+- Bounds: at most `KEPT` 4 kept watches, their machines (their segments' included) together at most `KEPT_MACHINES`
+  96; past that the oldest goes, the newest always kept. Each drop is logged on the new watch's `kept_dropped` (the
+  last `DROPPED` 8: id, machines, dropped_tick, by, why). A watch begun on the same tick holds nothing and is not kept.
+- Reads: `uptime {read: true, id}` (any agent) reads a kept watch in pages, with `kept_watch` {kept_tick, ended_tick,
+  closed_by, by}; its segments read by their ids. `uptime {}` and the paged read of the current watch list `kept`
+  [{id, started_tick, ended_tick, seconds, samples, machines, segments, closed_by, kept_tick}], `kept_dropped` and
+  `kept_note`. The start reply gives `kept`, `dropped` (this start's drops), a `replaced` that names the kept id, and
+  the line names both. A read of a dropped id says when, by which start and why, and lists what is kept.
+- mixed.lua: a split marks the old watch `splitting` around its restart, so the restart carries the kept watches on
+  and keeps no copy of it; `close` keeps it as a segment as before.
+- Storage (the copy, world n's 14:06 save, astra's watch of Nauvis (0,52)-(100,100): 41 machines, 71 samples): the kept watch
+  is 30,234 bytes as a serpent line (machines 28,245, its slimmed final 1,481); with its final whole it was 52,181
+  (lines 19,047, group_lines 2,874). A kept 58-machine watch (85 samples): 47,116. At the bounds an agent keeps about
+  66-76 KB.
+- Tests: tests/d26_batch225.lua (in lua.test.ts), failing on main; tests/d25_batch215.lua now expects uptime@1000 to
+  name two watches (Astra's earlier one is kept).

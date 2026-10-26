@@ -204,7 +204,10 @@ return function(api)
     if not why then
       local args = copy(job.call.args)
       args.seconds, args.reason = left, job.reason
+      -- (d26 batch225 QR) a split's new start keeps no copy of this watch (uptime.keep): it carries the kept ones on
+      job.splitting = true
       local ok, err = pcall(api.call, p, job.call.action, args)
+      job.splitting = nil
       new = api.state()[kind][entry.index]
       if not ok or new == job then why, new = 'the new start was refused: ' .. tostring(err), nil end
     end
