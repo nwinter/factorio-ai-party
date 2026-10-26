@@ -81,8 +81,8 @@ do
   eq(up.item, 'thruster'); eq(up.quality, 'legendary'); eq(up.comparator, '='); eq(up.custom_minimum, 1)
   eq(up.hub, 0, 'the hub\'s 6 normal thrusters are not legendary')
   eq(up.state, 'waiting')
-  has(up.line, 'thruster (legendary) 4 from vulcanus: waiting (the hub holds 0): matched: Meridian-V asks thruster (legendary) 4')
-  has(up.line, 'the game\'s pick: no silo on vulcanus fills a rocket for Meridian-V now')
+  has(up.line, 'thruster (legendary) 4 from vulcanus: waiting (the hub holds 0): matched at rocket-silo (15,141): Meridian-V asks thruster (legendary) 4')
+  has(up.line, 'the game\'s pick: no silo on vulcanus is filling a rocket for Meridian-V now')
   -- the game takes Meridian-V up: that silo is named; legendary in its rocket: loading
   silo.transitional_request_target = {valid=true, name='Meridian-V'}
   rocket = {{name='thruster', quality='legendary', count=2}}
@@ -94,7 +94,7 @@ do
   rocket = {{name='thruster', quality='normal', count=2}}
   lines, srows = SH.platform(pl, {}, nil, true)
   eq(srows[1].state, 'waiting')
-  has(srows[1].line, 'the game\'s pick: rocket-silo at (15,141) fills a rocket for Meridian-V now')
+  has(srows[1].line, 'the game\'s pick: rocket-silo at (15,141) is filling a rocket for Meridian-V now')
   defines, prototypes, game = nil, nil, nil
 end
 print('d22_batch91 BA1 silo and shipment by quality: ok')

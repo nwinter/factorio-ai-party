@@ -128,7 +128,7 @@ return function(api)
   -- auto silo's request_rows (every platform of the force, the networks' stock), 438 KB a call on a copy of world n)
   -- Each part is read when a row first needs it and kept for the call: the silos when a request from that planet is
   -- looked at, a silo's rocket cargo and robots' deliveries (cargo_of, coming_of) when a request is not delivered or in
-  -- flight, the request flags (flags_of: each auto silo's request_rows) when a request waits at the planet the platform
+  -- flight, the request flags (row_of: each auto silo's request_rows) when a request waits at the planet the platform
   -- is stopped at, the pads (pads_of) for the ready read. The same reads as before, of the same entities.
   local function silos_at(cache, force, planet, platform)
     local key = planet .. '|' .. platform
@@ -174,24 +174,116 @@ return function(api)
     end
     return x.rows
   end
-  local function flags_of(sil)
-    if not sil.flags then
-      sil.flags = {}
-      for _, x in ipairs(sil.list) do
-        for _, r in ipairs(rows_of(sil, x) or {}) do
-          local k = r.item .. '@' .. (r.quality or 'normal') .. ((r.comparator or '=') ~= '=' and r.comparator or '')
-          if r.platform == sil.platform and not sil.flags[k] then sil.flags[k] = r end
-        end
-      end
-    end
-    return sil.flags
-  end
   local function pads_of(sil)
     if not sil.pads then
       sil.pads = {}
       for _, e in ipairs(sil.found and sil.found.pads or {}) do if e.valid and e.force == sil.force then sil.pads[#sil.pads+1] = e end end
     end
     return sil.pads
+  end
+  -- (d26 batch223 QAG1, Astra 02:09: Kestrel II's uranium-rounds-magazine read "split_networks ... the silo's network can
+  -- give 0 ... other networks: network 96 holds 700" from Fulgora's first silo (network 840) while the other silo, in
+  -- network 96, read matched) one request judged at each silo of ours on the planet: its own request row (an auto silo,
+  -- the platform stopped there), else its network's stock against the payload a rocket waits for (the request's min
+  -- payload, else a full rocket by weight). Read once a silo a call: its parts, its network, its rows by item.
+  local function parts_of(x)
+    if x.parts == nil then
+      local n, req = pget(x.e, 'rocket_parts'), pget(pget(x.e, 'prototype'), 'rocket_parts_required')
+      x.parts = n and req and (n .. '/' .. req) or false
+    end
+    return x.parts or nil
+  end
+  local function net_of(sil, x)
+    if x.net == nil then
+      local ok, ln = pcall_method(pget(x.e, 'surface'), 'find_logistic_network_by_position', pget(x.e, 'position'), sil.force)
+      x.net = ok and ln or false
+    end
+    return x.net or nil
+  end
+  local function can_give(ln, item, qa, cmp)
+    local n = 0
+    for _, qn in ipairs(cmp == '=' and {qa} or takes(qa, cmp)) do
+      local ok, c = pcall_method(ln, 'get_item_count', qn == 'normal' and item or {name=item, quality=qn})
+      if ok and type(c) == 'number' then n = n + c end
+    end
+    return math.max(0, n)
+  end
+  local function payload_of(item, custom)
+    if custom then return custom end
+    local w = pget(pget(pget(prototypes, 'item'), item), 'weight')
+    local lift = pget(pget(prototypes, 'utility_constants'), 'rocket_lift_weight')
+    return w and lift and w > 0 and math.floor(lift / w) or nil
+  end
+  local function row_of(sil, x, key)
+    if not x.by_key then
+      x.by_key = {}
+      for _, r in ipairs(rows_of(sil, x) or {}) do
+        local k = r.item .. '@' .. (r.quality or 'normal') .. ((r.comparator or '=') ~= '=' and r.comparator or '')
+        if r.platform == sil.platform and not x.by_key[k] then x.by_key[k] = r end
+      end
+    end
+    return x.by_key[key]
+  end
+  local CAN = {matched=true, filling=true}
+  -- [{name, position, auto, network, can_give, payload, parts, flag, can_fill, row}]: those that can fill it first, then by
+  -- what their networks can give
+  local function judge(sil, item, qa, cmp, custom, here)
+    local key = item .. '@' .. qa .. (cmp ~= '=' and cmp or '')
+    local list, payload = {}, nil
+    for i, x in ipairs(sil.list) do
+      local pos = pget(x.e, 'position') or {x=0, y=0}
+      local s = {i=i, name=x.e.name, position={x=pos.x, y=pos.y}, auto=x.auto, parts=parts_of(x)}
+      local r = here and x.auto and row_of(sil, x, key)
+      if r then
+        s.row, s.flag = r, r.flag or (r.line and r.line:match('^([%w_]+):'))
+        s.network, s.can_give, s.payload = r.network, r.network_holds, r.payload
+        s.can_fill = CAN[s.flag] or false
+      else
+        local ln = net_of(sil, x)
+        s.network = ln and pget(ln, 'network_id') or nil
+        s.can_give = ln and can_give(ln, item, qa, cmp) or 0
+        if payload == nil then payload = payload_of(item, custom) or false end
+        s.payload = payload or nil
+        s.can_fill = x.auto and s.payload ~= nil and s.can_give >= s.payload or false
+      end
+      list[#list+1] = s
+    end
+    table.sort(list, function(a, b)
+      if a.can_fill ~= b.can_fill then return a.can_fill end
+      if (a.can_give or 0) ~= (b.can_give or 0) then return (a.can_give or 0) > (b.can_give or 0) end
+      return a.i < b.i
+    end)
+    return list
+  end
+  -- silos sharing a network and a verdict said once: "<verdict> (network N can give C, <payload>): silo (x,y) parts p, ..."
+  local function verdict(s, pl_name, here)
+    if not s.auto then return 'automatic requests off (a load_silo or a launch by hand sends it)' end
+    if s.can_fill then return (here or s.row) and 'can fill it' or 'can fill it once ' .. pl_name .. ' stops there' end
+    if s.row then return 'cannot, ' .. tostring(s.flag) end
+    return here and 'cannot (no request row of it read)' or 'cannot now'
+  end
+  local function silos_text(list, planet, pl_name, here)
+    local groups, order = {}, {}
+    for _, s in ipairs(list) do
+      local v = verdict(s, pl_name, here)
+      local net = s.network and string.format('network %d can give %d', s.network, s.can_give or 0) or 'in no logistic network'
+      local pay = s.payload and ((s.can_give or 0) < s.payload and string.format(', under the %d a rocket waits for', s.payload)
+        or string.format(', a rocket waits for %d', s.payload)) or ''
+      local k = v .. ' (' .. net .. pay .. ')'
+      if not groups[k] then groups[k] = {}; order[#order+1] = k end
+      local g = groups[k]
+      g[#g+1] = string.format('%s (%g,%g)%s', s.name, s.position.x, s.position.y, s.parts and ' parts ' .. s.parts or '')
+    end
+    local t = {}
+    for _, k in ipairs(order) do t[#t+1] = k .. ': ' .. table.concat(groups[k], ', ') end
+    return string.format('silos on %s for it%s: %s', planet, here and '' or ' (their networks\' stock now)', table.concat(t, '; '))
+  end
+  local function silos_rows(list)
+    local out = {}
+    for _, s in ipairs(list) do
+      out[#out+1] = {name=s.name, position=s.position, auto=s.auto, network=s.network, can_give=s.can_give, payload=s.payload, parts=s.parts, flag=s.flag, can_fill=s.can_fill}
+    end
+    return out
   end
   -- the silo the game picked for the platform (false with none), and its position, read once a call
   local function picked_of(sil, name)
@@ -205,7 +297,7 @@ return function(api)
   -- One up request's state and line. q: the request {item, quality, comparator, custom_minimum}; counts: the hub's by
   -- "name@quality". (BA1) The silo the game picked: a silo there whose automatic requests fill a rocket for this
   -- platform now (its transitional_request_target), named in the row (picked_silo) and the waiting line.
-  local function up_row(pl, planet, q, min, counts, here, sil, incoming)
+  local function up_row(pl, planet, q, min, counts, here, sil, incoming, fast)
     local item, qa, cmp = q.item, q.quality or 'normal', q.comparator or '='
     local held = of(counts, item, qa, cmp)
     local name = label(item, qa, cmp)
@@ -238,19 +330,38 @@ return function(api)
     end
     row.state = 'waiting'
     local gate
-    if not here then gate = 'the platform is not stopped at ' .. planet
+    if not here then
+      gate = 'the platform is not stopped at ' .. planet
+      -- (QAG1) the full read: each silo there by its network's stock (the tick reads none)
+      if not fast then
+        if #sil.list == 0 then gate = gate .. '; no rocket silo of ours on ' .. planet
+        else
+          local list = judge(sil, item, qa, cmp, q.custom_minimum, false)
+          row.silos = silos_rows(list)
+          gate = gate .. '; ' .. silos_text(list, planet, pl.name, false)
+        end
+      end
     else
       local auto = false
       for _, x in ipairs(sil.list) do if x.auto then auto = true end end
-      -- (BT1) the flags read here alone: a request waiting at the planet the platform is stopped at, with auto silos
-      local f = #sil.list > 0 and auto and flags_of(sil)[item .. '@' .. qa .. (cmp ~= '=' and cmp or '')]
       if #sil.list == 0 then gate = 'no rocket silo of ours on ' .. planet
-      elseif not auto then gate = 'no silo on ' .. planet .. ' has automatic requests on (a load_silo or launch by hand sends it)'
-      elseif f then gate = f.line
-      else gate = 'no silo reads a request of it' end
+      else
+        -- (BT1) the request rows read here alone: a request waiting at the planet the platform is stopped at, with auto
+        -- silos. (QAG1) every silo's row, the gate led by one that can fill it
+        local list = judge(sil, item, qa, cmp, q.custom_minimum, true)
+        row.silos = silos_rows(list)
+        local lead
+        for _, s in ipairs(list) do if s.row then lead = s; break end end
+        if not auto then gate = 'no silo on ' .. planet .. ' has automatic requests on (a load_silo or launch by hand sends it)'
+        elseif lead then
+          local line = lead.row.line or tostring(lead.flag)
+          gate = string.format('%s at %s (%g,%g): %s', tostring(lead.flag), lead.name, lead.position.x, lead.position.y, (line:gsub('^[%w_]+: ', '', 1)))
+        else gate = 'no silo reads a request of it' end
+        gate = gate .. '; ' .. silos_text(list, planet, pl.name, true)
+      end
       if auto then
-        gate = gate .. (picked and string.format('; the game\'s pick: %s at %s fills a rocket for %s now', picked.e.name, at(picked.e.position), pl.name)
-          or string.format('; the game\'s pick: no silo on %s fills a rocket for %s now', planet, pl.name))
+        gate = gate .. (picked and string.format('; the game\'s pick: %s at %s is filling a rocket for %s now', picked.e.name, at(picked.e.position), pl.name)
+          or string.format('; the game\'s pick: no silo on %s is filling a rocket for %s now', planet, pl.name))
       end
     end
     row.gate = gate
@@ -299,7 +410,7 @@ return function(api)
         if not only or q.item == only then
           n = n + 1
           sil = sil or silos_at(cache, force, planet, pl.name)
-          local row = up_row(pl, planet, q, q.min, counts_q, here, sil, inc and inc.rows)
+          local row = up_row(pl, planet, q, q.min, counts_q, here, sil, inc and inc.rows, fast)
           rows[#rows+1] = row
           if parts and n <= 24 then parts[#parts+1] = row.line end
         end
@@ -750,6 +861,6 @@ return function(api)
     direction='with ledger: up or down', silo='with ledger: a silo\'s unit number: the rockets it launched (pods[].silo gives each rocket\'s silo {unit_number, surface, position}, or unknown for rockets sent before the ledger kept silos)', from_tick='with ledger: journeys sent at or after this tick', to_tick='with ledger: journeys sent at or before this tick', limit='with ledger: 1..128 (default 32): the newest that many journeys',
     platform='a platform name (with ledger: its journeys)', item='or an item name: that item on every platform (with ledger: journeys carrying it; name@quality for one quality)',
     ready='optional true, with platform: the freight readiness read for the planet it stops at (else the stop it flies to): its gate (a circuit wait with what the hub\'s wires read), the requests from there not delivered, each silo there (its rocket, automatic requests and why it waits: what the rocket holds against the payload it waits for, the request flag; the circuit and logistic conditions of inserters and loaders within 8 tiles with what each reads now), the landing pads there (free slots each; per item the hub would send down: count, slots, what the pads can take of it now). Returns {lines, planet, silos, down, pad_free_slots}',
-    returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where); the platform\'s last 2 drops into a pad there with what the pad showed after (landed, then taken by construction robots: how many, the first orders they flew to; as the drops read\'s pad line); cargo conflict lines: an item the hub holds that the landing pads of two or more coming stops ask, each stop in the order reached with what its pads ask and hold, what goes down there and what is left aboard after it. rows [{platform, planet, item, direction up|down, state, ...; up rows: quality, comparator, custom_minimum, hub (what the hub holds of the qualities the request takes), picked_silo {name, position} (a silo whose automatic requests fill a rocket for this platform now)}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
+    returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling), led by a silo that can fill it, then each silo of ours on that planet: can fill it or why not, its network, what that network can give, the payload a rocket waits for, its rocket parts (a stop not reached: by the networks\' stock now); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where); the platform\'s last 2 drops into a pad there with what the pad showed after (landed, then taken by construction robots: how many, the first orders they flew to; as the drops read\'s pad line); cargo conflict lines: an item the hub holds that the landing pads of two or more coming stops ask, each stop in the order reached with what its pads ask and hold, what goes down there and what is left aboard after it. rows [{platform, planet, item, direction up|down, state, ...; up rows: quality, comparator, custom_minimum, hub (what the hub holds of the qualities the request takes), picked_silo {name, position} (a silo whose automatic requests fill a rocket for this platform now), silos [{name, position, auto, network, can_give, payload, parts, flag, can_fill}] (a waiting request)}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
   return M
 end

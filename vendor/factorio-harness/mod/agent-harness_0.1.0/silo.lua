@@ -747,7 +747,7 @@ return function(api)
               local from_store = ln and math.max(0, M.count_q(function(id) return ln.get_item_count(id, 'storage') end, name, q, cmp)) or 0
               local need_slots = payload and math.ceil(math.min(payload, full or payload) / stack) or nil
               local r = {platform=pl.name, item=name, quality=q, comparator=cmp, custom_minimum=mp, asks=f.min, holds=held, on_the_way=way, lacks=lacks, min_payload=mp, full_rocket=full,
-                payload=payload, network_holds=net, providers=from_prov, storage=from_store, slots_for_payload=need_slots, hub_free_slots=free_slots,
+                payload=payload, network_holds=net, network=ln and ln.network_id or nil, providers=from_prov, storage=from_store, slots_for_payload=need_slots, hub_free_slots=free_slots,
                 next_launch=mp and string.format('min_payload %d', mp) or (full and string.format('full %d', full) or nil),
                 filling=target == pl.name or nil, other_filling=target and target ~= pl.name and target or nil}
               local words = {string.format('%s asks %s %d (holds %d, %slacks %d)', pl.name, label, f.min, held, way > 0 and way .. ' on the way in rockets launched to it, ' or '', lacks)}

@@ -15565,3 +15565,31 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   - belt_positions: 5 groups, 238-248 positions, 4.4 KB of JSON; the reply 3.0 KB without, 7.5 KB with;
   - belt_tiles: 109 tiles (group 1) 2.1 ms, 238 tiles 5.0 ms, 1000 tiles 19.8 ms; 2.0 KB, 3.9 KB, 16.9 KB.
 - Test: tests/d26_batch221.lua (in lua.test.ts), failing on main.
+
+## d26 batch223 (QAG1, Astra 02:09: shipment said no silo fills a request that another silo could)
+- Cause: a request waiting at the planet the platform is stopped at took its gate from the first silo with automatic
+  requests in the census list that had a row for it. At tick 65239542 Kestrel II's uranium-rounds-magazine 1525 from
+  Fulgora read "split_networks ... the silo's network can give 0 ... other networks on fulgora: network 96 holds 700":
+  the row of the silo at (-65.5,90.5) (network 840). The silo at (-43.5,208.5), in network 96, read matched with 700
+  to give (`silo` at 65240446). On a copy of world n's 02:11 save those are Fulgora's two silos, in that order, and
+  main's shipment reads the same text there.
+- Now each silo of ours on that planet is judged for the request:
+  - stopped there: by its own request row (the silo's request_rows, read for every auto silo as before); a silo can
+    fill it when its flag is matched or filling;
+  - automatic requests off: its network's stock, said as off (a load_silo or a launch by hand sends it);
+  - a stop not reached (the full read; the 2 s tick reads none): each silo by its network's stock now against the
+    payload a rocket waits for (the request's min payload, else a full rocket by weight): "can fill it once PLATFORM
+    stops there" or "cannot now".
+- The gate leads with a silo that can fill it ("matched at rocket-silo (-43.5,208.5): Kestrel II asks ..."), else the
+  silo whose network can give the most. Then "silos on fulgora for it: can fill it (network 96 can give 700, a rocket
+  waits for 25): rocket-silo (-43.5,208.5) parts 28/50; cannot, split_networks (network 840 can give 0, under the 25 a
+  rocket waits for): rocket-silo (-65.5,90.5) parts 33/50". Silos sharing a network and verdict are listed together.
+  The up row gains `silos` [{name, position, auto, network, can_give, payload, parts, flag, can_fill}].
+- "the game's pick" (transitional_request_target) now reads "is filling a rocket for": it says what a silo is doing,
+  not what it can do.
+- On the copy (paused tick 65248152, the Mac at load average ~150; min of 20 calls, main / branch, two runs each):
+  `{platform: "Kestrel II", item}` 9.6-11.1 / 11.2-11.4 ms (reply 5.3 / 7.7 KB); `{platform: "Kestrel II"}`
+  17.2-18.5 / 19.5-20.3 ms (31.7 / 37.3 KB); `{item}` over every platform 47.0-53.7 / 47.7-49.8 ms (7.5 / 9.9 KB);
+  `ready` 8.7 / 7.4 ms. No tick work added: the tick's rows read the same request rows as before.
+- Test: tests/d26_batch223.lua (in lua.test.ts), failing on main; tests/d22_batch91.lua and d22_batch110_freight.lua
+  take the new texts.
