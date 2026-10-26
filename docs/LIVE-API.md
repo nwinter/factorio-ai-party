@@ -225,6 +225,15 @@ diamond with a dashed line to its target; `big` the demolishers near our buildin
 `[{id, name, surface, position, nearest {x, y, name}, speed, closing, nearest_distance, eta_s, label}]`, a ringed dot
 with a dashed line to our nearest building while it closes; at most 12 of each, absent when there are none (about
 300 bytes a row). The stream service read both before; they never reached the page.
+(d26 batch233 VM, viewer Aurora site:5019) `vehicles` {rows, total, read_age_s} draws the "Vehicles" layer (on by
+default, under Team) on the surface shown: our spidertrons, tanks and cars (cp2) where our force last saw them (harness `census {part:
+"vehicles"}`, read every 10 s by the stream service) `[{unit_number, name, type, surface, position, age_s (how old the
+position is), visible (its chunk in sight when read), unseen (never seen: no position, not drawn), driver (the agent in
+its driver seat, or "a player"), remote (the agent driving it by remote view), sent_by and sent_age_s (the agent that
+last sent it a route by remote view, and when), destination (a car or tank: its remote drive's target),
+route_targets}]`, a blue square for a spidertron, a blue dot for a tank or car (grey when the position is from out of
+sight), with a dashed line to its destination; hover: id, place, position age, driver, sender,
+destination. At most 64 rows, absent before a read or with none (about 250 bytes a row).
 (d22 batch75 AK2, viewer Foobator, site:4034: "the ship overview only has a progress bar for the first 2 that are in
 transit? can in transit be listed first and the rest have their planetary waiting time displayed?") Every platform's
 `state`, `route` and `speed_kms` come from the stream's views read (`PLATFORM_LUA`, every platform in one call every
@@ -443,6 +452,12 @@ status, with its reply count inline after it ("· 2 replies", a link to the firs
 Details and the list's scroll (the line at its top and that line's offset, or the end) are kept when the list is
 rebuilt and across a reload, in this tab's sessionStorage (`chatDetails`, `chatScroll`; a kept place waits up to 15 s
 for its line to arrive and gives way when the reader scrolls).
+(d26 batch236 OC, viewer Aurora 10:39: "Opus's shift15 confession c72 reappears beside fresh speech after startup")
+After a stream service start, the harness's kept confessions, tells, operator requests and board events come back in
+its first reads. One from before the current shift (`shift.start`; its time from its game tick) goes into no live
+feed: not `chat`, `operator_requests` or `board.events`, not the overlay, never voiced. The site's history and search
+keep it with its shift and date. One from earlier in the current shift stays in the feeds marked `history`, with its
+own time, as before. The overlay shows no `history` line and no replayed board event.
 
 The Operator names the line it answers with `tools/opreply.py` (d20 batch65 AA2, viewer Aurora 04:28: "Could replies
 keep the original question ID through delivery, split parts and history?"; shift50's 04:20 two-line artillery answer

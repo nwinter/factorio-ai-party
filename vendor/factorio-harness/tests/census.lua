@@ -94,7 +94,7 @@ for _,r in ipairs(grok('describe').operator_reads or {}) do listed=listed or r==
 eq(listed,true,'describe lists census')
 local r=op('census',{part='extras'})
 eq(r.ready,false); eq(r.part,'extras')
-fails(function() op('census',{part='everything'}) end,'part must be extras, snapshot, machines, basemap or planets')
+fails(function() op('census',{part='everything'}) end,'part must be extras, snapshot, machines, basemap, planets or vehicles')
 -- Grok's stone tiles and the bot's body are the only entities: the pass walks them and ends.
 advance(4000)
 r=op('census',{part='extras'})
