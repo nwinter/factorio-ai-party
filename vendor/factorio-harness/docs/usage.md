@@ -14452,6 +14452,28 @@ on its line (the reply's JSON dominates on the copy).
   breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
   (unchanged: the scan).
 - Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
+## d26 batch243 (SR, viewer Aurora 13:42: solo spidertron routing round water)
+
+On d26 spidertron #27069154 stood 1 tile from water at (78,339), an islet in a lake, for 8 minutes while every path round
+the water came back "found no path". What the copy of world n's 13:37 save showed, and what changed (spiderpath.lua,
+spiderroute.lua):
+- In 2.0.77 most entities' collision masks hold `water_tile` (223 prototypes: buildings, belts, poles, inserters, trees,
+  rocks), so a path request with that layer took the base for walls: from the shore at (57,337) to (601,551) it found
+  none; with `doodad`, 570 points. The 13 tiles a spidertron's legs (`player`, `rail`) stand on none of are exactly the
+  13 with `doodad`; among entities only corpses and rail remnants carry it. Requests use `doodad`, with the path cache
+  off (it kept a failure for a later request between the same spots).
+- The box is 0.8 (a 2x2 box at a tile's centre overlaps 3x3 tiles: no spot on the islet had room for it); a 1x1 box
+  did not pass a 1-tile land neck, 0.8 does. Starts and goals whose box touches water move to the nearest spot with room.
+- No path: asked again from up to 4 spots its legs step to across water (a run of 1..12 tiles; spots on open land
+  first), and to up to 4 spots it steps from onto the target's land; the first path wins, said in team alerts.
+- A target on water: the route ends at the dry spot nearest it within 48 tiles (reply `landed`), else said so.
+- A path over 120 points is thinned at twice the spacing instead of failing.
+- No progress for 3 s with water within 3 tiles ahead and no path being asked: it backs off to the newest spot of its
+  trail 3 tiles or more back (else straight back from its target) and asks again from there, any water on the line
+  counting; up to 3 times (30 tiles nearer its target counts afresh), each said in team alerts and the reply's
+  `recovery`; then the stall line with the recoveries tried and `no_path`. The reply has `path` while one is asked.
+- Legs on the copy: straight deepwater strips of 12, 14 and 16 tiles were crossed, 18 not (batch191 read 14 and 16).
+
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 
 At tick 59185129 delivery watch #384 (3 asteroid-collector@legendary from Kestrel IVc to Aquilo's pad) warned
