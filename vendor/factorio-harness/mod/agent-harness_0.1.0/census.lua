@@ -880,6 +880,13 @@ return function(api)
     local d = (api.state().census or {}).done
     return d and d.fuel and d.fuel[surface.index] or nil, d and d.fuel and d.start or nil
   end
+  -- (d26 batch230) the last pass's count of the snapshot's building types of ours on a surface, and its tick; nil
+  -- before a pass or for a surface it has not counted (supply stock's size limit)
+  function M.surface_buildings(surface)
+    local d = (api.state().census or {}).done
+    local n = d and d.where and d.where[surface.name]
+    return n, n and d.start or nil
+  end
   function M.buildings(force)
     local d=(api.state().census or {}).done
     if force.name~='player' or not d then return nil end
