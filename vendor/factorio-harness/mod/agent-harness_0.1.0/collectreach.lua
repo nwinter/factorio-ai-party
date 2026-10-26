@@ -38,6 +38,14 @@
 -- Read on a private copy of world n's shift57 save (05:16 PDT, Asterion over Nauvis: 89 chunks, 12 collectors on two
 -- sides facing out): one collector facing east took chunks placed at rest 12 and 12.4 tiles in front of it and not
 -- 12.7; with the others switched off, 2 tiles in front and not 1.2 (docs/usage.md has the rest).
+-- (d26 batch226 QM, Sol #2423: Weaver's 600 s tally in flight caught 103 and inferred 26,644) in flight every chunk also
+-- drifts with the platform's frame, beyond its movement: on a private copy (14:06 save) +y 0.0242 tiles a tick at 0.62
+-- km a tick, 0.0326 at 0.91, 0.0401 at 1.21, 0.0789 at Weaver's 3.77 (0.789 in a 10-tick read, past TOLERANCE: no
+-- watched chunk matched, each counted gone); at rest within 0.004 of where movement puts it. A chunk keeps its name and
+-- movement read to read (round 5 platforms, 0-2 of 56-329 chunks a read had no match: gone), so the tally matches by
+-- them, measures the frame's drift each moving read as their median offset, and predicts and traces paths in that
+-- frame; moving names the reads the platform's speed was above 0 at. On the copy Weaver in flight: main inferred 3612 and 1915 against 19 and 42
+-- caught; this: 14 of 14, 11 of 10, 16 of 16, and 12 of 12 over an arrival.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
@@ -416,6 +424,17 @@ return function(api)
     local now = job.pl and job.pl.valid and try(function() return job.pl.find_asteroid_chunks_filtered{area=job.box} end)
     local surface = now and job.pl.surface
     if not now then live = false; now = {} end
+    -- (MV) the platform's speed at the read: a moving read
+    local speed = now and try(function() return job.pl.speed end) or 0
+    if speed > 0 then
+      job.moving = (job.moving or 0) + 1
+      job.moving_from, job.moving_to = job.moving_from or tick, tick
+      if speed > (job.speed_max or 0) then job.speed_max = speed end
+    end
+    -- the frame's drift a tick, as last measured; none at rest (on the copy a docked platform's chunks sat within 0.004
+    -- tile of where movement put them)
+    local fx, fy = 0, 0
+    if speed > 0 then fx, fy = job.fx or 0, job.fy or 0 end
     -- the chunks near a reach of a collector that takes them: matched against the watched ones, and watched next
     local cur, prev = {}, {}
     for _, ch in ipairs(now) do
@@ -423,7 +442,7 @@ return function(api)
       local x, y = pos.x or pos[1] or 0, pos.y or pos[2] or 0
       local mx, my = mv and (mv.x or mv[1]) or 0, mv and (mv.y or mv[2]) or 0
       local name = chunk_name(ch)
-      local step = math.sqrt(mx * mx + my * my) * M.SAMPLE
+      local step = math.sqrt((mx + fx) * (mx + fx) + (my + fy) * (my + fy)) * M.SAMPLE
       local _, d = path_reach(job, name, x, y, 0, 0, 0)
       if d and d <= M.WATCH + 2 * step + 1 then
         local c = {name=name, x=x, y=y, mx=mx, my=my, tick=tick}
@@ -431,19 +450,41 @@ return function(api)
         if d <= M.WATCH + step then prev[#prev+1] = c end
       end
     end
-    for _, q in ipairs(job.prev or {}) do
+    -- (MV) a watched chunk is the one of its name with its movement (2.0.77 keeps a chunk's movement read to read: round 5
+    -- platforms on a copy, 0-2 of 56-329 chunks a read had no match, gone); the median of their offsets from where movement puts them is the
+    -- frame's drift (in flight the whole field moves: Weaver at 3.77 km a tick, +0.789 tiles in 10 ticks, every chunk
+    -- within 0.004 of it), and a match must sit within TOLERANCE of its spot with that drift
+    local old, hit, ox, oy = job.prev or {}, {}, speed > 0 and {} or nil, speed > 0 and {} or nil
+    for k, q in ipairs(old) do
       local dt = tick - q.tick
-      local px, py = q.x + q.mx * dt, q.y + q.my * dt
-      local found = false
       for _, c in ipairs(cur) do
-        if c.name == q.name and math.abs(c.x - px) <= M.TOLERANCE and math.abs(c.y - py) <= M.TOLERANCE then found = true; break end
+        if c.mx == q.mx and c.my == q.my and c.name == q.name then
+          hit[k] = c
+          if ox then ox[#ox+1], oy[#oy+1] = (c.x - q.x) / dt - q.mx, (c.y - q.y) / dt - q.my end
+          break
+        end
       end
+    end
+    if ox and #ox > 0 then
+      table.sort(ox); table.sort(oy)
+      local m = math.floor(#ox / 2) + 1
+      fx, fy = ox[m], oy[m]
+      job.fx, job.fy = fx, fy
+      local f = math.sqrt(fx * fx + fy * fy) * 60
+      if f > (job.drift_max or 0) then job.drift_max = f end
+    end
+    for k, q in ipairs(old) do
+      local dt = tick - q.tick
+      local vx, vy = q.mx + fx, q.my + fy
+      local px, py = q.x + vx * dt, q.y + vy * dt
+      local c = hit[k]
+      local found = c and math.abs(c.x - px) <= M.TOLERANCE and math.abs(c.y - py) <= M.TOLERANCE
       if not found then
         -- the drift a few ticks on too: a chunk last seen just short of the hull's edge
-        if on_hull(surface, px, py) or on_hull(surface, px + q.mx * 3, py + q.my * 3) then
+        if on_hull(surface, px, py) or on_hull(surface, px + vx * 3, py + vy * 3) then
           job.hit_hull = (job.hit_hull or 0) + 1
         else
-          local i, d = path_reach(job, q.name, q.x, q.y, q.mx, q.my, dt)
+          local i, d = path_reach(job, q.name, q.x, q.y, vx, vy, dt)
           local col = i and d <= M.SLACK and job.collectors[i]
           if col then
             col.taken = col.taken + 1
@@ -499,7 +540,15 @@ return function(api)
       if inf ~= ca then diff[#diff+1] = string.format('%s %s%d', n, inf > ca and '+' or '', inf - ca) end
     end
     local off = seen - caught
-    return {watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=secs, start_tick=job.start,
+    -- (MV) the reads the platform moved at (its speed above 0), and the frame's drift the matching corrected
+    local moving, moved_text
+    if job.moving then
+      moving = {reads=job.moving, of_reads=job.samples, from_tick=job.moving_from, to_tick=job.moving_to, speed_max_km_s=math.floor((job.speed_max or 0) * 60 + 0.5),
+        drift_max=job.drift_max and r1(job.drift_max) or nil}
+      moved_text = string.format('; the platform moved at %d of %d reads (ticks %d-%d, up to %d km/s), the chunks drifting with its frame up to %s tiles a second beyond their movement: matched in that frame',
+        moving.reads, moving.of_reads, moving.from_tick, moving.to_tick, moving.speed_max_km_s, moving.drift_max and string.format('%g', moving.drift_max) or '?')
+    end
+    return {moving=moving, watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=secs, start_tick=job.start,
       end_tick=done and job.until_tick or nil, caught=caught, caught_by_type=text_of(caught_by), read_every=job.catch_every,
       made=made, made_by_type=plat, made_minus_caught=made - caught, taken_otherwise=otherwise > 0 and otherwise or nil,
       collectors=rows, gone_in_reach_total=seen, inferred_minus_caught=off, by_type=per_type, hit_hull=job.hit_hull or 0, gone_elsewhere=job.gone_elsewhere or 0,
@@ -508,11 +557,12 @@ return function(api)
         #caught_parts > 0 and table.concat(caught_parts, ', ') or 'none', idle, idle == 1 and '' or 's', made, #made_parts > 0 and table.concat(made_parts, ', ') or 'none', made - caught, seen,
         off == 0 and 'equal to' or string.format('%d %s than', math.abs(off), off > 0 and 'more' or 'fewer'), #diff > 0 and '; by type ' .. table.concat(diff, ', ') or '')
         .. string.format('; not counted: %d gone on a hull tile (struck the hull), %d gone away from every reach', job.hit_hull or 0, job.gone_elsewhere or 0)
-        .. (otherwise > 0 and string.format('; %d taken from the outputs by other than their inserters (robots, a hand): not in caught', otherwise) or ''),
+        .. (otherwise > 0 and string.format('; %d taken from the outputs by other than their inserters (robots, a hand): not in caught', otherwise) or '') .. (moved_text or ''),
       note='caught: the chunks that arrived in the collectors\' outputs between the start and ' .. (done and 'the end' or 'now') .. ': each output\'s rise plus what the inserters taking from it picked up, read every read_every ticks, under half an inserter\'s half turn (chunks stack to 1: a pickup is one chunk); a chunk still in a collector\'s arm is not yet in it. '
         .. 'made: the platform\'s production statistics for chunks over the same span: every chunk made on the platform, the collectors\' catch and the crushers\' returns (reprocessing and advanced crushing return chunks); made_minus_caught: the crushers\' returns and the counts\' timing (on a copy of world n, made equalled the collectors\' and the crushers\' outputs together within 9 a type over 16,359 ticks). '
         .. 'gone_in_reach (inferred, not a catch count): a chunk seen within ' .. M.WATCH .. ' tiles (and its drift) of the reach of a collector whose filters take its type at one read (every ' .. M.SAMPLE
-        .. ' ticks), gone from where its drift puts it at the next, its path since within ' .. M.SLACK .. ' tile of that reach (collectors take chunks as they cross into it), counted for the collector whose reach it came nearest; not counted: one found where its drift puts it, one gone where its drift puts it on a platform tile (hit_hull: it struck the hull), one whose path came near no such reach (gone_elsewhere); a chunk taken without being seen near a reach first is missed'}
+        .. ' ticks), gone from where its drift puts it at the next, its path since within ' .. M.SLACK .. ' tile of that reach (collectors take chunks as they cross into it), counted for the collector whose reach it came nearest; not counted: one found where its drift puts it, one gone where its drift puts it on a platform tile (hit_hull: it struck the hull), one whose path came near no such reach (gone_elsewhere); a chunk taken without being seen near a reach first is missed; '
+        .. 'a chunk is matched read to read by its name and movement, near where its movement and the frame\'s drift put it: in flight every chunk also drifts with the platform\'s frame (measured each read as the median offset of the matched chunks; moving names the reads at which the platform\'s speed was above 0)'}
   end
   function M.tick(tick)
     local all = api.state().collector_tally

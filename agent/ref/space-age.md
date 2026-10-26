@@ -161,7 +161,8 @@
   catch counter). `made` over the same span and `made_minus_caught` (the crushers' returns and the counts' timing):
   on a copy of world n, Asterion made 1316 chunks in 16,359 ticks, 391 of them crushers' returns. `gone_in_reach`
   per collector is inferred: a chunk seen near the reach of a collector whose filters take it and gone at the next
-  read (every 10 ticks) with its drift's path within 1 tile of that reach; not counted: `hit_hull` (gone on a platform
+  read (every 10 ticks; matched by name and movement, in flight in the platform's frame: `moving` names those reads)
+  with its drift's path within 1 tile of that reach; not counted: `hit_hull` (gone on a platform
   tile) and `gone_elsewhere`; `inferred_minus_caught`, also `by_type`; the same read gives `tally` (so far, or done).
 - `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?, phases?, phases_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
