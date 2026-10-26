@@ -1034,6 +1034,13 @@ class OneCam(Director):
         f = self.fresh.get(name)
         return now - f[0] if f else 1e9
 
+    def newsworthy(self, name, now):
+        """A fresh agent worth a cut (fresh_cut): not stale, or its event within twice still_cut (a short build or
+        paste leaves the character standing by what it did)."""
+        age = self.fresh_age(name, now)
+        return age < self.cfg["fresh_cut"] and (self.stale_s(name, now) < self.cfg["still_cut"] or
+                                                age < 2 * self.cfg["still_cut"])
+
     def fresh_factor(self, name, now):
         age = self.fresh_age(name, now)
         return 1.0 + self.cfg["fresh_boost"] * max(0.0, 1.0 - age / self.cfg["fresh_s"])
@@ -2407,8 +2414,7 @@ class OneCam(Director):
         if stale < cfg["quiet_story"] or now - self.onair_since < cfg["quiet_story"]:
             return None
         for n in scores:
-            if n != subj and self.stale_s(n, now) < cfg["still_cut"] and \
-                    (self.fresh_age(n, now) < cfg["fresh_cut"] or self.stale_s(n, now) < cfg["moving_s"]):
+            if n != subj and (self.newsworthy(n, now) or self.stale_s(n, now) < cfg["moving_s"]):
                 return None  # someone to cut to: the story rules do
         return f"{subj} {'on a loop' if self.loop_s(subj, now) else 'still'} {int(stale)} s"
 
@@ -3418,7 +3424,8 @@ class OneCam(Director):
         resumed = None
         if need:
             r, self.resume = self.resume, None
-            lively = [n for n in ranked if n not in inset_agents and self.stale_s(n, now) < self.cfg["still_cut"]]
+            lively = [n for n in ranked if n not in inset_agents and
+                      (self.stale_s(n, now) < self.cfg["still_cut"] or self.newsworthy(n, now))]
             if r and self.after_quiet and self.stale_s(r["subject"], now) >= self.cfg["still_cut"]:
                 r = None  # (batch222) a quiet view cut a stale story: not back to it, to the best lively agent
             if r and r["subject"] in scores and r["subject"] not in inset_agents and \
@@ -3459,7 +3466,7 @@ class OneCam(Director):
             stale = still >= (cfg["plan_after"] if ended else cfg["still_cut"])
             # (batch222) a fresh agent (fresh_cut): after onair_dwell at fresh_ratio of the story's score, after still_min
             # from a stale story whatever the scores
-            fresh = [n for n in others if self.fresh_age(n, now) < cfg["fresh_cut"] and self.stale_s(n, now) < cfg["still_cut"]]
+            fresh = [n for n in others if self.newsworthy(n, now)]
             if not want and not holding and fresh and now - self.last_program_cut >= cfg["cut_spacing"] and \
                     (held >= cfg["onair_dwell"] and scores[fresh[0]] >= scores[subj] * cfg["fresh_ratio"] or
                      stale and held >= cfg["still_min"]):

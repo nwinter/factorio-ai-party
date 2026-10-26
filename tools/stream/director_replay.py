@@ -16,8 +16,8 @@ this checkout's. What each agent is, at each second (from its journal unless sai
 - interest: model.Agent's bump and decay (model.ACTION_WEIGHT when its action changes, 0.04 of it a second while it
   acts, 2 for a say or chat);
 - remote_vehicle: work.VehicleFeed over its journal rows.
-Not replayed: alerts, fights, platforms, segments, cues, attention, work, trio picks need nothing more but run as the
-rules say. So the replay compares rule sets on the same input; it is not the program that aired.
+Not replayed: alerts, fights, platforms, the base map, segments, cues, attention and work (the trio runs as the rules
+say). So the replay compares rule sets on the same input; it is not the program that aired.
 """
 import argparse, bisect, importlib, json, os, subprocess, sys, tempfile
 
