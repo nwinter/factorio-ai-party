@@ -87,8 +87,9 @@
   accumulators' stored MJ of their maximum), per logistic network (its id, roboports and the areas they cover,
   logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
   more, its construction backlog: ghosts, deconstruction and upgrade orders, those waiting 5+ min and the oldest, and
-  the cause; deliveries stuck with the item free; the items it holds most of and what its requesters ask:
-  `holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`), the turrets with ammo used in the
+  the cause; deliveries stuck with the item free at the quality asked; the items it holds most of and what its
+  requesters ask, each item@quality on its own (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300
+  short), electronic-circuit@rare 200 (200 short), ...`), the turrets with ammo used in the
   last hour, and `drills out of ore` per surface. Accumulators are read at the call (`acc_mj`, `acc_pct`, `acc_series`
   every 15 s over 3 min), and `fresh: true` adds each network's `draw_now_kw`. `platform: NAME`: that platform's
   networks (capacity, draw, solar power where it is and its panels' output, accumulators, machines on low power). On

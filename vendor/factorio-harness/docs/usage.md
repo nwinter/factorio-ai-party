@@ -4666,10 +4666,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     1.5 MW net flowed out over the last 30 s)`, and later `ran empty 1m00s ago; now at 61% ...`. On a private copy of
     world n network 301 fell like that every Fulgora day.
     Robot delays (Nick 12:35; worse is more waiting): `construction_wait`, ghosts in a network's construction area
-    waiting 5+ min since a view first saw them while their items are in the network and they lie inside a
-    roboport's construction area (`ghosts waiting on robots: 75 in network 3 near (25,50), oldest 22 min, 1
-    construction robot (busy); the items are in the network`); `deliveries_wait`, requests unfilled 5+ min while
-    providers or storage hold the item free (the engine's supply counts, net of pickups robots have reserved), with
+    waiting 5+ min since a view first saw them while their items (at the ghost's quality) are in the network and they
+    lie inside a roboport's construction area (`ghosts waiting on robots: 75 in network 3 near (25,50), oldest 22
+    min, 1 construction robot (busy); the items are in the network`); `deliveries_wait`, requests unfilled 5+ min while
+    providers or storage hold the item free at the quality the request asks (the engine's supply counts of that
+    item@quality, net of pickups robots have reserved; named item@quality for a quality other than normal), with
     what the logistic robots are doing (`deliveries waiting on robots: 4 requests unfilled 5+ min in network 3 near
     (25,50) while providers or storage hold the item free (copper-cable 500): no idle logistic robots; 40 robots
     waiting to charge at 3 roboports; 273 carrying for other requests`); `requester_full` (Sol, 22:08), requester
@@ -4764,7 +4765,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   once; state in `.lookahead.json` next to the journal). Lines: `your plan line: "iron smelting column east" (set
   1h20m ago)`, `your open board items: #12 ...`, `team plan goals: ...`, `research: automation-2 52% running; queued
   next: steel-processing, logistics-2`, `stock falling to zero within 2 h at the last 30 min rate: iron-plate in network
-  #8 (nauvis) in 30m (3000 left)` (each network's contents sampled every 5 game minutes, the last 35 min kept; at most
+  #8 (nauvis) in 30m (3000 left)` (each network's contents sampled every 5 game minutes by item@quality, the last 35
+  min kept; at most
   5; `none`, or `under 30 min of network samples yet`), `time left in the shift: 1h20m` (fh, from the deadline file),
   then `look ahead: a moment to think past the current task: what you and the team will need in the next hour or
   two, and whether your plan line still says it. What you do with this is up to you.`
@@ -4831,8 +4833,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   A logistic network's line ends with its items (Gemini, 12:20): `; holds iron-plate 4200, copper-plate 3100, coal 50`
   (its provider, storage and buffer chests as the game's network contents count them, the 6 most, `(+N kinds)`) and
   `; requesters ask iron-plate 400 (300 short), copper-cable 200` (the requests summed over its requester points, the
-  6 largest; `short` is what its requests lack now, held plus incoming). Read: `holds` (the 20 most held, `[{name,
-  count}]`) and `requests` (`[{name, asked, short}]`).
+  6 largest; `short` is what its requests lack now, held plus incoming). Each is by item@quality (d25 batch218):
+  `electronic-circuit@rare 200 (200 short)`. Read: `holds` (the 20 most held, `[{name, quality?, count}]`),
+  `requests` (`[{name, quality?, asked, short}]`; quality only when not normal) and `unfilled_items` (keyed
+  item@quality).
 - Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
   boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
   generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`
@@ -15392,6 +15396,40 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   machines)` (0.36 ms with the dispatch), and as sol `agent: 'astra'` read page 3 of 3 (machines 33-41 of 41).
 - Test: tests/d25_batch215.lua (tests/d25batch215.test.ts), failing on main.
 
+## d25 batch218 (QAC1, Sol #2393: logistics free-stock checks by item@quality)
+- Cause: networks.lua's deliveries_wait read each stuck request's free supply with `get_supply_counts(name)`. A name
+  alone is normal quality in 2.0.77 (on a copy of world n's 20:51 save, network 22 on Vulcanus: `electronic-circuit`
+  and `{name, quality='normal'}` both 53597; uncommon and rare 0; `get_contents` lists each quality apart). Sol's
+  requesters at (59.5,52.5) and (52.5,52.5) ask rare and uncommon circuits, steel, carbide and concrete, so the alert
+  set them against the normal stock. On the copy the deployed runtime gave Sol's alert word for word ("7 requests ...
+  (electronic-circuit 53707, steel-plate 14456, tungsten-carbide 4301, ...)"); this runtime gives none there.
+- deliveries_wait: each request's free count at its quality (`{name, quality}` when not normal), each item@quality
+  read once a view; the alert names item@quality (`electronic-circuit@rare 12`).
+- The networks read and line: requests, short, unfilled and holds by item@quality (`requesters ask
+  electronic-circuit@rare 60 (60 short)`; rows `{name, quality?, ...}`, `unfilled_items` keyed item@quality). What
+  robots already carry to a requester (`targeted_items_deliver`, whose rows carry quality) counts against the request
+  of that quality only: 50 normal on the way no longer fill a request for 50 rare.
+- Construction backlog (construction_wait and its cause): a ghost's item at the ghost's quality, an upgrade's at the
+  target's (on the copy robots left a rare assembling-machine-2 ghost unbuilt with 5 normal ones in storage and built
+  it as rare once one rare was there); the cause names `assembling-machine-3@rare` missing.
+- Look-ahead (`stock falling to zero ...`): the network samples are by item@quality, so a falling rare stock is not
+  hidden by normal stock. Samples taken before this runtime (by name) are not compared with new ones: up to 30 min
+  after the deploy the line says `under 30 min of network samples yet`.
+- gates and the off_by_condition alert: a logistic condition's item read at its signal's quality (on the copy an
+  inserter's `iron-plate@uncommon > 0` stayed false with 100 normal plates in its network and turned true at 5
+  uncommon). gates names `iron-plate@uncommon`, counts the reserved pickups of that quality; the alert says
+  `(iron-plate@epic 0 now)`.
+- Checked, unchanged: logistics_audit (already by quality), supply (normal requests against normal stock), the
+  conditions' item_count (already by quality), silo and personal reads (by quality). Fuel, ammo and science-pack
+  network reads (fuelhours, turretammo, labs, research, seeds, launchneed, packaudit, ghostlist's network_holds)
+  still count normal by name.
+- Cost (network 22: 257 requester points, 511 filters, 9 of them not normal, 130 contents rows): the view's row
+  for that network on the copy, main's and this networks.lua loaded side by side and alternated (10 rows a sample):
+  medians 3.5-4.4 ms each, paired branch/main ratios 0.98-1.09 across runs (the copy's noise is larger than any
+  difference). A counted loop of the same code on a mock of that size (local Lua): the row 389-410 us against main's
+  397-419; the stock sample (every 5 game minutes, all networks) 16-17 us against 14. Engine reads: the same or
+  fewer (one supply read per item@quality).
+- Test: tests/d25_batch218.lua (fails on main in each part).
 ## d25 batch217 (QAB1, Sol #2390: one chest's robots beyond the first 1024)
 - Cause: Nauvis's network #243 has 7523 logistic robots, 2600-3500 of them in the air (`logistic_robots` lists only
   those). `reservations {network}` reads the orders of the first 1024 of them, so the robots between the landing pad
