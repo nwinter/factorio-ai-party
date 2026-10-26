@@ -88,7 +88,9 @@ def main():
     m3.ingest({"agents": [], "space": space(sky, rockets=40)}, t)
     m3.ingest({"agents": [], "space": space(sky, dict(star, name="Peregrine", at="vulcanus"), rockets=41)}, t + 1)
     kinds = sorted(x["kind"] for x in m3.moments)
-    assert kinds == ["new_platform", "orbit", "shift_rocket"], kinds
+    # (d26 batch239 NP) Peregrine is first listed already at Vulcanus: made there or there before, not "reaches
+    # Vulcanus" (shift80 07:25, Aethera); a first arrival is an observed trip (test_route_direction)
+    assert kinds == ["new_platform", "shift_rocket"], kinds
     al = [a for a in m3.alerts if a["kind"] == "space"]
     assert all(a.get("facts", {}).get("headline") for a in al), al
     assert any(a["text"] == "Rocket 41 launched, the first this shift" for a in al), al
