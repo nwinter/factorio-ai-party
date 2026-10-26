@@ -208,6 +208,10 @@ case $kind in
     args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
+    # (d26 batch250 BC) Tool hooks that record each call in .tool-call.json (the busy notice); Codex runs a project hook
+    # only once the route's config.toml trusts it. The result goes to the run's start.log.
+    { printf '%s %s: ' "$(date +%H:%M:%S)" "$player"; python3 "$root/tools/codex_hooks.py" setup "$dir" "${POG_ROUTE:-codex-b}" 2>&1 | tail -1; } \
+      >> "$(dirname "$dir")/start.log" || true
     # (d20 batch50 E2) Codex re-injects only AGENTS.md after a compaction: the team's ground rules go in it (a
     # ground_rules read files them in .ground_rules.json; fh keeps the section current when they change)
     { "$dir/fh" call ground_rules >/dev/null 2>&1 && python3 "$root/tools/brief.py" rules "$dir" >/dev/null; } || true
