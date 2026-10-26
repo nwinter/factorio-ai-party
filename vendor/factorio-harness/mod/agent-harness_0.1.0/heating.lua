@@ -169,8 +169,10 @@ return function(api)
   --   entities there as the game had them frozen or not (67 warmed through a corner only, none frozen).
   -- Built parts link by the engine's heat_neighbours, planned ones by their connection points. Bounded: PREVIEW_NODES
   -- parts walked, PATH_TILES tiles a path search visits, PATH_BOX tiles across its box.
-  local PREVIEW_NODES,PREVIEW_REMOVE,PREVIEW_BUILD,FREEZE_BOX,PATH_VISITS,PATH_BOX,PATH_MARGIN,PATHS,PATH_COMPONENTS=4000,256,64,64,2000,64,24,3,4
-  local FREEZE_READ=200  -- freezable entities read a preview, in freeze_box, the nearest the changes first
+  -- (cp2, operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms
+  -- on the copy) the boxes round the changes, the freeze read and the path search kept small
+  local PREVIEW_NODES,PREVIEW_REMOVE,PREVIEW_BUILD,FREEZE_BOX,PATH_VISITS,PATH_BOX,PATH_MARGIN,PATHS,PATH_COMPONENTS=4000,256,64,32,600,32,12,3,2
+  local FREEZE_READ,FREEZE_MARGIN=60,12  -- freezable entities read a preview, the nearest the changes first
   local FREEZABLE  -- the entity names with heating_energy above 0 (read once)
   M.PREVIEW_NODES,M.PATH_VISITS,M.PATH_BOX=PREVIEW_NODES,PATH_VISITS,PATH_BOX
   local function tkey(x,y) return (x+524288)*1048576+(y+524288) end
@@ -241,25 +243,46 @@ return function(api)
     if by1-by0>PATH_BOX then local m=math.floor((y0+y1)/2); by0,by1=m-PATH_BOX/2,m+PATH_BOX/2 end
     local function inbox(pos) return pos.x>=bx0 and pos.x<bx1 and pos.y>=by0 and pos.y<by1 end
     -- the heat networks touching the changes, walked by the engine's links (built) up to PREVIEW_NODES
-    local nodes,index,head={}, {}, 1
-    local function add(e)
-      if #nodes>=PREVIEW_NODES or index[e.unit_number] then return end
-      local proto=e.prototype
-      local k=kind(proto)
-      if not k.heat then return end
-      local n={e=e,proto=proto,name=e.name,unit=e.unit_number,k=k}
-      nodes[#nodes+1]=n; index[e.unit_number]=n
+    local nodes,index={}, {}
+    -- (cp2) each name's kind and prototype read once a call, not a prototype object a part
+    local by_name={}
+    local function add(e,u)
+      u=u or e.unit_number
+      if #nodes>=PREVIEW_NODES or index[u] then return end
+      local name=e.name
+      local pk=by_name[name]
+      if not pk then local proto=e.prototype; pk={proto=proto,k=kind(proto)}; by_name[name]=pk end
+      if not pk.k.heat then return end
+      local n={e=e,proto=pk.proto,name=name,unit=u,k=pk.k}
+      nodes[#nodes+1]=n; index[u]=n
     end
+    -- (cp2) walked network by network from each seed, so the walk gives the components before as it goes
+    local before,before_of={}, {}
     timed('heat.walk',function()
-      for _,e in ipairs(surface.find_entities_filtered{area={{x0-4,y0-4},{x1+5,y1+5}},force=force,type=HEAT_TYPES}) do add(e) end
-      while nodes[head] do
-        local n=nodes[head]; head=head+1
-        local links={}
-        for _,o in ipairs(n.e.heat_neighbours) do
-          local u=o.unit_number
-          if u then add(o); local m=index[u]; if m then links[#links+1]=m end end
+      for _,s0 in ipairs(surface.find_entities_filtered{area={{x0-4,y0-4},{x1+5,y1+5}},force=force,type=HEAT_TYPES}) do
+        local start=#nodes+1
+        if not index[s0.unit_number] then add(s0) end
+        if nodes[start] then
+          local c={nodes={},sources=0,consumers={}}
+          before[#before+1]=c
+          local k=start
+          while nodes[k] do
+            local n=nodes[k]; k=k+1
+            local links={}
+            for _,o in ipairs(n.e.heat_neighbours) do
+              local u=o.unit_number
+              if u then
+                local m=index[u]
+                if not m then add(o,u); m=index[u] end
+                if m then links[#links+1]=m end
+              end
+            end
+            n.links=links
+            before_of[n]=c; c.nodes[#c.nodes+1]=n
+            if n.k.source then c.sources=c.sources+1 end
+            if n.k.consumer then c.consumers[#c.consumers+1]=n end
+          end
         end
-        n.links=links
       end
     end)
     local capped=#nodes>=PREVIEW_NODES
@@ -270,11 +293,10 @@ return function(api)
       for _,c in ipairs(n.points) do local k=tkey(c.x,c.y); local l=points[k]; if not l then l={}; points[k]=l end; l[#l+1]={n=n,c=c} end
     end
     timed('heat.points',function()
-      for _,n in ipairs(nodes) do
-        local e=n.e
-        local pos=e.position
-        n.position=pos
-        if not gone[n.unit] and inbox(pos) then n.direction=e.direction; point_index(n) end
+      -- (cp2) the walked parts in the path box, from one find there: positions read only for those
+      for _,e in ipairs(surface.find_entities_filtered{area={{bx0,by0},{bx1,by1}},force=force,type=HEAT_TYPES}) do
+        local n=index[e.unit_number]
+        if n and not gone[n.unit] then n.position=e.position; n.direction=e.direction; point_index(n) end
       end
     end)
     local live_planned={}
@@ -313,25 +335,20 @@ return function(api)
       if after then for _,r in ipairs(live_planned) do if not comp[r] then visit(r) end end end
       return comp,list
     end
-    local before_of,before,after
+    local after
     timed('heat.components',function()
-      before_of,before=components(false)
       local _
       _,after=components(true)
     end)
+    local function where(n) local q=n.position; if not q then q=n.e.position; n.position=q end; return q end
     local function summary(c)
       local names={}
-      local first
-      for _,n in ipairs(c.nodes) do
-        names[n.name]=(names[n.name] or 0)+1
-        local q=n.position
-        if not first or q.y<first.y or q.y==first.y and q.x<first.x then first=q end
-      end
+      for _,n in ipairs(c.nodes) do names[n.name]=(names[n.name] or 0)+1 end
       local parts={}
       for k,v in pairs(names) do parts[#parts+1]=v..' '..k end
       table.sort(parts)
-      return string.format('%d parts (%s), %s, first at %s',#c.nodes,table.concat(parts,', '),
-        c.sources>0 and c.sources..' heat source'..(c.sources==1 and '' or 's') or 'no heat source',at(first))
+      return string.format('%d parts (%s), %s, a part at %s',#c.nodes,table.concat(parts,', '),
+        c.sources>0 and c.sources..' heat source'..(c.sources==1 and '' or 's') or 'no heat source',at(where(c.nodes[1])))
     end
     local out={preview=true,surface=surface.name,removed=#removed,planned=#planned}
     out.before={}; for _,c in ipairs(before) do out.before[#out.before+1]=summary(c) end
@@ -343,17 +360,20 @@ return function(api)
         for _,n in ipairs(c.nodes) do local b=n.unit and before_of[n]; if b and b.sources>0 then lost[#lost+1]=c; break end end
       end
     end
+    local lost_of={}
+    for _,c in ipairs(lost) do for _,x in ipairs(c.nodes) do lost_of[x]=true end end
     -- the heat-network consumers (heat exchangers and other heat users) in them, cut from every source
     out.unheated={}
     for _,c in ipairs(lost) do
       local cons={}
-      for _,n in ipairs(c.consumers) do if #cons<8 then cons[#cons+1]=n.name..' '..at(n.position) end end
+      for _,n in ipairs(c.consumers) do if #cons<8 then cons[#cons+1]=n.name..' '..at(where(n)) end end
       out.unheated[#out.unheated+1]={component=summary(c),consumers=#cons>0 and cons or nil,consumers_count=#c.consumers}
     end
-    -- freezing: entities with heating_energy (the game's freezable ones) in the freeze box (the removed entities and
-    -- the cut-off parts, at most FREEZE_BOX across round the changes), each against the heaters touching it (from
-    -- the walked network's tiles: no find a heater)
-    if required then
+    -- freezing: entities with heating_energy (the game's freezable ones) in the freeze box (the changes with
+    -- FREEZE_MARGIN tiles round them, at most FREEZE_BOX across), each against the heaters touching it (one find of the
+    -- heaters there; a walked one by its network after, one not walked by its temperature: its network is unchanged)
+    -- (cp2) only a removal takes heat away (a build adds it): the freeze box and its order come from the removals
+    if required and #removed>0 then
       local warm_after={}
       for _,c in ipairs(after) do if c.sources>0 then for _,n in ipairs(c.nodes) do warm_after[n]=true end end end
       local rows,kw,beyond,unread={}, {}, 0, 0
@@ -372,26 +392,44 @@ return function(api)
           local b=box(proto,pos,dir)
           for x=b.l,b.r do for y=b.t,b.b do local k=tkey(x,y); local l=htile[k]; if not l then l={}; htile[k]=l end; l[#l+1]=n end end
         end
-        local fx0,fy0,fx1,fy1
-        local function fgrow(q) fx0=math.min(fx0 or q.x,q.x);fy0=math.min(fy0 or q.y,q.y);fx1=math.max(fx1 or q.x,q.x);fy1=math.max(fy1 or q.y,q.y) end
-        for _,e in ipairs(removed) do fgrow(e.position) end
-        for _,c in ipairs(lost) do for _,n in ipairs(c.nodes) do if n.position then fgrow(n.position) end end end
-        local cx,cy=(x0+x1)/2,(y0+y1)/2
-        local h=FREEZE_BOX/2
-        local lx0,ly0,lx1,ly1=math.max(fx0-2,cx-h),math.max(fy0-2,cy-h),math.min(fx1+3,cx+h),math.min(fy1+3,cy+h)
-        beyond=(fx0-2<cx-h or fy0-2<cy-h or fx1+3>cx+h or fy1+3>cy+h) and 1 or 0
-        for _,n in ipairs(nodes) do
-          local q=n.position
-          if n.k.heater and q.x>=lx0-3 and q.x<=lx1+3 and q.y>=ly0-3 and q.y<=ly1+3 then
-            mark(n,n.proto,q,n.proto.type=='heat-pipe' and 0 or n.e.direction)
-          end
+        local rx0,ry0,rx1,ry1
+        local cells,cell_list={}, {}
+        for _,e in ipairs(removed) do
+          local q=e.position
+          rx0=math.min(rx0 or q.x,q.x);ry0=math.min(ry0 or q.y,q.y);rx1=math.max(rx1 or q.x,q.x);ry1=math.max(ry1 or q.y,q.y)
+          local ck=tkey(math.floor(q.x/8),math.floor(q.y/8))
+          if not cells[ck] then cells[ck]=true; cell_list[#cell_list+1]={x=math.floor(q.x/8)*8+4,y=math.floor(q.y/8)*8+4} end
         end
+        local cx,cy=(rx0+rx1)/2,(ry0+ry1)/2
+        local h=FREEZE_BOX/2
+        local lx0,ly0,lx1,ly1=math.max(rx0-FREEZE_MARGIN,cx-h),math.max(ry0-FREEZE_MARGIN,cy-h),math.min(rx1+FREEZE_MARGIN,cx+h),math.min(ry1+FREEZE_MARGIN,cy+h)
+        local in_box=0
+        for _,e in ipairs(surface.find_entities_filtered{area={{lx0-2,ly0-2},{lx1+2,ly1+2}},force=force,type={'heat-pipe','reactor'}}) do
+          local n=index[e.unit_number]
+          if not n then
+            -- a heater of a network the changes do not touch: as it is now
+            n={name=e.name,position=e.position,e=e,unit=e.unit_number,outside=true}
+          else
+            n.position=n.position or e.position
+            if n.k and lost_of[n] then in_box=in_box+1 end
+          end
+          mark(n,e.prototype,e.position,e.type=='heat-pipe' and 0 or e.direction)
+        end
+        local lost_parts=0
+        for _,c in ipairs(lost) do lost_parts=lost_parts+#c.nodes end
+        beyond=lost_parts>in_box and 1 or 0
         for _,r in ipairs(live_planned) do if heats(r.proto) then mark(r,r.proto,r.position,r.direction) end end
         local cands=surface.find_entities_filtered{area={{lx0,ly0},{lx1,ly1}},force=force,name=FREEZABLE}
         if #cands>FREEZE_READ then
           unread=#cands-FREEZE_READ
           local d={}
-          for _,c in ipairs(cands) do local q=c.position; d[c]=(q.x-cx)^2+(q.y-cy)^2 end
+          -- the nearest a removal first (by the 8-tile cells the removals are in)
+          for _,c in ipairs(cands) do
+            local q=c.position
+            local best
+            for _,cl in ipairs(cell_list) do local v=(q.x-cl.x)^2+(q.y-cl.y)^2; if not best or v<best then best=v end end
+            d[c]=best
+          end
           table.sort(cands,function(u,v) return d[u]<d[v] end)
         end
         local stamp=0
@@ -410,6 +448,10 @@ return function(api)
                     n.stamp=stamp
                     if n.planned then
                       if warm_after[n] then warm_now=warm_now or n end
+                    elseif n.outside then
+                      local t=n.temp
+                      if t==nil then t=try(function() return n.e.temperature end) or 0; n.temp=t end
+                      if t>=30 then warm_before=warm_before or n; warm_now=warm_now or n end
                     else
                       if gone[n.unit] or not warm_after[n] then hit=true end
                       local t=n.temp
@@ -434,8 +476,8 @@ return function(api)
       if #rows>0 then out.freeze_count=#rows; out.freeze={}; for i=1,math.min(#rows,32) do out.freeze[i]=rows[i] end
         if #rows>32 then out.freeze[#out.freeze+1]=(#rows-32)..' more' end end
       local why={}
-      if beyond>0 then why[#why+1]='cut-off parts reach past freeze_box (at most '..FREEZE_BOX..' across round the changes): entities beside them there not read' end
-      if unread>0 then why[#why+1]=unread..' more entities with heating_energy in freeze_box not read (the '..FREEZE_READ..' nearest the changes read)' end
+      if beyond>0 then why[#why+1]='cut-off parts reach past freeze_box (the removals with '..FREEZE_MARGIN..' tiles round them, at most '..FREEZE_BOX..' across): entities beside them there not read' end
+      if unread>0 then why[#why+1]=unread..' more entities with heating_energy in freeze_box not read (the '..FREEZE_READ..' nearest a removal read)' end
       out.freeze_unread=#why>0 and table.concat(why,'; ') or nil
       local k={} for n,v in pairs(kw) do k[#k+1]=string.format('%s %g kW',n,v) end
       table.sort(k)

@@ -96,7 +96,7 @@ local r=H.preview(p,aq,{remove={{x=3.5,y=3.5}},build={{name='beacon',position={x
 eq(r.removed,1); eq(r.planned,2)
 eq(#r.before,1); has(r.before[1],'13 parts (1 heat-exchanger, 1 heating-tower, 11 heat-pipe), 1 heat source')
 eq(#r.after,2)
-has(r.after[1],'12 parts (1 heat-exchanger, 11 heat-pipe), no heat source'); has(r.after[2],'1 parts (1 heating-tower), 1 heat source, first at (20.5,3.5)')
+has(r.after[1],'12 parts (1 heat-exchanger, 11 heat-pipe), no heat source'); has(r.after[2],'1 parts (1 heating-tower), 1 heat source, a part at (20.5,3.5)')
 eq(#r.unheated,1); eq(r.unheated[1].consumers_count,1); eq(r.unheated[1].consumers[1],'heat-exchanger (9.5,11)')
 -- freezing: the water pipe on the tower's side, the one at its corner, and the inserter beside a cut-off pipe
 eq(r.freeze_count,3)

@@ -15960,3 +15960,20 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - airtime.py and vx_review.py count no dry run or settings-only launch as a fresh event.
 - director_replay.py `--timed`: the log's timed shots replayed at their times (with `--chart`, its own quiet views).
 - Test: tools/stream/test_idlecam.py.
+- cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
+  the copy): smaller defaults, the flags unchanged.
+  - The walk gives the components before as it goes (no second pass); positions and connection points are read only
+    for the walked parts a find in the path box returns; a network's line says "a part at (x,y)" (one read).
+  - freeze: only removals take heat away, so `freeze_box` is the removals with 12 tiles round them, at most 32 across;
+    its heaters from one find there (a heater of a network the changes do not touch: as it is now); the 60 entities
+    nearest a removal read (by the 8-tile cells the removals are in), the rest counted in `freeze_unread`.
+  - paths: `path_box` the changes with 12 tiles round them, at most 32 across; 600 tiles searched a read; 2 unheated
+    networks searched (`paths_unread` counts the rest), 3 paths each.
+  - On the copy (5 calls each; the Mac shared with another engineer's copy, load average 17-25):
+    - Astra's pipe removal (7 removals, 1005-part network): 18-19 ms a call (the first 29): heat.walk 4.7, heat.freeze
+      4.2, heat.points 2.4, heat.paths 2.4, heat.components 1.3, the team block 2.1;
+    - the tower move (3 removals, 2 builds): 17-20 ms: walk 3.8, freeze 3.9, points 1.8, paths 1.9, components 1.2;
+    - 20 removals (5 networks cut off): 19-23 ms: walk 3.9, freeze 3.4, points 2.5, paths 3.2, components 1.3;
+    - one planned heat pipe on Nauvis: 2.7-3.2 ms.
+    The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
+    the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
