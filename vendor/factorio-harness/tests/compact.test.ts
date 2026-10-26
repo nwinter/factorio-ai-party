@@ -58,5 +58,5 @@ test('every Lua suite passes against the compacted modules, and the compacted bu
   const file = join(dir, 'bundle.lua');
   await writeFile(file, bundle);
   execFileSync(lua, ['-e', `local f=assert(io.open(${JSON.stringify(file)})); assert(load(f:read('a'),'@bundle','t'))`], {stdio: 'pipe'});
-  assert.ok(Buffer.byteLength(bundle) < Buffer.byteLength(await bundleRuntime('mod/agent-harness_0.1.0/runtime.lua', {compact: false})));
+  assert.ok(Buffer.byteLength(bundle) < Buffer.byteLength(await bundleRuntime('mod/agent-harness_0.1.0/runtime.lua', {compact: false, limit: false})));
 });
