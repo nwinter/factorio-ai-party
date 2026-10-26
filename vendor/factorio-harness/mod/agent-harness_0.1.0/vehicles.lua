@@ -410,6 +410,16 @@ return function(api)
   end
   -- One tick of a drive: steer toward the target, ease off near it, stop
   -- there. riding_state is what a player's keys set.
+  local in_place = {}  -- prototype name -> it turns on the spot (tank_driving: a tank, not a car)
+  local function turns_in_place(v)
+    local t = in_place[v.name]
+    if t == nil then
+      local ok, td = pcall(function() return v.prototype.tank_driving end)
+      t = ok and td and true or false
+      in_place[v.name] = t
+    end
+    return t
+  end
   local function angle_to(from, to)
     -- Factorio orientation: 0 north, 0.25 east, clockwise, 0..1.
     local o = (math.atan2 or math.atan)(to.x - from.x, -(to.y - from.y)) / (2 * math.pi)
@@ -657,6 +667,15 @@ return function(api)
         name, ((long * long + short * short) ^ 0.5) * 2, nav.position.x, nav.position.y, t.what, M.touch_line(t.list, 3))
     else
       nav.why = string.format('no path for the %s (%.1f by %.1f tiles) to (%g,%g)', name, short * 2, long * 2, nav.position.x, nav.position.y)
+      -- (d26 batch243 review) what the target itself stands on: a tile the vehicle cannot, or ground it can with no
+      -- way through to it (copy: an island ringed by water read only "no path")
+      local okt, tile = pcall(function()
+        local t = v.surface.get_tile(nav.position.x, nav.position.y)
+        for layer in pairs(v.prototype.collision_mask.layers) do if t.collides_with(layer) then return t.name end end
+        return false
+      end)
+      if okt and tile then nav.why = nav.why .. string.format(' (the target itself is on %s, which it cannot drive on)', tile)
+      elseif okt then nav.why = nav.why .. ' (the target is on ground it can drive on: water, cliffs or buildings close every way to it)' end
     end
   end
   -- A path result for a drive: the next plan when none, then unreachable.
@@ -988,7 +1007,11 @@ return function(api)
     local accel
     if nav then
       local sharp = math.abs(diff)
-      if sharp > 0.2 then accel = speed > 0.03 and R.acceleration.braking or R.acceleration.nothing
+      -- (d26 batch243 review, copy) a car turns only while it rolls (prototype tank_driving false): stood facing away
+      -- from its path it never turned, and a drive round a wall's end ended blocked ("nothing that collides") in 5 s;
+      -- it creeps forward while it turns (a tank turns on the spot)
+      if sharp > 0.2 and not turns_in_place(v) then accel = speed > 0.06 and R.acceleration.braking or (speed < 0.03 and GAS or R.acceleration.nothing)
+      elseif sharp > 0.2 then accel = speed > 0.03 and R.acceleration.braking or R.acceleration.nothing
       elseif sharp > 0.08 then accel = speed > 0.12 and R.acceleration.braking or (speed < 0.05 and GAS or R.acceleration.nothing)
       else accel = (d > 12 or speed < 0.08) and GAS or R.acceleration.nothing end
     else
