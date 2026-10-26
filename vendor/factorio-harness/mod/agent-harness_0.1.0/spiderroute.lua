@@ -30,6 +30,11 @@ return function(api)
   -- its stall. Stalled, it moves again only past WOBBLE tiles from where it stood or that much nearer its target.
   M.WOBBLE = 3
   M.GUARD_EVERY = 30
+  -- (d26 batch243 SR, viewer Aurora 13:42) a spidertron 1 tile from water (water within WATER_NEAR tiles on the line to its next
+  -- target) with no path being asked recovers after STALL_WATER ticks without progress: it backs off to the newest spot
+  -- of its trail (the last 6 sampled spots it stood with room for a path's box) 3 tiles or more away, else straight
+  -- back from its target, and asks again for a path from there, up to RECOVER times; then the stall.
+  M.STALL_WATER, M.WATER_NEAR, M.RECOVER = 180, 3, 3
   local function store()
     local s = api.state()
     s.spiderroute = s.spiderroute or {spiders={}, events={}, eseq=0}
@@ -109,6 +114,14 @@ return function(api)
     end
     if a.go_to ~= nil then
       local list = points(a.go_to)
+      -- (d26 batch243) a target on water: the dry spot nearest it (its legs stand nowhere on water; at (200,600) and
+      -- (500,600) on d26 the route ended at the shore, stalled)
+      if api.path and api.path.landing then
+        for i, q in ipairs(list) do
+          local okl, d, note = pcall(api.path.landing, spider.surface, q)
+          if okl and note then list[i] = d; out.landed = out.landed or {}; out.landed[#out.landed + 1] = note end
+        end
+      end
       local mode = a.mode or 'replace'
       if mode == 'replace' and not a.clear then spider.autopilot_destination = nil end
       if mode == 'append' and #before + #list > 128 then error('the route would hold over 128 targets', 0) end
@@ -128,6 +141,9 @@ return function(api)
     if #r > 0 then
       local t = entry(spider, r, by, index)
       if own ~= nil then t.retreat = own end
+      -- (d26 batch243) its trail (spots it stood with room for a path) is the spidertron's, kept across go_to calls
+      local old = st.spiders[spider.unit_number]
+      if old and old.trail then t.trail = old.trail end
       st.spiders[spider.unit_number] = t
       local cfg = M.guard(spider, t)
       if cfg then out.retreat = api.retreat_line(cfg) .. (cfg.rider and ' (' .. cfg.rider .. ' rides it)' or '') .. string.format(', read every %d ticks', M.GUARD_EVERY) end
@@ -147,40 +163,59 @@ return function(api)
     local r = route(spider)
     local last = plan.targets[#plan.targets]
     if #r == 0 or dist(r[#r], last) > 0.5 then return end
-    if #pts == #plan.targets then
+    local found = false
+    for _, seg in pairs(plan.segs or {}) do if type(seg) == 'table' then found = true end end
+    local t0 = store().spiders[unit]
+    if not found and not plan.via then
+      if t0 then t0.no_path = table.concat(notes, '; ') end
       event(string.format('spidertron #%d: %s; its route stays %s', unit, table.concat(notes, '; '), route_line(r)), plan.by, unit)
       return
     end
+    if t0 then t0.no_path = not found and table.concat(notes, '; ') or nil end
     local err = api.path.write(spider, pts)
     local now = route(spider)
     local t = store().spiders[unit]
     if t and #now > 0 then t.near, t.best, t.target, t.moved = dist(spider.position, now[1]), dist(spider.position, now[1]), {x=now[1].x, y=now[1].y}, game.tick end
-    event(string.format('spidertron #%d: its route goes round the water now: %s%s%s', unit, route_line(now), #notes > 0 and '; ' .. table.concat(notes, '; ') or '',
-      err and '; the game refused it: ' .. err or ''), plan.by, unit)
+    -- (d26 batch243) a back-off's plan with no path found: its route goes back there and on, said as such
+    event(string.format(found and 'spidertron #%d: its route goes round the water now: %s%s%s' or 'spidertron #%d: no path round the water from its back-off spot either; its route: %s%s%s',
+      unit, route_line(now), #notes > 0 and '; ' .. table.concat(notes, '; ') or '', err and '; the game refused it: ' .. err or ''), plan.by, unit)
   end
-  -- (d24 batch191) no progress with water on the line ahead: a path round it once, then the shore. -> what was done.
-  local function unstick(e, t, r)
+  -- (d26 batch243) no progress with water within WATER_NEAR ahead (or STALL with water within GAP + 4) and no path being
+  -- asked: back off to the last spot it stood with room for a path's box (else the nearest one) and ask again from there,
+  -- the route going there first at once. -> what was done, or nil when nothing can be (then the stall line).
+  local function recover(e, t, r)
     local P = api.path
-    if not P then return nil end
-    if not t.rerouted then
-      t.rerouted = true
-      local ok, lines = pcall(P.plan, e, r, {owner='route', by=t.by})
-      if ok and lines then return 're-routed once: ' .. lines[1] .. '; a path round it was requested' end
+    if not (P and P.dry) then return nil end
+    t.tries = t.tries or {}
+    if #t.tries >= M.RECOVER then return nil end
+    local pos, q = e.position, r[1]
+    local okw, ahead = pcall(P.water_ahead, e.surface, pos, q)
+    if not (okw and ahead) then return nil end
+    -- the newest spot of its trail 3 tiles or more away (back the way it came), else straight back from the target
+    local back, from_trail = nil, false
+    for i = #(t.trail or {}), 1, -1 do
+      if dist(t.trail[i], pos) >= 3 then back, from_trail = t.trail[i], true; break end
     end
-    if not t.recovered then
-      -- water within GAP + 4 tiles on the line toward its target: the shore toward it
-      local pos, q = e.position, r[1]
-      local okw, ahead = pcall(P.water_ahead, e.surface, pos, q)
-      if not (okw and ahead) then return nil end
-      t.recovered = true
-      local oks, s = pcall(P.shore, e.surface, pos, q)
-      if not oks then s = nil end
-      if not s then return nil end
-      local route2 = {s}
-      for _, w in ipairs(r) do route2[#route2+1] = w end
-      local err = P.write(e, route2)
-      return string.format('shore recovery: its route goes first to %s, the tile its legs stand on nearest %s within 24 tiles%s', at(s), at(q), err and ' (the game refused it: ' .. err .. ')' or '')
+    if not back then
+      local okd, d = pcall(P.back, e.surface, pos, q)
+      back = okd and d or nil
     end
+    if not back then return nil end
+    local target = r[#r]
+    local route2 = {{x=back.x, y=back.y}}
+    for _, w in ipairs(r) do route2[#route2 + 1] = w end
+    local err = P.write(e, route2)
+    -- its legs did not cross here: any water on the line from the back-off spot asks for a path (gap 0)
+    local okp, lines = pcall(P.plan, e, {target}, {owner='route', by=t.by, from=back, gap=0})
+    local did = string.format('stalled %s, %s from water on the line to %s, with no path being asked: backed off to %s, the %s, and %s (recovery %d of %d)',
+      at(pos), ahead == 1 and '1 tile' or ahead .. ' tiles', at(q), at(back),
+      from_trail and 'last spot it stood 3 tiles or more back with room for a path' or 'spot with room for a path straight back from its target',
+      okp and lines and 'asked again for a path round the water to ' .. at(target) .. ' from there' or 'its route goes on from there (no water on the line from it)',
+      #t.tries + 1, M.RECOVER)
+    if err then did = did .. ' (the game refused the route: ' .. err .. ')' end
+    t.tries[#t.tries + 1] = did
+    t.far = dist(pos, target)
+    return did
   end
   -- What stands on the straight line from the spidertron toward its target, within AHEAD tiles, that its legs collide
   -- with: the first tile or entity, as text, or nil.
@@ -228,6 +263,10 @@ return function(api)
       out.sampling = string.format('moving or sampled under %d s: last progress %s ago', math.floor(M.STALL / 60), ago(game.tick - t.moved))
     end
     if t and t.retreated then out.retreated = t.retreated end
+    -- (d26 batch243) what it did on its own, and whether a path is being asked or none was found
+    if t and t.tries and #t.tries > 0 then out.recovery = t.tries end
+    if api.path and api.path.pending and api.path.pending(spider.unit_number) then out.path = 'a path round the water is being asked'
+    elseif t and t.no_path then out.no_path = t.no_path end
     if t and #r > 0 and t.stalled then
       local why = ahead(spider, r[1])
       out.stalled = {since_tick=t.moved, for_s=math.floor((game.tick - t.moved) / 60), position=spider.position, target=r[1],
@@ -287,7 +326,7 @@ return function(api)
       local okp, lines = pcall(api.path.plan, e, {cfg.to}, {owner='route', by=t.by})
       if okp and lines then water = lines[1] .. ': a path round the water was requested (the route becomes it when it comes)' end
     end
-    t.rerouted, t.recovered = nil, nil
+    t.rerouted, t.recovered, t.tries = nil, nil, nil
     local parts = {}
     for i, d in ipairs(before) do parts[i] = at(d) end
     local rec = {spidertron=e.name, unit_number=unit, why=info.why, from=info.from, health=info.health, shield=info.shield, to=cfg.to,
@@ -373,19 +412,43 @@ return function(api)
         -- its nearest; it moved over 1 tile without coming nearer while sliding along a lake's edge on the copy)
         local step = t.stalled and M.WOBBLE or 2 * M.MOVED
         local best = t.best or t.near
+        -- (d26 batch243) the last spot it stood with room for a path's box (where a back-off goes)
+        local P = api.path
+        if P and P.clear then
+          local okc, room = pcall(P.clear, e.surface, pos)
+          local q0 = {x=math.floor(pos.x) + 0.5, y=math.floor(pos.y) + 0.5}
+          t.trail = t.trail or {}
+          local last = t.trail[#t.trail]
+          if okc and room and not (last and last.x == q0.x and last.y == q0.y) then
+            t.trail[#t.trail + 1] = q0
+            if #t.trail > 6 then table.remove(t.trail, 1) end
+          end
+        end
+        local idle = game.tick - t.moved
+        local quick = false
+        if not t.stalled and idle >= M.STALL_WATER and P and P.water_ahead and not (P.pending and P.pending(unit)) then
+          local okw, wa = pcall(P.water_ahead, e.surface, pos, r[1], M.WATER_NEAR)
+          quick = okw and wa or false
+        end
+        -- recoveries count afresh once it is 30 tiles nearer its last target than at the last one
+        if t.tries and t.far and dist(pos, r[#r]) < t.far - 30 then t.tries, t.far = nil, nil end
         if near < best - step or target_moved then
           if t.stalled then event(string.format('spidertron #%d moves again: at %s toward %s', unit, at(pos), at(r[1])), t.by, unit) end
           t.pos, t.near, t.best, t.moved, t.stalled, t.target = {x=pos.x, y=pos.y}, near, near, game.tick, nil, {x=r[1].x, y=r[1].y}
-        elseif not t.stalled and game.tick - t.moved >= M.STALL then
-          local did = unstick(e, t, r)
+        elseif quick or (not t.stalled and idle >= M.STALL) then
+          local did = recover(e, t, r)
           if did then
-            t.moved, t.best = game.tick, near
-            event(string.format('spidertron #%d: no progress toward %s for %s at %s; %s', unit, at(r[1]), ago(M.STALL), at(pos), did), t.by, unit)
+            local now = route(e)
+            t.moved, t.best, t.near = game.tick, now[1] and dist(pos, now[1]) or near, now[1] and dist(pos, now[1]) or near
+            if now[1] then t.target = {x=now[1].x, y=now[1].y} end
+            event(string.format('spidertron #%d: no progress toward %s for %s; %s', unit, at(r[1]), ago(idle), did), t.by, unit)
           else
             t.stalled = true
             local f = M.facts(e)
             local held = st.locks and st.locks[unit]
-            event(string.format('spidertron #%d: %s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress', f.route_line,
+            event(string.format('spidertron #%d: %s%s%s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress',
+              t.tries and #t.tries > 0 and string.format('; %d recover%s tried', #t.tries, #t.tries == 1 and 'y' or 'ies') or '',
+              t.no_path and '; ' .. t.no_path or '', f.route_line,
               held and 'its retreat route; held: go_to is refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat)'
                 or 'vehicle {go_to, mode: "replace"} sets a new one, {clear: true} empties it'), t.by, unit)
             if held and held.agents[2] and held.agents[2] ~= t.by then event(st.events[#st.events].text, held.agents[2], unit) end
