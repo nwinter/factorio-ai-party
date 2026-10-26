@@ -15609,3 +15609,37 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Replayed (tools/stream/director_replay.py, main's rules -> these): 19:43-21:40 idle or loop 81.1% -> 47.0%, loop
   68.7% -> 1.3%, fresh missed 4 of 8 -> 0, cuts 0.53 -> 0.72 a minute; at 1 and 2 cameras the same within 2.5 points.
 - Test: tools/stream/test_freshcam.py.
+## d26 batch224 (AY and VS: flare barrages and spider raids on the stream; viewer Aurora 05:29, site:4974/4976)
+- Runtime (artycam.lua, artillery.lua): the operator read `artillery_live` sees the team's flares and their shells. It
+  goes live at a world restart (`fh deploy`); agents read nothing new, and use_item's reply is unchanged.
+  - artillery.lua's use_item {item: "artillery-targeting-remote"} hands each flare to artycam (`flared`). A shell on a
+    team flare's path (waiting, or taken within 300 ticks) gets the flare's spot as its target, the enemy spawner or
+    worm within 6 tiles of it as its name, and `flare` {by, tick}; `by` is who flared it. Before this, a shell
+    matched only the spawners and worms in automatic range (627.2 tiles on world n); Opus's d26 flares were 1350-1460
+    tiles out, so their shells were left out.
+  - A shell's heading comes from two sightings in consecutive reads. On the private copy a shell started 0.3-2.4 tiles
+    off the line from its piece's centre to its flare, so one sighting pointed hundreds of tiles wide at 1400 tiles;
+    the path through two sightings passed its flare within 0.2 tiles. The reply's `pending` counts sightings waiting
+    for their second.
+  - Shells are looked for only on a surface whose artillery shells used (item statistics) rose since the last read:
+    every loaded piece within the distance a shell flies between reads when the reads come every 0.2 s, else 4 pieces
+    in turn. A piece seen firing is skipped until its 200-tick cooldown is nearly over.
+  - The automatic targets: a nest index a surface, built one 8x8-chunk box a read (0.39 ms on the copy), again a
+    minute after the last. It replaces a find over each piece's 627-tile range once a minute, 10.5 ms on the copy
+    with nothing found: world n's nests in reach were cleared on d26.
+  - Pieces: up to 64 (was 16; world n has 26 artillery turrets), from the census's lists where it walked the surface.
+  - `every`: 0.2 while a team flare is kept or a sighting is pending, 0.5 while a piece has automatic targets, else 10.
+    `pieces` is now a count; `{pieces: true}` gives the rows (nothing read them, and they were most of the reply).
+  - Cost on the private copy (world n's 05:42 save, 26 pieces, as `remote.call` dispatch time minus the reply's JSON):
+    a read with no flare 0.49 ms median, of which 0.28 ms is dispatch (a refused read costs that) and 0.24 ms is the
+    read itself (timed alone). During a 30-flare barrage at the 0.2 s pace, 0.84 ms median and 4.8 ms max. The JSON
+    is 6 numbers a read (median) and 75 at most (3.9 us a number on world n).
+- Service (serve.py): the artillery poller follows `every` down to 0.1 s, and a flare request in a journal
+  (work.WorkFeed.flare_at) cuts its 10 s wait short.
+- Director (onecam.py; host only, live at a stream-service restart): a shell is judged arty_pre (6 s) before it lands.
+  The shot holds while the barrage's shells land within arty_near (48 tiles) or are flared by the same agent, up to
+  arty_max (90 s, was 20), with its frame on the impacts due next. arty_gap (120 s) now counts from the end of the last
+  artillery shot. A remote spidertron walking, firing or near a reported fight keeps its agent active and on the
+  vehicle (vehicle_keep 600 s); a vehicle switch is cut to as framed.
+- Tests: tests/d17_artycam.lua (the index, two sightings, flares, the search bounds), tools/stream/test_raidcam.py,
+  test_artycam.py.

@@ -108,6 +108,10 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   planet, basetour.py, chart-checked, a slow camera move; a platform visit; the base map), then the best lively agent;
   an agent driving a vehicle by remote view is shown where the vehicle is. airtime.py measures a log; director_replay.py
   replays one through these rules.
+- Flare barrages and spider raids (d26 batch224 AY/VS, viewer Aurora 05:29; ONECAM arty_*, vehicle_keep, vehicle_flip):
+  a shell from artillery_live is judged arty_pre before it lands; the shot holds while the barrage's shells land there
+  (or are flared by the same agent), up to arty_max, its frame on the impacts due next; arty_gap counts from its end.
+  A remote vehicle walking, firing or near a fight keeps its agent active and on the vehicle while that lasts.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -343,11 +347,19 @@ ONECAM = {
     # lands, held through the impact, then back to the story; below every urgent shot, battle, operator hold, segment
     # and fight (maybe_artillery)
     "artillery": True,
-    "arty_gap": 180.0,      # an artillery shot at most this often
+    # (d26 batch224 AY, viewer Aurora 05:29: "Opus's shelling is off-screen. Follow the vehicle or target area while
+    # the action lasts") A flare barrage: 40-110 flares in 8-28 s over nest clusters 50-500 tiles across, 21 pieces
+    # 1000-1460 tiles off firing every 3.3 s, shells up 17-24 s: impacts over a minute or so. A shell is kept until
+    # arty_pre before it lands; the shot holds while shells land within arty_near of where it looks (or flared by the
+    # same agent), up to arty_max, its frame moved to the impacts due next (arty_frame).
+    "arty_gap": 120.0,      # (batch224) from the end of one artillery shot to the start of the next
     "arty_lead": 0.6,       # a shell landing sooner than this is let go (the cut would come after it)
+    "arty_pre": 6.0,        # (batch224) a shell landing later than this is judged this long before it lands
     "arty_after": 4.0,      # held this long after the (last) impact
-    "arty_max": 20.0,       # an artillery shot at most this long, more shells landing there or not
-    "arty_near": 32.0,      # tiles: a later shell landing this close to the shot's target extends it
+    "arty_max": 90.0,       # (batch224; was 20) an artillery shot at most this long while more shells land there
+    "arty_near": 48.0,      # tiles: a later shell landing this close to the shot's frame or target extends it
+    "arty_move": 2.5,       # (batch224) the barrage's frame moved at most this often
+    "arty_zoom_min": 0.45,  # (batch224) the widest frame of a barrage's impacts
     "arty_zoom": 0.8,
     # Attention (Nick, 2026-10-13 12:00: "can we give a better feel in the stream for what they are paying attention
     # to?"; module doc): the agent on air looks or works away from its character -> the spot in the inset beside it
@@ -428,6 +440,13 @@ ONECAM = {
     "vehicle_stale": 30.0,
     "vehicle_near": 24.0,
     "vehicle_zoom": 0.75,
+    # (d26 batch224 VS, viewer Aurora 05:29) A remote vehicle walking (a read under vehicle_stale with speed, or a
+    # target given and not reached at vehicle_speed), firing (status vehicle_fire, seated) or in a fight or loss within
+    # fight_near of it keeps its agent active (not still, not looping, the move or fight boost) and on the vehicle
+    # while that lasts, from a read up to vehicle_keep old.
+    "vehicle_keep": 600.0,
+    "vehicle_speed": 45.0,  # km/h: a go_to reply has no speed (shift79 reads: 46-50 while walking)
+    "vehicle_flip": 20.0,   # an agent's shot switched between vehicle and character at most this often (replay 02:18:51)
 }
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
 DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
@@ -592,6 +611,9 @@ class OneCam(Director):
         self.cues = []          # (t, agent, decision, label)
         self.arty_seen = set()  # artillery shell keys already judged
         self.last_arty = -1e9
+        self.arty_queue = []    # (batch224) shells landing later than arty_pre: {sh, lands, key}
+        self.arty_end = -1e9    # (batch224) when the last artillery shot ends (arty_gap counts from it)
+        self.arty_said = {}     # (batch224) a drop's reason -> when it was last logged (a barrage's drops once per 10 s)
         self.artys = []         # (t, decision, why, label)
         self.fight_cands = {}  # fight episode -> {score, t, pieces, text, taken?}: candidates for a battle
         self.incoming = None   # a followed enemy group: {id, since, label, score, until}
@@ -611,6 +633,8 @@ class OneCam(Director):
         self.fresh = {}        # name -> (t, why): its latest fresh event
         self.progress = {}     # name -> [when its action last placed pieces, its count then]
         self.vehicle_was = {}  # name -> the remote vehicle row last seen (a new target is a fresh event)
+        self.vehicle_act = {}  # (batch224) name -> its vehicle's activity at the last step (vehicle_activity)
+        self.vehicle_swapped = {}  # (batch224) name -> when keep_vehicle last switched its shot (vehicle_flip)
         self.tours = None      # basetour.Tours (serve.py set_tours), or None: no base tours
         self.toured = {}       # surface -> when its tour last went on air
         self.last_tour = None
@@ -919,7 +943,7 @@ class OneCam(Director):
         for a in agents:
             m = self.motion.get(a["name"])
             p = a.get("position")
-            acting = a.get("combat") or plan_kind(a) in VISIBLE
+            acting = a.get("combat") or plan_kind(a) in VISIBLE or self.vehicle_activity(a, now)  # (batch224 VS)
             if m is None:
                 self.motion[a["name"]] = m = {"pos": p, "still_since": now, "moved": now}
             if p and m["pos"] and dist(p, m["pos"]) >= self.cfg["still_moved"]:
@@ -1017,6 +1041,10 @@ class OneCam(Director):
             why = why or f"{v.get('vehicle') or 'vehicle'} by remote view"
         if v:
             self.vehicle_was[n] = v
+        act = self.vehicle_activity(a, now)  # (batch224 VS) its vehicle starts firing or fighting: news
+        if act in ("fighting", "firing") and self.vehicle_act.get(n) not in ("fighting", "firing"):
+            why = why or f"{(v or a.get('vehicle_fire') or {}).get('vehicle') or 'vehicle'} {act}"
+        self.vehicle_act[n] = act
         p = a.get("position")
         if p and not why:
             places, s = self.places.setdefault(n, []), surface_of(a)
@@ -1046,14 +1074,53 @@ class OneCam(Director):
         return 1.0 + self.cfg["fresh_boost"] * max(0.0, 1.0 - age / self.cfg["fresh_s"])
 
     # -- (batch222 CD) a vehicle by remote view --------------------------------------------------------------------
+    def vehicle_where(self, v, now):
+        """Where a remote vehicle read (VehicleFeed row) has it now: a spidertron walking to its target led along that
+        line at its read speed (a go_to reply's none: vehicle_speed), at most to the target; -> ({x, y}, going)."""
+        spot = {"x": float(v["position"]["x"]), "y": float(v["position"]["y"])}
+        goal, speed = v.get("target"), v.get("speed")
+        if speed is None and goal:
+            speed = self.cfg["vehicle_speed"]
+        if not goal or not isinstance(speed, (int, float)) or speed <= 0:
+            return spot, False
+        d = math.hypot(goal["x"] - spot["x"], goal["y"] - spot["y"])
+        go = min(d, speed / 3.6 * max(0.0, now - v.get("t", now)))
+        if d <= 0:
+            return spot, False
+        return {"x": round(spot["x"] + (goal["x"] - spot["x"]) * go / d, 1),
+                "y": round(spot["y"] + (goal["y"] - spot["y"]) * go / d, 1)}, d - go > 1.0
+
+    def vehicle_activity(self, a, now):
+        """(batch224 VS) What the agent's vehicle does now that counts as action: "firing" (status vehicle_fire, seated:
+        enemies within its guns' reach, ammo in), "fighting" (a fight or loss still reported within fight_near of its
+        remote vehicle, a read up to vehicle_keep old), "walking" (a read under vehicle_stale showing speed, or a target
+        given and not reached yet at the lead's speed); else None."""
+        if not a:
+            return None
+        vf = a.get("vehicle_fire")
+        if isinstance(vf, dict) and vf.get("targets") and vf.get("ammo"):
+            return "firing"
+        v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else None
+        if not v or not isinstance(v.get("position"), dict):
+            return None
+        age = now - v.get("t", -1e9)
+        if age > self.cfg["vehicle_keep"]:
+            return None
+        spot, going = self.vehicle_where(v, now)
+        if self.fight_fresh(dict(spot, surface=surface_of(a)), now):
+            return "fighting"
+        if going or (age <= self.cfg["vehicle_stale"] and (v.get("speed") or 0) > 0):
+            return "walking"
+        return None
+
     def vehicle_spot(self, a, now, held=False):
         """Where the agent's vehicle by remote view is now, as {x, y, surface, label}; None when it drives none, the
-        read is stale (vehicle_stale; held: twice that for a shot already on the vehicle) or the vehicle is near its
-        character."""
+        read is stale (vehicle_stale; held: twice that for a shot already on the vehicle; batch224: vehicle_keep while
+        it walks, fires or fights, vehicle_activity) or the vehicle is near its character."""
         if not a or not a.get("position"):
             return None
         cfg, spot, label = self.cfg, None, None
-        stale = cfg["vehicle_stale"] * (2 if held else 1)
+        stale = cfg["vehicle_keep"] if self.vehicle_activity(a, now) else cfg["vehicle_stale"] * (2 if held else 1)
         drive = (a.get("plan") or {}).get("remote")
         m = COORD_RE.search(drive) if isinstance(drive, str) else None
         if m:  # a drive by remote view: status reads it every poll
@@ -1061,14 +1128,7 @@ class OneCam(Director):
             label = drive.split(" at ", 1)[0].replace("-", " ")
         v = a.get("remote_vehicle") if isinstance(a.get("remote_vehicle"), dict) else None
         if not spot and v and isinstance(v.get("position"), dict) and now - v.get("t", -1e9) <= stale:
-            spot, label = dict(v["position"]), str(v.get("vehicle") or "vehicle").replace("-", " ")
-            goal, speed = v.get("target"), v.get("speed")
-            if goal and isinstance(speed, (int, float)) and speed > 0:  # led toward its target (km/h -> tiles/s)
-                d = math.hypot(goal["x"] - spot["x"], goal["y"] - spot["y"])
-                go = min(d, speed / 3.6 * max(0.0, now - v["t"]))
-                if d > 0:
-                    spot = {"x": round(spot["x"] + (goal["x"] - spot["x"]) * go / d, 1),
-                            "y": round(spot["y"] + (goal["y"] - spot["y"]) * go / d, 1)}
+            spot, label = self.vehicle_where(v, now)[0], str(v.get("vehicle") or "vehicle").replace("-", " ")
         if not spot or dist(spot, a["position"]) < cfg["vehicle_near"]:
             return None
         who = a.get("display_name") or a["name"]
@@ -1096,8 +1156,8 @@ class OneCam(Director):
             k = plan_kind(a)
             loop = self.loop_s(n, now)
             vehicle = self.vehicle_spot(a, now) is not None
-            if a.get("combat") or k in FIGHT:
-                f = cfg["fight_boost"]  # under attack or shooting: a strong pick
+            if a.get("combat") or k in FIGHT or self.vehicle_activity(a, now) in ("fighting", "firing"):
+                f = cfg["fight_boost"]  # under attack or shooting (batch224: or its vehicle is): a strong pick
             elif big_plan(a):
                 f = cfg["plan_boost"]
             elif vehicle:
@@ -2173,14 +2233,23 @@ class OneCam(Director):
 
     def arty_label(self, sh, by_name):
         """'💥 Artillery · Opus's artillery turret (298, -320) → big spitter nest (398, -320), 100 tiles, with 1 medium
-        worm turret'"""
+        worm turret'; (batch224) a flare's shell: '💥 Artillery · Opus's flare → big spitter nest (-1392, 48), with 1
+        medium worm turret · artillery turret (-273, -558), 1273 tiles'"""
         piece, t = sh.get("piece") or {}, sh.get("target") or {}
         by = sh.get("by") or piece.get("by")
         who = next((a.get("display_name") or a["name"] for a in by_name.values() if by and a["name"].lower() == str(by).lower()), by)
         pp, tp = sh.get("from") or piece.get("position") or {}, t.get("position") or {}
+        where = f"({round(tp.get('x', 0))}, {round(tp.get('y', 0))})"
+        if sh.get("flare"):
+            text = (f"💥 Artillery · {who + chr(39) + 's' if who else 'Our'} flare → "
+                    f"{self.arty_name(t['name']) + ' ' if t.get('name') else ''}{where}")
+            if t.get("around"):
+                text += f", with {self.arty_name(t['around'])}"
+            text += (f" · {self.arty_name(piece.get('name') or 'artillery')} ({round(pp.get('x', 0))}, "
+                     f"{round(pp.get('y', 0))})")
+            return text + (f", {sh['distance']} tiles" if sh.get("distance") else "")
         text = (f"💥 Artillery · {who + chr(39) + 's' if who else 'Our'} {self.arty_name(piece.get('name') or 'artillery')} "
-                f"({round(pp.get('x', 0))}, {round(pp.get('y', 0))}) → {self.arty_name(t.get('name'))} "
-                f"({round(tp.get('x', 0))}, {round(tp.get('y', 0))})")
+                f"({round(pp.get('x', 0))}, {round(pp.get('y', 0))}) → {self.arty_name(t.get('name'))} {where}")
         if sh.get("distance"):
             text += f", {sh['distance']} tiles"
         if t.get("around"):
@@ -2205,38 +2274,56 @@ class OneCam(Director):
 
     def maybe_artillery(self, snapshot, by_name, scores, now, segment=None):
         """A shell in flight (snapshot artillery: artillery_live's last read, read_at its wall time) -> a cut to its
-        target if nothing outranks it and it lands at least arty_lead from now, at most once per arty_gap; held
-        arty_after past the impact, longer (up to arty_max) while more shells land there. Each decision is logged."""
+        target if nothing outranks it and it lands at least arty_lead from now, at most arty_gap after the last
+        artillery shot ended; held arty_after past the impact, longer (up to arty_max) while more shells land there
+        (arty_joins). (batch224) A shell landing later than arty_pre is kept (arty_queue) and judged arty_pre before it
+        lands; a barrage's frame follows the impacts due next (arty_frame). Each decision is logged."""
         cfg = self.cfg
-        art = snapshot.get("artillery") or {}
-        if not cfg["artillery"] or not art.get("shells"):
+        if not cfg["artillery"]:
             return
+        art = snapshot.get("artillery") or {}
         read_at = float(art.get("read_at") or now)
-        cur = self.state.get(self.onair) or {}
-        shot = cur.get("artillery") if now < cur.get("until", 0) else None
-        for sh in art["shells"]:
+        for sh in art.get("shells") or []:
             key = sh.get("key")
             t = (sh.get("target") or {}).get("position")
             if not key or not t or key in self.arty_seen:
                 continue
             self.arty_seen.add(key)
-            lands = read_at + float(sh.get("eta_ticks") or 0) / 60.0
-            label = self.arty_label(sh, by_name)
-            if shot:  # a shot on air: a shell landing beside its target holds it longer
-                if sh.get("surface") == shot["surface"] and dist(t, shot["target"]) <= cfg["arty_near"]:
+            self.arty_queue.append({"sh": sh, "key": key, "lands": read_at + float(sh.get("eta_ticks") or 0) / 60.0})
+        due = sorted((q for q in self.arty_queue if q["lands"] - now <= cfg["arty_pre"]), key=lambda q: q["lands"])
+        self.arty_queue = [q for q in self.arty_queue if q["lands"] - now > cfg["arty_pre"]]
+        cur = self.state.get(self.onair) or {}
+        shot = cur.get("artillery") if now < cur.get("until", 0) else None
+        pend = self.state.get(self.pending["slot"]) if self.pending else None
+        if not shot and pend and pend.get("artillery"):  # (batch224) a shot still framed on its standby takes them too
+            cur, shot = pend, pend["artillery"]
+        if not shot and now < self.arty_end:
+            self.arty_end = now  # the shot was cut short (an urgent shot, a look): the spacing counts from now
+        for q in due:
+            sh, key, lands = q["sh"], q["key"], q["lands"]
+            t = sh["target"]["position"]
+            if shot:  # a shot on air: a shell landing there (or a barrage's, flared by the same agent) holds it longer
+                if self.arty_joins(shot, sh):
                     cur["until"] = min(shot["since"] + cfg["arty_max"], max(cur["until"], lands + cfg["arty_after"]))
+                    self.arty_end = max(self.arty_end, cur["until"])
                     shot["shells"] += 1
+                    shot.setdefault("spots", []).append((lands, t["x"], t["y"]))
+                    if shot.get("label"):
+                        cur["work"] = f"{shot['label']} · {shot['shells']} shells"
                 continue
+            label = self.arty_label(sh, by_name)
             lead = lands - now
             if lead < cfg["arty_lead"]:
                 decision, why = "drop", f"lands in {lead:.1f} s"
-            elif now - self.last_arty < cfg["arty_gap"]:
-                decision, why = "drop", f"spacing: the last artillery shot {int(now - self.last_arty)} s ago"
+            elif now < self.arty_end + cfg["arty_gap"]:
+                decision, why = "drop", f"spacing: the last artillery shot ended {int(now - self.arty_end)} s ago"
             else:
                 busy = self.arty_busy(by_name, now, segment)
                 decision, why = ("drop", busy) if busy else ("cut", f"nothing more interesting on air; lands in {lead:.1f} s")
             if decision == "cut":
-                shot = {"surface": sh.get("surface"), "target": t, "since": now, "shells": 1, "key": key}
+                shot = {"surface": sh.get("surface"), "target": t, "since": now, "shells": 1, "key": key,
+                        "spots": [(lands, t["x"], t["y"])], "center": dict(t), "moved": now, "label": label,
+                        "flare_by": str((sh.get("flare") or {}).get("by") or "").lower() or None}
                 target = {"agents": [], "subject": "@work", "position": {"x": t["x"], "y": t["y"]},
                           "surface": sh.get("surface") or "nauvis", "zoom": cfg["arty_zoom"], "exact_zoom": True,
                           "until": min(now + cfg["arty_max"], lands + cfg["arty_after"]), "work": label, "artillery": shot}
@@ -2244,19 +2331,63 @@ class OneCam(Director):
                 if self.pending:  # framed on a standby: cut in time for the impact
                     self.pending["ready_s"] = max(0.2, min(cfg["ready_s"], lead - 0.5))
                 self.last_arty = now
+                self.arty_end = target["until"]
                 # (d22 batch89 AY5) the next shells of this read hold the new shot, not the state that was on air
                 # (shift57 07:50:12: KeyError 'until' on a state without one); urgent() keeps a copy, on air or on the
                 # standby, sharing this shot
                 cur = next((st for st in self.state.values() if isinstance(st, dict) and st.get("artillery") is shot), target)
             self.artys.append((now, decision, why, label))
+            said = why.split(":")[0]
+            if decision == "drop" and now - self.arty_said.get(said, -1e9) < 10.0:
+                continue  # (batch224) a barrage's shells dropped for one reason: logged once per 10 s
+            self.arty_said[said] = now
             entry = {"key": key, "decision": decision, "why": why, "label": label, "lead": round(lead, 2)}
             if self.log_path:
                 with open(self.log_path, "a") as f:
                     f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
                                         "slot": "program", "reason": f"artillery {decision}: {why}", "artillery": entry}) + "\n")
             print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} artillery {decision} ({why}): {label}", flush=True)
+        if shot and self.onair and (self.state.get(self.onair) or {}).get("artillery") is shot:
+            self.arty_frame(self.state[self.onair], shot, now)
         if len(self.arty_seen) > 2000:
             self.arty_seen = set(list(self.arty_seen)[-500:])
+
+    def arty_joins(self, shot, sh):
+        """(batch224) A shell holds the shot on air: on its surface, landing within arty_near of where it looks or of
+        its first target, or a flare's shell by the agent whose flare it shows."""
+        t = sh["target"]["position"]
+        if (sh.get("surface") or "nauvis") != (shot.get("surface") or "nauvis"):
+            return False
+        near = self.cfg["arty_near"]
+        if dist(t, shot["target"]) <= near or dist(t, shot.get("center") or shot["target"]) <= near:
+            return True
+        by = str((sh.get("flare") or {}).get("by") or "").lower()
+        return bool(by) and by == shot.get("flare_by")
+
+    def arty_frame(self, cur, shot, now):
+        """(batch224) A barrage on air: the frame on the impacts due next (landed in the last 1.5 s or landing within
+        arty_pre), the group round the first of them, wide enough for them all (arty_zoom down to arty_zoom_min); moved
+        as a glide at most every arty_move."""
+        cfg = self.cfg
+        if self.pending or now - shot.get("moved", -1e9) < cfg["arty_move"]:
+            return
+        win = [p for p in shot.get("spots") or [] if now - 1.5 <= p[0] <= now + cfg["arty_pre"]]
+        if not win:
+            return
+        first = min(win, key=lambda p: (p[0] < now, abs(p[0] - now)))
+        group = [p for p in win if math.hypot(p[1] - first[1], p[2] - first[2]) <= cfg["arty_near"]]
+        cx, cy = sum(p[1] for p in group) / len(group), sum(p[2] for p in group) / len(group)
+        ext = 2 * max(math.hypot(p[1] - cx, p[2] - cy) for p in group) + 16
+        z = round(max(cfg["arty_zoom_min"], min(cfg["arty_zoom"], self.fight_zoom(ext))), 2)
+        p = cur.get("position") or {}
+        d = dist({"x": cx, "y": cy}, p) if p else 1e9
+        if d < cfg["reframe_tiles"] and abs(z - cur.get("zoom", z)) < cfg["zoom_delta"]:
+            return
+        target = {k: v for k, v in cur.items() if k != "jump"}
+        target.update(position={"x": round(cx, 1), "y": round(cy, 1)}, zoom=z, exact_zoom=True,
+                      glide=round(max(0.5, min(2.0, d / 60.0)), 2))
+        shot["center"], shot["moved"] = {"x": cx, "y": cy}, now
+        self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
 
     # -- attention ---------------------------------------------------------------------------------------------
     def attention_far(self, a, by_name, now):
@@ -3485,6 +3616,8 @@ class OneCam(Director):
                     reason = f"{subj} {'on a loop' if looping else 'still'} {int(still)} s; {want} {why}"
                     self.still_block[subj] = now + cfg["still_block"]
             self.keep(cur, by_name, now)
+            if self.pending:
+                return  # (batch224) keep() swapped to its vehicle (or back) on a standby: that slot is taken (shift79 03:56:42)
             if want and self.bow_turn(want, reason, scores, now):
                 return  # the bow first; the story goes to `want` after it
         nxt = self.next_slot()
@@ -3535,13 +3668,17 @@ class OneCam(Director):
         a = by_name.get(subj)
         spot = self.vehicle_spot(a, now, held=bool(cur.get("vehicle")))
         solo = self.cfg["solo_zoom"]
+        flip = now - self.vehicle_swapped.get(subj, -1e9) < self.cfg["vehicle_flip"]  # (batch224) no flapping
         if cur.get("vehicle"):
+            if not spot and flip:
+                return True
             if not spot:
                 if self.mode == "trio":
                     return True  # (the big tile keeps its shot until the trio ends)
                 z = self.zoom_for(a, solo) or solo
                 self.swap({"agents": [subj], "follow": subj, "zoom": z, "solo_zoom": z, "subject": subj},
                           f"{subj}: back to the character (its vehicle's read is stale, or the vehicle is near)", now)
+                self.vehicle_swapped[subj] = now
                 return True
             p = cur.get("position") or {}
             d = dist(spot, p) if p else 1e9
@@ -3551,8 +3688,9 @@ class OneCam(Director):
                               glide=round(max(0.5, min(60.0, d / 1.5)), 2))
                 self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
             return True
-        if spot and self.mode != "trio":
+        if spot and self.mode != "trio" and not flip:
             self.swap(self.body_shot(subj, by_name, solo, now), f"vehicle: {spot['label']}", now)
+            self.vehicle_swapped[subj] = now
             return True
         return False
 

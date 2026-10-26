@@ -246,6 +246,8 @@ return function(api)
       if made then break end
     end
     assert(made, 'the game did not create ' .. flare .. ' at (' .. pos.x .. ',' .. pos.y .. ')')
+    -- (d26 batch224 AY) the stream's artillery shot names the team's flares (artycam.lua M.flare)
+    if api.flared then pcall(api.flared, {by=api.who and try(function() return api.who(p) end) or p.name, flare=made, position=pos, surface=p.surface.name}) end
     -- (d18 batch37 C2, viewer Aurora 16:57) a flare is a manual target: a piece fires at it within its manual range (its
     -- prototype's manual_range_modifier times its automatic range); each piece in reach says which range holds it
     local reach, out_of_reach, empty, watch, miss = {}, 0, {}, {}, nil
