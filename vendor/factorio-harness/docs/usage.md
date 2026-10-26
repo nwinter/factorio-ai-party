@@ -15332,7 +15332,7 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   the pane working (claude, codex, grok), and no usage-limit text (LIMIT; batch213's) or Grok limit dialog. The
   journal is not read for this rule.
 - After a provider stop has shown for --idle-min (the nudge time, 10 min) in a row: a known promo or setup dialog on
-  the screen (DIALOGS: Codex's "Set up security", "Security setup", "Codex just got an upgrade", "Approaching rate
+  the screen's last 40 lines (DIALOGS: Codex's "Set up security", "Security setup", "Codex just got an upgrade", "Approaching rate
   limits") gets one `esc`, and no option in it is chosen. A dialog still up after the esc is logged once and nothing is
   typed. Then one message: "Operator (automatic): your last turn stopped on a provider error: <the line>; continue
   from your tells and notes."
