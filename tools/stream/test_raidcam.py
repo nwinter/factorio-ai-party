@@ -222,8 +222,9 @@ def replay_inputs():
         (t0 + 20.5, "use_item", {"item": "artillery-targeting-remote", "position": {"x": -1180.0, "y": -720.0}},
          {"in_range": ["artillery-turret (-273.5,-558.5) 921.0 tiles, in its manual range only (1568; automatic 627.2), 5 shells"]}, True)]
     fights = director_replay.fights_of({"opus": j})
-    assert len(fights) == 1 and fights[0]["first"] == t0 - 32 and fights[0]["last"] == t0 + 8, fights
-    assert fights[0]["position"] == {"x": -865.0, "y": -584.0, "surface": "nauvis"}
+    # (batch245) reported until ATTACK_RECENT_S after its last hit, as live.py reports the attacked chunk
+    assert len(fights) == 1 and fights[0]["first"] == t0 - 32 and fights[0]["last"] == t0 + 8 + 30, fights
+    assert fights[0]["position"] == {"x": -865.0, "y": -584.0, "surface": "nauvis", "extent": 32.0}
     shells = director_replay.flare_shells({"opus": j})
     assert len(shells) == 2, shells
     (a1, s1), (a2, s2) = shells

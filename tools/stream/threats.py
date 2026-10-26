@@ -233,16 +233,19 @@ class Threats:
         bar = scores[int(left)] if len(scores) > left else 0.0  # the (left+1)-th best of the last hour
         return max(self.cfg["floor"], bar), {"candidates_h": len(cands), "taken_h": len(taken), "budget": budget}
 
-    def decide(self, kind, key, score, parts, now, blocked=None):
+    def decide(self, kind, key, score, parts, now, blocked=None, force=None, where=None):
         """A candidate's decision (logged): -> True to follow / hold it. blocked: the director's reason it cannot now
-        (an urgent shot, spacing), still counted as a candidate."""
+        (an urgent shot, spacing), still counted as a candidate. force: the director's reason to take it whatever the
+        bar (batch245: every battle), logged with its score; it spends none of the budget. where: the candidate's place
+        for the log (batch245: a group's position, target and size)."""
         bar, ctx = self.bar(now)
-        take = blocked is None and score >= bar
-        why = blocked or (f"score {score} >= bar {round(bar, 2)}" if take else f"score {score} < bar {round(bar, 2)}")
+        take = blocked is None and (force is not None or score >= bar)
+        why = blocked or (f"{force} (score {score}, bar {round(bar, 2)})" if force is not None else
+                          f"score {score} >= bar {round(bar, 2)}" if take else f"score {score} < bar {round(bar, 2)}")
         self.h["candidates"] = [c for c in self.h["candidates"] if now - c[0] <= self.cfg["window"] * 2] + [[now, score]]
-        if take:
+        if take and force is None:
             self.h["taken"] = [t for t in self.h["taken"] if now - t <= self.cfg["window"] * 2] + [now]
         self.save()
         self.log({"t": round(now, 1), "threat": kind, "key": key, "score": score, "parts": parts, "bar": None if bar == float("inf") else round(bar, 3),
-                  **ctx, "decision": "take" if take else "skip", "why": why})
+                  **ctx, "decision": "take" if take else "skip", "why": why, **({"where": where} if where else {})})
         return take
