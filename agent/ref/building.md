@@ -248,6 +248,16 @@
 - `heat_budget {position, add_pipes?, surface?}` (`surface`: a heat network on another planet by remote view, in sight): a heat network's mean temperature, heat capacity and heat above 30 C, and with
   `add_pipes` the mean after that many new cold heat pipes join.
   Example: `./fh call heat_budget --args '{"position":{"x":12.5,"y":40.5},"add_pipes":20}'`
+  Preview: `heat_budget {remove?: [{x,y}], remove_area?: {left_top, right_bottom}, remove_names?, build?: [{name, position,
+  direction}], surface?}` (no position): what those removals and builds would do to the heat networks there; nothing is
+  removed or built. `before` and `after` (each network: parts, heat sources, a part's position); `unheated` (networks that
+  lose their last heat source, with their heat exchangers); `freeze` (on a planet that requires heating: each entity
+  near the removals warmed now that no heater at 30 C or more in a network with a source would touch after; the 60
+  nearest a removal; `freeze_rule` from the game's data); `paths` (up to 3 shortest heat-pipe runs over free tiles from
+  each of 2 unheated networks to a heated one, near the changes; removed tiles are not free; `capped`,
+  `freeze_unread` and `paths_unread` say what was left out); `connections` (each removed or planned heat entity's connection tiles against
+  the border it warms: a heating tower joins at the middle of each side only, and warms its corners too).
+  Example: `./fh call heat_budget --args '{"surface":"aquilo","remove":[{"x":3.5,"y":3.5}],"build":[{"name":"heating-tower","position":{"x":-16.5,"y":23.5}}]}'`
 - `outpost {position, radius | area, dry_run?}`: queues one tour for an outpost: construct its ghosts, rearm its
   turrets, wire its poles cut off from power; `dry_run: true` shows the plan and what you lack.
   Example: `./fh call outpost --args '{"position":{"x":300,"y":-120},"radius":40,"dry_run":true}'`
