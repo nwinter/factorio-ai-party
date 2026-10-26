@@ -17489,7 +17489,8 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
     if ok and p and p.valid and p.character and p.character.valid then return p.character.position end
   end,
   is_read=function(action) return M.is_read(action) end,
-  is_talk=function(action) return M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end}
+  -- (d26 batch234) M.talk, owed's chat_ack among them: Opus's script acked after every wake and so never stood
+  is_talk=function(action) return M.talk(action) end}
 -- The agent's own play (selfview.lua): team.review every 2 game hours and the
 -- review read (actions and time by kind, repeated hand hauls, failures, open
 -- alerts in its claims, losses near its work); team.shift.retro at shift start.

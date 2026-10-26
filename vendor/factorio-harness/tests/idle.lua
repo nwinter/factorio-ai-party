@@ -209,8 +209,12 @@ advance(60*30); assert(report('sol').standing_s>=29)
 runtime.idle.request(si,'feed',{},{outcome='nothing_to_do',given=0}); advance(60)
 runtime.idle.request(si,'transfer',{},{transferred=0}); advance(60)
 assert(report('sol').standing_s>=31,'no effect, no end')
+-- (d26 batch234) chat_ack is talk (owed.lua): Opus's hold.py acked after every wake, so its standing ended each time and
+-- it was never nudged; idle_report said 902 game actions in 10 min of sleeps and acks.
+sol('chat_ack',{seq='all'}); advance(60)
+local row=report('sol'); assert(row.standing_s>=32,'a chat_ack is no work'); eq(row.stand_ended,nil)
 runtime.idle.request(si,'transfer',{},{transferred=40}); advance(60)
-local row=report('sol'); assert(row.standing_s<=1,row.standing_s); eq(row.stand_ended.why,'transfer')
+row=report('sol'); assert(row.standing_s<=1,row.standing_s); eq(row.stand_ended.why,'transfer')
 advance(60*20)
 S.active[si]={kind='walk',direction=0,until_tick=tick+600}; advance(60*4)
 sc.position={x=sc.position.x+6,y=sc.position.y}; S.active[si]=nil; advance(60*2)
