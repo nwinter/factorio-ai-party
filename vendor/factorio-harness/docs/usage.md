@@ -15181,6 +15181,108 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     this runtime 5.46 ms with the read as shipped (median 0.084 ms). A read alone, 100 in one command: 0.016 ms
     (qflow.count_by's 0.044 ms fetched get_output_count for each count).
 
+## d25 batch216 (QAA1, Astra 20:09: where Asterion's foundation went; QAA2, Astra 20:59: ghosts name takes a tile)
+- Flight 205's return: Asterion's hub foundation fell 154 -> 153 -> 148 between ticks 63979515 and 64022118. Watch
+  #1304 recorded no entity hits, losses or repairs; no ghosts were open at 64024909; supply read 0 foundation made or
+  used.
+- Engine facts (2.0.77), measured on a copy of world n's 20:02 save (tick 64007786, Asterion flying
+  solar-system-edge -> aquilo). Asteroids were made by script at its bare front edge, and level-script handlers
+  recorded every event and each tick's hub foundation, foundation tiles and tile ghosts:
+  - An asteroid that enters the foundation destroys every foundation tile under its collision box at once:
+    - small (box 1x1): 2 tiles;
+    - medium (2x2): 3 tiles;
+    - big (4x4): 5 tiles, and 5 more each tile it went on (40 in 8 rows from tick 64018232 to 64018380).
+  - The asteroid takes no damage from the tiles; the small one slowed from 0.050 to 0.039 tiles a tick.
+  - LuaSpacePlatform.damaged_tiles stays empty: tiles go whole.
+  - No event fires for the destruction: no tile event, no on_entity_died or on_entity_damaged, and no platform event.
+    2.0.77 has no tile-destruction event.
+  - On the same tick the game puts a tile ghost on each destroyed tile: ghost_name space-platform-foundation, force
+    player, last_user nil, quality normal.
+  - The hub builds the ghosts from its own foundation, one tile a build, with the hub's count 1 lower each:
+    - 153 -> 113 for 40 tiles;
+    - the first build 63 to 168 ticks after the ghosts appeared.
+  - Each build raises on_space_platform_built_tile: tile and item space-platform-foundation, the quality, and tiles
+    with old_tile empty-space and the tile's whole-number position.
+  - The platform's item production statistics read foundation made 0 and used 0 throughout.
+- flightwatch.lua: each window (and each `mixed.parts` entry) has `foundation`:
+  - destroyed, rebuilt, destroyed_between_finds, rebuilt_from_before, open;
+  - placed, placed_built, open_placed, removed;
+  - taken {quality: n}, taken_total, hub_foundation {start, end};
+  - first and last destroyed ticks, rows [{tick, what, count, at, from_tick}], rows_more, skipped_finds,
+    builds_heard;
+  - the line adds "foundation: N tiles destroyed (ticks a to b), N rebuilt by the platform, N foundation taken from
+    the hub by its tile builds, N destroyed not rebuilt yet; hub foundation a -> b".
+- How the watch finds the ghosts:
+  - The watch makes one find of the platform's tile ghosts at a sample: every `M.FLOOR_TICKS` (300) while the
+    platform's builds are heard, else each sample.
+  - The find is limited to the chunks that held foundation when the watch began (one tile count a chunk, once a
+    watch), widened by each build heard.
+  - It reads at most `M.FLOOR_SCAN` (512); a find that meets more reads none of them and counts in skipped_finds.
+  - A foundation ghost new since the last find counts as placed when the ghost log names a placer, else destroyed.
+    A placer is:
+    - a record kept with this ghost's unit number;
+    - the game's last user (a player);
+    - or an older record placed after the last find.
+  - A record placed earlier is of a ghost once built there: the hull's own pasted tiles.
+  - Ghosts aboard when the watch begins count as placed only with their own record or a player's.
+  - A seen ghost gone since is rebuilt (foundation there now) or removed.
+- How the platform's builds are read:
+  - The platform's builds come from on_space_platform_built_tile (`M.on_built_tile`) at their tick and quality.
+  - A build where no find saw a ghost counts as destroyed and built between two finds, or as placed when its record
+    is newer than the last find or it lay outside the chunks searched.
+  - Without the event (an older control.lua), each sample's find reads the builds, and the line says so.
+- The platform read (`platforms {platform}`) gains `foundation_lost`:
+  - the event's builds on that platform since the record began (`M.floor_read`; storage `floorlog`), as rebuilt
+    (ghosts no one placed) and placed_built;
+  - taken by quality, and the last 8 rows;
+  - the foundation ghosts aboard now, with and without a placer;
+  - builds_heard.
+- ghostlog.lua:
+  - A tile ghost's record keeps its unit number (`u`). `owner`/`owner_at` skip a record kept with another ghost's
+    unit number, and return the record's tick and whether it was kept with the ghost's own unit number.
+  - `forget_tile` drops a tile's record once its tile is built.
+  - Before this, a destroyed hull tile's new ghost read as placed by whoever pasted the hull; removeghosts.lua reads
+    the same owner.
+- control.lua forwards `on_space_platform_built_tile`. This is a mod update: control.lua takes effect when world n
+  restarts with the new mod folder. A runtime deploy alone gives the sample-read counts.
+- Tests: tests/d25_batch216.lua (tests/d25batch216.test.ts). It fails on main: a watch has no `foundation`.
+- On the copy, the branch runtime with the new control.lua, watch #1307 on Asterion:
+  - Astra placed 2 foundation ghosts (place_ghosts) at tick 64020720, and a medium asteroid struck at the front edge.
+  - The read gave destroyed 3 at 64020771 (from 64020720), placed 2 and placed_built 2 at 64020784/85, and rebuilt
+    3 at 64020787, 64020815 and 64020816.
+  - Taken: normal 5; hub foundation 78 -> 73. `foundation_lost` agreed.
+  - With the old control.lua (watch #1306, a find each sample), a big asteroid gave destroyed 28 (ticks 64020051 to
+    64020171) and rebuilt 28 read by the finds; hub foundation 108 -> 78, 30 taken, the 2 more from ghosts open
+    before the watch began.
+- Cost on the copy (world n's 20:02 save, Asterion, the largest platform: 402 chunks on its surface, 40 holding
+  foundation, 22015 tiles):
+  - One find a second, 30 of them in a level-script handler:
+    - within the 40 hull chunks: 0.67 ms each;
+    - over the whole surface: 1.02 ms each.
+  - In loops of 20, the same finds took 0.25 and 0.33 ms, and a count 0.43 ms.
+  - Finding the hull's chunks: 4.6 ms, once a watch.
+  - profile_ticks {seconds: 60}, part flightwatch.tick, watch #1309 on Asterion. The same runtime ran with the watch's
+    foundation reading off and on in turn (`w.fl` set aside):
+
+    | Pair | off (median / mean ms) | on (median / mean ms) |
+    |---|---|---|
+    | 1 | 0.736 / 0.928 | 0.685 / 0.891 |
+    | 2 | 0.661 / 0.824 | 0.701 / 1.319 |
+
+  - With a find every sample (before FLOOR_TICKS): off median 0.579 ms, on median 1.476 ms.
+  - Main's runtime with a watch on Asterion: median 0.584 ms.
+  - A big asteroid's 20 rebuilds in 40 s:
+    - part flightwatch.built_tile 4.47 ms (0.22 ms a build);
+    - event on_space_platform_built_tile 13.7 ms (0.69 ms a build, the forwarded event whole).
+- QAA2 (Astra 20:59): `ghosts {name}` takes a tile name.
+  - The game's `ghost_name` filter knows entity names only. Before this change, `name: "space-platform-foundation"`
+    was refused "Unknown entity name: space-platform-foundation", while an unfiltered read listed the ghosts
+    (tile: true, item, hub_holds).
+  - A name that is a tile prototype (and no entity) now finds the tile ghosts and keeps those of that name.
+  - A name that is neither is refused: "name: no entity or tile is named X".
+  - On the copy, after a strike: 3 foundation ghosts listed.
+  - Tested in tests/d25_batch216.lua (its QAA2 part fails on main with the game's refusal).
+
 ## d25 batch213 (QY1, operator 17:47: an agent whose quota rest ends is resumed in its pane)
 - Shift76: Muse rested on its weekly limit until Sun 17:00. From 17:00 its CLI showed "Usage limit reached ... Send a
   message to continue when usage is available." The idle nudges at 17:00 and 17:40 went as game tells, which a CLI

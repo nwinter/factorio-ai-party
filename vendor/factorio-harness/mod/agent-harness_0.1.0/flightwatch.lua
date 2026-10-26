@@ -46,13 +46,13 @@
 -- event, damaged_tiles stays empty); the game puts a foundation tile ghost (our force, no last user) on each that tick.
 -- The hub builds those ghosts from its own foundation one tile at a time, the first 63 to 168 ticks later, each raising
 -- on_space_platform_built_tile (item space-platform-foundation, the ghost's quality) with the hub's count one lower; the
--- platform's item production statistics count none of it (foundation made 0, used 0). So each sample finds the
--- platform's tile ghosts (one find, up to FLOOR_SCAN): a foundation ghost new since the
--- last sample with no placer in the ghost log (ghostlog.lua: an agent's or a player's) counts destroyed, one with a
--- placer placed; one gone since is built (foundation there now) or removed. The hub's builds come from that event
--- (control.lua forwards it; M.on_built_tile): its tick and quality; a build where no sample saw a ghost was destroyed,
--- or placed, and built between two samples. The event's builds of every platform are kept apart for the platform read
--- (M.floor_read: space.lua's foundation_lost).
+-- platform's item production statistics count none of it (foundation made 0, used 0). So the watch finds the
+-- platform's tile ghosts (one find within the chunks that held foundation when it began, up to FLOOR_SCAN; each sample,
+-- or every FLOOR_TICKS while the builds are heard): a foundation ghost new since the last find with no placer in the
+-- ghost log (ghostlog.lua: an agent's or a player's) counts destroyed, one with a placer placed; one gone since is built
+-- (foundation there now) or removed. The hub's builds come from that event (control.lua forwards it; M.on_built_tile):
+-- its tick and quality; a build where no find saw a ghost was destroyed, or placed, and built between two finds. The
+-- event's builds of every platform are kept apart for the platform read (M.floor_read: space.lua's foundation_lost).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
@@ -68,9 +68,13 @@ return function(api)
   -- (QX1) the ammunition read, and the watches a replacement chain names
   M.AMMO = {'uranium-rounds-magazine', 'firearm-magazine', 'piercing-rounds-magazine', 'rocket', 'explosive-rocket', 'railgun-ammo'}
   M.CHAIN = 8
-  -- (QAA1) the tile ghosts a sample reads at most (more aboard: that sample reads none), the rows a window keeps,
+  -- (QAA1) the tile ghosts a find reads at most (more aboard: that find reads none), the rows a window keeps,
   -- the builds a platform's record keeps
   M.FLOOR_SCAN, M.FLOOR_ROWS, M.FLOOR_KEEP = 512, 12, 8
+  -- the ghosts found every FLOOR_TICKS while the platform's builds are heard (they give each rebuild's tick; the find
+  -- dates a destruction and counts the open ghosts), else every sample. On a copy of world n, one find a second within
+  -- Asterion's 40 hull chunks took 0.67 ms (30 finds), over its whole surface (402 chunks) 1.02 ms.
+  M.FLOOR_TICKS = 300
   local FOUNDATION = 'space-platform-foundation'
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
@@ -264,9 +268,31 @@ return function(api)
   local function new_floor(pl)
     return {destroyed=0, rebuilt=0, between=0, before=0, placed=0, placed_built=0, removed=0, taken={}, rows={}, hub0=hub_foundation(pl)}
   end
-  -- one find, no count: on a copy of world n, Asterion's surface (402 chunks) with no tile ghost, 0.33 ms a find and
-  -- 0.43 a count (a find within its 40 hull chunks 0.25, but finding those chunks 4.6 ms)
-  local function ghost_find(s, f, n) return s.find_entities_filtered{name='tile-ghost', force=f, limit=n} end
+  -- One find, no count, within the hull's chunks when known (box). On a copy of world n, Asterion's surface has 402
+  -- chunks, 40 of them holding foundation; with no tile ghost, a find over the surface took 0.33 ms in a loop of 20 and
+  -- added about 0.9 ms a sample in profile_ticks; within those 40 chunks 0.25 ms in a loop. Finding the chunks (one
+  -- tile count each) took 4.6 ms: done once a watch, the box then widened by each build heard (foundation grows only by
+  -- builds; a destroyed tile lies inside it).
+  local function ghost_find(s, f, n, box)
+    if box then return s.find_entities_filtered{name='tile-ghost', force=f, limit=n, area={{box[1], box[2]}, {box[3], box[4]}}} end
+    return s.find_entities_filtered{name='tile-ghost', force=f, limit=n}
+  end
+  local function hull_box(s)
+    local x0, y0, x1, y1
+    for ch in s.get_chunks() do
+      local a = ch.area
+      if s.count_tiles_filtered{area=a, name=FOUNDATION, limit=1} > 0 then
+        x0, y0 = math.min(x0 or a.left_top.x, a.left_top.x), math.min(y0 or a.left_top.y, a.left_top.y)
+        x1, y1 = math.max(x1 or a.right_bottom.x, a.right_bottom.x), math.max(y1 or a.right_bottom.y, a.right_bottom.y)
+      end
+    end
+    return x0 and {x0, y0, x1, y1} or nil
+  end
+  local function widen(box, x, y)
+    if not box then return end
+    box[1], box[2] = math.min(box[1], math.floor(x)), math.min(box[2], math.floor(y))
+    box[3], box[4] = math.max(box[3], math.floor(x) + 1), math.max(box[4], math.floor(y) + 1)
+  end
   local function ghost_of(g) return g.ghost_name, g.position, g.quality.name end
   -- Who placed a ghost (the ghost log; ghostlog.lua): name, 'record' or 'last_user', the record's tick, and whether the
   -- record was kept with this ghost's own unit number
@@ -276,8 +302,8 @@ return function(api)
   end
   -- The platform's foundation ghosts now: {key: {x, y, q, by, src, bt, own}}; nil past FLOOR_SCAN tile ghosts (then n:
   -- FLOOR_SCAN + 1), nil and nil when they could not be read.
-  local function floor_ghosts(pl)
-    local okf, list = pcall(ghost_find, pl.surface, pl.force, M.FLOOR_SCAN + 1)
+  local function floor_ghosts(pl, box)
+    local okf, list = pcall(ghost_find, pl.surface, pl.force, M.FLOOR_SCAN + 1, box)
     if not okf then return nil end
     if #list > M.FLOOR_SCAN then return nil, #list end
     local out = {}
@@ -291,8 +317,8 @@ return function(api)
     end
     return out, #list
   end
-  -- A ghost seen built (r: its seen record, or nil when no sample saw it): by the event (q: its quality, heard=true) or
-  -- by a sample that found foundation there.
+  -- A ghost seen built (r: its seen record, or nil when no find saw it): by the event (q: its quality, heard=true) or
+  -- by a find that found foundation there.
   local function floor_built(w, r, x, y, q, tick, heard, by)
     local f = w.fl
     q = q or (r and r.q) or 'normal'
@@ -305,7 +331,7 @@ return function(api)
     end
     f.rebuilt = f.rebuilt + 1
     if not r then
-      -- destroyed and built between two samples
+      -- destroyed and built between two finds
       f.destroyed, f.between = f.destroyed + 1, f.between + 1
       f.first_destroyed = f.first_destroyed or tick
       f.last_destroyed = tick
@@ -315,11 +341,17 @@ return function(api)
       floor_row(f, tick, 'rebuilt', x, y, not heard and w.fl_tick or nil)
     end
   end
-  -- A sample: the ghosts new since the last (destroyed or placed) and those gone (built or removed).
+  -- A find (at a sample, FLOOR_TICKS apart while builds are heard): the ghosts new since the last (destroyed or placed)
+  -- and those gone (built or removed).
+  local function heard()
+    local ok, v = pcall(function() return api.built_tile_heard and api.built_tile_heard() end)
+    return ok and v or false
+  end
   local function floor_sample(w, pl, tick)
     local f = w.fl
     if not f then return end
-    local now, n = floor_ghosts(pl)
+    if tick - (w.fl_tick or -M.FLOOR_TICKS) < M.FLOOR_TICKS - M.EVERY / 2 and heard() then return end
+    local now, n = floor_ghosts(pl, w.fl_box)
     if not now then
       if n then f.skipped, f.skipped_tick = (f.skipped or 0) + 1, tick end
       return
@@ -328,7 +360,7 @@ return function(api)
     for k, g in pairs(now) do
       if not seen[k] then
         -- placed: its own record, a player's (the game's last user), or a record kept with no unit number placed since
-        -- the last sample; an older record is of a ghost once built there, not of this one
+        -- the last find; an older record is of a ghost once built there, not of this one
         local by = g.by and (g.own or g.src == 'last_user' or (g.bt or 0) > (w.fl_tick or -1)) and g.by or nil
         seen[k] = {x=g.x, y=g.y, t=tick, q=g.q, by=by}
         w.fl_n = w.fl_n + 1
@@ -365,10 +397,6 @@ return function(api)
     s.floorlog = s.floorlog or {since=game.tick, p={}}
     return s.floorlog
   end
-  local function heard()
-    local ok, v = pcall(function() return api.built_tile_heard and api.built_tile_heard() end)
-    return ok and v or false
-  end
   function M.on_built_tile(event)
     local pl = event.platform
     if not (pl and pl.valid) then return end
@@ -399,8 +427,12 @@ return function(api)
       if not ok then b = nil end
       if api.ghost_forget_tile then pcall(api.ghost_forget_tile, sname, FOUNDATION, centre) end
       for i, w in ipairs(ws) do
-        -- one no sample saw: placed when its record is from after the last sample
-        local by = rs[i] and rs[i].by or not rs[i] and b and (bt or 0) > (w.fl_tick or -1) and b or nil
+        -- one no sample saw: placed when its record is from after the last sample, or when it lay outside the box the
+        -- samples read (an expansion: no destroyed tile is there)
+        local bx = w.fl_box
+        local out = bx and (x < bx[1] or y < bx[2] or x >= bx[3] or y >= bx[4])
+        widen(bx, x, y)
+        local by = rs[i] and rs[i].by or not rs[i] and b and (out or (bt or 0) > (w.fl_tick or -1)) and b or nil
         floor_built(w, rs[i], math.floor(x), math.floor(y), q, tick, true, by)
       end
       rec.taken[q] = (rec.taken[q] or 0) + 1
@@ -593,9 +625,11 @@ return function(api)
     w.fl = new_floor(pl)
     if not w.fl_seen then
       w.fl_seen, w.fl_n = {}, 0
+      local okb, box = pcall(hull_box, pl.surface)
+      w.fl_box = okb and box or nil
       -- placed: its own record or a player's; an older record may be of a ghost once built there (a destroyed tile's
       -- ghost then), so those count as no one's
-      for k, g in pairs(floor_ghosts(pl) or {}) do
+      for k, g in pairs(floor_ghosts(pl, w.fl_box) or {}) do
         w.fl_seen[k] = {x=g.x, y=g.y, t=tick, q=g.q, by=(g.own or g.src == 'last_user') and g.by or nil, pre=true}
         w.fl_n = w.fl_n + 1
       end
@@ -675,7 +709,7 @@ return function(api)
     if w.fl_seen then
       local open, placed = 0, 0
       for _, r in pairs(w.fl_seen) do if r.by then placed = placed + 1 else open = open + 1 end end
-      w.fl_open, w.fl_open_placed, w.fl_seen, w.fl_n = open, placed, nil, 0
+      w.fl_open, w.fl_open_placed, w.fl_seen, w.fl_n, w.fl_box = open, placed, nil, 0, nil
     end
     w.ammo_last, w.ammo_flying = nil, nil
     w.state, w.ended, w.why = 'done', tick, why
@@ -1005,17 +1039,17 @@ return function(api)
     local h1 = pl and hub_foundation(pl) or w.fl_hub1
     local tn, tq = taken_text(f.taken)
     local h = heard()
-    r.foundation = {destroyed=f.destroyed, rebuilt=f.rebuilt, destroyed_between_samples=f.between, rebuilt_from_before=f.before, open=open,
+    r.foundation = {destroyed=f.destroyed, rebuilt=f.rebuilt, destroyed_between_finds=f.between, rebuilt_from_before=f.before, open=open,
       placed=f.placed, placed_built=f.placed_built, open_placed=placed, removed=f.removed, taken=f.taken, taken_total=tn,
       hub_foundation={start=f.hub0, ['end']=h1}, first_destroyed_tick=f.first_destroyed, last_destroyed_tick=f.last_destroyed,
-      rows=f.rows, rows_more=f.rows_more, skipped_samples=f.skipped, builds_heard=h}
+      rows=f.rows, rows_more=f.rows_more, skipped_finds=f.skipped, builds_heard=h}
     local text = string.format('; foundation: %d tiles destroyed%s, %d rebuilt by the platform%s, %d foundation taken from the hub by its tile builds%s, %d destroyed not rebuilt yet; hub foundation %s -> %s',
       f.destroyed, f.first_destroyed and string.format(' (ticks %d to %d)', f.first_destroyed, f.last_destroyed) or '', f.rebuilt,
       f.before > 0 and string.format(' (%d of ghosts aboard when the watch began)', f.before) or '', tn, tq, open, tostring(f.hub0), tostring(h1))
     if f.placed > 0 or f.placed_built > 0 or placed > 0 then text = text .. string.format(' (placed ghosts: %d appeared, %d built, %d open)', f.placed, f.placed_built, placed) end
     if f.removed > 0 then text = text .. string.format(' (%d foundation ghosts removed unbuilt)', f.removed) end
-    if f.skipped then text = text .. string.format(' (%d samples found over %d tile ghosts aboard and read none of them, the last at tick %d)', f.skipped, M.FLOOR_SCAN, f.skipped_tick) end
-    if not h then text = text .. ' (the platform\'s tile builds not heard: this server\'s control.lua forwards no on_space_platform_built_tile; builds read by the samples)' end
+    if f.skipped then text = text .. string.format(' (%d finds met over %d tile ghosts aboard and read none of them, the last at tick %d)', f.skipped, M.FLOOR_SCAN, f.skipped_tick) end
+    if not h then text = text .. ' (the platform\'s tile builds not heard: this server\'s control.lua forwards no on_space_platform_built_tile; builds read by the finds, each sample)' end
     return text
   end
   function M.row(w, full)
@@ -1154,8 +1188,8 @@ return function(api)
     .. 'ammunition: the platform\'s item production statistics, consumed (a turret\'s shots count there), of ' .. table.concat(M.AMMO, ', ') .. ' by quality, read at the window\'s start and end tick and at each sample; '
     .. 'a departure or arrival falls between two samples (ammunition_boundaries gives both ticks and what was used between them); '
     .. 'foundation: an asteroid that enters the foundation destroys the tiles under it with no event, and the game puts a foundation tile ghost on each at once; the hub builds them from its foundation one at a time (the item production statistics count none of it); '
-    .. 'each sample finds the foundation tile ghosts (up to ' .. M.FLOOR_SCAN .. ' tile ghosts aboard): one new with no placer in the harness\'s ghost log (an agent\'s or a player\'s) counts destroyed at that sample (rows: from_tick the sample before), one with a placer placed; '
-    .. 'rebuilt, taken and their ticks from the game\'s on_space_platform_built_tile (builds_heard), a build where no sample saw a ghost counted destroyed and rebuilt between two samples'
+    .. 'every ' .. M.FLOOR_TICKS / 60 .. ' s while the builds are heard (else each sample) the watch finds the foundation tile ghosts (up to ' .. M.FLOOR_SCAN .. ' tile ghosts, within the chunks that held foundation when the watch began, widened by each build heard): one new with no placer in the harness\'s ghost log (an agent\'s or a player\'s) counts destroyed at that find (rows: from_tick the find before), one with a placer placed; '
+    .. 'rebuilt, taken and their ticks from the game\'s on_space_platform_built_tile (builds_heard), a build where no find saw a ghost counted destroyed and rebuilt between two finds (placed when outside those chunks or its record is newer than the last find)'
   -- (d25 batch205 QR2, Astra #2338: a queue could not read the watch its earlier step started without its id) read:
   -- true with platform reads that platform's latest watch, never starting or replacing one; checked with no world at
   -- submit and in dry_run (runtime.lua step_checks) as here.
@@ -1353,7 +1387,7 @@ return function(api)
       .. 'damage {hits, damage, entities (damage by entity name), by (hits by cause)}, lost (up to 8), lost_count, repair_packs_used, hub_repair_packs {start, end}, fuel {start, end: {thruster-fuel, thruster-oxidizer: {held, in_tanks}}}, '
       .. 'ammunition (this window: {from_tick, to_tick, ticks, total, used {item: {quality: n}}}; each mixed.parts entry has its own and repair_packs_used), ammunition_watch (from the tick it began, after a split), ammunition_chain (after replace: true, from the first replaced watch\'s start: also watches, first), '
       .. 'ammunition_boundaries [{what (departure, arrival, between, start), from_tick, to_tick, ticks, total, used, line}], '
-      .. 'foundation (this window; each mixed.parts entry has its own) {destroyed, rebuilt, destroyed_between_samples, rebuilt_from_before, open, placed, placed_built, open_placed, removed, taken {quality: n}, taken_total, hub_foundation {start, end}, first_destroyed_tick, last_destroyed_tick, rows [{tick, what, count, at, from_tick}], rows_more, skipped_samples, builds_heard}, lines, line, note}. '
+      .. 'foundation (this window; each mixed.parts entry has its own) {destroyed, rebuilt, destroyed_between_finds, rebuilt_from_before, open, placed, placed_built, open_placed, removed, taken {quality: n}, taken_total, hub_foundation {start, end}, first_destroyed_tick, last_destroyed_tick, rows [{tick, what, count, at, from_tick}], rows_more, skipped_finds, builds_heard}, lines, line, note}. '
       .. 'Sampled once a second, each watch on its own tick; at most 128 ammo turrets a watch (turrets built meanwhile are added within a minute); one watch that counts per platform of the force (armed, watching, or done and not read; a start at the limit is refused, naming them); kept in the save until cleared (read done ones 1 h after the read, replaced ones not read 24 h, at most 16 of those); the setter hears in team.alerts when one begins at a departure and when one ends'}}
   return M
 end

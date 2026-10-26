@@ -411,7 +411,7 @@
   and now; samples, runs and `longest_below_samples` below a shot's energy; `kills` and `damage` dealt over the watch
   (its tooltip's counts, as `turret_tally` reads). A watch begun before the harness read lasers has no `lasers`.
   `foundation` (each window, and each `mixed.parts` entry): `destroyed` (new foundation ghosts no one placed, at the
-  sample that found them), `rebuilt`, `open`, `placed`/`placed_built` (ghosts an agent or player placed), `taken` (by
+  find that saw them: every 5 s, each second while `builds_heard` is false), `rebuilt`, `open`, `placed`/`placed_built` (ghosts an agent or player placed), `taken` (by
   quality) and `hub_foundation` {start, end}, with tick `rows`. 2.0.77, measured on a copy: an asteroid that enters the
   foundation destroys the tiles under it with no event (a big one 5 a row as it goes on), and the game puts a ghost on
   each at once; the hub builds them from its foundation one at a time (on_space_platform_built_tile), 63+ ticks later;
