@@ -201,6 +201,30 @@ def vehicle_framing(log_rows, where, t0, t1, step=0.25, ease=0.08, jump=200.0):
     return out
 
 
+def surface_air_of(log_rows, t0, t1):
+    """[(t, surface, 1.0)] each second of [t0, t1] the program showed a surface (its on-air client's latest camera
+    surface): what surface-air.json would have held for a replay that starts at t1 (batch232 --surface-from)."""
+    rows = sorted((r for r in log_rows if isinstance(r.get("t"), (int, float))), key=lambda r: r["t"])
+    onair, surf, out, i, t = None, {}, [], 0, t0
+    while t < t1:
+        while i < len(rows) and rows[i]["t"] <= t:
+            r = rows[i]
+            i += 1
+            m = re.match(r"(cut to|move) (\S+?):", str(r.get("reason") or "")) if r.get("slot") == "program" else None
+            if m:
+                onair = m.group(2)
+            elif r.get("slot") != "program":
+                cam = ((r.get("result") or {}).get("camera")) or {}
+                s = cam.get("surface") or (r.get("cmd") or {}).get("surface")
+                if s:
+                    surf[r["slot"]] = str(s)
+                onair = onair or r.get("slot")
+        if surf.get(onair):
+            out.append((t, surf[onair], 1.0))
+        t += 1.0
+    return out
+
+
 def fights_of(js):
     """[fight]: the attacks the journals' team blocks report, each {key, kind, text, first, last, position}."""
     out = {}
@@ -302,8 +326,9 @@ def loop_pos(lp, t, start):
 class World:
     """The agents' states at each second (module doc)."""
 
-    def __init__(self, js, log_rows, fights=None, shells=None, live=False):
+    def __init__(self, js, log_rows, fights=None, shells=None, live=False, vehicle_interest=False):
         import model
+        self.vehicle_interest = vehicle_interest  # (batch232 VC2: rules that bump interest for a vehicle's new target)
         self.paths = vehicle_paths(js) if live else None  # (batch232) the live vehicle reads, modelled
         self.last_live = -1e9
         self.fights = fights or []
@@ -388,6 +413,10 @@ class World:
                 self.vehicles.ingest(name, rows[k][1])
                 k += 1
             self.row_i[name] = k
+            vehicle = self.vehicles.current(name, t)
+            if self.vehicle_interest:
+                was, ag.remote_vehicle = ag.remote_vehicle, vehicle
+                self.model.vehicle_interest(ag, was, t)
             pos, walking = self.position(name, t)
             active = walking or (self.active.get(name) if t < self.act_until.get(name, 0) else False)
             if active and active != ag.active:
@@ -402,7 +431,7 @@ class World:
                         "activity": "acting" if active else "thinking" if thinking else "idle",
                         "active": active, "interest": round(ag.interest, 2),
                         "plan": {"kind": active} if active else None, "combat": False, "travel": None,
-                        "remote_vehicle": self.vehicles.current(name, t)})
+                        "remote_vehicle": vehicle})
         snap = {"agents": [a for a in out if a["position"]], "alerts": [], "tick": self.tick,
                 "fights": [dict(f, last=min(f["last"], t)) for f in self.fights if f["first"] <= t <= f["last"] + 240]}
         i = bisect.bisect_right([x[0] for x in self.shells], t)
@@ -438,7 +467,7 @@ def clock_t(day_t, hhmm):
 
 
 def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0, t0=None, t1=None, fights=False,
-           shells=None, vehicles="journal"):
+           shells=None, vehicles="journal", surface_from=None):
     log_rows = log_rows_of(log_path)
     t0 = log_rows[0]["t"] if t0 is None else t0
     t1 = log_rows[-1]["t"] if t1 is None else t1
@@ -447,7 +476,7 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
     with tempfile.TemporaryDirectory() as tmp:
         onecam = load_rules(rules, tmp)
         world = World(js, log_rows, fights_of(js) if fights else None, flare_shells(js) if shells == "flares" else None,
-                      live=vehicles == "live")
+                      live=vehicles == "live", vehicle_interest=rules == "here")
 
         def send(body):
             return {"ok": True, "camera": {"move": {"start_tick": 0}} if body.get("move") else {}}
@@ -459,7 +488,10 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
             if os.path.isdir(run):
                 d.set_surface_memory(os.path.join(run, "surface-seen.json"))
                 d.surface_memory = None
+                d.surface_air = []  # (a run's surface-air.json is wall-clock; the replay seeds its own below)
                 break
+        if surface_from:
+            d.surface_air = surface_air_of(log_rows_of(surface_from), t0 - d.cfg["surface_window"], t0)
         if chart and hasattr(d, "set_tours"):
             import basetour
             d.set_tours(basetour.Tours(chart))
@@ -484,6 +516,8 @@ def main(argv=None):
     ap.add_argument("--shells", choices=("none", "flares"), default="none", help="artillery shells modelled from flares")
     ap.add_argument("--vehicles", choices=("journal", "live"), default="journal",
                     help="live: the service's vehicle position reads, modelled from the journals' replies (batch232)")
+    ap.add_argument("--surface-from", nargs="+", help="director logs before --from: the planets' air time a restart "
+                    "now keeps (surface-air.json), seeded from their last surface_window (batch232)")
     ap.add_argument("--from", dest="t_from", help="HH:MM local (the first log's day)")
     ap.add_argument("--to", dest="t_to", help="HH:MM local")
     ap.add_argument("--json", action="store_true")
@@ -493,7 +527,7 @@ def main(argv=None):
     t0 = clock_t(first, a.t_from) if a.t_from else None
     t1 = clock_t(first, a.t_to) if a.t_to else None
     _, js, (t0, t1) = replay(a.log, a.runs, out, a.cams, a.rules, a.chart, t0=t0, t1=t1, fights=a.fights,
-                             shells=a.shells, vehicles=a.vehicles)
+                             shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from)
     rows = list(airtime.rows_of(out))
     m = airtime.measure(rows, js, t0, t1)
     m.update(log=" ".join(os.path.basename(x) for x in a.log), rules=a.rules, cams=a.cams, replay_log=out,
