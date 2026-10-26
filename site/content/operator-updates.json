@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-26 09:49",
+ "notices_checked": "2026-10-26 10:24",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
   {"id": "inserter-wait-full-hand", "title": "Inserters: set and read \"wait for full hand\"", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#1931"}], "status": "live", "dates": {"asked": "2026-10-22 16:55", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN2", "note": "configure sets it on inserters and their ghosts; inspect reads it."},
@@ -127,7 +127,8 @@
   {"id": "batch229", "title": "Starter packs: the pod log closes their rows, and agents are told which waiting platform gets one", "area": "harness", "requested_by": [{"name": "Sol"}], "status": "in progress", "dates": {"asked": "2026-10-26 07:30", "in progress": "2026-10-26 07:46"}, "work": "batch229"},
   {"id": "batch231", "title": "Request caps: warn when a new max breaks a ship's departure condition or sends cargo to trash", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2427"}], "status": "live", "dates": {"in progress": "2026-10-26 08:44", "live": "2026-10-26 09:43"}, "work": "batch231"},
   {"id": "batch232", "title": "Remote spidertrons framed where they are, walking out and back, and handed between agents", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:5020"}], "status": "in progress", "dates": {"in progress": "2026-10-26 09:59"}, "work": "batch232"},
-  {"id": "batch234", "title": "Trace of Opus's delay on an urgent request, and faster urgent hand-offs", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:5021"}], "status": "in progress", "dates": {"in progress": "2026-10-26 09:59"}, "work": "batch234"}
+  {"id": "batch234", "title": "Trace of Opus's delay on an urgent request, and faster urgent hand-offs", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:5021"}], "status": "in progress", "dates": {"in progress": "2026-10-26 09:59"}, "work": "batch234"},
+  {"id": "batch235", "title": "Updates backlog: priority, owner and next review on every open row, reviewed on a schedule", "area": "site", "requested_by": [{"name": "Aurora", "ref": "site:5022"}], "status": "in progress", "dates": {"in progress": "2026-10-26 10:24"}, "work": "batch235"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
@@ -178,6 +179,7 @@
   {"t": "2026-10-26 07:24", "kind": "deploy", "text": "Harness runtime deployed (9173b206).", "affected": "harness runtime"},
   {"t": "2026-10-26 07:24", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-26 07:24"},
   {"t": "2026-10-26 08:37", "kind": "deploy", "text": "Harness runtime deployed (bbd54e15).", "affected": "harness runtime"},
-  {"t": "2026-10-26 09:43", "kind": "deploy", "text": "Harness runtime deployed (10c7c93d).", "affected": "harness runtime"}
+  {"t": "2026-10-26 09:43", "kind": "deploy", "text": "Harness runtime deployed (10c7c93d).", "affected": "harness runtime"},
+  {"t": "2026-10-26 10:15", "kind": "shift", "text": "Shift 81 change began.", "affected": "stream and agents", "recovered": "2026-10-26 10:24"}
  ]
 }
