@@ -2265,6 +2265,10 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.outpost and M.outpost.schema or {}) do description.actions[name]=schema end
   description.actions.heat_budget={position='{x,y} of a heat pipe, reactor, heating tower or heat exchanger (in sight or by remote view)',surface='optional planet, surface or platform name (default yours): the heat network at position, in a chunk our force sees now there by remote view (d20 batch62 X4)',
     add_pipes='optional 0..5000: new heat pipes at their starting temperature joining the network',
+    remove='preview (d26 batch242): 1..256 {x,y}: the entities of ours there, as if removed (nothing removed); with remove_area and build, without position',
+    remove_area='preview: {left_top, right_bottom}: the entities of ours there as if removed (remove_names: only those names)',remove_names='preview, with remove_area: entity names',
+    build='preview: 1..64 {name, position, direction}: entities as if built (nothing built)',
+    note='preview, with remove, remove_area or build (no position): the heat networks touching the changes, walked by the game\'s heat links (at most 4000 parts; planned ones join by their heat connection points): before and after (parts, heat sources, a part\'s position); unheated (each component that had a heat source and has none after, with its heat exchangers and other heat users); freeze (a surface that requires heating: each entity with heating_energy in freeze_box (the removals with 12 tiles round them, at most 32 across; the 60 nearest a removal read) that a heater at 30 C or more warms now and none in a component with a heat source would after, with freeze_rule from the game\'s data; freeze_unread); paths (each unheated component, at most 2 (paths_unread): up to 3 shortest heat-pipe runs of free tiles to a component with a heat source: tiles, start, end; in path_box: the changes with 12 tiles round them, at most 32 across; at most 600 tiles searched a read; the removed entities\' tiles are not free); connections (each removed or planned heat entity: the tiles its heat connections join, against the border it warms, corners included; a heating tower joins at the middle tile of each side only). A read: nothing removed or built',
     returns='parts, mean_c (weighted by heat capacity), lowest, highest, capacity_mj_per_c, stored_above_30_mj, after_c (with add_pipes: the mean once the new pipes share the heat, none made or used meanwhile), line'}
   for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
@@ -13862,10 +13866,20 @@ M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipmen
 -- (d24 batch179 QV1) every cargo pod's journey, up and down, per planet: shipment {ledger} pods (podlog.lua)
 M.podlog=require('podlog'){state=state}
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
-M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
+M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end,heat_points=function(...) return M.dryrun.heat_points(...) end,
+  position=position,direction=function(v) return v==nil and 0 or M.direction_of(v) end,timed=M.timed}
 M.railrun=require('railrun'){}  -- elevated rails and rail supports the game keeps (d20 batch69 AE1)
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
+  -- (d26 batch242 HP, Astra #2454) remove, remove_area or build: the preview of what they do to the heat networks there
+  if a.remove~=nil or a.remove_area~=nil or a.build~=nil then
+    assert(a.position==nil and a.add_pipes==nil,'heat_budget preview (remove, remove_area, build) goes without position and add_pipes')
+    assert(a.remove==nil or type(a.remove)=='table','remove is a list of {x,y}: the entities of ours there')
+    assert(a.remove_names==nil or a.remove_area~=nil,'remove_names goes with remove_area')
+    local surface=p.surface
+    if a.surface~=nil then surface=game.get_surface(a.surface) or M.on_surface(p,a.surface).surface end
+    return M.heating.preview(p,surface,a)
+  end
   assert(a.position~=nil,'heat_budget takes position: a heat pipe, reactor, heating tower or heat exchanger')
   local ok,e=pcall(entity,p,a,true)
   if not ok then e=remote_entity(p,a) end
@@ -17142,7 +17156,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q) return M.podlog.landed_from(name,since,item,q) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q) return M.podlog.landed_from(name,since,item,q) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
@@ -21008,7 +21022,7 @@ function M.on_event(event)
   end
   if event.name==defines.events.on_script_path_request_finished then
     -- (d24 batch191) a spidertron's path round water (spiderpath.lua): its go_to route or its spider_kite
-    local okp,ours=pcall(M.spiderpath.on_path,event,function(rec,plan,spider,pts,notes)
+    local okp,ours=pcall(M.timed,'spiderpath.on_path',M.spiderpath.on_path,event,function(rec,plan,spider,pts,notes)  -- (d26 batch243) its own part in profile_ticks
       if rec.owner=='kite' then M.spiderkite.routed(state().active[rec.index],plan,spider,pts) else M.spiderroute.routed(rec,plan,spider,pts,notes) end
     end)
     if okp and ours then return end

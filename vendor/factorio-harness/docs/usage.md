@@ -14470,6 +14470,35 @@ on its line (the reply's JSON dominates on the copy).
   breeder 0.065 ms, 3 and 3 0.18 ms, 6 and 6 0.26 ms. supply {pentapod-egg} whole on the copy: 27-54 ms a call
   (unchanged: the scan).
 - Test: tests/d24_batch182.lua (fails on main: no returned, no used_by).
+## d26 batch243 (SR, viewer Aurora 13:42: solo spidertron routing round water)
+
+On d26 spidertron #27069154 stood 1 tile from water at (78,339), an islet in a lake, for 8 minutes while every path round
+the water came back "found no path". What the copy of world n's 13:37 save showed, and what changed (spiderpath.lua,
+spiderroute.lua):
+- In 2.0.77 most entities' collision masks hold `water_tile` (223 prototypes: buildings, belts, poles, inserters, trees,
+  rocks), so a path request with that layer took the base for walls: from the shore at (57,337) to (601,551) it found
+  none; with `doodad`, 570 points. The 13 tiles a spidertron's legs (`player`, `rail`) stand on none of are exactly the
+  13 with `doodad`; among entities only corpses and rail remnants carry it. Requests use `doodad`, with the path cache
+  off (it kept a failure for a later request between the same spots).
+- The box is 0.8 (a 2x2 box at a tile's centre overlaps 3x3 tiles: no spot on the islet had room for it); a 1x1 box
+  did not pass a 1-tile land neck, 0.8 does. Starts and goals whose box touches water move to the nearest spot with room.
+- No path: asked again from up to 4 spots its legs step to across water (a run of 1..12 tiles; spots on open land
+  first), and to up to 4 spots it steps from onto the target's land; the first path wins, said in team alerts.
+- A target on water: the route ends at the dry spot nearest it within 48 tiles (reply `landed`), else said so.
+- A path over 120 points is thinned at twice the spacing instead of failing.
+- No progress for 3 s with water within 3 tiles ahead and no path being asked: it backs off to the newest spot of its
+  trail 3 tiles or more back (else straight back from its target) and asks again from there, any water on the line
+  counting; up to 3 times (30 tiles nearer its target counts afresh), each said in team alerts and the reply's
+  `recovery`; then the stall line with the recoveries tried and `no_path`. The reply has `path` while one is asked.
+- Legs on the copy: straight deepwater strips of 12, 14 and 16 tiles were crossed, 18 not (batch191 read 14 and 16).
+- cp2 (navigation review, operator 14:13): a spidertron sent by go_to whose route ends within 4 tiles of its last target
+  says so to its sender once in team alerts (`spidertron #N arrived at (x,y) (its route ended at (x,y))`); spider_kite's
+  shore recovery takes a spot with room whose straight line its legs walk (it had picked spots across the water); a
+  car (prototype `tank_driving` false: it turns only while it rolls) creeps forward while it turns sharply, where a
+  tank turns on the spot (on the copy a car at rest facing away from its path ended `blocked`, "nothing that
+  collides", within 5 s); a drive's `unreachable` says what the target itself is on (a tile the vehicle cannot drive
+  on, or ground it can with every way to it closed).
+
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 
 At tick 59185129 delivery watch #384 (3 asteroid-collector@legendary from Kestrel IVc to Aquilo's pad) warned
@@ -15919,6 +15948,96 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - cp2 (shift81 10:20-10:27, Opus off air): model.py bumps an agent's interest when it sends its remote vehicle to a new
   target (as a build), and keeps a little alive while it walks; onecam.py keeps the planets' air time in
   runs/RUN/surface-air.json across a restart (it began empty at each shift: Aquilo and Fulgora agents x2.5).
+
+## d26 batch246 (FL, Astra #2461: a queue guard for bare foundation loss)
+- Case: in trial 242 Asterion lost a floor tile at (-50,-60), tick 67333569, and the hub rebuilt it, with no entity
+  lost or hit. platform_loss and platform_hit count entities only, so a queued safe-return plan could not react.
+- `platform_foundation_loss {platform, since_tick?, at_least?}` (1..1000, default 1): a wait_until condition and queue
+  guard, in the body, remote and platform lanes, inside all/any; dry_run and a submit refuse the same values
+  (conditions.lua validate). Foundation tiles of that platform destroyed since the wait or guard began.
+- The loss log (flightwatch.lua, storage.floorloss by platform index: a ring of LOSS_KEEP 256 rows {seq, x, y, pt,
+  seen, after, rebuilt}), two ways in:
+  - the hub's rebuild (on_space_platform_built_tile, forwarded always) of a tile on a ghost no one placed: a tile lost
+    and rebuilt between two reads counts, as "lost and rebuilt between reads (after tick N), rebuilt at tick T";
+  - a find of the platform's foundation ghosts (loss_scan: at most once every LOSS_SCAN 60 ticks a platform, and only
+    when such a wait or guard is checked; no per-tick scan): a ghost no one placed, first seen, counts as "ghost first
+    seen at tick S (lost after tick N)"; its rebuild later fills in that row's tick and adds none.
+  The game gives no event and no tick for the loss itself (memory factorio-platform-foundation-loss); "lost after"
+  is the read before.
+- Floor placed or mined on purpose is left out: a ghost an agent placed (place_ghosts, paste, routes: the ghost log's
+  record) or a player placed (the ghost's last_user), as flight_watch tells them; a tile an agent lays or mines by hand,
+  and robots' tile deconstruction, make no ghost and no platform build. The game's ghost on a destroyed tile has no
+  last user and no record. A player's ghost built before any find saw it reads as a loss (its last user is gone with it).
+- Not counted: ghosts already there at a platform's first find (their loss tick is unknown) and their rebuilds; on a
+  guard's first check, a ghost first seen after a find from before its start (its loss may be older). A find that
+  meets over 512 tile ghosts reads none and says so; rebuilds are still counted.
+- Baseline: `fl_since` (since_tick, else the submit or the first check) and `fl_seq` (its place in the log) on the
+  guard's when, or a wait's record; queue_edit keeps both for a guard not named (scheduler.lua seed), and the reply's
+  baseline reads "foundation tiles of NAME destroyed since tick T".
+- When met, saw names up to 8 tiles and `+N more`; a fired guard keeps the rows {x, y, seen, after, rebuilt} as its
+  evidence in the queue history.
+- On a copy of world n (_autosave12, tick 68001021, Asterion flying, 212 foundation in its hub), a platform-lane
+  guard on luna's queue; each tile destroyed by script as the game does it (set_tiles to empty space, a foundation tile
+  ghost of ours with no last user) at Asterion's bare edge x=49:
+  - (49,-55) at 68002041: fired at 68002050, "ghost first seen at tick 68002050 (lost after tick 68001990), not rebuilt
+    yet"; the hub rebuilt it by 68002161;
+  - the queue paused (queue_pause), (49,-56) destroyed at 68002431, rebuilt by the hub at 68002495, queue_resume at
+    68002731: fired at 68002740, "lost and rebuilt between reads (after tick 68002410), rebuilt at tick 68002495";
+  - with a guard armed, luna's place_ghosts of a foundation tile at (50,-57) (built by the hub) and deconstruct of the
+    tile (49,-58) (taken up by the hub): no fire over 600 ticks; a strike at (49,-57) then fired it 39 ticks later with
+    that one tile.
+- Cost on the copy (profile_ticks, 600 ticks, one guard armed, one strike): flightwatch.loss_scan 60 calls 8.85 ms, 10
+  of them a find over Asterion's surface (about 0.9 ms a find, once a second a platform while checked; the rest return
+  at once); flightwatch.built_tile 0.18 ms an event (flight_watch's own work included).
+- Test: tests/d26_batch246.lua (in lua.test.ts), failing on main (no such condition).
+
+## d26 batch242 (HP, Astra #2454: heat network preview)
+- Case (runs/shift81/astra/journal.jsonl, 20:03-20:10Z): an Aquilo beacon retrofit crossed a dense heat trunk.
+  deconstruct of the heat pipes in (11,3)-(14,6) named 815 cut-off parts only after marking; rerouting took several
+  inspect reads; moving the heating tower from (3.5,3.5) to (-16.5,23.5) took the only heater of the water pipe at
+  (3.5,1.5).
+- `heat_budget {remove?: [{x,y}], remove_area?: {left_top, right_bottom}, remove_names?, build?: [{name, position,
+  direction}], surface?}` (no position): a preview, nothing removed or built (heating.lua M.preview):
+  - `before`, `after`: the heat networks touching the changes, each "N parts (by name), K heat sources, first at
+    (x,y)". Built parts link by the engine's heat_neighbours (walked from the changes, at most 4000 parts); planned ones
+    by their heat connection points (dryrun.lua heat_points). A heat source is a reactor (nuclear reactor, heating
+    tower) or a heat interface.
+  - `unheated`: each network that had a source and has none after, with its heat users (heat exchangers and other
+    entities with a heat energy source).
+  - `freeze` (a planet with entities_require_heating): each entity with heating_energy in `freeze_box` (the removals
+    and the cut-off parts, at most 64 across round the changes; the 200 nearest the changes read) that a heater at
+    30 C or more touches now and none in a network with a source would after; `freeze_rule` with each one's
+    heating_energy from the game's data and M.RULE; `freeze_unread` says what was not read.
+  - `paths`: for each unheated network (at most 4), up to 3 shortest heat-pipe runs over free tiles (nothing built,
+    planned or ghosted there, nor a removed entity's tiles; a tile a heat pipe can stand on) in `path_box` (the
+    changes with 24 tiles round them, at most 64 across) to a tile joining a network with a source: tile count, start,
+    end, the tiles; at most 2000 tiles searched a read; else `none` with what was searched.
+  - `connections`: each removed or planned heat entity's connection tiles against the border it warms.
+- The game, on a private copy of world n's 13:07 save (tick 67569165, Aquilo, Astra's layout before the tower moved):
+  - connection points: heat pipe and heat interface on 4 sides; heating tower (3x3) at (0,-1) N, (1,0) E, (0,1) S,
+    (-1,0) W only (the middle tile of each side); nuclear reactor 12; heat exchanger one at (0,0.5) S. The connection
+    model against the engine's heat_neighbours over 873 heat entities in (-40,-40)-(50,40): 868 alike, the other 5 at
+    the read's edge (their neighbours outside it).
+  - freezing: 418 entities with heating_energy in (-30,-30)-(40,30): 417 frozen or not as the rule says (a heat pipe
+    or reactor at 30 C or more touching, a side or a corner), 67 of them warmed through a corner only, none frozen; the
+    other, a programmable speaker at (31.5,19.5), read cold and not frozen.
+  - Astra's cases as previews: the pipes in (11,3)-(14,6): 4 networks cut off, 14 + 195 + 1 + 605 = 815 parts (as
+    deconstruct said), 308 freezing in the box read. The tower move with a beacon at (3.5,3.5) and a tower at
+    (-16.5,23.5): `pipe (3.5,1.5): heated now by heating-tower (3.5,3.5) (675 C); after: no heater at 30 C or more in a
+    component with a heat source touches it`; the planned tower joins at (-16.5,21.5) (-14.5,23.5) (-16.5,25.5)
+    (-18.5,23.5).
+- Cost on the copy (profile parts heat.*, a call each, 5 calls): Astra's network of 1005 parts (1003 heat pipes, a
+  heating tower, a heat exchanger):
+  - 7 removals (her pipes): 31-36 ms a call: heat.walk 4.8, heat.points 5.3, heat.components 2.6, heat.freeze 8.6,
+    heat.paths 7.6, the rest (summaries, lines, the team block) about 5;
+  - 3 removals and 2 builds (the tower move): 30-32 ms: walk 4.3, points 4.1, components 2.2, freeze 8.2, paths 7.0;
+  - 20 removals (every heat pipe in (8,0)-(14,6), 5 networks cut off): 33-37 ms: walk 5.3, points 5.8, components
+    2.7, freeze 9.0, paths 6.6;
+  - one planned heat pipe on Nauvis (nothing to walk): 3.1-3.5 ms.
+  The walk is about 4.5-5 us a part (at most 4000: about 20 ms); each part under 10 ms on Astra's network; the
+  whole read in one tick. Earlier forms of this read were 92-127 ms (a find round each cut-off heater, a path box
+  of 128) and 40 ms; the bounds above came from those.
+- Test: tests/d26_batch242.lua (in lua.test.ts), failing on main (no preview).
 ## d26 batch240 (IA: idle air and late builds; batch237 findings 1 and 3)
 - Host only (tools/stream; docs/STREAM-NOTES.md "Idle air and late builds"): no runtime change, no new game read. The
   stream service reads two more things from the journals it already tails: each agent's latest build, paste,
@@ -15930,3 +16049,37 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - airtime.py and vx_review.py count no dry run or settings-only launch as a fresh event.
 - director_replay.py `--timed`: the log's timed shots replayed at their times (with `--chart`, its own quiet views).
 - Test: tools/stream/test_idlecam.py.
+
+## d26 batch245 (MB: battles, enemy groups and walk loops; shift81's review)
+- Host only (tools/stream; docs/STREAM-NOTES.md "Battles, enemy groups and walk loops"): no runtime change, no new game
+  read (the director now reads the status queues the service already polls). Agents read nothing new.
+- onecam.py: every attack on our buildings, vehicles or agents on a planet is a battle on air within seconds unless an
+  operator look holds the camera (battle_all; a tour's look gives way, the hourly piece ends); against flapping a fight
+  elsewhere follows on at the battle's end, the same area resumes within 90 s, a repeat within 300 s with nothing
+  lost is its inset; a spidertron's fight is its vehicle shot. A group not followed goes in the inset until contact;
+  group rows in the director log keep its place. A repeating body queue walking is a loop (loop_queue).
+- vx_review.py counts a threat the program framed as on air (insets apart); director_replay.py `--fights` reads
+  current alert texts.
+- Test: tools/stream/test_battlecam.py.
+- Checkpoint 2 (SP, viewer Aurora 14:53: the spider shot): a vehicle shot's standby follows the vehicle and frames it
+  before the cut; dwell counts while it is in the frame; the lead follows what the live reads saw (a stuck spider's read
+  with speed leads nowhere) and stays inside the frame's inner box, a stop inside it holds the frame; a vehicle stuck
+  20 s with no fight or fire has served its dwell and counts as standing, moving on again is news. director_replay.py
+  gives both rule sets the vehicle and build interest bumps. Test: tools/stream/test_spidershot.py.
+- cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
+  the copy): smaller defaults, the flags unchanged.
+  - The walk gives the components before as it goes (no second pass); positions and connection points are read only
+    for the walked parts a find in the path box returns; a network's line says "a part at (x,y)" (one read).
+  - freeze: only removals take heat away, so `freeze_box` is the removals with 12 tiles round them, at most 32 across;
+    its heaters from one find there (a heater of a network the changes do not touch: as it is now); the 60 entities
+    nearest a removal read (by the 8-tile cells the removals are in), the rest counted in `freeze_unread`.
+  - paths: `path_box` the changes with 12 tiles round them, at most 32 across; 600 tiles searched a read; 2 unheated
+    networks searched (`paths_unread` counts the rest), 3 paths each.
+  - On the copy (5 calls each; the Mac shared with another engineer's copy, load average 17-25):
+    - Astra's pipe removal (7 removals, 1005-part network): 18-19 ms a call (the first 29): heat.walk 4.7, heat.freeze
+      4.2, heat.points 2.4, heat.paths 2.4, heat.components 1.3, the team block 2.1;
+    - the tower move (3 removals, 2 builds): 17-20 ms: walk 3.8, freeze 3.9, points 1.8, paths 1.9, components 1.2;
+    - 20 removals (5 networks cut off): 19-23 ms: walk 3.9, freeze 3.4, points 2.5, paths 3.2, components 1.3;
+    - one planned heat pipe on Nauvis: 2.7-3.2 ms.
+    The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
+    the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.

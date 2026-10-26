@@ -2145,6 +2145,86 @@ Replay (director_replay.py --timed --chart --vehicles live; main's rules -> thes
 - Platform builds stay as aired in the replay (their work shots are replayed at the aired times, unnamed).
 - Test: tools/stream/test_idlecam.py.
 
+## Battles, enemy groups and walk loops (2026-10-26, d26 batch245 MB, shift81's review)
+Shift81 10:20-14:24: 5 of 5 battles and 14 of 16 enemy groups never on air (the review counted a threat on air only
+when the director took it); idle 35.3%, Grok's walk loops 33.0 min. From the four director logs:
+- Battles: the threat read saw all five and scored each about 0.70 (an outpost 0.7, no loss so no pieces part)
+  against a bar of 2.09; all five skipped. None was held off by a look, a platform hold or cut spacing. Two were
+  Opus's spidertron hit by worms (12:31:38, 12:32:00), two walls hit by behemoths (12:48:55, 12:49:28), one laser
+  turret line (12:57:36, during the Base overview segment). The alert inset showed four at once; the program framed
+  12:32:00 (Opus's spider shot, 18 tiles) and 12:48:55 (Haiku's spider, 49 tiles) by chance.
+- Groups: followed only above the bar and 600 s apart: 4 skipped for spacing, 5 under the bar (routine -1.2 once the
+  defenses held), 5 while a segment, platform work or Opus's artillery shot was on. 7 reached our buildings (one by
+  12:32, six at 12:46-12:53 on the walls at (-150, -585) and (-47, -458)); the rest stopped or turned back.
+- Grok's "ag-tour" queue loop (800 rounds, 66 x 32 tiles) passed loop_span 64 whenever two polls caught its ends:
+  after batch240 went live (13:40) it was "moving" for the still and fresh rules (6.3 of its 8.9 idle minutes).
+Changes (onecam.py):
+- battle_all: every fight where enemies hit our buildings, vehicles or an agent on a planet is a battle, whatever its
+  score (logged with "our defenses fight"; threats.decide force=, no group budget spent). Not an agent's own firing,
+  friendly fire, a few cheap pieces or a platform. A spidertron's fight is its vehicle shot, moved with it; the battle
+  ends once the vehicle has walked on from the fight.
+- Against flapping: a fight elsewhere during a battle waits ("wait" rows) and follows on at its end in the same step;
+  one begun after waits battle_gap (20 s) of the story; the same area within battle_resume (90 s, was 45) resumes it;
+  within battle_repeat (300 s) with nothing lost it is only an alert inset (shift79: the lasers at (-304, -272) were
+  hit at 02:08, 02:09, 02:13 and 02:19).
+- An operator look holds the camera (the battle airs after); a tour's look gives way (AUTO_LOOKS), and the hourly
+  piece ends when a battle takes the program.
+- A group not followed goes in the inset (group_pip: "Incoming · ...", panned with it, up to 45 s, until contact,
+  turning back or another shot following a group); its contact is a battle. Group rows in the director log keep its
+  place (`where`: position, target, size).
+- loop_queue: a repeating body queue that walks or waits (status queues.body.repeating; model.py passes `queues`) is a
+  loop whatever its size; one that mines, builds or crafts is not.
+- vx_review.py: a threat is on air when taken or when the program's camera stood within FRAME_TILES (60) of its spot;
+  shown only in the inset it stays missed (counted apart); a battle's repeat given its inset is by design; another
+  battle is no repeated shot. airtime.owner names a standby's shot ("@battle", "@look").
+- director_replay.py `--fights` reads shift81's alert texts ("...; spidertron x11 hit ...", "1m41s ago", a lone "0s
+  ago") and reports a fight until 30 s after its last hit, as live.py reports the chunk; a walk loop's queue repeats.
+Replay (--timed --chart --fights --vehicles live; main's rules -> these):
+- shift81 10:20-14:23: battles at once/late/missed 0/0/5 -> 4/1/0 (the late one waited 43 s while the first spider
+  battle was on); idle or loop 28.1% -> 21.5% (aired 35.5%): the loop rule alone 23.1%, the battle rule alone 26.8%;
+  Grok on air 19.2 -> 0.7 min, tours 33.9 -> 41.5 min; cuts 1.57 -> 1.63 a minute. Builds and deconstructions move by
+  one either way (path differences: a trio instead of a cut, another "all stale" pick).
+- shift81 13:37-14:23 replayed alone: 47.2% -> 39.8% (aired 49.9%), Grok's loop 8.1 -> 1.1 min; no battle in it.
+- shift79 02:03-06:05 (65 fight episodes): battles at once 0 -> 29, 25 repeats only in the inset, 9 fights elsewhere
+  ended while another battle was on air; battle shots 28.3 of 242 min; idle 41.4% -> 32.4%; 2 of 8 builds late
+  (median 3 -> 12 s).
+- director_replay.py gave model.py's vehicle and build interest bumps only with `--rules here` (from batch232, when
+  main lacked them): main's replays since batch240 ran without them (shift81: 26.4% where the same rules give 21.5%).
+  Both rule sets get them now.
+- Groups are not replayed (logs before batch245 have no group positions); the inset rule is tested.
+- Test: tools/stream/test_battlecam.py.
+
+## A remote vehicle's shot: framed before the cut, smooth, stuck scenes short (2026-10-26, d26 batch245 SP)
+Viewer Aurora 14:53: "In shift82, Opus's spider shot panned without catching it before a cut." The director log and
+Opus's journal: 14:59:32 a platform visit took the program from the spider shot on main; main stayed where it was
+(off air, no reframe) while the spider walked on; 14:59:54 "back to opus" cut to main 236 tiles behind it and the view
+panned on air; 15:00:00 a quiet view took it ("opus still 1779 s": Opus's clocks call the character idle while it
+drives, and batch240 counts a character standing from its clocks once the vehicle stops). Also: 14:41:56-14:45:39 the
+spider was stuck at (73, -620) and 14:46:11-14:56:04 at (151, -554) while Opus kept calling it every 16 s; a read with
+speed and no progress made the aim run 30 tiles ahead and snap back (14:41:57-14:42:01; six such reversals in the
+hour); the stuck scene held the program up to 176 s at a time.
+Changes (onecam.py; ONECAM vehicle_stuck 20 s, vehicle_progress 4 tiles, vehicle_still_box 0.7, vehicle_obs 12 s,
+vehicle_settle 3 s):
+- A standby on a vehicle shot follows the vehicle off air (jumps) and is framed anew, waiting ready_s, when it is more
+  than a frame off: the cut shows the vehicle.
+- Dwell counts only while the vehicle is in the frame (onair_since held back while it is out).
+- The lead is no faster than the last two live reads saw it go (no lead and no "walking" on a read with speed and no
+  progress) and at most vehicle_still_box of the half frame ahead; a stop inside that box keeps the frame still, and
+  the way back after a stop the aim ran past is a settle over vehicle_settle.
+- Stuck: a vehicle that has not moved vehicle_progress tiles in vehicle_stuck s, not fighting or firing (a fight or
+  fire is the recovery or combat that keeps it): its shot has served its dwell, its agent scores and counts as
+  standing from when it stopped, a quiet view may come vehicle_stuck after the last, and a call to it is no news;
+  moving on again is news ("spidertron on its way again").
+- The clocks' idle seconds count from when the agent's vehicle last walked, fought or fired.
+Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rules -> these; aired):
+- cuts to a vehicle shot whose frame was off the vehicle (over half a frame): 7 of 18 -> 1 of 15 (aired 5 of 14);
+  vehicle shots on a vehicle that had not moved 4 tiles in 20 s: 761 -> 405 s (aired 608); vehicle shots while it
+  moved: 530 -> 531 s.
+- shift81 10:20-14:23: off-frame cuts 26 of 52 -> 2 of 43; stuck air 1448 -> 901 s; Opus on air 37.9 -> 31.0 min; idle
+  21.5% -> 25.5% (the review counts a stuck spider as Opus acting: its calls); builds 10/8/4 -> 9/12/1 (path
+  differences: a trio at 12:22:32, other "all stale" picks).
+- Test: tools/stream/test_spidershot.py.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

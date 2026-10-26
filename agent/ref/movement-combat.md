@@ -226,9 +226,11 @@
   (or `remote: true, vehicle`) of a spidertron alone reads its route and `stalled`: no progress toward its target for
   10 s (where it stands, for how long, and what its legs cannot stand on in the straight line ahead), also said once in
   your next reply and listed in status `spidertrons`. Its legs stand on no water, lava or space tile and step across
-  14 tiles of it at most: a straight leg over more than 12 gets a path round it (reply `water`; the route becomes the
-  path when it comes, said once in team alerts). No progress for 10 s with water ahead: one re-route, then shore
-  recovery (first to the dry tile nearest its target within 24 tiles), then `stalled`.
+  16 tiles of it at most (18 stopped them): a straight leg over more than 12 gets a path round it (reply `water`; the
+  route becomes the path when it comes, said once in team alerts), from an islet first across to land, onto an islet
+  last across from land. A target on water ends at the dry spot nearest it (reply `landed`). Within 3 tiles of water,
+  no progress for 3 s and no path being asked: it backs off and asks again (alerts, reply `recovery`), up to 3 times,
+  then `stalled`; reply `path` while one is asked, `no_path` when none was found. Its arrival is said once in team alerts.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.

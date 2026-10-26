@@ -959,7 +959,8 @@ class Airing:
 
     def interrupt(self):
         """Why to end the piece now (looked at every 2 s), else None. With one camera nothing else shows a fresh
-        attack, loss or death, so it ends the piece; with more, the attack is in the inset and the piece goes on.
+        attack, loss or death, so it ends the piece; with more, the attack is in the inset and the piece goes on, until
+        a battle takes the program (onecam battle_all).
         Someone else's look or the host view taking the camera ends it with any count."""
         now = self.now()
         if now - self.last_look < 2:
@@ -974,6 +975,8 @@ class Airing:
             return f"a look by {lk.get('by') or 'someone'} took the camera"
         if st.get("hostview"):
             return "the host view took the camera"
+        if (st.get("onair") or {}).get("battle"):
+            return "a battle took the camera"  # (d26 batch245 MB: a battle takes a tour's look with any count)
         if self.cameras(st) > 1:
             return None
         for a in st.get("alerts") or []:
