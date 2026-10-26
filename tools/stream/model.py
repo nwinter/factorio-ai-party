@@ -66,6 +66,12 @@ def research_units(used):
 HISTORY_S = 60  # game seconds: a line in the first chat read (the backlog at a restart) older than this is history
 CHAT_LOG_TAIL = 4 << 20  # bytes of runs/RUN/chat.jsonl read for restored lines' times (about 15000 lines)
 MAIDEN_STALE_S = 120  # game seconds: a platform_left read later than this (a restart catching up) is not shown
+# (d26 batch239 NP) game seconds: a platform first listed whose chronicle creation is older than this (a shift) gets
+# its hub now (a record waiting for its starter pack), said so instead of "new"
+PLATFORM_MADE_RECENT_S = 4 * 3600
+# (NP) more technologies done in one score read than the labs finish in a few seconds: the read before was short (a
+# restart's first read), so these are seeded, not announced
+RESEARCH_BURST = 3
 PLANET_LABELS = {"nauvis": "Nauvis", "vulcanus": "Vulcanus", "fulgora": "Fulgora", "gleba": "Gleba", "aquilo": "Aquilo",
                  "solar-system-edge": "Solar system edge", "shattered-planet": "Shattered Planet"}
 # Items the production widget can show, by game stage (0 raw .. 5 rocket). The widget leads with science per minute
@@ -888,6 +894,7 @@ class Model:
         # space-memory.json, seeded from the chronicle along the run chain; the camera tells news from routine by it
         self.platform_routes = {}
         self.orbit_known = set()  # (platform, planet) visited before this service saw it: no orbit moment for those
+        self.platforms_first_seen = []  # (d26 batch239 NP) names first listed in the last space read (_orient_platforms)
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
@@ -1017,6 +1024,7 @@ class Model:
             sp["platforms"] = [p for p in sp.get("platforms") or []
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
             self.planets_reached.update(sp.get("planets") or [])  # surfaces with our entities: reached before
+            self.platforms_first_seen = []
             sp["platforms"] = self._orient_platforms(sp["platforms"])
             self._save_space_memory()
             self.space = sp
@@ -1500,6 +1508,8 @@ class Model:
             for name in reversed(r.get("top_done") or []):
                 res["recent"].appendleft({"name": name, "label": tech_label(name), "t": None})
             self.research_started = True
+        elif len(done - res["done"]) > RESEARCH_BURST:
+            pass  # (NP) a short first read: the rest are old, not "Research complete" now
         else:
             for name in sorted(done - res["done"]):
                 self.done_at[name] = now
@@ -2134,6 +2144,11 @@ class Model:
         on such a planet (an agent's body there, or our entities). Each fires once as a moment (segments.py turns it
         into a space_moment segment) and an alert; whatever is already true when the service starts is seeded."""
         sp = self.space
+        # (d26 batch239 NP) nothing read yet (the first observe of a restart whose score read failed, an agent's surface
+        # alone): seeding from the empty default made every platform, planet and the first rocket "new" on the next read
+        if not (sp.get("rockets") or sp.get("platforms") or sp.get("planets")):
+            return
+        first_seen, self.platforms_first_seen = self.platforms_first_seen, []
         found = []
         if sp.get("rockets"):
             found.append(("rocket", {"kind": "first_rocket", "title": "First rocket launched",
@@ -2149,13 +2164,24 @@ class Model:
                                            "title": f"Rocket {sp['rockets']} launched, the first this shift",
                                            "facts": {"rockets": sp["rockets"]}}))
         plats = sp.get("platforms") or []
-        if plats:
-            p = plats[0]
-            found.append(("platform", {"kind": "first_platform", "title": f"First space platform: {p['name']}",
-                                       "facts": {"platform": p["name"], "where": platform_place(p)}}))
-        for p in plats[1:]:  # every later platform launched is a headline too
-            found.append((f"platform:{p['name']}", {"kind": "new_platform", "title": f"New space platform: {p['name']}",
-                                                    "facts": {"platform": p["name"], "where": platform_place(p)}}))
+        # (d26 batch239 NP, shift80 07:25:04: "Spindle is new. A fresh platform just appeared in orbit of Nauvis") each
+        # platform by its name: the first in the list was keyed "platform", so when Aethera (index 1, its hub built from
+        # its starter pack at 07:25) joined the list, Spindle moved off that key and read as new. A platform is new when
+        # its name is first listed after this service's first space read and the space memory never had it: its hub
+        # built in the game (a starter pack landed) or made while the service ran; never one the service had not read
+        # yet. The chronicle's creation (platform_history) says when it was made.
+        for p in plats:
+            if p["name"] not in first_seen:
+                continue
+            made = self.platform_history.get(p["name"]) or {}
+            kind = "first_platform" if len(self.platform_course) <= 1 else "new_platform"
+            title = f"First space platform: {p['name']}" if kind == "first_platform" else f"New space platform: {p['name']}"
+            facts = {"platform": p["name"], "where": platform_place(p)}
+            if isinstance(made.get("created"), (int, float)) and self.tick and self.tick - made["created"] > PLATFORM_MADE_RECENT_S * 60:
+                # made long before (a record waiting for its starter pack): its hub is what is new
+                title = f"{p['name']} gets its hub, a platform made at {fmt_game_time(made['created'] / 60)}"
+                facts.update(made_game_time=fmt_game_time(made["created"] / 60), made_by=made.get("by"), hub_built=True)
+            found.append((f"platform:{p['name']}", {"kind": kind, "title": title, "facts": facts}))
         for p in plats:  # each platform's first arrival at each planet other than Nauvis
             loc = p.get("at") if p.get("at") in PLANET_LABELS else None
             if loc and loc != "nauvis":
@@ -2175,7 +2201,9 @@ class Model:
                           "planets_reached": len({"nauvis", *landed})}}))
         arrivals, self.arrivals = self.arrivals, []
         if self.space_seen is None:
+            # the first space read of this service: what is true now is seeded, and no platform it lists is new
             self.space_seen = {k for k, _ in found}
+            self.space_seen.update(f"platform:{p['name']}" for p in plats)
             return
         fired = set()
         for key, m in found:
@@ -2368,6 +2396,8 @@ class Model:
             p = dict(p)
             name, at = p.get("name"), p.get("at") or ""
             new = name not in self.platform_course
+            if new:
+                self.platforms_first_seen.append(name)  # (NP) a name this service and the space memory never had
             c = self.platform_course.setdefault(name, {"visited": set()})
             m = AT_RE.match(at)
             if not m:
@@ -2384,6 +2414,11 @@ class Model:
                         self.arrivals.append((name, at, came, at not in c["visited"], at not in self.planets_reached))
                     c.update(orbit=at, moving=False, conn=None, pct=None, toward=None)
                     c["visited"].add(at)  # where it is when first seen counts as visited (a service restart)
+                    if new:
+                        # (d26 batch239 NP) first listed at a planet: there before this service saw it, or made there
+                        # (Aethera at Vulcanus, its hub built at 07:25 in shift80 from a record of 89h11m): no "X
+                        # reaches Vulcanus" moment
+                        self.orbit_known.add((name, at))
                     self.planets_reached.add(at)
                 elif at == "in transit":
                     c["moving"] = True
