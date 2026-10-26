@@ -17,7 +17,9 @@ this checkout's. What each agent is, at each second (from its journal unless sai
   acts, 2 for a say or chat);
 - remote_vehicle: work.VehicleFeed over its journal rows.
 (d26 batch224) With --fights: the attacks the team blocks of the journals' replies report ("attack #16888 at
-(-865,-584): ... first 32s ago, last 29s ago"), as snapshot fights from their first to their last report. With
+(-865,-584): ... first 32s ago, last 29s ago"; batch245: also shift81's "...; spidertron x11 hit 11 times, 227 damage,
+first 1m41s ago, ..." and a lone hit's "..., 0s ago"), as snapshot fights from their first hit to ATTACK_RECENT_S after
+their last (live.py reports the chunk that long), a chunk wide. With
 --shells flares: artillery_live's shells modelled from the journals' flares (use_item artillery-targeting-remote
 replies: the pieces in range with shells and their distances): each flare taken by the in-range piece free soonest, a
 second after it was placed, then every COOLDOWN_S; the shell read the second it leaves, landing distance / SHELL_TPS
@@ -35,6 +37,7 @@ its quiet views or tours with --chart (the replay makes its own). The agents' in
 read once a POLL_S; a walk loop (the harness's queue) and a sleep keep no interest up; a request done within itself
 (INSTANT) is no running action; a running action lasts while the replies' clocks say the character was busy;
 work.DidFeed's builds (`did`) and work.ClockFeed's idle seconds (`idle_s`).
+(d26 batch245) An agent on a walk loop has its status read's queues.body repeating (onecam: a loop whatever its size).
 """
 import argparse, bisect, importlib, json, math, os, re, subprocess, sys, tempfile, time
 
@@ -55,7 +58,12 @@ INSTANT = {"build", "place", "place_ghosts", "paste", "blueprint_place", "decons
 SLOTS = [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2}, {"slot": "cam3", "player": 3}]
 COOLDOWN_S = 200 / 60.0  # artillery-wagon-cannon cooldown (2.0.77 base item.lua)
 SHELL_TPS = 60.0         # a shell flies 1 tile a tick (artycam.lua)
-ATTACK_RE = re.compile(r"attack #(\d+) at \((-?[\d.]+),\s*(-?[\d.]+)\)[^;\"]*?first (\d+)s ago, last (\d+)s ago")
+# (batch245) shift81's alerts: "attack #16958 at (760,-857): 10 attackers seen (...); likely from nest ...; spidertron
+# x11 hit 11 times, 227 damage, first 0s ago, last 0s ago", "first 1m41s ago", or a single hit "..., 0s ago"
+ATTACK_RE = re.compile(r"attack #(\d+) at \((-?[\d.]+),\s*(-?[\d.]+)\)([^\"]*?)(?:first ((?:\d+m)?\d+s) ago, last "
+                       r"((?:\d+m)?\d+s) ago|, (\d+s) ago)")
+HIT_RE = re.compile(r"; ([\w-]+) x\d+ hit")
+ATTACK_RECENT_S = 30.0   # live.py ATTACK_RECENT_TICKS: an attacked area is reported while its last hit is this recent
 CRUISE_TPS = 47.5 / 3.6  # a spidertron walking: spidertron 27069154's reads in shifts 79-80, 46-50 km/h, median 47.5
 POLL_S = 3.0             # the service's poll (serve.py --poll): the live vehicle read
 PIECE_RE = re.compile(r"^([\w-]+) \((-?[\d.]+),(-?[\d.]+)\) ([\d.]+) tiles")
@@ -294,10 +302,14 @@ def fights_of(js):
                 continue
             for m in ATTACK_RE.finditer(json.dumps(alerts)):
                 key = "attack:" + m.group(1)
-                first, last = t - int(m.group(4)), t - int(m.group(5))
-                f = out.setdefault(key, {"key": key, "kind": "attack", "text": f"attack #{m.group(1)}", "first": first,
-                                         "last": last, "losses": [], "agent": None,
-                                         "position": {"x": float(m.group(2)), "y": float(m.group(3)), "surface": "nauvis"}})
+                first = t - airtime.seconds(m.group(5) or m.group(7))
+                last = t - airtime.seconds(m.group(6) or m.group(7))
+                hit = HIT_RE.search(m.group(4) or "")
+                last += ATTACK_RECENT_S  # (batch245) live.py reports the area while its last hit is this recent
+                f = out.setdefault(key, {"key": key, "kind": "attack", "first": first, "last": last, "losses": [],
+                                         "agent": None, "text": f"attack #{m.group(1)}" + (f": {hit.group(1)}" if hit else ""),
+                                         "position": {"x": float(m.group(2)), "y": float(m.group(3)), "surface": "nauvis",
+                                                      "extent": 32.0}})
                 f["first"], f["last"] = min(f["first"], first), max(f["last"], last)
     return sorted(out.values(), key=lambda f: f["first"])
 
@@ -526,7 +538,10 @@ class World:
                         "activity": "acting" if active else "thinking" if thinking else "idle",
                         "active": active, "interest": round(ag.interest, 2),
                         "plan": {"kind": active} if active else None, "combat": False, "travel": None,
-                        "remote_vehicle": vehicle, "did": did, "idle_s": self.clocks.current(name, t)})
+                        "remote_vehicle": vehicle, "did": did, "idle_s": self.clocks.current(name, t),
+                        # (batch245) the status read's queue lanes: a walk loop's queue repeats
+                        "queues": {"body": {"repeating": True, "paused": False, "active": {"action": "move_to"}}}
+                        if any(a <= t < b for a, b, _ in j.loops) else None})
         snap = {"agents": [a for a in out if a["position"]], "alerts": [], "tick": self.tick,
                 "fights": [dict(f, last=min(f["last"], t)) for f in self.fights if f["first"] <= t <= f["last"] + 240]}
         i = bisect.bisect_right([x[0] for x in self.shells], t)

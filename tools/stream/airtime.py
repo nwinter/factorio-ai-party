@@ -254,6 +254,8 @@ def owner(shot):
     m = ARTY_RE.search(reason)
     if m:
         return m.group(1).lower()
+    if reason.startswith("standby: "):  # (batch245) a shot framed on a standby: "standby: battle area:..." -> @battle
+        return "@" + (reason[len("standby: "):].split(" ")[0].split(":")[0].strip(" @") or "standby")
     return ("@" + reason.split(":")[0].replace("standby", "").strip(" @")) if reason else None
 
 

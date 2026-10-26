@@ -73,7 +73,7 @@ def losses_keep_it():
              "position": pos, "key": "loss:-85,-110"}
     losses = [t + 10, t + 18, t + 25, t + 31, t + 40, t + 47, t + 55]
     entry = lambda now: {"key": "loss:-85,-110", "kind": "loss", "last": now, "position": pos,  # noqa: E731
-                         "losses": [x for x in losses if x <= now]}
+                         "losses": [x for x in losses if x <= now], "text": alert["text"]}  # (as model.py reports it)
     d.step(snap(team, [alert], [entry(t + 10)]), t + 10)
     back, away = None, None
     for k in range(11, 120):
@@ -84,7 +84,8 @@ def losses_keep_it():
             back = k
             break
     assert away is not None and away <= 13, (away, d.cuts)
-    assert back is not None and 55 + d.cfg["fight_quiet"] - 1 <= back <= 55 + d.cfg["fight_quiet"] + 3, (back, d.cuts)
+    # (batch245: a real loss is a battle, held battle_loss_after past its last loss)
+    assert back is not None and 55 + d.cfg["fight_quiet"] - 1 <= back <= 55 + d.cfg["battle_loss_after"] + 3, (back, d.cuts)
 
 
 def no_cut_from_a_fight():
@@ -121,7 +122,7 @@ def map_spacing():
     # a fight reported somewhere: no map while it goes on, nor until it has been quiet fight_quiet
     d.last_program_cut = t + 34
     fight = {"key": "area:900,900", "kind": "attack", "last": t + 70, "position": {"x": 900, "y": 900}}
-    for k in range(34, 90):
+    for k in range(34, 140):  # (batch245: the fight is a battle, held battle_after past it, then back to the story)
         d.step(snap(team, fights=[dict(fight, last=t + k)] if k < 70 else [fight], basemap=BASEMAP), t + k)
         if d.maps:
             break
