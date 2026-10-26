@@ -385,7 +385,7 @@ class LiveSource:
         if time.time() >= self.next_vehicles:
             self.next_vehicles = time.time() + self.vehicles_every
             try:
-                v = self.h.vehicles()
+                v = self.h.census_vehicles()
                 if v is not None:
                     obs["vehicles"] = dict(v, t=time.time())
             except Exception as e:
@@ -477,6 +477,12 @@ class LiveSource:
             # where each agent is paying attention (attention.py): its latest request with a position, area or list
             obs["attention"] = self.work.take_attention()
             now = time.time()
+            units = self.work.vehicles.units(now)
+            if units:  # (d26 batch232 VC) where the agents' remote vehicles are now (harness VEHICLES_LUA, 5.4 us each)
+                try:
+                    self.work.vehicles.apply_live(self.h.vehicles(units), now)
+                except Exception as e:
+                    errors["vehicles"] = f"{type(e).__name__}: {e}"
             for a in obs["agents"]:  # the same request again and again: the agent's own sampling (workcard.py)
                 a["repeats"] = self.work.repeats.current(a["name"], now)
                 # (d26 batch222 CD) its vehicle by remote view, from its journal's vehicle replies (onecam follows it)

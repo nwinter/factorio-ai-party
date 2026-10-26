@@ -39,11 +39,31 @@ class VehicleFeed:
     its position") Each agent's latest vehicle by remote view, from its journal's `vehicle {remote: true, vehicle}`
     replies (a spidertron's go_to or route read: its position, speed and route; a car or tank's drive: "by remote view:
     tank (-40,-150), unit_number 311799; your character stays at ..."): {vehicle, unit_number, position, speed (km/h,
-    when read), target, t (epoch, the reply's)}. Opus's spidertron in shift77: a read about every 5 s while it walks."""
+    when read), target, t (epoch, the reply's)}. Opus's spidertron in shift77: a read about every 5 s while it walks.
+    (d26 batch232 VC, viewer Aurora site:5020) A unit belongs to the agent who called it last (Astra sent spidertron
+    27069154 at 09:23, Opus took it at 09:26): an older row of another agent for that unit is no longer theirs. The
+    service reads the units' positions every poll (apply_live, harness VEHICLES_LUA): current() then gives that
+    position, speed and next target, `t` its time, `seen_t` the agent's own last reply, `live` True."""
+
+    LIVE_KEEP = 15.0  # seconds a live position read stands
 
     def __init__(self):
         self.pending = {}  # request id -> (agent, args)
         self.rows = {}     # agent -> the latest row
+        self.live = {}     # unit_number -> (epoch, VEHICLES_LUA row)
+
+    def units(self, now):
+        """The unit numbers of the agents' current vehicles (for the live read)."""
+        return sorted({r["unit_number"] for a, r in self.rows.items()
+                       if isinstance(r.get("unit_number"), int) and self.current(a, now, live=False)})
+
+    def apply_live(self, reads, now):
+        """reads: {unit: VEHICLES_LUA row}; a unit asked for and not returned (gone) drops its live row."""
+        for u in list(self.live):
+            if u not in reads:
+                self.live.pop(u)
+        for u, r in reads.items():
+            self.live[u] = (now, r)
 
     def ingest(self, agent, r):
         if not isinstance(r, dict):
@@ -69,10 +89,15 @@ class VehicleFeed:
         if res.get("spidertron") and isinstance(p, dict) and isinstance(p.get("x"), (int, float)):
             route = res.get("route") if isinstance(res.get("route"), list) else []
             goal = res.get("go_to") if isinstance(res.get("go_to"), dict) else (route[0] if route else None)
-            row = {"vehicle": str(res["spidertron"]), "unit_number": res.get("unit_number"),
+            # (batch232) a go_to with more arguments (Astra 09:23:26: auto_target, retreat) replies with no unit_number:
+            # the request's vehicle names it
+            unit = res.get("unit_number") if isinstance(res.get("unit_number"), int) else (
+                args.get("vehicle") if isinstance(args.get("vehicle"), int) else None)
+            row = {"vehicle": str(res["spidertron"]), "unit_number": unit,
                    "position": {"x": round(float(p["x"]), 1), "y": round(float(p["y"]), 1)},
                    "speed": res.get("speed") if isinstance(res.get("speed"), (int, float)) else None,
                    "target": goal if isinstance(goal, dict) and isinstance(goal.get("x"), (int, float)) else None}
+
         elif isinstance(res.get("remote"), str) and args.get("drive") is not None:
             m = POS_RE.search(res["remote"])
             name = res["remote"].split(":", 1)[-1].strip().split(" ", 1)[0] if ":" in res["remote"] else "vehicle"
@@ -86,9 +111,24 @@ class VehicleFeed:
             if t is not None:
                 self.rows[agent] = dict(row, t=t)
 
-    def current(self, agent, now):
+    def current(self, agent, now, live=True):
         row = self.rows.get(agent)
-        return row if row and now - row["t"] <= VEHICLE_KEEP else None
+        if not row or now - row["t"] > VEHICLE_KEEP:
+            return None
+        u = row.get("unit_number")
+        if u is not None and any(a != agent and r.get("unit_number") == u and r["t"] > row["t"] for a, r in self.rows.items()):
+            return None  # (batch232) handed on: another agent called it since
+        got = self.live.get(u) if live else None
+        if not got or now - got[0] > self.LIVE_KEEP:
+            return dict(row, seen_t=row["t"])
+        t, r = got
+        speed = r.get("speed") if isinstance(r.get("speed"), (int, float)) else 0.0
+        dest = r.get("dest") if isinstance(r.get("dest"), dict) else None
+        if not dest and speed:
+            dest = row.get("target")  # a car or tank driving to its drive target
+        return dict(row, position={"x": round(float(r["x"]), 1), "y": round(float(r["y"]), 1)},
+                    speed=round(abs(speed) * 216.0, 1), target=dest, cmd_target=row.get("target"), t=t, seen_t=row["t"], live=True,
+                    health=r.get("health"))
 
 
 def _epoch(at):

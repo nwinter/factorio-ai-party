@@ -5,7 +5,7 @@ Viewer Aurora (site:5019): "Could vehicle maps start with Spidertrons? The plann
 visible. Show ID, position age, controller and destination." The harness census reads our spidertrons where our force
 last saw them (census.lua part vehicles: the position now when the chunk is in sight, else the last one seen with its
 tick; who rides it, who drives it by remote view, who last sent it a route, its destination); the stream service reads
-it every 10 s (harness.vehicles, live.py), model.vehicles_snapshot counts the ages on to the snapshot, push_live sends
+it every 10 s (harness.census_vehicles, live.py), model.vehicles_snapshot counts the ages on to the snapshot, push_live sends
 `vehicles` {rows, total, read_age_s} without anything else, and static/mapview.js draws each on the surface shown (a
 square, grey from out of sight, a dashed line to its destination) and names it on hover.
 """
@@ -86,13 +86,13 @@ class FakeHarness(harness.Harness):
 
 def main():
     h = FakeHarness(READ)
-    v = h.vehicles()
-    check("harness.vehicles asks the census for part vehicles as an operator read", 'part = "vehicles"' in h.asked[0]
+    v = h.census_vehicles()
+    check("harness.census_vehicles asks the census for part vehicles as an operator read", 'part = "vehicles"' in h.asked[0]
           and 'action = "census"' in h.asked[0] and "operator = true" in h.asked[0], h.asked[0][:400])
-    check("harness.vehicles: tick, rows, total", v["tick"] == 66924930 and len(v["rows"]) == 5 and v["total"] == 3, v)
-    check("harness.vehicles: an empty list written as {} reads as no rows",
-          FakeHarness(dict(READ, vehicles={}, vehicles_total=0)).vehicles()["rows"] == [])
-    check("harness.vehicles: none from a runtime without the part (the read prints {})", FakeHarness({}).vehicles() is None)
+    check("harness.census_vehicles: tick, rows, total", v["tick"] == 66924930 and len(v["rows"]) == 5 and v["total"] == 3, v)
+    check("harness.census_vehicles: an empty list written as {} reads as no rows",
+          FakeHarness(dict(READ, vehicles={}, vehicles_total=0)).census_vehicles()["rows"] == [])
+    check("harness.census_vehicles: none from a runtime without the part (the read prints {})", FakeHarness({}).census_vehicles() is None)
 
     m = Model({"agents": {"opus": {"display_name": "Opus"}}})
     check("model: no vehicles before a read", m.vehicles_snapshot(1000.0) is None)

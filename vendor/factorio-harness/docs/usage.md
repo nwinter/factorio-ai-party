@@ -15816,7 +15816,7 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Cost: on world n (module probe, census.lua loaded in a throwaway state over its real census lists, d26 ~10:30): 0.122,
   0.065, 0.072 ms for its 3 spidertrons (one on Gleba, two on Nauvis; all in sight, none ridden or sent). world n had 3
   spidertrons, 0 cars and 7 tanks (force counts, 0.2 ms).
-- The stream service reads it every 10 s (tools/stream harness.vehicles, live.py); model.vehicles_snapshot counts each
+- The stream service reads it every 10 s (tools/stream harness.census_vehicles, live.py); model.vehicles_snapshot counts each
   age on to the snapshot; site/push_live.py `public_vehicles` sends `vehicles` (docs/LIVE-API.md); site/static/mapview.js
   draws the Vehicles layer (Team group). A runtime without the part answers nothing and the layer reads "not read".
 - Tests: tests/d26_batch233.lua (in lua.test.ts), site/test_vehicles.py; both fail on main.
@@ -15824,3 +15824,12 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   remote drive's target when an agent drives it by remote view. On world n (module probe after a save, d26 ~10:50):
   0.388, 0.318, 0.258 ms for its 10 (7 tanks and 3 spidertrons on Nauvis and Gleba; one spidertron sent by Opus to
   (-1632,-605)). The map draws a car or tank as a dot, a spidertron as a square.
+## d26 batch232 (VC: a remote spidertron framed where it is; viewer Aurora site:5020)
+- Host only (tools/stream; docs/STREAM-NOTES.md "A remote spidertron framed where it is"): no runtime change. The
+  stream service reads its agents' remote vehicles by unit number every poll with a raw Lua read (harness.py
+  VEHICLES_LUA: position, speed, next autopilot target, health; 5.4 us a spidertron on world n). Agents read nothing new.
+- onecam.py: the vehicle view aims 1 s ahead at no less than 1.2x the vehicle's speed (shift80 09:27: 9-10 tiles/s
+  behind a 13 tiles/s spider, 130 tiles back); a unit belongs to the agent who called it last; staleness counts from the
+  agent's own call; the barrage frame's glide is a speed in tiles/s.
+- Replayed 09:20-09:30 (director_replay.py --vehicles live): spider in frame 46.5 of 148 s on main, 236 of 237 s here.
+- Test: tools/stream/test_vehcam.py.
