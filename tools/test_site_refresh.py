@@ -6,7 +6,8 @@
 - a failed preview deploy leaves production alone; a failed production deploy says the preview has the new build;
 - --no-deploy builds and checks only;
 - (d22 batch97 BG3) one refresh at a time: a lock held by a live process is waited for (up to POG_SITE_REFRESH_WAIT,
-  then the refresh fails, naming its pid); one whose process is gone is taken over; the lock goes when it ends.
+  then the refresh fails, naming its pid); one whose process is gone is taken over; the lock goes when it ends;
+- (d26 batch241) DIST.deployed only while the build in DIST is the one production has (site/chart_deploy.py).
 """
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -52,13 +53,18 @@ def main():
         assert json.loads((tmp / "dist" / "live" / "status.json").read_text())["last_run"]["id"] == "s3"  # deployed with it
         assert (tmp / "dist" / "runs" / "long" / "index.html").exists()
         assert "site-refresh: done" in r.stdout.splitlines()[-1], r.stdout
+        assert (tmp / "dist.deployed").is_file(), "(batch241) a build production has is marked"
         r, calls = run(tmp, WRANGLER_FAIL="preview")
         assert r.returncode == 1 and len(calls) == 1 and "--branch preview" in calls[0], calls
         assert "FAILED: deploy to preview (production left as it was)" in r.stdout, r.stdout
         r, calls = run(tmp, WRANGLER_FAIL="main")
         assert r.returncode == 1 and len(calls) == 2 and "preview has the new build" in r.stdout, r.stdout
+        assert not (tmp / "dist.deployed").exists(), "a build production does not have is not marked"
+        r, calls = run(tmp)
+        assert r.returncode == 0 and (tmp / "dist.deployed").is_file(), r.stdout
         r, calls = run(tmp, "--no-deploy")
         assert r.returncode == 0 and calls == [] and "done (--no-deploy)" in r.stdout, r.stdout
+        assert not (tmp / "dist.deployed").exists(), "a build not deployed is not marked"
         assert not (tmp / "lock").exists(), "the lock goes with the refresh"
         holder = subprocess.Popen(["sleep", "30"])
         try:

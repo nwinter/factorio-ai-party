@@ -267,13 +267,17 @@ map's edge (dashed, its distance in the tooltip).
 colours (tiles; resources, trees, rocks and cliffs; then every building at its footprint, turned by its direction;
 rails as curves), with recipes and train stop names as text (no game icons or sprites), kept in runs/RUN/chart/out/.
 site/build.py publishes them with the site (tools/site-refresh.sh, hourly from tools/start-team.sh and at each shift
-change, so a cell is at most about an hour older than the stream's copy) under `/live/chart/`:
+change) under `/live/chart/`, and (d26 batch241) site/chart_deploy.py deploys the chart alone into that build every 5
+minutes (`POG_CHART_DEPLOY_EVERY` seconds; none while the Mac's 1-minute load average is over 3 times its cores) when a
+cell, labels file or a surface's `complete` changed, so the site's cells are at most about 6.5 minutes older than the
+stream's (shift80: 25-50 minutes). A new run starts with the run it resumed from's chart (cells, version,
+`complete`), so a restart publishes the current run's chart at once:
 `index.json` `{v, cell: 384, tick, surfaces: {name: {platform, cells: {"cx,cy": [version, oldest read tick, newest read
 tick, chunks, x0, y0, x1, y1]}, chunks: [stored, charted], complete}}}` (the last four: the box round our buildings in
 the cell, absent without any; `complete`: the surface's first pass is done, every charted chunk read and drawn, kept
 from then on),
 `SURFACE/CX_CY.png` (pixel (0,0) is tile (cx*384, cy*384)) and `SURFACE/CX_CY.labels.json` `{recipes: [[x, y, recipe]],
-stops: [[x, y, name]]}` (tiles). push_live reads the deployed index every 5 minutes and sends `chart {v, tick,
+stops: [[x, y, name]]}` (tiles). push_live reads the deployed index every minute and sends `chart {v, tick,
 surfaces, complete, saved}`; the page fetches `index.json?v=` when `v` changes and each cell as `CX_CY.png?v=version`. Once a
 surface's published chart is `complete` (cp7, viewer Aurora 21:36: a first publish of six cells hid Nauvis's terrain
 and buildings elsewhere) push_live leaves out what it replaces (`saved`: the bytes): on a complete Nauvis the basemap's `rows`,

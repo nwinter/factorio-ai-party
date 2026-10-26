@@ -70,9 +70,16 @@ def main():
           c == {"v": 42, "tick": 777, "surfaces": ["fulgora", "gleba", "nauvis"], "complete": ["gleba", "nauvis"]}, c)
     def boom(req, timeout):
         raise OSError("down")
-    check("read at most every 5 minutes, the last one kept when a read fails",
-          push_live.site_chart("https://example.test", now=1100, opener=boom) == c and push_live.site_chart("https://example.test", now=1400, opener=boom) == c
-          and "down" in push_live._chart["error"])
+    seen = []
+    def counted(req, timeout):
+        seen.append(req.full_url)
+        return R(body)
+    push_live.site_chart("https://example.test", now=1030, opener=counted)
+    push_live.site_chart("https://example.test", now=1061, opener=counted)
+    check("(batch241) read again after a minute, not before (it was 5 minutes: the site's map 5 more minutes behind)",
+          seen == ["https://example.test/live/chart/index.json"], seen)
+    check("the last one kept when a read fails",
+          push_live.site_chart("https://example.test", now=1200, opener=boom) == c and "down" in push_live._chart["error"])
     state = {"basemap": {"tick": 5, "cell": 16, "x0": 0, "y0": 0, "w": 2, "h": 2, "rows": ["AA", "SS"] * 50, "nests": [[1, 2, "s"]],
                          "turrets": [[1, 1, 18]], "core": {"cell": 2, "x0": -10, "y0": -20, "w": 30, "h": 40, "rows": ["A" * 30] * 40},
                          "ore": {"cell": 16, "rows": ["ii"]}, "terrain_grid": {"rows": ["aa"] * 100}, "terrain": [{"src": "/live/terrain/x.webp"}]},

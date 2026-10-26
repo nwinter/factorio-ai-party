@@ -349,6 +349,14 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_SITE_HOURLY:-1}" != 0 ]; then
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("site-hourly:$!:$rundir/site-hourly.log")
 fi
+# (d26 batch241) the chart alone, within minutes: site/chart_deploy.py deploys the run's changed cells into the build
+# production has, every 5 minutes (POG_CHART_DEPLOY_EVERY seconds; shift80's site map was 25-50 min behind the
+# stream's). POG_CHART_DEPLOY=0 turns it off; off with POG_PUSH_LIVE=0.
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_CHART_DEPLOY:-1}" != 0 ]; then
+  nohup python3 -u site/chart_deploy.py "$rundir" >"$rundir/chart-deploy.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("chart-deploy:$!:$rundir/chart-deploy.log")
+fi
 # The site's polls (site/polls_relay.py): RUN/polls.json for ./fh poll, the agents' team-block line, the stream's poll
 # strip and the hosts; agents' votes (./fh poll vote) posted with the token; agents' and viewers' poll ideas into the
 # operator inbox. POG_POLLS=0 turns it off; off with POG_PUSH_LIVE=0 (test runs must not vote in the public polls).
