@@ -2,7 +2,7 @@
 -- 12:11: the idle nudge told Haiku it had stood idle 11 min, 72 s into a 120 s uptime watch Astra had asked of it).
 -- A watch running is the agent's work: from its start to its end tick, its sampler reading it. The idle count, the
 -- clock line, the sleep line and the operator's idle report (idle.lua) read it as busy with that watch, named.
--- Each watch: id (kind@start tick), scope, start and end tick, samples, the latest sample, and a state:
+-- Each watch: id (kind@start tick/agent), scope, start and end tick, samples, the latest sample, and a state:
 --   running  sampled within STALE ticks, before its end tick
 --   done     its final result is in (final_read: the agent read it after the end, or not yet)
 --   late     its end tick passed LATE ticks ago and no final result came (its sampler stopped); not work
@@ -29,6 +29,17 @@ return function(api)
   local function at(q) return q and string.format('(%g,%g)', q.x, q.y) or '?' end
   local function pct(n, d) return d > 0 and math.floor(100 * n / d + 0.5) or 0 end
   local function jobs(kind) return (api.state()[kind] or {}) end
+  -- (d25 batch215 QZ3, Sol #2388: Sol's 13-machine and Astra's 41-machine uptime watches began on tick 63906911, both
+  -- "uptime@63906911") a watch's id names its owner: KIND@START_TICK/AGENT, kept on the watch once the name is known
+  -- (a watch begun before this keeps its start; the id is made on its first read). KIND@START_TICK alone, when the
+  -- owner is not known.
+  function M.id(kind, job, index)
+    if job.id then return job.id end
+    local who = api.who_index and index and api.who_index(index)
+    local id = string.format('%s@%d', kind, job.start)
+    if who then id = id .. '/' .. who; job.id = id end
+    return id
+  end
   -- What a watch reads (units: machines, turrets or belt points), how many are gone, its scope and latest sample.
   local DESCRIBE = {}
   function DESCRIBE.uptime(job)
@@ -136,7 +147,7 @@ return function(api)
     return {units=1, gone=job.gone and 1 or 0, scope=job.scope or '?', sample=#parts > 0 and table.concat(parts, ', ') or nil, empty=false}
   end
   -- One watch's row; tick = now.
-  local function row(kind, job, tick)
+  local function row(kind, job, tick, index)
     local d = DESCRIBE[kind](job)
     local sampled = job.sampled
     local state
@@ -145,7 +156,7 @@ return function(api)
     elseif tick > job.until_tick + M.LATE then state = 'late'
     elseif sampled and tick - sampled > M.STALE then state = 'stalled'
     else state = 'running' end
-    local r = {id=kind .. '@' .. job.start, kind=kind, scope=d.scope, start_tick=job.start, end_tick=job.until_tick, state=state,
+    local r = {id=M.id(kind, job, index), kind=kind, scope=d.scope, start_tick=job.start, end_tick=job.until_tick, state=state,
       samples=job.samples or 0, gone=d.gone > 0 and d.gone or nil, of=d.units,
       latest=sampled and {tick=sampled, s_ago=math.floor((tick - sampled) / 60), line=d.sample} or (d.sample and {line=d.sample}) or nil,
       final_read=nil}
@@ -176,7 +187,7 @@ return function(api)
     for _, kind in ipairs(M.KINDS) do
       local job = jobs(kind)[index]
       if type(job) == 'table' and job.start and job.until_tick and tick - job.until_tick <= M.KEEP then
-        local ok, r = pcall(row, kind, job, tick)
+        local ok, r = pcall(row, kind, job, tick, index)
         if ok then out[#out+1] = r end
       end
     end
@@ -194,7 +205,7 @@ return function(api)
       local job = jobs(kind)[index]
       if type(job) == 'table' and not job.result and job.until_tick and tick <= job.until_tick
         and not (job.sampled and tick - job.sampled > M.STALE) and not job.all_gone then
-        return kind .. '@' .. job.start, job
+        return M.id(kind, job, index), job
       end
     end
   end

@@ -2388,7 +2388,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line, mixed (d23 batch123 CF2: an edit inside what it measures split its window: the line); and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read or replaced, end_tick its time limit); none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch) running or needing it: id (KIND@START_TICK/AGENT), kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line, mixed (d23 batch123 CF2: an edit inside what it measures split its window: the line); and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read or replaced, end_tick its time limit); none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -16402,7 +16402,7 @@ M.beltsample=require('beltsample'){state=state,reason=function(v) return M.measu
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
 M.uptime=require('uptime'){state=state,reason=function(v) return M.measures.reason(v) end,timed=M.timed,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
-  status_name=function(e) return M.machine_status(e) end,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end,productivity_now=function(e,r) return M.craftrate.productivity_now(e,r) end}
+  status_name=function(e) return M.machine_status(e) end,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,watch_id=function(kind,job,index) return M.measures.id(kind,job,index) end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end,productivity_now=function(e,r) return M.craftrate.productivity_now(e,r) end}
 function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_tally (turrettally.lua, d20 batch60 V3, Astra #1521): turrets' kills and damage dealt over a window; inspect's too.
 M.turrettally=require('turrettally'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
@@ -16412,7 +16412,8 @@ function handlers.turret_tally(p,a) return M.turrettally.handler(p,a) end
 M.asteroidwatch=require('asteroidwatch'){state=state,count_by=function(st,n,c) return M.qflow.count_by(st,n,c) end,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform,timed=M.timed}
 -- signal_watch (signalwatch.lua, d24 batch140 PL1, Sol #2116): named signals on one circuit network over a window.
 M.signalwatch=require('signalwatch'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,
-  on_surface=function(p,name) return M.on_surface(p,name) end,parse_signals=function(v,what) return M.circuits.parse_signals(v,what) end}
+  on_surface=function(p,name) return M.on_surface(p,name) end,parse_signals=function(v,what) return M.circuits.parse_signals(v,what) end,
+  watch_id=function(kind,job,index) return M.measures.id(kind,job,index) end}
 function handlers.signal_watch(p,a) return M.signalwatch.handler(p,a) end
 -- remove_ghosts (removeghosts.lua, d24 batch144 PP1, Luna #2137): one's own entity ghosts (tile ghosts with tiles) in an
 -- area or at positions, taken away by remote view as the deconstruction planner takes ghosts.
@@ -17459,7 +17460,7 @@ M.factory_digest=require('factory_digest'){state=state,use_lines=function(force)
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
 -- (d20 batch70 AF1) each agent's bounded watches: uptime, turret_tally, belt_flow (measures.lua)
-M.measures=require('measures'){state=state}
+M.measures=require('measures'){state=state,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end}
 -- the running watch's row (sleep line), or nil
 function M.measure_row(index)
   local id=M.measures.running(index)
