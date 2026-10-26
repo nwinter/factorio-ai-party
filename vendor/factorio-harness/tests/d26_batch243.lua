@@ -19,7 +19,7 @@ local surface={name='nauvis'}
 surface.get_tile=function(x,y)
   local w=wetset[math.floor(x)..','..math.floor(y)] or false
   local name=w and 'water' or 'grass-1'
-  return {name=name,collides_with=function(l) return w and l=='water_tile' or false end,
+  return {name=name,collides_with=function(l) return w and (l=='water_tile' or l=='player' or l=='doodad') or false end,
     prototype={collision_mask={layers=w and {player=true,water_tile=true} or {}}}}
 end
 surface.find_entities_filtered=function() return {} end
@@ -46,15 +46,20 @@ local function line(a,b,n) local out={} for i=0,n do out[#out+1]={position={x=a.
 -- 1. clear / dry: a spot whose box (BOX each side) touches water has no room; the nearest spot with room.
 water(2,-50,40,50)                                  -- a lake east of x 2
 eq(P.clear(surface,{x=0.5,y=0.5}),true)
-eq(P.clear(surface,{x=1.5,y=0.5}),false,'the box reaches x 2')
-local d=P.dry(surface,{x=1.8,y=0.5},8); eq(d.x,0.5,'west by a tile')
+eq(P.clear(surface,{x=1.5,y=0.5}),true,'a 1x1 box at a tile centre covers that tile'); eq(P.clear(surface,{x=1.9,y=0.5}),false,'the box reaches x 2')
+local d=P.dry(surface,{x=1.8,y=0.5},8); assert(d.x<2 and P.clear(surface,d),'west of the water: '..d.x)
 eq(P.dry(surface,{x=20,y=0},8),nil,'mid-lake: none within 8')
 
--- 2. go_to from the water's edge: the path starts from the spot with room (on d26 every start was 1 tile from water)
+-- 2. go_to from the water's edge: the path starts from the spot with room (on d26 every start was 1 tile from water).
+-- From here the map is an island: a channel of 7 tiles (x 2..8, its legs step across), land, then a lake (x 20..50).
+wetset={}; water(2,-50,8,50); water(20,-50,50,50)
 sd.position={x=1.6,y=0.4}
 local r=R.set(spider,{go_to={x=60,y=0}},'sol')
-eq(#requests,1); eq(requests[1].start.x,0.5,'the start moved off the edge'); eq(requests[1].goal.x,60)
-assert(r.water and r.water.crossing[1]:find('crosses 39 tiles of water',1,true),r.water and r.water.crossing[1])
+eq(#requests,1); assert(requests[1].start.x<2 and P.clear(surface,requests[1].start),'the start moved off the edge'); eq(requests[1].goal.x,60)
+-- the doodad layer (the 13 tiles legs stand on none of; most buildings and trees carry water_tile), the cache off
+eq(requests[1].collision_mask.layers.doodad,true); eq(requests[1].collision_mask.layers.water_tile,nil)
+eq(requests[1].pathfind_flags.cache,false)
+assert(r.water and r.water.crossing[1]:find('crosses 31 tiles of water',1,true),r.water and r.water.crossing[1])
 eq(R.facts(spider).path,'a path round the water is being asked')
 
 -- 3. island escape: no path from the start; asked again from up to HOPS spots its legs step to across the water
@@ -66,6 +71,7 @@ assert(hops>=1 and hops<=P.HOPS,'hops '..hops)
 for k=before+1,#requests do
   local h=requests[k].start
   eq(P.clear(surface,h),true); eq(P.segment(surface,{x=1.6,y=0.4},h),nil,'a step its legs take')
+  assert(h.x>8 and h.x<20,'across the channel, not the same land: '..h.x)
 end
 answer(900+before+1)                                -- the nearest hop: none either
 local hop=requests[before+2].start
@@ -75,6 +81,17 @@ eq(route[1].x,hop.x); eq(route[1].y,hop.y)
 local l=lines()
 assert(l[1]:find('its route goes round the water now',1,true) and l[1]:find('its legs step first to '..P.at(hop),1,true),l[1])
 eq(R.facts(spider).path,nil); eq(R.facts(spider).no_path,nil)
+
+-- 3b. hops on open land come first: a 2-tile islet in a channel (x 2..14, islet x 6..7) is nearer the goal, the far
+-- shore (x 15 on) is open land (copy: from the islet at (76,338) the 4 nearest the goal were other islets)
+do
+  local keep=wetset
+  wetset={}; water(2,-50,14,50)
+  for x=6,7 do for y=-1,1 do wetset[x..','..y]=nil end end
+  local hs=P.hops(surface,{x=0.5,y=0.5},{x=6.5,y=0.5})
+  assert(#hs>=1 and hs[1].x>=15,'open land first: '..(hs[1] and hs[1].x or 'none'))
+  wetset=keep
+end
 
 -- 4. none at all: said, with the spots tried; the vehicle read says it too (never a silent stall)
 R.set(spider,{go_to={x=60,y=0}},'sol')
@@ -88,7 +105,7 @@ assert(R.facts(spider).no_path:find('found no path',1,true))
 -- 5. a target on water: the route ends at the dry spot nearest it, said in the reply
 local w=R.set(spider,{go_to={x=30,y=0}},'sol')
 assert(w.landed[1]:find('the target (30,0) is on water: the route ends at ',1,true),w.landed[1])
-assert(route[#route].x>40 or route[#route].x<2,'dry: '..route[#route].x)
+assert(route[#route].x>50 or route[#route].x<20,'dry: '..route[#route].x)
 
 -- 6. a long detour (over MAX_POINTS at SPACING) is thinned coarser, not "no path"
 local long={}
@@ -116,4 +133,16 @@ assert(l and l[#l]:find('backed off to (5.5,0.5), the last spot it stood 3 tiles
 assert(l[#l]:find('(recovery 1 of 3)',1,true))
 eq(route[1].x,5.5)
 assert(R.facts(spider).recovery[1]:find('backed off to (5.5,0.5)',1,true))
+
+-- 8. short water its legs did not cross (5 tiles, under GAP: go_to asked for no path): the recovery asks for one anyway
+wetset={}; water(10,-50,14,50)
+route={}
+sd.position={x=9.1,y=0.5}
+local before8=#requests
+R.set(spider,{go_to={x=30,y=0.5}},'sol')
+eq(#requests,before8,'5 tiles: crossable by the rule, no path asked')
+storage.spiderroute.spiders[8101].trail=nil
+ticks(R.STALL_WATER+120)
+eq(#requests,before8+1,'after the stall: asked'); eq(requests[#requests].goal.x,30)
+assert(storage.spiderroute.spiders[8101].tries[1]:find('asked again for a path round the water to (30,0.5)',1,true))
 print('d26_batch243: ok')

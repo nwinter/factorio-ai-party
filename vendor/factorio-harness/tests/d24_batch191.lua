@@ -23,7 +23,7 @@ local surface={name='nauvis'}
 surface.get_tile=function(x,y)
   local w=wx1 and x>=wx1 and x<=wx2 and (not wy or math.abs(y)<wy)
   local name=w and 'deepwater' or 'grass-1'
-  return {name=name,collides_with=function(l) return w and l=='water_tile' or false end,
+  return {name=name,collides_with=function(l) return w and (l=='water_tile' or l=='player' or l=='doodad') or false end,
     prototype={collision_mask={layers=w and {player=true,water_tile=true} or {}}}}
 end
 surface.find_entities_filtered=function(f)
@@ -178,7 +178,7 @@ wx1,wx2,wy=10,40,30
 requests={}
 sd.position={x=0,y=0}; spider.autopilot_destination=nil
 a=K.plan(p,{position={x=60,y=0}},spider,'remote'); K.start(a)
-eq(run(a,10),nil); eq(#requests,1); eq(requests[1].collision_mask.layers.water_tile,true); eq(requests[1].goal.x,60)
+eq(run(a,10),nil); eq(#requests,1); eq(requests[1].collision_mask.layers.doodad,true); eq(requests[1].goal.x,60)
 assert(a.water:find('crosses 31 tiles of deepwater',1,true),a.water)
 local path={}
 for i=0,50 do path[#path+1]={position={x=i*0.2,y=-i}} end         -- north, along the dry side
@@ -209,14 +209,14 @@ assert(lines and lines[1]:find('its route goes round the water now: ',1,true),li
 -- (d26 batch243) a target on water ends at the dry spot nearest it; no path: asked again from spots its legs step to
 -- (island escape), none either: said, the route kept straight to that spot
 local r2=R.set(spider,{go_to={x=30,y=0}},'sol')
-assert(r2.landed and r2.landed[1]:find('the target (30,0) is on water: the route ends at (41.5,0.5), the nearest spot its legs stand on',1,true),r2.landed and r2.landed[1])
-eq(r2.route_line,'1 target: (41.5,0.5)')
+assert(r2.landed and r2.landed[1]:find('the target (30,0) is on water: the route ends at (40.5,0.5), the nearest spot its legs stand on',1,true),r2.landed and r2.landed[1])
+eq(r2.route_line,'1 target: (40.5,0.5)')
 local asked=#requests
 P.on_path({id=500+#requests},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end)
-local hops=#requests-asked; assert(hops>=1 and hops<=P.HOPS,'hops '..hops)
+local hops=#requests-asked; eq(hops,0,'a lake of 31 tiles: no spot its legs step to across it')
 for k=1,hops do P.on_path({id=500+asked+k},function(rec,plan,sp,pts,notes) R.routed(rec,plan,sp,pts,notes) end) end
 lines=R.lines({name='sol'},{spiderroute_seen=storage.spiderroute.eseq-1})
-assert(lines[1]:find('the pathfinder found no path round the water to (41.5,0.5); asked again from '..hops..' spot',1,true) and lines[1]:find('its route stays 1 target: (41.5,0.5)',1,true),lines[1])
+assert(lines[1]:find('the pathfinder found no path round the water to (40.5,0.5); its route stays 1 target: (40.5,0.5)',1,true),lines[1])
 -- standing 2 tiles from the water (within WATER_NEAR) with no path being asked: 3 s, it backs off and asks again (3 times), then the stall line
 sd.position={x=8,y=0}
 local seen=storage.spiderroute.eseq

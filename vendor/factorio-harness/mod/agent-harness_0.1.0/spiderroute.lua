@@ -176,8 +176,9 @@ return function(api)
     local now = route(spider)
     local t = store().spiders[unit]
     if t and #now > 0 then t.near, t.best, t.target, t.moved = dist(spider.position, now[1]), dist(spider.position, now[1]), {x=now[1].x, y=now[1].y}, game.tick end
-    event(string.format('spidertron #%d: its route goes round the water now: %s%s%s', unit, route_line(now), #notes > 0 and '; ' .. table.concat(notes, '; ') or '',
-      err and '; the game refused it: ' .. err or ''), plan.by, unit)
+    -- (d26 batch243) a back-off's plan with no path found: its route goes back there and on, said as such
+    event(string.format(found and 'spidertron #%d: its route goes round the water now: %s%s%s' or 'spidertron #%d: no path round the water from its back-off spot either; its route: %s%s%s',
+      unit, route_line(now), #notes > 0 and '; ' .. table.concat(notes, '; ') or '', err and '; the game refused it: ' .. err or ''), plan.by, unit)
   end
   -- (d26 batch243) no progress with water within WATER_NEAR ahead (or STALL with water within GAP + 4) and no path being
   -- asked: back off to the last spot it stood with room for a path's box (else the nearest one) and ask again from there,
@@ -204,7 +205,8 @@ return function(api)
     local route2 = {{x=back.x, y=back.y}}
     for _, w in ipairs(r) do route2[#route2 + 1] = w end
     local err = P.write(e, route2)
-    local okp, lines = pcall(P.plan, e, {target}, {owner='route', by=t.by, from=back})
+    -- its legs did not cross here: any water on the line from the back-off spot asks for a path (gap 0)
+    local okp, lines = pcall(P.plan, e, {target}, {owner='route', by=t.by, from=back, gap=0})
     local did = string.format('stalled %s, %s from water on the line to %s, with no path being asked: backed off to %s, the %s, and %s (recovery %d of %d)',
       at(pos), ahead == 1 and '1 tile' or ahead .. ' tiles', at(q), at(back),
       from_trail and 'last spot it stood 3 tiles or more back with room for a path' or 'spot with room for a path straight back from its target',
