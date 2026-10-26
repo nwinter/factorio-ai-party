@@ -15953,6 +15953,48 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   target (as a build), and keeps a little alive while it walks; onecam.py keeps the planets' air time in
   runs/RUN/surface-air.json across a restart (it began empty at each shift: Aquilo and Fulgora agents x2.5).
 
+## d26 batch246 (FL, Astra #2461: a queue guard for bare foundation loss)
+- Case: in trial 242 Asterion lost a floor tile at (-50,-60), tick 67333569, and the hub rebuilt it, with no entity
+  lost or hit. platform_loss and platform_hit count entities only, so a queued safe-return plan could not react.
+- `platform_foundation_loss {platform, since_tick?, at_least?}` (1..1000, default 1): a wait_until condition and queue
+  guard, in the body, remote and platform lanes, inside all/any; dry_run and a submit refuse the same values
+  (conditions.lua validate). Foundation tiles of that platform destroyed since the wait or guard began.
+- The loss log (flightwatch.lua, storage.floorloss by platform index: a ring of LOSS_KEEP 256 rows {seq, x, y, pt,
+  seen, after, rebuilt}), two ways in:
+  - the hub's rebuild (on_space_platform_built_tile, forwarded always) of a tile on a ghost no one placed: a tile lost
+    and rebuilt between two reads counts, as "lost and rebuilt between reads (after tick N), rebuilt at tick T";
+  - a find of the platform's foundation ghosts (loss_scan: at most once every LOSS_SCAN 60 ticks a platform, and only
+    when such a wait or guard is checked; no per-tick scan): a ghost no one placed, first seen, counts as "ghost first
+    seen at tick S (lost after tick N)"; its rebuild later fills in that row's tick and adds none.
+  The game gives no event and no tick for the loss itself (memory factorio-platform-foundation-loss); "lost after"
+  is the read before.
+- Floor placed or mined on purpose is left out: a ghost an agent placed (place_ghosts, paste, routes: the ghost log's
+  record) or a player placed (the ghost's last_user), as flight_watch tells them; a tile an agent lays or mines by hand,
+  and robots' tile deconstruction, make no ghost and no platform build. The game's ghost on a destroyed tile has no
+  last user and no record. A player's ghost built before any find saw it reads as a loss (its last user is gone with it).
+- Not counted: ghosts already there at a platform's first find (their loss tick is unknown) and their rebuilds; on a
+  guard's first check, a ghost first seen after a find from before its start (its loss may be older). A find that
+  meets over 512 tile ghosts reads none and says so; rebuilds are still counted.
+- Baseline: `fl_since` (since_tick, else the submit or the first check) and `fl_seq` (its place in the log) on the
+  guard's when, or a wait's record; queue_edit keeps both for a guard not named (scheduler.lua seed), and the reply's
+  baseline reads "foundation tiles of NAME destroyed since tick T".
+- When met, saw names up to 8 tiles and `+N more`; a fired guard keeps the rows {x, y, seen, after, rebuilt} as its
+  evidence in the queue history.
+- On a copy of world n (_autosave12, tick 68001021, Asterion flying, 212 foundation in its hub), a platform-lane
+  guard on luna's queue; each tile destroyed by script as the game does it (set_tiles to empty space, a foundation tile
+  ghost of ours with no last user) at Asterion's bare edge x=49:
+  - (49,-55) at 68002041: fired at 68002050, "ghost first seen at tick 68002050 (lost after tick 68001990), not rebuilt
+    yet"; the hub rebuilt it by 68002161;
+  - the queue paused (queue_pause), (49,-56) destroyed at 68002431, rebuilt by the hub at 68002495, queue_resume at
+    68002731: fired at 68002740, "lost and rebuilt between reads (after tick 68002410), rebuilt at tick 68002495";
+  - with a guard armed, luna's place_ghosts of a foundation tile at (50,-57) (built by the hub) and deconstruct of the
+    tile (49,-58) (taken up by the hub): no fire over 600 ticks; a strike at (49,-57) then fired it 39 ticks later with
+    that one tile.
+- Cost on the copy (profile_ticks, 600 ticks, one guard armed, one strike): flightwatch.loss_scan 60 calls 8.85 ms, 10
+  of them a find over Asterion's surface (about 0.9 ms a find, once a second a platform while checked; the rest return
+  at once); flightwatch.built_tile 0.18 ms an event (flight_watch's own work included).
+- Test: tests/d26_batch246.lua (in lua.test.ts), failing on main (no such condition).
+
 ## d26 batch242 (HP, Astra #2454: heat network preview)
 - Case (runs/shift81/astra/journal.jsonl, 20:03-20:10Z): an Aquilo beacon retrofit crossed a dense heat trunk.
   deconstruct of the heat pipes in (11,3)-(14,6) named 815 cut-off parts only after marking; rerouting took several
@@ -16023,6 +16065,11 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - vx_review.py counts a threat the program framed as on air (insets apart); director_replay.py `--fights` reads
   current alert texts.
 - Test: tools/stream/test_battlecam.py.
+- Checkpoint 2 (SP, viewer Aurora 14:53: the spider shot): a vehicle shot's standby follows the vehicle and frames it
+  before the cut; dwell counts while it is in the frame; the lead follows what the live reads saw (a stuck spider's read
+  with speed leads nowhere) and stays inside the frame's inner box, a stop inside it holds the frame; a vehicle stuck
+  20 s with no fight or fire has served its dwell and counts as standing, moving on again is news. director_replay.py
+  gives both rule sets the vehicle and build interest bumps. Test: tools/stream/test_spidershot.py.
 - cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
   the copy): smaller defaults, the flags unchanged.
   - The walk gives the components before as it goes (no second pass); positions and connection points are read only
