@@ -942,6 +942,9 @@ html { scroll-padding-top: 76px; }
 .upd p { margin: 3px 0 0; }
 .upd-msgs { margin-top: 4px; font-size: .9rem; }
 .upd-flag { color: var(--muted); font-style: italic; }
+/* (d26 batch235 UR, viewer Aurora site:5022) an open row's priority, owner and next review; the backlog line */
+.upd-review { color: var(--muted); }
+.upd-backlog { margin: .25rem 0 0; }
 .upd-history { margin-top: 2px; font-size: .9rem; }
 .upd-history > summary { cursor: pointer; color: var(--muted); }
 .upd-history ul { list-style: none; padding: 0 0 0 10px; margin: 4px 0 0; border-left: 3px solid var(--line-strong); }
