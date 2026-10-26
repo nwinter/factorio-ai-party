@@ -264,7 +264,7 @@ test('fh sleep polls sleep_check with peek, then reads once normally; death exit
     assert.deepEqual(seen.slice(1,-1).map(r=>r.args.peek),[true,true]);
     assert.equal(seen.at(-1).args.peek,undefined);
   }
-  await assert.rejects(cli(1,['sleep','901']),(error:any)=>/SECONDS 1\.\.900/.test(error.stdout));
+  await assert.rejects(cli(1,['sleep','0']),(error:any)=>/SECONDS 1\.\.900 \(more runs 900\)/.test(error.stdout));
 });
 function sleepEngine(seen:any[], woke='condition') {
   let checks=0;
@@ -360,8 +360,27 @@ test('fh call sleep SECONDS is seconds through the same blocking sleep; more wor
   await assert.rejects(cli(1,['call','sleep','300','60']),(error:any)=>/seconds 1\.\.900: fh sleep SECONDS or fh call sleep SECONDS/.test(error.stdout));
   await assert.rejects(cli(1,['call','sleep','5m']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
   await assert.rejects(cli(1,['call','sleep','300','--args','{"seconds":60}']),(error:any)=>/sleep seconds given twice \(300 and --args seconds 60\)/.test(error.stdout));
-  await assert.rejects(cli(1,['call','sleep','901']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
   await assert.rejects(cli(1,['call','sleep','0']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+});
+test('a sleep or wait over 900 s runs 900 and says so (d26 batch238 SC: hold.py asked 1150 and looped on the refusal)',async()=>{
+  for (const [args,said] of [[['sleep','1150'],'asked 1150 s; slept the 900 s maximum'],
+    [['call','sleep','1150'],'asked 1150 s; slept the 900 s maximum'],
+    [['call','sleep','--args','{"seconds":1150}'],'asked 1150 s; slept the 900 s maximum'],
+    [['wait','--until','tell','--max','1150'],'asked 1150 s; waited the 900 s maximum']] as [string[],string][]) {
+    const seen:any[]=[];
+    await engine(sleepEngine(seen,'elapsed'),async port=>{
+      assert.equal(JSON.parse((await cli(port,args)).stdout).result.corrected,said,args.join(' '));
+    });
+    assert.equal(seen[0].action,'sleep'); assert.equal(seen[0].args.seconds,900,args.join(' '));
+  }
+  const seen:any[]=[];
+  await engine(sleepEngine(seen,'told'),async port=>{
+    assert.equal(JSON.parse((await cli(port,['sleep','1150'])).stdout).result.corrected,'asked 1150 s; capped at the 900 s maximum');
+    const {stdout}=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'wait','--until','tell','--max','1150'],
+      {env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    assert.match(stdout,/^woke: told after 2 s.*\ncorrected: asked 1150 s; capped at the 900 s maximum\n/);
+  });
+  assert.deepEqual(seen.filter(r=>r.action==='sleep').map(r=>r.args.seconds),[900,900]);
 });
 test('a sleep never runs past the deadline: cut to the time left, or none after it',async()=>{
   const { mkdtemp, writeFile } = await import('node:fs/promises');
