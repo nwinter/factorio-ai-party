@@ -11,6 +11,19 @@ return function(api)
   local STILL_TICKS = 1800
   local STARVED_TICKS = 600 -- a starved wake looks at the sleeper's claims every 10 s
   local MAX_ANY = 8         -- conditions in one until=any
+  -- (d25 batch214 QZ2) the most a sleep takes, also a queue step's check (runtime.lua step_ranges, step_lengths)
+  M.MAX_TICKS, M.MAX_ANY = MAX_TICKS, MAX_ANY
+  -- A sleep's condition as members: {until=any, conditions} (or a list) gives its conditions, else the one.
+  function M.members(c)
+    assert(type(c) == 'table', 'condition is a wait_until condition: {until=..., ...}')
+    if c['until'] == 'any' or c[1] ~= nil then
+      local members = c['until'] == 'any' and c.conditions or c
+      assert(type(members) == 'table' and #members >= 1 and #members <= M.MAX_ANY,
+        'until=any takes conditions: 1..' .. M.MAX_ANY .. ' wait_until conditions (alert among them); whichever holds first wakes it')
+      return members
+    end
+    return {c}
+  end
   -- A sleep with nothing running and nothing to wait for is cut to this (d15 H4, Nick 07:45: Sonnet asked 900 s in 90
   -- of 162 sleeps in shifts 14-16, 73% of its time asleep with its character idle); 900 s needs a queue, an action or a
   -- condition.
@@ -204,16 +217,7 @@ return function(api)
     -- Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok: `alert|platform_arrived
     -- NAME`): {until=any, conditions=[...]} (or a list), whichever holds first wakes it.
     local members
-    if a.condition ~= nil then
-      assert(type(a.condition) == 'table', 'condition is a wait_until condition: {until=..., ...}')
-      if a.condition['until'] == 'any' or a.condition[1] ~= nil then
-        members = a.condition['until'] == 'any' and a.condition.conditions or a.condition
-        assert(type(members) == 'table' and #members >= 1 and #members <= MAX_ANY,
-          'until=any takes conditions: 1..' .. MAX_ANY .. ' wait_until conditions (alert among them); whichever holds first wakes it')
-      else
-        members = {a.condition}
-      end
-    end
+    if a.condition ~= nil then members = M.members(a.condition) end
     -- until=alert (fh wait --until alert): a new attack, enemy group or enemy base alert for the team; with kinds
     -- (Luna, 19:50: low power, starvation in a claim), a new or grown alert group of those kinds addressed to you, or
     -- starved: a machine in one of your claims that lacks ingredients and did not when the sleep began.

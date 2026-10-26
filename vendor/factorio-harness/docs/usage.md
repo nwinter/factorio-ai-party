@@ -15213,3 +15213,55 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Test: tools/test_pane_resume.py, with fake panes and fixed times. It replays shift76's Muse screen and also covers
   mid-turn panes, Grok's dialog (Enter never on Buy more credits), Claude, Codex, agy, a dry run and the deadline. It
   fails on main (no tools/pane_resume.py). Under POG_TEST=1, HerdrPanes refuses (docs/TESTS-LIVE.md).
+## d25 batch214 (QZ1, Sol #2379: uptime rows in pages; QZ2, Astra #2380: limits dry_run missed)
+- QZ1. Sol's 600 s Asterion watch of 20 machines gave `machine_rows` as text above 16 (uptime.ROWS: 64 rows of 15
+  fields took 23 ms to encode on a copy), so the coal and sulfur shortage counters of each machine could not be compared.
+  - `uptime {read: true, page?, page_size?, positions?, id?, details?}` (uptime.lua M.read) reads a watch and never
+    starts or replaces one (M.starts is false with read). Rows are M.machine_row's (now apart from M.result) or
+    M.lab_row's for the page's machines only, with `index` and `short_counts` {ingredient: {samples, least, need,
+    first_tick, last_tick}}; `details: true` keeps each row's `line` and adds `lines`. `positions` picks machines (the
+    nearest centre within M.MATCH 2 tiles a side; `not_found`), `id` `uptime@START_TICK` any agent's (`agent` names
+    the owner; only the owner's read marks a done one read). A done watch counts to `ended_tick` (set when it ends) or
+    `until_tick`, so a late read gives its final numbers. The default `uptime {}` is unchanged.
+  - Checked with no world (M.check_read): read true; not with seconds, area, items, position, surface, platform,
+    recipe, quality or reason; id `uptime@N`; page 1..64; page_size 1..16 (M.ROWS); details boolean; positions 1..64
+    {x,y}. runtime.lua step_checks.uptime runs it at submit and in dry_run.
+  - On a copy of world n (d25 16:50 save, Sol's 20 positions and 8 items on Asterion, 142 samples): `uptime {}` 15.5 KB,
+    12.3 ms a call (2.7 ms of it the JSON); page 1 13.9 KB, 13.3 ms (9.7 ms JSON); page 2 3.3 KB, 4.9 ms (2.0 ms
+    JSON); page 1 with details 25.2 KB, 14.0 ms; 3 positions 4.0 KB, 5.6 ms. The copy encodes a number in about
+    27 us, world n about 3.9 us. Rows with short_counts: 3 of 16 on page 1, the first cryogenic plant coal 6 samples
+    (ticks 63628936-63636136), sulfur 4. A queued read (body lane) returned page 2 of the same watch
+    (uptime@63628735, its samples still counting). No tick work.
+- QZ2. Astra's dock baseline 196 passed dry_run with 9 uptime items; live, its earlier steps ran, then uptime refused
+  ("items: 1..8 items ..."). batch208's sweep had grepped limits written as numbers; this one is written as a constant.
+  - Method: every `#x <= CONSTANT` refusal in the mod (157) mapped to its action, and every `integer(a.key, d, lo,
+    hi)` (184) and documented `lo..hi` range probed: a queue_submit dry_run with the value one past the end, in the body
+    lane and then the remote lane, on the test runtime; each one accepted checked against the live call's refusal
+    (its message on the test runtime, or the code where the call stops first at a world read).
+  - Added to step_lengths: uptime `items` (uptime.ITEMS, a new watch only), inspect `name` with area or radius
+    (TYPES_MAX; described now), recipes and technologies `name` (LIST_NAMES), platforms, status and inspect `fields`
+    (M.field_list, the read's own parser: a list, or one string split at | ,), transfer `via` (VIA_POINTS), transfer and
+    collect `items` with pick (ITEMS_MAX), transfer `steps` (transferchain.count_legs: the chests in all its steps,
+    MAX_LEGS 32), sleep `condition` (waits.members: until=any 1..MAX_ANY 8).
+  - Added to step_ranges (each handler's bound): scan limit 1..1024, radius 1..64, page 1..4; nearest limit 1..64,
+    radius 1..128; inspect radius 1..64; stock limit 1..64, radius 1..1024; map radius 32..1024, limit 1..256; recipes
+    and technologies limit 1..256; shipment limit 1..128 (ledger); damage_log and grid radius 1..64; artillery radius
+    1..4096; alerts_digest limit 1..64; danger radius 8..128, quiet_s 10..3600; power radius 1..64 (fragile 8..512),
+    limit 1..256; belt_upgrade tiles 1..512; blueprint_list limit and from 1..256 (H.limits.LIBRARY); sleep seconds
+    1..900 (waits.MAX_TICKS/60); flight_watch minutes 1..480 (MAX_MIN); craft count 1..1000; construct ticks
+    1..216000; build_path and clear_cliffs ticks 1..36000; assembler_batch count 1..10000; heat_budget add_pipes
+    0..5000; outpost radius 4..128; drill_sites limit 1..16, radius 2..24; supply and trace radius 1..512; spider_kite
+    radius 8..64, ticks 1..36000, ammo_below 1..100000; delivery_watch count 1..1000000 (with item); avoid_enemies as a
+    margin 0..32 (move_to, recover, belt_route, vehicle with drive); vehicle ticks 1..36000 (drive); where_is limit
+    1..50; refuel from_radius 1..128; mine, pickup and repair ticks 1..600 in their one-entity modes.
+  - Not added: craftable (not queueable); feed and collect `via` (not their arguments); placements limit and radius
+    (clamped, not refused); pages whose end is the page count of what is read (gates, ghosts, losses, platform_plan,
+    stock); losses limit, stock page and turrets below (the call took the value on the test runtime: the check is in a
+    mode not mapped); vehicle combat (against the gun's range); wait_until's own (conditions.validate already runs at
+    submit); load_silo items (counted after merging repeats) and fields inside list entries (an entry's wires); the
+    board, tell, chat, say, lesson, reminder, vote, profile, operator and harness_request texts and lists (queueable;
+    tell and say cut a long text in a queue step; none of shift76's 1525 queued steps was one of them).
+  - On the copy: main's dry_run took uptime 9 items, scan limit 2000, flight_watch minutes 481 and platforms 33
+    fields; this runtime refused each, and each live call refused with its own message.
+- Tests: tests/d25_batch214.lua (QZ1) and tests/d25_batch214b.lua (QZ2), both failing on main; tests/d25_batch208.lua
+  now has a pick mode and counts a chain's steps.
