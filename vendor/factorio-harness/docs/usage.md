@@ -15328,3 +15328,46 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   397-419; the stock sample (every 5 game minutes, all networks) 16-17 us against 14. Engine reads: the same or
   fewer (one supply read per item@quality).
 - Test: tests/d25_batch218.lua (fails on main in each part).
+## d25 batch217 (QAB1, Sol #2390: one chest's robots beyond the first 1024)
+- Cause: Nauvis's network #243 has 7523 logistic robots, 2600-3500 of them in the air (`logistic_robots` lists only
+  those). `reservations {network}` reads the orders of the first 1024 of them, so the robots between the landing pad
+  at (52,54) and the requester at (-269.5,486.5) could not be shown. On the copy that read took 64 ms (handler median).
+- The engine gives each logistic point its own counts (`targeted_items_deliver`, `targeted_items_pickup`), every robot
+  included, and lists no robots per point. So `reservations {position, from?, radius?, item?, surface?}`
+  (reservations.lua M.point) reads:
+  - the counts at the chest's or pad's points in a network. A point in no network (a landing pad's request from
+    platforms in orbit) is `from_orbit`, and no robot brings it.
+  - the logistic robots in the air in boxes: radius (8..128, default 64) round position and round from, and boxes of
+    32 tiles either side along the line between. `find_entities_filtered{area, type='logistic-robot', limit}`, up to
+    READ_MAX 1024 robots, each once (by unit_number).
+  - each robot's `robot_order_queue`. An order whose target is the entity is a pickup there (its destination is the
+    next order's target) or a delivery there (its source is the order before it, a pickup, when the robot has not
+    picked up yet; carrying: the engine keeps no source). Grouped as routes, 24 robots with their position.
+  - found set against the counts: `not_found_on_the_way` and `not_found_for_pickup`.
+- `sweep: true` (with position): a job (state().robot_sweeps, one an agent, kept 10 min done) over the box of the
+  network's cells, their logistic radius and 64 tiles round. Each tick it does one step: one column of 32 tiles
+  (find), or 256 robots' orders. Nauvis: 42 columns, 76-77 ticks. `reservations {sweep: N}` reads it: running, or
+  the read, with the counts at its start and end (`at_start`). What was found is set against the larger of the two.
+  It is a profile part: `reservations.tick`.
+- Checked with no world (`check_point`: the call, a queue step and dry_run): position {x,y}; from {x,y}; radius
+  8..128; no network with position; `sweep: N` alone; sweep with no from or radius.
+- On the copy (world n's 20:34 save, tick 64114921, network #243: 7523 robots, 3468 in the air), handler medians of
+  5 calls (profile part `reservations.read`):
+
+  | read | handler | dispatch | reply |
+  |---|---|---|---|
+  | network 243 (before; the first 1024 robots) | 64.4 ms | 67.2 ms | 4.7 KB |
+  | the pad (52,54), radius 64 (270 robots read) | 1.96 ms | 4.6 ms | 3.1 KB |
+  | requester (102.5,-43.5) from the pad (465 robots read) | 3.00 ms | 5.6 ms | 3.8 KB |
+  | requester (-269.5,486.5) bioflux from the pad (336) | 2.85 ms | 6.0 ms | 1.3 KB |
+  | the same, radius 128 (960) | 5.89 ms | 8.7 ms | 1.2 KB |
+
+  - The pad: reserved for pickup steel-plate 48 and processing-unit 4, and all 52 were found on 13 robots flying to
+    it, each with its requester. Its request from orbit (steel-plate 302, calcite 22) was apart.
+  - A sweep of requester (102.5,-43.5): 2628 robots read of 2655 in the air over 77 ticks. It found stone-brick 52
+    and steel-plate 33 on 22 robots, its counts at both ends. That is 17 carrying, and 5 flying to passive providers
+    at (-134.5,-540.5), (-140.5,-540.5) and (-134.5,-550.5).
+  - The sweep's step: 78 steps in 27.6 ms (0.35 ms on average; the busiest second 56 steps in 18.4 ms).
+  - Sol's requester had nothing on the way in this save.
+- Unchanged: `reservations {network}` and where_is (their robot reads stay the first 1024).
+- Test: tests/d25_batch217.lua (tests/d25batch217.test.ts), failing on main.
