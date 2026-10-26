@@ -121,7 +121,10 @@ return function(api)
       if r then r.b = who; r.bt = game.tick; return end
     end
     local pos = e.position
-    put(k, {a=who, t=game.tick, v=via, h=hand or nil, s=e.surface.name, n=nkey(pos.x, pos.y)}, is_tile(e))
+    -- (d25 batch216 QAA1) a tile ghost's unit number: the record is that ghost's only (an asteroid's destroyed tile gets a
+    -- new ghost from the game at a spot an agent's ghost was once built from)
+    local u = is_tile(e) and try(function() return e.unit_number end) or nil
+    put(k, {a=who, t=game.tick, v=via, h=hand or nil, s=e.surface.name, n=nkey(pos.x, pos.y), u=u}, is_tile(e))
   end
   function M.forget(e)
     if not (e and e.valid) then return end
@@ -178,10 +181,18 @@ return function(api)
   end
   -- (d24 batch144 PP1) Who placed a ghost: the agent of the harness's record, else the game's last user; nil when
   -- neither knows. The second value says which: 'record' or 'last_user'.
+  -- (QAA1) a tile record kept with its ghost's unit number names another ghost than e: not e's
+  local function other(r, e)
+    if not (r and r.u and e) then return false end
+    local ok, u = pcall(function() return e.unit_number end)
+    return ok and u ~= nil and u ~= r.u
+  end
+  -- (QAA1) the third and fourth values: the record's tick, and true when it was kept with e's own unit number
   function M.owner(e)
     if not (e and e.valid) then return nil end
     local r = rec_of(e)
-    if r then return r.a, 'record' end
+    if other(r, e) then r = nil end
+    if r then return r.a, 'record', r.t, r.u ~= nil end
     local lu = last_user(e)
     if lu then return lu, 'last_user' end
   end
@@ -191,9 +202,19 @@ return function(api)
     local t = L.pidx[surface_name]
     local r
     if not L.pidx_done or (t and t[nkey(pos.x, pos.y)]) then r = (tile and L.tmap or L.map)[surface_name .. '|' .. name .. '|' .. pos.x .. ',' .. pos.y] end
-    if r then return r.a, 'record' end
+    if other(r, e) then r = nil end
+    if r then return r.a, 'record', r.t, r.u ~= nil end
     local lu = last_user(e)
     if lu then return lu, 'last_user' end
+  end
+  -- (QAA1) a tile ghost's record dropped once its tile is built (on_space_platform_built_tile): a later ghost there is
+  -- another's
+  function M.forget_tile(surface_name, name, pos)
+    local L = st()
+    local k = surface_name .. '|' .. name .. '|' .. pos.x .. ',' .. pos.y
+    local r = L.tmap[k]
+    if r then unindex(L, r); L.tmap[k] = nil; return true end
+    return false
   end
   function M.stats()
     local L = st()

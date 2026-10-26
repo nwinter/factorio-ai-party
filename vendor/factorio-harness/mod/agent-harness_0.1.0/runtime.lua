@@ -19594,7 +19594,10 @@ M.ammoreserve=require('ammoreserve'){state=state}
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
   fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
-  trace_done=function(pl) return M.ammofeed.done_tick(pl) end,supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end,mixed_view=function(w) return M.mixed and M.mixed.view(w) end}
+  trace_done=function(pl) return M.ammofeed.done_tick(pl) end,supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end,mixed_view=function(w) return M.mixed and M.mixed.view(w) end,
+  -- (d25 batch216 QAA1) who placed a foundation ghost (the ghost log), and whether control.lua forwards the platform's tile builds
+  ghost_owner=function(g) return M.ghostlog.owner(g) end,ghost_owner_at=function(s,name,pos) return M.ghostlog.owner_at(s,name,pos,true) end,ghost_forget_tile=function(s,name,pos) return M.ghostlog.forget_tile(s,name,pos) end,
+  built_tile_heard=function() return script.get_event_handler(defines.events.on_space_platform_built_tile)~=nil end}
 function handlers.flight_watch(p,a) return M.flightwatch.call(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -19752,7 +19755,7 @@ M.platwait=require('platwait'){state=state}
 -- Who edited a request section or a departure gate (editlog.lua; d19 batch41 B1, Sol seq 861).
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
-space=space_module{made=function(t) return M.made.mark(t) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
+space=space_module{made=function(t) return M.made.mark(t) end,floor_read=function(pl) return M.flightwatch.floor_read(pl) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
   plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
@@ -20922,6 +20925,12 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record
+  if event.name~=nil and event.name==(defines.events or {}).on_space_platform_built_tile then
+    local ok,err=pcall(M.timed,'flightwatch.built_tile',M.flightwatch.on_built_tile,event)
+    if not ok then local s=state(); s.floorlog_error={tick=game.tick,error=tostring(err)} end
+    return
+  end
   -- (d24 batch179 QV1) a cargo pod leaving, landing or delivering: the pod ledger (podlog.lua); faults are counted
   if M.podlog.EVENTS[event.name] then
     local ok,err=pcall(M.podlog.on_event,event)

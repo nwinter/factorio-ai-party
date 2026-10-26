@@ -159,7 +159,7 @@ return function(api)
     -- (d25 batch212 QX1) a flight watch's part keeps its ammunition and repair packs used, read at from and to
     local fw = type(read) == 'table' and read or {}
     return {from_tick=from, to_tick=to, line=type(read) == 'table' and (read.line or read.note) or nil, lines=#lines > 0 and lines or nil,
-      ammunition=fw.ammunition, repair_packs_used=fw.repair_packs_used}
+      ammunition=fw.ammunition, repair_packs_used=fw.repair_packs_used, foundation=fw.foundation}  -- (d25 batch216 QAA1) its foundation too
   end
   local function summary(mx)
     local e = mx.edits[1]
