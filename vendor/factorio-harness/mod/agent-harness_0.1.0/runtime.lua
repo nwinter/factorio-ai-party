@@ -21022,7 +21022,7 @@ function M.on_event(event)
   end
   if event.name==defines.events.on_script_path_request_finished then
     -- (d24 batch191) a spidertron's path round water (spiderpath.lua): its go_to route or its spider_kite
-    local okp,ours=pcall(M.spiderpath.on_path,event,function(rec,plan,spider,pts,notes)
+    local okp,ours=pcall(M.timed,'spiderpath.on_path',M.spiderpath.on_path,event,function(rec,plan,spider,pts,notes)  -- (d26 batch243) its own part in profile_ticks
       if rec.owner=='kite' then M.spiderkite.routed(state().active[rec.index],plan,spider,pts) else M.spiderroute.routed(rec,plan,spider,pts,notes) end
     end)
     if okp and ours then return end
