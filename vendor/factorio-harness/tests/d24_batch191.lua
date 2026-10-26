@@ -172,12 +172,13 @@ assert(a.why:find('found no path round the water',1,true),a.why)
 last={}; K.finish(a,'stalled',last,function() end,'sol'); eq(last.recovery,a.tried); eq(last.no_path,a.no_path)
 wx1,wx2=nil,nil
 
--- 9. spiderpath: a run of more than GAP tiles blocks a straight line (14 crossed on the copy, 16 did not).
-wx1,wx2=10,21  -- 12 tiles: crossable
+-- 9. spiderpath: a run of more than GAP tiles blocks a straight line ((d26 batch247 NV4) GAP 14: on the copy straight
+-- strips of 14 and 15 crossed every time, 16 two times of three, 17 and 18 not).
+wx1,wx2=10,23  -- 14 tiles: crossable
 eq(P.segment(surface,{x=0,y=0},{x=40,y=0}),nil)
-wx1,wx2=10,23  -- 14 tiles
+wx1,wx2=10,25  -- 16 tiles
 local seg=P.segment(surface,{x=0,y=0},{x=40,y=0})
-assert(seg and seg.run==14 and seg.tile=='deepwater',seg and seg.line); eq(seg.line,'(0,0) -> (40,0) crosses 14 tiles of deepwater from (10.5,0.5)')
+assert(seg and seg.run==16 and seg.tile=='deepwater',seg and seg.line); eq(seg.line,'(0,0) -> (40,0) crosses 16 tiles of deepwater from (10.5,0.5)')
 -- the shore: the dry tile nearest the target within 24 tiles (water 10..40: this side)
 wx2=40
 local s2=P.shore(surface,{x=5,y=0},{x=40,y=0}); assert(s2.x<10,'dry: '..s2.x)

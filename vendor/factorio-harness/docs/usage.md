@@ -14497,6 +14497,11 @@ spiderroute.lua):
 - NV3: a car's or tank's drive stuck on its path (neither moving nor turning for 1.5 s) backs up 1 s and asks for a
   fresh path twice (was once), ours spared as always; the third stall is `blocked`, naming both back-offs
   (`last.backed_up`: each, joined by "; then ").
+- NV4 (copy): what its legs step across, by raw routes (no planning) over deepwater: straight strips of 14 (3 of 3) and
+  15 (4 of 4) were crossed, 16 two times of three, 17 and 18 never; strips at 45 degrees up to 18 tiles across (25 along
+  the line) were crossed, 20 not (it slid along the edge); jagged strips (each row's edges moved up to 3 tiles) up to
+  18 tiles on the line were crossed. GAP (a straight leg's water run taken as crossable, and a hop's reach) is now 14
+  (was 12): a strip of 14 is walked straight, one of 15 gets a path round it.
 
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 

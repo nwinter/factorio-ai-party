@@ -146,8 +146,8 @@ ticks(R.STALL_WATER+120)
 eq(#requests,before8+1,'after the stall: asked'); eq(requests[#requests].goal.x,30)
 assert(storage.spiderroute.spiders[8101].tries[1]:find('asked again for a path round the water to (30,0.5)',1,true))
 -- 9. spider_kite's shore spot: room for the box and a straight line its legs walk (d26: the spot across the water,
--- (77.5,314.5), stalled again 1 tile from it). A strip of 14 tiles (over GAP) between: it stays on this side.
-wetset={}; water(10,-50,23,50)
+-- (77.5,314.5), stalled again 1 tile from it). A strip of 16 tiles (over GAP) between: it stays on this side.
+wetset={}; water(10,-50,25,50)
 local sh=P.shore(surface,{x=5.5,y=0.5},{x=60,y=0.5})
 assert(sh and sh.x<10 and P.clear(surface,sh),'this side: '..tostring(sh and sh.x))
 -- 10. its arrival said to the sender (a go_to replies at once; before, nothing said it got there)

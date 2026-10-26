@@ -31,7 +31,9 @@ return function(api)
   local M = {}
   -- (d26 batch243) BOX 0.5: a 1x1 box at a tile's centre covers that tile; the 2x2 box (BOX 1) at a centre overlaps 3x3
   -- tiles, and on the islet at (75,338), where #27069154 stood, no spot had room for it (8 had for 1x1)
-  M.GAP, M.SPACING, M.BOX, M.MAX_POINTS = 12, 12, 0.4, 120
+  -- (d26 batch247 NV4, copy) GAP 14: straight strips its legs crossed 14 (3 of 3) and 15 (4 of 4), 16 (2 of 3), not 17
+  -- or 18; 45-degree strips up to 18 across (25 along the line) and jagged strips up to 18 on the line all crossed
+  M.GAP, M.SPACING, M.BOX, M.MAX_POINTS = 14, 12, 0.4, 120
   M.HOPS, M.HOP_MIN, M.DRY_START, M.DRY_GOAL, M.LAND, M.DRY_FAR = 4, 4, 8, 24, 20, 48
   local water = {}  -- tile name -> its legs cannot stand on it (player or rail layer; prototype facts: the same on every peer)
   local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end

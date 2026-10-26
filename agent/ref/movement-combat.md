@@ -226,7 +226,8 @@
   (or `remote: true, vehicle`) of a spidertron alone reads its route and `stalled`: no progress toward its target for
   10 s (where it stands, for how long, and what its legs cannot stand on in the straight line ahead), also said once in
   your next reply and listed in status `spidertrons`. Its legs stand on no water, lava or space tile and step across
-  16 tiles of it at most (18 stopped them): a straight leg over more than 12 gets a path round it (reply `water`; the
+  15 tiles of it straight (16 two times of three, 17 not; more on a slant or a jagged shore): a straight leg over more
+  than 14 gets a path round it (reply `water`; the
   route becomes the path when it comes, said once in team alerts), from an islet first across to land, onto an islet
   last across from land. A target on water ends at the dry spot nearest it (reply `landed`). Within 3 tiles of water,
   no progress for 3 s and no path being asked: it backs off and asks again (alerts, reply `recovery`), up to 3 times,
