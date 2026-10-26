@@ -506,6 +506,8 @@ return function(api)
       words[#words+1] = rocket_inv and 'no cargo loaded' or 'no rocket to load yet'
     end
     local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)
+    row.starter_pack = M.starter_line(e)
+    if row.starter_pack then words[#words+1] = row.starter_pack end
     row.trash = items_text(contents(trash), 8)
     if row.trash then words[#words+1] = 'trash slots: ' .. row.trash .. ' (never launched; transfer {position, direction: to_player, inventory: rocket_silo_trash} takes it back)' end
     row.auto_requests = try(function() return e.use_transitional_requests end) and true or false
@@ -837,18 +839,36 @@ return function(api)
     if #aboard == 0 then return nil end
     local asked = {}
     for _, r in ipairs(try(function() return M.request_rows(e, force) end) or {}) do asked[r.item] = r.platform end
-    local lost, kept, lost_n = {}, {}, 0
+    -- (d26 batch229 SP, Sol 66352254: a pack for Loom refused as trash) a starter pack while a platform of ours waits for
+    -- one at this planet stays aboard and launches to it (starterpack.lua; the copy, 2.0.77)
+    local sp = api.starterpack and api.starterpack()
+    local planet = sp and try(function() return e.surface.planet and e.surface.planet.name end)
+    local waits = planet and #sp.waiting(force or e.force, planet) > 0
+    local lost, kept, lost_n, packs = {}, {}, 0, false
     for _, st in ipairs(aboard) do
-      if asked[st.name] then kept[#kept+1] = {name=st.name, count=st.count, quality=st.quality}
+      if waits and sp.is_pack(st.name) then packs = true
+      elseif asked[st.name] then kept[#kept+1] = {name=st.name, count=st.count, quality=st.quality}
       else lost[#lost+1] = {name=st.name, count=st.count, quality=st.quality}; lost_n = lost_n + st.count end
     end
     local lost_text, kept_text = items_text(lost, 8), items_text(kept, 8)
-    return {lost=lost_text, lost_count=lost_n, asked=kept_text,
+    local starter = packs and M.starter_line(e) or nil
+    return {lost=lost_text, lost_count=lost_n, asked=kept_text, starter_pack=starter,
       line=string.format('the rocket holds %s', table.concat((function()
         local t = {}
         if lost_text then t[#t+1] = lost_text .. ' that no platform stopped above asks this planet for: with automatic requests on the game moves it into the silo\'s trash slots, which never launch' end
         if kept_text then t[#t+1] = kept_text .. ' that a platform above asks for' end
+        if starter then t[#t+1] = starter:sub(18) end
         return t end)(), '; and '))}
+  end
+  -- (d26 batch229 SP, Sol: the pack loaded for Loom went to Aethera) a starter pack in the rocket: the platform of ours
+  -- the game sends it to when no platform is named (starterpack.lua), or nil
+  function M.starter_line(e)
+    local sp = api.starterpack and api.starterpack()
+    local inv = sp and defines.inventory.rocket_silo_rocket and try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
+    local packs = inv and sp.packs_in(inv)
+    if not packs then return nil end
+    local planet = try(function() return e.surface.planet and e.surface.planet.name end) or e.surface.name
+    return 'the rocket holds ' .. sp.goes_to_line(e.force, planet, packs)
   end
   -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
   function M.setting_edits(e)
@@ -862,6 +882,7 @@ return function(api)
       auto_requests = try(function() return e.use_transitional_requests end) and true or false,
       send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false,
       setting_edits = M.setting_edits(e),
+      starter_pack = M.starter_line(e),
       requesting_for = target, parts = rk.parts, built_parts = rk.built_parts, next_parts = rk.next_parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
       state = try(function() return silo_states[e.rocket_silo_status] end)}
   end
