@@ -258,14 +258,19 @@
   each merge and each belt merging in against the line after it; `lane_mix`: each side-load, from which side of the
   line and onto which lane (both its lanes go onto that one), or a splitter or end-on join lane to lane, with what
   each lane carries after it; `limit`: a side-load stopped full while the line after it runs at its cap (the line's
-  own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap. The call returns when the sampling ends;
+  own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap. Where inserters pick
+  from a sampled tile the point adds `inserters` (each one's `picked`, counted from its hand each sample), `picked`,
+  `passed_on` (seen next on what the tile feeds) and `lanes_rate`, and its `rate` is passed_on + picked: an inserter can
+  take an item in the tick it comes onto the tile, and no sample sees it on the lane. `note` names what each count can
+  miss. The call returns when the sampling ends;
   `belt_flow {}` reads the last result. The sample ends at `until_tick`: `stop` and your actions do not end it (a new
   `belt_flow {position}` replaces it); `./fh wait` waits for it when nothing else runs. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
   With `exact_tile: true` it samples the belt at position only, no line walked (a splitter: the half position is in, its
   input lanes). Per lane: `left` (items seen on the lane, then gone; `rate` a minute), `passed_on` (seen next on what the
   tile feeds), `taken` (gone from mid-lane: taken off this tile), `not_seen_after` (gone at the lane's end and not seen
   on what it feeds: taken there or here before a sample saw it), `entered`, `held`, `state`. `inserters`: each inserter
-  picking from the tile, with `picked` counted from its hand, items it takes in the tick they arrive included. `tile`
+  picking from the tile, with `picked` counted from its hand, items it takes in the tick they arrive included;
+  `through` (`through_rate`): passed_on + picked where inserters pick from the tile, else left. `tile`
   names the entity (name, direction, unit number). On Asterion's explosives line, blocked at (13.5,38.5), the tile at
   (13.5,37.5) read 8/min taken by its inserter while the end and the line read stopped.
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
