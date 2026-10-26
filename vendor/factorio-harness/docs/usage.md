@@ -15896,3 +15896,14 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - cp2 (shift81 10:20-10:27, Opus off air): model.py bumps an agent's interest when it sends its remote vehicle to a new
   target (as a build), and keeps a little alive while it walks; onecam.py keeps the planets' air time in
   runs/RUN/surface-air.json across a restart (it began empty at each shift: Aquilo and Fulgora agents x2.5).
+## d26 batch240 (IA: idle air and late builds; batch237 findings 1 and 3)
+- Host only (tools/stream; docs/STREAM-NOTES.md "Idle air and late builds"): no runtime change, no new game read. The
+  stream service reads two more things from the journals it already tails: each agent's latest build, paste,
+  deconstruction or silo load (work.DidFeed; the live read never shows these), and how long its character has stood
+  idle by its replies' clocks (work.ClockFeed). Agents read nothing new.
+- onecam.py: a build is a fresh event (on air within 30 s of a story standing still; away from the character, its spot);
+  back from an urgent or timed shot, fresh news first and no stale story while another agent acts; the planet bonus
+  only for an agent doing something; quiet views after 60 s of quiet story, 120 s apart, giving way to fresh news.
+- airtime.py and vx_review.py count no dry run or settings-only launch as a fresh event.
+- director_replay.py `--timed`: the log's timed shots replayed at their times (with `--chart`, its own quiet views).
+- Test: tools/stream/test_idlecam.py.

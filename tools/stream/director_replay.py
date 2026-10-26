@@ -28,6 +28,13 @@ position the vehicle walks its route at CRUISE_TPS until the next reply. vehicle
 vehicle shots, how long the vehicle stood inside the on-air client's frame (the client moved as cameras.lua moves it).
 Not replayed: alerts, platforms, the base map, segments, cues, attention and work (the trio runs as the rules say). So
 the replay compares rule sets on the same input; it is not the program that aired.
+(d26 batch240) With --timed: the log's own timed shots (every cut to a shot that neither follows an agent nor shows its
+vehicle: platform visits, work and departures, the base map, tours, cues, segments, looks, threats) replayed at their
+times for as long as they aired, as segments; its quiet views only where the replayed story is quiet too, and none of
+its quiet views or tours with --chart (the replay makes its own). The agents' inputs as the service has them: positions
+read once a POLL_S; a walk loop (the harness's queue) and a sleep keep no interest up; a request done within itself
+(INSTANT) is no running action; a running action lasts while the replies' clocks say the character was busy;
+work.DidFeed's builds (`did`) and work.ClockFeed's idle seconds (`idle_s`).
 """
 import argparse, bisect, importlib, json, math, os, re, subprocess, sys, tempfile, time
 

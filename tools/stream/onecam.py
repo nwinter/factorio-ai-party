@@ -115,6 +115,11 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 - A remote vehicle where it is (d26 batch232 VC, viewer Aurora site:5020; ONECAM vehicle_ahead, vehicle_glide): the
   service's live read of the vehicles (harness VEHICLES_LUA) places it; the view aims ahead and glides at least at its
   speed; a unit belongs to the agent who called it last; a vehicle/character switch keeps the story's dwell.
+- Builds and idle air (d26 batch240 IA; ONECAM did_hold, did_zoom, fresh_min, quiet_min, quiet_story, quiet_gap): an
+  agent's build, paste, deconstruction or silo load from its journal (`did`, work.DidFeed) is a fresh event and an act,
+  its spot the shot when away from the character; its clocks' idle seconds (`idle_s`, work.ClockFeed) make it still.
+  Back from an urgent or timed shot, fresh news first and no story standing still while another acts; the surface
+  bonus only for an agent doing something; a quiet view gives way to fresh news.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
