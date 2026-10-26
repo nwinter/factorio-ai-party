@@ -2009,6 +2009,58 @@ air of 88:
 - The replay has no losses, battles, platforms or segments: as aired these took about 20 minutes, and Opus had 1.1.
 - Tests: tools/stream/test_raidcam.py, test_artycam.py, vendor/factorio-harness/tests/d17_artycam.lua.
 
+## A remote spidertron framed where it is (2026-10-26, d26 batch232 VC)
+
+Viewer Aurora, d26 09:54 (site:5020): "The site selected Opus at 09:26:50 PDT during recon, but spider 27069154 wasn't
+shown. Could batch224 check actual vehicle framing, noncombat motion and the Astra/Opus handoff?"
+
+What aired (shift80; director-20261026-072406.jsonl, Opus's and Astra's journals):
+- Spidertron 27069154 is one spider for both agents. Astra sent it at 09:23:26 toward (-410,-400) then (-600,-560); the
+  reply had no unit_number (go_to with retreat and targeting) and said the first leg crossed water at (-326.5,-446.5).
+  Opus took it at 09:26:23 at (-329.5,-450.3), 192 tiles along: it had stood there. Opus sent it to (-700,-560), its
+  scan found it there at 09:27:00.86 (386 tiles in at most 37 s), and back to (-160,-540) at 09:27:03; no read after,
+  home by 09:32:09. Its walking reads in shifts 79-80: 46-50 km/h, median 47.5 (12.8-13.9 tiles/s).
+- The view: each vehicle reframe glided at d/1.5 tiles/s, d from the last spot sent a second earlier: 9-10 tiles/s
+  behind a spider walking 13, and the lead ran at 45 km/h from the replies alone. Simulating the client as cameras.lua
+  moves it (at most `speed` tiles/s, a teleport only past 200 tiles) against the spider's path at 12.8-13.9 tiles/s:
+  the frame started 30-58 tiles behind at 09:26:50, held it from about 09:26:55 to 09:27:08 (arrived and turned), and
+  fell back from there: 44-56 tiles at 09:27:15, 133-146 at 09:27:45. In frame 13.5-15 s of 09:26:50-09:27:50 (frame
+  half 26.8 x 15.1 tiles at zoom 1.12); vehicle_framing over the whole Opus shot (09:26:50-09:28:06): 22 of 75.5 s. Astra's shot (09:23:10-43) was led on at 45 km/h past where the spider stood.
+
+The change (host only, live at a stream-service restart):
+- The service reads the agents' remote vehicles by unit number every poll (harness.py VEHICLES_LUA, a raw Lua read like
+  the platform reads: position, speed, next autopilot target, health; 5.4 us a spidertron on world n, 0.3 us a unit
+  gone). work.VehicleFeed merges it: position and speed from the read (`live`), `seen_t` the agent's own last call.
+- A unit belongs to the agent who called it last: an older row of another agent for it is dropped (Astra's shot goes
+  back to her character when Opus takes the spider). A reply with no unit_number takes the request's `vehicle`.
+- keep_vehicle aims vehicle_ahead (1 s) on and glides at d/1 tiles/s, at least vehicle_glide (1.2) x the vehicle's
+  speed. vehicle_speed (the lead without a live read) 47.5 km/h (was 45). A switch between vehicle and character keeps
+  the story's on-air start (it reset the 90 s dwell before).
+- Staleness counts from the agent's own call: a spider standing with live reads is shown vehicle_stale (30 s) after
+  the call, or while it walks, fights or fires (batch224); the live read alone does not hold the shot.
+- Slot rows in the director log name the shot's vehicle (target.vehicle).
+- Also fixed (batch224): the barrage frame's glide is a speed, d/1.5 tiles/s and at least 2 (it was 0.5-2).
+
+Replayed 09:20-09:30 (director_replay.py --fights; --vehicles live models the reads from every vehicle reply in the
+journals, walking each route at 47.5 km/h and never past where the next reply found it; vehicle_framing simulates the
+on-air client against that path):
+
+| rules | positions | cameras | spider shots on air | spider in frame |
+|---|---|---|---|---|
+| as aired | replies | 3 | 108 s | 42 s (Astra 20 of 32.5, Opus 22 of 75.5) |
+| main | replies | 3 | 148 s | 46.5 s (Astra 32 of 71, Opus 14.5 of 77) |
+| this | replies | 3 | 148 s | 112.5 s (Astra 35.5 of 70, Opus 77 of 78) |
+| this | live read | 3 | 237 s | 236 s (Astra 63 of 63, Opus 173 of 174) |
+| main | replies | 2 | 148 s | 46.5 s |
+| this | live read | 2 | 148 s | 147 s |
+| this | live read | 1 | 148 s | 148 s |
+
+- The live rows in the replay come from the same path the metric checks, so "in frame" with them says the view keeps
+  up with where the read says the spider is, not that the model is right. The model's legs: Astra's 192 tiles then
+  standing (as Opus's reply found it), Opus's out and back straight at 47.5 km/h.
+- Main's 1-camera replay log names no vehicle in its rows, so vehicle_framing cannot score it.
+- Tests: tools/stream/test_vehcam.py (fails on main's onecam: 8 of 79 s in frame with the same live reads).
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

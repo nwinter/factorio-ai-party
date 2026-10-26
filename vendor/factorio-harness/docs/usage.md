@@ -15764,3 +15764,12 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     now: nothing changed: its new waits at stop 2 (fulgora), where it waits, hold now: ...`.
   - Cost on the copy: that 5-step dry run 9-12 ms against 1.6-3.0 ms for a 1-step plan with nothing to check.
 - Test: tests/d26_batch231.lua (in lua.test.ts), failing on main.
+## d26 batch232 (VC: a remote spidertron framed where it is; viewer Aurora site:5020)
+- Host only (tools/stream; docs/STREAM-NOTES.md "A remote spidertron framed where it is"): no runtime change. The
+  stream service reads its agents' remote vehicles by unit number every poll with a raw Lua read (harness.py
+  VEHICLES_LUA: position, speed, next autopilot target, health; 5.4 us a spidertron on world n). Agents read nothing new.
+- onecam.py: the vehicle view aims 1 s ahead at no less than 1.2x the vehicle's speed (shift80 09:27: 9-10 tiles/s
+  behind a 13 tiles/s spider, 130 tiles back); a unit belongs to the agent who called it last; staleness counts from the
+  agent's own call; the barrage frame's glide is a speed in tiles/s.
+- Replayed 09:20-09:30 (director_replay.py --vehicles live): spider in frame 46.5 of 148 s on main, 236 of 237 s here.
+- Test: tools/stream/test_vehcam.py.

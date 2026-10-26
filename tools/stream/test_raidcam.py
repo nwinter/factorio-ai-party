@@ -123,7 +123,8 @@ def raid():
     a = opus_with(v)
     assert d.vehicle_activity(a, t + 10) == "walking"
     spot = d.vehicle_spot(a, t + 10)
-    assert spot and abs(spot["x"] - (-600 - 125 * 500 / 519.2)) < 2, spot  # 12.5 tiles/s for 10 s along the line
+    go = d.cfg["vehicle_speed"] / 3.6 * 10  # vehicle_speed for 10 s along the line
+    assert spot and abs(spot["x"] - (-600 - go * 500 / 519.2)) < 2, spot
     eta = 519.2 / (d.cfg["vehicle_speed"] / 3.6)
     assert d.vehicle_activity(a, t + eta + 2) is None, "arrived: standing"
     # its agent counts as acting while it walks: not standing still

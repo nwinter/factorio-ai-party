@@ -509,6 +509,27 @@ def planet_read_lua(surface=None):
     return PLANET_READ_LUA.replace("ARGS", args)
 
 
+# (d26 batch232 VC, viewer Aurora site:5020) Where the agents' remote vehicles are now, by unit number (work.VehicleFeed
+# names them from the journals): {unit, name, surface, x, y, speed (tiles a tick), dest (a spidertron's next autopilot
+# target), dests (how many), health}; a unit gone or not a vehicle is left out. 5.4 us a spidertron on world n (d26).
+VEHICLES_LUA = r"""
+local out = {}
+for _, u in ipairs(UNITS) do
+  local e = game.get_entity_by_unit_number(u)
+  if e and e.valid and (e.type == "spider-vehicle" or e.type == "car") then
+    local p = e.position
+    local r = {unit = u, name = e.name, surface = e.surface.name, x = p.x, y = p.y, speed = e.speed}
+    pcall(function()
+      local d = e.autopilot_destination
+      if d then r.dest = {x = d.x, y = d.y}; r.dests = #e.autopilot_destinations end
+    end)
+    pcall(function() r.health = math.floor(e.get_health_ratio() * 100 + 0.5) / 100 end)
+    out[#out + 1] = r
+  end
+end
+rcon.print(helpers.table_to_json({vehicles = out}))
+"""
+
 PROBE_LUA = r"""
 local i = remote.interfaces.agent_harness
 rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~= nil, cameras = (i and i.cameras) ~= nil})
@@ -653,6 +674,15 @@ class Harness:
         if isinstance(m.get("core"), dict) and not isinstance(m["core"].get("rows"), list):  # (d21 batch68 AD1) its dense core
             m["core"]["rows"] = []
         return dict(m, surface=surface)
+
+    def vehicles(self, units):
+        """(batch232) {unit: row} for these vehicles' unit numbers (VEHICLES_LUA), at most 16."""
+        units = [int(u) for u in units if isinstance(u, int) or str(u).isdigit()][:16]
+        if not units:
+            return {}
+        r = self.lua(VEHICLES_LUA.replace("UNITS", "{" + ",".join(str(u) for u in units) + "}"))
+        rows = r.get("vehicles") if isinstance(r, dict) else None
+        return {row["unit"]: row for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and "unit" in row}
 
     def probe(self):
         return self.lua(PROBE_LUA)
