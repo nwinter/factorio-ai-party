@@ -12,7 +12,7 @@ take_attention().
 
 ./shot is not here: the shot script calls fh without the journal and always centres on the character.
 """
-import json, os
+import json, os, re
 
 import attention
 from waitcard import WaitFeed
@@ -30,6 +30,73 @@ REMOTE = {"place_ghosts": "building", "paste": "pasting a blueprint", "blueprint
 ON_PLATFORM = {"inspect": "inspecting", "configure": "configuring", "launch": "launching a rocket to",
                "drop": "dropping cargo from", "platform_schedule": "scheduling", "requests": "setting requests on"}
 MAX_READ = 1 << 20  # per file per poll: a burst of observe replies cannot stall the tick
+VEHICLE_KEEP = 600.0  # seconds a remote vehicle's last read is kept (the director judges staleness itself)
+POS_RE = re.compile(r"\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)")
+
+
+class VehicleFeed:
+    """(d26 batch222 CD, viewer Aurora site:4851: "follow a remotely controlled Spidertron while it moves or fights, using
+    its position") Each agent's latest vehicle by remote view, from its journal's `vehicle {remote: true, vehicle}`
+    replies (a spidertron's go_to or route read: its position, speed and route; a car or tank's drive: "by remote view:
+    tank (-40,-150), unit_number 311799; your character stays at ..."): {vehicle, unit_number, position, speed (km/h,
+    when read), target, t (epoch, the reply's)}. Opus's spidertron in shift77: a read about every 5 s while it walks."""
+
+    def __init__(self):
+        self.pending = {}  # request id -> (agent, args)
+        self.rows = {}     # agent -> the latest row
+
+    def ingest(self, agent, r):
+        if not isinstance(r, dict):
+            return
+        if r.get("event") == "request":
+            q = r.get("request") or {}
+            args = q.get("args") if isinstance(q.get("args"), dict) else {}
+            if q.get("action") == "vehicle" and args.get("remote") is True:
+                self.pending[q.get("id")] = (agent, args)
+                if len(self.pending) > 256:
+                    self.pending.pop(next(iter(self.pending)))
+            return
+        if r.get("event") != "response":
+            return
+        resp = r.get("response") or {}
+        req = self.pending.pop(resp.get("id"), None)
+        res = resp.get("result") if isinstance(resp.get("result"), dict) else None
+        if not req or not resp.get("ok") or not res:
+            return
+        args = req[1]
+        row = None
+        p = res.get("position")
+        if res.get("spidertron") and isinstance(p, dict) and isinstance(p.get("x"), (int, float)):
+            route = res.get("route") if isinstance(res.get("route"), list) else []
+            goal = res.get("go_to") if isinstance(res.get("go_to"), dict) else (route[0] if route else None)
+            row = {"vehicle": str(res["spidertron"]), "unit_number": res.get("unit_number"),
+                   "position": {"x": round(float(p["x"]), 1), "y": round(float(p["y"]), 1)},
+                   "speed": res.get("speed") if isinstance(res.get("speed"), (int, float)) else None,
+                   "target": goal if isinstance(goal, dict) and isinstance(goal.get("x"), (int, float)) else None}
+        elif isinstance(res.get("remote"), str) and args.get("drive") is not None:
+            m = POS_RE.search(res["remote"])
+            name = res["remote"].split(":", 1)[-1].strip().split(" ", 1)[0] if ":" in res["remote"] else "vehicle"
+            drive = args.get("drive") if isinstance(args.get("drive"), dict) else None
+            if m:
+                row = {"vehicle": name, "unit_number": args.get("vehicle") if isinstance(args.get("vehicle"), int) else None,
+                       "position": {"x": float(m.group(1)), "y": float(m.group(2))}, "speed": None,
+                       "target": drive if drive and isinstance(drive.get("x"), (int, float)) else None}
+        if row:
+            t = _epoch(r.get("at"))
+            if t is not None:
+                self.rows[agent] = dict(row, t=t)
+
+    def current(self, agent, now):
+        row = self.rows.get(agent)
+        return row if row and now - row["t"] <= VEHICLE_KEEP else None
+
+
+def _epoch(at):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(at).replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
 
 
 def target_of(args):
@@ -60,6 +127,7 @@ class WorkFeed:
         self.partial = {}  # agent -> an unfinished last line
         self.waits = WaitFeed()
         self.repeats = RepeatFeed()  # the same request again and again: an agent's own sampling (workcard.py)
+        self.vehicles = VehicleFeed()  # (batch222) each agent's vehicle by remote view: where it is (onecam)
         self.attention = []  # every request with an attention point (attention.py) since take_attention()
 
     def take_attention(self):
@@ -103,6 +171,7 @@ class WorkFeed:
                     continue
                 self.waits.ingest(agent, r)
                 self.repeats.ingest(agent, r)
+                self.vehicles.ingest(agent, r)  # (a restart's tail too: the director drops a stale read)
                 if not isinstance(r, dict):
                     continue
                 q = r.get("request") or {}

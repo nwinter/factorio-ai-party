@@ -37,7 +37,8 @@ def sum_flows(parts):
                 have[i] += c
     return out
 
-PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
+# (d26 batch222 CD) remote: a drive by remote view, "tank at (-40.0,-150.0) by remote view" (status active.remote)
+PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s", "remote")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
 PROGRESS_EVERY = 120  # (d22 batch75 AK11) seconds between board_progress reads
 FOCUS_RETRY = 600  # board_focus with no rows (a runtime before d20 batch54 N3): asked again after 10 min
@@ -467,6 +468,8 @@ class LiveSource:
             now = time.time()
             for a in obs["agents"]:  # the same request again and again: the agent's own sampling (workcard.py)
                 a["repeats"] = self.work.repeats.current(a["name"], now)
+                # (d26 batch222 CD) its vehicle by remote view, from its journal's vehicle replies (onecam follows it)
+                a["remote_vehicle"] = self.work.vehicles.current(a["name"], now)
 
         for a in obs["agents"]:
             a["wait"] = self.waits.current(a["name"], obs.get("tick") or 0, time.time())

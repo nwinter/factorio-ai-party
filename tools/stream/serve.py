@@ -608,6 +608,9 @@ def main():
             director.set_threat_history(os.path.join(os.path.dirname(os.path.abspath(a.run)), "threat-history.json"))
             # when an agent first stood on each planet (game ticks), kept across restarts and shifts (surface balance)
             director.set_surface_memory(os.path.join(os.path.dirname(os.path.abspath(a.run)), "surface-seen.json"))
+            if getattr(source, "chart", None) is not None:  # (d26 batch222 CD) base tours from the site's chart
+                import basetour
+                director.set_tours(basetour.Tours(os.path.join(source.chart.root, "out"), source.chart))
         if not a.mock and not a.no_cuts and run.get("cuts", True) is not False:
             from obsws import OBS
             host, _, port = a.obs.partition(":")

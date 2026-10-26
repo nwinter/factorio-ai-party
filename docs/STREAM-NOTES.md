@@ -1858,6 +1858,63 @@ bow shot (`bow_turn`):
     had it, and the trio's 0.999): before 0.53 (25.7 ahead, 113 across), now 0.32 (42.5 ahead, 187.5 across: all of
     it).
 
+## Loops, fresh events, base tours, remote vehicles (2026-10-26, d26 batch222 CD)
+
+Viewer Aurora 20:09 (site:4963): "Grok's repeat walking often fills the stream. Could camera priority decay for repeated
+loops, favor fresh work/events or a useful overview, and preserve host holds?"; site:4876-4879 (03:42-03:44: fresh
+events and visible progress, remote work, quiet-time factory, ship and frontier views, ready frames before cuts, each
+camera count); site:4851 (d24 23:34: follow a remotely controlled spidertron by its position). Viewer Caleb d25
+09:56-11:02 (site:4914-4915): base tours, a wide slow pan of each planet's base (the operator did Nauvis, Vulcanus,
+Gleba and Fulgora by hand with POST /look and a camera move).
+- Measured (`tools/stream/airtime.py --log ... --runs ...`): what the program followed (the director log's program
+  rows and each client's shots) against each agent's journal: its clock ("character idle Ns of it": idle at 90% or
+  more) and its walk loops (a queue_repeat of walks, from its reply to a queue_cancel/queue_clear/queue_repeat, an
+  idle queue_status, or a minute of idle clocks). Fresh events: an accepted visible request (build, ghosts, paste,
+  deconstruct, mine, launch, a vehicle drive or go_to, fights...) of a kind the agent had not made in 10 minutes;
+  the delay is to the program showing that agent (missed after 10 minutes).
+- Rules (onecam.py ONECAM, module doc):
+  - A short loop: `loop_travel` (120) tiles walked in `loop_window` (180 s) inside `loop_span` (64 tiles), with no
+    pieces placed. Its score halves every `loop_half` (60 s), to `loop_floor` (0.1); its walk gets no move_boost; on
+    air it is stale like a character standing still (the still rule's reason says "on a loop"). Standing `loop_end`
+    (30 s) ends it.
+  - Fresh: a kind of action not run in `fresh_window` (10 min), a big action starting, its remote vehicle given a new
+    target, or new ground (`fresh_far` 96 tiles from where it stood in the window): x(1 + `fresh_boost`) fading over
+    `fresh_s` (120 s). Pieces placed within `progress_s` (20 s): x`progress_boost` (1.3). A fresh agent (within
+    `fresh_cut` 120 s, not stale itself) takes the camera after `onair_dwell` at `fresh_ratio` (1.0) of the story's
+    score, and from a stale story after `still_min` whatever the scores.
+  - Quiet time: the story on air stale `quiet_story` (90 s), nobody fresh or moving, nothing urgent, held, framed or
+    fighting: the quiet view shown longest ago of a base tour, a platform visit (`quiet_platform_hold` 25 s) and the
+    base map (the last two with a standby only), at most one every `quiet_gap` (150 s); after it the best agent that is
+    not stale. Also a tour every `tour_every` (30 min; `tour_first` 15 min after a start) with the base map's guards.
+    Host view, operator looks (tour.py and the hourly piece air as looks), follows and platform holds come first; a
+    look takes the camera from a tour.
+  - Base tours (basetour.py): from the run's chart (runs/RUN/chart/out: the machine labels and index): the densest
+    machine (most others within 48 tiles), the machines within 120 tiles of it, their main axis from the 10th to the
+    90th percentile (at most 200 tiles), 3 or 4 points each moved half way to the machines near it, west to east, zoom
+    0.4, 3.5 tiles a second within 30-50 s, a 2 s rest at each end. Every point's on-air frame is on charted chunks
+    (the chart store's, chart.Chart.known; the index's complete cells without a store); a point that is not is left
+    out (2 at least). On shift78's chart: Nauvis (-115,-105) to (1,30), 54 s; Vulcanus (-48,158) to (90,112), 45.6 s;
+    Gleba (-5,43) to (95,54), Fulgora (-8,199) to (71,188), Aquilo (-12,3) to (42,12), 34 s each; a plan 5-23 ms, kept
+    until the chart index changes. On air: "Nauvis base · a slow pan" (the look card), snapshot onair.tour. The move
+    goes with the standby's framing (the pan starts its 2 s rest later, about at the cut); one client moves on air.
+  - Remote vehicles: work.VehicleFeed reads each agent's `vehicle {remote: true, vehicle}` replies (a spidertron's
+    position, speed and route; a drive's "by remote view: tank (x,y)"), live.py passes `remote_vehicle`, and status
+    `active.remote` (PLAN_KEYS) gives a drive's position every poll. A read under `vehicle_stale` (30 s; twice that once
+    on air) at least `vehicle_near` (24 tiles) from the character: the agent's shot is a fixed view on the vehicle at
+    `vehicle_zoom`, led toward its target at its read speed between reads, moved with it (a glide, no cut), labelled
+    "Opus · spidertron by remote view" (snapshot onair.vehicle); else the character. A switch between the two is framed
+    on a standby and cut to (one client: moved on air). Opus's spidertron in shift77: a read about every 5 s while it
+    walked, 40-50 km/h, out to (-1500,225) with the character at the base.
+  - One client: an urgent or quiet shot moves the client on air and writes a `move` program row (it wrote none
+    before, so airtime.py counted no cut there).
+- Replayed (`tools/stream/director_replay.py --log ... --runs ... --chart ... --cams N [--rules main]`): the agents'
+  states rebuilt from their journals (positions from status replies and the log's follow results; walk loops walked;
+  actions, idle and interest as model.py makes them) and stepped through main's rules and these, measured the same
+  way. No alerts, platforms, segments or cues are replayed, so it compares the rules on the same input, not the
+  program that aired.
+- Not done: no frontier views (the edge of the charted ground); tours of platforms are the existing visits.
+- `python3 tools/stream/test_freshcam.py`.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
