@@ -31,6 +31,19 @@ shown again after the message (or Grok's dialog still up) is logged once, and it
 --every-min after the last try) until the CLI moves or the run's deadline. Each step is a row in runs/RUN/nudges.jsonl
 ({"resume": true, ...}) and a line in idle-nudge.log. --dry-run reads the panes and types nothing.
 
+(d25 batch220 QAE1, operator 23:58: Sol's Codex turn ended at ~23:25 on "Selected model is at capacity. Please try a
+different model." under a "Set up security for Daybreak mode" dialog; tools/supervise.sh skipped every nudge as
+"working" because a background loop of Sol's made a platform_defense request every 20 s, and the operator resumed it
+at 23:55.) A CLI stopped on a provider error: an agent with no rest running (no resting.json; a rest is the rule above)
+whose pane's last 40 lines show a provider stop (STOP, per CLI, after the last message typed here) and no turn running,
+with herdr not reading it working (claude, codex, grok), for --idle-min (the nudge time) in a row. A usage-limit
+screen (LIMIT) is never one. Then: a known promo or setup dialog on the screen (DIALOGS) gets one esc, and nothing
+else is pressed in it; a dialog still up after the esc is logged and nothing is typed. Then one message, "Operator
+(automatic): your last turn stopped on a provider error: <the line>; continue from your tells and notes.". A minute
+later a turn running (or herdr working) is logged as resumed; a provider stop after the message is logged once per
+stop, and it tries again at most once per 20 min (RETRY_S) while the stop stays. The journal is not read for this:
+a background loop makes requests while the CLI is stopped.
+
 Under POG_TEST=1 (tools/testsafe.py) HerdrPanes refuses: tests drive Resumer with fake panes.
 """
 import importlib.util
@@ -67,6 +80,28 @@ TAIL = 25          # the screen's last lines that show a turn running
 CHECK_S = 60       # the look after typing
 RECENT_S = 120     # a request of its own this recent: working (supervise.sh)
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
+# (d25 batch220) Each CLI's provider-stop lines: the Codex 0.164, Claude Code 2.1.310, Grok 1.0.70 and Muse 1.4.13
+# binaries' texts (Codex's "■ Selected model is at capacity. Please try a different model.", Sol 23:25 d25).
+STOP = {
+    "codex": re.compile(r"at capacity|[Rr]ate limit|stream error|stream disconnected|Reconnecting|high demand|"
+                        r"[Ss]erver overloaded|[Ii]nternal server error|exceeded retry limit|unexpected status"),
+    "claude": re.compile(r"API Error(?!: Request was aborted)|[Oo]verloaded|high load|temporarily limiting requests|"
+                         r"Request timed out|Connection error"),
+    "grok": re.compile(r"Rate limited|rate limit for your plan|The service is busy|Service unavailable|"
+                       r"Something went wrong on our side|did not complete successfully|Connection failed|"
+                       r"No response from the model|temporarily overloaded|stopped responding|"
+                       r"temporarily unavailable|timed out or was interrupted|Reconnecting"),
+    "muse": re.compile(r"model failed|provider error|turn failed|rate limited|[Ss]erver overloaded|server error|"
+                       r"connection failed|stream error|stopped before reaching the model"),
+}
+# Lines that are not a stop although a pattern matches: Codex's switch-model reminder dialog
+NOT_STOP = re.compile(r"rate limit reminders|Approaching rate limits")
+# Promo or setup dialogs a stopped CLI can show on top (Codex: the Daybreak security setup notice, Sol 23:25 d25 with
+# "1 Set up security" and esc dismiss; its model-upgrade and switch-model notices): one esc, never an option chosen
+DIALOGS = re.compile(r"Set up security|[Ss]ecurity setup|Codex just got an upgrade|Approaching rate limits")
+END = "continue from your tells and notes."
+RETRY_S = 1200     # a provider-stop message at most once per 20 min
+STOP_TAIL = 40     # the screen's last lines searched for a stop (a dialog on top takes ~10)
 
 
 def when(t, now=None):
@@ -81,6 +116,37 @@ def message(row, now=None):
     else:
         what = f"your {row.get('reason') or 'quota'} rest ended at {end}"
     return f"{TAG}{what[len('your'):]}. Continue the shift from notes.md and your inbox (./fh tells)."
+
+
+def stop_message(line):
+    return f"{TAG} last turn stopped on a provider error: {line}; {END}"
+
+
+def after_typed(lines):
+    """The lines after the last message typed here (its wrapped lines too), or all of them."""
+    i = max((k for k, l in enumerate(lines) if TAG in l), default=None)
+    if i is None:
+        return lines
+    acc, end = "", "".join(END.split())   # compared without spaces: a wrap can split a word
+    for j in range(i, min(len(lines), i + 12)):
+        acc += "".join(lines[j].split())
+        if end in acc or "inbox(./fhtells)." in acc:
+            return lines[j + 1:]
+    return lines[i + 1:]
+
+
+def provider_stop(kind, screen):
+    """The last provider-stop line in the screen's last lines after the last message typed here, or None; None too
+    while a turn runs or a usage-limit text shows (pane_resume's rest rule owns those)."""
+    tail = after_typed((screen or "").splitlines())[-STOP_TAIL:]
+    text = "\n".join(tail)
+    if BUSY.search(text) or any(p.search(text) for p in LIMIT.values()) or DIALOG.search(text):
+        return None
+    pats = [STOP[kind]] if kind in STOP else list(STOP.values())
+    for line in reversed(tail):
+        if not NOT_STOP.search(line) and not DIALOGS.search(line) and any(p.search(line) for p in pats):
+            return " ".join(line.strip(" \t■⚠✗✘•│┃●◆⎿").split())[:200]
+    return None
 
 
 def bold_before(line, label):
@@ -184,8 +250,11 @@ class HerdrPanes:
 class Resumer:
     """The rule, apart from herdr (tests give fake panes)."""
 
-    def __init__(self, run_dir, panes, every_s=1200, deadline=None, dry=False, end_rest=None, pause=time.sleep):
+    def __init__(self, run_dir, panes, every_s=1200, deadline=None, dry=False, end_rest=None, pause=time.sleep,
+                 idle_s=600):
         self.run_dir = run_dir
+        self.idle_s = idle_s   # (d25 batch220) the nudge time: a provider stop this long gets a message
+        self.stops = {}        # agent -> its provider-stop episode: {line, seen, t, tries, phase, logged}
         self.panes = panes
         self.every_s = every_s
         self.deadline = deadline
@@ -208,6 +277,15 @@ class Resumer:
                                          "kind": kind, "pane": pane, "phase": "due", "tries": 0, "t": None,
                                          "logged": set(), "row": row}
             if not st or st["phase"] == "over":
+                if not row and kind != "agy" and not (self.deadline and now >= self.deadline):
+                    entry = self.stopped(name, pane, kind, now)
+                    if entry:
+                        entry.update({"agent": name, "kind": kind, "resume": True, "provider_stop": True,
+                                      "t": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now))})
+                        if self.dry:
+                            entry["dry_run"] = True
+                        write(entry)
+                        out.append(entry)
                 continue
             entry = self.advance(name, d, st, now)
             if entry:
@@ -325,6 +403,74 @@ class Resumer:
             cleared = "; rest ended (resting-last.json)"
         entry["line"] = (f"resume {name}: rest until {clock} passed; {'dry run: would type' if self.dry else 'typed'} "
                          f"({how}){cleared}")
+        return entry
+
+    def stopped(self, name, pane, kind, now):
+        """(d25 batch220) One poll of the provider-stop rule for an agent with no rest: the row to log, or None."""
+        ep = self.stops.get(name)
+        screen = self.panes.read(pane) or ""
+        line = provider_stop(kind, screen)
+        working = kind in HERDR_TRACKS and self.panes.status(pane) == "working"
+        busy = BUSY.search("\n".join(screen.splitlines()[-TAIL:]))
+        if ep and ep["t"] is not None and now - ep["t"] >= CHECK_S and ep["phase"] == "typed":
+            ep["phase"] = "checked"
+            if busy or working:
+                self.stops.pop(name, None)
+                return {"action": "resumed", "tries": ep["tries"], "line": f"resume {name}: resumed after the provider-stop "
+                        f"message ({'a turn running' if busy else 'herdr reads its pane working'} "
+                        f"{round((now - ep['t']) / 60)} min after try {ep['tries']})"}
+            if line:
+                ep["line"] = line
+                if "failing" not in ep["logged"]:
+                    ep["logged"].add("failing")
+                    return {"action": "still_stopped", "tries": ep["tries"], "stop": line,
+                            "line": f"resume {name}: its pane shows a provider stop again {round((now - ep['t']) / 60)} "
+                                    f"min after try {ep['tries']} ({line}); next try {RETRY_S // 60} min after the last"}
+                return None
+            self.stops.pop(name, None)
+            return {"action": "no_stop", "tries": ep["tries"],
+                    "line": f"resume {name}: no turn running and no provider stop {round((now - ep['t']) / 60)} min "
+                            f"after try {ep['tries']}"}
+        if busy or working or not line:
+            if ep and ep["phase"] != "typed":
+                self.stops.pop(name, None)   # the CLI moved, or the stop is gone: the episode ends
+            return None
+        if not ep:
+            ep = self.stops[name] = {"line": line, "seen": now, "t": None, "tries": 0, "phase": "seen", "logged": set()}
+        ep["line"] = line
+        if now - ep["seen"] < self.idle_s or ep["phase"] == "typed":
+            return None
+        if ep["t"] is not None and now - ep["t"] < RETRY_S:
+            return None
+        n = ep["tries"] + 1
+        esc = ""
+        if DIALOGS.search(screen):
+            if self.dry:
+                esc = "esc (dry run) for the dialog on top; "
+            else:
+                self.panes.keys(pane, "esc")
+                self.pause(0.5)
+                screen = self.panes.read(pane) or ""
+                if DIALOGS.search(screen):
+                    ep["t"] = now
+                    if "dialog" in ep["logged"]:
+                        return None
+                    ep["logged"].add("dialog")
+                    return {"action": "dialog_up", "try": n, "stop": line,
+                            "line": f"resume {name}: a dialog is still on its pane after esc; nothing typed; next try "
+                                    f"{RETRY_S // 60} min later"}
+                esc = "esc for the dialog on top; "
+        text = stop_message(line)
+        how, ok, said = ("dry run", True, "") if self.dry else self.panes.prompt(pane, text)
+        ep["t"], ep["tries"] = now, n
+        ep["phase"] = "typed" if ok else "seen"
+        entry = {"action": "typed" if ok else "not_typed", "try": n, "how": how, "text": text, "stop": line,
+                 "stopped_min": round((now - ep["seen"]) / 60), "sent": ok and not self.dry}
+        if said:
+            entry["output"] = said
+        entry["line"] = (f"resume {name}: provider stop for {entry['stopped_min']} min ({line}); {esc}"
+                         + (f"{'dry run: would type' if self.dry else 'typed'} ({how})" if ok else
+                            f"try {n} failed ({how}: {said}); next try {RETRY_S // 60} min later"))
         return entry
 
     def try_again(self, pane):
