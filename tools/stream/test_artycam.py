@@ -94,9 +94,10 @@ def spacing_and_more_shells():
     d.step(snap(team(), [shell(key="b", eta=200, x=410.5, y=-325.5)], read_at=t + 2), t + 2)
     assert cur["until"] > first_until and cur["artillery"]["shells"] == 2, cur
     assert cur["until"] <= t + 20, cur["until"]
-    # another target far off while the shot is on air: no new cut
+    # another target far off while the shot is on air: no new cut (batch224: the frame may glide over the impacts)
+    slot, shot = d.onair, cur["artillery"]
     d.step(snap(team(), [shell(key="c", eta=200, x=900, y=900)], read_at=t + 3), t + 3)
-    assert d.state[d.onair] is cur
+    assert d.onair == slot and d.state[d.onair].get("artillery") is shot and shot["shells"] == 2, d.state[d.onair]
     for k in range(4, 30):
         d.step(snap(team()), t + k)
     # 60 s later: spacing; 200 s later: a cut again

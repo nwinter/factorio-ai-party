@@ -1934,6 +1934,81 @@ Gleba and Fulgora by hand with POST /look and a camera move).
 - Not done: no frontier views (the edge of the charted ground); tours of platforms are the existing visits.
 - `python3 tools/stream/test_freshcam.py`.
 
+## Flare barrages and spider raids (2026-10-26, d26 batch224 AY and VS)
+
+Viewer Aurora, d26 05:29 and 05:31 (site:4974, site:4976): "Could batch222 show remote Spidertron movement/combat and
+artillery firing/impacts automatically? Opus's shelling is off-screen. Follow the vehicle or target area while the
+action lasts."
+
+What shift79 showed (02:06-03:34; runs/shift79, the director logs 020204 and 022342):
+- Opus placed 1016 artillery flares in shift79, in bursts of 40-110 flares over 8-28 s every 3-5 minutes. Each burst
+  covered nest clusters 50-500 tiles across, 1000-1460 tiles from 21 turrets that reached them.
+- One artillery shot aired, at 02:21:06: an automatic shot at a big worm 627 tiles out. A flare's shell matched no
+  target: artycam matched only the spawners and worms in automatic range (627.2 tiles), and its one sighting near the
+  piece could not point a shell at a target 1400 tiles out anyway (below).
+- The spiders walked by remote at 02:04-02:10, 02:17-02:20 and 02:24, and stood after that. batch222 went live at
+  02:23:42 (the merge at 02:23:30 and the service restart): VehicleFeed fed one fresh event because only the 02:24 walk
+  came after it. Its 608 rows changed target 352 times (two spiders read in turn), so the reads were neither stale nor
+  the same. After 02:25 the raid was artillery only.
+- Opus was on air 1.1 of the 88 minutes as aired (airtime.on_air_by).
+- 03:56:39-42: keep_vehicle framed Opus's spidertron on cam2, direct() then framed Sol on the same standby, and the cut
+  aired Sol with the vehicle's reason.
+
+Game side (artycam.lua; live at a world restart):
+- A team flare (artillery.lua's use_item hands it over) is a target: a shell on its path gets the flare's spot, the
+  spawner or worm within 6 tiles of it, and who flared it.
+- A shell's heading comes from two sightings in consecutive reads. On the private copy, shells started 0.3-2.4 tiles
+  off the line from their piece's centre to the target (the muzzle's shift by orientation). The path through two
+  sightings passed the flare within 0.2 tiles.
+- Shells are looked for only after the surface's artillery shells used (item statistics, 5 us) rise: every loaded
+  piece at the 0.2 s pace (a 20-tile find, 0.023 ms a piece), else 4 in turn. A piece seen firing is skipped for its
+  200-tick cooldown.
+- Automatic targets come from a nest index built one 8x8-chunk box a read (0.39 ms). The old find over a piece's
+  627-tile range cost 10.5 ms on the copy once a minute a piece, nothing found.
+- Pieces up to 64 (world n has 26 turrets; 16 were watched). `pieces` in the reply is a count unless asked.
+- Cost on the copy (world n's 05:42 save; dispatch minus the reply's JSON): 0.49 ms a read with no flare (0.28 of it
+  is dispatch itself, 0.24 the read); 0.84 ms median, 4.8 ms max during a 30-flare barrage at 0.2 s. Of 30 flares,
+  every shot after the first read was resolved (15 of 15); the first read, long after the previous one, found 3 of 15.
+
+Service (serve.py): the poller follows `every` down to 0.1 s; a flare request in a journal (WorkFeed.flare_at) cuts
+its 10 s wait short.
+
+Director (onecam.py; live at a stream-service restart):
+- A shell is judged arty_pre (6 s) before it lands; the shot then holds while shells land within arty_near (48
+  tiles) of its frame or are flared by the same agent, up to arty_max (90 s, was 20), its frame moved (a glide every
+  arty_move 2.5 s at most) to the impacts due next, zoom down to arty_zoom_min (0.45). arty_gap (120 s) counts from the
+  shot's end. A shell landing while the shot is still framed on its standby joins it.
+- Caption: "💥 Artillery · Opus's flare → big spitter nest (-1392, 48), with 2 medium worm turret · artillery turret
+  (-274, -558), 1300 tiles · 12 shells".
+- A remote vehicle walking (a read under vehicle_stale with speed, or a target given and not reached at
+  vehicle_speed 45 km/h), firing (status vehicle_fire, seated) or within fight_near of a reported fight keeps its
+  agent acting (not still, not looping; the fight boost when fighting) and on the vehicle while that lasts, from a
+  read up to vehicle_keep (600 s) old. A switch between vehicle and character is cut to as framed, at most every
+  vehicle_flip (20 s).
+- Priorities are unchanged: looks, platform holds, follows, battles, incoming groups, segments, urgent shots, a fight
+  reported anywhere, the trio and replays outrank an artillery shot.
+
+Replayed 02:06-03:34 (director_replay.py --fights, both logs; flares: shells modelled from Opus's flares, each taken by
+the in-range piece free soonest 1 s on, then every 3.3 s, landing distance/60 s later; no turret turning). Minutes on
+air of 88:
+
+| rules | shells | cameras | Opus | artillery | Grok | Astra | Sol | Muse | Gemini | Haiku | tour | idle+loop | cuts/min |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| main | none (today) | 3 | 10.0 | 0 | 41.6 | 11.3 | 9.2 | 5.1 | 4.4 | 2.9 | 3.5 | 72.1% | 0.60 |
+| main | flares (Lua only) | 3 | 15.1 | 5.1 | 38.5 | 10.1 | 8.8 | 7.1 | 3.0 | 1.0 | 3.5 | 67.8% | 0.95 |
+| these | none (onecam only) | 3 | 12.1 | 0 | 40.0 | 10.6 | 10.8 | 6.3 | 5.0 | 1.0 | 2.3 | 70.4% | 0.62 |
+| these | flares (both) | 3 | 16.6 | 6.4 | 41.0 | 8.4 | 10.0 | 5.3 | 4.5 | 0 | 2.3 | 66.5% | 0.94 |
+| main | none | 2 | 9.7 | 0 | 44.6 | 8.6 | 10.7 | 5.4 | 2.0 | 1.0 | 4.4 | 70.8% | 0.65 |
+| these | flares | 2 | 16.2 | 7.6 | 39.3 | 8.7 | 10.7 | 5.1 | 3.2 | 1.0 | 2.3 | 65.4% | 1.11 |
+| main | none | 1 | 10.0 | 0 | 41.9 | 10.0 | 9.1 | 6.0 | 4.5 | 2.0 | 4.5 | 71.1% | 0.69 |
+| these | flares | 1 | 16.6 | 8.0 | 39.4 | 8.5 | 10.7 | 4.9 | 3.1 | 1.0 | 2.3 | 65.2% | 1.12 |
+
+- Opus's minutes include the artillery shots its flares made. 18 barrage shots at 3 cameras, held 10-32 s each (the
+  modelled impacts last 15-25 s; live, turret turning spreads them more). Drops: 10 for spacing, 8 in a trio, 2 under
+  an urgent shot.
+- The replay has no losses, battles, platforms or segments: as aired these took about 20 minutes, and Opus had 1.1.
+- Tests: tools/stream/test_raidcam.py, test_artycam.py, vendor/factorio-harness/tests/d17_artycam.lua.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

@@ -233,6 +233,41 @@ def shot_at(timeline, t):
     return timeline[lo - 1][1] if lo else None
 
 
+ARTY_RE = re.compile(r"Artillery · (\S+?)'s ")
+
+
+def owner(shot):
+    """(batch224) Whose the shot is: the agent it follows or names first; an artillery shot's agent (its label: "💥
+    Artillery · Opus's flare → ..."); else what it shows ("@map", "@tour", ...: the reason's first word) or None."""
+    if not shot:
+        return None
+    if shot.get("follow"):
+        return shot["follow"]
+    if shot.get("agents"):
+        return shot["agents"][0]
+    reason = str(shot.get("reason") or "")
+    m = ARTY_RE.search(reason)
+    if m:
+        return m.group(1).lower()
+    return ("@" + reason.split(":")[0].replace("standby", "").strip(" @")) if reason else None
+
+
+def on_air_by(log_rows, t0=None, t1=None, step=1.0):
+    """(batch224) {owner: seconds on air} over [t0, t1] (owner(): an agent, or what the shot shows)."""
+    log_rows = [r for r in log_rows if isinstance(r.get("t"), (int, float))]
+    if not log_rows:
+        return {}
+    t0 = log_rows[0]["t"] if t0 is None else t0
+    t1 = log_rows[-1]["t"] if t1 is None else t1
+    timeline, _ = program(log_rows)
+    out, t = {}, t0
+    while t < t1:
+        who = owner(shot_at(timeline, t)) or "-"
+        out[who] = out.get(who, 0.0) + step
+        t += step
+    return out
+
+
 def measure(log_rows, js, t0=None, t1=None, step=1.0):
     """The three numbers (module doc) over [t0, t1] (default: the log's span)."""
     log_rows = [r for r in log_rows if isinstance(r.get("t"), (int, float))]

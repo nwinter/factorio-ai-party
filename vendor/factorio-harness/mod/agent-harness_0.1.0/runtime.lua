@@ -13926,7 +13926,8 @@ M.capsules=require('capsules'){state=state,position=position,assert_visible=asse
 handlers.use_item=M.capsules.handlers.use_item
 -- Artillery (artillery.lua; Grok, d15 14:07): the pieces with the spawners and worms in range, automatic targeting
 -- (configure auto_targeting) and the targeting remote (use_item).
-M.artillery=require('artillery'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,position=position,held=held,state=state,deliver=function(index,t) return M.board.deliver(index,t) end}
+M.artillery=require('artillery'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,position=position,held=held,state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
+  flared=function(r) if M.artycam then M.artycam.flare(r) end end}
 -- Artillery shells in flight and their targets, for the stream's director (artycam.lua; d17 artycam, viewer Foobator).
 M.artycam=require('artycam'){state=state,range=function(e) return M.artillery.range(e) end}
 function handlers.artillery(p,a) return M.artillery.read(p,a) end

@@ -12,7 +12,7 @@ take_attention().
 
 ./shot is not here: the shot script calls fh without the journal and always centres on the character.
 """
-import json, os, re
+import json, os, re, time
 
 import attention
 from waitcard import WaitFeed
@@ -129,6 +129,7 @@ class WorkFeed:
         self.repeats = RepeatFeed()  # the same request again and again: an agent's own sampling (workcard.py)
         self.vehicles = VehicleFeed()  # (batch222) each agent's vehicle by remote view: where it is (onecam)
         self.attention = []  # every request with an attention point (attention.py) since take_attention()
+        self.flare_at = 0.0  # (batch224 AY) when the latest artillery flare request was read: serve.py polls artillery_live
 
     def take_attention(self):
         out, self.attention = self.attention, []
@@ -178,6 +179,8 @@ class WorkFeed:
                 if bootstrap or r.get("event") != "request":
                     continue
                 args = q.get("args") if isinstance(q.get("args"), dict) else {}
+                if q.get("action") == "use_item" and args.get("item") == "artillery-targeting-remote":
+                    self.flare_at = time.time()
                 att = attention.point(q.get("action"), args)
                 if att:
                     self.attention.append(dict(att, agent=agent, at=r.get("at")))
