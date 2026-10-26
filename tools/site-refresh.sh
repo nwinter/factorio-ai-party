@@ -50,6 +50,9 @@ until mkdir "$lock" 2>/dev/null; do
 done
 echo $$ > "$lock/pid"
 trap 'rm -rf "$lock"' EXIT
+# (d26 batch241) OUT.deployed: the build in OUT is the one production has (site/chart_deploy.py deploys the chart only
+# into such a build); gone from the start of a build until its production deploy
+rm -f "$out.deployed"
 if [ -n "$last" ]; then
   python3 site/status_update.py "$last" --runs-dir "$runs" --status "$status" || fail "status.json update"
 fi
@@ -73,4 +76,5 @@ for branch in preview main; do
     || fail "deploy to $branch (production left as it was$([ $branch = main ] && echo '; preview has the new build'))"
   step "deployed to $branch"
 done
+date +%s > "$out.deployed"
 step "done"

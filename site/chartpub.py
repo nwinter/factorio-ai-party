@@ -1,7 +1,7 @@
 """The chart under the live map (d22 batch97 BG3): the cells the stream service draws from the game
 (tools/stream/chart.py, runs/RUN/chart/out/: SURFACE/CX_CY.png at 1 px a tile, CX_CY.labels.json, index.json),
-published with the site under /live/chart/ by site/build.py, so a cell is as old as the last site build (hourly and at
-each shift change). site/push_live.py reads the deployed index's version into the state; static/live.js fetches the
+published with the site under /live/chart/ by site/build.py (hourly and at each shift change), and between builds by
+site/chart_deploy.py within about 3 minutes of a change (d26 batch241). site/push_live.py reads the deployed index's version into the state; static/live.js fetches the
 index when it changes and static/mapview.js draws the cells under the overlays.
 
 - source(runs_dir, long): the run whose chart is newest: the long run's shifts and the run going on now (one whose

@@ -18,12 +18,16 @@ entities a read; on the x86 private copy the base's densest chunks read in 7.5-1
 
 The store is runs/RUN/chart/store/SURFACE/CX_CY.json (a cell's chunks, each with its read tick and rows), read back
 from the runs this one resumed from (as the map memory is); a changed chunk's cell (and a neighbour cell when the chunk
-is on its edge, for footprints across it) is drawn again into runs/RUN/chart/out/SURFACE/CX_CY.png and .labels.json;
+is on its edge, for footprints across it) is drawn again into runs/RUN/chart/out/SURFACE/CX_CY.png and .labels.json.
+(d26 batch241) A new run starts its out/ as a copy of the nearest earlier run's (cells, labels, index: the version goes
+on from there, `complete` kept), so the site has a whole chart from the run's first minute and only changed cells are
+drawn again; before, every cell was drawn again from version 1 and the site kept the old run's chart until then;
 out/index.json lists every cell as [version, its chunks' oldest read tick, newest, chunks, and the box round our
 buildings in it x0, y0, x1, y1 in tiles when it has any] (the page frames a surface on those boxes). The site build publishes
-out/ under /live/chart/ (site/build.py), and push_live sends the published index's version.
+out/ under /live/chart/ (site/build.py, and site/chart_deploy.py within minutes of a change), and push_live sends the
+published index's version.
 """
-import json, math, os, re, time
+import json, math, os, re, shutil, time
 
 CHUNK, CPC = 32, 12              # tiles a chunk; chunks a cell side
 CELL = CHUNK * CPC               # 384 tiles a cell side
@@ -228,6 +232,15 @@ class Chart:
 
     # ------------------------------------------------------------------ keeping
     def _load(self, root, earlier):
+        if root and not os.path.exists(os.path.join(root, "out")):
+            for d in earlier or ():  # (batch241) a new run: the nearest earlier run's out/, its files dated now
+                if d and os.path.isfile(os.path.join(d, "out", "index.json")):
+                    try:
+                        shutil.copytree(os.path.join(d, "out"), os.path.join(root, "out"), dirs_exist_ok=True,
+                                        copy_function=shutil.copyfile, ignore=shutil.ignore_patterns("*.tmp"))
+                    except OSError as e:
+                        self.error = f"carry: {e}"[:160]
+                    break
         for d in [root] + list(earlier or ()):
             sd = os.path.join(d, "store") if d else None
             if not sd or not os.path.isdir(sd):
@@ -245,7 +258,7 @@ class Chart:
                             c = Cell.from_json(json.load(fh))
                     except (OSError, ValueError):
                         continue
-                    c.draw = d != root or not os.path.exists(os.path.join(root, "out", surface, fn[:-5] + ".png"))
+                    c.draw = not os.path.exists(os.path.join(root, "out", surface, fn[:-5] + ".png"))
                     c.dirty = d != root
                     cells[(int(m.group(1)), int(m.group(2)))] = c
                 if cells:

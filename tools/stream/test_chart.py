@@ -8,7 +8,8 @@ that answers as chart.lua does: python3 tools/stream/test_chart.py
   (east and west turn it), a footprint across a cell edge drawn in both cells, a chunk not charted transparent;
 - labels (recipes, stops) in tiles; the index with each cell's version and oldest and newest read ticks;
 - a changed chunk on a cell's edge draws the neighbour again; one inside does not;
-- the store saved and read back from a run this one resumed from (its cells drawn again there).
+- the store saved and read back from a run this one resumed from; (batch241) the new run's out/ starts as that run's
+  (version and `complete` go on, no cell drawn again); without one, its cells drawn again there.
 """
 import json, os, sys, tempfile
 
@@ -210,14 +211,42 @@ def main():
         # saved and read back from the run this one resumed from
         c.save(force=True)
         clock[0] += 1
-        c2 = chart.Chart(os.path.join(tmp, "run3", "chart"), earlier=[root], clock=lambda: clock[0])
+        # (d26 batch241, shift80 06:11: the site kept shift79's chart v6401 for 50 min while the new run drew every cell
+        # again from v1) a new run starts with the earlier run's out/: its version goes on, `complete` kept, nothing redrawn
+        idx_old = json.load(open(os.path.join(out, "index.json")))
+        idx_old["surfaces"]["nauvis"]["complete"] = True
+        json.dump(idx_old, open(os.path.join(out, "index.json"), "w"))
+        open(os.path.join(out, "nauvis", "x.png.tmp"), "w").write("half")
+        old_png = open(os.path.join(out, "nauvis", "0_0.png"), "rb").read()
+        r3 = os.path.join(tmp, "run3", "chart")
+        c2 = chart.Chart(r3, earlier=[root], clock=lambda: clock[0])
         check("read back from the earlier run", c2.known("nauvis") == c.known("nauvis"), (c2.known("nauvis"), c.known("nauvis")))
+        idx3 = json.load(open(os.path.join(r3, "out", "index.json")))
+        check("a new run's out/ at once: the earlier run's index, cells and labels (no .tmp)", idx3 == idx_old
+              and open(os.path.join(r3, "out", "nauvis", "0_0.png"), "rb").read() == old_png
+              and os.path.exists(os.path.join(r3, "out", "nauvis", "0_0.labels.json"))
+              and not os.path.exists(os.path.join(r3, "out", "nauvis", "x.png.tmp")), sorted(os.listdir(os.path.join(r3, "out", "nauvis"))))
+        check("its version goes on and `complete` is kept", c2.version == idx_old["v"] and "nauvis" in c2.complete, (c2.version, c2.complete))
         c2.tiles, c2.ents = c.tiles, c.ents
         n = c2.build(limit=99)
-        check("and drawn again into this run's out/ (its index from 1)", n == 3 and os.path.exists(os.path.join(tmp, "run3", "chart", "out", "nauvis", "0_0.png")), n)
-        idx3 = json.load(open(os.path.join(tmp, "run3", "chart", "out", "index.json")))
-        check("a new run's index: not complete until its own lists are read", idx3["surfaces"]["nauvis"]["complete"] is False
-              and idx3["surfaces"]["nauvis"]["chunks"] == [4, 4], idx3["surfaces"]["nauvis"])
+        check("no cell drawn again for the copy", n == 0, n)
+        g.add(1, 1)
+        c2.take_rows("nauvis", g.rows([(1, 1)]))
+        n = c2.build(limit=99)
+        idx3 = json.load(open(os.path.join(r3, "out", "index.json")))
+        check("a changed chunk: its cell drawn, at the next version", n == 1 and idx3["v"] == idx_old["v"] + 1
+              and idx3["surfaces"]["nauvis"]["cells"]["0,0"][0] == idx_old["v"] + 1 and idx3["surfaces"]["nauvis"]["complete"] is True, idx3)
+        # an earlier run with a store but no out/: every cell drawn again from version 1, not complete until its lists
+        os.rename(out, out + ".gone")
+        r4 = os.path.join(tmp, "run4", "chart")
+        c4 = chart.Chart(r4, earlier=[root], clock=lambda: clock[0])
+        c4.tiles, c4.ents = c.tiles, c.ents
+        n = c4.build(limit=99)
+        idx4 = json.load(open(os.path.join(r4, "out", "index.json")))
+        check("no earlier out/: drawn again into this run's out/ (its index from 1)", n == 3 and idx4["v"] == 3, (n, idx4["v"]))
+        check("and not complete until its own lists are read", idx4["surfaces"]["nauvis"]["complete"] is False
+              and idx4["surfaces"]["nauvis"]["chunks"] == [4, 4], idx4["surfaces"]["nauvis"])
+        os.rename(out + ".gone", out)
         rec = chart.parse_chunk(c2.cells["nauvis"][(0, 0)].chunks[(0, 0)][1])
         check("a chunk's rows survive the round trip", rec["recipes"] == [(24, 6, "iron-plate")] and ("stone-furnace", 10, 40, 0, 1) in rec["ents"]
               and rec["tiles"][0][0] == ("water", 8), rec["tiles"][0])

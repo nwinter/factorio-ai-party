@@ -24,6 +24,7 @@ defaults:
 | tools/new-run.sh | copying `~/.config/pog/rcon-WORLD.pw` | no key in the run |
 | tools/obs-recover.sh | the lock in `runs/` without `POG_REC_LOCK` | `POG_REC_LOCK` |
 | site/build.py | the repo's `runs/` as `--runs-dir` | a temp runs folder |
+| site/chart_deploy.py | its wrangler deploy without `POG_WRANGLER` (batch241) | `POG_WRANGLER` or a stub runner |
 | tools/pane_resume.py `HerdrPanes` | herdr pane reads and typing | fake panes (tools/test_pane_resume.py, tools/test_pane_resume_stop.py) |
 
 Two more changes keep a live tool from mistaking a test's process for the live run's:
