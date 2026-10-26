@@ -146,6 +146,6 @@
   {"t": "2026-10-25 19:19", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 19:19"},
   {"t": "2026-10-25 19:43", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 19:43"},
   {"t": "2026-10-25 20:34", "kind": "deploy", "text": "Harness runtime deployed (d0f319f2).", "affected": "harness runtime"},
-  {"t": "2026-10-25 21:40", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-25 21:40", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 21:40"}
  ]
 }
