@@ -270,7 +270,7 @@ do
   SH.tick()
   eq(rr,2,'the stop\'s auto silos alone')
   eq(st.shipment.last['1|nauvis|rocket'],'waiting:hub_full')
-  eq(st.shipment.events[1].text,'shipment: rocket from nauvis for Tern waits: hub_full: Tern asks rocket 10; the game\'s pick: no silo on nauvis fills a rocket for Tern now')
+  eq(st.shipment.events[1].text,'shipment: rocket from nauvis for Tern waits: hub_full at rocket-silo (1,0): Tern asks rocket 10; silos on nauvis for it: cannot, hub_full (in no logistic network): rocket-silo (1,0), rocket-silo (2,0); the game\'s pick: no silo on nauvis is filling a rocket for Tern now')
   -- delivered: no flags read
   SH = dofile('mod/agent-harness_0.1.0/shipment.lua'){state=function() return {} end,census_typed=function(f,s) return silos[s.index] end,
     hub_counts=function(p,q) if q then return {['rocket@normal']=10,['coal@normal']=5} end return {rocket=10,coal=5} end,
