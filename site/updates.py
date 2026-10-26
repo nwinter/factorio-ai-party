@@ -18,6 +18,7 @@ chat has moved on. For build.py:
 import datetime
 import hashlib
 import json
+import re
 from pathlib import Path
 
 STATUSES = ("planned", "in progress", "live", "verified")
@@ -25,10 +26,19 @@ ACCEPTED = ("in progress", "planned")  # (d24 batch180) accepted, not live yet: 
 CHIP = {"planned": "fx-chip--grey", "in progress": "fx-chip--orange", "live": "fx-chip--blue", "verified": "fx-chip--green"}
 WHAT = {"planned": "accepted, not started", "in progress": "an engineer is on it, or it waits for the merge gate",
         "live": "merged and deployed", "verified": "checked working in the game or on the site after it went live"}
+PRIO_CHIP = {"urgent": "fx-chip--orange", "normal": "fx-chip--blue", "later": "fx-chip--grey"}
 AREAS = ("harness", "stream", "site")
 NOTICE_KINDS = ("deploy", "restart", "rest", "outage", "shift")
-DATE_KEYS = ("asked",) + STATUSES
+# (d26 batch235 UR, viewer Aurora site:5022: "Could accepted work get regular backlog reviews after recovery and long
+# jobs? Keep its original ID, priority, owner and next review so older requests need no repeat viewer nudge.") a row's
+# priority, owner (a role: "engineer batch233", "operator"), next_review and reviewed (when it was last reviewed); a
+# re-plan keeps the first planned date and adds replanned; an owner handed on stays in owner_history.
+PRIORITIES = ("urgent", "normal", "later")
+DATE_KEYS = ("asked",) + STATUSES + ("replanned",)
 FMT = "%Y-%m-%d %H:%M"
+OWNER_LEN = 80
+# the owner is a role, never a person: the names build.py's _BLOCKED keeps off the site, and an email
+OWNER_BLOCKED = re.compile(r"(?i)\bnick\b|\bwinter\b|account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d|@")
 try:
     from zoneinfo import ZoneInfo
     PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -65,6 +75,17 @@ def load(path):
             raise ValueError(f"operator update {uid}: area {u['area']!r} not in {AREAS}")
         if (u.get("note_at") is not None and when(u["note_at"]) is None) or u.get("note_status", "planned") not in STATUSES:
             raise ValueError(f"operator update {uid}: note_at {u.get('note_at')!r} (YYYY-MM-DD HH:MM) or note_status {u.get('note_status')!r} (one of {STATUSES})")
+        for k in ("next_review", "reviewed"):
+            if u.get(k) is not None and when(u[k]) is None:
+                raise ValueError(f"operator update {uid}: {k} {u[k]!r} (YYYY-MM-DD HH:MM)")
+        if u.get("priority") is not None and u["priority"] not in PRIORITIES:
+            raise ValueError(f"operator update {uid}: priority {u['priority']!r} not in {PRIORITIES}")
+        if u.get("owner") is not None and not owner_ok(u["owner"]):
+            raise ValueError(f"operator update {uid}: owner {u['owner']!r}: a role up to {OWNER_LEN} characters "
+                             "(\"engineer batch233\", \"operator\"), no person's name or account")
+        oh = u.get("owner_history")
+        if oh is not None and not (isinstance(oh, list) and all(isinstance(h, dict) and owner_ok(h.get("owner")) and when(h.get("until")) for h in oh)):
+            raise ValueError(f"operator update {uid}: owner_history is a list of {{owner, until: YYYY-MM-DD HH:MM}}")
         hist = u.get("history")
         if hist is not None and (not isinstance(hist, list) or not all(
                 isinstance(h, dict) and isinstance(h.get("note"), str) and h["note"] and when(h.get("until"))
@@ -82,7 +103,42 @@ def load(path):
     checked = data.get("notices_checked")
     if checked is not None and when(checked) is None:
         raise ValueError(f"notices_checked {checked!r}: YYYY-MM-DD HH:MM")
-    return {"updates": rows, "notices": notices, "notices_checked": checked}
+    reviewed = data.get("backlog_reviewed")
+    if reviewed is not None and when(reviewed) is None:
+        raise ValueError(f"backlog_reviewed {reviewed!r}: YYYY-MM-DD HH:MM")
+    return {"updates": rows, "notices": notices, "notices_checked": checked, "backlog_reviewed": reviewed}
+
+
+def owner_ok(o):
+    """An owner is a role (free text up to OWNER_LEN characters), never a person's name or account."""
+    return isinstance(o, str) and 0 < len(o.strip()) <= OWNER_LEN and not OWNER_BLOCKED.search(o)
+
+
+def is_open(u):
+    """Accepted and not live yet: planned or in progress (the rows a backlog review looks at)."""
+    return u.get("status") in ACCEPTED
+
+
+def last_change(u):
+    """When the row last changed: its newest status date, note, or owner handed on (a review alone is no change)."""
+    times = [when(v) for v in (u.get("dates") or {}).values()] + [when(u.get("note_at"))] + [when(h.get("until")) for h in u.get("owner_history") or []]
+    times = [t for t in times if t]
+    return max(times) if times else None
+
+
+def is_due(u, now):
+    """An open row whose next review has passed at now, or that has none."""
+    nr = when(u.get("next_review"))
+    return is_open(u) and (nr is None or nr <= now)
+
+
+def ago(then, now):
+    """'3 d 4 h', '5 h 20 min', '12 min' from then to now ('?' with no time)."""
+    if not then:
+        return "?"
+    mins = max(0, int((now - then).total_seconds() // 60))
+    d, h, m = mins // 1440, mins % 1440 // 60, mins % 60
+    return f"{d} d {h} h" if d else f"{h} h {m:02d} min" if h else f"{m} min"
 
 
 def problems(data):
@@ -172,7 +228,10 @@ def _latest(u, asks):
 
 def stage(u, asks=None):
     """When it reached its current status (the order within a status group, newest first); its newest date without one."""
-    return when((u.get("dates") or {}).get(u["status"])) or _latest(u, asks or {})
+    dates = u.get("dates") or {}
+    d = when(dates.get(u["status"]))
+    r = when(dates.get("replanned")) if u["status"] == "planned" else None  # (batch235) planned again: since then
+    return max(x for x in (d, r) if x) if d or r else _latest(u, asks or {})
 
 
 def acknowledged(u):
@@ -195,14 +254,31 @@ def _key(d):
 def _search(u, asks):
     """The words the page's search box matches: title, id, status, area, batch, who asked and their refs, the notes and
     the asking messages."""
-    bits = [u.get("title"), u.get("id"), u.get("status"), u.get("area"), u.get("work"), u.get("note")]
+    bits = [u.get("title"), u.get("id"), u.get("status"), u.get("area"), u.get("work"), u.get("note"), u.get("priority"), u.get("owner")]
     for r in u.get("requested_by") or []:
         bits += [r.get("name"), r.get("ref"), (asks.get(r.get("ref")) or {}).get("text")]
     bits += [h.get("note") for h in u.get("history") or []]
     return " ".join(" ".join(str(b).split()) for b in bits if b).lower()
 
 
-def _row(u, asks, replies, esc):
+def _review(u, esc, now):
+    """(batch235) an open row's priority, owner (and those before), next review (due at now, the build's time) and when it
+    was last reviewed; nothing for a row past in progress."""
+    if not is_open(u):
+        return ""
+    pr, owner, nr, rv = u.get("priority"), u.get("owner"), when(u.get("next_review")), when(u.get("reviewed"))
+    before = [h["owner"] for h in u.get("owner_history") or []]
+    bits = [f'<span class="fx-chip {PRIO_CHIP[pr]} upd-priority">{esc(pr)}</span>' if pr else '<span class="muted">no priority set</span>',
+            ("Owner " + esc(owner) + (f' <span class="muted">(before: {esc(", ".join(before))})</span>' if before else ""))
+            if owner else '<span class="muted">no owner set</span>',
+            ("Next review " + esc(_day(nr)) + (' <span class="upd-flag upd-due">due</span>' if now and nr <= now else ""))
+            if nr else '<span class="muted">no review set</span>']
+    if rv:
+        bits.append(f'<span class="muted">last reviewed {esc(_day(rv))}</span>')
+    return '<p class="small upd-review">' + " · ".join(bits) + "</p>"
+
+
+def _row(u, asks, replies, esc, now=None):
     st = u["status"]
     who = []
     for r in u.get("requested_by") or []:
@@ -217,6 +293,8 @@ def _row(u, asks, replies, esc):
         d = when(dates.get(k))
         if d:
             steps.append((k, d))
+    if when(dates.get("replanned")):
+        steps.append(("planned again", when(dates["replanned"])))
     timeline = " · ".join(f"{esc(k)} {esc(_day(d))}" for k, d in steps)
     quotes = []
     for r in u.get("requested_by") or []:
@@ -263,6 +341,7 @@ def _row(u, asks, replies, esc):
     return (f'<li class="upd" id="u-{anchor}"{attrs}><div class="upd-head"><span class="fx-chip {CHIP[st]} upd-status">{esc(st)}</span>'
             f'{area} <a class="upd-title" href="#u-{anchor}">{esc(u["title"])}</a></div>'
             + (f'<p class="small upd-meta">{meta}</p>' if meta else "")
+            + _review(u, esc, now)
             + (f'<p class="small muted upd-dates">{timeline}</p>' if timeline else "")
             + note
             + msgs + "</li>")
@@ -280,12 +359,12 @@ CADENCE = ("This page is rebuilt every hour and whenever the operator refreshes 
            "new updates every 3 minutes and when you come back to it, and adds them in place.")
 
 
-def rows_html(data, asks, replies, esc):
+def rows_html(data, asks, replies, esc, built=None):
     """{id: (status, the row's li)}: the rows as the page and updates.json give them, each with a sig (a hash of its
-    li) that the page compares to see a row changed."""
+    li) that the page compares to see a row changed. built: the build's time, which a next review is due against."""
     out = {}
     for u in data["updates"]:
-        li = _row(u, asks, replies, esc)
+        li = _row(u, asks, replies, esc, built)
         sig = hashlib.sha1(li.encode()).hexdigest()[:12]
         out[u["id"]] = (u["status"], li.replace('<li class="upd" ', f'<li class="upd" data-sig="{sig}" ', 1), sig)
     return out
@@ -303,6 +382,17 @@ def _updated(data, built):
     stamp = newest(data)
     return ("Status data last changed " + _day(stamp) if stamp else "No status dates yet") + \
         (f"; this page built {_day(built)}" if built else "") + "."
+
+
+def _backlog(data, built):
+    """(batch235) when the backlog was last reviewed (operator_updates.py reviewed) and how many rows are open; with the
+    build's time, how many are due."""
+    rows = [u for u in data["updates"] if is_open(u)]
+    rv = when(data.get("backlog_reviewed"))
+    due = sum(1 for u in rows if is_due(u, built)) if built else None
+    return ((f"Backlog last reviewed {_day(rv)}" if rv else "The backlog has no review yet") +
+            f"; {len(rows)} row{'' if len(rows) == 1 else 's'} open (planned or in progress)" +
+            (f", {due} due for review at this build" if due is not None else "") + ".")
 
 
 def _checked(data):
@@ -356,7 +446,7 @@ def build_page(data, asks, replies, esc, built=None):
     from the build; the publish cadence; the page polls stamp.json and fetches updates.json when it changed (updates_json(),
     stamp_json()) while open."""
     rows = data["updates"]
-    lis = rows_html(data, asks, replies, esc)
+    lis = rows_html(data, asks, replies, esc, built)
     legend = "".join(f'<li><span class="fx-chip {CHIP[s]} upd-status">{esc(s)}</span> {esc(WHAT[s])}</li>' for s in STATUSES)
 
     def group(s):
@@ -380,12 +470,13 @@ def build_page(data, asks, replies, esc, built=None):
 stands. Accepted work comes first (planned, then in progress once an engineer has it), then what is live and not
 verified yet, then what is verified; each group lists the newest first, by the date it reached its status. Times are
 Pacific.</p>
+<p class="small upd-backlog" id="upd-backlog">{esc(_backlog(data, built))}</p>
 <p class="muted small upd-updated" id="upd-updated">{esc(_updated(data, built))}</p>
 <p class="muted small upd-cadence">{esc(CADENCE)} <span id="upd-live-note" aria-live="polite"></span></p>
 <p class="upd-counts" id="upd-counts">{_counts(rows, esc)}</p>
 <ul class="upd-legend small">{legend}</ul>
 {_tools(rows, esc)}
-<div id="upd-root" data-built="{esc(built.strftime(FMT) if built else '')}" data-stamp="{data_stamp(data, asks, replies, esc)}">
+<div id="upd-root" data-built="{esc(built.strftime(FMT) if built else '')}" data-stamp="{data_stamp(data, asks, replies, esc, built)}">
 <h2 id="open">Accepted: planned and in progress</h2>
 {accepted_html}{none_open}
 <h2 id="live-unverified">Live, not verified yet</h2>
@@ -401,11 +492,11 @@ Pacific.</p>
     return body, '<script src="/static/updates.js" defer></script>'
 
 
-def data_stamp(data, asks, replies, esc):
+def data_stamp(data, asks, replies, esc, built=None):
     """A hash of what the page shows apart from its build time: the page polls /updates/stamp.json (a few dozen bytes)
-    and fetches updates.json only when this changed."""
-    lis = rows_html(data, asks, replies, esc)
-    text = json.dumps([sorted((k, v[2]) for k, v in lis.items()), _notices(data, esc), _checked(data), str(newest(data))])
+    and fetches updates.json only when this changed (a review falling due at a build changes it too)."""
+    lis = rows_html(data, asks, replies, esc, built)
+    text = json.dumps([sorted((k, v[2]) for k, v in lis.items()), _notices(data, esc), _checked(data), str(newest(data)), _backlog(data, built)])
     return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
@@ -413,9 +504,9 @@ def updates_json(data, asks, replies, esc, built=None):
     """/updates/updates.json, published with the page: what the page's script needs to add new rows in place (each row's
     status, sig and li), the counts, the two time lines and the notices; and its stamp (stamp_json(): what the page
     polls)."""
-    lis = rows_html(data, asks, replies, esc)
-    return {"stamp": data_stamp(data, asks, replies, esc), "built": built.strftime(FMT) if built else "",
-            "updated": _updated(data, built), "checked": _checked(data),
+    lis = rows_html(data, asks, replies, esc, built)
+    return {"stamp": data_stamp(data, asks, replies, esc, built), "built": built.strftime(FMT) if built else "",
+            "updated": _updated(data, built), "checked": _checked(data), "backlog": _backlog(data, built),
             "counts": _counts(data["updates"], esc), "notices": _notices(data, esc),
             "rows": [{"id": uid, "status": st, "sig": sig, "html": li} for uid, (st, li, sig) in lis.items()]}
 

@@ -12,6 +12,10 @@ Aurora site:4349, site:4350): add a change, move it to its next status, add a st
   tools/operator_updates.py recover [--affected WHAT] [--kind K] [--at ...]
   tools/operator_updates.py checked [--at ...]
   tools/operator_updates.py list [--all]
+  tools/operator_updates.py due [--now "YYYY-MM-DD HH:MM"]
+  tools/operator_updates.py reviewed ID [--next +4h|+2d|"YYYY-MM-DD HH:MM"] [--note N] [--at ...]
+  add and set also take --priority urgent|normal|later, --owner ROLE ("engineer batch233", "operator") and
+  --next-review +4h|DATE.
 
 --at is Pacific time (the default: now). add records the status's date, and "asked" when --asked is given; set
 records the new status's date and keeps the earlier ones. A note is kept with when it was written and under which
@@ -36,6 +40,16 @@ or moves that row in one call (upsert() here, under the same lock): the viewer a
 asked, the planned date recorded, the reply shown under the row; a status that would go backwards, or one past planned
 with no work, is refused before anything is sent. add --ref '#NNNN' with no --by of its own takes the asker from the
 board (the item's requested_by, else its owner; an operator read of the world, --world, default POG_WORLD or n).
+
+(d26 batch235 UR, viewer Aurora site:5022: "Could accepted work get regular backlog reviews after recovery and long
+jobs? Keep its original ID, priority, owner and next review so older requests need no repeat viewer nudge.") A row
+has a priority, an owner (a role, never a person's name: updates.owner_ok) and a next_review. set --owner keeps the
+owner it replaces in owner_history (until when); set --status planned on a row planned before keeps its first planned
+date and records replanned; the id, the asked date and who asked never change. due lists the open rows (planned, in
+progress) whose next review has passed at --now (default now) or that have none, oldest asked first, each with its id,
+who asked, priority, owner, status and how long since it last changed; reviewed stamps a review (the row's reviewed
+and the file's backlog_reviewed) and sets the next one: --next +4h / +2d / +30m from the review's time, or a date;
+without it, by priority: urgent 4 h, normal 24 h, later 72 h.
 """
 import argparse, contextlib, datetime, fcntl, json, os, re, sys
 from pathlib import Path
@@ -100,6 +114,47 @@ def set_note(u, note, t, status):
         u.setdefault("history", []).append(h)
     u["note"], u["note_at"], u["note_status"] = note, t, status
     return True
+
+
+NEXT = {"urgent": 4 * 60, "normal": 24 * 60, "later": 72 * 60}  # (batch235) minutes to the next review, by priority
+
+
+def review_at(text, base):
+    """--next / --next-review: '+4h', '+2d', '+30m' after base (a 'YYYY-MM-DD HH:MM'), or a date as written."""
+    m = re.fullmatch(r"\+(\d+)([mhd])", (text or "").strip())
+    if m:
+        mins = int(m.group(1)) * {"m": 1, "h": 60, "d": 1440}[m.group(2)]
+        return (updates.when(base) + datetime.timedelta(minutes=mins)).strftime(updates.FMT)
+    if updates.when(text) is None:
+        raise SystemExit(f"next review {text!r}: write +4h, +2d, +30m or YYYY-MM-DD HH:MM (Pacific)")
+    return text
+
+
+def owner_of(text):
+    if not updates.owner_ok(text):
+        raise SystemExit(f"--owner {text!r}: a role up to {updates.OWNER_LEN} characters (\"engineer batch233\", \"operator\"), "
+                         "no person's name or account")
+    return text.strip()
+
+
+def plan_fields(u, args, t):
+    """--priority, --owner and --next-review onto row u at time t; an owner handed on is kept in owner_history.
+    Returns what changed, as words."""
+    said = []
+    if args.priority and args.priority != u.get("priority"):
+        u["priority"] = args.priority
+        said.append(f"priority {args.priority}")
+    if args.owner:
+        o = owner_of(args.owner)
+        if o != u.get("owner"):
+            if u.get("owner"):
+                u.setdefault("owner_history", []).append({"owner": u["owner"], "until": t})
+            u["owner"] = o
+            said.append(f"owner {o}")
+    if args.next_review:
+        u["next_review"] = review_at(args.next_review, t)
+        said.append(f"next review {u['next_review']}")
+    return said
 
 
 def needs_work(uid, status, work):
@@ -204,6 +259,9 @@ def main(argv=None):
     a.add_argument("--asked", help="when it was asked (YYYY-MM-DD HH:MM; a site message's own time is used without it)")
     a.add_argument("--at")
     a.add_argument("--world", help="the world a board --ref is read from (default POG_WORLD or n)")
+    a.add_argument("--priority", choices=updates.PRIORITIES)
+    a.add_argument("--owner", help="a role: \"engineer batch233\", \"operator\"")
+    a.add_argument("--next-review", help="+4h, +2d, +30m or YYYY-MM-DD HH:MM")
     s = sub.add_parser("set")
     s.add_argument("id")
     s.add_argument("--status", choices=updates.STATUSES)
@@ -211,6 +269,9 @@ def main(argv=None):
     s.add_argument("--work")
     s.add_argument("--reply", action="append", default=[])
     s.add_argument("--at")
+    s.add_argument("--priority", choices=updates.PRIORITIES)
+    s.add_argument("--owner", help="a role: \"engineer batch233\", \"operator\"")
+    s.add_argument("--next-review", help="+4h, +2d, +30m or YYYY-MM-DD HH:MM")
     n = sub.add_parser("notice")
     n.add_argument("--kind", required=True, choices=updates.NOTICE_KINDS)
     n.add_argument("--text", required=True)
@@ -227,8 +288,15 @@ def main(argv=None):
     c.add_argument("--at")
     ls = sub.add_parser("list")
     ls.add_argument("--all", action="store_true")
+    du = sub.add_parser("due")
+    du.add_argument("--now", help="YYYY-MM-DD HH:MM (Pacific; default now)")
+    rv = sub.add_parser("reviewed")
+    rv.add_argument("id")
+    rv.add_argument("--next", help="+4h, +2d, +30m or YYYY-MM-DD HH:MM (default by priority: urgent 4 h, normal 24 h, later 72 h)")
+    rv.add_argument("--note")
+    rv.add_argument("--at")
     args = ap.parse_args(argv)
-    if args.cmd == "list":
+    if args.cmd in ("list", "due"):
         return run(args)
     with locked(args.file):  # one writer at a time: read, change and write under the lock
         return run(args)
@@ -264,21 +332,27 @@ def run(args, board=None):
             row["work"] = args.work
         if args.note:
             set_note(row, args.note, t, args.status)
+        plan_fields(row, args, t)
         data["updates"].append(row)
         write(args.file, data)
         print(f"added {args.id}: {args.status}")
     elif args.cmd == "set":
         u = find(data, args.id)
-        if not (args.status or args.note or args.work or args.reply):
-            raise SystemExit("set: give --status, --note, --work or --reply")
+        if not (args.status or args.note or args.work or args.reply or args.priority or args.owner or args.next_review):
+            raise SystemExit("set: give --status, --note, --work, --reply, --priority, --owner or --next-review")
         t = stamp(args.at)
         status = args.status or u["status"]
         needs_work(args.id, status, args.work or u.get("work"))
         said = []
         if args.status:
+            dates = u.setdefault("dates", {})
+            if args.status == "planned" and u["status"] != "planned" and dates.get("planned"):
+                dates["replanned"] = t  # (batch235) planned again: the first planned date stays
+                said.append(f"planned again {t} (first planned {dates['planned']})")
+            else:
+                dates[args.status] = t
+                said.append(f"{args.status} {t}")
             u["status"] = args.status
-            u.setdefault("dates", {})[args.status] = t
-            said.append(f"{args.status} {t}")
         if args.work:
             u["work"] = args.work
         if args.note:
@@ -289,6 +363,7 @@ def run(args, board=None):
             said.append(f"note kept, written {'while ' + u['note_status'] if u.get('note_status') else 'before this status'}")
         if args.reply:
             u["replies"] = list(dict.fromkeys((u.get("replies") or []) + args.reply))
+        said += plan_fields(u, args, t)
         write(args.file, data)
         print(f"{args.id}: " + ("; ".join(said) or "updated"))
     elif args.cmd == "notice":
@@ -324,12 +399,48 @@ def run(args, board=None):
         data["notices_checked"] = stamp(args.at)
         write(args.file, data)
         print(f"notices checked through {data['notices_checked']}")
+    elif args.cmd == "due":
+        now = updates.when(stamp(args.now))
+        print("\n".join(due_lines(data, now)))
+    elif args.cmd == "reviewed":
+        u = find(data, args.id)
+        if not updates.is_open(u):
+            raise SystemExit(f"{args.id} is {u['status']}: a review is of a planned or in progress row")
+        t = stamp(args.at)
+        nxt = review_at(args.next, t) if args.next else review_at(f"+{NEXT[u.get('priority') or 'normal']}m", t)
+        u["reviewed"], u["next_review"] = t, nxt
+        if args.note:
+            set_note(u, args.note, t, u["status"])
+        data["backlog_reviewed"] = t
+        write(args.file, data)
+        print(f"{args.id}: reviewed {t}; next review {nxt}" + ("; note set" if args.note else ""))
     else:
         for u in data["updates"]:
             if args.all or u.get("status") != "verified":
                 refs = ", ".join(f"{r.get('name')} {r.get('ref') or ''}".strip() for r in u.get("requested_by") or [])
                 flag = "  (no work)" if u.get("status") != "planned" and not u.get("work") else ""
                 print(f"{u['status']:<12} {u['id']:<28} {u['title']}" + (f"  [{refs}]" if refs else "") + flag)
+
+
+def due_lines(data, now):
+    """(batch235) the open rows due for review at now (next_review passed, or none), oldest asked first: a count line,
+    then one line a row."""
+    rows = [u for u in data["updates"] if updates.is_open(u)]
+    due = [u for u in rows if updates.is_due(u, now)]
+
+    def asked(u):
+        return updates.when((u.get("dates") or {}).get("asked")) or updates.acknowledged(u) or datetime.datetime.max
+    due.sort(key=lambda u: (asked(u), u["id"]))
+    out = [f"due: {len(due)} of {len(rows)} open rows at {now.strftime(updates.FMT)} (next review passed or none), oldest asked first"]
+    for u in due:
+        refs = ", ".join(f"{r.get('name')} {r.get('ref') or ''}".strip() for r in u.get("requested_by") or []) or "no asker"
+        a = asked(u)
+        nr = u.get("next_review")
+        out.append(f"  {u['id']}  [{refs}]  priority {u.get('priority') or 'not set'}  owner {u.get('owner') or 'not set'}  {u['status']}"
+                   f"  changed {updates.ago(updates.last_change(u), now)} ago"
+                   f"  review {'due since ' + nr if nr else 'never set'}"
+                   + (f"  asked {a.strftime(updates.FMT)}" if a != datetime.datetime.max else ""))
+    return out
 
 
 if __name__ == "__main__":
