@@ -145,4 +145,20 @@ storage.spiderroute.spiders[8101].trail=nil
 ticks(R.STALL_WATER+120)
 eq(#requests,before8+1,'after the stall: asked'); eq(requests[#requests].goal.x,30)
 assert(storage.spiderroute.spiders[8101].tries[1]:find('asked again for a path round the water to (30,0.5)',1,true))
+-- 9. spider_kite's shore spot: room for the box and a straight line its legs walk (d26: the spot across the water,
+-- (77.5,314.5), stalled again 1 tile from it). A strip of 14 tiles (over GAP) between: it stays on this side.
+wetset={}; water(10,-50,23,50)
+local sh=P.shore(surface,{x=5.5,y=0.5},{x=60,y=0.5})
+assert(sh and sh.x<10 and P.clear(surface,sh),'this side: '..tostring(sh and sh.x))
+-- 10. its arrival said to the sender (a go_to replies at once; before, nothing said it got there)
+wetset={}
+route={}
+sd.position={x=0.5,y=0.5}
+R.set(spider,{go_to={x=20.5,y=0.5}},'sol')
+ticks(60)
+sd.position={x=20.2,y=0.6}; route={}                -- the game: there, its route done
+local seen10=storage.spiderroute.eseq
+ticks(60)
+l=R.lines({name='sol'},{spiderroute_seen=seen10})
+eq(l and l[1],'spidertron #8101 arrived at (20.2,0.6) (its route ended at (20.5,0.5))')
 print('d26_batch243: ok')

@@ -29,7 +29,12 @@
   `damage?` summed, `entity_names?`, `since_tick?`: hits on our entities on that platform by asteroids or enemies since
   the wait or guard began, a hit repaired since still counted; met on the first hit, or at at_least or damage, whichever
   comes first; saw names the first hits, where, damage, by what, when; a fired guard keeps them in its queue history;
-  remote and platform lanes, e.g. `{"until":"platform_hit","platform":"Edge5"}`); `platform_energy_below` (`platform`,
+  remote and platform lanes, e.g. `{"until":"platform_hit","platform":"Edge5"}`); `platform_foundation_loss`
+  (`platform`, `at_least?` tiles, `since_tick?`: foundation tiles of that platform destroyed since the wait or guard
+  began, a tile rebuilt by the hub since still counted; floor placed on purpose (a ghost an agent or player placed, a
+  tile laid or mined by hand) is not; saw names each tile, when its ghost was first seen or that it was lost and rebuilt
+  between reads, and when it was rebuilt; a fired guard keeps them in its queue history; remote and platform lanes,
+  e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
   `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
   in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
@@ -145,8 +150,9 @@
   active step is untouched. Example: `./fh call queue_edit --args '{"id":"job-12","to":1}'`
 - `queue_edit {lane?, expected_revision, guards: {remove?, replace?, add?}}`: the guards only, by id (`guard-N`,
   queue_status `guards`): `remove: ["guard-3"]`, `replace: [{id, when, goto|steps}]`, `add: [guards]`. The active step,
-  its wait and the pending steps go on; a guard not named keeps its baseline (platform_loss its since tick); one
-  replaced or added starts its own. The reply gives `revision` and each guard's `baseline`. Example:
+  its wait and the pending steps go on; a guard not named keeps its baseline (platform_loss, platform_hit and
+  platform_foundation_loss their since tick); one replaced or added starts its own. The reply gives `revision` and each
+  guard's `baseline`. Example:
   `./fh call queue_edit --args '{"lane":"platform:Edge8","expected_revision":41,"guards":{"remove":["guard-3"]}}'`
 - `queue_cancel {lane?, clear?}`: cancels a queue (`lane: "remote"` for the remote lane); `clear: false` keeps the
   pending steps, paused (a running `wait_ticks` ends: `cancelled_wait`).
