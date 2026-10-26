@@ -6,6 +6,9 @@
     "PostCompact": [
       {"hooks": [{"type": "command", "command": "python3 \"$GROK_WORKSPACE_ROOT/tools/context.py\" hook post-compact --mark", "timeout": 20}]}
     ],
+    "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "python3 \"$GROK_WORKSPACE_ROOT/tools/context.py\" hook pre-tool", "timeout": 20}]}
+    ],
     "PostToolUse": [
       {"hooks": [{"type": "command", "command": "python3 \"$GROK_WORKSPACE_ROOT/tools/context.py\" hook post-tool", "timeout": 20}]}
     ]

@@ -14,7 +14,8 @@ Hook events: pre-compact and post-compact log to DIR/context.log (post-compact a
 DIR/compactions.md; --mark leaves a marker so the next post-tool hook re-injects notes.md, for harnesses without
 a SessionStart "compact" hook). session-compact prints notes.md for a SessionStart(compact) hook. post-tool
 re-injects notes.md after a marked compaction and, with --at N (Claude), warns once per context window when the
-transcript is within reach of the compaction point so the agent updates notes.md first. pre-compact with
+transcript is within reach of the compaction point so the agent updates notes.md first. post-tool and pre-tool (Grok,
+Muse; Claude Code's is tools/permit.py) record each tool call's end and start for tools/toolcall.py. pre-compact with
 --skip-late S --at N (Claude) blocks an automatic compaction in the last S seconds before DIR/deadline.txt.
 """
 import calendar
@@ -25,6 +26,9 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import toolcall  # noqa: E402
+
 NOTES_CAP = 7000          # characters of notes.md injected after a compaction (the playbook asks for under 6 KB)
 # Log lines injected after a compaction (the playbook keeps ~10). Haiku's Log reached 39 lines in shake4 and Claude Code
 # also re-attaches notes.md as a recently read file, so each compaction carried the whole Log twice and the floor
@@ -119,6 +123,7 @@ def setup(kind, model, d):
             "PreCompact": [{"hooks": [hook_cmd("pre-compact")]}],
             "PostCompact": [{"hooks": [hook_cmd("post-compact", "--mark")]}],
             "SessionStart": [{"matcher": "compact", "hooks": [hook_cmd("session-compact")]}],
+            "PreToolUse": [{"hooks": [hook_cmd("pre-tool")]}],
             "PostToolUse": [{"hooks": [hook_cmd("post-tool")]}],
         }})
     # agy: no threshold or compaction hooks; .agy-loop.sh starts a fresh conversation past compact_at (agy-tokens).
@@ -557,8 +562,17 @@ def hook(event, args):
         save()
         log(source=payload.get("source"))
         print(brief(d, "Your context was just compacted."))
+    elif event == "pre-tool":   # (d26 batch238 BT) Grok, Muse; Claude Code's PreToolUse is tools/permit.py
+        try:
+            toolcall.started(d, payload)
+        except OSError:
+            pass
     elif event == "post-tool":
         context = None
+        try:
+            toolcall.ended(d, payload)
+        except OSError:
+            pass
         if "hooks_seen" not in state:
             state["hooks_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")   # shows the workspace hooks load (smoke tests)
             save()
