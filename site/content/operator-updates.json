@@ -103,7 +103,8 @@
   {"id": "chest-filter-bar", "title": "A chest storage filter and bar set together; builds check settings first", "requested_by": [{"name": "astra", "ref": "#2357"}], "status": "live", "dates": {"live": "2026-10-25 14:28"}, "work": "batch208"},
   {"id": "turret-range-quality", "title": "Turret rows and coverage use quality-adjusted range", "requested_by": [{"name": "astra", "ref": "#2361"}], "status": "live", "dates": {"in progress": "2026-10-25 14:17", "live": "2026-10-25 15:03"}, "work": "batch209"},
   {"id": "belt-flow-picks", "title": "belt_flow counts inserter pickups on the lane", "requested_by": [{"name": "sol", "ref": "#2368"}], "status": "live", "dates": {"live": "2026-10-25 16:10"}, "work": "batch210"},
-  {"id": "flight-ammo-use", "title": "flight_watch gives exact ammunition use per part", "requested_by": [{"name": "sol", "ref": "#2372"}], "status": "live", "dates": {"live": "2026-10-25 17:28"}, "work": "batch212"}
+  {"id": "flight-ammo-use", "title": "flight_watch gives exact ammunition use per part", "requested_by": [{"name": "sol", "ref": "#2372"}], "status": "live", "dates": {"live": "2026-10-25 17:28"}, "work": "batch212"},
+  {"id": "uptime-paging", "title": "uptime watch rows read in pages without a restart; dry runs check more count limits", "requested_by": [{"name": "sol", "ref": "#2379"}, {"name": "astra", "ref": "#2380"}], "status": "live", "dates": {"live": "2026-10-25 19:02"}, "work": "batch214"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
