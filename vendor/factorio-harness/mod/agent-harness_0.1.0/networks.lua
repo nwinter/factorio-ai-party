@@ -256,6 +256,13 @@ return function(api)
   -- read fails), in the same pass (BT1: the row read every point and its filters a second time). A point's
   -- get_item_count is read once and asked with one filter table, its fields set for each request (BT1).
   local ITEM_Q = {name='', quality=''}
+  -- (d25 batch218 QAC1, Sol #2393: a backlog alert named 53287 free electronic-circuit for requests of rare and
+  -- uncommon ones, none of those free) an item and its quality as one key: the name for normal, else name@quality.
+  -- The engine reads a name alone as normal quality; qid gives that or {name, quality}.
+  local function qkey(name, quality) return (quality == nil or quality == 'normal') and name or name .. '@' .. quality end
+  local function qid(name, quality) return (quality == nil or quality == 'normal') and name or {name=name, quality=quality} end
+  local function qsplit(key) local name, q = key:match('^(.-)@([%w%-]+)$'); if name then return name, q end; return key, nil end
+  M.qkey = qkey
   local function shortfalls(ln, asked)
     local out, coming_keys = {}, {}
     local points = tget(ln, 'requester_points')
@@ -275,7 +282,7 @@ return function(api)
       for _, f in ipairs(tget(pt, 'filters') or EMPTY) do
         local name = filter_name(f)
         local quality = type(f.quality) == 'table' and f.quality.name or f.quality or 'normal'
-        if asked and name and (f.count or 0) > 0 then asked[name] = (asked[name] or 0) + f.count end
+        if asked and name and (f.count or 0) > 0 then local k = qkey(name, quality); asked[k] = (asked[k] or 0) + f.count end
         if name and (f.count or 0) > 0 and unit then
           coming = coming or tget(pt, 'targeted_items_deliver') or EMPTY
           count_of = count_of or tget(owner, 'get_item_count')
@@ -286,7 +293,7 @@ return function(api)
           else for _, c in pairs(coming) do if type(c) == 'table' and c.name == name then on_way = on_way + (c.count or 0) end end end
           local missing = f.count - have - on_way
           local key = (missing > 0 or (on_way > 0 and have < f.count)) and unit .. '|' .. name .. '|' .. quality
-          if missing > 0 then out[#out+1] = {key=key, name=name, missing=missing, e=owner} end
+          if missing > 0 then out[#out+1] = {key=key, name=name, quality=quality, missing=missing, e=owner} end
           if on_way > 0 and have < f.count then coming_keys[#coming_keys+1] = key end
         end
       end
@@ -326,13 +333,15 @@ return function(api)
             local key = f.name .. '|' .. id
             seen[key] = true
             local counts = {}
+            -- (QAC1) by item@quality (qkey); q marks such a sample: one from before counted every quality by name
             for _, x in ipairs(tcall(ln, 'get_contents') or EMPTY) do
               local name = type(x.name) == 'table' and x.name.name or x.name
-              if name then counts[name] = (counts[name] or 0) + (x.count or 0) end
+              local q = type(x.quality) == 'table' and x.quality.name or x.quality
+              if name then local k = qkey(name, q); counts[k] = (counts[k] or 0) + (x.count or 0) end
             end
             local h = n.stock[key] or {force=f.name, id=id, samples={}}
             h.surface = surface.name
-            h.samples[#h.samples+1] = {tick=game.tick, counts=counts}
+            h.samples[#h.samples+1] = {tick=game.tick, counts=counts, q=true}
             while #h.samples > STOCK_KEEP do table.remove(h.samples, 1) end
             n.stock[key] = h
           end
@@ -341,8 +350,8 @@ return function(api)
     end
     for key in pairs(n.stock) do if not seen[key] then n.stock[key] = nil end end
   end
-  -- Rows {name, id, surface, ticks (to zero), left}, soonest first, at most max; and whether any network has 30 min
-  -- of samples yet.
+  -- Rows {name (item@quality, qkey), id, surface, ticks (to zero), left}, soonest first, at most max; and whether any
+  -- network has 30 min of samples yet (of the same kind as the last: by quality or not).
   function M.running_out(f, max)
     local n = store()
     local rows, enough = {}, false
@@ -350,7 +359,7 @@ return function(api)
       local now = h.force == f.name and h.samples[#h.samples]
       local old
       for i = #h.samples - 1, 1, -1 do
-        if now and now.tick - h.samples[i].tick >= STOCK_LOOK then old = h.samples[i]; break end
+        if now and now.tick - h.samples[i].tick >= STOCK_LOOK then old = h.samples[i].q == now.q and h.samples[i] or nil; break end
       end
       if old then
         enough = true
@@ -1218,12 +1227,20 @@ return function(api)
     local p = e.position
     return e.name .. '@' .. p.x .. ',' .. p.y
   end
+  -- The item an order needs and its quality (QAC1: a ghost's own quality, an upgrade's target quality).
   local function order_item(e, kind)
-    local proto = kind == 'ghost' and try(function() return e.ghost_prototype end)
-      or kind == 'upgrade' and try(function() return e.get_upgrade_target() end) or nil
+    local proto, q
+    if kind == 'ghost' then
+      proto = try(function() return e.ghost_prototype end)
+      q = try(function() return e.quality end)
+    elseif kind == 'upgrade' then
+      local ok, tp, tq = pcall(function() return e.get_upgrade_target() end)
+      if ok then proto, q = tp, tq end
+    end
     local items = proto and try(function() return proto.items_to_place_this end)
     local first = items and items[1]
-    return first and (type(first) == 'string' and first or first.name) or nil
+    if type(q) ~= 'string' then q = q and try(function() return q.name end) end
+    return first and (type(first) == 'string' and first or first.name) or nil, q
   end
   local function plural(n, word) return n .. ' ' .. word .. (n == 1 and '' or 's') end
   -- The finds of one network's orders: {kind, filter}; the background view makes one a step.
@@ -1278,10 +1295,12 @@ return function(api)
     end
     local missing, missing_set, present = {}, {}, 0
     for _, o in ipairs(look) do
-      local item = o.kind ~= 'deconstruct' and o.e.valid and order_item(o.e, o.kind)
+      local item, q
+      if o.kind ~= 'deconstruct' and o.e.valid then item, q = order_item(o.e, o.kind) end
       if item then
-        if (tcall(ln, 'get_item_count', item) or 0) > 0 then present = present + 1
-        elseif not missing_set[item] then missing_set[item] = true; missing[#missing+1] = item end
+        local k = qkey(item, q)
+        if (tcall(ln, 'get_item_count', qid(item, q)) or 0) > 0 then present = present + 1
+        elseif not missing_set[k] then missing_set[k] = true; missing[#missing+1] = {key=k, id=qid(item, q)} end
       end
     end
     -- (the items present: every item the oldest orders need is in the network, and they lie in its construction area)
@@ -1291,9 +1310,9 @@ return function(api)
     elseif #missing > 0 then
       local parts = {}
       for i = 1, math.min(4, #missing) do
-        local item, where = missing[i], 'in no other network'
+        local item, where = missing[i].key, 'in no other network'
         for _, o in ipairs(others) do
-          if o.id ~= v.id and (tcall(o.ln, 'get_item_count', item) or 0) > 0 then
+          if o.id ~= v.id and (tcall(o.ln, 'get_item_count', missing[i].id) or 0) > 0 then
             local x, y = other_at(o)
             where = string.format('held in network #%d near (%d,%d)%s', o.id, x, y, o.surface ~= surface.name and ' on ' .. o.surface or '')
             break
@@ -1332,20 +1351,26 @@ return function(api)
         if ok and f and e.valid then
           -- One item in every slot (reqchest.lua; Sonnet, d15): which, and what puts it there.
           local one = api.reqchest and try(function() return api.reqchest().one_item(e) end)
-          out[#out+1] = {e=e, item=x.name, text=one and one.line or f.text, spoilage=f.spoilage}
+          out[#out+1] = {e=e, item=qkey(x.name, x.quality), text=one and one.line or f.text, spoilage=f.spoilage}
         end
       end
     end
     return #out > 0 and out or nil
   end
+  -- (QAC1) free of the quality each request asks (items: item@quality, qkey), each item@quality read once.
   local function deliveries(n, ln, v, short)
-    local stuck, items = 0, {}
+    local stuck, items, read = 0, {}, {}
     for _, x in ipairs(short) do
       local since = n.unfilled[x.key]
       if since and game.tick - since >= DELIVERY_WAIT then
-        local s = tcall(ln, 'get_supply_counts', x.name) or EMPTY
-        local free = math.max(0, (s['active-provider'] or 0) + (s['passive-provider'] or 0)) + math.max(0, s.storage or 0)
-        if free > 0 then stuck = stuck + 1; items[x.name] = free end
+        local k = qkey(x.name, x.quality)
+        local free = read[k]
+        if not free then
+          local s = tcall(ln, 'get_supply_counts', qid(x.name, x.quality)) or EMPTY
+          free = math.max(0, (s['active-provider'] or 0) + (s['passive-provider'] or 0)) + math.max(0, s.storage or 0)
+          read[k] = free
+        end
+        if free > 0 then stuck = stuck + 1; items[k] = free end
       end
     end
     if stuck == 0 then return nil end
@@ -1446,16 +1471,20 @@ return function(api)
         local short, short_now = shortfalls(ln, asked), {}
         for _, x in ipairs(short) do
           local since = n.unfilled[x.key]
-          if since and game.tick - since >= UNFILLED_TICKS then r.unfilled = r.unfilled + 1; r.items[x.name] = (r.items[x.name] or 0) + x.missing end
-          short_now[x.name] = (short_now[x.name] or 0) + x.missing
+          local k = qkey(x.name, x.quality)
+          if since and game.tick - since >= UNFILLED_TICKS then r.unfilled = r.unfilled + 1; r.items[k] = (r.items[k] or 0) + x.missing end
+          short_now[k] = (short_now[k] or 0) + x.missing
         end
         -- The items it holds and what its requesters ask (Gemini, 12:20): the network's contents (provider, storage and
-        -- buffer chests, as its GUI lists them) and the requests summed over its requester points, with what is short now.
+        -- buffer chests, as its GUI lists them) and the requests summed over its requester points, with what is short now;
+        -- each by item@quality (QAC1).
         local stock = {}
         for k, v in pairs(tcall(ln, 'get_contents') or EMPTY) do
           local name, c = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
+          local q = type(v) == 'table' and v.quality or nil
           if type(name) == 'table' then name = name.name end
-          if type(name) == 'string' and type(c) == 'number' and c > 0 then stock[name] = (stock[name] or 0) + c end
+          if type(q) == 'table' then q = q.name end
+          if type(name) == 'string' and type(c) == 'number' and c > 0 then local key = qkey(name, q); stock[key] = (stock[key] or 0) + c end
         end
         r.stock, r.asked, r.short_now = stock, asked, short_now
         r.busy_since = n.busy[id]
@@ -1939,13 +1968,16 @@ return function(api)
           x.logistic_area, x.construction_area = r.view.logistic_area, r.view.construction_area
           -- Its items (Gemini, 12:20): the 20 most held, and every item its requesters ask for with what is short now.
           local held = {}
-          for name, c in pairs(r.stock or {}) do held[#held+1] = {name=name, count=c} end
-          table.sort(held, function(p, q) return p.count > q.count or (p.count == q.count and p.name < q.name) end)
+          -- (QAC1) each item@quality its own row, with quality when not normal
+          for k, c in pairs(r.stock or {}) do local name, q = qsplit(k); held[#held+1] = {name=name, quality=q, count=c, key=k} end
+          table.sort(held, function(p, q) return p.count > q.count or (p.count == q.count and p.key < q.key) end)
           while #held > 20 do table.remove(held) end
+          for _, h in ipairs(held) do h.key = nil end
           x.holds = #held > 0 and held or nil
           local asks = {}
-          for name, c in pairs(r.asked or {}) do asks[#asks+1] = {name=name, asked=c, short=(r.short_now or {})[name] or 0} end
-          table.sort(asks, function(p, q) return p.asked > q.asked or (p.asked == q.asked and p.name < q.name) end)
+          for k, c in pairs(r.asked or {}) do local name, q = qsplit(k); asks[#asks+1] = {name=name, quality=q, asked=c, short=(r.short_now or {})[k] or 0, key=k} end
+          table.sort(asks, function(p, q) return p.asked > q.asked or (p.asked == q.asked and p.key < q.key) end)
+          for _, a in ipairs(asks) do a.key = nil end
           x.requests = #asks > 0 and asks or nil
           x.logistic_robots, x.construction_robots = r.view.logistic, r.view.construction
           x.charging, x.waiting = r.view.charging, r.view.waiting
@@ -2969,7 +3001,8 @@ return function(api)
       returns='surfaces [{surface, platform (on a platform surface), electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw (on a platform: at the solar power where it is), solar_power (percent), solar_power_text, '
         .. 'acc, acc_mj, acc_max_mj, acc_pct (accumulators read now), acc_series (what they held every 15 s over the last 3 min, from the 5 s samples), draw_now_kw (fresh), machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line (its accumulator part read now)}], logistic [{id, roboports, personal, center, '
         .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
-        .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
+        .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items (keyed item@quality), '
+        .. 'holds [{name, quality (when not normal), count}], requests [{name, quality, asked, short}] (each item@quality its own row), '
         .. 'ghosts, line}], turrets {by_name, '
         .. 'ammo_used_1h, line}, storm (Fulgora, read now: state storm while dark (lightning strikes in the dark, none in daylight; the API has no storm property), else clear; '
         .. 'phase day|darkening|full dark|brightening, darkness, dusk_in_s, evening_in_s, morning_in_s, dawn_in_s, day_s, line)}]; none (a surface or platform named with none of these); as_of (kept 60 s; made again from when a generator, solar panel or accumulator of ours is built); built_since (the last one built after the view began: what, where, when, when the new view is due); note (how each number is counted). Electric networks over 2 poles or with '

@@ -4666,10 +4666,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     1.5 MW net flowed out over the last 30 s)`, and later `ran empty 1m00s ago; now at 61% ...`. On a private copy of
     world n network 301 fell like that every Fulgora day.
     Robot delays (Nick 12:35; worse is more waiting): `construction_wait`, ghosts in a network's construction area
-    waiting 5+ min since a view first saw them while their items are in the network and they lie inside a
-    roboport's construction area (`ghosts waiting on robots: 75 in network 3 near (25,50), oldest 22 min, 1
-    construction robot (busy); the items are in the network`); `deliveries_wait`, requests unfilled 5+ min while
-    providers or storage hold the item free (the engine's supply counts, net of pickups robots have reserved), with
+    waiting 5+ min since a view first saw them while their items (at the ghost's quality) are in the network and they
+    lie inside a roboport's construction area (`ghosts waiting on robots: 75 in network 3 near (25,50), oldest 22
+    min, 1 construction robot (busy); the items are in the network`); `deliveries_wait`, requests unfilled 5+ min while
+    providers or storage hold the item free at the quality the request asks (the engine's supply counts of that
+    item@quality, net of pickups robots have reserved; named item@quality for a quality other than normal), with
     what the logistic robots are doing (`deliveries waiting on robots: 4 requests unfilled 5+ min in network 3 near
     (25,50) while providers or storage hold the item free (copper-cable 500): no idle logistic robots; 40 robots
     waiting to charge at 3 roboports; 273 carrying for other requests`); `requester_full` (Sol, 22:08), requester
@@ -4764,7 +4765,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   once; state in `.lookahead.json` next to the journal). Lines: `your plan line: "iron smelting column east" (set
   1h20m ago)`, `your open board items: #12 ...`, `team plan goals: ...`, `research: automation-2 52% running; queued
   next: steel-processing, logistics-2`, `stock falling to zero within 2 h at the last 30 min rate: iron-plate in network
-  #8 (nauvis) in 30m (3000 left)` (each network's contents sampled every 5 game minutes, the last 35 min kept; at most
+  #8 (nauvis) in 30m (3000 left)` (each network's contents sampled every 5 game minutes by item@quality, the last 35
+  min kept; at most
   5; `none`, or `under 30 min of network samples yet`), `time left in the shift: 1h20m` (fh, from the deadline file),
   then `look ahead: a moment to think past the current task: what you and the team will need in the next hour or
   two, and whether your plan line still says it. What you do with this is up to you.`
@@ -4831,8 +4833,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   A logistic network's line ends with its items (Gemini, 12:20): `; holds iron-plate 4200, copper-plate 3100, coal 50`
   (its provider, storage and buffer chests as the game's network contents count them, the 6 most, `(+N kinds)`) and
   `; requesters ask iron-plate 400 (300 short), copper-cable 200` (the requests summed over its requester points, the
-  6 largest; `short` is what its requests lack now, held plus incoming). Read: `holds` (the 20 most held, `[{name,
-  count}]`) and `requests` (`[{name, asked, short}]`).
+  6 largest; `short` is what its requests lack now, held plus incoming). Each is by item@quality (d25 batch218):
+  `electronic-circuit@rare 200 (200 short)`. Read: `holds` (the 20 most held, `[{name, quality?, count}]`),
+  `requests` (`[{name, quality?, asked, short}]`; quality only when not normal) and `unfilled_items` (keyed
+  item@quality).
 - Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
   boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
   generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`

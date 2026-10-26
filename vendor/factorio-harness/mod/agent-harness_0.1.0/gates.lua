@@ -9,6 +9,9 @@ return function(api)
   local M = {}
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
   local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
+  -- (d25 batch218 QAC1) a logistic condition's item read at its signal's quality: the name alone is normal, else
+  -- {name, quality} (ItemWithQualityID)
+  local function sigid(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and {name=s.name, quality=q} or s.name end
   -- PAGE and CHEST_BUDGET as timed on world n: about 50 us an entity read, 3 us a chest looked at, 2 ms to sort 1024
   local MAX_LINES, MAX_CHESTS, PAGE, CHEST_BUDGET = 64, 256, 128, 512
   local budget = CHEST_BUDGET
@@ -19,8 +22,9 @@ return function(api)
   -- The most a network could hold of an item, up to need: its count and what its storage and provider chests could
   -- take more, looked at only when the count is under need and only until need is reached.
   local reach_cache = {}
+  -- item: an ItemWithQualityID (sigid)
   local function most(net, item, need)
-    local k = tostring(try(function() return net.network_id end)) .. '|' .. item
+    local k = tostring(try(function() return net.network_id end)) .. '|' .. (type(item) == 'table' and item.name .. '@' .. item.quality or item)
     local v = reach_cache[k]
     if not v then
       v = {count=try(function() return net.get_item_count(item) end) or 0, room=0, looked=0, i=1, j=0, done=false}
@@ -53,9 +57,12 @@ return function(api)
   local SPLIT_POINTS = 1024
   local split_cache = {}
   local function item_of(t) local n = t and t.name; return type(n) == 'table' and n.name or n end
+  local function quality_of(t) local q = t and t.quality; if type(q) == 'table' then q = q.name end; return q or 'normal' end
+  -- item: an ItemWithQualityID (sigid); the reserved pickups counted at its quality
   local function split(net, item)
     if split_cache.tick ~= game.tick then split_cache = {tick=game.tick} end
-    local k = tostring(try(function() return net.network_id end)) .. '|' .. item
+    local name, quality = type(item) == 'table' and item.name or item, type(item) == 'table' and item.quality or 'normal'
+    local k = tostring(try(function() return net.network_id end)) .. '|' .. name .. '@' .. quality
     if split_cache[k] then return split_cache[k] end
     local sc = try(function() return net.get_supply_counts(item) end)
     if type(sc) ~= 'table' then return nil end
@@ -64,7 +71,7 @@ return function(api)
       if i > SPLIT_POINTS then break end
       pts = i
       for _, t in pairs(try(function() return pt.targeted_items_pickup end) or {}) do
-        if item_of(t) == item then reserved = reserved + (t.count or 0) end
+        if item_of(t) == name and quality_of(t) == quality then reserved = reserved + (t.count or 0) end
       end
     end
     local rq, rqn = 0, 0
@@ -109,10 +116,10 @@ return function(api)
       if sig and sig.name and net and (sig.type == nil or sig.type == 'item') then
         local constant = cond.constant
         local need = GT[cond.comparator or ''] and type(constant) == 'number' and not cond.second_signal and ((cond.comparator == '>' and constant + 1) or constant) or nil
-        local m = most(net, sig.name, need)
+        local m = most(net, sigid(sig), need)
         -- where the count sits, when the condition is false (it holds the entity off)
-        local sp = c.logistic_met == false and split(net, sig.name)
-        text = text .. string.format(' (network %s: %s %d%s%s)', tostring(try(function() return net.network_id end)), sig.name, m.count,
+        local sp = c.logistic_met == false and split(net, sigid(sig))
+        text = text .. string.format(' (network %s: %s %d%s%s)', tostring(try(function() return net.network_id end)), sigtext(sig), m.count,
           api.negative_note and api.negative_note(sig.name, m.count) or '', sp and '; the count: ' .. sp.line or '')
         if need then
           if need > m.most and m.all then
