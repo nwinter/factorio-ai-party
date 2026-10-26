@@ -144,9 +144,11 @@ sol('status')
 -- Sleep wakes on a tell (woke=told) and on board news (woke=board).
 sol('sleep',{seconds=60})
 eq(sol('sleep_check',{peek=true}).woke,nil)
-astra('tell',{to='sol',text='wake up, plates are in'})
+local sent=astra('tell',{to='sol',text='wake up, plates are in'})
 r=sol('sleep_check',{peek=true}); eq(r.woke,'told'); eq(r.tell,'astra: wake up, plates are in')
-r=sol('sleep_check',{}); eq(r.woke,'told')
+-- (d26 batch238, viewer Aurora 11:50) which item woke it, for a script's own safe point
+eq(r.woke_by.kind,'tell'); eq(r.woke_by.seq,sent.seq); eq(r.woke_by.from,'astra'); eq(r.woke_by.viewer,nil)
+r=sol('sleep_check',{}); eq(r.woke,'told'); eq(r.woke_by.seq,sent.seq)
 assert(has(r.team.tells,'wake up')) -- the final read delivers it
 jump(601) -- past the 10 s in which a new sleep repeats this wake
 sol('sleep',{seconds=60})
@@ -246,7 +248,7 @@ assert(m and m[1]:find('server',1,true) and m[1]:find('longer replies',1,true),m
 eq((grok('status').team or {}).mentions,nil)
 grok('sleep',{seconds=60}); eq(grok('sleep_check',{peek=true}).woke,nil)
 runtime.on_event{name=defines.events.on_console_chat,tick=tick,message='@grok thanks, filed'}
-eq(grok('sleep_check',{peek=true}).woke,'mentioned')
+r=grok('sleep_check',{peek=true}); eq(r.woke,'mentioned'); eq(r.woke_by.kind,'mention'); eq(type(r.woke_by.seq),'number')
 
 -- History (Muse, shift10: "a tell shown once in the team block is lost if I
 -- miss it"): fh tells lists the last 30 received, oldest first, with time,

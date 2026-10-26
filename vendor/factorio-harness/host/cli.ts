@@ -50,9 +50,9 @@ const help = `fh — Factorio agent CLI
                                             except over a walking or loading tour (collect, transfer, load_silo, feed, rearm, ...)
                                             (exit 3: it still runs; --wait-through-tells keeps waiting)
   fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or a teammate's mention, a new alert (alert),
-                                            a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900);
+                                            a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900: more runs 900);
                                             your action and queue keep going; the team block waits for your next reply
-  fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
+  fh sleep SECONDS [--until COND]           Wait up to 900 s (more runs 900; never past the deadline) while your action and queue keep going;
                                             wakes on damage, death, a teammate's mention, a tell, board news, your queue finishing or
                                             stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y] | rocket_ready X,Y (a silo)
                                             | rocket_parts>=N at X,Y (the rocket being built at that silo has N parts; silo_parts too)
@@ -379,7 +379,10 @@ function wakeLine(reply: Reply): string {
     ?? (r.woke === 'elapsed' && r.capped ? r.capped : undefined);
   const more = r.full ? '' : ['told','mentioned','board','eggs','alert','urgent','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
   // What is open for the agent (open.lua; d15 H3), last.
-  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${r.alert_held ? `; ${said(r.alert_held)}` : ''}${more}${r.open ? `; ${said(r.open)}` : ''}`;
+  // (d26 batch238) which item woke it, in a form a script can match: "woke_by: tell #92032 from astra"
+  const by = r.woke_by && typeof r.woke_by === 'object'
+    ? `; woke_by: ${r.woke_by.viewer ? 'viewer ' : ''}${r.woke_by.kind}${r.woke_by.seq !== undefined ? ` #${r.woke_by.seq}` : ''} from ${r.woke_by.from}` : '';
+  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${by}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${r.alert_held ? `; ${said(r.alert_held)}` : ''}${more}${r.open ? `; ${said(r.open)}` : ''}`;
 }
 /** --require-met (d17 study P2, Opus s31: a wait --until item_count woke on a tell and the script went on): whether the
  * condition held, as the first line and the exit status (0 met, 3 not met, 1 failed). */
@@ -653,6 +656,15 @@ function setExit(reply: Reply) {
 // fh ACTION run as fh call ACTION (round1650d: Haiku's fh transfer, Luna's fh move_to): said once, in corrected (or on
 // the error).
 let cliCorrected: string | undefined;
+// (d26 batch238 SC) a sleep or wait over 900 s runs 900 and says so in corrected: Opus's hold.py asked 1150, the
+// refusal sent nothing, and its loop acked 1,192 times in 4 minutes on world n.
+const MAX_WAIT_S = 900;
+function overMax(asked: number, reply: Reply, verb: 'slept' | 'waited'): void {
+  if (asked <= MAX_WAIT_S) return;
+  const full = reply.ok && (reply.result?.woke === 'elapsed' || reply.result?.outcome === 'timed_out');
+  const note = `asked ${asked} s; ${full ? `${verb} the ${MAX_WAIT_S} s maximum` : `capped at the ${MAX_WAIT_S} s maximum`}`;
+  cliCorrected = cliCorrected ? `${cliCorrected}; ${note}` : note;
+}
 function withCliNote(value: unknown): unknown {
   if (!cliCorrected || !value || typeof value !== 'object') return value;
   const note = cliCorrected;
@@ -1976,10 +1988,12 @@ async function main() {
     // action only starts a sleep (shake4-6: Luna's 103 sleeps that never waited).
     if (action === 'sleep' && !bridged) {
       const seconds = args.seconds;
-      if (typeof seconds !== 'number' || !Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS');
+      if (typeof seconds !== 'number' || !Number.isSafeInteger(seconds) || seconds < 1) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS (more runs 900)');
       if (args.condition !== undefined && (typeof args.condition !== 'object' || args.condition === null)) throw new Error('sleep condition must be an object; or use fh sleep SECONDS --until ...');
       const {seconds: _s, condition: _c, ...call} = args;
-      return sleep(seconds, args.condition as Record<string,unknown> | undefined, false, undefined, call);
+      const slept = await sleep(Math.min(seconds, MAX_WAIT_S), args.condition as Record<string,unknown> | undefined, false, undefined, call);
+      overMax(seconds, slept, 'slept');
+      return slept;
     }
     // A waited wait_until runs as long as the CLI waits: --wait-timeout MS
     // becomes its timeout in ticks (up to 15 minutes) unless args name one.
@@ -2204,11 +2218,12 @@ async function main() {
     } else if (command === 'sleep') {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');
       const seconds = Number(positionals[1]);
-      if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
+      if (!Number.isSafeInteger(seconds) || seconds < 1) throw new Error('sleep requires SECONDS 1..900 (more runs 900)');
       const then = thenCall(values.then, positionals[2], values.args);
       const until = untilEvent(values.until);
       requireMetOk(until);
-      const reply = await sleep(seconds, until);
+      const reply = await sleep(Math.min(seconds, MAX_WAIT_S), until);
+      overMax(seconds, reply, 'slept');
       const met = values['require-met'] ? metLine(reply) : undefined;
       if (met && outputFormat === 'compact') process.stdout.write(met.line + '\n');
       const shown = await withThen(reply, then);
@@ -2219,8 +2234,8 @@ async function main() {
       // fh wait --max S, fh wait --until idle --max S: the action (and combat) to end, at most S s; at once when idle.
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const max = integer(values.max, 600);
-      if (max > 900) throw new Error('wait --max takes 1..900 seconds');
-      const reply = await waitForIdle(max*1000);
+      const reply = await waitForIdle(Math.min(max, MAX_WAIT_S)*1000);
+      overMax(max, reply, 'waited');
       output(reply);
       setExit(reply);
     } else if (command === 'wait' && values.until !== undefined && /^\s*idle\s*$/.test(values.until)) {
@@ -2231,11 +2246,11 @@ async function main() {
     } else if (command === 'wait' && (values.until !== undefined || values.max !== undefined)) {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const max = integer(values.max, 600);
-      if (max > 900) throw new Error('wait --max takes 1..900 seconds');
       const then = thenCall(values.then, positionals[1], values.args);
       const until = untilEvent(values.until);
       requireMetOk(until);
-      const reply = await sleep(max, until, true);
+      const reply = await sleep(Math.min(max, MAX_WAIT_S), until, true);
+      overMax(max, reply, 'waited');
       const met = values['require-met'] ? metLine(reply) : undefined;
       if (met && outputFormat === 'compact') process.stdout.write(met.line + '\n');
       if (met && outputFormat !== 'compact' && reply.result) reply.result = {require_met:met, ...reply.result};
@@ -2243,6 +2258,7 @@ async function main() {
       // An older runtime delivered the team block with the sleep (full): the line, then the whole reply.
       if (reply.ok && outputFormat === 'compact' && !reply.result?.full) {
         process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
+        if (cliCorrected) { process.stdout.write(`corrected: ${cliCorrected}\n`); cliCorrected = undefined; }
         const read = await withThen(reply, then);
         if (read.result?.then_read) output({ok:true, tick:read.tick, result:read.result.then_read});
         else if (read.result?.then_skipped) process.stdout.write(`then: ${read.result.then_skipped}\n`);

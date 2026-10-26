@@ -29,6 +29,12 @@ REMOTE = {"place_ghosts": "building", "paste": "pasting a blueprint", "blueprint
 # and hub requests (space.lua).
 ON_PLATFORM = {"inspect": "inspecting", "configure": "configuring", "launch": "launching a rocket to",
                "drop": "dropping cargo from", "platform_schedule": "scheduling", "requests": "setting requests on"}
+# (d26 batch240 IA) Requests that change the map where they land, done within the request: the live read shows only a
+# running action (status replies of shifts 80-81 name move_to, gather, wait_until, construct, clear_cliffs, pickup and
+# mine), so the director saw none of these. DidFeed tells it of each.
+DID = {"build", "place", "place_ghosts", "paste", "blueprint_place", "build_blueprint", "blueprint", "construct",
+       "build_path", "deconstruct", "load_silo", "launch", "mine"}
+DID_KEEP = 120.0  # seconds an agent's latest such request stands (onecam fresh_cut)
 MAX_READ = 1 << 20  # per file per poll: a burst of observe replies cannot stall the tick
 VEHICLE_KEEP = 600.0  # seconds a remote vehicle's last read is kept (the director judges staleness itself)
 POS_RE = re.compile(r"\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)")
@@ -131,6 +137,104 @@ class VehicleFeed:
                     health=r.get("health"))
 
 
+def did_kind(action, args, res):
+    """(batch240) `action` when an accepted request of a DID kind changed something, else None: a dry run (shift80:
+    53 of 83 place_ghosts and 46 of 55 builds), a launch that only set the silo's settings (all 4 in shift80), ghosts
+    or marks of which none were placed."""
+    if action not in DID or not isinstance(res, dict):
+        return None
+    if (isinstance(args, dict) and args.get("dry_run")) or res.get("dry_run"):
+        return None
+    if action == "launch" and "settings" in res:
+        return None
+    if res.get("placed") == 0 or res.get("changed") == 0:
+        return None
+    return action
+
+
+class DidFeed:
+    """(d26 batch240 IA) Each agent's latest request that changed the map (did_kind), from its journal: {action, t (the
+    request's epoch), position, platform}. In shift80 6 of 18 new builds aired at once, and the director's log names a
+    build as fresh once in four logs."""
+
+    def __init__(self):
+        self.pending = {}  # request id -> (agent, action, args, epoch)
+        self.rows = {}     # agent -> the latest row
+
+    def ingest(self, agent, r):
+        if not isinstance(r, dict):
+            return
+        if r.get("event") == "request":
+            q = r.get("request") or {}
+            if q.get("action") in DID:
+                args = q.get("args") if isinstance(q.get("args"), dict) else {}
+                self.pending[q.get("id")] = (agent, q["action"], args, _epoch(r.get("at")))
+                if len(self.pending) > 256:
+                    self.pending.pop(next(iter(self.pending)))
+            return
+        if r.get("event") != "response":
+            return
+        resp = r.get("response") or {}
+        req = self.pending.pop(resp.get("id"), None)
+        if not req or not resp.get("ok") or req[3] is None:
+            return
+        _, action, args, t = req
+        if did_kind(action, args, resp.get("result")):
+            plat, pos = target_of(args)
+            self.rows[agent] = {"action": action, "t": t, "position": pos, "platform": plat if isinstance(plat, str) else None}
+
+    def current(self, agent, now):
+        row = self.rows.get(agent)
+        return dict(row) if row and now - row["t"] <= DID_KEEP else None
+
+
+CLOCK_RE = re.compile(r"\+((?:\d+h)?(?:\d+m)?\d+s) since your last request, character idle ((?:\d+h)?(?:\d+m)?\d+s) of it")
+IDLE_FRAC = 0.9     # a reply's clock this idle (character idle / time since the last request): the character stood
+CLOCK_KEEP = 900.0  # seconds a clock stands with no newer reply (an agent silent longer: not known)
+
+
+def seconds(text):
+    """'1h2m3s' -> 3723."""
+    return sum(int(n) * {"h": 3600, "m": 60, "s": 1}[u] for n, u in re.findall(r"(\d+)([hms])", text or ""))
+
+
+class ClockFeed:
+    """(d26 batch240 IA) How long each agent's character has stood idle, by its own replies' clocks ("+53s since your
+    last request, character idle 53s of it"): idle replies in a row, from the first one's span start; any reply not
+    idle ends it. The game read cannot tell a character standing from one doing what it shows no action for; the
+    clocks are what airtime.py and vx_review.py count as idle air (shift80: 108 of 244 min)."""
+
+    def __init__(self):
+        self.state = {}  # agent -> [last reply epoch, idle since epoch or None]
+
+    def ingest(self, agent, r):
+        if not isinstance(r, dict) or r.get("event") != "response":
+            return
+        res = (r.get("response") or {}).get("result")
+        m = CLOCK_RE.search(res.get("clock") or "") if isinstance(res, dict) and isinstance(res.get("clock"), str) else None
+        t = _epoch(r.get("at")) if m else None
+        if t is None:
+            return
+        self.note(agent, t, seconds(m.group(1)), seconds(m.group(2)))
+
+    def note(self, agent, t, span, idle):
+        """A reply at epoch t whose clock says `span` s since the last request, the character idle `idle` s of it."""
+        st = self.state.setdefault(agent, [t, None])
+        if span > 0 and idle >= IDLE_FRAC * span:
+            if st[1] is None or t - span > st[0] + 1.0:
+                st[1] = t - span  # a new idle run (the reply before it was not idle, or a gap in the journal)
+        elif span > 0:
+            st[1] = None
+        st[0] = max(st[0], t)
+
+    def current(self, agent, now):
+        """Seconds the character has stood idle by now (0: it acted since), or None when not known."""
+        st = self.state.get(agent)
+        if not st or now - st[0] > CLOCK_KEEP:
+            return None
+        return round(max(0.0, now - st[1]), 1) if st[1] is not None else 0.0
+
+
 def _epoch(at):
     from datetime import datetime
     try:
@@ -168,6 +272,8 @@ class WorkFeed:
         self.waits = WaitFeed()
         self.repeats = RepeatFeed()  # the same request again and again: an agent's own sampling (workcard.py)
         self.vehicles = VehicleFeed()  # (batch222) each agent's vehicle by remote view: where it is (onecam)
+        self.did = DidFeed()  # (batch240) each agent's latest build, paste, deconstruction or silo load (onecam)
+        self.clocks = ClockFeed()  # (batch240) how long each agent's character has stood idle, by its clocks (onecam)
         self.attention = []  # every request with an attention point (attention.py) since take_attention()
         self.flare_at = 0.0  # (batch224 AY) when the latest artillery flare request was read: serve.py polls artillery_live
 
@@ -213,6 +319,8 @@ class WorkFeed:
                 self.waits.ingest(agent, r)
                 self.repeats.ingest(agent, r)
                 self.vehicles.ingest(agent, r)  # (a restart's tail too: the director drops a stale read)
+                self.did.ingest(agent, r)  # (a restart's tail too: DID_KEEP drops old rows)
+                self.clocks.ingest(agent, r)
                 if not isinstance(r, dict):
                     continue
                 q = r.get("request") or {}

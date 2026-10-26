@@ -10,7 +10,8 @@ Three numbers for the span of the log:
   journal's clock: "character idle Ns of it" at least IDLE_FRAC of the time since its last request) or ran a walk loop
   (a queue_repeat whose steps are all walks, from its accepted reply until a queue_cancel, queue_clear or another
   queue_repeat, a queue_status with nothing active or pending, or a run of idle clocks LOOP_IDLE_S long);
-- time to a fresh event: an agent's accepted request of a visible kind (FRESH) it had not made in the FRESH_GAP before;
+- time to a fresh event: an agent's accepted request of a visible kind (FRESH) it had not made in the FRESH_GAP before
+  (batch240: of the kinds that change the map, work.did_kind's: no dry run, no launch that only sets the silo);
   from that request to the program showing the agent (following it, or a shot naming it), 0 when it is on air then,
   missed after MISS_S;
 - cuts a minute: the program's cuts between clients and one client's moves (onecam.py `cut to` and `move` rows).
@@ -21,6 +22,9 @@ UTC ISO (`at`), the log's epoch seconds. director_replay.py writes logs this rea
 """
 import argparse, gzip, json, os, re, statistics, sys
 from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from work import DID, did_kind  # noqa: E402  (batch240: what changed the map, as the director's DidFeed says)
 
 IDLE_FRAC = 0.9      # a clock this idle (character idle / time since the last request) is an idle stretch
 LOOP_IDLE_S = 60.0   # idle clocks this long after a walk loop's start: the loop has stopped
@@ -143,7 +147,8 @@ class Journal:
             elif action == "queue_status" and ok and res and open_loop is not None and \
                     not res.get("active") and not res.get("pending") and not res.get("repeating"):
                 open_loop[1], open_loop = t, None
-            if ok and action in FRESH and (action != "vehicle" or args.get("go_to") or args.get("drive")):
+            if ok and action in FRESH and (action != "vehicle" or args.get("go_to") or args.get("drive")) and \
+                    (action not in DID or did_kind(action, args, res)):  # (batch240) no dry run, no settings call
                 if t0 - last_kind.get(action, -1e18) >= FRESH_GAP:
                     self.events.append((t0, action))
                 last_kind[action] = t0

@@ -2109,6 +2109,42 @@ cp2:
 - Cost: the stream service's slow game reads and errors, the caster's spend.
 - Shift80 (06:11-10:15) and shift81 (10:19-10:58): the findings are in the operator's report-d20-batch237.md.
 
+## Idle air and late builds (2026-10-26, d26 batch240 IA, batch237 findings 1 and 3)
+Shift80 06:11-10:15: a standing character or a walk loop 51.2% of the program (125 of 244 min); 16 new builds (dry
+runs aside) of which 4 on air at once, 9 late (75 s median), 3 never. From the director logs:
+- The director never saw a build. The live read shows a character's running action (status replies of shifts 80-81:
+  move_to, gather, wait_until, construct, clear_cliffs, pickup, mine); place_ghosts, build, paste, deconstruct and
+  load_silo are done within the request. In four logs one build ("sol fresh: construct") was a fresh cut.
+- After an urgent or timed shot (cue, base map, platform visit or work, departure, segment) it went back to the story
+  it cut, standing or not: 51.8 of the 125 idle minutes; another agent acting and scoring as high for 20.1 of them.
+- After a quiet view with every agent stale: the best of them (37.8 min). Standing characters on a short planet kept
+  the planet bonus (x1.6-2.5: Astra on Aquilo, 25.9 idle min).
+Changes:
+- work.py DidFeed: each agent's latest request that changed the map (work.did_kind: no dry run, no launch that only sets
+  the silo, nothing placed), from its journal; ClockFeed: how long its character has stood idle by its replies' clocks
+  ("character idle Ns of it", what airtime.py counts). live.py passes `did` and `idle_s`; model.py bumps interest once
+  per build (ACTION_WEIGHT, DID_WEIGHT 3).
+- onecam.py: a build is a fresh event and an act; away from the character (vehicle_near) its spot is the agent's shot
+  for did_hold (45 s), then the character. A clock-idle character is still whatever its position read says.
+- Back from an urgent or timed shot: fresh news first, unless the story it cut has its own, a big action or a fight; not
+  to a story standing still while another agent acts. A fresh agent takes over a stale story after fresh_min (20 s;
+  was still_min, 60 s). The surface bonus only for an agent doing something (the Nauvis penalty is as before).
+- Quiet views sooner (quiet_story 60 s, quiet_gap 120 s; were 90, 150), and one gives way to a fresh agent after
+  quiet_min (8 s).
+- airtime.py's fresh events (vx_review's missed action) count by did_kind: shift80's "18 new builds" were 16; 99 of its
+  138 build and place_ghosts calls were dry runs, and all 4 launch calls only set silo settings.
+Replay (director_replay.py --timed --chart --vehicles live; main's rules -> these):
+- `--timed` replays the log's timed shots (platforms, map, cues, segments, looks, threats) at their times as segments;
+  with `--chart` the replay makes its own tours and quiet views. Positions are read once a poll (3 s); a walk loop and a
+  sleep keep no interest up (Grok's 4 h loop: 1.7 live, 7.0 replayed before); instant requests are no running action;
+  a running action lasts while the clocks say the character was busy.
+- shift80 06:11-10:15: idle or loop 56.0% -> 43.3% (aired 51.2%); builds at once 3 -> 7, missed 3 -> 2, median 65 -> 35 s;
+  cuts 1.36 -> 1.48 a minute; repeated views 11.8 -> 15.3 min.
+- shift81 10:20-12:30: 35.9% -> 28.6% (aired 36.2%); builds at once 3 -> 6, median 73 -> 21 s; Opus's spider on air
+  568 -> 920 s, in frame 547 -> 886 s.
+- Platform builds stay as aired in the replay (their work shots are replayed at the aired times, unnamed).
+- Test: tools/stream/test_idlecam.py.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

@@ -24,7 +24,9 @@ import router
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.append(os.path.dirname(HERE))   # tools/: toolcall
 sys.dont_write_bytecode = True
+import toolcall  # noqa: E402
 
 SITE_URL = "https://player-of-games-live.your-subdomain.workers.dev"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -1205,6 +1207,15 @@ class Relay:
         free = [n for n in order if now - self.addressed.get(n, -1e9) >= self.ASK_WINDOW]
         return free[0] if free else min(order, key=lambda n: self.addressed.get(n, -1e9))
 
+    def in_tool_call(self, names):
+        """(d26 batch238 BT) for each agent the line went to whose model has been inside one tool call a minute or more,
+        one line (tools/toolcall.py; batch234: site:5017 went to Opus 15 min into a 19-min Bash call, read never)."""
+        run_dir = os.path.dirname(self.done_path) if self.done_path else None
+        if not run_dir:
+            return []
+        return [f for n in names if re.fullmatch(r"[a-z][a-z0-9_-]{0,15}", n or "")
+                for f in [toolcall.fact(n, os.path.join(run_dir, n), what="messages")] if f]
+
     def addressed_to(self, to, author, now):
         names = [n for n, _ in self.roster]
         if to in names and self.asked.get(author, (None,))[0] != to:
@@ -1322,6 +1333,9 @@ class Relay:
                 self.addressed_to(n, author, now)
             self.asked[author] = (to[0], now)
             msg["to"], msg["to_all"] = to[0], to
+            busy = self.in_tool_call(to)
+            if busy:  # (d26 batch238 BT) said with the delivery: the site's "delivered to ...: why" and the relayed record
+                msg["route_why"] = "; ".join(([msg["route_why"]] if msg.get("route_why") else []) + busy)
         self.remember_relayed(msg, now)  # (with to: d20 batch57 S5)
         return msg
 
