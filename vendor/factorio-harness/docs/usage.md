@@ -5198,6 +5198,8 @@ fh watch    # deploy on every change
   (12.5,30.5)-(63.5,30.5); most 8 at (40.5,30.5); out end (63.5,30.5) 8, in end (12.5,30.5) 6` (out: its items move on
   to no belt of the line; in: nothing of the line feeds it; up to 4 ends, the fullest first), then `N more belt lines
   hold M`. Up to 4096 belt tiles are listed; the `belts` total counts every one.
+  `belt_positions: true` (d26 batch221) adds those lines' tiles from the same scan, and `belt_tiles` reads fixed
+  tiles later (the d26 batch221 section).
 - `supply {item}` adds `surplus_chest`: the largest unreserved stock among plain, storage and provider chests,
   excluding requesters and buffers. It includes position, kind, held, reserved for robot pickups, and free; this
   does not reserve the stock or assert that no inserter uses it. It is independent of the largest-five chest list.
@@ -15500,3 +15502,30 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     and Astra's watches; the close makes the final of each).
   - No tick work: the close runs inside the edit.
 - Test: tests/d25_batch219.lua (tests/d25batch219.test.ts), failing on main.
+
+## d26 batch221 (QAF1, Sol #2401: supply belt groups with their tile positions, from one snapshot)
+- Cause: `belt_lines` joins the belt tiles holding the item into lines and gives each one's items, tiles and box. The
+  lines move as items move: a later read of the same belts has other tiles, so Sol could not sum the tiles of a line
+  read earlier (#2401: flight214's 151 tiles could not be read again; flight216's later scan, 27-236 ticks after a
+  116-tile summary, held 111).
+- `supply {item, belt_positions: true}` (whole surface or `near`): `belt_positions` {snapshot_tick, groups,
+  max_positions, complete, note}. Each group is a line `belt_lines` lists, in its order, from the same scan: items,
+  tiles, box `(x1,y1)-(x2,y2)` and positions `"(21.5,25.5) 52, (22.5,25.5) 7, ..."` (each belt tile holding the item,
+  the belt's position, a splitter's its centre; by rows).
+  - Cap: 1000 positions over all groups. Past it a group lists its first ones by rows and `positions_not_listed`
+    counts the rest. The scan's own 4096 belt-tile limit stays (`incomplete` says so when reached).
+  - Reused within 10 s as any supply read; the snapshot keeps its tick (`as_of` says reused).
+- `supply {item, belt_tiles}`: 1..1000 positions, a group's positions text as it came (the counts after them are not
+  read) or a list `[[x,y], ...]`. Those tiles alone, at one tick: snapshot_tick, tiles, total, belt_tiles (how many
+  have a belt of ours), positions `"(x,y) count, ..."` in the order asked (0 for an empty belt or none; `no_belt` names
+  up to 8 with none), `duplicates` (a tile listed twice is counted once). Not with near, radius or belt_positions; not
+  for a fluid. Read only.
+- Counts are the belt's count of the item by name: normal quality, as `belts` and `belt_lines` count it (engine fact on
+  the copy: a belt with one normal and one uncommon explosives read 1 by name, 2 by `{name}`).
+- `belt_lines` keys tiles by number instead of text (the same lines and text).
+- On the copy (world n's 00:23 save, Asterion = platform-16, explosives: 2304 belts, 316-318 tiles holding it):
+  - supply read (scan and reply) 59-64 ms on main, 29-43 ms on this branch, 30-44 ms with belt_positions (6 alternating
+    rounds; main's `belt_lines` built text keys: 27.7 ms of it);
+  - belt_positions: 5 groups, 238-248 positions, 4.4 KB of JSON; the reply 3.0 KB without, 7.5 KB with;
+  - belt_tiles: 109 tiles (group 1) 2.1 ms, 238 tiles 5.0 ms, 1000 tiles 19.8 ms; 2.0 KB, 3.9 KB, 16.9 KB.
+- Test: tests/d26_batch221.lua (in lua.test.ts), failing on main.
