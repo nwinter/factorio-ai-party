@@ -652,6 +652,56 @@ return function(api)
       return n>=want,string.format('platform %s: %d of ours lost since tick %d%s: %s%s',c.platform,n,holder.loss_since,
         n<want and string.format(' (met at %d)',want) or '',table.concat(parts,', '),n>#rows and string.format(', +%d more',n-#rows) or '')
     end,
+    -- (d26 batch246 FL, Astra #2461: trial 242 lost a floor tile at (-50,-60), tick 67333569, with no entity lost or hit)
+    -- foundation tiles of that platform destroyed since the wait or guard began (since_tick, default its first check,
+    -- kept on the wait or the condition), from flightwatch.lua's loss log: the hub's rebuilds of tiles on ghosts no
+    -- one placed (a tile lost and rebuilt between checks counts), and the platform's foundation ghosts no one placed
+    -- (a find at most once a second a platform while it is checked). Floor placed or mined on purpose is not counted.
+    -- Met at at_least (default 1); saw names each tile: where, when its ghost was first seen and after which find, when
+    -- it was rebuilt; a fired guard keeps them as its evidence.
+    platform_foundation_loss=function(p,c,estimate,record)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+      local holder=record or c
+      holder.fl_since=holder.fl_since or c.since_tick or game.tick
+      assert(api.floor_losses,'foundation losses are not read on this runtime')
+      local r,keep=api.floor_losses(pl,game.tick)
+      if holder.fl_seq==nil then
+        -- the rows logged after since_tick, back through the ring (older than the ring holds: counted from its oldest);
+        -- of those, a ghost first seen after a find from before since_tick is left out (its loss may be older); a tile
+        -- rebuilt after since_tick counts
+        local s,skip=r.seq,nil
+        while s>0 and s>r.seq-keep do
+          local e=r.ring[(s-1)%keep+1]
+          if not e or e.seq~=s or e.pt<=holder.fl_since then break end
+          if e.seen and e.after and e.after<holder.fl_since then skip=skip or {}; skip[#skip+1]=s end
+          s=s-1
+        end
+        holder.fl_seq,holder.fl_skip=s,skip
+      end
+      local skipped={}
+      for _,s in ipairs(holder.fl_skip or {}) do skipped[s]=true end
+      local n=r.seq-holder.fl_seq-#(holder.fl_skip or {})
+      local want=c.at_least or 1
+      -- a find that met too many tile ghosts to read (rebuilds are still heard)
+      local unread=r.skipped and r.skipped==r.scan_tick and string.format(' (the find at tick %d met over %d tile ghosts aboard and read none; rebuilds are still counted)',r.skipped,(r.skipped_n or 1)-1) or ''
+      if n<=0 then return false,string.format('platform %s: no foundation tile of it destroyed since tick %d%s',c.platform,holder.fl_since,unread) end
+      local rows,parts={},{}
+      for seq=math.max(holder.fl_seq+1,r.seq-keep+1),r.seq do
+        local e=r.ring[(seq-1)%keep+1]
+        if e and e.seq==seq and not skipped[seq] and #rows<8 then
+          rows[#rows+1]={x=e.x,y=e.y,seen=e.seen,after=e.after,rebuilt=e.rebuilt}
+          local when=e.seen and string.format('ghost first seen at tick %d%s',e.seen,e.after and ' (lost after tick '..e.after..')' or '')
+            or string.format('lost and rebuilt between reads%s',e.after and ' (after tick '..e.after..')' or '')
+          parts[#parts+1]=string.format('(%d,%d) %s%s',e.x,e.y,when,e.rebuilt and ', rebuilt at tick '..e.rebuilt or ', not rebuilt yet')
+        end
+      end
+      local met=n>=want
+      if met then holder.evidence=rows end
+      return met,string.format('platform %s: %d foundation tile%s destroyed since tick %d%s: %s%s',c.platform,n,n==1 and '' or 's',holder.fl_since,
+        n<want and string.format(' (met at %d)',want) or '',table.concat(parts,', '),n>#parts and string.format(', +%d more',n-#parts) or '')..unread
+    end,
     -- (d22 batch92 BB1, Sol #1884: platform_loss fires only once something is destroyed, and medium asteroid impacts
     -- can cascade before the next flight_watch read; BB2, Astra #1886: damage, as a repaired hit leaves no damaged
     -- entity to find) hits on our entities on a platform since the wait or guard began (since_tick, default its first
@@ -968,7 +1018,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|platform_ammo_below|all|any'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1010,7 +1060,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_energy_below, platform_progress, platform_ammo_below, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1172,6 +1222,11 @@ return function(api)
       assert(c.names==nil or (type(c.names)=='table' and #c.names>=1 and #c.names<=16),'platform_loss names: 1..16 entity names')
       for _,n in ipairs(c.names or {}) do assert(type(n)=='string','platform_loss names are entity names') end
       assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_loss since_tick is a game tick up to now')
+    end
+    if kind=='platform_foundation_loss' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_foundation_loss requires platform (a platform of ours by name)')
+      if c.at_least~=nil then number(c.at_least,1,1000,'at_least') end
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_foundation_loss since_tick is a game tick up to now')
     end
     if kind=='platform_hit' then
       assert(type(c.platform)=='string' and #c.platform>0,'platform_hit requires platform (a platform of ours by name)')

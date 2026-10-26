@@ -454,6 +454,8 @@ return function(api)
       -- the platform's record: placed when the ghost log kept the record with its ghost's unit number (from this change
       -- on; a built tile's record is dropped here, so one kept is its ghost's)
       local by = r and r.by or not r and b and own and b or nil
+      -- (d26 batch246 FL) a tile no one placed, rebuilt: destroyed (platform_foundation_loss)
+      if not by then M.loss_rebuilt(pl, x, y, tick) end
       local what = by and 'placed_built' or 'rebuilt'
       rec[what] = rec[what] + 1
       local last = rec.rows[#rec.rows]
@@ -463,6 +465,78 @@ return function(api)
         if #rec.rows > M.FLOOR_KEEP then table.remove(rec.rows, 1) end
       end
     end
+  end
+  -- (d26 batch246 FL, Astra #2461: trial 242 lost a floor tile at (-50,-60), tick 67333569, with no entity lost or hit;
+  -- platform_loss and platform_hit count entities only) each platform's destroyed foundation tiles, for the
+  -- platform_foundation_loss wait and guard (conditions.lua): a ring of LOSS_KEEP rows {seq, x, y, pt (the tick it
+  -- was logged), seen (the tick a find first saw its ghost), after (the find before it: lost after that tick), rebuilt
+  -- (the tick the hub built it again)}. Two ways in:
+  -- - the hub's rebuild (on_space_platform_built_tile, always forwarded: event-driven) of a tile on a ghost no one
+  --   placed: a tile lost and rebuilt between finds is still counted;
+  -- - a find of the platform's foundation ghosts no one placed (loss_scan, at most once every LOSS_SCAN ticks a
+  --   platform, only while such a wait or guard is checked): a tile lost and not rebuilt yet (the hub out of
+  --   foundation) counts when first seen. Ghosts already there at a platform's first find are not counted (their loss
+  --   tick is unknown), nor their rebuilds.
+  -- Floor placed on purpose is left out: a ghost an agent placed (place_ghosts, paste, the routes; the ghost log) or a
+  -- player placed (the game's last user) is placed, as flight_watch tells them; an agent's hand-laid or mined tile and
+  -- robots' tile deconstruction make no ghost and no rebuild. (The game puts a ghost with no last user on a destroyed
+  -- tile: memory factorio-platform-foundation-loss.)
+  M.LOSS_KEEP, M.LOSS_SCAN, M.LOSS_ROWS = 256, 60, 8
+  local function loss_log(pl)
+    local s = api.state()
+    s.floorloss = s.floorloss or {}
+    local r = s.floorloss[pl.index]
+    if not r or r.name ~= pl.name then r = {name=pl.name, seq=0, ring={}, seen={}}; s.floorloss[pl.index] = r end
+    return r
+  end
+  local function loss_push(r, x, y, pt)
+    r.seq = r.seq + 1
+    local e = {seq=r.seq, x=x, y=y, pt=pt}
+    r.ring[(r.seq - 1) % M.LOSS_KEEP + 1] = e
+    return e
+  end
+  local function loss_row(r, seq)
+    local e = r.ring[(seq - 1) % M.LOSS_KEEP + 1]
+    return e and e.seq == seq and e or nil
+  end
+  M.loss_row = loss_row
+  function M.loss_rebuilt(pl, x, y, tick)
+    local r = loss_log(pl)
+    local k = fkey(x, y)
+    local sn = r.seen[k]
+    if sn then
+      r.seen[k] = nil
+      local e = sn.seq and loss_row(r, sn.seq)
+      if e then e.rebuilt = tick end
+      return
+    end
+    local e = loss_push(r, math.floor(x), math.floor(y), tick)
+    e.rebuilt, e.after = tick, r.read_tick
+  end
+  function M.loss_scan(pl, tick)
+    local r = loss_log(pl)
+    if r.scan_tick and tick - r.scan_tick < M.LOSS_SCAN then return r end
+    local now, n = floor_ghosts(pl, nil)
+    r.scan_tick = tick
+    -- a find met over FLOOR_SCAN tile ghosts (a large paste) reads none: the next counts from the last one read
+    if not now then r.skipped, r.skipped_n = tick, n; return r end
+    local prev = r.read_tick
+    r.read_tick = tick
+    for k, g in pairs(now) do
+      -- placed: as flight_watch tells them (its own record, a player's, or a record newer than the find before)
+      local by = g.by and (g.own or g.src == 'last_user' or (g.bt or 0) > (prev or -1)) and g.by or nil
+      if by then r.seen[k] = {placed=true}  -- its build later is no loss
+      elseif not r.seen[k] then
+        if prev == nil then r.seen[k] = {pre=true}
+        else
+          local e = loss_push(r, g.x, g.y, tick)
+          e.seen, e.after = tick, prev
+          r.seen[k] = {seq=e.seq}
+        end
+      end
+    end
+    for k in pairs(r.seen) do if not now[k] then r.seen[k] = nil end end  -- built unheard, or removed
+    return r
   end
   local function taken_text(t)
     local parts, n = {}, 0
