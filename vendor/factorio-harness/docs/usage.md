@@ -15666,6 +15666,40 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   66-76 KB.
 - Tests: tests/d26_batch225.lua (in lua.test.ts), failing on main; tests/d25_batch215.lua now expects uptime@1000 to
   name two watches (Astra's earlier one is kept).
+## d26 batch226 (QM, Sol #2423: the collector tally on a moving platform)
+- Measured on a private copy of world n's 14:06 save, chunk reads one and 10 ticks apart (find_asteroid_chunks_filtered
+  around the platform), each chunk matched by its name and movement, observed position against position + movement x
+  ticks:
+
+| Platform | State | Speed (km a tick) | Chunks | Observed - predicted, y a tick (x) | Within 0.5 at 10 ticks |
+|---|---|---|---|---|---|
+| Limestone | docked | 0 | 56 | -0.00003 (0.0000) | 56 of 56 |
+| Weaver | at Nauvis | 0.0155 | 297 | 0.00067 | 296 of 297 |
+| Anvil | in flight | 0.62 | 163 | 0.0242 (0.0001) | 163 of 163 |
+| Kestrel II | in flight | 0.91 | 117 | 0.0326 | 117 of 117 |
+| Petrel | in flight | 1.21 | 158 | 0.0401 | 158 of 158 |
+| Weaver | in flight (set on its route) | 3.77 | 322 | 0.0789 (spread 0.070-0.079) | 0 of 322 |
+
+- So in flight the whole field also drifts +y with the platform's frame beyond each chunk's `movement`; `movement` does
+  not include it. A chunk keeps its name and `movement` from read to read (0-2 a read had no match: gone). Weaver
+  reaches 3.8-4.2 km a tick (242 km/s: its distance rose 0.016174 of 15,000 km in 60 ticks at 4.04), so at every
+  10-tick read no watched chunk sat within TOLERANCE 0.5 of its prediction, and each was counted gone at the reach its
+  uncorrected path came nearest: the 26,644.
+- collectreach.lua: a watched chunk is matched by name and movement; at a read with the platform's speed above 0 the
+  frame's drift is the median offset of the matches, and the prediction, the hull check, the reach path and the watch
+  margin use movement + drift (at rest none, as before). The result adds `moving` {reads, of_reads, from_tick,
+  to_tick, speed_max_km_s, drift_max (tiles a second)}; the line adds "the platform moved at N of M reads (ticks A-B,
+  up to K km/s), the chunks drifting with its frame up to D tiles a second beyond their movement: matched in that
+  frame", and the note says how chunks are matched. caught and made are unchanged.
+- On the copy, a tally of Weaver (6 collectors) as sol:
+  - main, in flight 30 s: caught 19, inferred 3612 (gone_elsewhere 596); 40 s across an arrival: caught 42, inferred 1915;
+  - this, in flight 30 s: 14 and 14; 40 s: 10 and 11; 40 s: 16 and 16; 90 s across an arrival (296 of 541 reads
+    moving): 12 and 12;
+  - docked 30 s: main 2 and 2, this 5 and 5.
+- Tick cost (profile_ticks 30 s, collector_tally.tick, one tally running): docked on Needle (16 collectors) main 89.5
+  and 93.4 ms in 1800 ticks, this 89.5 and 96.4; Weaver in flight main 158.7, this 67.6 and 90.2 (main credited
+  thousands of chunks, each with a path search).
+- Test: tests/d26_batch226.lua (in lua.test.ts), failing on main (in flight, inferred 203 against 43 taken).
 
 ## d26 batch229 (SP, Sol, operator request 973: a starter pack loaded for Loom went to Aethera)
 - What happened: Sol made Loom at Vulcanus (66287441) and put a starter pack in silo (14.5,140.5)'s rocket
