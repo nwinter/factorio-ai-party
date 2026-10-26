@@ -79,9 +79,17 @@ return function(api)
     local d = try(function() return pod.cargo_pod_destination end)
     local station = d and d.station and try(function() return d.station.valid and d.station end)
     local up = origin and try(function() return origin.type == 'rocket-silo' end)
-    local pl, planet
+    local pl, planet, starter, orbit
     if up then
       pl = platform_of(station)
+      -- (d26 batch229 SP, Sol: pod 46268167 read "vulcanus to nil, in flight" 5 min after it took Loom's pack to Aethera) a
+      -- starter pack's pod goes to the platform it starts (no hub yet: no station), named by the destination
+      local kind = d and try(function() return d.type end)
+      local cd = defines.cargo_destination or {}
+      if not pl and kind ~= nil and kind == cd.space_platform then
+        pl = try(function() return d.space_platform.valid and d.space_platform end)
+        starter = pl and true or nil
+      elseif not pl and kind ~= nil and kind == cd.orbit then orbit = true end
       planet = try(function() return origin.surface.name end)
     else
       pl = platform_of(origin) or platform_of(pod)
@@ -91,7 +99,7 @@ return function(api)
     if not planet then return nil end
     st.seq = st.seq + 1
     r = {id=st.seq, unit=unit, up=up or nil, platform=pl and pl.name, stop=pl and try(function() return pl.space_location.name end),
-      sent=tick or game.tick, items=contents(pod)}
+      sent=tick or game.tick, items=contents(pod), starter=starter, orbit=orbit}
     for k, v in pairs(info or {}) do r[k] = v end
     if up then set_silo(r, silo or origin) end
     local list = st.by[planet] or {}
@@ -106,7 +114,8 @@ return function(api)
       end
       st.open_n = n
     end
-    if st.open_n < M.OPEN_MAX then st.open[unit] = {planet=planet, id=r.id, tick=tick or game.tick}; st.open_n = st.open_n + 1 end
+    -- pod: checked once a second (M.sweep) until a landing closes the journey; pl: a starter pack's platform
+    if st.open_n < M.OPEN_MAX then st.open[unit] = {planet=planet, id=r.id, tick=tick or game.tick, pod=pod, pl=starter and pl or nil}; st.open_n = st.open_n + 1 end
     return r.id
   end
   local function pad_state(pad, items)
@@ -149,7 +158,14 @@ return function(api)
     local unit = pod.unit_number
     local open = st.open[unit]
     if open then st.open[unit] = nil; st.open_n = math.max(0, (st.open_n or 1) - 1) end
-    if not (open and find(st, open)) then return end
+    local r = open and find(st, open)
+    if not r then return end
+    -- (d26 batch229 SP) no on_cargo_pod_finished_descending came: a starter pack's pod delivers in the tick its platform
+    -- starts (its hub built; the copy, 2.0.77: ~27.5 s after launch, the pod gone the next tick)
+    if not r.landed then
+      r.landed, r.seen = game.tick, 'event'
+      if r.starter and r.platform then r.dest = 'platform ' .. r.platform .. ' (its starter pack: the platform starts, its hub built)' end
+    end
     open.tick, open.surface, open.position = game.tick, pod.surface, {x=pod.position.x, y=pod.position.y}
     st.after = st.after or {}
     st.after[unit] = open
@@ -175,13 +191,42 @@ return function(api)
       if box then r.dest = 'ground ' .. at(box.position) .. ' (cargo-pod-container)' end
     end
   end
-  -- The deliveries read the tick after (the runtime's tick calls it only while one waits).
+  -- (d26 batch229 SP) a journey whose pod is gone with no landing event: a starter pack's pod (its platform starts:
+  -- its hub built), else gone (r.gone, the tick it was found gone; a pod sent to orbit is removed there with its cargo,
+  -- the copy, 2.0.77). A journey open before this runtime kept its pod takes it from its next pod event (no lookup:
+  -- game.get_entity_by_unit_number finds no cargo pod in 2.0.77), else ends as before (OPEN_TICKS).
+  local function close_gone(st, unit, open, tick)
+    st.open[unit] = nil; st.open_n = math.max(0, (st.open_n or 1) - 1)
+    local r = find(st, open)
+    if not r or r.landed then return end
+    local pl = open.pl
+    if r.starter and pl and try(function() return pl.valid and pl.hub and pl.hub.valid end) then
+      r.landed, r.delivered, r.dest = tick, tick, 'platform ' .. pl.name .. ' (its starter pack: the platform starts, its hub built)'
+    else
+      r.gone = tick
+      if r.starter then r.gone_state = pl and try(function() return pl.valid and M.STATES[pl.state] end) or 'its platform is gone' end
+    end
+  end
+  M.STATES = {}
+  for k, v in pairs(defines and defines.space_platform_state or {}) do M.STATES[v] = k end
+  function M.sweep(tick)
+    local st = api.state().podlog
+    if not (st and st.open) then return end
+    for unit, open in pairs(st.open) do
+      local pod = open.pod
+      if pod ~= nil and not pod.valid then close_gone(st, unit, open, tick) end
+    end
+  end
+  -- The deliveries read the tick after (the runtime's tick calls it only while one waits); every SWEEP ticks while a
+  -- journey is open, its pod checked (M.sweep).
+  M.SWEEP = 60
   function M.tick(tick)
     local st = api.state().podlog
     local a = st and st.after or {}
     for unit, open in pairs(a) do
       if tick > open.tick then a[unit] = nil; pcall(after, st, open, tick) end
     end
+    if tick % M.SWEEP == 0 then M.sweep(tick) end
   end
   M.EVENTS = {}
   local E = defines and defines.events or {}
@@ -194,6 +239,8 @@ return function(api)
     if not (n and pod and pod.valid) then return end
     local st = store()
     st.events = true
+    local o = st.open[pod.unit_number]
+    if o and o.pod == nil then o.pod = pod end
     -- (QT1) journeys landed before this runtime kept delivery ticks count by their land tick (landed_from)
     st.delivered_since = st.delivered_since or event.tick
     if n == 'on_cargo_pod_started_ascending' then M.sent(pod, {seen='event'}, event.tick)
@@ -338,8 +385,12 @@ return function(api)
     local since = store().silo_since
     for i = math.max(1, #all - f.limit + 1), #all do
       local r, planet = all[i].r, all[i].planet
-      local from, to = r.up and planet or tostring(r.platform), r.up and tostring(r.platform) or planet
-      local flying = not r.landed
+      -- (d26 batch229 SP) up: the platform, a starter pack's platform, orbit, or not read
+      local up_to = r.platform and (r.platform .. (r.starter and ' (its starter pack)' or '')) or (r.orbit and 'orbit') or 'a destination not read'
+      local from, to = r.up and planet or tostring(r.platform), r.up and up_to or planet
+      -- a journey delivered with no landing recorded (before batch229: a starter pack's pod) landed when delivered
+      local landed = r.landed or r.delivered
+      local flying = not landed and not r.gone
       local silo, silo_text
       if r.up then
         if r.silo then
@@ -349,12 +400,14 @@ return function(api)
         else silo, silo_text = 'unknown', 'silo unknown (sent before the ledger kept silos)' end
       end
       rows[#rows+1] = {id=r.id, pod=r.unit, direction=r.up and 'up' or 'down', silo=silo, platform=r.platform, stop=r.stop, surface=planet,
-        sent_tick=r.sent, landed_tick=r.landed, destination=r.dest, items=items_text(r.items), by=r.kind == 'drop' and r.by or nil,
+        sent_tick=r.sent, landed_tick=landed, gone_tick=r.gone, starter_pack=r.starter, destination=r.dest, items=items_text(r.items), by=r.kind == 'drop' and r.by or nil,
         pad_free_before=slots(r.free), pad_free_after=slots(r.free_after), ground=r.ground,
         line=string.format('%s #%d, pod %d, %s ago: %s to %s%s, %s, %s%s; %s', r.up and 'up' or 'down', r.id, r.unit, ago(game.tick - r.sent), from, to,
           not r.up and r.stop and ' (at ' .. r.stop .. ')' or '', items_text(r.items), kind_text(r), silo_text and ' ' .. silo_text or '',
           flying and (game.tick - r.sent > M.OPEN_TICKS and 'no landing recorded' or 'in flight')
-            or string.format('landed %s after %ds%s', r.dest and 'in ' .. r.dest or '(where not read)', math.floor((r.landed - r.sent) / 60), r.seen == 'sampled' and ' (to the second)' or '')
+            or r.gone and string.format('pod gone by tick %d, %ds after it was sent, no landing recorded%s', r.gone, math.floor((r.gone - r.sent) / 60),
+              r.gone_state and '; ' .. tostring(r.platform) .. ' reads ' .. r.gone_state or r.orbit and ' (a pod sent to orbit is removed there with its cargo)' or '')
+            or string.format('landed %s after %ds%s', r.dest and 'in ' .. r.dest or '(where not read)', math.floor((landed - r.sent) / 60), r.seen == 'sampled' and ' (to the second)' or '')
             .. (r.free and string.format('; the pad\'s free slots %s before, %s after', slots(r.free), r.free_after and slots(r.free_after) or '?') or '')
             .. (r.ground and string.format('; %d did not fit in the pad and landed on the ground beside it', r.ground) or ''))}
     end

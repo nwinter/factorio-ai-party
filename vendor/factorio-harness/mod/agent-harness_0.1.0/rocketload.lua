@@ -459,6 +459,8 @@ return function(api)
       cargo=list_text(contents(inv)), rocket_weight=api.rocket_weight(silo), slots=used_slots(inv) .. '/' .. #inv,
       chests=#chests > 0 and #chests or nil, complete=#short == 0, short=#short > 0 and short or nil,
       switches=M.switches_text(silo)}
+    -- (d26 batch229 SP) a starter pack aboard: the platform of ours it goes to with no platform named
+    out.starter_pack = api.starter_line and try(function() return api.starter_line(silo) end) or nil
     -- (d17 batch14 A13, Grok) each loaded spoilable item's spread, at the top of the reply
     local fl = {}
     for _, row in ipairs(rows) do if row.freshness then fl[#fl+1] = row.freshness end end
