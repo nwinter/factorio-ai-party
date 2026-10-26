@@ -45,7 +45,11 @@ change (a new request or tell to it in the harness's unanswered items, a new men
 invalid or with its final unread) at most every every_min, else as a fallback at every_min doubled for each nudge of
 the stretch (at most every 4 h). A sleep or wait the agent set itself with a known end (sleep_left_s, action_until_s)
 holds the nudge until it ends when it began less than idle_min after the agent's last work (back-to-back waits do not).
-The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
+(d25 batch213 QY1, operator 17:47: Muse sat at its CLI's limit screen from 17:00, when its rest ended, to 17:44, and
+the nudges' tells reached nothing) When a rest's until passes, tools/pane_resume.py types one continue message into
+the agent's pane (Grok: Try Again in its limit dialog; the agy loop resumes itself), never mid-turn, logs it here and in
+nudges.jsonl, and ends the rest; a CLI still at its limit screen a minute later is logged once and tried again at the
+next nudge. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
 fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
 team (on request) and exits; --dry-run logs without sending.
 """
@@ -57,6 +61,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
 sys.dont_write_bytecode = True
 from factory_digest import Digest, haul_lines
 import pacing  # noqa: E402  (tools/stream/pacing.py: an agent's rest between turns)
+from pane_resume import HerdrPanes, Resumer  # noqa: E402  (d25 batch213: an agent resumed in its pane at its rest's end)
 
 
 def log(msg):
@@ -760,6 +765,9 @@ def main():
             entry["dry_run"] = True
         with open(path, "a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if entry.get("resume"):
+            log(entry["line"] + (" (dry run)" if a.dry_run else ""))
+            return
         if entry.get("handoff"):
             log(f"handoff for {entry['agent']} to {entry.get('lead')}: {'sent' if entry.get('sent') else entry.get('error')}")
             return
@@ -772,12 +780,21 @@ def main():
     log(f"idle nudges for {a.run}: {len(n.members) or 'all'} agents, idle {a.idle_min} min, every {a.every_min} min, "
         f"grace {a.grace_min} min, deadline {time.strftime('%H:%M', time.localtime(n.deadline)) if n.deadline else '?'}"
         + (" (dry run)" if a.dry_run else ""))
+    # (d25 batch213) the panes are read in a dry run too; nothing is typed there
+    resumer = Resumer(a.run, HerdrPanes(), n.every_s, n.deadline, a.dry_run) if os.path.isfile(
+        os.path.join(a.run, "panes.txt")) else None
     while True:
         now = time.time()
         digest.deadline = n.deadline = run_deadline(a.run)
         if n.deadline and now >= n.deadline:
             log("deadline reached")
             return
+        if resumer:
+            resumer.deadline = n.deadline
+            try:
+                resumer.step(now, write)
+            except Exception as e:
+                log(f"resume failed: {type(e).__name__}: {e}")
         try:
             for row in digest.step(now, h.dispatch, dry_run=a.dry_run):
                 log(f"factory digest part {row['part']}: {'dry run' if a.dry_run else 'sent'}")

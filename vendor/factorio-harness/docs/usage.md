@@ -15180,3 +15180,36 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     46.4 ms (236) with qflow.count_by reads; 1 armed (Asterion): main 1.87 ms (60 calls, median 0.029 ms a second),
     this runtime 5.46 ms with the read as shipped (median 0.084 ms). A read alone, 100 in one command: 0.016 ms
     (qflow.count_by's 0.044 ms fetched get_output_count for each count).
+
+## d25 batch213 (QY1, operator 17:47: an agent whose quota rest ends is resumed in its pane)
+- Shift76: Muse rested on its weekly limit until Sun 17:00. From 17:00 its CLI showed "Usage limit reached ... Send a
+  message to continue when usage is available." The idle nudges at 17:00 and 17:40 went as game tells, which a CLI
+  stopped at its prompt never reads. tools/supervise.sh typed nothing: herdr reads Muse's pane as "working" from its
+  launch on (revision 1, 14:31 to 17:46). The operator typed a message into the pane at 17:44.
+- tools/pane_resume.py, run by tools/idle_nudge.py at each poll. When a rest's `until` passes (runs/RUN/AGENT/
+  resting.json, any reason), it acts once in the agent's pane (panes.txt):
+  - muse, claude, codex: one message, "Operator (automatic): your quota rest ended at Sun 17:00, when your usage limit
+    was due to reset. Continue the shift from notes.md and your inbox (./fh tells)." Sent with `herdr agent prompt`,
+    or `herdr pane send-text` and `send-keys enter` where herdr refuses the pane as an agent (Muse).
+  - grok, with its limit dialog up ("You hit your weekly limit.", 1 Buy more credits, 2 Try Again): `down` when Buy
+    more credits is highlighted, then `enter` only when the screen's colours show Try Again highlighted (bold) and Buy
+    more credits not. Otherwise nothing is pressed and the next nudge tries again. Without the dialog: a message.
+  - agy: nothing typed. The loop sleeps until the reset and ends the rest itself (agy-quota.py --woke). A resting.json
+    still there a minute after `until` is logged once.
+  Then it logs the resume and ends the rest (resting.json to resting-last.json; the runtime hears done, as
+  tools/quota_rest.py --done does). A rest the agent already ended with a request of its own is cleared, nothing typed.
+- Never into a pane mid-turn: nothing is typed while the screen's last 25 lines show a turn running ("esc to
+  interrupt" for Muse, Claude Code and Codex; Grok's "[stop]"), while herdr reads the pane working (claude, codex,
+  grok; Muse's status is ignored, see above), or within 2 min of a request of its own in the journal. It waits for the
+  next poll and logs the wait once.
+- A minute after it types: a request of its own since, or a turn running, is logged as resumed. The CLI's limit text
+  after the message (or Grok's dialog still up) is logged once, and it types again at the next nudge (--every-min
+  after the last try) until the CLI moves or the deadline passes.
+- Logs: rows {"resume": true, "action": typed | waiting | still_at_limit | resumed | cleared | loop | ...} in
+  runs/RUN/nudges.jsonl, and "resume NAME: ..." lines in idle-nudge.log. --dry-run reads the panes and types nothing.
+- Limit texts matched: Muse "Usage limit reached" (shift76's screen); Claude Code "You've hit your limit · resets ..."
+  (its API error rows); Codex "Usage limit reached. You've reached your usage limit" (the 0.164.0 binary); Grok "You
+  hit your weekly limit." and the dialog's "Resubmit the last prompt once you have usage again" (1.0.70, the d24 capture).
+- Test: tools/test_pane_resume.py, with fake panes and fixed times. It replays shift76's Muse screen and also covers
+  mid-turn panes, Grok's dialog (Enter never on Buy more credits), Claude, Codex, agy, a dry run and the deadline. It
+  fails on main (no tools/pane_resume.py). Under POG_TEST=1, HerdrPanes refuses (docs/TESTS-LIVE.md).
