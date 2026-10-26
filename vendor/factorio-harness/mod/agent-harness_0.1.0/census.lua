@@ -893,6 +893,69 @@ return function(api)
     return d.building_counts,d.building_counts_as_of
   end
 
+  -- (d26 batch233 VM, viewer Aurora site:5019: "Could vehicle maps start with Spidertrons? ... Show ID, position age,
+  -- controller and destination.") part vehicles: ours of VEHICLE_TYPES the last pass kept (KEEP), each where our force
+  -- last saw it: its position now when its chunk is visible to our force (radar coverage or a character's sight), else
+  -- the one it had when this read last saw it so (seen_tick); who sits in its driver seat, who drives it by remote view
+  -- (api.vehicle_people), who last sent it a route by remote view and when (spiderroute.lua); its destination (the first
+  -- target of its route) and how many targets the route holds. One never seen since the census began keeping them:
+  -- unseen, no position. Reads the kept entities only (no find); writes only the last-seen table.
+  local VEHICLE_TYPES, VEHICLES_MAX = {'spider-vehicle'}, 64
+  M.VEHICLE_TYPES, M.VEHICLES_MAX = VEHICLE_TYPES, VEHICLES_MAX
+  local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
+  local function vehicles(d)
+    local st = store()
+    st.vehicles_seen = st.vehicles_seen or {}
+    local seen = st.vehicles_seen
+    local f = game.forces.player
+    local people = api.vehicle_people and try(api.vehicle_people) or {}
+    local by_char, remote = people.by_character or {}, people.remote or {}
+    local routes = (api.state().spiderroute or {}).spiders or {}
+    local rows, units, total = {}, {}, 0
+    local surfaces = {}
+    for si in pairs(d.walked or {}) do surfaces[#surfaces+1] = si end
+    table.sort(surfaces)
+    for _, si in ipairs(surfaces) do
+      local by = d.by_type and d.by_type[si]
+      for _, t in ipairs(VEHICLE_TYPES) do
+        for _, e in ipairs(by and by[t] or {}) do
+          local unit = e.valid and e.unit_number
+          if unit and not units[unit] then
+            units[unit] = true
+            total = total + 1
+            if #rows < VEHICLES_MAX then
+              local s = e.surface
+              local pos = e.position
+              local visible = try(function() return f.is_chunk_visible(s, {math.floor(pos.x / 32), math.floor(pos.y / 32)}) end) == true
+              if visible then seen[unit] = {x=r1(pos.x), y=r1(pos.y), surface=s.name, tick=game.tick} end
+              local last = seen[unit]
+              local row = {unit_number=unit, name=e.name, type=e.type, surface=last and last.surface or s.name}
+              if last then row.position, row.seen_tick, row.age_s = {x=last.x, y=last.y}, last.tick, math.floor((game.tick - last.tick) / 60)
+              else row.unseen = true end
+              row.visible = visible
+              local drv = try(function() return e.get_driver() end)
+              if drv then
+                local cu = try(function() return drv.unit_number end)
+                row.driver = cu and by_char[cu] or 'a player'
+              end
+              local rm = remote[unit]
+              if rm then row.remote = rm.name; row.remote_target = rm.target and {x=r1(rm.target.x), y=r1(rm.target.y)} or nil end
+              local sent = routes[unit]
+              if sent and sent.by then row.sent_by, row.sent_tick = sent.by, sent.tick end
+              local dests = try(function() return e.autopilot_destinations end) or {}
+              local first = dests[1] and (dests[1].position or dests[1]) or try(function() return e.autopilot_destination end)
+              if first and first.x then row.destination, row.route_targets = {x=r1(first.x), y=r1(first.y)}, math.max(#dests, 1) end
+              rows[#rows+1] = row
+            end
+          end
+        end
+      end
+    end
+    table.sort(rows, function(a, b) return a.unit_number < b.unit_number end)
+    return rows, total
+  end
+  M.vehicles = vehicles
+
   -- The operator read: {part = extras | snapshot | machines | basemap, ore = true (basemap)}. Nothing yet: {ready=false}.
   -- basemap with ore: the last finished ore grid on the same cell size, its pass's start as ore.tick, else none
   -- (ore_pending: the next pass reads it). (d22 batch97 BG3) It was served only within ORE_EVERY + PERIOD (19,800
@@ -903,7 +966,7 @@ return function(api)
     local st = store()
     local d = st.done
     local part = args.part
-    assert(part == 'extras' or part == 'snapshot' or part == 'machines' or part == 'basemap' or part == 'planets', 'part must be extras, snapshot, machines, basemap or planets')
+    assert(part == 'extras' or part == 'snapshot' or part == 'machines' or part == 'basemap' or part == 'planets' or part == 'vehicles', 'part must be extras, snapshot, machines, basemap, planets or vehicles')
     assert(args.surface == nil or (type(args.surface) == 'string' and part == 'basemap'), 'surface goes with part basemap: another planet\'s coarse map')
     if part == 'basemap' and args.ore then st.ore_asked = game.tick end
     if not d then return {ready=false, part=part, pass_running=st.job ~= nil} end
@@ -926,6 +989,9 @@ return function(api)
       out.entities, out.surfaces_with_buildings = counts, d.where
     elseif part == 'machines' then
       out.machines = d.machines
+    elseif part == 'vehicles' then
+      out.vehicles, out.vehicles_total = vehicles(d)
+      out.tick = game.tick
     elseif part == 'planets' then
       -- The other planets with a coarse map: name, building count, cell, size (the maps themselves: basemap surface=).
       local list = {}

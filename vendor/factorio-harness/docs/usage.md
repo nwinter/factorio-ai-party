@@ -15764,3 +15764,25 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     now: nothing changed: its new waits at stop 2 (fulgora), where it waits, hold now: ...`.
   - Cost on the copy: that 5-step dry run 9-12 ms against 1.6-3.0 ms for a 1-step plan with nothing to check.
 - Test: tests/d26_batch231.lua (in lua.test.ts), failing on main.
+
+## d26 batch233 (VM, viewer Aurora site:5019: spidertrons on the site's maps)
+- "Could vehicle maps start with Spidertrons? The planned item would make remote recon visible. Show ID, position age,
+  controller and destination."
+- Operator read `census {part: "vehicles"}` (census.lua): ours of VEHICLE_TYPES (`spider-vehicle`) that the census pass
+  keeps (its KEEP list, entity references; no find), at most 64: `vehicles [{unit_number, name, type, surface, position,
+  seen_tick, age_s, visible, unseen, driver, remote, remote_target, sent_by, sent_tick, destination, route_targets}]`,
+  `vehicles_total`, `tick`.
+  - Position: read now when its chunk is visible to our force (radar coverage or a character's sight), else the last
+    position this read saw (census storage `vehicles_seen`), with `seen_tick` and `age_s`; one never seen: `unseen`.
+  - `driver`: the agent whose character sits in its driver seat (runtime vehicle_people), else "a player"; `remote`:
+    the agent driving it by remote view now (a `vehicle {drive, remote}` action) and `remote_target`; `sent_by`,
+    `sent_tick`: the agent that last sent it a route by remote view (`vehicle {go_to, remote}`, spiderroute.lua).
+  - `destination`: the first target of its route (autopilot destinations), `route_targets` how many.
+  - A vehicle built after the pass began is listed from the next pass (about 10 minutes on world n).
+- Cost: on world n (module probe, census.lua loaded in a throwaway state over its real census lists, d26 ~10:30): 0.122,
+  0.065, 0.072 ms for its 3 spidertrons (one on Gleba, two on Nauvis; all in sight, none ridden or sent). world n had 3
+  spidertrons, 0 cars and 7 tanks (force counts, 0.2 ms).
+- The stream service reads it every 10 s (tools/stream harness.vehicles, live.py); model.vehicles_snapshot counts each
+  age on to the snapshot; site/push_live.py `public_vehicles` sends `vehicles` (docs/LIVE-API.md); site/static/mapview.js
+  draws the Vehicles layer (Team group). A runtime without the part answers nothing and the layer reads "not read".
+- Tests: tests/d26_batch233.lua (in lua.test.ts), site/test_vehicles.py; both fail on main.

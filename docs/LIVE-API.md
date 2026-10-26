@@ -225,6 +225,14 @@ diamond with a dashed line to its target; `big` the demolishers near our buildin
 `[{id, name, surface, position, nearest {x, y, name}, speed, closing, nearest_distance, eta_s, label}]`, a ringed dot
 with a dashed line to our nearest building while it closes; at most 12 of each, absent when there are none (about
 300 bytes a row). The stream service read both before; they never reached the page.
+(d26 batch233 VM, viewer Aurora site:5019) `vehicles` {rows, total, read_age_s} draws the "Vehicles" layer (on by
+default, under Team) on the surface shown: our spidertrons where our force last saw them (harness `census {part:
+"vehicles"}`, read every 10 s by the stream service) `[{unit_number, name, type, surface, position, age_s (how old the
+position is), visible (its chunk in sight when read), unseen (never seen: no position, not drawn), driver (the agent in
+its driver seat, or "a player"), remote (the agent driving it by remote view), sent_by and sent_age_s (the agent that
+last sent it a route by remote view, and when), destination, route_targets}]`, a blue square (grey when the position
+is from out of sight) with a dashed line to its destination; hover: id, place, position age, driver, sender,
+destination. At most 64 rows, absent before a read or with none (about 250 bytes a row).
 (d22 batch75 AK2, viewer Foobator, site:4034: "the ship overview only has a progress bar for the first 2 that are in
 transit? can in transit be listed first and the rest have their planetary waiting time displayed?") Every platform's
 `state`, `route` and `speed_kms` come from the stream's views read (`PLATFORM_LUA`, every platform in one call every

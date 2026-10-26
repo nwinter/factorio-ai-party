@@ -654,6 +654,18 @@ class Harness:
             m["core"]["rows"] = []
         return dict(m, surface=surface)
 
+    def vehicles(self):
+        """(d26 batch233 VM, viewer Aurora site:5019) the census's vehicles part: our spidertrons, each where our force last
+        saw it (census.lua vehicles): {tick, rows [{unit_number, name, type, surface, position, seen_tick, age_s, visible,
+        unseen, driver, remote, remote_target, sent_by, sent_tick, destination, route_targets}], total}, or None (no
+        harness, no census pass yet, or a runtime without the part). From storage and the kept entities: 0.07-0.12 ms on
+        world n for its 3 spidertrons (d26)."""
+        r = self.lua(PLANET_READ_LUA.replace("ARGS", '{part = "vehicles"}'))
+        if not isinstance(r, dict) or r.get("part") != "vehicles":
+            return None
+        rows = r.get("vehicles") if isinstance(r.get("vehicles"), list) else []  # table_to_json writes an empty table as {}
+        return {"tick": r.get("tick"), "rows": [x for x in rows if isinstance(x, dict)], "total": r.get("vehicles_total") or len(rows)}
+
     def probe(self):
         return self.lua(PROBE_LUA)
 
