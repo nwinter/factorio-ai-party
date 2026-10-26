@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-25 16:14",
+ "notices_checked": "2026-10-25 17:33",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
   {"id": "inserter-wait-full-hand", "title": "Inserters: set and read \"wait for full hand\"", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#1931"}], "status": "live", "dates": {"asked": "2026-10-22 16:55", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN2", "note": "configure sets it on inserters and their ghosts; inspect reads it."},
@@ -102,7 +102,8 @@
   {"id": "dry-run-text", "title": "Queue dry runs check text and list lengths", "requested_by": [{"name": "astra", "ref": "#2355"}], "status": "live", "dates": {"live": "2026-10-25 14:00"}, "work": "batch208"},
   {"id": "chest-filter-bar", "title": "A chest storage filter and bar set together; builds check settings first", "requested_by": [{"name": "astra", "ref": "#2357"}], "status": "live", "dates": {"live": "2026-10-25 14:28"}, "work": "batch208"},
   {"id": "turret-range-quality", "title": "Turret rows and coverage use quality-adjusted range", "requested_by": [{"name": "astra", "ref": "#2361"}], "status": "live", "dates": {"in progress": "2026-10-25 14:17", "live": "2026-10-25 15:03"}, "work": "batch209"},
-  {"id": "belt-flow-picks", "title": "belt_flow counts inserter pickups on the lane", "requested_by": [{"name": "sol", "ref": "#2368"}], "status": "live", "dates": {"live": "2026-10-25 16:10"}, "work": "batch210"}
+  {"id": "belt-flow-picks", "title": "belt_flow counts inserter pickups on the lane", "requested_by": [{"name": "sol", "ref": "#2368"}], "status": "live", "dates": {"live": "2026-10-25 16:10"}, "work": "batch210"},
+  {"id": "flight-ammo-use", "title": "flight_watch gives exact ammunition use per part", "requested_by": [{"name": "sol", "ref": "#2372"}], "status": "live", "dates": {"live": "2026-10-25 17:28"}, "work": "batch212"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
@@ -136,6 +137,7 @@
   {"t": "2026-10-25 14:03", "kind": "deploy", "text": "Harness runtime deployed (23a687f8).", "affected": "harness runtime"},
   {"t": "2026-10-25 14:25", "kind": "shift", "text": "Shift 76 change began.", "affected": "stream and agents", "recovered": "2026-10-25 14:34"},
   {"t": "2026-10-25 15:06", "kind": "deploy", "text": "Harness runtime deployed (f15b4af8).", "affected": "harness runtime"},
-  {"t": "2026-10-25 16:14", "kind": "deploy", "text": "Harness runtime deployed (f540dcb1).", "affected": "harness runtime"}
+  {"t": "2026-10-25 16:14", "kind": "deploy", "text": "Harness runtime deployed (f540dcb1).", "affected": "harness runtime"},
+  {"t": "2026-10-25 17:33", "kind": "deploy", "text": "Harness runtime deployed (162aa023).", "affected": "harness runtime"}
  ]
 }
