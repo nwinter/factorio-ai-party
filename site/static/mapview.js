@@ -29,10 +29,10 @@
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   var LAYERS = [['chart', 'Chart'], ['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
-    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power'], ['robots', 'Logistics'], ['nests', 'Nests'], ['threats', 'Attacks'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { chart: true, terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, threats: true, agents: true, attention: true, alerts: true };
+    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power'], ['robots', 'Logistics'], ['nests', 'Nests'], ['threats', 'Attacks'], ['agents', 'Agents'], ['vehicles', 'Vehicles'], ['attention', 'Attention'], ['alerts', 'Fights']];
+  var DEFAULT_ON = { chart: true, terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, threats: true, agents: true, vehicles: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
-    range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
+    range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', vehicle: '#4fc3f7', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
   // (d20 batch50 G1, viewer Aurora: "Could the map flag turrets lacking ammo, fuel or energy and mark stale or unknown
   // readings?") basemap.turret_state (tools/stream/turretstate.py): counts per state and the turrets not armed now as
   // [x, y, state (e empty, p no power, u unknown), name, age_s at as_of], read once a minute.
@@ -350,6 +350,13 @@
     var th = data.threats || {}, here = function (x) { return x && ok(x.position) && (x.surface || 'nauvis') === surface; };
     d.groups = (Array.isArray(th.incoming) ? th.incoming : []).filter(here);
     d.big = (Array.isArray(th.big) ? th.big : []).filter(here);
+    // (d26 batch233 VM, viewer Aurora site:5019) our vehicles (spidertrons; cp2 cars and tanks) where our force last saw them (push_live's vehicles: the
+    // census's read every 10 s), on the surface shown; the agents' names as the page shows them
+    var vh = data.vehicles && Array.isArray(data.vehicles.rows) ? data.vehicles : null;
+    d.vehiclesRead = !!vh;
+    d.vehicles = (vh ? vh.rows : []).filter(here);
+    d.who = {};
+    (data.agents || []).forEach(function (a) { if (a && a.name) d.who[String(a.name).toLowerCase()] = a.display_name || a.name; });
     d.nests = (home && Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
     // (G1) each turret's readiness; ages from the state's game tick (now_tick) when it has one
     var ts = home && data.base && data.base.turret_state;
@@ -461,6 +468,18 @@
     return sec < 60 ? sec + ' s ago' : sec < 3600 ? Math.round(sec / 60) + ' min ago' : Math.round(sec / 3600) + ' h ago';
   }
   function cap(s) { s = String(s || '').replace(/[-_]/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
+  // (d26 batch233 VM) a vehicle's hover: "Spidertron 23036938 · x -149, y -544 · Nauvis · seen 5 s ago (in sight) ·
+  // no driver · route sent by Opus 2 min ago · to x -60, y -300 (3 targets)"; who: the agents' names as the page has them
+  function vehicleText(d, x) {
+    var who = function (n) { return n === 'a player' ? n : d.who[String(n).toLowerCase()] || cap(n); };
+    var p = x.position, parts = [cap(x.name || 'vehicle') + ' ' + x.unit_number, coordsText(p.x, p.y, x.surface)];
+    if (num(x.age_s)) parts.push(x.visible ? 'seen ' + ago(x.age_s) + ' (in sight)' : 'last seen ' + ago(x.age_s) + ' (out of sight since)');
+    parts.push(x.driver ? 'driven by ' + who(x.driver) : x.remote ? 'driven by ' + who(x.remote) + ' by remote view' : 'no driver');
+    if (x.sent_by) parts.push('route sent by ' + who(x.sent_by) + (num(x.sent_age_s) ? ' ' + ago(x.sent_age_s) : ''));
+    parts.push(ok(x.destination) ? 'to x ' + Math.floor(x.destination.x) + ', y ' + Math.floor(x.destination.y) +
+      (x.route_targets > 1 ? ' (' + x.route_targets + ' targets)' : '') : 'no destination');
+    return parts.join(' · ');
+  }
   // (d20 batch50 D1, viewer Aurora: "Could partial map updates retain the last map with its age? Tabs sometimes disappear
   // and reset the selected planet") A push brings one planet's map, and a planet or a cloud can be missing from one:
   // every surface seen once keeps its switch and its last map (memo {planets, seen}, the viewer's own), the newer of
@@ -737,6 +756,12 @@
         (e.closing ? ' · closing' + (e.eta_s != null ? ', about ' + agoText(e.eta_s) + ' away' : '') : '') });
       return m;
     }));
+    sc.vehicles = !on.vehicles ? [] : d.vehicles.map(function (x) {
+      var at = spot(x.position), pinned = at !== x.position, t = ok(x.destination) ? x.destination : null;
+      var m = { x: px(at.x), y: py(at.y), tx: t && !pinned ? px(t.x) : null, ty: t && !pinned ? py(t.y) : null, seen: x.visible === true, car: x.type === 'car' };
+      sc.hits.push({ x: m.x, y: m.y, r: 9, text: vehicleText(d, x) + (pinned ? ' · ' + d.dist(x.position) + ' tiles from the base' : '') });
+      return m;
+    });
     sc.pins = on.alerts ? d.pins.filter(function (p) { return !d.fights.length || (p.kind !== 'attack' && p.kind !== 'loss'); }).map(function (p) {
       var at = spot(p.position), m = { x: px(at.x), y: py(at.y) };
       sc.hits.push({ x: m.x, y: m.y, r: 9, text: cap(p.kind) + ': ' + p.text });
@@ -989,6 +1014,19 @@
       if (t.big) { ctx.fillStyle = '#ff7a1a'; circle(ctx, t.x, t.y, 6); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#ff7a1a'; ctx.lineWidth = 1.5; circle(ctx, t.x, t.y, 10); ctx.stroke(); }
       else { ctx.fillStyle = '#ff5a44'; ctx.beginPath(); ctx.moveTo(t.x, t.y - 6); ctx.lineTo(t.x + 6, t.y); ctx.lineTo(t.x, t.y + 6); ctx.lineTo(t.x - 6, t.y); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     });
+    // (VM) a vehicle: a dashed line to its destination, a blue square for a spidertron, a blue dot for a car or tank (cp2)
+    // (grey where the position is from out of sight)
+    (sc.vehicles || []).forEach(function (t) {
+      if (t.tx != null) {
+        ctx.setLineDash([4, 3]); ctx.strokeStyle = 'rgba(79, 195, 247, .8)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.tx, t.ty); ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = 'rgba(79, 195, 247, .9)'; ctx.lineWidth = 1.5; circle(ctx, t.tx, t.ty, 3); ctx.stroke();
+      }
+      ctx.fillStyle = t.seen ? C.vehicle : C.unknown; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+      if (t.car) { circle(ctx, t.x, t.y, 5.5); ctx.fill(); ctx.stroke(); }
+      else { ctx.fillRect(t.x - 5, t.y - 5, 10, 10); ctx.strokeRect(t.x - 5, t.y - 5, 10, 10); }
+      ctx.fillStyle = '#000'; ctx.fillRect(t.x - 1.5, t.y - 1.5, 3, 3);
+    });
     sc.pins.forEach(function (p) {
       ctx.fillStyle = C.red; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(p.x, p.y - 9); ctx.lineTo(p.x + 8, p.y + 6); ctx.lineTo(p.x - 8, p.y + 6); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -1050,7 +1088,8 @@
       layer === 'power' ? !!(d.net && d.net.grid) : layer === 'robots' ? !!(d.net && d.net.logistic.length) :
       layer === 'coverage' ? d.turrets.length > 0 : layer === 'readiness' ? !!d.tstate : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
-      layer === 'alerts' ? d.fights.length + d.pins.length > 0 : layer === 'threats' ? d.groups.length + d.big.length > 0 : false;
+      layer === 'alerts' ? d.fights.length + d.pins.length > 0 : layer === 'threats' ? d.groups.length + d.big.length > 0 :
+      layer === 'vehicles' ? d.vehicles.length > 0 : false;
   }
 
   function Viewer(host, opts) {
@@ -1224,7 +1263,7 @@
   // below a row each (style.css .mapview-pair)
   var PAIRS = [['terrain', 'networks'], ['combat', 'team']];
   var GROUPS = [['terrain', 'Terrain', ['chart', 'terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
-    ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'threats', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
+    ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'threats', 'alerts']], ['team', 'Team', ['agents', 'vehicles', 'attention', 'library']]];
   // (d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero?
   // Vulcanus currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") Why a
   // layer has nothing on the surface shown: "not read" with why (no read of it in the state, a read this page has not
@@ -1273,6 +1312,7 @@
       : 'not read: no chart published yet';
     if (k === 'threats') return 'none: no enemy group on its way and no demolisher near ours on ' + where + ' now (read every 2-10 s)';
     if (k === 'agents') return 'none: no agent on ' + where + ' now';
+    if (k === 'vehicles') return d.vehiclesRead ? 'none: no vehicle of ours on ' + where + ' in the last read (every 10 s)' : 'not read: no vehicle read in the live state yet';
     if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
     return 'none on ' + where + ' now';
   }
@@ -1404,6 +1444,7 @@
     if (d.fights.length && on.alerts) h += '<li><i class="mv-fight"></i>Fights</li>';
     if (d.groups.length && on.threats) h += '<li><i class="mv-group"></i>Enemies on their way (a dashed line to their target)</li>';
     if (d.big.length && on.threats) h += '<li><i class="mv-big"></i>Demolishers near ours</li>';
+    if (d.vehicles.length && on.vehicles) h += '<li><i class="mv-vehicle"></i>Vehicles: spidertrons (square), tanks and cars (dot); a dashed line to the destination; grey: last seen out of sight</li>';
     var box = this.root.querySelector('.mapview-legend');
     if (box.dataset.sig !== h) { box.dataset.sig = h; box.innerHTML = h ? '<ul class="mm-legend">' + h + '</ul>' : ''; }
   };

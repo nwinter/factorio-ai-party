@@ -863,6 +863,7 @@ class Model:
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
+        self.vehicles = None  # (d26 batch233 VM) the census's vehicles read {tick, rows, total, t} (live.py, every 10 s)
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
         self.library_areas = None  # (d21 batch68 AD2) the library's placed areas, the last read (live.py observe_library_areas)
@@ -970,6 +971,8 @@ class Model:
             self.darkness = obs["darkness"]
         if obs.get("connected_players") is not None:
             self.connected_players = list(obs["connected_players"])
+        if isinstance(obs.get("vehicles"), dict) and isinstance(obs["vehicles"].get("rows"), list):
+            self.vehicles = obs["vehicles"]
         if isinstance(obs.get("turret_state"), dict):  # (d20 batch50 G1) each turret's readiness (turretstate.py)
             self.turret_state = obs["turret_state"]
         if obs.get("basemap"):
@@ -1357,6 +1360,25 @@ class Model:
             if isinstance(obs.get(feed), list) and not obs[feed]:
                 self.feeds_live.add(feed)
 
+    # (d26 batch236 OC, viewer Aurora 10:39: "Opus's shift15 confession c72 reappears beside fresh speech after startup.
+    # Could old confessions stay dated history, without appearing or being voiced as new shift messages?") At shift81's
+    # start the confessions read returned the runtime's kept ones, c71-c75 (shift15-16: no agent has confessed since);
+    # backlog_old marked them history, but they went into the chat window beside the new shift's lines, and the
+    # overlay, which reads no history mark, showed them as current. A backlog line from before the current shift
+    # (run["shift"]["start"]; its time from its tick, tick_time) is left out of the live feeds: the site's history and
+    # search keep it with its shift and date (site/agents.py, site/search.py). One the backlog has before the game tick
+    # is known cannot be dated: left out too. Lines from earlier in this shift stay as history (BU1).
+    def before_shift(self, m, feed):
+        """True for a backlog line of `feed` from before the current shift's start, or one not datable yet."""
+        if feed in self.feeds_live:
+            return False
+        start = (self.run.get("shift") or {}).get("start")
+        if not isinstance(start, (int, float)):
+            return False
+        if not (isinstance(m.get("tick"), (int, float)) and self.tick):
+            return True
+        return self.tick_time(m["tick"]) < start
+
     def _restore(self, entry, m, feed):
         """Mark a backlog line history with its own time (backlog_old); True when it did."""
         if not self.backlog_old(m, feed):
@@ -1432,6 +1454,8 @@ class Model:
         if key in self.chat_seen:
             return
         self.chat_seen.add(key)
+        if self.before_shift(c, "confessions"):
+            return
         sender = self._match_sender(c.get("from", ""))
         entry = {"seq": f"c{c.get('seq')}", "tick": c.get("tick"), "from": c.get("from"), "agent": sender,
                  "text": c.get("text", ""), "t": c.get("t", now), "confess": True, "lane": "talk"}
@@ -1449,6 +1473,8 @@ class Model:
         if key in self.chat_seen:
             return
         self.chat_seen.add(key)
+        if self.before_shift(t, "tells"):
+            return
         sender = self._match_sender(t.get("from", ""))
         to = t.get("to")
         names = ["team"] if to == "team" else [n for n in (to or []) if isinstance(n, str)]
@@ -1469,6 +1495,8 @@ class Model:
         if key in self.chat_seen:
             return
         self.chat_seen.add(key)
+        if self.before_shift(r, "operator_requests"):
+            return
         sender = self._match_sender(r.get("agent", ""))
         text = r.get("text", "")
         entry = {"seq": f"o{r.get('seq')}", "tick": r.get("tick"), "from": r.get("agent"), "agent": sender,
@@ -1613,6 +1641,8 @@ class Model:
             return  # notes and operator bookkeeping are noise on stream
         if kind == "plan":
             return  # plan edits show as the plan line itself (board_snapshot)
+        if self.before_shift(e, "board_events"):  # (OC) the item cache above is kept; the event is not shown
+            return
         agent = self._who(e.get("by"))
         restored = self.backlog_old(e, "board_events")  # (BU1) a restart's replay of the kept events
         t = self.tick_time(e["tick"]) if restored else e.get("t", now)
@@ -2758,6 +2788,30 @@ class Model:
         out["stale"] = marks + workcard.stale(texts, work, self.tick) or None
         return out
 
+    VEHICLE_KEYS = ("unit_number", "name", "type", "surface", "visible", "unseen", "driver", "remote", "remote_target",
+                    "sent_by", "destination", "route_targets")
+
+    def vehicles_snapshot(self, now):
+        """(d26 batch233 VM) the last vehicles read with its ages counted on to now: each row's age_s (how old the position
+        is) and sent_age_s (since an agent last sent it a route by remote view), and read_age_s; None before a read."""
+        v = self.vehicles
+        if not v:
+            return None
+        since = max(0.0, now - (v.get("t") or now))
+        tick = v.get("tick")
+        rows = []
+        for r in v.get("rows") or []:
+            row = {k: r[k] for k in self.VEHICLE_KEYS if r.get(k) is not None}
+            p = r.get("position")
+            if isinstance(p, dict) and isinstance(p.get("x"), (int, float)) and isinstance(p.get("y"), (int, float)):
+                row["position"] = {"x": round(float(p["x"]), 1), "y": round(float(p["y"]), 1)}
+                if isinstance(r.get("age_s"), (int, float)):
+                    row["age_s"] = round(r["age_s"] + since)
+            if isinstance(r.get("sent_tick"), (int, float)) and isinstance(tick, (int, float)):
+                row["sent_age_s"] = round(max(0, tick - r["sent_tick"]) / 60 + since)
+            rows.append(row)
+        return {"rows": rows, "total": v.get("total") or len(rows), "read_age_s": round(since)}
+
     def snapshot(self, now, cameras=None):
         self.snap_now = now  # (BI5) the time a project's owner_work reads its wait at
         cams_by_agent = {}
@@ -2825,6 +2879,7 @@ class Model:
             "connected_players": self.connected_players,
             "basemap": dict(self.basemap, turret_state=self.turret_state) if self.basemap and self.turret_state else self.basemap,
             "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
+            "vehicles": self.vehicles_snapshot(now),
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
             "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
             # the library's placed areas with their hookups (libareas.lua; push_live sends them, the live map draws them)

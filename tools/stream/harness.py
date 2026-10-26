@@ -675,6 +675,18 @@ class Harness:
             m["core"]["rows"] = []
         return dict(m, surface=surface)
 
+    def census_vehicles(self):
+        """(d26 batch233 VM, viewer Aurora site:5019) the census's vehicles part (batch232's vehicles() reads given units): our spidertrons, tanks and cars, each where our force last
+        saw it (census.lua vehicles): {tick, rows [{unit_number, name, type, surface, position, seen_tick, age_s, visible,
+        unseen, driver, remote, remote_target, sent_by, sent_tick, destination, route_targets}], total}, or None (no
+        harness, no census pass yet, or a runtime without the part). From storage and the kept entities: 0.07-0.12 ms on
+        world n for its 3 spidertrons (d26)."""
+        r = self.lua(PLANET_READ_LUA.replace("ARGS", '{part = "vehicles"}'))
+        if not isinstance(r, dict) or r.get("part") != "vehicles":
+            return None
+        rows = r.get("vehicles") if isinstance(r.get("vehicles"), list) else []  # table_to_json writes an empty table as {}
+        return {"tick": r.get("tick"), "rows": [x for x in rows if isinstance(x, dict)], "total": r.get("vehicles_total") or len(rows)}
+
     def vehicles(self, units):
         """(batch232) {unit: row} for these vehicles' unit numbers (VEHICLES_LUA), at most 16."""
         units = [int(u) for u in units if isinstance(u, int) or str(u).isdigit()][:16]
