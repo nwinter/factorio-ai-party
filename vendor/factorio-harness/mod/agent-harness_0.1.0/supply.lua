@@ -167,10 +167,11 @@ return function(api)
   -- the same way): the finished reply (plain data, no entities), keyed by
   -- what was asked, with as_of. Module state on purpose (as profile.lua): it
   -- never touches game state, and a peer without it reads anew.
-  local REUSE_TICKS, replies = 600, {}
+  local REUSE_TICKS, replies, last_hit = 600, {}, false
   function M.reuse(key, fn)
     for k, c in pairs(replies) do if game.tick - c.tick >= REUSE_TICKS or c.tick > game.tick then replies[k] = nil end end
     local hit = replies[key]
+    last_hit = hit ~= nil
     if hit then
       local out = {}
       for k, v in pairs(hit.out) do out[k] = v end
@@ -184,15 +185,22 @@ return function(api)
     return out
   end
   function M.forget() replies = {} end
+  -- (d26 batch230, Sol #2425) what the last M.reuse of key gave: 'fresh' (read now) or 'reused', and the tick it was read
+  local function read_of(key)
+    local c = replies[key]
+    return last_hit and 'reused' or 'fresh', c and c.tick or game.tick
+  end
   -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
   local function timed(label, fn, ...)
     if api.timed then return api.timed(label, fn, ...) end
     return fn(...)
   end
   -- Its parts are profile parts supply.<part> (operator 18:33: observe/supply 106 ms, supply.scan 79 ms).
+  -- opts.stock (d26 batch230, M.stock): the places' counts only: no spots, spoilage, logistic networks, chests' orphan
+  -- requests, belt tiles or inserter targets.
   function M.scan(surface, force, names, opts)
     opts = opts or {}
-    local area, packs = opts.area, opts.packs or {}
+    local area, packs, lean = opts.area, opts.packs or {}, opts.stock
     local single
     do local n = 0; for name in pairs(names) do n = n + 1; single = name end; if n ~= 1 then single = nil end end
     local function filter(f)
@@ -211,12 +219,12 @@ return function(api)
     end
     local counted = {}
     local function spot(t, e, n, kind)
-      if #t.spots < MAX_SPOTS then t.spots[#t.spots+1] = {position=e.position, name=e.name, n=n, kind=kind, unit=e.unit_number, e=e} end
+      if not lean and #t.spots < MAX_SPOTS then t.spots[#t.spots+1] = {position=e.position, name=e.name, n=n, kind=kind, unit=e.unit_number, e=e} end
     end
     -- A spoilable item (Space Age): its first stack to spoil or hatch, where,
     -- and how many spoil within 5 minutes (spoil.lua), read where it was found.
     local sp, spoils = api.spoil, {}
-    for name in pairs(names) do spoils[name] = sp and sp.spoils(name) or nil end
+    for name in pairs(names) do spoils[name] = not lean and sp and sp.spoils(name) or nil end
     -- science asks for stock value across qualities. Reuse one compact content
     -- read per inventory to find packs before walking their spoilable stacks.
     local normal_count, content_counts = count, {}
@@ -269,19 +277,35 @@ return function(api)
     for name in pairs(names) do if (try(function() return prototypes.item[name].fuel_value end) or 0) > 0 then fuels[name] = true end end
     for t, group in pairs(GROUP) do if (group ~= 'labs' and group ~= 'miners' or any_pack or (group == 'miners' and opts.miners)) and (group ~= 'robots' or not area) and (group ~= 'burners' or next(fuels)) then types[#types+1] = t end end
     table.sort(types)
-    local found = timed('supply.find', surface.find_entities_filtered, filter{type=types, limit=MAX_FOUND})
     local lists, seen = {crafters={}, labs={}, chests={}, belts={}, inserters={}, robots={}, miners={}, burners={}}, {}
-    for _, e in ipairs(found) do
-      local group = GROUP[e.type]
-      local list = group and lists[group]
-      if list then
-        seen[group] = (seen[group] or 0) + 1
-        if #list < CAP[group] then list[#list+1] = e end
+    local nfound = 0
+    if lean and try(function() return surface.platform end) then
+      -- (d26 batch230) stock on a platform: a find per group, each at its cap. On a copy of world n (Asterion, 7716 found)
+      -- the finds cost what one does and the sorting of one find's entities by type (9 ms) is left out; on a planet a
+      -- find per group cost 1.6-2.2 times one find (Vulcanus 39-43 ms against 25), so planets keep the one find.
+      local by = {}
+      for _, t in ipairs(types) do local g = GROUP[t]; by[g] = by[g] or {}; by[g][#by[g]+1] = t end
+      timed('supply.find', function()
+        for g, ts in pairs(by) do
+          local list = surface.find_entities_filtered(filter{type=ts, limit=CAP[g]})
+          lists[g], seen[g], nfound = list, #list, nfound + #list
+        end
+      end)
+    else
+      local found = timed('supply.find', surface.find_entities_filtered, filter{type=types, limit=MAX_FOUND})
+      for _, e in ipairs(found) do
+        local group = GROUP[e.type]
+        local list = group and lists[group]
+        if list then
+          seen[group] = (seen[group] or 0) + 1
+          if #list < CAP[group] then list[#list+1] = e end
+        end
       end
+      nfound = #found
     end
     -- Robots fly: with an area, those of the whole surface still count in flight.
     if area then lists.robots = surface.find_entities_filtered{type=ROBOTS, force=force, limit=MAX_ROBOTS} end
-    counted.found, counted.seen = #found, seen
+    counted.found, counted.seen = nfound, seen
     -- Crafters: makers and users by recipe, and what their outputs hold.
     local crafters = lists.crafters
     counted.crafters = #crafters
@@ -374,7 +398,7 @@ return function(api)
       end
     end
     -- Logistic networks: requesters for the items and the networks' stock.
-    local nets = try(function() return force.logistic_networks[surface.name] end) or {}
+    local nets = not lean and try(function() return force.logistic_networks[surface.name] end) or {}
     local characters = {}
     for _, ag in ipairs(api.agents and try(api.agents) or {}) do
       local c = try(function() local pl = api.lookup(ag.index); return pl and pl.character end)
@@ -533,7 +557,7 @@ return function(api)
       local main = inventory(e, MAIN[e.type] or 'chest')
       local trash = e.type == 'logistic-container' and inventory(e, 'logistic_container_trash') or nil
       local point, id, filters
-      if kind == 'requester' or kind == 'buffer' then
+      if not lean and (kind == 'requester' or kind == 'buffer') then
         point = try(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
         id = point and try(function() return point.logistic_network.network_id end)
         filters = point and not id and try(function() return point.filters end) or {}
@@ -561,20 +585,29 @@ return function(api)
     counted.belts = #belts
     counted.belts_total = seen.belts or #belts
     timed('supply.belts', function()
+    -- stock, one item: the belt's own count by name, as belt_lines reads it, without a table a belt
+    if lean and single then
+      local t = T[single]
+      for _, e in ipairs(belts) do
+        local ok, n = pcall(e.get_item_count, single)
+        if ok and n > 0 then t.belts = t.belts + n end
+      end
+      return
+    end
     for _, e in ipairs(belts) do
       local held = {}
       belt_counts(e, names, single, held, opts.science_value and spoils[single])
       for name, n in pairs(held) do
         local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt'); spoil_at(t, e, 'belt', function(acc) sp.belt(e, acc) end)
         -- each belt tile holding it, for the belt lines (M.belt_lines)
-        if n > 0 and #t.belt_spots < MAX_SPOTS then t.belt_spots[#t.belt_spots+1] = {e.position.x, e.position.y, n, e.direction or 0, e.type} end
+        if n > 0 and not lean and #t.belt_spots < MAX_SPOTS then t.belt_spots[#t.belt_spots+1] = {e.position.x, e.position.y, n, e.direction or 0, e.type} end
       end
     end
     end)
     -- Inserters: what their hands hold, the ones feeding users and taking
     -- from makers.
     local want_targets = false
-    for _, t in pairs(T) do if #t.users > 0 or #t.makers > 0 then want_targets = true end end
+    for _, t in pairs(T) do if not lean and (#t.users > 0 or #t.makers > 0) then want_targets = true end end
     local inserters = lists.inserters
     counted.inserters = #inserters
     local function visit(e)
@@ -787,8 +820,8 @@ return function(api)
   end
   -- Where the item sits: the total and each kind of place that holds it.
   function M.where(t)
-    local parts, total = {}, 0
-    local function add(label, n) if n > 0 then parts[#parts+1] = label .. ' ' .. n; total = total + n end end
+    local parts, total, places = {}, 0, {}
+    local function add(label, n) if n > 0 then parts[#parts+1] = label .. ' ' .. n; total = total + n; places[label] = n end end
     add('belts', t.belts)
     for _, kind in ipairs(KIND_ORDER) do add(KIND_LABEL[kind], t.kinds[kind] or 0) end
     add('machine outputs', t.outputs)
@@ -798,9 +831,9 @@ return function(api)
     add('inserter hands', t.hands)
     add('robots', t.robots)
     add('fuel slots', t.fuel or 0)
-    if (t.ground or 0) > 0 then parts[#parts+1] = 'on the ground ' .. t.ground .. ' (' .. t.ground_as_of .. ')'; total = total + t.ground end
-    if t.carried > 0 then parts[#parts+1] = 'characters ' .. t.carried .. ' (' .. table.concat(t.characters, ', ') .. ')'; total = total + t.carried end
-    return total, parts
+    if (t.ground or 0) > 0 then parts[#parts+1] = 'on the ground ' .. t.ground .. ' (' .. t.ground_as_of .. ')'; total = total + t.ground; places['on the ground'] = t.ground end
+    if t.carried > 0 then parts[#parts+1] = 'characters ' .. t.carried .. ' (' .. table.concat(t.characters, ', ') .. ')'; total = total + t.carried; places.characters = t.carried end
+    return total, parts, places
   end
   -- Where the item sits on belts (Muse, Grok 07:50: supply said coal 1001 on belts and nobody could find the backed-up
   -- line): the belt tiles holding it joined into lines (tiles side by side that hold it; an underground's two ends and
@@ -2154,8 +2187,8 @@ return function(api)
   -- chest with its position (d20 batch63 Y3, Astra #1543 and Luna: consumers "all" with compact failed on chests, a
   -- count there, and makers, requesters and split came back with no lines).
   function M.compact(out)
-    if type(out) ~= 'table' then return out end
-    local keep = {item=out.item, surface=out.surface, compact=true, as_of=out.as_of, clock=out.clock, team=out.team, chat=out.chat}
+    if type(out) ~= 'table' or out.stock then return out end
+    local keep = {item=out.item, surface=out.surface, compact=true, as_of=out.as_of, read=out.read, read_tick=out.read_tick, clock=out.clock, team=out.team, chat=out.chat}
     if out.flow == nil and type(out.lines) == 'table' then
       local lines = {}
       if type(out.line) == 'string' and out.line ~= out.lines[1] then lines[1] = out.line end
@@ -2181,9 +2214,9 @@ return function(api)
     return keep
   end
 
-  M.schema = {supply = {consumers='"all", with an item (d18 batch38 D2): every machine of ours on the surface whose recipe takes it and every requester or buffer chest asking for it, the largest use first, 24 a call (from: next_from): a machine with recipe, status, its take a minute now (working: at its speed) and at full speed; a chest with asks, holds, coming, and what the machines its inserters feed take; machines, working, per_min, full_per_min, chests, rows, lines, next_from',makers='"all", with an item: every machine of ours on the surface whose recipe makes it, nearest you first, 24 a call (from: next_from), from the census pass\'s lists: each with position, recipe, status and why when it stops (its own circuit or logistic condition and what it reads now; an input inserter off by its condition; the ingredients short), its rate now (a minute), its inputs against one craft (name have/needed), what its output holds, and what its output inserters drop into; makers, by_status, by_recipe, rows, lines, next_from',from='with makers or consumers: the first row (next_from of the last call)',requesters='true, with an item (Sonnet: a row starved while its requesters asked for none): who gets it: every requester or buffer chest in our logistic networks on the surface asking for it (one in no network only when it feeds the machines; the machines from the census pass, crafters_as_of says when), with asks, holds, coming (robots bringing it now), the machines its inserters feed that use it (how many work, their take a minute at full speed) and state (served now, met, or unmet and why: no network, none free, no idle robot, none on the way yet); served first, then unmet, then met; per network its free stock and idle robots; then unasked: requester and buffer chests whose inserters feed machines that use it while they ask for none of it, with what they ask. lines, requesters [{chest, position, network, asks, holds, coming, use_per_min, state, line}], unasked [{chest, position, asks, line}]. Read only',split='true, with an item or a fluid (a fluid: each group fed from the pipe segments its input boxes are on, each with the machines making it there): where it goes now: every crafter of ours on the surface whose recipe takes it, grouped by recipe and place (within 12 tiles), each group with machines, how many work, its take at full speed and share of the take, and what its feeding inserters pick from (belts, requester or buffer chests by logistic network, chests, drills dropping straight in); then the requester and buffer chests asking for it that feed none of them; against the surface\'s use and make in the last 10 min: lines, groups [{recipe, box, machines, working, per_min, from}], lone_requesters. Read only',all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need; with makers, consumers, requesters or split: that read\'s lines (each machine and chest with its position), from and next_from',belt_positions='true, with an item (whole surface or near): belt_positions {snapshot_tick, groups, max_positions, note}: each group belt_lines lists, in its order, from the same scan: items, tiles, box, positions "(x,y) count, ..." (every belt tile of it holding the item, by rows); at most 1000 positions over all groups, past that a group lists its first ones and positions_not_listed counts the rest',belt_tiles='1..1000 positions, with an item: a group\'s positions text from belt_positions ("(x,y) n, ...": the counts are not read) or a list [[x,y], ...]: those belt tiles alone, read at one tick: snapshot_tick, tiles, total, belt_tiles (how many have a belt of ours), positions "(x,y) count, ..." in the order asked, 0 for an empty belt or none (no_belt names them); a tile listed twice counted once (duplicates). Read only',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
+  M.schema = {supply = {consumers='"all", with an item (d18 batch38 D2): every machine of ours on the surface whose recipe takes it and every requester or buffer chest asking for it, the largest use first, 24 a call (from: next_from): a machine with recipe, status, its take a minute now (working: at its speed) and at full speed; a chest with asks, holds, coming, and what the machines its inserters feed take; machines, working, per_min, full_per_min, chests, rows, lines, next_from',makers='"all", with an item: every machine of ours on the surface whose recipe makes it, nearest you first, 24 a call (from: next_from), from the census pass\'s lists: each with position, recipe, status and why when it stops (its own circuit or logistic condition and what it reads now; an input inserter off by its condition; the ingredients short), its rate now (a minute), its inputs against one craft (name have/needed), what its output holds, and what its output inserters drop into; makers, by_status, by_recipe, rows, lines, next_from',from='with makers or consumers: the first row (next_from of the last call)',requesters='true, with an item (Sonnet: a row starved while its requesters asked for none): who gets it: every requester or buffer chest in our logistic networks on the surface asking for it (one in no network only when it feeds the machines; the machines from the census pass, crafters_as_of says when), with asks, holds, coming (robots bringing it now), the machines its inserters feed that use it (how many work, their take a minute at full speed) and state (served now, met, or unmet and why: no network, none free, no idle robot, none on the way yet); served first, then unmet, then met; per network its free stock and idle robots; then unasked: requester and buffer chests whose inserters feed machines that use it while they ask for none of it, with what they ask. lines, requesters [{chest, position, network, asks, holds, coming, use_per_min, state, line}], unasked [{chest, position, asks, line}]. Read only',split='true, with an item or a fluid (a fluid: each group fed from the pipe segments its input boxes are on, each with the machines making it there): where it goes now: every crafter of ours on the surface whose recipe takes it, grouped by recipe and place (within 12 tiles), each group with machines, how many work, its take at full speed and share of the take, and what its feeding inserters pick from (belts, requester or buffer chests by logistic network, chests, drills dropping straight in); then the requester and buffer chests asking for it that feed none of them; against the surface\'s use and make in the last 10 min: lines, groups [{recipe, box, machines, working, per_min, from}], lone_requesters. Read only',all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need; with makers, consumers, requesters or split: that read\'s lines (each machine and chest with its position), from and next_from',belt_positions='true, with an item (whole surface or near): belt_positions {snapshot_tick, groups, max_positions, note}: each group belt_lines lists, in its order, from the same scan: items, tiles, box, positions "(x,y) count, ..." (every belt tile of it holding the item, by rows); at most 1000 positions over all groups, past that a group lists its first ones and positions_not_listed counts the rest',stock='true, with an item (whole surface): its count there by place, read now and never reused: stock true, read "fresh", read_tick, total, where and places (the total and places supply\'s where gives; places {label: count} for those holding it), counted, next_tick; one read a 5 s for your same surface and item (sooner: refused with the next tick); a platform of at most 10000 buildings by the census, a planet of at most 2500 (once counted). No belt lines, networks or machines; not with near, radius, belt_positions, belt_tiles, makers, consumers, requesters or split. Read only',belt_tiles='1..1000 positions, with an item: a group\'s positions text from belt_positions ("(x,y) n, ...": the counts are not read) or a list [[x,y], ...]: those belt tiles alone, read at one tick: snapshot_tick, tiles, total, belt_tiles (how many have a belt of ours), positions "(x,y) count, ..." in the order asked, 0 for an empty belt or none (no_belt names them); a tile listed twice counted once (duplicates). Read only',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: scope_line and placed (an item that places a vehicle: where counts it stored, as items; placed: our vehicles of it standing in the world on every surface, as where_is gives); flow (made/used in 10 min; an item that spoils adds that the production statistics leave spoiling out: made counts crafts with a productivity bonus\'s extra, used counts ingredients and fuel burned); uncounted (an item that spoils, whole surface only: against the last whole-surface supply of it 1-60 min before, made, used, held then and now, cargo pods over the same interval from the pod log (landed, sent up in rockets; landed_pods, sent_pods, pods_complete), uncounted (then + made - used - now, signed) and residual (then + made + landed - used - sent up - now, signed, a minute too; residual_means: what its sign can be: above 0 more left the stock than these count (spoiling, which the statistics count nowhere, or what left uncounted), below 0 more came in (what arrived uncounted))); made_by_spoiling (an item others spoil into: each source, how many are held in the places read and how many spoil within 5 min; the production statistics do not count spoiling); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, fuel slots (machines, heating towers, boilers, vehicles: a fuel), on the ground (whole surface: the ground watch\'s last pass), characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a short one whose input inserter is off by its circuit or logistic condition, or whose requester asks for less than one craft, first: the condition and what its source holds; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when; returned (a maker\'s recipe that gives or takes it with ignored_by_stats, pentapod-egg\'s own: what a craft gives, takes and gives back, what the statistics count as made and used (the returned amount on neither side: made is the net), and with one such recipe making all of it at one productivity its crafts, out, back in and net a minute from made); used_by (what used counts besides made: the recipes taking it (each craft\'s ingredient past ignored_by_stats), the burners holding or burning it (fuel burned counts as used; their number, burning now, held, rate at full power), turrets holding it (ammo), and what used leaves out: spoiling or hatching, what is carried off the surface). Read only'}}
+    returns='one read, the same for everyone, kept 10 s (read: "fresh" read now, or "reused" from read_tick, as_of its age): scope_line and placed (an item that places a vehicle: where counts it stored, as items; placed: our vehicles of it standing in the world on every surface, as where_is gives); flow (made/used in 10 min; an item that spoils adds that the production statistics leave spoiling out: made counts crafts with a productivity bonus\'s extra, used counts ingredients and fuel burned); uncounted (an item that spoils, whole surface only: against the last whole-surface supply of it 1-60 min before, made, used, held then and now, cargo pods over the same interval from the pod log (landed, sent up in rockets; landed_pods, sent_pods, pods_complete), uncounted (then + made - used - now, signed) and residual (then + made + landed - used - sent up - now, signed, a minute too; residual_means: what its sign can be: above 0 more left the stock than these count (spoiling, which the statistics count nowhere, or what left uncounted), below 0 more came in (what arrived uncounted))); made_by_spoiling (an item others spoil into: each source, how many are held in the places read and how many spoil within 5 min; the production statistics do not count spoiling); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, fuel slots (machines, heating towers, boilers, vehicles: a fuel), on the ground (whole surface: the ground watch\'s last pass), characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a short one whose input inserter is off by its circuit or logistic condition, or whose requester asks for less than one craft, first: the condition and what its source holds; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when; returned (a maker\'s recipe that gives or takes it with ignored_by_stats, pentapod-egg\'s own: what a craft gives, takes and gives back, what the statistics count as made and used (the returned amount on neither side: made is the net), and with one such recipe making all of it at one productivity its crafts, out, back in and net a minute from made); used_by (what used counts besides made: the recipes taking it (each craft\'s ingredient past ignored_by_stats), the burners holding or burning it (fuel burned counts as used; their number, burning now, held, rate at full power), turrets holding it (ammo), and what used leaves out: spoiling or hatching, what is carried off the surface). Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -2194,6 +2227,7 @@ return function(api)
       surface = game.get_surface(a.surface)
       assert(surface, 'no surface ' .. a.surface)
     end
+    if a.stock ~= nil then return M.stock(p, surface, item, a) end
     -- (d18 batch37 A1) every maker of the item on the surface, a row each (makersall.lua)
     if a.makers ~= nil then return api.makers_all(p, item, surface, a) end
     if a.consumers ~= nil then return M.consumers(p, surface, item, a) end
@@ -2206,6 +2240,7 @@ return function(api)
       local copy = {}
       for k, v in pairs(out) do copy[k] = v end
       out = copy
+      out.read, out.read_tick = read_of(key)
       out.item, out.surface = item, surface.name
       out.note = 'take at full speed: each machine\'s recipe at its crafting speed; robots bringing: what the game has robots carrying to that chest now. Read only'
       return out
@@ -2235,6 +2270,7 @@ return function(api)
     local key = string.format('supply|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item,
       area and string.format('%g,%g,%g', area.position.x, area.position.y, area.radius) or '') .. (a.belt_positions and '|positions' or '')
     local out = M.reuse(key, function() return M.supply_fresh(surface, force, item, area, a.belt_positions) end)
+    local read, read_tick = read_of(key)
     -- all_stopped: every maker and user not working, by cluster (E4); else those lines are left out
     assert(a.all_stopped == nil or type(a.all_stopped) == 'boolean', 'all_stopped is true or false')
     if type(out) == 'table' and not a.all_stopped and (out.makers_stopped or out.users_stopped) then
@@ -2243,6 +2279,8 @@ return function(api)
       copy.makers_stopped, copy.users_stopped = nil, nil
       out = copy
     end
+    -- (d26 batch230) which kind of read it was; a fresh one's table is the one kept, and a reuse's copy says reused
+    if type(out) == 'table' then out.read, out.read_tick = read, read_tick end
     return out
   end
   -- The items that spoil into item (copper-bacteria into copper-ore): names, memoized.
@@ -2385,6 +2423,64 @@ return function(api)
     left[#left+1] = 'what is carried off the surface (rockets, cargo pods, vehicles, characters)'
     lines[#lines+1] = 'not counted in used: ' .. table.concat(left, '; ')
     return lines
+  end
+  -- (d26 batch230, Sol #2425: a recorder of a platform's explosives every 5 s got every other frame from the 10 s reuse)
+  -- stock: an item's count on the whole surface by place, read now and never reused: the scan's own counts (opts.stock),
+  -- so the same total and places as supply's where. A call on a copy of world n's 07:31 save: Asterion (platform-16,
+  -- 7460 buildings in the census) 16-17 ms against 35 for the supply read, platform-4 (1509) 5; planets cost more a
+  -- building (Aquilo 587: 6.5 ms, Fulgora 3836: 21-25, Gleba 4265: 19-20; Nauvis 49944 about 60). Platforms about 2.3 ms +
+  -- 1.9 us a building, planets 3.9 ms + 4.5 us. So one read an agent a STOCK_EVERY for the same surface and item, and none
+  -- on a surface the census counts more than STOCK_MAX buildings on (about 21 ms and 15 ms there; a planet it has not
+  -- counted yet too). Module state, as replies.
+  local STOCK_EVERY, STOCK_MAX, stock_last = 300, {platform=10000, planet=2500}, {}
+  M.STOCK_EVERY, M.STOCK_MAX = STOCK_EVERY, STOCK_MAX
+  function M.stock(p, surface, item, a)
+    assert(a.stock == true, 'stock is true')
+    assert(prototypes.item[item], 'stock is for an item (a fluid: supply {item} gives its segments)')
+    for _, k in ipairs({'near', 'radius', 'belt_positions', 'belt_tiles', 'all_stopped', 'makers', 'consumers', 'from', 'requesters', 'split'}) do
+      if a[k] ~= nil then error('stock counts the whole surface by place: no ' .. k .. ' with it', 0) end
+    end
+    local tick = game.tick
+    if api.surface_buildings then
+      local n = api.surface_buildings(surface)
+      local kind = try(function() return surface.platform end) and 'platform' or 'planet'
+      if n and n > STOCK_MAX[kind] then
+        error(string.format('stock reads a platform of at most %d buildings, a planet of at most %d; the census counts %d on %s. supply {item, surface} reads it (reused within %d s)',
+          STOCK_MAX.platform, STOCK_MAX.planet, n, surface.name, REUSE_TICKS / 60), 0)
+      elseif not n and kind == 'planet' then
+        error(string.format('stock: the census has not counted the buildings on %s yet (a planet is read once it has, at most %d)', surface.name, STOCK_MAX.planet), 0)
+      end
+    end
+    for k, last in pairs(stock_last) do if tick - last >= STOCK_EVERY or last > tick then stock_last[k] = nil end end
+    local key = string.format('%s|%s|%s', tostring(p.index or p.name), tostring(surface.index or surface.name), item)
+    local last = stock_last[key]
+    if last then
+      error(string.format('stock: one read a %d s for the same surface and item; yours of %s on %s was at tick %d; the next from tick %d (in %.1f s)',
+        STOCK_EVERY / 60, item, surface.name, last, last + STOCK_EVERY, (last + STOCK_EVERY - tick) / 60), 0)
+    end
+    stock_last[key] = tick
+    local want = {[item]=true}
+    for _, n in ipairs(M.spoil_sources(item)) do want[n] = true end
+    local scan = M.scan(surface, p.force, want, {packs=packs_of(p.force), stock=true})
+    local t = scan.items[item]
+    if api.ground_index then
+      local g = try(function() return api.ground_index(p.force, surface, item) end)
+      if g and g.count > 0 then t.ground, t.ground_as_of = g.count, string.format('the ground watch\'s pass %ds ago', math.floor((tick - (g.as_of or tick)) / 60 + 0.5)) end
+    end
+    local total, parts, places = M.where(t)
+    local c = scan.counted
+    local capped = {}
+    if c.crafters >= MAX_MACHINES then capped[#capped+1] = 'crafters' end
+    if c.chests >= MAX_CHESTS then capped[#capped+1] = 'chests' end
+    if c.belts >= MAX_BELTS then capped[#capped+1] = 'belts' end
+    if c.inserters >= MAX_INSERTERS then capped[#capped+1] = 'inserters' end
+    if c.robots >= MAX_ROBOTS then capped[#capped+1] = 'robots' end
+    return {item=item, surface=surface.name, stock=true, read='fresh', read_tick=tick, as_of=string.format('live (tick %d)', tick),
+      total=total, where=total > 0 and (total .. ': ' .. table.concat(parts, ', ')) or ('none on ' .. surface.name), places=places,
+      counted=string.format('%d crafters, %d chests, %d of %d belts, %d inserters, %d robots%s', c.crafters, c.chests, c.belts, c.belts_total,
+        c.inserters, c.robots, #capped > 0 and ' (stopped at the cap: ' .. table.concat(capped, ', ') .. ')' or ''),
+      next_tick=tick + STOCK_EVERY,
+      note=string.format('counts read at read_tick, never reused: supply\'s where (normal quality; on the ground: the ground watch\'s last pass); places lists those holding it. One read a %d s for the same surface and item (yours); no belt lines, networks or machines. Read only', STOCK_EVERY / 60)}
   end
   function M.supply_fresh(surface, force, item, area, positions)
     if prototypes.fluid and prototypes.fluid[item] then return M.fluid_supply(surface,force,item,area) end

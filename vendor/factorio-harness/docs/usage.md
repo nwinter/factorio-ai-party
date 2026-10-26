@@ -15727,3 +15727,100 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   transfer of a pack into silo (14.5,140.5) naming Loom.
 - Docs: agent/ref/space-age.md (platform_create).
 - Tests: tests/d26_batch229.lua (in lua.test.ts).
+## d26 batch230 (SF, Sol #2425: fresh stock snapshots at 5 s)
+- Cause: supply keeps a read 10 s (supply.lua M.reuse, REUSE_TICKS 600). Sol's recorder read
+  `supply {surface: "platform-16", item: "explosives", belt_positions: true}` (Asterion) every 5 s, so every other
+  frame was the read before: 7 unique of 13 at 66415490..66419090.
+- The supply read's cost, on a private copy of world n's 07:31 save (each read uncached; a measuring copy with the
+  reuse off):
+  - Asterion (platform-16; 7460 buildings in the census, 7716 entities found): 34-40 ms a call (the first 84), reply
+    8.9 KB. Profile parts a read: supply.scan 23.7 ms (supply.find 4.6, supply.belts 8.3, supply.inserters 1.0,
+    supply.crafters 0.4, sorting the found entities by type ~9), the rest of the read (belt lines and positions, machines,
+    lines) ~8.6, board.team 1.7,
+    platalerts.lines 0.7, encode 0.45.
+  - Nauvis, the same item: 184-204 ms a call, reply 6.2 KB. supply.scan 179 ms (supply.find 33, supply.stock 55,
+    supply.chests 19, supply.requesters 11, supply.inserters 9, supply.belts 9, supply.robots 5, supply.crafters 4).
+  - So a fresh supply read every 5 s (a `fresh: true`) would cost 35 ms each on Asterion: the lean stock read instead.
+- `supply {item, stock: true}` (whole surface): the item's count there by place, read now and never reused: `stock`
+  true, `read` "fresh", `read_tick`, `as_of`, `total`, `where` (the same text as supply's `where`) and `places`
+  (`{label: count}` for the places holding it: belts, requester chests, ..., machine outputs, users' inputs, inserter
+  hands, robots, fuel slots, on the ground, characters), `counted`, `next_tick`.
+  - The counts are the supply scan's own (opts.stock leaves out spots, spoilage, logistic networks, chests' orphan
+    requests, belt tiles and inserter targets), so the same total and places as `where`. On the copy at one tick:
+    stock and supply both `2732: belts 2650, machine outputs 24, users' inputs 42, inserter hands 16`, and again at
+    66384739 (2731). Normal quality, as `where`; on the ground from the ground watch's last pass, as `where`. In-orbit
+    hubs and placed vehicles are not added (supply's text adds them after `where`'s total).
+  - One read an agent a 5 s (300 ticks) for the same surface and item: sooner is refused, `stock: one read a 5 s for
+    the same surface and item; yours of explosives on platform-16 was at tick N; the next from tick N+300 (in 5.0 s)`.
+    A refused call takes no read. Another agent or item reads now.
+  - Size: a platform of at most 10000 buildings and a planet of at most 2500, by the census's count of the surface
+    (census.lua M.surface_buildings: the snapshot types, ours); a planet the census has not counted yet is refused, a
+    platform not counted is read. Refusal: `stock reads a platform of at most 10000 buildings, a planet of at most
+    2500; the census counts 49944 on nauvis. supply {item, surface} reads it (reused within 10 s)`.
+  - Not with near, radius, belt_positions, belt_tiles, all_stopped, makers, consumers, from, requesters or split; not
+    for a fluid. compact leaves a stock reply as it is.
+  - On a platform the stock read finds each group of types apart (a find per group): on Asterion the finds cost what
+    one does and the 9 ms of sorting one find's entities by type is left out. On a planet a find per group cost
+    1.6-2.2 times one find (Vulcanus 39-43 ms against 25), so planets keep the one find.
+- Cost of a stock read on the copy (a call, reply blocks included; five agents at one paused tick):
+  - Asterion 16-20 ms (the supply read at the same tick: 34.9 ms, 9.0 KB). Parts a read: supply.scan 14.1 ms
+    (supply.find 7.2, supply.belts 5.8, supply.crafters 0.33, supply.inserters 0.30), board.team 2.5,
+    platalerts.lines 0.9, encode 0.27. Reply: the stock fields 0.7 KB, 0.9-1.4 KB with clock and team lines.
+  - platform-4 (1509 buildings): 5.1-5.8 ms. Aquilo (587): 6.4-6.5 ms (supply 15.9). Fulgora (3836): 21-25 ms
+    (supply 32). Gleba (4265): 19-20 ms (supply 22). Nauvis (49944): about 60 ms of reads (find 34, belts 18,
+    robots 3, hands 2, chests 2; probe), refused. Fit: platforms about 2.3 ms + 1.9 us a building, planets 3.9 ms +
+    4.5 us: the caps are about 21 ms and 15 ms.
+  - At 5 s on Asterion: 17 ms every 5 s, against the supply read's 35 ms every 10 s the recorder costs now.
+- Every supply reply (the plain read and `requesters`) now says `read`: "fresh" (read now) or "reused" (the same read
+  within 10 s), and `read_tick`: the tick it was read (compact keeps both). For existing callers nothing else changed:
+  the reuse (10 s, the same key) and `as_of`'s text are as before.
+- Test: tests/d26_batch230.lua (in lua.test.ts), failing on main.
+
+## d26 batch231 (RG, Astra #2427: a request cap below a departure gate)
+- Case (runs/shift80/astra/journal.jsonl): Kestrel II waited at Fulgora (stop 1) with `item_count
+  low-density-structure >= 3500` among its waits and section 2 `low-density-structure 3500..3500 from fulgora`. A
+  remote-lane plan submitted at 66523549 (its dry run at 66523494 accepted it) ran at 66620993: three
+  `wait_until item_count` steps, then `requests` section 2 `1000..2100 from fulgora`, section 21 off, then
+  `platform_schedule {stop: 1, wait: [...]}` without the low-density-structure wait. The hub sent 1400 down to
+  Fulgora, and the schedule step was refused: `nothing changed: its new waits at stop 1 (fulgora), where it waits,
+  hold now: ...; go: true makes the edit anyway`. The ship stayed on a wait it could no longer meet.
+- The game, on a private copy of world n's 07:47 save (tick 66651206), maxes lowered by script:
+  - Stopped: Kestrel IVc at Fulgora, iron-plate `0..2000 from fulgora` with 5857 held. The next tick 1000 (its 10
+    trash slots) were in the trash; cargo pods took the trash down a load at a time; the hub held 2000 after 120 ticks
+    and the trash was empty by 2340 ticks. All 3857 went down.
+  - In flight: Kestrel II (fulgora->aquilo), low-density-structure maxes 500 (fulgora) + 1000 (nauvis) with 3500
+    held. The next tick 450 were in the trash (9 of its 10 slots free, 50 a stack); the other 3050 stayed in the
+    hub, unchanged 2346 ticks later.
+  - Every hub there had 10 trash slots.
+- requests (the write and `dry_run: true`) on a platform hub: `waits_unmet`, a line for each `item_count` wait (`>=`,
+  `>`, `=`) of the stop it waits at and of its next stop (in flight: the stop it flies to) whose number the new maxes
+  from that stop's planet (added up, the sections that are on) leave unreached, when the change altered that max:
+  `low-density-structure: stop 1 (fulgora), where it waits now, waits for item_count low-density-structure >= 3500;
+  its requests from fulgora would keep at most 2100 there (were 3500), so that wait cannot hold while it is there
+  (the hub holds 3500 now)`; a stop whose waits are joined by or says another group can send it on. A max from another
+  planet keeps nothing at that stop (KEEP_RULE), so no line for it.
+- `sends_down` in flight: only what the trash has room for goes now (`get_insertable_count` on the hub's trash):
+  `2000 over its max 1500: 450 go to the hub's trash now (the room its trash has) and down to aquilo at its next stop,
+  asked or not; 1550 stay in the hub while it flies`. Stopped, over a max from another planet: `at most N (its 10 trash
+  slots) go to the hub's trash once it flies ...; the rest stays in the hub while it flies`. KEEP_RULE says both, with
+  the copy's numbers. The stopped case (all over the stop's max goes down there) is as before.
+- queue_submit `dry_run: true`: `world_checks`, read now, each step as if it ran now (the steps before it are not
+  applied; `world_checks_note` gives the tick):
+  - each `platform_schedule` step as the call reads it before it changes anything (space.lua schedule_check):
+    `refused if it ran now:` with the call's own refusal (no schedule, a stop or current out of range, the stop's
+    waits, keep_leg flying no leg or its destination not in the stops, current on the stop it waits at or flies to,
+    an edit that makes it leave at once without `go: true`, and every refusal of the arguments alone), and `when it
+    runs:` what a refusal then turns on (whether it waits at that stop and the new waits hold then; the current stop
+    then; the leg it flies then; a schedule change fails when the platform still reads no_schedule or no_path 300 ticks
+    after it). The call's argument checks are one function (arg_checks) run first by the call and by the check: a bad
+    `paused` with `stops` is now refused before the stops are written.
+  - the first 4 `requests` steps on a platform as their dry run: their `waits_unmet` and `sends_down` lines (each about
+    5 ms on the copy; past 4 named, not read).
+  - Checked on the copy: 15 platform_schedule argument and state cases, each step's `refused if it ran now:` text the
+    same as the direct call's refusal (Kestrel IVc at Fulgora). Astra's shape (a requests step lowering holmium-plate
+    to 600 at Fulgora, then a stop 2 waits edit whose waits held) read: `step 2 (requests Kestrel IVc): if it ran now:
+    holmium-plate: stop 2 (fulgora), where it waits now, waits for item_count holmium-plate >= 1000; its requests from
+    fulgora would keep at most 600 there ...` and `step 3 (platform_schedule Kestrel IVc stop 2): refused if it ran
+    now: nothing changed: its new waits at stop 2 (fulgora), where it waits, hold now: ...`.
+  - Cost on the copy: that 5-step dry run 9-12 ms against 1.6-3.0 ms for a 1-step plan with nothing to check.
+- Test: tests/d26_batch231.lua (in lua.test.ts), failing on main.
