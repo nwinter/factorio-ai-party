@@ -671,6 +671,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mm-legend i.mv-fight { background: rgba(224, 78, 58, .25); border-radius: 50%; box-shadow: 0 0 0 1.5px #ff5a44; }
 .mm-legend i.mv-group { background: #ff5a44; transform: rotate(45deg) scale(.8); }
 .mm-legend i.mv-big { background: #ff7a1a; border-radius: 50%; box-shadow: 0 0 0 2px #1b1f1a, 0 0 0 3.5px #ff7a1a; }
+.mm-legend i.mv-vehicle { background: #4fc3f7; border: 1px solid #000; box-shadow: inset 0 0 0 3.5px #4fc3f7, inset 0 0 0 5px #000; }
 .map-research { margin: 0 0 6px; color: var(--fx-text); }
 .map-research strong { color: var(--fx-heading); }
 .cam-lines, ul.platforms { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .88rem; }
