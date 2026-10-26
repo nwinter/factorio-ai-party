@@ -70,7 +70,7 @@ def put(bucket, item, tries=3, nice=0):
     """One object; the API answers an occasional 502, so up to `tries` attempts. `nice` lowers wrangler's priority."""
     p, key, ctype, cache = item
     cmd = (["nice", "-n", str(nice)] if nice else []) + wrangler() + [
-        "r2", "object", "put", f"{bucket}/{key}", "--file", str(p), "--remote",
+        "r2", "object", "put", f"{bucket}/{key}", "--file", str(Path(p).resolve()), "--remote",
         "--content-type", ctype, "--cache-control", cache]
     for k in range(tries):
         r = subprocess.run(cmd, cwd=REPO / "site" / "worker", capture_output=True, text=True)
