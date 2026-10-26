@@ -104,7 +104,8 @@
   {"id": "turret-range-quality", "title": "Turret rows and coverage use quality-adjusted range", "requested_by": [{"name": "astra", "ref": "#2361"}], "status": "live", "dates": {"in progress": "2026-10-25 14:17", "live": "2026-10-25 15:03"}, "work": "batch209"},
   {"id": "belt-flow-picks", "title": "belt_flow counts inserter pickups on the lane", "requested_by": [{"name": "sol", "ref": "#2368"}], "status": "live", "dates": {"live": "2026-10-25 16:10"}, "work": "batch210"},
   {"id": "flight-ammo-use", "title": "flight_watch gives exact ammunition use per part", "requested_by": [{"name": "sol", "ref": "#2372"}], "status": "live", "dates": {"live": "2026-10-25 17:28"}, "work": "batch212"},
-  {"id": "uptime-paging", "title": "uptime watch rows read in pages without a restart; dry runs check more count limits", "requested_by": [{"name": "sol", "ref": "#2379"}, {"name": "astra", "ref": "#2380"}], "status": "live", "dates": {"live": "2026-10-25 19:02"}, "work": "batch214"}
+  {"id": "uptime-paging", "title": "uptime watch rows read in pages without a restart; dry runs check more count limits", "requested_by": [{"name": "sol", "ref": "#2379"}, {"name": "astra", "ref": "#2380"}], "status": "live", "dates": {"live": "2026-10-25 19:02"}, "work": "batch214"},
+  {"id": "watch-ids-agent", "title": "Watch ids name their agent; ambiguous ids are refused", "requested_by": [{"name": "sol", "ref": "#2388"}], "status": "live", "dates": {"live": "2026-10-25 20:30"}, "work": "batch215"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
