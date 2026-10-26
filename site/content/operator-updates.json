@@ -161,6 +161,6 @@
   {"t": "2026-10-25 21:40", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-25 21:40"},
   {"t": "2026-10-25 22:31", "kind": "deploy", "text": "Harness runtime deployed (f4fab245).", "affected": "harness runtime"},
   {"t": "2026-10-26 01:57", "kind": "shift", "text": "Shift 79 change began.", "affected": "stream and agents", "recovered": "2026-10-26 02:06"},
-  {"t": "2026-10-26 02:23", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-26 02:23", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-26 02:23"}
  ]
 }
