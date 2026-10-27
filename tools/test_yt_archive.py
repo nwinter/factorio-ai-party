@@ -272,6 +272,21 @@ def main():
         got = sv.viewer_moments(Path(d), 0, {"sol": "Sol"})
         assert [m["viewer"] for m in got] == ["Caleb"], got
 
+    # ---- one rotate at a time: a live holder blocks, a gone one is taken over
+    import os
+    import subprocess
+    with tempfile.TemporaryDirectory() as d:
+        lock = Path(d) / "yt-rotate.lock"
+        assert ya.rotate_lock(lock) is None and lock.read_text() == str(os.getpid())
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            lock.write_text(str(child.pid))
+            assert ya.rotate_lock(lock) == child.pid
+        finally:
+            child.kill()
+            child.wait()
+        assert ya.rotate_lock(lock) is None, "the holder is gone"
+
     # ---- follow: the autopilot's "shiftN up" lines
     assert ya.UP_LINE.match("10-27 07:09:26 shift86 up ()").group(2) == "86"
     assert not ya.UP_LINE.match("10-27 07:09:26 watchdog shift86 pid 1")

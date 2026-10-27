@@ -508,7 +508,41 @@ def ssd_free_gb(path):
         return None
 
 
+def rotate_lock(path):
+    """One rotate at a time (follow's and one started by hand would upload the same shift): a file with the pid; one
+    whose pid is gone is taken over. Returns the holder's pid when another rotate runs, else None (the lock is ours)."""
+    path = Path(path)
+    try:
+        holder = int(path.read_text().strip() or 0)
+    except (OSError, ValueError):
+        holder = 0
+    if holder and holder != os.getpid():
+        try:
+            os.kill(holder, 0)
+            return holder
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            return holder
+    if path.parent.is_dir():
+        path.write_text(str(os.getpid()))
+    return None
+
+
 def rotate(a):
+    if not a.dry_run:
+        holder = rotate_lock(Path(a.state).with_name("yt-rotate.lock"))
+        if holder:
+            print(f"another rotate runs (pid {holder}): nothing done")
+            return 0
+        try:
+            return _rotate(a)
+        finally:
+            Path(a.state).with_name("yt-rotate.lock").unlink(missing_ok=True)
+    return _rotate(a)
+
+
+def _rotate(a):
     videos = all_videos([a.manifest, a.extra])
     have = {v["shift"] for v in videos.values()}
     known = {n for n in finished_shifts(a.runs_dir) if n >= a.from_shift}
