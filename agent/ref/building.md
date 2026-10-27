@@ -72,6 +72,10 @@
   ice platform). Concrete under a building on Aquilo's ice goes as tile entries before it (`{"name":"concrete",
   "position":...}`), on brash ice or ammoniacal ocean ice platform first, then concrete; the game takes the entity's
   ghost over those tile ghosts. The dry run's verdict fails on an entry the real call would refuse, naming the tiles.
+  Cargo bays in a dry run give `cargo_bays`: whether each joins the hub or a landing pad, and through which bay, and
+  the slots it would have after. A bay joins where it shares an edge (any overlap, not a corner alone) with the hub, a
+  pad or a joined bay, through a chain of any length; a bay that links up a built bay joined to nothing adds that bay
+  too; a ghost bay joins nothing until built.
   Example: `./fh call place_ghosts --args '{"entities":[{"name":"assembling-machine-2","position":{"x":20.5,"y":8.5},"recipe":"iron-gear-wheel"}],"dry_run":true}'`
 - `belt_upgrade {position, to?, tiles?, dry_run?}`: the belt line through position traced both ways (up to `tiles`,
   default 256; undergrounds to their pair), each tile replaced by hand with the faster one at its own position and

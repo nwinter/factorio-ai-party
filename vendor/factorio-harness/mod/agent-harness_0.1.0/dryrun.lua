@@ -785,6 +785,12 @@ return function(api)
   -- not_connected_to_hub_or_pad) Each planned cargo bay: whether it joins the platform hub or a landing pad, touching it
   -- edge to edge or a bay that does (built, a ghost, or one planned before it), and the slots that hub or pad would
   -- have after: what its main inventory has now plus each joining bay's inventory bonus. Lines, or nil.
+  -- (d27 batch259 CB, Astra #2483: Kestrel II's bays (-2,54) and (-6,58) "join nothing" against a chain of 24 built bays
+  -- from the hub at (0,0); built, the hub went 539 -> 579) The bays and hubs are followed along the chains, one small
+  -- find each, out of the 16 tiles around the plan. The game (2.0.77, a test platform): a bay joins the hub, a pad or a
+  -- joined bay where their boxes share an edge, by any overlap (a corner alone joins nothing); a chain of any length
+  -- counts; a bay that bridges to an unjoined built bay joins that one too; a ghost joins nothing until built.
+  local BAY_READS = 160  -- entities read along the chains at most (two finds each)
   local function tbox(b)
     return {math.floor(b.left_top.x + 0.5), math.floor(b.left_top.y + 0.5), math.floor(b.right_bottom.x + 0.5), math.floor(b.right_bottom.y + 0.5)}
   end
@@ -798,76 +804,142 @@ return function(api)
     for _, rec in ipairs(recs) do
       if rec.proto and rec.proto.type == 'cargo-bay' and rec.pos then
         local b = api.placewhy and try(function() return api.placewhy.box_at(rec.proto.collision_box, rec.pos, rec.dir or 0) end)
-        if b then planned[#planned+1] = {rec=rec, box=tbox(b)} end
+        if b then planned[#planned+1] = {rec=rec, box=tbox(b), label=string.format('%s %s', rec.name, at(rec.pos))} end
       end
     end
     if #planned == 0 then return nil end
     local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
     for _, b in ipairs(planned) do x0, y0, x1, y1 = math.min(x0, b.box[1]), math.min(y0, b.box[2]), math.max(x1, b.box[3]), math.max(y1, b.box[4]) end
-    local area = {{x0 - 16, y0 - 16}, {x1 + 16, y1 + 16}}
-    local hosts, bays = {}, {}
-    for _, e in ipairs(try(function() return s.find_entities_filtered{area=area, type={'space-platform-hub', 'cargo-landing-pad', 'cargo-bay'}, force=force, limit=64} end) or {}) do
-      if e.valid then
-        local item = {e=e, box=tbox(e.bounding_box), label=string.format('%s %s', e.name, at(e.position))}
-        if e.type == 'cargo-bay' then bays[#bays+1] = item else item.host = item; hosts[#hosts+1] = item end
+    local hosts, bays, seen, queue, reads = {}, {}, {}, {}, 0
+    local function find(area)
+      local out = try(function() return s.find_entities_filtered{area=area, type={'space-platform-hub', 'cargo-landing-pad', 'cargo-bay'}, force=force, limit=64} end) or {}
+      for _, g in ipairs(try(function() return s.find_entities_filtered{area=area, ghost_type='cargo-bay', force=force, limit=64} end) or {}) do out[#out+1] = g end
+      return out
+    end
+    -- each found again by each neighbour's find: known ones by unit number before any other read; labels when printed
+    local function item_of(e)
+      local k = e.unit_number or e
+      local it = seen[k]
+      if it then return it end
+      local kind = e.type
+      it = {e=e, box=tbox(e.bounding_box), ghost=kind == 'entity-ghost', nb={}}
+      seen[k] = it
+      if kind == 'cargo-bay' or it.ghost then bays[#bays+1] = it else hosts[#hosts+1] = it end
+      return it
+    end
+    local function visit(it) if not it.queued then it.queued = true; queue[#queue+1] = it end end
+    local function lbl(it)
+      if not it.label then
+        local e = it.e
+        it.label = it.ghost and string.format('ghost %s %s', e.ghost_name, at(e.position)) or string.format('%s %s', e.name, at(e.position))
+      end
+      return it.label
+    end
+    local function link(a, b) if not a.nb[b] then a.nb[b] = true; b.nb[a] = true; a.nb[#a.nb+1] = b; b.nb[#b.nb+1] = a end end
+    -- the 16 tiles around the plan (the nearest joined for a bay that joins nothing), then along the chains
+    for _, e in ipairs(find({{x0 - 16, y0 - 16}, {x1 + 16, y1 + 16}})) do visit(item_of(e)) end
+    for i, b in ipairs(planned) do
+      b.nb = {}
+      visit(b)
+      for j = 1, i - 1 do if touches(b.box, planned[j].box) then link(b, planned[j]) end end
+    end
+    local i, short = 1, false
+    while i <= #queue do
+      local it = queue[i]
+      i = i + 1
+      if reads >= BAY_READS then short = true; break end
+      reads = reads + 1
+      local b = it.box
+      for _, e in ipairs(find({{b[1] - 1, b[2] - 1}, {b[3] + 1, b[4] + 1}})) do
+        local o = item_of(e)
+        if o ~= it and touches(o.box, b) then link(it, o); visit(o) end
       end
     end
-    for _, g in ipairs(try(function() return s.find_entities_filtered{area=area, ghost_type='cargo-bay', force=force, limit=64} end) or {}) do
-      if g.valid then bays[#bays+1] = {e=g, box=tbox(g.bounding_box), label=string.format('ghost %s %s', g.ghost_name, at(g.position))} end
-    end
-    -- what joins: the hosts, then bays touching a joined one, round after round (built and ghosts, then the plan's)
+    -- what joins: from the hosts along the touching edges, through the items ok(item) takes (one pass, any chain length)
     local joined = {}
-    for _, h in ipairs(hosts) do joined[#joined+1] = h end
-    local function spread(list)
-      local changed = true
-      while changed do
-        changed = false
-        for _, b in ipairs(list) do
-          if not b.host then
-            for _, j in ipairs(joined) do
-              if touches(b.box, j.box) then b.host = j.host; b.via = j; joined[#joined+1] = b; changed = true; break end
-            end
-          end
+    local function join(seeds, ok)
+      local q, k = seeds, 1
+      while k <= #q do
+        local j = q[k]
+        k = k + 1
+        for _, b in ipairs(j.nb) do
+          if not b.host and ok(b) then b.host, b.via = j.host, j; joined[#joined+1] = b; q[#q+1] = b end
         end
       end
     end
-    spread(bays)
-    spread(planned)
+    -- now: built bays only (a ghost joins nothing until built), for the slots read from each hub or pad
+    local seeds = {}
+    for _, h in ipairs(hosts) do h.host = h; joined[#joined+1] = h; seeds[#seeds+1] = h end
+    join(seeds, function(b) return b.e and not b.ghost and b.e.type == 'cargo-bay' end)
+    local built, now_host = {}, {}
+    for _, b in ipairs(bays) do if not b.ghost then built[#built+1] = b; now_host[b] = b.host end end
+    -- after the plan: ghosts and the planned bays too (a planned bay may bridge to a built bay joined to nothing)
+    seeds = {}
+    for _, j in ipairs(joined) do seeds[#seeds+1] = j end
+    join(seeds, function() return true end)
     local lines, by_host = {}, {}
+    local function gain(h, orphan)
+      local t = by_host[h] or {n=0, planned=0, orphans=0}
+      by_host[h] = t
+      t.n = t.n + 1
+      if orphan then t.orphans = t.orphans + 1 else t.planned = t.planned + 1 end
+    end
+    local function ghosted(b)  -- a ghost bay on its way to the host (it joins once that is built)
+      local v, n = b.via, 0
+      while v and v ~= v.host and n < BAY_READS do
+        if v.ghost then return true end
+        v, n = v.via, n + 1
+      end
+      return false
+    end
     for _, b in ipairs(planned) do
-      local name = string.format('%s %s', b.rec.name, at(b.rec.pos))
       if b.host then
-        by_host[b.host] = by_host[b.host] or {n=0, bonus=0, unknown=false}
-        local h = by_host[b.host]
-        h.n = h.n + 1
-        lines[#lines+1] = string.format('%s joins %s%s', name, b.host.label, b.via == b.host and ' (touching it)' or ' through ' .. (b.via.label or (b.via.rec and string.format('%s %s', b.via.rec.name, at(b.via.rec.pos))) or '?'))
+        gain(b.host)
+        lines[#lines+1] = string.format('%s joins %s%s%s', b.label, lbl(b.host), b.via == b.host and ' (touching it)' or ' through ' .. lbl(b.via),
+          ghosted(b) and ' once the ghost bays on the way are built' or '')
       else
         local best, bd
         for _, j in ipairs(joined) do
           local dx = math.max(j.box[1] - b.box[3], b.box[1] - j.box[3], 0)
           local dy = math.max(j.box[2] - b.box[4], b.box[2] - j.box[4], 0)
           local d = math.max(dx, dy)
-          if not bd or d < bd then best, bd = j.label or (j.rec and string.format('%s %s', j.rec.name, at(j.rec.pos))), d end
+          if not bd or d < bd then best, bd = j, d end
         end
-        lines[#lines+1] = string.format('%s joins nothing: it touches no hub, landing pad or bay joined to one, edge to edge%s', name,
-          best and string.format('; the nearest joined: %s, %d tiles from its edge', best, bd) or '; no hub or landing pad within 16 tiles')
+        lines[#lines+1] = string.format('%s joins nothing: it touches no hub, landing pad or bay joined to one, edge to edge%s', b.label,
+          short and string.format('; none found along its chains within %d hubs, pads and bays read (the reads stop there)', BAY_READS)
+          or best and (bd == 0 and string.format('; it meets %s at a corner only, which joins nothing', lbl(best))
+            or string.format('; the nearest joined: %s, %d tiles from its edge', lbl(best), bd))
+          or '; no chain of bays from it reaches a hub or landing pad')
+      end
+    end
+    for _, b in ipairs(built) do
+      if b.host and not now_host[b] then
+        gain(b.host, true)
+        lines[#lines+1] = string.format('%s (built, joined to nothing now) joins %s through %s once the plan%s built', lbl(b), lbl(b.host), lbl(b.via),
+          ghosted(b) and ' and the ghost bays on the way are' or ' is')
       end
     end
     -- A bay's slots are not in the API (cargo-bay has no inventory_size_bonus on 2.0.77): read from the host, its slots
     -- now less its prototype's own, over the built bays joined to it now.
-    for h, t in pairs(by_host) do
-      local e = h.e
-      local which = e.type == 'space-platform-hub' and defines.inventory.hub_main or defines.inventory.cargo_landing_pad_main
-      local inv = try(function() return e.get_inventory(which) end)
-      local now = inv and #inv
-      local own = try(function() return e.prototype.get_inventory_size(which) end)
-      local built = 0
-      for _, b in ipairs(bays) do if b.host == h and b.e.type == 'cargo-bay' then built = built + 1 end end
-      local each = now and own and built > 0 and (now - own) % built == 0 and (now - own) / built or nil
-      lines[#lines+1] = string.format('%s: %s slots now (%s its own, %d built bay%s joined)%s', h.label, now and tostring(now) or '?', own and tostring(own) or '?',
-        built, built == 1 and '' or 's',
-        each and string.format(', %d after the %d planned bay%s joining it (%d a bay, as read from it)', now + each * t.n, t.n, t.n == 1 and '' or 's', each)
-          or string.format('; the %d planned bay%s joining it add slots the API does not give (no built bay to read them from)', t.n, t.n == 1 and '' or 's'))
+    for _, h in ipairs(hosts) do
+      local t = by_host[h]
+      if t then
+        local e = h.e
+        local which = e.type == 'space-platform-hub' and defines.inventory.hub_main or defines.inventory.cargo_landing_pad_main
+        local inv = try(function() return e.get_inventory(which) end)
+        local now = inv and #inv
+        local own = try(function() return e.prototype.get_inventory_size(which) end)
+        local n = 0
+        for b, hh in pairs(now_host) do if hh == h then n = n + 1 end end
+        local each = not short and now and own and n > 0 and (now - own) % n == 0 and (now - own) / n or nil
+        local plural = function(k, what) return string.format('%d %s bay%s', k, what, k == 1 and '' or 's') end
+        local who = plural(t.planned, 'planned') .. (t.orphans > 0 and ' and ' .. plural(t.orphans, 'built') or '')
+        lines[#lines+1] = string.format('%s: %s slots now (%s its own, %d built bay%s joined)%s', lbl(h), now and tostring(now) or '?', own and tostring(own) or '?',
+          n, n == 1 and '' or 's',
+          each and string.format(', %d after the %s joining it (%d a bay, as read from it)', now + each * t.n, who, each)
+            or short and string.format('; the %s joining it: the chains were read only to %d entities, so the slots after are not counted', who, BAY_READS)
+            or string.format('; the %s joining it add slots the API does not give (no built bay to read them from)', who))
+      end
     end
     return lines
   end
