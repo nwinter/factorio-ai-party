@@ -47,7 +47,8 @@ def build(d, content, runs):
     path.write_text(json.dumps(content))
     out = Path(d) / f"dist-{content['archive']}"
     r = subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(runs),
-                        "--content", str(path)], capture_output=True, text=True)
+                        "--content", str(path), "--videos", str(Path(d) / "no-videos.json"),
+                        "--r2", str(Path(d) / "no-r2.json")], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     r = subprocess.run([sys.executable, str(SITE / "check.py"), str(out)], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout

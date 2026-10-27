@@ -1901,10 +1901,10 @@ def main():
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
-    ap.add_argument("--videos", default=str(SITE / "content" / "videos.json"),
-                    help="the shifts' YouTube videos (tools/yt_upload.py writes it; missing: no videos)")
-    ap.add_argument("--r2", default=str(videos_page.R2_JSON),
-                    help="the shifts that play on R2 (site/videos_page.py refresh writes it; missing: none)")
+    ap.add_argument("--videos", help="the shifts' YouTube videos (default site/content/videos.json, which "
+                    "tools/yt_archive.py writes; missing: no videos)")
+    ap.add_argument("--r2",
+                    help="the shifts that play on R2 (default site/content/r2.json: site/videos_page.py refresh; missing: none)")
     ap.add_argument("--thumbs", default=os.environ.get("POG_SITE_THUMBS") or str(videos_page.THUMBS),
                     help="the shifts' thumbnails, shift-N.jpg (site/videos_page.py refresh makes them)")
     ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
@@ -1913,6 +1913,11 @@ def main():
     # checkout, where the repo's runs/ is the live run's and the stats caches land in its shift folders
     if os.environ.get("POG_TEST") == "1" and os.path.realpath(args.runs_dir) == os.path.realpath(REPO / "runs"):
         raise SystemExit("POG_TEST=1: build.py needs --runs-dir (not the repo's runs/) in a test run")
+    # (batch265) a test build reads the live videos.json and r2.json only when it names them: those files now exist in
+    # the checkout the gate tests in
+    test = os.environ.get("POG_TEST") == "1"
+    args.videos = args.videos or ("" if test else str(SITE / "content" / "videos.json"))
+    args.r2 = args.r2 or ("" if test else str(videos_page.R2_JSON))
     if args.content:
         global CONTENT, AGENTS
         CONTENT = json.loads(Path(args.content).read_text())
