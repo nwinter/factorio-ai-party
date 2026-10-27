@@ -361,7 +361,8 @@
   remote view, in sight): per crafting machine (16 a call), each ingredient of its
   next craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the
   places within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer
-  only over its request), with how many; donors for the first 8 short items a call (`donors_skipped`); the ground as
+  only over its request), with how many. A craft takes ingredients of its recipe's quality only (`recipe_quality`): held,
+  short and donors count that quality; `other_quality` is the rest of that item in the input; donors for the first 8 short items a call (`donors_skipped`); the ground as
   the ground watch last binned it. `area` (up to 128x128) lists the machines short of something (`all: true`: every
   one, those short of nothing as a line); `more` says how many are there, `skip` reads on. `positions` past 16 come
   back in `left`. Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`

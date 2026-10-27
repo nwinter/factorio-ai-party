@@ -36,8 +36,9 @@ return function(api)
     return false
   end
   -- (d19 batch45) for a caller scanning many items round centres in one box (ingredient_gap): our holders there found
-  -- once and each one's output read once (normal quality, by item: held), landed pods, and ground(item) for the
-  -- stacks on the ground (the ground watch's cells, or nil). A box over MAX_NEAR a side: holders nil (each scan finds).
+  -- once and each one's output read once (by item and quality: held, keyed name or name@quality), landed pods, and
+  -- ground(item) for the stacks on the ground (the ground watch's cells, every quality, or nil). A box over MAX_NEAR a
+  -- side: holders nil (each scan finds).
   local MAX_NEAR=320
   -- (each holder's type read cost as much as its inventory: crafters, chests and pads found apart)
   local NEAR_FINDS={{{'assembling-machine','furnace','agricultural-tower'},'output'},{{'container','logistic-container','temporary-container'},defines and defines.inventory.chest,true},
@@ -54,13 +55,14 @@ return function(api)
           local okc,list=false,nil
           if ok and inv then okc,list=pcall(inv.get_contents) end
           if okc and #list>0 then
-            -- what a scan needs of a holder, read once: {e, inv, name, position, chest, count (normal quality)}
+            -- what a scan needs of a holder, read once: {e, inv, name, position, chest, count (of that quality)}
+            -- (d27 batch262 IQ, Astra #2536: a legendary recipe's donors were normal stock) every quality, by key
             local hn,hq=e.name,e.position
             for _,c in ipairs(list) do
-              if c.quality=='normal' or c.quality==nil then
-                local l=held[c.name]; if not l then l={}; held[c.name]=l end
-                l[#l+1]={e=e,inv=inv,name=hn,position=hq,chest=find[3],count=c.count}
-              end
+              local q=c.quality
+              local k=(q==nil or q=='normal') and c.name or c.name..'@'..(type(q)=='string' and q or q.name)
+              local l=held[k]; if not l then l={}; held[k]=l end
+              l[#l+1]={e=e,inv=inv,name=hn,position=hq,chest=find[3],count=c.count}
             end
           end
         end
@@ -86,9 +88,10 @@ return function(api)
     -- (M.near): what a caller scanning many items round nearby centres found once; each place kept within the radius
     -- here. Its makers are only the holders holding some.
     local near=opts.near
-    local held=near and near.holders and quality=='normal' and not opts.whole and not opts.types
+    local held=near and near.holders and not opts.whole and not opts.types
     local far=opts.radius or 128
-    for _,x in pairs(held and (near.held[item] or {}) or (opts.surface or p.surface).find_entities_filtered(f)) do
+    local qkey=quality=='normal' and item or item..'@'..quality
+    for _,x in pairs(held and (near.held[qkey] or {}) or (opts.surface or p.surface).find_entities_filtered(f)) do
       local h=held and x or nil
       local e=h and h.e or x
       if e.valid and not (h and api.distance(centre,h.position)>far) then
@@ -143,15 +146,25 @@ return function(api)
       end
       -- (d25 batch198 QK2, Astra #2325) the stacks of the quality asked (normal when none), each within the radius
       -- (a row: the stacks of a 32-tile cell there, at the nearest one); near's cells are by name, every quality
+      -- (d27 batch262 IQ) with near, its cells (every quality) only say whether stacks lie within the radius: then the
+      -- stacks there of the quality asked are read (most short items have none near)
       local g
-      if near then g=near.ground(item) else g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item,
+      if near then
+        g=near.ground(item)
+        local any=false
+        for _,c in ipairs(g and g.cells or {}) do if opts.whole or api.distance(centre,c.position)<=far then any=true; break end end
+        if any and api.on_ground then
+          g=M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item,{quality=quality,position=not opts.whole and centre or nil,radius=not opts.whole and far or nil}) end)
+        elseif not any then g=nil end
+      end
+      if not near then g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item,
         {quality=quality,position=not opts.whole and centre or nil,radius=not opts.whole and (opts.radius or 128) or nil}) end) end
       for _,c in ipairs(g and g.cells or {}) do
         local d=api.distance(centre,c.position)
         if opts.whole or d<=(opts.radius or 128) then
           on_ground=(on_ground or 0)+c.count
           places[#places+1]={name=string.format('%d stack%s on the ground',c.stacks,c.stacks==1 and '' or 's'),position=c.position,count=c.count,distance=d,ground=true,
-            quality=not near and quality or nil}
+            quality=quality}
         end
       end
     end
