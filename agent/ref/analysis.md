@@ -450,7 +450,8 @@
   from it passes within a worm's or spawner's reach the map shows. A call reads up to 4 squares of 128 tiles of the
   construction area (fewer once 60 ghosts are read); the first line names `sources_from` for the next squares.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
-  labs waiting for packs, and what requester chests lack, in lines.
+  labs waiting for packs, and what requester chests lack, in lines. Short machines are missing stock, or held back by
+  their feeder's condition (its source holds the ingredient: the inserter, condition, value now, source stock).
 - `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), for hits our force saw:
   what dealt each hit (a fire, projectile or stream) and the game's cause with its position, facing and distance against
   its range, both from the game's event. A fire's cause is the turret whose stream lit the first fire; a hit past its

@@ -189,7 +189,7 @@ do
   local force={name='player',current_research={name='automation-2'},logistic_networks={nauvis={{requester_points={pt}}}}}
   local SH=dofile('mod/agent-harness_0.1.0/shortages.lua'){reuse=function(_,fn) return fn() end,status_name=function(e) return e.st end}
   local r=SH.read({surface=surface,force=force},{})
-  eq(r.lines[1],'stopped short of an ingredient: copper-cable short of copper-plate (2 machines); engine-unit short of steel-plate (1 machine)')
+  eq(r.lines[1],'stopped short of an ingredient, missing stock: copper-cable short of copper-plate (2 machines); engine-unit short of steel-plate (1 machine)')
   eq(r.lines[2],'no fuel: 1 boiler')
   eq(r.lines[3],'power: 1 machines on low power (1 electric-mining-drill), 0 on no power')
   eq(r.lines[4],'labs: 1 of 2 wait for science packs (research automation-2)')
