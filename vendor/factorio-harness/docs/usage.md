@@ -16450,6 +16450,53 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - The rest is the stream service (tools/stream/viewers.py: the lane 12 a minute a viewer, no gap, 20 in all; the relay
   3 s, 3 s a viewer, 8 waiting) and the site (the Worker's 500 characters): docs/VIEWERS-NOTES.md "d27 batch263".
 - Test: tests/audience.lua (fails on main: 300 ~= 1200).
+## d27 batch269 (BS, Sol #2570: belt_flow counted stacks where it should count items)
+- Sol (shift86, Vulcanus): 4 big mining drills (1267 tungsten ore a minute) feed a fast belt; `belt_flow` read the line
+  after the merge at 634/min and the plain tile (-62.5,384.5) at 632/min (316 a lane), and an exact_tile read at the
+  provider tile (-44.5,209.5) gave through 1108/min (passed_on in stacks + picked in items).
+- Read on a copy of world n's 08:54 save (2.0.77), the force's `belt_stack_size_bonus` 1:
+  - a lane entry of `get_detailed_contents()` is a stack: one `unique_id`, `stack.count` items; `#line` counts entries,
+    `get_contents()` and `get_item_count()` count items (a tile with 4 entries of 2: 4, 8, 8);
+  - a big mining drill (prototype `drops_full_belt_stacks` true) puts stacks of 1 + the bonus on a plain belt: bonus 0
+    one item, 1 stacks of 2, 3 stacks of 4; an electric mining drill (false) one item at bonus 1 and 3;
+  - a stack inserter puts stacks of 2 on a belt at bonus 1; inserter, fast and bulk inserters one item;
+  - inserters take items: a yellow or fast inserter (hand 3) takes 3 from stacks of 2, and the stack it took part of
+    stays on the lane with its `unique_id` and a lower count (2 -> 1 on the pickup tile);
+  - the stack-inserter research gives +1; transport-belt-capacity-1 and -2 +1 each (not researched in world n);
+  - a lane tile holds 4 entries whatever their count (4 stacks of 4 at bonus 3).
+- belt_flow (beltsample.lua) counts items everywhere it counted entries: a lane's `left`/`passed` and `rate`,
+  `entered`, `held` and `held_max`, `on_tile`, `passed_on` (the items of each stack seen on what the tile feeds), the
+  exact tile's `taken` and `not_seen_after`, the merges' totals, and measures.lua's watch line ("N items passed").
+  Part of a stack taken off the tile (its count fell, the id stayed) counts as left, and on an exact tile as taken.
+- Added: per lane `stacks_rate` and `stacks` (stacks that left), `stack_max` (the largest stack seen, when over 1),
+  `held_stacks`; the state says `N items/min`, with `(S stacks/min, up to K a stack)` where stacks were seen; a
+  section's `lane_cap {stacks, items}`; the reply's `stacking {belt_stack_size, largest, lanes, line}` (the line is in
+  `lines` when stacks were seen). Every rate text says items/min.
+- Kept in stacks: `full` (4 stacks on the tile) and a lane's cap (speed x 4 x 3600 stacks a minute; the limit's at-cap
+  test compares stacks a minute).
+- A sample running when this deploys keeps its records: an entry with no count is one item.
+- Also: a finished exact_tile sample read "invalid: it reads nothing" in the watch lines (Sol's sleep line, shift86:
+  "belt_flow@71874912/sol ... invalid: it reads nothing; 451 samples"): measures.lua found no points in its result.
+  It is one unit now, gone when its tile was removed or out of sight at every sample.
+- On the copy, branch deployed (bot sol):
+  - line read from (-62.5,384.5), 30 s: 952 + 316 items/min into the merge, 1268 items/min after it (634 stacks/min);
+    the force's production statistics: 12,672 tungsten ore in 10 minutes from those 4 drills (1267 a minute);
+  - exact_tile (-62.5,384.5): 636 + 632 = 1268 items/min, all passed on;
+  - exact_tile (-44.5,209.5): through 1276 items/min (162 seen next + 476 picked by the bulk inserter in 30 s).
+- Cost (profile_ticks {seconds: 30} on the copy while a 30 s sample ran; part beltsample.tick, ms a tick; under
+  Rosetta a run varies by about 0.01 ms):
+  - main: line read (3 points) 0.033, 0.025, 0.028; exact_tile at the provider 0.026, 0.037;
+  - this branch, final: line read 0.035, exact_tile 0.027; earlier builds 0.042, 0.028, 0.035, 0.034 (line) and
+    0.031, 0.033, 0.034 (exact). The final build keeps main's sets (id -> name) with a count table beside them that
+    holds only counts other than 1, and reads an id's name once (an item keeps its name); the count is read each sample
+    (an inserter can take part of a stack).
+- The copy (pog-b269-headless) is stopped.
+- Bundle (compacted): 6,263,977 bytes on main (929570d2), 6,268,874 with this branch (limit 8,388,608).
+- Not changed: trace {throughput: true} (beltrate.lua) gives a lane's capacity as 4 items a tile at its speed and the
+  drills' supply in items; a lane of stacks of 2 carries twice that capacity. trace's lane_full counts entries against
+  4 a tile, which is right in stacks.
+- Docs: agent/ref/analysis.md (belt_flow); the schema's returns. Test: tests/d27_batch269.lua (fails on main: no
+  stacks); tests/beltsample.lua, d24_batch176.lua and d25_batch210.lua say items/min.
 ## d27 batch268 (DP: deconstruct by exact positions, Astra #2561)
 - Astra's shift86 journal: 620 `deconstruct` calls, each `{surface: nauvis, area: 0.2 x 0.2 round one pole's centre,
   entity_names: [one pole name]}`. They were 327 small and 292 medium electric poles and 1 solar panel, and each

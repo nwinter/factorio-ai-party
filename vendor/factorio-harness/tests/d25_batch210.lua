@@ -94,7 +94,7 @@ eq(A.lanes_rate,A.left.rate+A.right.rate); near(A.left.passed,got.on,1)
 eq(A.rate,(A.passed_on+A.picked)*6)
 near(A.rate,(got.T2+got.on)*6,6)
 assert(A.lanes_rate<0.6*A.rate,A.lanes_rate..' vs '..A.rate)
-has(r.lines[1],'/min through it: '..A.passed_on..' seen next on transport-belt (3.5,0.5) + '..A.picked..' picked by the inserters picking from it (bulk-inserter (2.5,1.5) #900 picked '..A.picked)
+has(r.lines[1],' items/min through it: '..A.passed_on..' seen next on transport-belt (3.5,0.5) + '..A.picked..' picked by the inserters picking from it (bulk-inserter (2.5,1.5) #900 picked '..A.picked)
 -- the side belt: no inserter, no change
 eq(r.points[2].kind,'side'); eq(r.points[2].inserters,nil); eq(r.points[2].rate,0)
 -- T4, the end: items taken as they come on are never on the lane (those waiting while the hand swings are)
@@ -102,7 +102,7 @@ local B=r.points[3]
 assert(B.lanes_rate<0.5*B.rate,B.lanes_rate..' vs '..B.rate); eq(B.passed_on,0)
 near(B.picked,got.T4,1); near(B.rate,got.T4*6,6); assert(B.rate>200,B.rate)
 has(r.lines[3],'0 seen next on nothing: the line ends here + '..B.picked..' picked by the inserters picking from it (bulk-inserter (4.5,1.5) #901 picked '..B.picked)
-eq(r.merges[1],string.format('merge at (3.5,0.5): line %g/min + belt (3.5,-0.5) 0/min in (%g/min), %g/min on after it',A.rate,A.rate,B.rate))
+eq(r.merges[1],string.format('merge at (3.5,0.5): line %g items/min + belt (3.5,-0.5) 0 items/min in (%g items/min), %g items/min on after it',A.rate,A.rate,B.rate))
 has(r.note,'a lane\'s rate (left) misses an item taken off the tile before a sample sees it there')
 has(r.note,'a point with inserters picking from it has rate passed_on + picked')
 -- lane entries: T2 saw the odd items come on
@@ -114,7 +114,7 @@ t0.T4=truth.T4
 for t=802,1110 do game.tick=t; step(t); S.tick(t) end
 r=S.handler(p,{})
 near(r.through,truth.T4-t0.T4,1); eq(r.through,r.picked); eq(r.through_rate,r.picked_rate)
-has(r.lines[3],'through the tile: '..r.through_rate..'/min (0 seen next on nothing: the line ends here + '..r.picked..' picked)')
+has(r.lines[3],'through the tile: '..r.through_rate..' items/min (0 seen next on nothing: the line ends here + '..r.picked..' picked)')
 -- a legendary bulk inserter (rotation 0.1 a tick: a half swing in 5 ticks) at a sampled tile: sampled every 5 ticks
 inserter(4.5,-0.5,4.5,0.5,0.1)
 r=S.handler(p,{position={1.5,0.5},seconds=2}); eq(r.every_ticks,5)
