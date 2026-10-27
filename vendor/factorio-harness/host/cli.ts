@@ -16,6 +16,7 @@ import { splitSay, overLimit, SAY_BYTES, SAY_PARTS } from './saysplit.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync, renameSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate, walkLine } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
+import { targetLine } from './target.js';
 import { lookaheadDue } from './lookahead.js';
 import { pollNews } from './polls.js';
 import { trimRepeats, type ShownState } from './repeats.js';
@@ -586,6 +587,14 @@ export function keepDescribe(path: string | undefined, describe: unknown) {
 }
 let lookaheadName = '';
 // The site's polls (polls.ts): a new open poll's line in the team block, once.
+// (d27 batch277 RT) the run's target (pog's runs/RUN/target.json, host/target.ts): its line on every status reply
+let targetFile: string | undefined;
+function addTarget(reply: Reply, action: string) {
+  if (!targetFile || action !== 'status' || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
+  let line: string | undefined;
+  try { line = targetLine(readFileSync(targetFile, 'utf8')); } catch { return; }  // no target set: no line
+  if (line) reply.result = {target:line, ...reply.result};  // first: a long status pages its tail to ./fh more
+}
 let pollsFile: string | undefined, pollsSeenFile: string | undefined;
 function addPoll(reply: Reply, action: string, args: Record<string, unknown>) {
   if (!pollsFile || !pollsSeenFile || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
@@ -1180,6 +1189,7 @@ async function main() {
   // pog's RUN/polls.json: the workspace is the journal's folder, the run its parent
   pollsFile = process.env.FH_POLLS_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'polls.json') : undefined);
   pollsSeenFile = process.env.FH_POLLS_SEEN || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-polls-seen.json') : undefined);
+  targetFile = process.env.FH_TARGET_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'target.json') : undefined);
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); noteRules(reply); notePace(reply); return reply; }};
@@ -2313,6 +2323,7 @@ async function main() {
       if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
       else await addLookahead(reply, action, args);
       addPoll(reply, action, args);
+      addTarget(reply, action);
       // (d20 batch59 U2) a library entry's string goes to blueprints/NAME.txt in the workspace unless --out names a file.
       const exportTo = values.out ?? (typeof args.name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/.test(args.name) ? join('blueprints', `${args.name}.txt`) : undefined);
       if (reply.ok && action === 'blueprint_export' && !args.layout && exportTo && typeof reply.result?.blueprint === 'string') {

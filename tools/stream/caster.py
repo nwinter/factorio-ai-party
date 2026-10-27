@@ -30,6 +30,7 @@ import pollstrip  # noqa: E402
 POLL_URL = pollstrip.site_host()
 sys.path.insert(0, os.path.dirname(HERE))
 from shift_times import shift_number  # noqa: E402
+import run_target  # noqa: E402  (d27 batch277 RT: the run's target, runs/RUN/target.json)
 
 CASTERS = {
     "pbp": {"name": "Rook", "label": "Rook",
@@ -1066,7 +1067,7 @@ def loss_count(e):
     return int(m.group(1)) if m else 0
 
 
-def facts_for(e, s, baseline=None, deadline=None, shift=None):
+def facts_for(e, s, baseline=None, deadline=None, shift=None, target=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     if e.get("since_last_report"):  # battle beats held back since the last one: sum them up in one line
         f["since_last_battle_report"] = e["since_last_report"]
@@ -1077,6 +1078,10 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     paced = e["kind"] in ("research", "open", "viewer") or e.get("angle") in ("pace", "explain")
     f.update(context_facts(s, baseline if paced else None, deadline, clock=paced or e["kind"] == "segment",
                            shift=shift))
+    # (d27 batch277 RT) the run's target the operator set (run_target.fact: goal, set_by, soft or hard, when, hours_left)
+    # where the pace is the story, as the time left in the run toward it; not on every line
+    if target and (paced or e["kind"] in ("open", "segment")):
+        f["run_target"] = dict(target)
     if e["kind"] == "open" and shift:  # shake5 opened with "Two hours in and the team's cracking oil!"
         f["how_to_call_it"] = ("welcome viewers back: this is a later shift of the same world, picking up where the "
                                "last one was saved")
@@ -1333,7 +1338,8 @@ EXCHANGE_RULES = (
     "the facts carry a shift, the run is a series of shifts on one saved world: this shift picks up the world where "
     "the last one left it, and at the deadline the world is saved and the next shift continues it, so research in "
     "progress and the base carry over and the deadline is a handover. Talk about the end of the shift, "
-    "the save or the next shift only once minutes_to_deadline is under 10. Call shifts only by the numbers in this_shift "
+    "the save or the next shift only once minutes_to_deadline is under 10. run_target, when given, is the goal the "
+    "operator set for the whole run and the hours left to it (soft: a target, the run's end not fixed). Call shifts only by the numbers in this_shift "
     "and next_shift. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so. Skip map distances and directions unless they "
@@ -2908,7 +2914,8 @@ class Caster:
         t_start = time.time()
         if e["kind"] == "analyst":  # (CM2) the next analyst beat waits ANALYST_EVERY from this one, aired or not
             self.analyst_t = t_start
-        facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
+        facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift(),
+                          run_target.fact(getattr(self.a, "run_dir", None)))
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         self.mark_changes(facts)
@@ -3343,7 +3350,7 @@ def bench(a):
         lat, kept, total = [], 0, 0
         for label, e, first, n in bench_events(snap):
             e = dict(e, t=time.time())
-            facts = facts_for(e, snap, base, read_deadline(a.deadline), read_shift(a.run_dir))
+            facts = facts_for(e, snap, base, read_deadline(a.deadline), read_shift(a.run_dir), run_target.fact(a.run_dir))
             t0 = time.time()
             try:
                 lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist", show=show_for(snap))
