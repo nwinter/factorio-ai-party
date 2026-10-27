@@ -37,7 +37,23 @@ ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
 # What each agent carries, wears and builds (the harness's loadout read via serve.py; the agents page shows it)
 LOADOUT_KEYS = ("health", "vehicle", "guns", "ammo", "selected_gun", "armor", "items", "item_kinds", "slots", "crafting",
                 "building", "age_s")
-CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t", "source")  # source: a relayed viewer's YouTube or site
+# source: a relayed viewer's YouTube or site; summary (d27 batch273 TL): a tell over 500 bytes, beside its whole text
+CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t", "source", "summary")
+CHAT_LINES, CHAT_BYTES = 40, 24 * 1024  # (batch273: a tell holds 2000 bytes) the newest lines that fit, at most 40
+
+
+def public_chat(chat, limit=CHAT_BYTES):
+    """The state's chat: the newest CHAT_LINES lines within `limit` bytes (40 tells of 2000 bytes would be 80 KB of
+    the state's 256 KB; the page shows the last 12 and two an agent)."""
+    out, size = [], 0
+    for c in reversed((chat or [])[-CHAT_LINES:]):
+        row = {k: c[k] for k in CHAT_KEYS if k in c}
+        n = len(json.dumps(row, ensure_ascii=False).encode())
+        if out and size + n > limit:
+            break
+        out.append(row)
+        size += n
+    return out[::-1]
 
 
 def agent_work(agents, limit=AGENT_WORK_BYTES):
@@ -757,7 +773,7 @@ def public_state(s):
             a["loadout"] = {k: lo[k] for k in LOADOUT_KEYS if lo.get(k) is not None}
         if hauls.get(a.get("name")):
             a["haul"] = hauls[a["name"]]
-    out["chat"] = [{k: c[k] for k in CHAT_KEYS if k in c} for c in s.get("chat", [])[-40:]]
+    out["chat"] = public_chat(s.get("chat"))
     out["cameras"] = {slot: dict({"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")},
                                  **{k: c[k] for k in CAMERA_LABELS if c.get(k)})
                       for slot, c in (s.get("cameras") or {}).items()}

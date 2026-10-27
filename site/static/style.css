@@ -714,6 +714,7 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .board-claims, .board-events, .game-chat { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .9rem; }
 .board-claims li, .game-chat li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }
 .board-claims b, .game-chat b { color: var(--fx-heading); }
+.game-chat .tell-summary { font-weight: 600; } /* (batch273) a long tell's summary line above its whole text */
 .board-events li { overflow-wrap: anywhere; }
 .board-events .fx-chip { font-size: .8rem; padding: 0 5px; }
 .board-projects { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: .9rem; }
