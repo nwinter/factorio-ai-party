@@ -255,7 +255,7 @@ def build_page(lr, videos, r2, thumbs, h):
 <p class="lede">The whole run, shift by shift: {len(done)} shifts of about four hours each, {on_yt} on YouTube.{pl}
 The archive player plays a shift beside its timeline of events, the hosts' captions and the chat ({on_r2} shifts so far;
 more as they are encoded).</p>
-<nav class="jump" aria-label="On this page"><a href="#start">Start here</a>{'<a href="#moments">Moments to watch</a>' if moments else ""}<a href="#all">All shifts</a></nav>
+<nav class="jump" aria-label="On this page">{'<a href="#start">Start here</a>' if cards else ""}{'<a href="#moments">Moments to watch</a>' if moments else ""}<a href="#all">All shifts</a></nav>
 {featured}
 {moments_html}
 <h2 id="all">All shifts</h2>

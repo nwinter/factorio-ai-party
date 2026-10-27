@@ -1901,23 +1901,19 @@ def main():
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
-    ap.add_argument("--videos", help="the shifts' YouTube videos (default site/content/videos.json, which "
-                    "tools/yt_archive.py writes; missing: no videos)")
+    # (batch265) the video data only when named (tools/site-refresh.sh names site/content/videos.json, r2.json and
+    # site/og/thumbs): a test's build never picks up the files the live checkout has
+    ap.add_argument("--videos", help="the shifts' YouTube videos (site/content/videos.json: tools/yt_archive.py; "
+                    "none: no videos)")
     ap.add_argument("--r2",
-                    help="the shifts that play on R2 (default site/content/r2.json: site/videos_page.py refresh; missing: none)")
-    ap.add_argument("--thumbs", default=os.environ.get("POG_SITE_THUMBS") or str(videos_page.THUMBS),
-                    help="the shifts' thumbnails, shift-N.jpg (site/videos_page.py refresh makes them)")
+                    help="the shifts that play on R2 (site/content/r2.json: site/videos_page.py refresh; none: none)")
+    ap.add_argument("--thumbs", help="the shifts' thumbnails, shift-N.jpg (site/og/thumbs: site/videos_page.py refresh)")
     ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
     args = ap.parse_args()
     # (d24 batch186) a test run (POG_TEST=1) builds from its own runs folder: the gate runs the tests in the live
     # checkout, where the repo's runs/ is the live run's and the stats caches land in its shift folders
     if os.environ.get("POG_TEST") == "1" and os.path.realpath(args.runs_dir) == os.path.realpath(REPO / "runs"):
         raise SystemExit("POG_TEST=1: build.py needs --runs-dir (not the repo's runs/) in a test run")
-    # (batch265) a test build reads the live videos.json and r2.json only when it names them: those files now exist in
-    # the checkout the gate tests in
-    test = os.environ.get("POG_TEST") == "1"
-    args.videos = args.videos or ("" if test else str(SITE / "content" / "videos.json"))
-    args.r2 = args.r2 or ("" if test else str(videos_page.R2_JSON))
     if args.content:
         global CONTENT, AGENTS
         CONTENT = json.loads(Path(args.content).read_text())
@@ -1945,8 +1941,8 @@ def main():
 
     if LONG:
         global VIDEOS, R2
-        VIDEOS = load_videos(args.videos)
-        R2 = load_r2(args.r2)
+        VIDEOS = load_videos(args.videos) if args.videos else {}
+        R2 = load_r2(args.r2) if args.r2 else {}
     write("index.html", build_home(runs, all_worlds))
     if LONG:
         LONG["platform_losses"] = chron.platform_losses(LONG, args.runs_dir)  # the platform table's loss details
@@ -1969,8 +1965,8 @@ def main():
         if VIDEOS or R2:
             thumbs = {}
             for s in LONG["shifts"]:
-                jpg = Path(args.thumbs) / f"shift-{s['n']}.jpg"
-                if not s.get("empty") and jpg.is_file():
+                jpg = Path(args.thumbs or "/nonexistent") / f"shift-{s['n']}.jpg"
+                if args.thumbs and not s.get("empty") and jpg.is_file():
                     (out / "static" / "thumbs").mkdir(parents=True, exist_ok=True)
                     shutil.copy(jpg, out / "static" / "thumbs" / jpg.name)
                     thumbs[s["n"]] = jpg.name

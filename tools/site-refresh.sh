@@ -62,11 +62,14 @@ if [ "${POG_SITE_CARDS:-1}" != 0 ]; then
   python3 site/og_card.py --shifts --runs-dir "$runs" || step "shift cards failed (shift pages keep the site's card)"
 fi
 # (batch265) /videos/: which shifts play on R2 now (each master playlist must answer 200) and the thumbnails; a failure
-# keeps the last r2.json (POG_SITE_VIDEOS=0 skips it: tests)
+# keeps the last r2.json (POG_SITE_VIDEOS=0 skips it and builds without video data: tests)
+videos=()
 if [ "${POG_SITE_VIDEOS:-1}" != 0 ]; then
   python3 site/videos_page.py refresh --runs-dir "$runs" || step "videos refresh failed (the last r2.json stays)"
+  # build.py reads the video data only when named (a test's build never sees this checkout's files)
+  videos=(--videos site/content/videos.json --r2 site/content/r2.json --thumbs site/og/thumbs)
 fi
-python3 site/build.py --out "$out" --runs-dir "$runs" || fail "build"
+python3 site/build.py --out "$out" --runs-dir "$runs" ${videos[@]+"${videos[@]}"} || fail "build"
 [ "$status" = "$root/site/live/status.json" ] || cp "$status" "$out/live/status.json"  # a test's own status file
 python3 site/check.py "$out" || fail "check.py"
 python3 site/test_live.py || fail "test_live.py"

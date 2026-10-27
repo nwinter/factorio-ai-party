@@ -7,11 +7,16 @@
   date, length (the video's, else R2's, else the shift's), YouTube in the playlist, the archive player only where
   R2 has the shift, a shift with neither says the video comes later; chapters link into the video; a chapter or
   title naming the stream owner never reaches the page; moments to watch link a minute before the moment;
-- thumbnails: a shift-N.jpg only when the shift has one, else a text label.
+- thumbnails: a shift-N.jpg only when the shift has one, else a text label;
+- build.py reads the video data only when named: a build given none has no /videos/ and no Videos link even when
+  site/content/r2.json, videos.json and site/og/thumbs exist in the checkout (the gate tests in the live checkout,
+  where site-refresh writes them; d27 08:12); a build given R2 data and no videos has /videos/ with no "Start here"
+  and passes check.py.
 """
 import html
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -111,6 +116,32 @@ def main():
     assert vp.public_shifts({}) == []
     assert vp.headline("Factorio AI Party · Shift 12: A: b", 12) == "A: b" and vp.headline("x", 1) == ""
     assert vp.hm(3 * 3600 + 59 * 60 + 40) == "4h00" and vp.hm(None) == "–"
+    # ---- build.py: the video data only when named
+    sys.path.insert(0, str(SITE))
+    from test_archive import make  # noqa: E402  (a made-up runs folder: pub1 -> pub2)
+    content = dict(json.loads((SITE / "content" / "site.json").read_text()), archive=False, run_start="pub1")
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        runs = d / "runs"
+        runs.mkdir()
+        make(runs)
+        (d / "site.json").write_text(json.dumps(content))
+        (d / "r2.json").write_text(json.dumps({"pub1": {"shift": 1, "player": vp.player_url("shift01"), "duration_s": 3600.0}}))
+
+        def build(*extra):
+            out = d / f"dist{len(extra)}"
+            r = subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(runs),
+                                "--content", str(d / "site.json"), *extra], capture_output=True, text=True)
+            assert r.returncode == 0, r.stderr[-2000:]
+            r = subprocess.run([sys.executable, str(SITE / "check.py"), str(out)], capture_output=True, text=True)
+            assert r.returncode == 0, r.stdout[-2000:]
+            return out
+        out = build()
+        assert not (out / "videos").exists() and 'href="/videos/"' not in (out / "index.html").read_text(), \
+            "no video data named: no page, no link"
+        out = build("--r2", str(d / "r2.json"))
+        page = (out / "videos" / "index.html").read_text()
+        assert "Archive player" in page and 'href="#start"' not in page and 'href="/videos/"' in (out / "index.html").read_text()
     print("test_videos_page: ok")
 
 
