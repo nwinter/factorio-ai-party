@@ -3,11 +3,15 @@
 # binary runs natively there as a headless server (--start-server), with RCON on a LAN port, so timings need no
 # scaling for OrbStack's x86 emulation on this Mac. One copy per machine; holder.json says which engineer holds it.
 #
-#   tools/imac-copy.sh start HOLDER [SAVE.zip]   world n's newest save from pogwin (or SAVE.zip), this checkout's
-#                                                harness mod, then the server; refused while another holder runs it
+#   tools/imac-copy.sh start HOLDER [SAVE.zip]   world n's newest save from pogwin (or SAVE.zip on this Mac, or
+#                                                imac:PATH on the iMac), this checkout's harness mod, then the
+#                                                server; refused while another holder runs it. /quit saves over the
+#                                                copy's saves/copy.zip; the reference save for copy_bench comparisons
+#                                                is imac:/Users/owner/pog-copy/ref/world-n-d27-1211.zip
 #   tools/imac-copy.sh stop HOLDER [--force]     /quit, then the server's own PID if it is still up; frees the copy
 #   tools/imac-copy.sh status                    who holds it, since when, the save, whether it answers (tick, paused)
 #   tools/imac-copy.sh log [N]                   the server log's last N lines (default 200; 0: the whole log)
+# IMAC_FACTORIO_DIR, IMAC_MOD (the agent-harness folder to serve), IMAC_RCON_PORT and IMAC_GAME_PORT override defaults.
 #
 # Then the usual tools take world `imac` (bin/fh and tools/pog.py: imac.local:27400, ~/.config/pog/rcon-imac.pw):
 #   POG_WORLD=imac FH_DESCRIBE_CACHE=$SCRATCH/.desc-imac.json bin/fh deploy          this checkout's runtime
@@ -24,7 +28,7 @@ dir=${IMAC_DIR:-/Users/owner/pog-copy}                       # on the iMac
 install=${IMAC_FACTORIO_DIR:-/Users/owner/code/factorio-mac-2.0.77}  # the macOS client install (mt274, d27)
 rcon_port=${IMAC_RCON_PORT:-27400} game_port=${IMAC_GAME_PORT:-34400}
 pwfile=$HOME/.config/pog/rcon-imac.pw
-mod=$root/vendor/factorio-harness/mod/agent-harness_0.1.0
+mod=${IMAC_MOD:-$root/vendor/factorio-harness/mod/agent-harness_0.1.0}   # another branch's mod folder, e.g. mt274's
 cmd=${1:-status}; shift || true
 
 remote() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" "$@"; }
@@ -34,8 +38,9 @@ alive() { [ -n "$1" ] && remote "kill -0 $1 2>/dev/null"; }
 rcon() { python3 "$root/tools/pog.py" --world imac rcon "$1"; }
 
 binary() {
-  # The server binary inside the install: factorio.app/Contents/MacOS/factorio (or a bin/ layout)
-  remote "for f in '$install'/factorio.app/Contents/MacOS/factorio '$install'/*/factorio.app/Contents/MacOS/factorio '$install'/Factorio.app/Contents/MacOS/factorio '$install'/bin/*/factorio; do [ -x \"\$f\" ] && { echo \"\$f\"; exit 0; }; done; exit 1" ||
+  # The server binary inside the install: factorio.app/Contents/MacOS/factorio (or a bin/ layout). No globs: the
+  # iMac's login shell is zsh, which fails the whole command on a glob that matches nothing
+  remote "for f in '$install'/factorio.app/Contents/MacOS/factorio '$install'/Factorio.app/Contents/MacOS/factorio '$install'/bin/x64/factorio; do [ -x \"\$f\" ] && { echo \"\$f\"; exit 0; }; done; exit 1" ||
     { echo "no Factorio binary under $host:$install (the macOS 2.0.77 install, d27 mt274); set IMAC_FACTORIO_DIR" >&2; exit 2; }
 }
 
@@ -67,7 +72,10 @@ start)
     scp -q "pogwin:D:/pog/inst/n/saves/$name" "$tmp/copy.zip"
     save_label="world n $name"
   else
-    cp "$save" "$tmp/copy.zip"; save_label=$save
+    case $save in
+      imac:*) save_label=$save ;;   # a save already on the iMac, e.g. imac:/Users/owner/pog-copy/ref/world-n-d27-1211.zip
+      *) cp "$save" "$tmp/copy.zip"; save_label=$save ;;
+    esac
   fi
   cat > "$tmp/config.ini" <<EOF
 ; tools/imac-copy.sh: the copy's own write-data, apart from any Factorio client of the iMac's user
@@ -88,7 +96,10 @@ EOF
   scp -q "$tmp/mod-list.json" "$host:$dir/mods/mod-list.json"
   scp -q "$tmp/config.ini" "$host:$dir/config/config.ini"
   scp -q "$tmp/server-settings.json" "$host:$dir/server-settings.json"
-  scp -q "$tmp/copy.zip" "$host:$dir/saves/copy.zip"
+  case $save in
+    imac:*) remote "cp '${save#imac:}' '$dir/saves/copy.zip'" ;;
+    *) scp -q "$tmp/copy.zip" "$host:$dir/saves/copy.zip" ;;
+  esac
   pw=$(cat "$pwfile")
   pid=$(remote "cd '$dir' && nohup '$bin' --config '$dir/config/config.ini' --start-server '$dir/saves/copy.zip' --mod-directory '$dir/mods' \
     --server-settings '$dir/server-settings.json' --rcon-bind 0.0.0.0:$rcon_port --rcon-password '$pw' --port $game_port \

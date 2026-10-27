@@ -4,7 +4,8 @@
 1. bin/fh and tools/pog.py: world `imac` is imac.local:27400 with ~/.config/pog/rcon-imac.pw; POG_RCON_HOST overrides
    the host; the other worlds stay on the tunnel (127.0.0.1).
 2. tools/imac-copy.sh (a fake ssh): status says who holds the copy; start is refused while another holder's server
-   runs, naming the holder; stop is refused for someone else without --force; a start needs a holder name.
+   runs, naming the holder; stop is refused for someone else without --force; a start needs a holder name; a start
+   from imac:PATH copies that save on the iMac (no scp of a save).
 3. tools/copy_bench.py reads the harness tick average and its own timing lines as the server logs them.
 No network: ssh, scp and node are stubs on PATH.
 """
@@ -53,7 +54,12 @@ def script():
 case "$args" in
   *"cat '/Users/owner/pog-copy/holder.json'"*) [ -f {d}/free ] || echo '{held}' ;;
   *"kill -0 4242"*) exit 0 ;;
+  *"kill -0 5151"*) exit 1 ;;
+  *"for f in"*) echo /Applications/x/factorio ;;
+  *nohup*) echo 5151 ;;
+  *"cat > "*) cat > /dev/null ;;
 esac''')
+    stub(d, "rsync", f'echo "rsync $*" >> {log}')
     stub(d, "scp", f'echo "scp $*" >> {log}')
     stub(d, "python3", f'case "$*" in *pog.py*) echo "pog.py $*" >> {log}; exit 1 ;; esac; exec /usr/bin/env -u PATH {sys.executable} "$@"')
     sh = os.path.join(HERE, "imac-copy.sh")
@@ -71,6 +77,12 @@ esac''')
     assert r.returncode != 0 and "usage: tools/imac-copy.sh start HOLDER" in r.stderr, r
     open(os.path.join(d, "free"), "w").close()
     assert run("status").stdout.strip() == "free: no copy running on imac.local"
+    open(log, "w").close()
+    r = run("start", "d20-b205/batch279", "imac:/Users/owner/pog-copy/ref/x.zip")
+    sent = open(log).read()
+    assert "cp '/Users/owner/pog-copy/ref/x.zip' '/Users/owner/pog-copy/saves/copy.zip'" in sent, sent
+    assert not re.search(r"scp .*copy\.zip", sent) and "--start-server '/Users/owner/pog-copy/saves/copy.zip'" in sent, sent
+    assert r.returncode == 1 and "the server exited" in r.stderr, r
     src = open(sh).read()
     assert "pkill" not in src and "killall" not in src and 'remote "kill $pid"' in src, "its own PID only"
     print("2. imac-copy.sh: who holds it; a second holder refused; stop only by its holder: ok")
