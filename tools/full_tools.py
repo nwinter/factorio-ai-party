@@ -10,7 +10,8 @@ tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph 
              the sandbox may write team-tools; other agents' workspaces are unreadable except their notes.md.
 
   grok-args: Grok Build's --allow/--deny words for the same two things, and its kernel sandbox profile.
-  sync:      tools/full_tools.py sync RUN_DIR [SECONDS]: mirror Muse's own team-tools folder with the shared one.
+  sync:      tools/full_tools.py sync RUN_DIR [SECONDS]: mirror Muse's own team-tools folder with the shared one, one
+             pass at a time (RUN_DIR/.team-tools-sync.lock), each copy whole (a dotfile temp, then a rename).
   carry:     tools/full_tools.py carry [--dry-run] RUN_DIR PREV_DIR NAME...: a later shift (tools/start-team.sh,
              POG_RESUME) starts with each agent's tools/ and the run's team-tools/ from the previous shift that had
              them, up the resumed-from chain; files over 5 MB, caches, dotfiles and symlinks stay behind. Each file is
@@ -24,14 +25,18 @@ No tool here reads or writes the game: only ./fh acts in it.
 """
 import ctypes
 import ctypes.util
+import contextlib
 import errno
+import fcntl
 import glob
+import itertools
 import json
 import os
 import re
 import shutil
 import stat
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB = os.path.join(ROOT, "tools", "analyst", "kb")
@@ -62,15 +67,82 @@ def subagents_off():
         return set()
 
 
-def sync_pair(a, b):
+# d27 (#2609): at shift88's start Muse's launch made its mirror (15:24:30) and copied 1395 files into it while the
+# daemon's next pass ran over the same pair. shutil.copy2 truncates the destination first, so each pass saw the other's
+# half-written file as newer and copied it back: 33 shared files ended at 0 bytes. Now each copy goes to a dotfile temp
+# beside the destination (every walk here skips dotfiles) and replaces it whole, and one pass at a time holds the run's
+# lock.
+SYNC_LOG = "team-tools-sync.log"
+SYNC_LOCK = ".team-tools-sync.lock"
+SYNC_LOCK_WAIT_S = 120   # a full pass over shift88's 1399 files (58 MB) into an empty mirror: 0.8 s cloned, 2.1 s copied
+SYNC_TMP = ".pog-sync-"
+SYNC_TMP_STALE_S = 300   # a temp unchanged this long belongs to a pass that was killed
+_SYNC_TMP_N = itertools.count()
+
+
+def sync_log(log, line):
+    """Append one line to the run's team-tools-sync.log (the daemon's stdout appends to it too)."""
+    if log:
+        with open(log, "a") as f:
+            f.write(line + "\n")
+
+
+@contextlib.contextmanager
+def sync_lock(run, wait=None):
+    """Hold the run's sync lock (flock on RUN/.team-tools-sync.lock) for one pass: yields True, or False when another
+    pass held it for `wait` seconds (SYNC_LOCK_WAIT_S)."""
+    wait = SYNC_LOCK_WAIT_S if wait is None else wait
+    with open(os.path.join(run, SYNC_LOCK), "a") as f:   # closing it (or the process dying) releases the lock
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    yield False
+                    return
+                time.sleep(0.05)
+        yield True
+
+
+def mirror_file(src, dst, how=None):
+    """dst becomes a whole copy of src (a clone where the volume clones; mode and mtime kept) in one rename: a reader
+    sees the old file or the new one, never a partial one. False, dst untouched, when src changed during the copy (an
+    agent still writing it): the next pass copies it."""
+    tmp = os.path.join(os.path.dirname(dst), f"{SYNC_TMP}{os.getpid()}-{next(_SYNC_TMP_N)}")
+    try:
+        was = os.stat(src)
+        place_file(src, tmp, {} if how is None else how)
+        now = os.stat(src)
+        if (now.st_size, now.st_mtime_ns) != (was.st_size, was.st_mtime_ns):
+            os.remove(tmp)
+            return False
+        os.replace(tmp, dst)
+        return True
+    except BaseException:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
+        raise
+
+
+def sync_pair(a, b, log=None):
     """Copy each file that is missing or older on one side from the other (by mtime); never deletes. Returns the
-    copied paths, relative to the folders."""
+    copied paths, relative to the folders. A copy that replaces a non-empty file with an empty one adds a
+    "team-tools-sync: EMPTIED" line to log (an agent may empty a file on purpose: logged, not blocked)."""
     copied = []
     names = set()
     for top in (a, b):
         for base, dirs, files in os.walk(top):
             dirs[:] = [x for x in dirs if not x.startswith(".")]
             names |= {os.path.relpath(os.path.join(base, f), top) for f in files if not f.startswith(".")}
+            for f in files:   # temps of a killed pass
+                p = os.path.join(base, f)
+                try:
+                    if f.startswith(SYNC_TMP) and time.time() - os.lstat(p).st_ctime > SYNC_TMP_STALE_S:
+                        os.remove(p)
+                except OSError:
+                    pass
     for rel in sorted(names):
         pa, pb = os.path.join(a, rel), os.path.join(b, rel)
         ta = os.path.getmtime(pa) if os.path.isfile(pa) else None
@@ -82,17 +154,27 @@ def sync_pair(a, b):
         else:
             continue
         os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(src, dst)
+        was = os.path.getsize(dst) if os.path.isfile(dst) else 0
+        if not mirror_file(src, dst):
+            continue
+        if was and not os.path.getsize(dst):
+            sync_log(log, f"team-tools-sync: EMPTIED {dst} (was {was} bytes; from {src}, {time.strftime('%H:%M:%S')}, "
+                          f"pid {os.getpid()})")
         copied.append(rel)
     return copied
 
 
 def sync(run):
-    """Mirror each workspace's real team-tools folder (MIRRORED harnesses) with the run's shared one."""
+    """Mirror each workspace's real team-tools folder (MIRRORED harnesses) with the run's shared one, holding the run's
+    lock. A pass that waited SYNC_LOCK_WAIT_S for it is skipped (the daemon's next pass runs SECONDS later)."""
     shared, out = os.path.join(run, "team-tools"), []
-    for ws in sorted(glob.glob(os.path.join(run, "*", "team-tools"))):
-        if os.path.isdir(ws) and not os.path.islink(ws):
-            out += [f"{os.path.basename(os.path.dirname(ws))}: {r}" for r in sync_pair(shared, ws)]
+    with sync_lock(run) as held:
+        if not held:
+            return [f"pass skipped: another pass held {SYNC_LOCK} for {SYNC_LOCK_WAIT_S} s"]
+        for ws in sorted(glob.glob(os.path.join(run, "*", "team-tools"))):
+            if os.path.isdir(ws) and not os.path.islink(ws):
+                out += [f"{os.path.basename(os.path.dirname(ws))}: {r}"
+                        for r in sync_pair(shared, ws, os.path.join(run, SYNC_LOG))]
     return out
 
 
@@ -247,7 +329,11 @@ def copy_tree(src, dst, dry=False, how=None, have=()):
             else:
                 if not dry:
                     os.makedirs(os.path.dirname(os.path.join(dst, rel)), exist_ok=True)
-                    place_file(p, os.path.join(dst, rel), how)   # keeps the mode (executable scripts) and mtime
+                    # keeps the mode (executable scripts) and mtime; a start killed mid-copy leaves a dotfile temp
+                    # (skipped as a cache file), never a cut-short file the next start keeps as "already there"
+                    if not mirror_file(p, os.path.join(dst, rel), how):
+                        skipped.setdefault("changed while copied", []).append(rel)
+                        continue
                 copied.append(rel)
                 size += os.path.getsize(p)
     return copied, size, skipped
@@ -382,7 +468,16 @@ def workspace(d, kind):
         if os.path.islink(link):
             os.remove(link)
         os.makedirs(link, exist_ok=True)
-        sync_pair(shared, link)
+        run, log = os.path.dirname(shared), os.path.join(os.path.dirname(shared), SYNC_LOG)
+        with sync_lock(run) as held:   # behind a running daemon pass (shift start)
+            if held:
+                for r in sync_pair(shared, link, log):
+                    sync_log(log, f"{time.strftime('%H:%M:%S')} {os.path.basename(os.path.abspath(d))} (launch): {r}")
+            else:   # the folder starts as it is; the daemon's next pass fills it
+                line = (f"{time.strftime('%H:%M:%S')} {os.path.basename(os.path.abspath(d))} (launch): pass skipped: "
+                        f"another pass held {SYNC_LOCK} for {SYNC_LOCK_WAIT_S} s")
+                sync_log(log, line)
+                print(line, file=sys.stderr)
     elif not os.path.lexists(link):
         os.symlink("../team-tools", link)
     data = os.path.join(d, "gamedata")
@@ -507,8 +602,7 @@ if __name__ == "__main__":
         claude(sys.argv[2])
     elif cmd == "grok-args":
         print(grok_args(sys.argv[2]))
-    elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed
-        import time
+    elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed (stdout: >> team-tools-sync.log)
         while True:
             for line in sync(sys.argv[2]):
                 print(time.strftime("%H:%M:%S"), line, flush=True)

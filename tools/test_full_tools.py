@@ -8,14 +8,21 @@
 - codex: live web search, multi_agent and team-tools writable only with the switch on. grok: subagents, workflows
   and web_fetch only with it; the allow and deny words.
 - the paragraph names no strategy: no "should", "must" or "try".
+- team-tools mirror (#2609, shift88: 33 shared files emptied at the start): two sync passes at once leave every file
+  whole on both sides; the run's lock holds a launch's pass behind a running one; the EMPTIED line; a copy killed
+  partway; a shift start (carry, the sync daemon, a Muse launch).
 """
 import json
 import os
+import random
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -410,6 +417,281 @@ def flags():
     print("claude flags: ok")
 
 
+DAY = 86400
+
+
+def mixed_tree(top, n=300, seed=7):
+    """n files of mixed sizes (1 byte to 1 MB) in a few folders, a day old as carried files are; {rel: bytes}."""
+    rnd, files, t = random.Random(seed), {}, time.time() - DAY
+    for i in range(n):
+        rel = os.path.join(f"d{i % 5}" if i % 3 else "", f"f{i:03d}." + ("json", "py", "md")[i % 3])
+        data = bytes(rnd.getrandbits(8) for _ in range(16)) * (rnd.choice((1, 3, 60, 400, 2000, 8000, 65536)))
+        p = os.path.join(top, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data)
+        os.utime(p, (t + i, t + i))
+        files[rel] = data
+    return files
+
+
+def tree(top):
+    """{rel: bytes} of the files a pass sees (no dotfiles)."""
+    out = {}
+    for base, dirs, fs in os.walk(top):
+        dirs[:] = [x for x in dirs if not x.startswith(".")]
+        for f in fs:
+            if not f.startswith("."):
+                out[os.path.relpath(os.path.join(base, f), top)] = open(os.path.join(base, f), "rb").read()
+    return out
+
+
+def same(want, top, label):
+    got = tree(top)
+    assert sorted(got) == sorted(want), (label, sorted(set(got) ^ set(want))[:5])
+    empty = [r for r in want if not got[r]]
+    bad = [r for r in want if got[r] != want[r]]
+    assert not empty and not bad, f"{label}: {len(empty)} empty, {len(bad)} differ, e.g. {(empty + bad)[:3]}"
+
+
+PASS = ("import sys; sys.path.insert(0, sys.argv[1]); import full_tools; "
+        "full_tools.sync_pair(sys.argv[2], sys.argv[3], sys.argv[4])")
+
+
+def concurrent_passes():
+    """Two sync_pair passes at once (two processes, as the launch's and the daemon's at shift88) over 300 files, a
+    few rounds: every file equals its source on both sides, none empty."""
+    tools = os.path.dirname(os.path.abspath(full_tools.__file__))
+    for rnd in range(4):
+        tmp = tempfile.mkdtemp()
+        try:
+            shared, mirror = os.path.join(tmp, "team-tools"), os.path.join(tmp, "muse", "team-tools")
+            want = mixed_tree(shared, seed=rnd)
+            os.makedirs(os.path.join(mirror, "d1"))
+            with open(os.path.join(mirror, "d1", "muse-only.py"), "wb") as f:   # newer on the mirror side
+                f.write(b"print('muse')\n")
+            want["d1/muse-only.py"] = b"print('muse')\n"
+            log = os.path.join(tmp, "team-tools-sync.log")
+            ps = [subprocess.Popen([sys.executable, "-c", PASS, tools, shared, mirror, log]) for _ in range(2)]
+            assert [p.wait(60) for p in ps] == [0, 0]
+            same(want, shared, f"round {rnd} shared")
+            same(want, mirror, f"round {rnd} mirror")
+            left = [f for b, _, fs in os.walk(tmp) for f in fs if f.startswith(full_tools.SYNC_TMP)]
+            assert not left, left
+            assert "EMPTIED" not in (open(log).read() if os.path.exists(log) else "")
+        finally:
+            shutil.rmtree(tmp)
+    print("concurrent passes: ok")
+
+
+def muse_run():
+    tmp = make_run()
+    run = os.path.join(tmp, "run")
+    m = os.path.join(run, "muse")
+    os.makedirs(m)
+    open(os.path.join(m, "AGENTS.md"), "w").write(AGENTS)
+    return tmp, run, m
+
+
+def lock():
+    """A Muse launch's pass waits while another pass holds the run's lock, then mirrors everything; past
+    SYNC_LOCK_WAIT_S it skips its pass (logged), the launch goes on and the daemon fills the folder later."""
+    tmp, run, m = muse_run()
+    wait = full_tools.SYNC_LOCK_WAIT_S
+    try:
+        want = mixed_tree(os.path.join(run, "team-tools"), n=40)
+        with full_tools.sync_lock(run) as held:   # the daemon's pass
+            assert held
+            th = threading.Thread(target=full_tools.workspace, args=(m, "muse"))
+            th.start()
+            time.sleep(0.5)
+            assert th.is_alive(), "the launch's pass did not wait"
+            assert tree(os.path.join(m, "team-tools")) == {}
+            with full_tools.sync_lock(run, wait=0) as again:
+                assert not again
+        th.join(30)
+        assert not th.is_alive()
+        same(want, os.path.join(m, "team-tools"), "after the lock")
+        log = open(os.path.join(run, full_tools.SYNC_LOG)).read()
+        assert "muse (launch): f000.json" in log, log[:300]
+        # bounded: the launch skips its pass and says so
+        full_tools.SYNC_LOCK_WAIT_S = 0.3
+        open(os.path.join(run, "team-tools", "late.py"), "w").write("late\n")
+        with full_tools.sync_lock(run):
+            t0 = time.monotonic()
+            full_tools.workspace(m, "muse")
+            assert time.monotonic() - t0 < 5
+            assert full_tools.sync(run) == [f"pass skipped: another pass held {full_tools.SYNC_LOCK} for 0.3 s"]
+        assert not os.path.exists(os.path.join(m, "team-tools", "late.py"))
+        assert "muse (launch): pass skipped: another pass held .team-tools-sync.lock for 0.3 s" in \
+            open(os.path.join(run, full_tools.SYNC_LOG)).read()
+        assert full_tools.sync(run) == ["muse: late.py"]   # the daemon's next pass
+    finally:
+        full_tools.SYNC_LOCK_WAIT_S = wait
+        for root, dirs, _ in os.walk(tmp):
+            for x in dirs:
+                os.chmod(os.path.join(root, x), 0o755)
+        shutil.rmtree(tmp)
+    print("sync lock: ok")
+
+
+def emptied():
+    """A pass that replaces a non-empty file with an empty one logs a line the operator's watcher reads; it still
+    copies (an agent may empty a file on purpose). A new empty file or a non-empty replacement logs nothing."""
+    tmp, run, m = muse_run()
+    try:
+        shared, mine = os.path.join(run, "team-tools"), os.path.join(m, "team-tools")
+        os.makedirs(shared)
+        os.makedirs(mine)
+        old = time.time() - DAY
+        for top in (shared, mine):
+            for name, text in (("plan.json", b"{\"a\": 1}\n"), ("keep.md", b"keep\n")):
+                with open(os.path.join(top, name), "wb") as f:
+                    f.write(text)
+                os.utime(os.path.join(top, name), (old, old))
+        open(os.path.join(mine, "plan.json"), "w").close()                 # Muse empties it
+        open(os.path.join(mine, "keep.md"), "w").write("kept\n")           # Muse edits it
+        open(os.path.join(mine, "new-empty.txt"), "w").close()
+        assert sorted(full_tools.sync(run)) == ["muse: keep.md", "muse: new-empty.txt", "muse: plan.json"]
+        assert os.path.getsize(os.path.join(shared, "plan.json")) == 0
+        lines = [l for l in open(os.path.join(run, full_tools.SYNC_LOG)).read().splitlines() if "EMPTIED" in l]
+        assert len(lines) == 1, lines
+        assert lines[0].startswith(f"team-tools-sync: EMPTIED {os.path.join(shared, 'plan.json')} (was 9 bytes; from "
+                                   f"{os.path.join(mine, 'plan.json')}, "), lines
+    finally:
+        shutil.rmtree(tmp)
+    print("emptied line: ok")
+
+
+KILLED = r"""
+import os, shutil, signal, sys
+sys.path.insert(0, sys.argv[1])
+import full_tools
+def no_clone(src, dst):
+    raise OSError(45, "no clones here")
+def half(src, dst, *, follow_symlinks=True):   # the copy dies halfway (SIGKILL: nothing runs after it)
+    data = open(src, "rb").read()
+    with open(dst, "wb") as f:
+        f.write(data[:len(data) // 2])
+        f.flush()
+        os.kill(os.getpid(), signal.SIGKILL)
+full_tools.clone_file = no_clone
+shutil.copyfile = half
+full_tools.sync_pair(sys.argv[2], sys.argv[3], sys.argv[4])
+"""
+
+
+def killed_copy():
+    """A pass killed partway through a copy: the destination keeps its old content, and the temp it leaves is a
+    dotfile no later pass copies; it goes once unchanged for SYNC_TMP_STALE_S. A source that changes during the copy
+    is left for the next pass."""
+    tmp = tempfile.mkdtemp()
+    stale = full_tools.SYNC_TMP_STALE_S
+    try:
+        shared, mirror = os.path.join(tmp, "team-tools"), os.path.join(tmp, "muse", "team-tools")
+        os.makedirs(shared)
+        os.makedirs(mirror)
+        old, new = b"old " * 50000, b"new " * 60000
+        for top, data, t in ((mirror, old, time.time() - DAY), (shared, new, time.time() - 60)):
+            with open(os.path.join(top, "layout.json"), "wb") as f:
+                f.write(data)
+            os.utime(os.path.join(top, "layout.json"), (t, t))
+        tools = os.path.dirname(os.path.abspath(full_tools.__file__))
+        log = os.path.join(tmp, "team-tools-sync.log")
+        r = subprocess.run([sys.executable, "-c", KILLED, tools, shared, mirror, log])
+        assert r.returncode == -signal.SIGKILL, r.returncode
+        assert open(os.path.join(mirror, "layout.json"), "rb").read() == old, "the killed copy reached the file"
+        temps = [f for f in os.listdir(mirror) if f.startswith(full_tools.SYNC_TMP)]
+        assert len(temps) == 1 and os.path.getsize(os.path.join(mirror, temps[0])) == len(new) // 2, temps
+        assert full_tools.sync_pair(shared, mirror, log) == ["layout.json"]   # the temp is no file to copy
+        assert open(os.path.join(mirror, "layout.json"), "rb").read() == new
+        assert os.listdir(shared) == ["layout.json"] and temps[0] in os.listdir(mirror)   # not stale yet
+        full_tools.SYNC_TMP_STALE_S = 0
+        time.sleep(0.05)
+        assert full_tools.sync_pair(shared, mirror, log) == []
+        assert os.listdir(mirror) == ["layout.json"], os.listdir(mirror)
+        # a source an agent is still writing: this pass leaves the destination alone, the next copies it
+        place = full_tools.place_file
+
+        def writing(src, dst, how):
+            place(src, dst, how)
+            with open(src, "ab") as f:
+                f.write(b" more")
+        later = time.time()
+        os.utime(os.path.join(shared, "layout.json"), (later, later))
+        full_tools.place_file = writing
+        try:
+            assert full_tools.sync_pair(shared, mirror, log) == []
+        finally:
+            full_tools.place_file = place
+        assert open(os.path.join(mirror, "layout.json"), "rb").read() == new and os.listdir(mirror) == ["layout.json"]
+        assert full_tools.sync_pair(shared, mirror, log) == ["layout.json"]
+        assert open(os.path.join(mirror, "layout.json"), "rb").read() == new + b" more"
+    finally:
+        full_tools.SYNC_TMP_STALE_S = stale
+        shutil.rmtree(tmp)
+    print("killed copy: ok")
+
+
+def shift_start():
+    """tools/start-team.sh's order: carry from the previous run, the sync daemon started (every 0.05 s here), then
+    Muse's launch makes its mirror and copies while the daemon keeps passing. Every file on both sides equals the
+    previous run's."""
+    tmp = tempfile.mkdtemp()
+    daemon = None
+    copyfile, clone_file = shutil.copyfile, full_tools.clone_file
+    try:
+        runs = os.path.join(tmp, "runs")
+        prev, run = os.path.join(runs, "shift01"), os.path.join(runs, "shift02")
+        want = mixed_tree(os.path.join(prev, "team-tools"))
+        with open(os.path.join(prev, "team-tools", "muse.md"), "wb") as f:
+            f.write(b"older\n")
+        os.makedirs(os.path.join(prev, "muse", "team-tools"))
+        with open(os.path.join(prev, "muse", "team-tools", "muse-only.py"), "wb") as f:   # not yet shared there
+            f.write(b"print('m')\n")
+        want.update({"muse.md": b"older\n", "muse-only.py": b"print('m')\n"})
+        os.makedirs(os.path.join(run, "muse"))
+        open(os.path.join(run, "muse", "AGENTS.md"), "w").write(AGENTS)
+        full_tools.carry(run, prev, ["muse"])
+        same(want, os.path.join(run, "team-tools"), "carried")
+        log = open(os.path.join(run, full_tools.SYNC_LOG), "a")
+        daemon = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(full_tools.__file__)),
+                                   "full_tools.py"), "sync", run, "0.05"], stdout=log, stderr=subprocess.STDOUT)
+        time.sleep(0.5)   # its passes so far find no mirror
+        def no_clone(src, dst):
+            raise OSError(45, "no clones here")
+
+        def slow(src, dst, *, follow_symlinks=True):   # a slow disk: the launch's 302 copies take a second or two,
+            with open(src, "rb") as a, open(dst, "wb") as b:   # so daemon passes fall inside them
+                while chunk := a.read(65536):
+                    b.write(chunk)
+                    b.flush()
+                    time.sleep(0.001)
+            return dst
+        full_tools.clone_file, shutil.copyfile = no_clone, slow
+        try:
+            full_tools.workspace(os.path.join(run, "muse"), "muse")
+        finally:
+            shutil.copyfile, full_tools.clone_file = copyfile, clone_file
+        time.sleep(0.3)   # a few more daemon passes
+        assert daemon.poll() is None, open(log.name).read()
+        daemon.terminate()
+        daemon.wait(10)
+        same(want, os.path.join(run, "team-tools"), "shared")
+        same(want, os.path.join(run, "muse", "team-tools"), "mirror")
+        text = open(log.name).read()
+        assert "EMPTIED" not in text and "muse (launch): f000.json" in text, text[:500]
+    finally:
+        shutil.copyfile, full_tools.clone_file = copyfile, clone_file
+        if daemon and daemon.poll() is None:
+            daemon.kill()
+        for root, dirs, _ in os.walk(tmp):
+            for x in dirs:
+                os.chmod(os.path.join(root, x), 0o755)
+        shutil.rmtree(tmp)
+    print("shift start: ok")
+
+
 if __name__ == "__main__":
     workspace()
     clone()
@@ -420,3 +702,8 @@ if __name__ == "__main__":
     codex_and_grok()
     grok_hooks()
     flags()
+    concurrent_passes()
+    lock()
+    emptied()
+    killed_copy()
+    shift_start()
