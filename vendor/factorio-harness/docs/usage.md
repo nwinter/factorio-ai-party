@@ -1747,6 +1747,9 @@ fh sleep 900 --until researched                       # ...or until the research
   iron-gear-wheel (37 crafts) in 2 machines since the wait began (at least 50)`. A queue `wait_until` step or a direct
   wait only (the counts start with the wait; a guard, an order's `when` or a loop `condition` refuses). Word form:
   `fh sleep 600 --until "produced iron-gear-wheel>=50 at 10.5,20.5 13.5,20.5"` (`produced>=N at X,Y`: crafts).
+  (d27 batch278) `counter_from: N` with one machine (`position`): count from that products-finished count instead of
+  the count at the wait's first check (assembler_batch passes the count it read when it planned, so crafts finished
+  before the wait began count too).
 - `wait_until {until: "rocket_parts", at_least: N, position}` (Sonnet, shift14 22:50) is met when the rocket being built
   at that silo has at least N parts; a built rocket (rising into place or ready) has all of them, and while one
   launches the count is the next one's. `saw`: `rocket parts 35/50 (at least 40); rocket-silo (65.5,14.5):
@@ -16570,3 +16573,46 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   transcripts).
 - Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
   its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
+
+## d27 batch278 (AB, Astra #2589: assembler_batch waited for more than the machine can hold)
+
+- Astra's dry run on Aquilo, for 10 fusion-generator in the cryogenic plant at (42.5,-24.5), held the output inserter
+  and waited for 10 in the machine. Read on world n (d27 12:10, two reads under 1 ms each): the plant (crafting speed 2)
+  has fusion-generator stack 5, an empty output, 201 tungsten plate, 201 superconductor and 100 quantum processors
+  inside, and products_finished 36. It was off by its own logistic condition `fusion-generator < 2`
+  (`disabled_by_control_behavior`). Its input inserter had its own logistic condition `fusion-generator < 6`. The
+  output inserter put into a passive provider chest with room for 233.
+- Measured on a private copy (2.0.77; a fresh map's script surface with pressure 300, infinity chests, no output
+  inserter):
+  - The output held: a cryogenic plant on fusion-generator (stack 5) stopped at 4. Its bulk inserter stopped feeding at
+    2 held (`waiting_for_space_in_destination`). An assembler 2 on gears (stack 100) stopped at 6; its inserter stopped
+    at 3. The machines crafted what was already inside. So a wait for 10 in the plant never ends.
+  - products_finished counts crafts. An assembler 2 on copper cable given 20 plates: 20 (40 cables). An
+    electromagnetic plant (+50% productivity) given 20 plates: 30 (60 cables), the bonus crafts included.
+  - A machine's own logistic condition holds it off with no logistic network round it: `gear < -2147483648` read
+    `disabled_by_control_behavior`. Its input inserter put 8 plates in, then stopped. An unwired circuit enable
+    condition (the same never-true condition) is ignored: the machine kept working.
+- `assembler_batch` now:
+  - reads the machine's products-finished counter when it plans. Its `made` step is `wait_until produced {position,
+    counter_from, at_least: crafts}`, so the batch is the crafts on the counter, wherever the products go. The output
+    inserter is not held.
+  - switches the machine's own conditions off for the batch (`circuit_set logistic: false`, and `remove_condition` for
+    a wired circuit condition) and sets them back after. The output inserter's own conditions are handled the same way.
+    The input inserter's own conditions come back after the batch in place of `input off`; without any, the input
+    stays held as before. A condition with no signal cannot be set by circuit_set: it stays off, and the plan says so.
+  - says in the plan and the reply: `counter {now, done_at}`, `output_stack`, `feeds_until` (outputstop's idle-full
+    rule), `destination` and a chest's `room` (and a line when the room is less than the count), and
+    `machine_condition`, `output_condition`, `input_condition`. A line also says when the crafts at the machine's speed
+    take longer than the `made` wait's 900 s.
+  - refuses a batch whose ingredients do not fit the requester's slots at once (under its bar, with what else it
+    holds): `refused` names the slots. A dry run says it and returns no steps; a real call fails.
+- `wait_until produced` takes `counter_from` (one machine, a whole number).
+- Run on a copy of world n's d22 save (2.0.77, a rig like Astra's on Nauvis with its pressure set to 300 there, sol's
+  bot): dry run, then `count: 10`. The 12 steps met in order. The staged waits saw 1000, 1000 and 500 in the requester;
+  `made` saw "made 10 crafts in 1 machine since the wait began (at least 10)". 10 fusion generators were in the passive
+  provider and none in the plant. After the batch the plant had `fusion-generator < 2` back (and was off by it, with 12
+  in the network), and the input inserter had `fusion-generator < 6` back. A dry run through dispatch took 5.7-12.8 ms
+  there (Rosetta), including the JSON. It runs only when called; nothing is added to the tick.
+- Bundle (compacted): 6,270,315 bytes on main (5c6ef5ce), 6,278,546 with this branch (limit 8,388,608).
+- Docs: agent/ref/circuits-settings.md (`assembler_batch`). Test: tests/d27_batch278.lua (fails on main: no counter, no
+  conditions, no counter_from); tests d17_batch19, d20_batch53, d22_batch77 and d17_batch19_rt take the new steps.
