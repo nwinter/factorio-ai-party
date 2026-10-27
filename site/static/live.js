@@ -792,6 +792,27 @@
     return 'waiting ' + (m < 60 ? m + more + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + more + ' min');
   }
   function inTransit(p) { return !!(p.route || p.state === 'on_the_path' || p.where === 'in transit'); }
+  // (batch270) the game's icons (static/game/index.json, site/gameicons.py; Graphics copyright Wube Software): loaded
+  // once, shown from the next refresh; a name without one keeps its text. A technology level without its own picture
+  // uses the one below it.
+  var GAME = null;
+  if (typeof fetch === 'function') {
+    fetch('/static/game/index.json').then(function (r) { return r.json(); }).then(function (d) {
+      GAME = {};
+      Object.keys(d).forEach(function (k) { GAME[k] = {}; d[k].forEach(function (n) { GAME[k][n] = 1; }); });
+    }).catch(function () { /* no icons */ });
+  }
+  function gi(kind, name, size) {
+    var have = GAME && GAME[kind];
+    if (!have) return '';
+    name = String(name || '').trim().toLowerCase().replace(/ /g, '-');
+    var k = have[name] ? name : null, m = /^(.*?)-(\d+)$/.exec(name);
+    if (!k && m) {
+      for (var i = Math.min(+m[2], 20); i > 0 && !k; i--) if (have[m[1] + '-' + i]) k = m[1] + '-' + i;
+      if (!k && have[m[1]]) k = m[1];
+    }
+    return k ? '<img class="gi" src="/static/game/' + kind + '/' + k + '.webp" width="' + (size || 20) + '" height="' + (size || 20) + '" alt="">' : '';
+  }
   function spaceInset(sp) {
     if (!sp || !(sp.platforms || []).length && !(sp.planets || []).length) return '';
     var plats = (sp.platforms || []).filter(inTransit).concat((sp.platforms || []).filter(function (p) { return !inTransit(p); }));
@@ -800,11 +821,13 @@
         Math.round(p.route.pct) + '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.name) + ' on its way"></div>' : '';
       // where it is, plus its state when that says more than "flying" or "waiting at a stop" (no schedule, paused...)
       var st = p.state && !/^(on_the_path|waiting_at_station|paused)$/.test(p.state) ? label(p.state).toLowerCase() : '';
-      return '<li><b>' + esc(p.name) + '</b> <span>' + esc([p.where || label(p.state), st].filter(Boolean).join(' · ')) + '</span>' +
+      var at = String(p.where || '').split(' ')[0];
+      return '<li>' + gi('item', 'space-platform-hub', 18) + '<b>' + esc(p.name) + '</b> ' + gi('place', at, 16) + '<span>' + esc([p.where || label(p.state), st].filter(Boolean).join(' · ')) + '</span>' +
         (p.speed_kms ? ' <span class="fx-muted">' + esc(p.speed_kms) + ' km/s</span>' : '') + (inTransit(p) || !waitedText(p) ? '' : ' <span class="fx-muted">' + esc(waitedText(p)) + '</span>') +
         (p.paused ? ' <span class="fx-chip fx-chip--grey">paused</span>' : '') + bar + '</li>';
     }).join('');
-    return '<div class="space-inset"><h4>Space</h4><p class="small fx-muted">' + esc([(sp.planets || []).join(', '), sp.rockets ? sp.rockets + ' rocket' + (sp.rockets > 1 ? 's' : '') + ' launched' : ''].filter(Boolean).join(' · ')) + '</p>' +
+    var planets = (sp.planets || []).map(function (n) { return gi('place', n, 18) ? '<span title="' + esc(n) + '">' + gi('place', n, 18) + '</span>' : esc(n); }).join(' ');
+    return '<div class="space-inset"><h4>Space</h4><p class="small fx-muted space-planets">' + planets + (sp.rockets ? ' · ' + gi('item', 'rocket-part', 16) + esc(sp.rockets.toLocaleString ? sp.rockets.toLocaleString('en-US') : sp.rockets) + ' rocket' + (sp.rockets > 1 ? 's' : '') + ' launched' : '') + '</p>' +
       (rows ? '<ul class="platforms">' + rows + '</ul>' : '') + '</div>';
   }
 
@@ -841,11 +864,11 @@
     // status strip
     var pct = Math.round((r.progress || 0) * 100);
     var strip = '<div class="strip-item"><span class="fx-label">Game time</span><b>' + esc(s.game_time || '–') + (s.paused ? ' (paused)' : '') + '</b></div>' +
-      '<div class="strip-item"><span class="fx-label">Technologies</span><b>' + esc(r.done_count != null ? r.done_count : '–') + '</b></div>' +
-      '<div class="strip-item"><span class="fx-label">SPM</span><b>' + esc(sci.spm != null ? fmt(sci.spm) : '–') + '</b></div>' +
+      '<div class="strip-item"><span class="fx-label">Technologies</span><b>' + gi('item', 'lab', 20) + esc(r.done_count != null ? r.done_count : '–') + '</b></div>' +
+      '<div class="strip-item"><span class="fx-label">SPM</span><b>' + gi('item', 'automation-science-pack', 20) + esc(sci.spm != null ? fmt(sci.spm) : '–') + '</b></div>' +
       '<div class="strip-item"><span class="fx-label">Packs made / min</span><b>' + esc((sci.made || {}).per_min != null ? fmt(sci.made.per_min) : '–') + '</b></div>' +
       '<div class="strip-item"><span class="fx-label">Stage</span><b>' + esc(sci.stage_label || '–') + '</b></div>' +
-      (r.current ? '<div class="strip-item strip-research"><div class="live-research-label"><span>Researching <strong>' + esc(r.label || label(r.current)) +
+      (r.current ? '<div class="strip-item strip-research"><div class="live-research-label"><span>' + gi('tech', r.current, 22) + 'Researching <strong>' + esc(r.label || label(r.current)) +
         '</strong></span><span class="live-research-pct">' + pct + '%</span></div><div class="fx-progress fx-progress--research fx-progress--thin" role="progressbar" aria-valuenow="' +
         pct + '" aria-valuemin="0" aria-valuemax="100" aria-label="Research progress" style="--fx-value:' + pct + '%"></div></div>' : '');
     $('#strip').innerHTML = strip;

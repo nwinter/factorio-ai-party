@@ -425,7 +425,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .toc ol { padding-left: 1.2em; margin: 0; }
 .toc li { margin: .3rem 0; }
 .toc a { color: var(--ink-2); }
-@media (max-width: 860px) { .study-layout { grid-template-columns: 1fr; } .toc { position: static; max-height: none; } }
+@media (max-width: 860px) { .study-layout { grid-template-columns: minmax(0, 1fr); } .toc { position: static; max-height: none; } }
+.prose li, .prose p { overflow-wrap: anywhere; }
 .prose { max-width: 48em; overflow-wrap: break-word; }
 .prose h2 { scroll-margin-top: 80px; }
 .prose h3 { scroll-margin-top: 80px; }
@@ -1169,3 +1170,7 @@ table.long-run .moments li { list-style: none; margin-left: -1.1em; display: fle
 @media (max-width: 600px) { .journey-list li { flex-basis: 40%; } .j-pic, .j-pic .gi { width: 64px; height: 64px; } }
 .shift-watch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: .4rem 0 .8rem; }
 ol.techs li { display: flex; align-items: center; gap: 6px; }
+.strip-item b .gi, .live-research-label .gi { margin-right: 5px; vertical-align: -.25em; }
+.space-inset .platforms li .gi { margin-right: 4px; vertical-align: -.25em; }
+.lost { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.lost a { display: inline-flex; align-items: center; min-height: 40px; padding: 4px 14px; border: 1px solid var(--line); border-radius: var(--fx-r-1); background: var(--surface); text-decoration: none; font-weight: 600; }
