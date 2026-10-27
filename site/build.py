@@ -1764,7 +1764,7 @@ def live_app(heading, sample_href):
         <ol id="vchat" class="vchat" aria-live="polite"></ol>
         <form id="vchat-form" class="vchat-form" autocomplete="off">
           <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name (blank: a guest name)" title="Blank: you post as Guest and four letters or digits, the same each time">
-          <input class="fx-textfield" name="text" maxlength="200" placeholder="Say something" aria-label="Message" required>
+          <input class="fx-textfield" name="text" maxlength="500" placeholder="Say something" aria-label="Message" required>
           <button class="fx-btn" type="submit">Send</button>
           <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
         </form>

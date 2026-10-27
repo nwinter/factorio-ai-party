@@ -278,8 +278,8 @@ so no new remote function was needed.
   `viewer NAME: text` to the game chat in grey and to the chat log with `from: "viewer NAME"`, `viewer: true` and no
   player, so it is unread for every agent and shows in the `chat:` trailer as `latest=viewer bob: ...`. It files no
   `team` mention (a viewer's `@astra` would otherwise jump the queue of teammates' mentions). Rich text tags are
-  stripped from names and bracketed in text. Rate limit in the harness: one line per viewer (case-blind) every 20 s,
-  6 a minute in all, in game ticks; a dropped line is `posted:false, dropped, retry_after_s` (not an error), so the
+  stripped from names and bracketed in text. Rate limit in the harness: one line per viewer (case-blind) every 3 s,
+  20 a minute in all, in game ticks (20 s and 6 before d27 batch263); a dropped line is `posted:false, dropped, retry_after_s` (not an error), so the
   bridge can drop or retry without parsing errors.
 - `tools/audience.py viewer NAME TEXT` and `tools/audience.py confessions [--since]` wrap both (exit 3 on a dropped
   line). It refuses worlds a, b, c and n unless `POG_AUDIENCE_ANY_WORLD=1`; I wrote that guard while keeping off run
@@ -288,7 +288,7 @@ so no new remote function was needed.
 
 ### Decisions to check
 
-- Confession cooldown 15 s and length 300; viewer limits 20 s per name and 6 a minute. All are constants at the top of
+- Confession cooldown 15 s and length 300; viewer limits 3 s per name and 20 a minute (d27 batch263). All are constants at the top of
   `audience.lua`.
 - Viewer lines skip mention filing. If viewers should be able to ping an agent, drop the `not viewer` check in
   `chat.lua`'s `append` (they would then appear in `team.mentions`).

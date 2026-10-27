@@ -27,7 +27,7 @@
 const SCHEMA = 1;
 const MAX_STATE_BYTES = 256 * 1024;
 const CHAT = {
-  maxLen: 200,          // characters per message
+  maxLen: 500,          // characters per message (d27 batch263 VR, Nick 06:30: 200 before, so long messages came in parts)
   minGapS: 4,           // per client: seconds between messages
   perMinute: 8,         // per client
   globalPerMinute: 60,  // all clients together
