@@ -940,11 +940,12 @@ do
   eq((un.items or {})['cliff-explosives'], nil); eq(un.cliffs_by_hand, nil)
   force.technologies = nil
   -- a network with construction robots over it: no hand-clearing line
-  cw2.find_logistic_network_by_position = function() return {available_construction_robots=5} end
+  -- (d27 batch276: a network whose construction area covers the cliff, as the dry run now asks)
+  cw2.find_logistic_networks_by_construction_area = function() return {{network_id=1, available_construction_robots=5}} end
   r = dryrun.check(cp2, {kind='ghosts', entities=belts})
   eq(r.cliffs, '4 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only with one explosive (construction robots bring it): cliff-explosives 1, you hold 0')
   eq(r.cliffs_by_hand, nil)
-  cw2.find_logistic_network_by_position = nil
+  cw2.find_logistic_networks_by_construction_area = nil
   held['cliff-explosives'] = 3
   r = dryrun.check(cp2, {kind='ghosts', entities=belts})
   eq(r.missing, nil); has(r.cliffs, 'cliff-explosives 1, you hold 3')
