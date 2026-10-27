@@ -130,13 +130,15 @@ return function(api)
   local function bump(map, key, n) map[key] = (map[key] or 0) + (n or 1) end
   -- How much of an item robots are on their way to take from a logistic chest (its logistic point's pickup
   -- reservations; Grok, 15:20); 0 for any other entity.
-  function M.reserved(e, item)
+  -- (d27 batch262 IQ) quality: robots' pickups of that quality only (rows carry it as a string, 2.0.77); nil: every one
+  function M.reserved(e, item, quality)
     if not (e and e.valid and e.type == 'logistic-container') then return 0 end
     local pt = try(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
     local n = 0
     for _, r in ipairs(pt and try(function() return pt.targeted_items_pickup end) or {}) do
       local name = type(r.name) == 'table' and r.name.name or r.name
-      if name == item then n = n + (r.count or 0) end
+      local q = type(r.quality) == 'table' and r.quality.name or r.quality or 'normal'
+      if name == item and (quality == nil or q == quality) then n = n + (r.count or 0) end
     end
     return n
   end
