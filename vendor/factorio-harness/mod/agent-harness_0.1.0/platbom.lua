@@ -129,6 +129,16 @@ return function(api)
     return need
   end
   local function store() local st = api.state and api.state() or {}; st.bom_requests = st.bom_requests or {}; return st.bom_requests end
+  -- hold (d27 batch281, Astra #2604: Resolute's 24 beacons, 11.52 MW, staged before fusion while 4.8 MW of solar runs it;
+  -- a slot cleared by hand came back with the next rewrite): items the section asks none of while held, an item at every
+  -- quality or item@quality; kept through the rewrites until hold: false. Their ghosts stay.
+  local function is_held(rec, k) return rec and rec.hold and (rec.hold[k] or rec.hold[(split(k))]) and true or false end
+  local function hold_list(rec)
+    local out = {}
+    for k in pairs(rec and rec.hold or {}) do out[#out+1] = k end
+    table.sort(out)
+    return out
+  end
   local function section_of(hub, group, create)
     local secs = try(function() return hub.get_logistic_sections() end)
     if not secs then return nil end
@@ -145,12 +155,24 @@ return function(api)
     local hub = pl.hub
     local items = {}
     local carry = next(need) and in_robots(pl, pl.force) or {}
-    for k, n in pairs(need) do local name, q = split(k); items[#items+1] = {item=k, name=name, quality=q, n=math.max(0, n - (carry[k] or 0)), need=n, carry=carry[k]} end
+    local holds = {}
+    for k, n in pairs(need) do
+      local name, q = split(k)
+      if is_held(rec, k) then holds[#holds+1] = {item=k, need=n}
+      else items[#items+1] = {item=k, name=name, quality=q, n=math.max(0, n - (carry[k] or 0)), need=n, carry=carry[k]} end
+    end
     table.sort(items, function(x, y) return x.item < y.item end)
+    table.sort(holds, function(x, y) return x.item < y.item end)
+    local hold_lines = {}
+    for _, h in ipairs(holds) do
+      hold_lines[#hold_lines+1] = string.format('%s: held, not asked (the ghosts need %d; the hub holds %d)', label(h.item), h.need,
+        count_of(try(function() return hub.get_inventory(defines.inventory.hub_main) end), h.item))
+    end
     if #items == 0 then
       local _, secs, i = section_of(hub, rec.group, false)
       if secs and i then secs.remove_section(i) end
-      return {}, true
+      rec.min, rec.held, rec.slot = {}, {}, {}
+      return hold_lines, #holds == 0
     end
     local sec = section_of(hub, rec.group, true)
     local n = try(function() return sec.filters_count end) or 0
@@ -231,6 +253,7 @@ return function(api)
         .. (rec.adopted and rec.adopted[it.item] and string.format(' (adopted from the slot, changed by requests or min_payload: %s)', rec.adopted[it.item].mp and tostring(rec.adopted[it.item].mp) or 'none') or '')
         .. (spent and spent[it.item] and string.format(' (lowered at once by %d since the last rewrite as the hub spent it)', spent[it.item]) or '')
     end
+    for _, l in ipairs(hold_lines) do lines[#lines+1] = l end
     return lines, false
   end
   -- The watch (batch27 A3, Sol: the 10 s rewrite launched a full stack after ghosts used hub stock: 200 pipes, extra
@@ -323,18 +346,38 @@ return function(api)
       end
     end
     local old = recs[pl.index]
+    -- hold: a list of items (every quality) or item@quality; false or [] clears it; not given, the request's hold is kept.
+    -- Given with no area and no import_from, the request in place keeps its own.
+    local hold = old and old.hold
+    if a.hold ~= nil then
+      assert(a.hold == false or (type(a.hold) == 'table' and (next(a.hold) == nil or a.hold[1] ~= nil)),
+        'hold is a list of items or item@quality (false or [] clears it)')
+      hold = nil
+      for _, item in ipairs(a.hold or {}) do
+        assert(type(item) == 'string', 'hold: item names or item@quality')
+        local name, q = split(item)
+        assert(prototypes.item[name], 'hold: unknown item ' .. item)
+        assert(not item:find('@', 1, true) or prototypes.quality[q], 'hold: unknown quality ' .. q .. ' (item or item@quality)')
+        hold = hold or {}
+        hold[item] = true
+      end
+      if old and a.area == nil and a.import_from == nil then
+        areas, from = old.areas, old.import_from
+      end
+    end
     if not mpmap and old and old.min_payload then mpmap = old.min_payload end
     assert(a.tail == nil or type(a.tail) == 'boolean', 'tail must be true or false')
     local tail = a.tail
     if tail == nil and old then tail = old.tail end
     local rec = {group=group, import_from=from, areas=areas, force=p.force.name, by=api.who and api.who(p) or nil, tick=game.tick, min_payload=mpmap, tail=tail or nil,
-      written=old and old.written or nil, adopted=not a.min_payload and old and old.adopted or nil, spent=old and old.spent or nil}
+      written=old and old.written or nil, adopted=not a.min_payload and old and old.adopted or nil, spent=old and old.spent or nil, hold=hold}
     recs[pl.index] = rec
     local lines, gone = apply(pl, rec, ghost_need(pl, p.force, areas))
     if gone then recs[pl.index] = nil end
     return {platform=pl.name, request=gone and 'nothing to request: no ghost' .. (areas and ' in the area' or '') or 'set',
       group=group, lines=#lines > 0 and lines or {'no ghost' .. (areas and ' in the area' or '') .. ' on ' .. pl.name .. ': no request kept'},
-      note='a hub section of its own (logistic group "' .. group .. '"), set to what the ghosts' .. (areas and ' in the area' or '') .. ' still need; read again every 10 s: lowered as they are built, removed with the last; each tick a drop in what the hub holds of an item it asks lowers that request by as much at once; your other hub requests stay as they are'}
+      hold=not gone and hold and hold_list(rec) or nil,
+      note='a hub section of its own (logistic group "' .. group .. '"), set to what the ghosts' .. (areas and ' in the area' or '') .. ' still need; read again every 10 s: lowered as they are built, removed with the last; each tick a drop in what the hub holds of an item it asks lowers that request by as much at once; your other hub requests stay as they are' .. (hold and not gone and '; held items (hold) are asked none of until hold: false or [], and their ghosts stay' or '')}
   end
   function M.tick(tick)
     local recs = store()
@@ -390,6 +433,7 @@ return function(api)
   function M.read(p, a)
     if a.surface ~= nil and a.platform == nil then return M.from_surface(p, a.surface) end
     assert(a.pack == nil or type(a.pack) == 'boolean', 'pack must be true or false')
+    assert(a.hold == nil or a.request ~= nil, 'hold goes with request: true (the managed section\'s items asked none of)')
     if a.request ~= nil then
       assert(type(a.request) == 'boolean', 'request is true or false')
       return M.request(p, a, api.platform(p, a.platform))
@@ -426,6 +470,7 @@ return function(api)
     local flight, pods = in_flight(pl)
     local carry = in_robots(pl, p.force)
     local ask = asks(hub)
+    local rec = store()[pl.index]
     local rows, rest, lines = {}, {}, {}
     -- a row an item at a quality: built, held, in flight and carried at that quality only; the hub's stock of the item at
     -- other qualities is said beside it (it builds none of these ghosts)
@@ -441,30 +486,33 @@ return function(api)
       local left = math.max(0, n - held - coming - robots)
       rows[#rows+1] = {item=name, quality=q, key=label(item), ghosts_need=n, requests=requests[item], built=built, hub=held,
         hub_other_quality=all > held and all - held or nil, in_flight=coming > 0 and coming or nil,
-        in_robots=robots > 0 and robots or nil, remaining=left, asks=ask[item]}
+        in_robots=robots > 0 and robots or nil, remaining=left, asks=ask[item], held=is_held(rec, item) or nil}
       if left > 0 then rest[#rest+1] = {name=name, quality=q, count=left} end
     end
     table.sort(rows, function(x, y) if x.remaining ~= y.remaining then return x.remaining > y.remaining end return x.key < y.key end)
     for _, r in ipairs(rows) do
-      lines[#lines+1] = string.format('%s: ghosts need %d%s%s; hub holds %d%s%s%s; %s%s', r.key, r.ghosts_need,
+      lines[#lines+1] = string.format('%s: ghosts need %d%s%s; hub holds %d%s%s%s; %s%s%s', r.key, r.ghosts_need,
         r.requests and string.format(' (%d of them asked into ghosts and machines)', r.requests) or '', r.built and string.format(' (%d built)', r.built) or '',
         r.hub, r.hub_other_quality and string.format(' (and %d at other qualities, which do not build these)', r.hub_other_quality) or '',
         r.in_robots and string.format(', construction robots carry %d', r.in_robots) or '', r.in_flight and string.format(', %d in flight', r.in_flight) or '',
         r.remaining > 0 and string.format('%d to send', r.remaining) or 'covered',
-        r.asks and string.format(' (the hub asks %d)', r.asks) or ' (the hub asks none)')
+        r.asks and string.format(' (the hub asks %d)', r.asks) or ' (the hub asks none)', r.held and ' (held by the platform_bom request\'s hold)' or '')
     end
     -- (d17 batch34 A3, Muse nearly called Wayfarer's hull closed on a request line that had dropped) ghosts open whose
     -- item no active hub request asks for, while the hub, cargo pods on their way and its robots hold less than they need
-    local unasked = {}
+    -- (d27 batch281) items the platform_bom request holds are said apart, not as unrequested
+    local unasked, holds = {}, {}
     for _, r in ipairs(rows) do
-      if r.remaining > 0 and (r.asks or 0) == 0 then
+      if r.remaining > 0 and (r.asks or 0) == 0 and r.held then holds[#holds+1] = string.format('%s %d', r.key, r.remaining)
+      elseif r.remaining > 0 and (r.asks or 0) == 0 then
         unasked[#unasked+1] = string.format('%s: ghosts need %d, %d not in the hub, in flight or in robots; no active hub request asks for it', r.key, r.ghosts_need, r.remaining)
       end
     end
     local out = {platform=pl.name, entity_ghosts=entity_ghosts, tile_ghosts=tile_ghosts, pods_in_flight=pods, items=rows,
       lines=#lines > 0 and lines or {'no ghost on ' .. pl.name .. ': nothing to build'}, unrequested=#unasked > 0 and unasked or nil,
-      requests_check=(entity_ghosts + tile_ghosts > 0) and (#unasked > 0 and string.format('%d item%s the ghosts still need %s no active hub request (unrequested)', #unasked, #unasked == 1 and '' or 's', #unasked == 1 and 'has' or 'have')
-        or 'every item the ghosts still need has an active hub request') or nil}
+      requests_check=(entity_ghosts + tile_ghosts > 0) and ((#unasked > 0 and string.format('%d item%s the ghosts still need %s no active hub request (unrequested)', #unasked, #unasked == 1 and '' or 's', #unasked == 1 and 'has' or 'have')
+        or 'every item the ghosts still need has an active hub request') .. (#holds > 0 and string.format('; %d held by the platform_bom request\'s hold, not asked: %s', #holds, table.concat(holds, ', ')) or '')) or nil,
+      hold=rec and rec.hold and hold_list(rec) or nil}
     if #rest > 0 then
       local lift, slots = api.cargo.limits(nil)
       local w = api.cargo.weigh(rest, lift, slots)
@@ -591,7 +639,8 @@ return function(api)
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
     tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; a slot with no custom minimum payload (the game\'s default, a full rocket by weight) is lowered the same way; kept until false. Each line says the minimum payload the slot has now',
-    min_payload='with request: {item: N} (every quality of it) or {"item@quality": N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
+    min_payload='with request: {item: N} (every quality of it) or {"item@quality": N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too',
+    hold='with request: a list of items (every quality) or item@quality the section asks none of while held: kept through the rewrites until hold: false or [] (not given: kept as it is); their ghosts stay; given with no area and no import_from, the request keeps its own. The read says them apart in requests_check (held, not asked), not as unrequested, and both give hold', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
     returns='lines (one per item and quality, item@quality past normal, most still to send first, then the total), items [{item, quality, key (item, or item@quality past normal), ghosts_need (what the entity and tile ghosts there need of it at that quality), built (entities of it at that quality, or tiles, already built there), hub (held at that quality), hub_other_quality (the hub\'s stock of the item at other qualities: it builds none of these ghosts), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], requests_check (with ghosts open: whether every item they still need has an active hub request) and unrequested (each item the ghosts still need, beyond the hub, in flight and in robots, that no active hub request asks for), entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}
   return M
