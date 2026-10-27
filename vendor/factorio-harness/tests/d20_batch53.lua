@@ -153,12 +153,12 @@ end
 print('d20_batch53 L5 wagon slot filters and bar: ok')
 
 -- L6 (Astra #1205): assembler_batch with the requester's trash unrequested on switches it off before the requests are
--- cleared and staged, and on after the output is released.
+-- cleared and staged, and on after the batch.
 do
   defines={inventory={assembling_machine_input=2,assembling_machine_output=3}}
   local recipe={name='fusion-reactor',products={{type='item',name='fusion-reactor',amount=1}},ingredients={{type='item',name='tungsten-plate',amount=200}}}
   local m={valid=true,unit_number=1,name='assembling-machine-3',type='assembling-machine',position={x=22.5,y=-0.5},
-    bounding_box={left_top={x=21,y=-2},right_bottom={x=24,y=1}},get_recipe=function() return recipe end,get_inventory=function() return nil end}
+    bounding_box={left_top={x=21,y=-2},right_bottom={x=24,y=1}},get_recipe=function() return recipe end,get_inventory=function() return nil end,products_finished=0}
   local point={trash_not_requested=true}
   local req={valid=true,unit_number=2,name='requester-chest',position={x=22.5,y=-3.5},prototype={logistic_mode='requester'},
     get_item_count=function() return 0 end,get_requester_point=function() return point end}
@@ -170,13 +170,13 @@ do
   local r=B.run({},{position={x=22.5,y=-0.5},count=1,dry_run=true})
   local labels={}
   for i,st in ipairs(r.steps) do labels[i]=st.label end
-  eq(table.concat(labels,' / '),'hold output / input held / keep staged (trash unrequested off) / clear requester / stage / staged tungsten-plate / staged / input on / made / input off / release output / trash unrequested on again')
-  eq(r.steps[3].args.trash_unrequested,false); eq(r.steps[12].args.trash_unrequested,true)
+  eq(table.concat(labels,' / '),'input held / keep staged (trash unrequested off) / clear requester / stage / staged tungsten-plate / staged / input on / made / input off / trash unrequested on again')
+  eq(r.steps[2].args.trash_unrequested,false); eq(r.steps[10].args.trash_unrequested,true)
   eq(r.trash_unrequested,'on: switched off for the batch and on again after')
-  has(r.plan[4],'requester (22.5,-3.5) has trash unrequested on')
+  has(table.concat(r.plan,'\n'),'requester (22.5,-3.5) has trash unrequested on')
   point.trash_not_requested=false
   r=B.run({},{position={x=22.5,y=-0.5},count=1,dry_run=true})
-  eq(#r.steps,10); eq(r.trash_unrequested,'off')
+  eq(#r.steps,8); eq(r.trash_unrequested,'off')
   defines=nil
 end
 print('d20_batch53 L6 assembler_batch keeps the staged items: ok')

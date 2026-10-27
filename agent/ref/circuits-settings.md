@@ -146,17 +146,22 @@
     trash slots. A silo's ghost takes both too (a place_ghosts entry's `configure` among them), and the silo built from it keeps them.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
 - `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
-  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < -2147483648`, false at any count) and the
-  input inserter held; the requester feeding it cleared, then asked for exactly what the batch still needs of each
-  ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
-  input on; waits for the products in the machine; the input off again; the output released. The requester and both
-  inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
-  (the machine would make more with it). The inserters need a logistic network for their logistic condition. A
-  requester with trash unrequested on has it switched off before its requests are cleared and staged, and on again
-  after the output is released (`trash_unrequested` in the reply; a plan stopped between leaves it off). The recipe's
-  quality (`quality`) goes on every item ingredient's request and wait and on the product wait (fluids have none); a
-  machine whose modules give quality has its product wait count every quality. `other_quality`: what the requester
-  holds of an ingredient at another quality (the machine does not take it).
+  queue plan, each step a call whose reply says what it did: the machine's own conditions (its logistic condition, and
+  its circuit condition when a wire is on it) and the output inserter's switched off; the input inserter held (logistic
+  `INGREDIENT < -2147483648`, false at any count); the requester feeding it cleared, then asked for exactly what the
+  batch still needs of each ingredient (crafts x amount less what the machine and the requester hold now); waits for it;
+  requests cleared; the input on; waits for the crafts on the machine's products-finished counter (`counter`: its count
+  at the plan and the count that ends the batch; productivity bonus crafts count too) while the products go out through
+  the output inserter (`destination`, and a chest's `room` for them); the input off again (or its own condition set
+  back); the machine's and the output's own conditions set back. The products are not held in the machine: its output
+  holds one stack (`output_stack`) and inserters stop feeding it at `feeds_until` held. A batch whose ingredients do not
+  fit the requester's slots at once is refused (`refused`, the slots said). The requester and both inserters are found
+  round the machine unless given. `surplus` names what is already there over the batch's need (the machine would make
+  more with it). The inserters need a logistic network for their logistic condition. A requester with trash
+  unrequested on has it switched off before its requests are cleared and staged, and on again after the batch
+  (`trash_unrequested` in the reply; a plan stopped between leaves it off). The recipe's quality (`quality`) goes on
+  every item ingredient's request and wait (fluids have none). `other_quality`: what the requester holds of an
+  ingredient at another quality (the machine does not take it).
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, clear_all?, section?, active?, add_section?, remove_section?, group?,
   trash_unrequested?, construction_requests?, keep?, dry_run?, force?, surface?}` or `{groups: true}`: a

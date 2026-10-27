@@ -26,6 +26,18 @@
 -- too (a count by the name alone is normal quality in 2.0); fluids have no quality. A machine whose modules give quality
 -- makes some products a tier or more higher: its product wait counts every quality. What the requester holds of an
 -- ingredient at another quality is said: the machine does not take it.
+-- (d27 batch278 AB, Astra #2589: a dry run on Aquilo for 10 fusion generators held the output and waited for 10 in a
+-- cryogenic plant whose output holds one stack of 5 and whose inserters stop feeding it at 2; the plant was also off by
+-- its own logistic condition, fusion-generator < 2, which the plan never touched) Measured on 2.0.77 (a copy, a
+-- cryogenic plant on fusion-generator and an assembler 2 on gears, their output held): the input inserter stopped
+-- feeding at 2 and 3 held and the machines stopped at 4 and 6, what was inside crafted. So the products are no longer
+-- held and waited for in the machine: the plan reads the machine's products-finished counter (its GUI's: crafts,
+-- productivity bonus crafts too) when it plans and waits (produced, counter_from) for that many more crafts, the
+-- products going out through the output inserter as they come. A machine's own enable conditions (its logistic
+-- condition, also when no logistic network covers it, and its circuit condition when a wire is on it; an unwired one is
+-- ignored) and the output inserter's are switched off for the batch and set back as they were after; the input
+-- inserter's own conditions are set back after it too (without any it stays held, as before). The dry run says the
+-- output's limits, the counter and where the products go (a chest: its room for them).
 return function(api)
   local M = {}
   -- a logistic condition that never holds: the least 32-bit constant (circuits.lua M.NEVER's)
@@ -40,6 +52,55 @@ return function(api)
     return out
   end
   local function same(a, b) return a and b and a.valid and b.valid and a.unit_number == b.unit_number end
+  -- A condition as circuit_set takes it back: "fusion-generator < 2", "signal-A >= signal-B", a quality as NAME@QUALITY.
+  local ASCII = {['\226\137\165']='>=', ['\226\137\164']='<=', ['\226\137\160']='!='}
+  local function ctext(c)
+    if type(c) ~= 'table' or type(c.first_signal) ~= 'table' or not c.first_signal.name then return nil end
+    local function sig(g) return g.name .. ((g.quality and g.quality ~= 'normal') and '@' .. g.quality or '') end
+    local right = (type(c.second_signal) == 'table' and c.second_signal.name) and sig(c.second_signal) or tostring(c.constant or 0)
+    return string.format('%s %s %s', sig(c.first_signal), ASCII[c.comparator] or c.comparator or '<', right)
+  end
+  M.ctext = ctext
+  local function wired(e)
+    for _, w in ipairs({'circuit_red', 'circuit_green'}) do
+      local id = defines.wire_connector_id and defines.wire_connector_id[w]
+      if id and try(function() return e.get_circuit_network(id) end) then return true end
+    end
+    return false
+  end
+  -- An entity's own enable conditions: {logistic = text | false (connected, no signal), enable = text | false, disabled}
+  -- or nil. A circuit condition counts only with a wire on the entity (2.0.77 ignores an unwired one).
+  local function own(e)
+    local cb = try(function() return e.get_control_behavior() end)
+    if not cb then return nil end
+    local r = {}
+    if try(function() return cb.connect_to_logistic_network end) then r.logistic = ctext(try(function() return cb.logistic_condition end)) or false end
+    if try(function() return cb.circuit_enable_disable end) and wired(e) then r.enable = ctext(try(function() return cb.circuit_condition end)) or false end
+    if r.logistic == nil and r.enable == nil then return nil end
+    r.disabled = try(function() return cb.disabled end) == true
+    return r
+  end
+  M.own = own
+  local function own_text(r)
+    local parts = {}
+    if r.logistic ~= nil then parts[#parts+1] = r.logistic and string.format('logistic "%s"', r.logistic) or 'logistic condition with no signal' end
+    if r.enable ~= nil then parts[#parts+1] = r.enable and string.format('circuit "%s" (wired)', r.enable) or 'circuit condition with no signal (wired)' end
+    return table.concat(parts, ', ') .. (r.disabled and ', off by it now' or '')
+  end
+  -- circuit_set arguments that switch R off, and that set it back (nil: nothing to set back; a condition with no signal
+  -- cannot be set by circuit_set, so it stays off: said).
+  local function off_args(pos, r)
+    local a = {position=pos}
+    if r.logistic ~= nil then a.logistic = false end
+    if r.enable ~= nil then a.remove_condition = true end
+    return a
+  end
+  local function back_args(pos, r, logistic_default)
+    local a, any = {position=pos}, false
+    if r.logistic then a.logistic = r.logistic; any = true elseif logistic_default ~= nil then a.logistic = logistic_default; any = true end
+    if r.enable then a.enable = r.enable; any = true end
+    return any and a or nil
+  end
 
   -- The inserters round the machine: those that drop into it, and those that pick from it.
   local function inserters(m)
@@ -91,19 +152,19 @@ return function(api)
     local function q_of(name) return quality == 'normal' and name or string.format('%s (%s)', name, quality) end
     -- Quality from modules: products above the recipe's quality, so the product counts take every quality.
     local upgrades = (try(function() return m.effects and m.effects.quality end) or 0) > 0
-    local product_quality = upgrades and 'any' or quality
     local had = 0
     if upgrades then
       for _, q in ipairs(qualities()) do had = had + count_in(mo, product, q) end
     else had = count_in(mo, product) end
     local other = {}
-    local sets, waits, surplus, lines = {}, {}, {}, {}
+    local sets, waits, surplus, lines, targets = {}, {}, {}, {}, {}
     for _, ing in ipairs(recipe.ingredients or {}) do
       if ing.type == 'item' then
         local total = ing.amount * crafts
         local inside = count_in(mi, ing.name)
         local held = try(function() return req.get_item_count(id(ing.name)) end) or 0
         local need = total - inside - held
+        targets[#targets+1] = {name=ing.name, count=math.max(need + held, held)}
         if need > 0 then
           sets[#sets+1] = {item=ing.name, min=need + held, max=need + held, quality=quality ~= 'normal' and quality or nil}
           waits[#waits+1] = {item=ing.name, at_least=need + held}
@@ -122,13 +183,56 @@ return function(api)
         end
       end
     end
+    -- (AB) the staged waits wait in the requester: what it must hold at once has to fit its slots (under its bar), with
+    -- what else it holds; else the batch is refused, the slots said.
+    local rinv = try(function() return req.get_inventory(defines.inventory.chest) end)
+    local refused
+    if rinv then
+      local usable = #rinv
+      local bar = try(function() return rinv.get_bar() end)
+      if bar and bar - 1 < usable then usable = bar - 1 end
+      local function stack_of(n) return try(function() return prototypes.item[n].stack_size end) or 1 end
+      local slots, mine, parts = 0, {}, {}
+      for _, t in ipairs(targets) do
+        local k = math.ceil(t.count / stack_of(t.name))
+        slots = slots + k; mine[t.name] = true
+        parts[#parts+1] = string.format('%d %s (%d slot%s)', t.count, q_of(t.name), k, k == 1 and '' or 's')
+      end
+      local other = 0
+      for _, c in pairs(try(function() return rinv.get_contents() end) or {}) do
+        if type(c) == 'table' and c.name and not (mine[c.name] and (c.quality or 'normal') == quality) then other = other + math.ceil((c.count or 0) / stack_of(c.name)) end
+      end
+      if slots + other > usable then
+        refused = string.format('the requester %s has %d slot%s%s; the batch must hold %s there at once%s: %d slots. Refused: a smaller count, or a requester with room',
+          at(req.position), usable, usable == 1 and '' or 's', usable < #rinv and string.format(' (its bar at %d of %d)', usable, #rinv) or '',
+          table.concat(parts, ', '), other > 0 and string.format(', and other items fill %d', other) or '', slots + other)
+      end
+    end
     local first = recipe.ingredients and recipe.ingredients[1] and recipe.ingredients[1].name or product
     local rpos, mpos = {x=req.position.x, y=req.position.y}, {x=m.position.x, y=m.position.y}
+    local opos = {x=output.position.x, y=output.position.y}
     local steps = {}
     local ipos = {x=input.position.x, y=input.position.y}
     local trash = try(function() return req.get_requester_point().trash_not_requested end)
-    steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=product .. HOLD}, label='hold output'}
-    steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. HOLD}, label='input held'}
+    -- What the machine can hold, and its counter (AB): the products are counted as crafts finished, not in its output.
+    local pf = try(function() return m.products_finished end)
+    assert(type(pf) == 'number', string.format('%s %s has no products-finished counter', m.name, at(m.position)))
+    local stack = try(function() return prototypes.item[product].stack_size end)
+    local speed = try(function() return m.crafting_speed end) or 1
+    local idle_full = m.type == 'assembling-machine' and per * (1 + math.ceil(1.166 * speed / (recipe.energy or 1) - 1e-9)) or nil
+    -- Where the products go: the output inserter's drop target, and a chest's room for them.
+    local dest = try(function() return output.drop_target end)
+    local room
+    if dest and (dest.type == 'container' or dest.type == 'logistic-container') then
+      room = try(function() return dest.get_inventory(defines.inventory.chest).get_insertable_count(id(product)) end)
+    end
+    -- The machine's own conditions and the inserters' (AB): off for the batch, set back after.
+    local m_own, o_own, i_own = own(m), own(output), own(input)
+    if m_own then steps[#steps+1] = {action='circuit_set', args=off_args(mpos, m_own), label='machine condition off'} end
+    if o_own then steps[#steps+1] = {action='circuit_set', args=off_args(opos, o_own), label='output condition off'} end
+    local held_args = {position=ipos, logistic=first .. HOLD}
+    if i_own and i_own.enable ~= nil then held_args.remove_condition = true end
+    steps[#steps+1] = {action='circuit_set', args=held_args, label='input held'}
     if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=false}, label='keep staged (trash unrequested off)'} end
     steps[#steps+1] = {action='requests', args={position=rpos, clear_all=true}, label='clear requester'}
     if #sets > 0 then
@@ -139,39 +243,70 @@ return function(api)
       steps[#steps+1] = {action='requests', args={position=rpos, clear_all=true}, label='staged'}
     end
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=false}, label='input on'}
-    steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={mpos}, item=product, quality=product_quality ~= 'normal' and product_quality or nil, at_least=had + count, timeout=54000}, label='made'}
-    steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. HOLD}, label='input off'}
-    steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=false}, label='release output'}
+    steps[#steps+1] = {action='wait_until', args={['until']='produced', position=mpos, counter_from=pf, at_least=crafts, timeout=54000}, label='made'}
+    local i_back = i_own and back_args(ipos, i_own, false)
+    steps[#steps+1] = i_back and {action='circuit_set', args=i_back, label='input condition back'}
+      or {action='circuit_set', args={position=ipos, logistic=first .. HOLD}, label='input off'}
+    local o_back = o_own and back_args(opos, o_own)
+    if o_back then steps[#steps+1] = {action='circuit_set', args=o_back, label='output condition back'} end
+    local m_back = m_own and back_args(mpos, m_own)
+    if m_back then steps[#steps+1] = {action='circuit_set', args=m_back, label='machine condition back'} end
     if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=true}, label='trash unrequested on again'} end
     local plan = {
       string.format('%d %s: %d craft%s of %s in %s %s (it holds %d of it now)', count, upgrades and product or q_of(product), crafts, crafts == 1 and '' or 's', recipe.name, m.name, at(m.position), had)}
     if quality ~= 'normal' then
-      plan[#plan+1] = string.format('recipe quality %s: each item ingredient is asked for and waited for at %s quality%s', quality, quality,
-        upgrades and '' or ', and the products counted at it')
+      plan[#plan+1] = string.format('recipe quality %s: each item ingredient is asked for and waited for at %s quality', quality, quality)
     end
     if upgrades then
-      plan[#plan+1] = string.format('its modules give quality: some products come out above %s, so the products are counted at every quality', quality)
+      plan[#plan+1] = string.format('its modules give quality: some products come out above %s', quality)
     end
-    for _, l in ipairs{
-      string.format('output inserter %s held (logistic "%s%s", false whatever the network count, reservations too) until the batch is made; input inserter %s held while the requester fills', at(output.position), product, HOLD, at(input.position)),
-      string.format('requester %s cleared, then asked for exactly what is still to come', at(req.position))} do plan[#plan+1] = l end
+    plan[#plan+1] = string.format('counted by its products-finished counter (its GUI\'s crafts, productivity bonus crafts too): %d now, the batch done at %d; the products are not held in it%s: they go out through output inserter %s%s',
+      pf, pf + crafts,
+      stack and string.format(' (its output holds one stack, %d %s%s)', stack, product, idle_full and string.format(', and inserters stop feeding it at %d held', idle_full) or '') or '',
+      at(output.position),
+      dest and string.format(' into %s %s%s', dest.name, at(dest.position), room and string.format(' (room for %d %s there now)', room, product) or '') or ' (it drops on the ground or a belt)')
+    if room and room < count then
+      plan[#plan+1] = string.format('%s %s has room for %d of the %d: once it is full the rest stays in the machine (inserters stop feeding it at %s held) and the batch waits until something takes from it',
+        dest.name, at(dest.position), room, count, idle_full and tostring(idle_full) or 'its stack')
+    end
+    local secs = crafts * (recipe.energy or 1) / speed
+    if secs > 900 then
+      plan[#plan+1] = string.format('at its crafting speed %g the %d crafts take about %d s: the made wait times out at 900 s first (the plan stops there: queue_status)', speed, crafts, math.floor(secs + 0.5))
+    end
+    if refused then plan[#plan+1] = refused end
+    if m_own then
+      local nosig = m_own.logistic == false or m_own.enable == false
+      plan[#plan+1] = string.format('the machine\'s own condition (%s) is switched off for the batch and %s', own_text(m_own),
+        not m_back and 'stays off after (circuit_set cannot set a condition with no signal)' or nosig and 'set back after, its part with no signal left off' or 'set back after')
+    end
+    if o_own then
+      plan[#plan+1] = string.format('output inserter %s: its own condition (%s) is switched off for the batch and set back after', at(output.position), own_text(o_own))
+    end
+    plan[#plan+1] = string.format('input inserter %s held (logistic "%s%s", false whatever the network count, reservations too) while the requester fills%s',
+      at(input.position), first, HOLD, i_own and string.format('; its own condition (%s) is set back after the batch', own_text(i_own)) or '')
+    plan[#plan+1] = string.format('requester %s cleared, then asked for exactly what is still to come', at(req.position))
     if #other > 0 then
       plan[#plan+1] = string.format('the requester %s also holds %s: the machine takes only %s quality', at(req.position), table.concat(other, ', '), quality)
     end
     if trash then
-      plan[#plan+1] = string.format('requester %s has trash unrequested on: robots would take the staged ingredients back once its requests are cleared; it is switched off before the requests are cleared and on again after the output is released (a plan stopped between leaves it off: requests {position, trash_unrequested: true})', at(req.position))
+      plan[#plan+1] = string.format('requester %s has trash unrequested on: robots would take the staged ingredients back once its requests are cleared; it is switched off before the requests are cleared and on again after the batch (a plan stopped between leaves it off: requests {position, trash_unrequested: true})', at(req.position))
     end
     for _, l in ipairs(lines) do plan[#plan+1] = l end
-    plan[#plan+1] = string.format('then: its requests cleared, the input on, wait for %d %s in the machine, the input off again (logistic "%s%s"), the output released',
-      had + count, upgrades and product .. ' (every quality)' or q_of(product), first, HOLD)
+    plan[#plan+1] = string.format('then: its requests cleared, the input on, wait for %d craft%s on its counter (%d), %s',
+      crafts, crafts == 1 and '' or 's', pf + crafts, i_back and 'the input\'s own condition set back' or string.format('the input off again (logistic "%s%s")', first, HOLD))
     local out = {machine=at(m.position), recipe=recipe.name, quality=quality, product=product, other_quality=#other > 0 and other or nil, crafts=crafts, requester=at(req.position), input=at(input.position),
       output=at(output.position), plan=plan, surplus=#surplus > 0 and surplus or nil,
+      counter={now=pf, done_at=pf + crafts}, output_stack=stack, feeds_until=idle_full,
+      destination=dest and string.format('%s %s', dest.name, at(dest.position)) or nil, room=room,
+      machine_condition=m_own and own_text(m_own) or nil, output_condition=o_own and own_text(o_own) or nil, input_condition=i_own and own_text(i_own) or nil,
       trash_unrequested=trash ~= nil and (trash and 'on: switched off for the batch and on again after' or 'off') or nil}
     if #surplus > 0 then
       out.surplus_line = 'the requester and the machine already hold more than the batch needs: ' .. table.concat(surplus, ', ')
         .. '; the machine makes more with it before the input goes off (take it out first: transfer to_player)'
     end
-    if a.dry_run then out.line = 'dry run: nothing queued'; out.steps = steps; return out end
+    out.refused = refused
+    if a.dry_run then out.line = refused and 'dry run: refused, nothing would be queued: ' .. refused or 'dry run: nothing queued'; out.steps = not refused and steps or nil; return out end
+    if refused then error(refused, 0) end
     out.queue = api.submit(p, {steps=steps})
     out.queued = #steps
     out.line = string.format('queued %d steps: %s%s', #steps, table.concat(plan, '; '), out.surplus_line and '; ' .. out.surplus_line or '')
@@ -181,6 +316,6 @@ return function(api)
     requester='optional {x,y}: the requester chest that feeds it (default: the one an inserter takes from into it)',
     input='optional {x,y}: that inserter', output='optional {x,y}: the inserter that takes from the machine (default: the one round it)',
     dry_run='true: the read and the plan (steps), nothing queued',
-    returns='quality (the recipe\'s: item ingredients asked for and waited for at it, and the products counted at it; at every quality when the machine\'s modules give quality), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after the output is released), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition ("PRODUCT < -2147483648": false whatever the network count, a negative one under reservations too), input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
+    returns='quality (the recipe\'s: item ingredients asked for and waited for at it), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after), counter {now, done_at} (the machine\'s products-finished counter, as its GUI shows: crafts, productivity bonus crafts too), output_stack and feeds_until (one stack of the product in its output; inserters stop feeding it at that many held), destination and room (where the output inserter puts the products; a chest\'s room for them now), machine_condition, output_condition, input_condition (their own logistic condition, and circuit condition with a wire on them: switched off for the batch and set back after), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): the machine\'s and the output inserter\'s own conditions off, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits (produced, counter_from) for the crafts on the machine\'s counter while the products go out, input off (or its own condition set back), the others\' conditions set back. The inserters need a logistic network for their logistic condition'}}
   return M
 end
