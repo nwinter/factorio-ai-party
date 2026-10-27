@@ -298,7 +298,9 @@
   tick and the read that gives its result. `stop` ends none of them.
 - The clock line counts a wait or sleep as idle: `game 98h40m; +5m00s, idle 5m00s (100%, 4m30s in wait_ticks)`, and so
   do your stream card and the operator's idle nudge. The idle nudge's tell waits for the end of a sleep or wait with
-  an end that began within 10 min of your last work. With a standing order on (not paused, none running) it is still
+  an end that began within 10 min of your last work. A remote or platform lane with a step running, or one done in
+  the last 10 min, holds it, except while something asks you (an unanswered request or tell, a mention, a watch that
+  needs you, a board item overdue for review). With a standing order on (not paused, none running) it is still
   idle, and the clock and sleep lines add `on watch: NAMES` (the orders that act when a trigger holds). Queues,
   standing orders and `queue_repeat` keep your character working through a sleep.
 - A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their

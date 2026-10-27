@@ -16716,3 +16716,23 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   transcripts).
 - Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
   its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
+
+## d27 batch286 (IL: no idle nudge while the agent's other lanes work)
+
+- Found (runs/shift88 nudges.jsonl): Astra was nudged "your character idle" at 15:58, 16:20 and 16:49 while
+  platform:Resolute ran (a wait_until step running; 14 steps done in the 10 min of the last two) and she slept 30 s
+  between checks (asleep 95-97%). She answered two with operator requests (16:21, 16:50). batch252 cp2 had kept
+  standing as the character's own and listed the lanes in the nudge.
+- tools/idle_nudge.py (host, read at shift start): `due()` returns `lanes working: platform:Resolute 14` (or
+  `... running`) for an agent whose other lanes (idle_report `lanes`: remote, platform:NAME) have a step done in the
+  window or a step running now, unless something asks it now: unanswered requests or tells (open.lua), unread mentions
+  apart from tells, a watch late, stalled, invalid or with its final unread, a board item overdue for review. Those
+  nudge as before, with the lanes named. The check comes after the rest and "not answering" checks, so their handoffs
+  and back-off are as before.
+- idle-nudge.log and nudges.jsonl get one line (`no idle nudge for astra (11 min standing): lanes working:
+  platform:Resolute 14`; a row with `skipped: true`) when it begins and when the set of working lanes changes.
+- Shifts 86-88 replayed from the nudges' own texts (the lanes part, the open part): 5 of 72 nudges sent would not
+  have gone, all Astra's (shift86 07:38 platform:Asterion; shift87 13:50 remote, 14:56 platform:Resolute; shift88
+  15:58, 16:49 platform:Resolute). Her 16:20 nudge still goes: a tell from Haiku was unanswered then.
+- Docs: agent/ref/waits-queues.md (the idle nudge line). Test: tools/test_idle_lanes.py (fails on main at Astra's
+  16:49 row).
