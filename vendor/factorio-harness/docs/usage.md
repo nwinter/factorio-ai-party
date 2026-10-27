@@ -16676,7 +16676,8 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   - On a copy (sol's bot): a powered fast inserter with that hold stayed at 60 plates moved
     (`disabled_by_control_behavior`); `circuit_set {position}` was refused with the line above; `clear: true` set it
     working (62 moved within a second).
-- Bundle (compacted): 6,272,393 bytes on main (91ba4ad1), 6,296,020 with this branch (limit 8,388,608).
+- Bundle (compacted): 6,280,624 bytes on main (954db4ca, batch278 in it), 6,296,020 with this branch (limit
+  8,388,608).
 ## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
 - The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
 - Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
