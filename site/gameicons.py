@@ -28,6 +28,8 @@ def key(kind, name):
     name = (name or "").strip().lower().replace(" ", "-")
     if name in have:
         return name
+    if kind == "item" and name.endswith("-rail") and "rail" in have:  # straight-rail, curved-rail-a: the rail item
+        return "rail"
     m = re.match(r"^(.*?)-(\d+)$", name)
     if m:
         base, n = m.group(1), int(m.group(2))
