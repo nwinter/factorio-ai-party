@@ -545,6 +545,9 @@ return function(api)
                 e.name,was.x,was.y,there,tostring(was.recipe or 'none'),tostring(rname or 'none')),0)
             end
             if was.recipe==nil and rname~=nil then was.recipe=rname end
+            -- (d27 batch278 AB) counter_from: the count to start from (assembler_batch reads it when it plans, so crafts
+            -- finished before the wait's first check count too)
+            if base[key]==nil and c.counter_from~=nil then base[key]=c.counter_from end
             if base[key]==nil or pf<base[key] then base[key]=pf end
             local made=pf-base[key]
             crafts=crafts+made
@@ -1218,6 +1221,10 @@ return function(api)
         for _,pos in ipairs(c.positions) do api.position(pos) end
       end
       assert(c.at_least~=nil,'produced requires at_least (items made since the wait began; crafts without item)')
+      if c.counter_from~=nil then
+        assert(type(c.counter_from)=='number' and c.counter_from>=0 and c.counter_from==math.floor(c.counter_from),'produced counter_from is a whole number: a machine\'s products-finished count')
+        assert(c.platform==nil and (c.positions==nil or #c.positions==1),'produced counter_from takes one machine (position)')
+      end
       number(c.at_least,1,1e9,'at_least')
     end
     if kind=='platform_built' or kind=='platform_ready' then

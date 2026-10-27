@@ -15,7 +15,7 @@ do
   local made={['pipe/rare']=2,['pipe/epic']=1}
   local m={valid=true,unit_number=1,name='assembling-machine-2',type='assembling-machine',position={x=17.5,y=230.5},
     bounding_box={left_top={x=16,y=229},right_bottom={x=19,y=232}},get_recipe=function() return recipe,{name='rare'} end,
-    get_inventory=function(i) if i==3 then return {get_item_count=function(n) return made[key(n)] or 0 end} end end}
+    get_inventory=function(i) if i==3 then return {get_item_count=function(n) return made[key(n)] or 0 end} end end,products_finished=40}
   local req={valid=true,unit_number=2,name='requester-chest',position={x=17.5,y=233.5},prototype={logistic_mode='requester'},
     get_item_count=function(n) return held[key(n)] or 0 end,get_requester_point=function() return {trash_not_requested=false} end}
   local input={valid=true,unit_number=3,type='inserter',position={x=17.5,y=232.5},pickup_target=req,drop_target=m}
@@ -30,15 +30,16 @@ do
   local set=by.stage.args.set
   eq(#set,1,'water is a fluid: not staged'); eq(set[1].item,'iron-plate'); eq(set[1].quality,'rare'); eq(set[1].min,100,'95 to come, 5 rare held')
   eq(by['staged iron-plate (rare)'].args.quality,'rare'); eq(by['staged iron-plate (rare)'].args.at_least,100)
-  eq(by.made.args.quality,'rare'); eq(by.made.args.at_least,102,'the 2 rare pipes held, not the epic one')
+  eq(by.made.args['until'],'produced'); eq(by.made.args.quality,nil,'crafts on the counter: no quality'); eq(by.made.args.at_least,100); eq(by.made.args.counter_from,40)
+  has(r.plan[1],'100 pipe (rare): 100 crafts of pipe in assembling-machine-2 (17.5,230.5) (it holds 2 of it now)')
   eq(r.other_quality[1],'30 normal iron-plate')
   has(table.concat(r.plan,'\n'),'iron-plate (rare): 100 for 100 crafts, the machine holds 0, the requester 5: 95 to come')
   has(table.concat(r.plan,'\n'),'the requester (17.5,233.5) also holds 30 normal iron-plate: the machine takes only rare quality')
-  -- quality modules: the products come out at rare or above, so the made wait counts every quality
+  -- quality modules: the products come out at rare or above; the counter counts crafts whatever their quality
   m.effects={quality=2.5}
   r=B.run({},{position={x=17.5,y=230.5},count=100,dry_run=true})
   for _,st in ipairs(r.steps) do by[st.label]=st end
-  eq(by.made.args.quality,'any'); eq(by.made.args.at_least,103)
+  eq(by.made.args.at_least,100); has(table.concat(r.plan,'\n'),'its modules give quality: some products come out above rare')
   eq(by.stage.args.set[1].quality,'rare')
   -- a normal recipe: no quality argument anywhere, as before
   m.effects=nil
