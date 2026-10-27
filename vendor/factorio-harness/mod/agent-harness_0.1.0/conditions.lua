@@ -1018,12 +1018,33 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|all|any'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
   -- conditions=[...]} met when each is; saw joins theirs. Members are plain conditions.
   checks.platform_ready=checks.platform_built
+  -- (d27 batch261 AD, Astra #2508: Luna's 15-min PU boost was capped by a relative timeout, set late and restarted by a
+  -- resume, and the gate was restored 4m21s after its cutoff) an absolute game tick: met once the game reaches it,
+  -- at the first check when it has passed already; nothing restarts it.
+  local function clock(ticks) local s=math.floor(ticks/60); return string.format('%dm%02ds',math.floor(s/60),s%60) end
+  checks.tick_at_least=function(p,c)
+    local left=c.tick-game.tick
+    if left<=0 then return true,string.format('tick %d reached (now %d, %s past it)',c.tick,game.tick,clock(-left)) end
+    return false,string.format('tick %d: %d ticks left (%s)',c.tick,left,clock(left))
+  end
+  -- The tick a condition is met by at the latest, or nil: tick_at_least's own, or the earliest of any's members.
+  function M.deadline(c)
+    if type(c)~='table' then return nil end
+    if c['until']=='tick_at_least' then return type(c.tick)=='number' and c.tick or nil end
+    if c['until']~='any' or type(c.conditions)~='table' then return nil end
+    local d
+    for _,m in ipairs(c.conditions) do
+      local t=M.deadline(m)
+      if t and (not d or t<d) then d=t end
+    end
+    return d
+  end
   -- (d22 batch117 BZ1, Astra #1970: a full-edge abort that keeps the return leg's ammunition) a platform's whole stock
   -- of one ammunition item: hub, turret slots, belts, inserter hands, machine outputs and chests, from the background
   -- reading (ammoreserve.lua) with its age; a reading older than max_age (or none by then) meets it.
@@ -1064,6 +1085,7 @@ return function(api)
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
+  M.TICK_AHEAD=1296000
   function M.validate(c)
     if type(c)=='table' and M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end
     -- queue_done (A1, Sonnet 22:50) is a sleep's: fh sleep/fh wait --until queue_done; in a queue the next step is that.
@@ -1257,6 +1279,11 @@ return function(api)
       assert(c.area==nil or c.loop==nil,'platform_ammo_below: area or loop, not both')
       assert(c.position==nil and c.radius==nil,'platform_ammo_below: area or loop (a belt\'s position aboard) scopes it; no position or radius')
       if c.loop~=nil then api.position(c.loop) end
+    end
+    if kind=='tick_at_least' then
+      assert(type(c.tick)=='number' and c.tick==math.floor(c.tick) and c.tick>=0 and c.tick<=game.tick+M.TICK_AHEAD,
+        string.format('tick_at_least tick is a whole game tick 0..%d (now %d, at most %d ticks, 6 game hours, ahead); one passed already is met at the first check',game.tick+M.TICK_AHEAD,game.tick,M.TICK_AHEAD))
+      assert(c.position==nil and c.positions==nil and c.area==nil,'tick_at_least reads the game tick only: no position, positions or area')
     end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
