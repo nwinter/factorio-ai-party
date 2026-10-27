@@ -5965,10 +5965,18 @@ fh watch    # deploy on every change
   group in a chunk no one sees now is not read.
 - The `labs` read adds `lacking`, one row a lab lacking a pack the research needs (up to 8; Luna 03:20: 4 of 43 labs
   had no military science while 8,754 packs sat in storage): `lab (27.5,44.5) lacks military-science-pack: fed by
-  long-handed-inserter (30.5,44.5) from lab (32.5,44.5) holding 0; no logistic network there`. A requester source says
-  what it asks of the pack (`asking 0` / `no request for it`); with a logistic network there, what it holds and the
-  chest its robots would take the pack from (the network's own pickup point). On the copy of world n, 13-24 ms in the
-  container for Nauvis's 43 labs (about 3-5 ms on n).
+  long-handed-inserter (30.5,44.5) from lab (32.5,44.5) holding 0; no logistic network covers the lab`. A requester
+  source says what it asks of the pack (`asking 0` / `no request for it`). The network is the feeding requester's (or
+  buffer's) own, as `inspect` reads it (`requester-chest (91.5,113.5)'s logistic network #243 holds 110299`, or `...
+  is in no logistic network`), else the network at the lab (`the lab's logistic network #N`); with one, what it holds
+  and the chest its robots would take the pack from (the network's own pickup point). (d27 batch276 LN, Astra #2579:
+  it looked the network up at the lab's centre, 29.7 tiles from a roboport, outside its logistic range, and said "no
+  logistic network there" of a requester in network #243.) On the copy of world n, 13-24 ms in the container for
+  Nauvis's 43 labs (about 3-5 ms on n); d27 with 30 labs, 22-43 ms a call through dispatch, 6-12 ms within 12 tiles.
+- 2.0.77 (a copy of world n, d27 batch276): `find_logistic_network_by_position` covers a roboport's logistic range
+  only (none 29.7 tiles from a roboport whose construction range is 55); `find_logistic_networks_by_construction_area`
+  finds the networks whose construction robots reach a spot. The dry run's cliffs line (`no construction robots reach
+  it here`) and a turret ghost's default ammo (`network_holds`) use the construction area.
 - `status` (brief and full) adds `logistics_here` (Haiku): `logistic network #96 where you stand: 834 logistic robots
   (710 idle), 11 construction robots (11 idle), 15 roboports; 5 personal requests unfilled (long-handed-inserter,
   ...)`, or `no logistic network where you stand (x,y)`. `requests` gives each unfilled request's reason.
@@ -16640,3 +16648,20 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     (Rosetta, 5 calls each, twice). It runs on queue_submit only; nothing is added to the tick.
 - Bundle (compacted): 6,270,992 bytes on main (a50e73be), 6,278,546 with batch278, 6,291,600 with this branch (limit
   8,388,608).
+## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
+- The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
+- Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
+  teammates' tells have stayed unread 2 minutes or more, not yet reported by a sleep, ends at once: `woke: told`,
+  `tell` "N unread tells from before this sleep began (a sleep reports each once; chat_ack marks them read): #seq
+  from, waiting ...: text; ...", `woke_by {kind tell, seq (the newest), from, unread: true}`, and `already_unread: N`
+  on the sleep's own reply. Not with `wake_on_messages: false` or a wake filter (`wake_from`, `wake_on_operator`,
+  `wake_local`). Haiku, shift86 15:24: 8 of Sol's tells unread up to 33 min, hidden by its output filters; its
+  `fh wait --until "tell|alert" --max 900` slept the 900 s ("Nothing new has come in for 15 minutes"). Shifts 80-86
+  replayed under the rule: a sleep ends at once about 5-11 times a shift for Astra, Sol and Luna, 8-10 for Sonnet and
+  Haiku, 0-2 for the others.
+- Ground rules for Claude Code workspaces too (host/rules.ts, tools/launch-agent.sh): AGENTS.md (CLAUDE.md links to
+  it) carries the team's ground rules section, kept current by fh, as for Codex. Opus and Sonnet did not compact in
+  shifts 82-86, so the post-compaction brief never gave them the rules ("rule 27" appears 0 times in their shift86
+  transcripts).
+- Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
+  its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).

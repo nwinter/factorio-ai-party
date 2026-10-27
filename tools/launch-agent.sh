@@ -192,6 +192,9 @@ case $kind in
     [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" claude "$dir"
     # After context.py, which writes the hooks: the wait cap's SessionStart hook (tools/sleepcap/setup.py).
     python3 "$root/tools/sleepcap/setup.py" claude "$dir"
+    # (d27 batch275 HW) the team's ground rules in AGENTS.md (CLAUDE.md links to it), which Claude Code loads at the start
+    # and after each compaction, as for Codex below; fh keeps the section current (host/rules.ts)
+    { "$dir/fh" call ground_rules >/dev/null 2>&1 && python3 "$root/tools/brief.py" rules "$dir" >/dev/null; } || true
     # Started directly instead of through ai-session, which cannot pass flags: with the same environment ai-session
     # sets for the route (CLAUDE_CONFIG_DIR = the route's root, except for the default profile, and no API keys), plus
     # no MCP servers but our own (the user-scope cube-local leaked in smoke-2145), no Claude in Chrome, no skills.

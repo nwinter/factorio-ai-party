@@ -8,7 +8,7 @@ return function(api)
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
   M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
     position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
-    returns='research line (name, progress, eta at the working labs: every lab of ours, research_labs per surface) and per lab group of the area: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network there and what it holds of it, and the chest its robots would take it from'}}
+    returns='research line (name, progress, eta at the working labs: every lab of ours, research_labs per surface) and per lab group of the area: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network of its requester or buffer chest (else at the lab) and what it holds of it, and the chest its robots would take it from'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
     if s >= 3600 then return string.format('%dh%02dm', math.floor(s / 3600), math.floor(s / 60) % 60) end
@@ -36,9 +36,13 @@ return function(api)
   -- inserter dropping into it and its source (a chest: what it holds and asks of the pack; a lab: what that lab holds;
   -- a belt: what it carries), the logistic network there and what it holds of the pack, and the chest its robots would
   -- take it from (the network's pickup point for it).
+  -- (d27 batch276 LN, Astra #2579) "there" is the feeding requester's (or buffer's) own network, as inspect reads it:
+  -- the lab's centre was looked up, and the biolab (91.5,117.5) stands 29.7 tiles from roboport (62,121), outside its
+  -- logistic range (25) and inside its construction range, while its requester (91.5,113.5) is in network #243 (2.0.77,
+  -- a copy of world n: find_logistic_network_by_position at the lab gives none). Without such a chest: the lab's.
   local function lab_why(lab, name, surface, force, seen)
     local b = lab.bounding_box
-    local feeds = {}
+    local feeds, chest = {}, nil
     for _, ins in pairs(try(function() return surface.find_entities_filtered{area={left_top={x=b.left_top.x-3, y=b.left_top.y-3}, right_bottom={x=b.right_bottom.x+3, y=b.right_bottom.y+3}}, type='inserter', force=force, limit=32} end) or {}) do
       if try(function() return ins.drop_target end) == lab then
         local src = try(function() return ins.pickup_target end)
@@ -57,23 +61,34 @@ return function(api)
               end
             end
             local mode = try(function() return src.prototype.logistic_mode end)
-            if mode == 'requester' or mode == 'buffer' then text = text .. (asked and string.format(', asking %d', asked) or ', no request for it') end
+            if mode == 'requester' or mode == 'buffer' then
+              text = text .. (asked and string.format(', asking %d', asked) or ', no request for it')
+              chest = chest or src
+            end
           end
         end
         feeds[#feeds+1] = ins.name .. ' ' .. at(ins.position) .. ' from ' .. text
       end
     end
-    local ln = try(function() return surface.find_logistic_network_by_position(lab.position, force) end)
+    local ln, where
+    if chest then
+      ln, where = try(function() return chest.logistic_network end), chest.position
+    else
+      ln, where = try(function() return surface.find_logistic_network_by_position(lab.position, force) end), lab.position
+    end
     local net = ''
     if ln then
       local n = try(function() return ln.get_item_count(name) end) or 0
-      local pick = n > 0 and try(function() return ln.select_pickup_point{name=name, position=lab.position} end)
+      local pick = n > 0 and try(function() return ln.select_pickup_point{name=name, position=where} end)
       local owner = pick and try(function() return pick.owner end)
-      net = string.format('; logistic network #%s there holds %d%s', tostring(try(function() return ln.network_id end) or '?'), n,
+      net = string.format('; %s logistic network #%s holds %d%s', chest and string.format("%s %s's", chest.name, at(chest.position)) or "the lab's",
+        tostring(try(function() return ln.network_id end) or '?'), n,
         owner and string.format(', robots would take it from %s %s', owner.name, at(owner.position)) or '')
-    else net = '; no logistic network there' end
+    elseif chest then net = string.format('; %s %s is in no logistic network', chest.name, at(chest.position))
+    else net = '; no logistic network covers the lab' end
     return string.format('lab %s lacks %s: %s%s', at(lab.position), name, #feeds > 0 and 'fed by ' .. table.concat(feeds, ' | ') or 'no inserter drops into it', net)
   end
+  M.lab_why = lab_why  -- (tests/d27_batch276.lua)
   -- (d26 batch248 R1) every lab of ours, every surface, for the research line: {working, total, rows}
   local function all_labs(force)
     local out = {working=0, total=0, rows={}}
