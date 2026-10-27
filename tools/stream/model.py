@@ -799,6 +799,10 @@ def vehicle_interest(ag, was, now):
 
 PROJECTS_SHOWN_MAX = 8  # (d22 batch75 AK11) projects worked on or blocked the board card shows before "show all"
 
+# (d27 batch267) work that changes a platform (work.py REMOTE; onecam.BUILD_WORK): news for the director
+WORK_BUILDS = {"place_ghosts", "paste", "blueprint_place", "deconstruct", "cancel_deconstruction", "remove_ghosts"}
+
+
 class Model:
     def set_inbox(self, path):
         """runs/RUN/operator-inbox.jsonl: its viewer rows count as viewer lines for the Operator's replies."""
@@ -1105,8 +1109,11 @@ class Model:
                 return
             p = w["position"]
             item["label"] = f"{who} {w.get('verb') or 'building'} at ({round(p['x'])}, {round(p['y'])}) (from afar)"
-        if any(x["agent"] == item["agent"] and x.get("platform") == item["platform"] and now - x["t"] < 20
-               for x in self.work):
+        # (d27 batch267 LB: Sol's place_ghosts on Loom at 06:16:58 came 14 s after an inspection there and was never
+        # an item) a build is its own item after an inspection, settings or requests; after a build, one item
+        build = w.get("action") in WORK_BUILDS
+        if any(x["agent"] == item["agent"] and x.get("platform") == item["platform"] and now - x["t"] < 20 and
+               (not build or x.get("action") in WORK_BUILDS) for x in self.work):
             return  # one request after another on the same job: one item
         self.work.append(item)
         ag.bump(1.0, now)

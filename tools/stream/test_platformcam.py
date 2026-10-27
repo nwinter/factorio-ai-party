@@ -166,10 +166,11 @@ def work():
     for k in range(20, 24):
         d.step(snap(a, [plat()], work=items), t + k)
     row = main_row(d, t + 23)
-    assert row["agents"] == ["astra"] and row["work"] == "Astra working on Starling" and row["surface"] == "platform-1", row
-    assert row["platform"]["label"] == "Astra · working on Starling" and row["platform"]["why"] == "work", row
+    # (d27 batch267) a build there: "building on"
+    assert row["agents"] == ["astra"] and row["work"] == "Astra building on Starling" and row["surface"] == "platform-1", row
+    assert row["platform"]["label"] == "Astra · building on Starling" and row["platform"]["why"] == "work", row
     info = onair_info({"agents": a}, d.public(t + 23))
-    assert info["agent"] == "astra" and info["doing"] == "working on Starling", info
+    assert info["agent"] == "astra" and info["doing"] == "building on Starling", info
     # more requests keep it there past work_hold
     for k in range(24, 60):
         if k % 10 == 0:
@@ -182,13 +183,18 @@ def work():
     row = main_row(d, t + 99)
     assert row["agents"] == ["astra"] and not row.get("work") and row.get("surface") is None, (row, d.cuts)
     assert d.cuts[-1][2] == "back to astra", d.cuts
-    # an agent off air far below the one on air: no cut to its platform
+    # an agent off air far below the one on air: no cut to its platform for an inspection ...
     d, _ = world(map_every=0, platform_every=0)
     a = [agent("astra", 0, 0, 5), agent("sol", 300, 0, 1)]
     for k in range(0, 200):
-        w = [dict(item(t + k), id=f"w{k}", agent="sol")] if k > 100 and k % 10 == 0 else []
+        w = [dict(item(t + k), id=f"w{k}", agent="sol", action="inspect")] if k > 100 and k % 10 == 0 else []
         d.step(snap(a, [plat()], work=w), t + k)
     assert not d.platforms, d.platforms
+    # ... (d27 batch267 LB) but a build there is news whatever the scores: on air within work_build_fresh
+    for k in range(200, 240):
+        w = [dict(item(t + 201), id="wb", agent="sol")] if k >= 201 else []
+        d.step(snap(a, [plat()], work=w), t + k)
+    assert d.platforms and d.platforms[-1][1:] == ("Starling", "work") and d.platforms[-1][0] - (t + 201) <= 30, d.platforms
 
 
 def feed():
