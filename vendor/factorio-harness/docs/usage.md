@@ -16491,6 +16491,7 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     holds only counts other than 1, and reads an id's name once (an item keeps its name); the count is read each sample
     (an inserter can take part of a stack).
 - The copy (pog-b269-headless) is stopped.
+- Bundle (compacted): 6,263,977 bytes on main (929570d2), 6,268,874 with this branch (limit 8,388,608).
 - Not changed: trace {throughput: true} (beltrate.lua) gives a lane's capacity as 4 items a tile at its speed and the
   drills' supply in items; a lane of stacks of 2 carries twice that capacity. trace's lane_full counts entries against
   4 a tile, which is right in stacks.
