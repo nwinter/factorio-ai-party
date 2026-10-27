@@ -26,9 +26,9 @@
   `boilers`, `tells`.
 - `stream-people`, viewers: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
   `operator`, `poll`, `players`, `vote`, `votes`, `restore`.
-- `space-age`, rockets, platforms, planets, spoilage, Gleba: `platforms`, `platform NAME`,
+- `space-age`, rockets, spoilage, Gleba: `platforms`, `platform NAME`,
   `platform_arrived`/`platform_left` waits, `platform_create`, `platform_schedule`, `platform_rename`, `platform_delete`,
   `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
   `platform_rearm`, `platform_digest`, `platform_tiles`, `platform_lanes`, `platform_gate`, `demolishers`, `shipment`,
-  `fleet`, `min_payload`, `launch`, `silo`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`,
+  `fleet`, `min_payload`, `launch`, `silo`, `launch_budget`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`,
   `freight_audit`, `delivery_watch`, `flight_watch`, `where_is`, `agriculture`, `eggs`.
