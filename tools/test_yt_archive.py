@@ -240,34 +240,29 @@ def main():
     assert ya.pacific_day(datetime.datetime(2026, 10, 28, 6, 59, tzinfo=utc)) == "2026-10-27"
     assert ya.pacific_day(datetime.datetime(2026, 10, 28, 7, 1, tzinfo=utc)) == "2026-10-28"
 
-    # ---- the owner's name: out of a description before the video leaves private; the site's address stays
+    # ---- the owner's name may appear (Nick d27 10:10): a description naming him is uploaded and published as it is
     desc = ("Shift 29 of the run.\n\nFrom chat\n\u2022 NickWinter (host) asked: \"Sol: why?\" Sol answered: \"x\"\n"
-            "\u2022 Caleb asked: \"q?\" Sol answered: \"a\"\n\nChapters\n0:00 start\n2:34:03 NickWinter (host) asks: Sol\n"
             "Charts: https://factorio.nickwinter.net/runs/long/shift-29/")
-    assert ya.names_owner(desc) and not ya.names_owner("https://factorio.nickwinter.net/x") and not ya.names_owner("Nickel plate")
-    clean = ya.scrub(desc)
-    assert "NickWinter" not in clean and "Caleb asked" in clean and "factorio.nickwinter.net" in clean and "0:00 start" in clean
     v29 = vids(28, 29)
     v29["shift29"]["description"] = desc
     v29["shift29"]["chapters"] = [{"at": 0, "time": "0:00", "title": "start"},
                                   {"at": 9243, "time": "2:34:03", "title": "NickWinter (host) asks: Sol"}]
     ops = ya.plan_ops(v29, state_of(v29, items=True))
-    assert [(o["op"], o["run"]) for o in ops][:2] == [("videos.update.snippet", "shift29"), ("videos.update", "shift29")], ops
+    assert {o["op"] for o in ops} == {"videos.update"}, ops
     done29 = state_of(v29, "public", items=True)
-    done29["videos"]["shift29"]["scrubbed"] = True
     done29["videos"]["shift28"]["privacy"] = "unlisted"
     assert ya.plan_ops(v29, done29) == []
     with tempfile.TemporaryDirectory() as d:
         site = ya.site_videos(v29, done29, Path(d) / "videos.json")
-        assert "NickWinter" not in json.dumps(site) and len(site["shift29"]["chapters"]) == 1
-    # and at the source: tools/shift_video.py leaves the owner's chat lines out of the viewer moments
+        assert "NickWinter (host) asked" in site["shift29"]["description"] and len(site["shift29"]["chapters"]) == 2
+    # tools/shift_video.py: the host's own chat account is not a viewer moment; a viewer's question naming him is
     import shift_video as sv
     with tempfile.TemporaryDirectory() as d:
         rows = [{"from": "viewer NickWinter (host)", "viewer": True, "text": "Sol: is it gone?", "tick": 10,
                  "logged_at": "2026-10-16T10:00:00-07:00"},
                 {"from": "sol", "text": "NickWinter (host), yes.", "tick": 20, "logged_at": "2026-10-16T10:00:30-07:00"},
-                {"from": "viewer Caleb", "viewer": True, "text": "Sol: next?", "tick": 30, "logged_at": "2026-10-16T10:01:00-07:00"},
-                {"from": "sol", "text": "Caleb, the rail.", "tick": 40, "logged_at": "2026-10-16T10:01:30-07:00"}]
+                {"from": "viewer Caleb", "viewer": True, "text": "Sol: did Nick see it?", "tick": 30, "logged_at": "2026-10-16T10:01:00-07:00"},
+                {"from": "sol", "text": "Caleb, Nick saw the rail.", "tick": 40, "logged_at": "2026-10-16T10:01:30-07:00"}]
         (Path(d) / "chat.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
         got = sv.viewer_moments(Path(d), 0, {"sol": "Sol"})
         assert [m["viewer"] for m in got] == ["Caleb"], got

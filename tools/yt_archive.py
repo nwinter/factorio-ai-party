@@ -29,8 +29,8 @@ went up on 2026-10-24 alone); --upload-units 1600 budgets the older figure of 1,
 take the day past --daily minus --margin waits for the next day; a quotaExceeded reply marks the day spent.
 
 rotate: the finished shifts with no video, the newest first, then the rest oldest first, each through
-tools/archive_upload.py --shifts N --limit 1 --privacy private, then apply (its description checked for the owner's
-name before it leaves private; public when it is the latest, else unlisted; the previous latest unlisted), while
+tools/archive_upload.py --shifts N --limit 1 --privacy private, then apply (public when it is the latest, else
+unlisted; the previous latest unlisted), while
 the day's quota has room for the upload and its follow-ups (thumbnail, playlist insert, the previous latest's
 demotion) and the SSD keeps --keep-free-gb free after the copy and join (the R2 encode needs about 35 GB). Then apply.
 """
@@ -71,10 +71,6 @@ DAILY, MARGIN, UPLOADS_A_DAY = 10_000, 200, 100
 # status fields videos.update keeps only when sent (the rest are read-only or reset)
 STATUS_KEEP = ("embeddable", "license", "publicStatsViewable", "selfDeclaredMadeForKids", "containsSyntheticMedia")
 UP_LINE = re.compile(r"^(\d\d-\d\d \d\d:\d\d:\d\d) shift(\d+) up\b")
-# the stream owner's name (site/build.py _OWNER): never on a public page, so a description line naming it goes before
-# the video leaves private (the site's own address does not count)
-OWNER = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
-SITE_HOST = re.compile(r"(?i)[\w.-]*nickwinter\.net\S*")
 
 
 class QuotaExceeded(Exception):
@@ -85,15 +81,6 @@ class QuotaExceeded(Exception):
 
 def shift_n(run):
     return int(re.sub(r"\D", "", run))
-
-
-def names_owner(text):
-    return bool(OWNER.search(SITE_HOST.sub("", text or "")))
-
-
-def scrub(description):
-    """The description without the lines that name the owner (a chat bullet, a chapter line)."""
-    return "\n".join(ln for ln in (description or "").split("\n") if not names_owner(ln))
 
 
 def public_shifts(shifts, fixed=FIXED_PUBLIC):
@@ -126,9 +113,6 @@ def plan_ops(videos, state, fixed=FIXED_PUBLIC):
         ops.append({"op": "playlists.insert", "run": None, "units": COST["playlists.insert"]})
     elif pl.get("privacy") not in (None, "public"):
         ops.append({"op": "playlists.update", "run": None, "units": COST["playlists.update"]})
-    for r in order:  # first: the owner's name out of the description, while the video is still private
-        if names_owner(videos[r].get("description")) and not (sv.get(r) or {}).get("scrubbed"):
-            ops.append({"op": "videos.update.snippet", "run": r, "units": COST["videos.list"] + COST["videos.update"]})
     promote = [r for r in order if want[r] == "public" and cur[r] != "public"]
     demote = [r for r in order if want[r] != "public" and cur[r] == "public"]
     rest = [r for r in order if want[r] == "unlisted" and cur[r] == "private"]
@@ -356,16 +340,6 @@ def do_op(client, op, videos, state):
     run = op["run"]
     v = videos[run]
     cur = sv.setdefault(run, {"id": v["id"]})
-    if op["op"] == "videos.update.snippet":
-        r = client.call("videos.list", "GET", f"{yt.API}/videos?part=snippet&id={v['id']}")
-        items = r.get("items") or [{"snippet": {"title": v.get("title"), "description": v.get("description"),
-                                                "categoryId": "20"}}]
-        sn = items[0]["snippet"]
-        body = {k: sn[k] for k in ("title", "categoryId", "tags", "defaultLanguage", "defaultAudioLanguage") if k in sn}
-        body["description"] = scrub(sn.get("description"))
-        client.call("videos.update", "PUT", f"{yt.API}/videos?part=snippet", body={"id": v["id"], "snippet": body})
-        cur["scrubbed"] = True
-        return
     if op["op"] == "videos.update":
         status = {k: cur["status"][k] for k in STATUS_KEEP if k in (cur.get("status") or {})}
         status.setdefault("selfDeclaredMadeForKids", False)
@@ -390,9 +364,8 @@ def site_videos(videos, state, path=SITE_VIDEOS):
         if p not in ("public", "unlisted"):
             continue
         v = videos[run]
-        out[run] = {k: v[k] for k in ("id", "shift", "title", "uploaded", "timeline") if k in v}
-        out[run]["description"] = scrub(v.get("description"))
-        out[run]["chapters"] = [c for c in v.get("chapters") or [] if not names_owner(c.get("title"))]
+        out[run] = {k: v[k] for k in ("id", "shift", "title", "uploaded", "timeline", "description") if k in v}
+        out[run]["chapters"] = list(v.get("chapters") or [])
         out[run].update(playlist=pl if (sv.get(run) or {}).get("item") else None, privacy=p)
     if Path(path).parent.is_dir():
         save(path, out)
@@ -408,10 +381,6 @@ def describe(ops, videos):
             rows.append(f"playlists.insert: create the public playlist {PLAYLIST!r}")
         elif op["op"] == "playlists.update":
             rows.append(f"playlists.update: make the playlist {PLAYLIST!r} public")
-        elif op["op"] == "videos.update.snippet":
-            rows.append(f"videos.list + videos.update (snippet): {op['run']} ({videos[op['run']]['id']}): the description "
-                        f"without its {sum(names_owner(ln) for ln in videos[op['run']]['description'].split(chr(10)))} "
-                        f"line(s) that name the stream owner")
         elif op["op"] == "videos.update":
             rows.append(f"videos.update: {op['run']} ({videos[op['run']]['id']}) -> {op['privacy']}")
         else:
@@ -468,10 +437,6 @@ def apply(a, dry=False):
         for op in now:
             # a playlist insert only once its video is no longer private
             if op["op"] == "playlistItems.insert" and state["videos"].get(op["run"], {}).get("privacy") == "private":
-                continue
-            # and no video leaves private while its description still names the owner
-            if op["op"] == "videos.update" and names_owner(videos[op["run"]].get("description")) \
-                    and not state["videos"].get(op["run"], {}).get("scrubbed"):
                 continue
             do_op(client, op, videos, state)
             save(a.state, state)

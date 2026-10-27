@@ -44,7 +44,8 @@ SITE_URL = "https://factorio.nickwinter.net"
 SERIES = "Factorio AI Party"
 TEAM = ["astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse"]
 OWNERS = {"nickwinter"}  # the operator's own chat name: not a viewer moment
-# (batch265) any chat name or line naming the stream owner ("NickWinter (host)" in shift29): never in a public description
+# the host's chat account under any label ("NickWinter (host)" in shift29): the host is not a viewer, so not a viewer
+# moment; a viewer's line or an agent's answer that names the host is (Nick d27 10:10: his name may appear)
 OWNER_NAME = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
 VIDEO_KBPS, AUDIO_KBPS = 2000, 128  # about 0.96 GB an hour
 MIN_GAP = 90  # seconds between chapters (YouTube's floor is 10)
@@ -513,7 +514,7 @@ def viewer_moments(d, tick0, names, hide=None):
             continue
         viewer = who.split(" ", 1)[1]
         text = r.get("text") or ""
-        if viewer.lower() in OWNERS or OWNER_NAME.search(viewer) or OWNER_NAME.search(text) or "?" not in text or text.strip() in used or (hide and hide(viewer, text)):
+        if viewer.lower() in OWNERS or OWNER_NAME.search(viewer) or "?" not in text or text.strip() in used or (hide and hide(viewer, text)):
             continue
         t = iso_local(r["logged_at"])
         for s in rows[i + 1:]:
@@ -522,7 +523,7 @@ def viewer_moments(d, tick0, names, hide=None):
                 break
             if s.get("viewer") or s.get("from") not in names:
                 continue
-            if viewer.lower() in (s.get("text") or "").lower() and not OWNER_NAME.search(s.get("text") or ""):
+            if viewer.lower() in (s.get("text") or "").lower():
                 used.add(text.strip())
                 q = re.sub(r"^@\w+\s+", "", text.strip())
                 a = re.sub(r"^@\w+[,:]?\s+", "", (s.get("text") or "").strip())

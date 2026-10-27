@@ -93,7 +93,7 @@ def make(root):
     j.call("2026-10-13T06:05:10Z", "say", {"text": "@sol taking the turrets"})
     j.call("2026-10-13T06:05:20Z", "tell", {"to": "sol", "text": "hi"})
     j.call("2026-10-13T06:05:30Z", "confess", {"text": "I walked into the nest. Mail me at bot@example.com"})
-    j.call("2026-10-13T06:05:40Z", "confess", {"text": "Nick should SECRET-OWNER-LINE"})  # names the owner: left out
+    j.call("2026-10-13T06:05:40Z", "confess", {"text": "Nick asked for the wall first"})  # names the owner: kept (d27)
     with gzip.open(a / "opus" / "journal.jsonl.gz", "wt") as f:  # an ended shift's journal is compressed
         f.write(j.text())
     k = Journal()
@@ -318,9 +318,9 @@ def main():
         chat = (out / "chat" / "index.html").read_text()
         for want in ("Turrets first, then the wall.", "Past midnight &amp; still here.", "Spoken · reaction",
                      "I walked into the nest", "[email]", 'data-kind="confession"', 'data-agent="opus"',
-                     'id="hl-q"', 'value="confession" checked', "Confessions (1)", "Spoken on stream (2)", 'href="/chat/"'):
+                     'id="hl-q"', 'value="confession" checked', "Confessions (2)", "Spoken on stream (2)", 'href="/chat/"'):
             assert want in chat, want
-        assert "SECRET" not in chat and "example.com" not in chat and "Nick" not in chat
+        assert "SECRET" not in chat and "example.com" not in chat and "Nick asked for the wall first" in chat
         # the highlights (site/content/moments.json, the agent-minds study) above the lines
         n_moments = len(json.loads((SITE / "content" / "moments.json").read_text()))
         assert f'id="highlights"><h2>Highlights<span class="h-sub">{n_moments} moments</span>' in chat
