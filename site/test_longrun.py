@@ -7,7 +7,7 @@
 - science packs made from each counter's rises (a falling counter never gives a negative rate);
 - firsts in order (packs, technologies, rockets, platform departures and arrivals, planets, the first death, the
   first viewer line); the viewer Q&A (a resend once, the agents' answers that name the viewer, the hosts' answers,
-  the owner's lines left out); every shift has its own page;
+  lines naming an account or tool left out, the owner's shown); every shift has its own page;
 - start.log gives only times: its account and quota lines never reach the page;
 - with the archive on, build.py --runs-dir writes /runs/long/ and links it from the homepage and the Runs list; check.py passes.
 """
@@ -47,7 +47,7 @@ def make(root):
                 {"seq": 2, "tick": 3600 * 20 + 60, "from": "viewer fan_1", "text": "@sonnet build turrets?", "viewer": True},
                 {"seq": 3, "tick": 3600 * 21, "from": "sonnet", "text": "@fan_1 two turrets going up now"},
                 {"seq": 4, "tick": 3600 * 22, "from": "viewer NickWinter", "text": "owner line"},
-                {"seq": 5, "tick": 3600 * 23, "from": "viewer other", "text": "great stuff nick"},
+                {"seq": 5, "tick": 3600 * 23, "from": "viewer other", "text": "great stuff codex-b"},
                 {"seq": 6, "tick": 3600 * 24, "from": "opus", "text": "unrelated line"}],
           service="[director] 02:30:00 main:  zoom 1.1  <- attack: Sonnet died\n"
                   "[director] 02:31:00 main:  zoom 0.8  <- attack: 3 lost near (1, 2): 3 gun turret\n"
@@ -73,23 +73,23 @@ def make(root):
           caster="05:30:00 [Vale] (space_moment, or:x, 1s) Platform's named. Solstice.\n"
                  "05:31:00 [Rook] (camera, or:x, 1s) Nothing to see.\n")
     # the team plan s3 left (tools/stream/planlog.py; viewer Alex 22:12): goals, lines, a project with its next step;
-    # a line naming the owner is left out by keep, as any other text
+    # a line naming a tool account is left out by keep, as any other text
     (root / "s3" / "plan.json").write_text(json.dumps({
         "goals": "Rocket silo, then Vulcanus", "goals_tick": 3600 * 70,
         "lines": [{"agent": "sonnet", "text": "rocket silo at (40,-30)", "by": "sonnet", "tick": 3600 * 100},
                   {"agent": "opus", "text": "fuel for the Solstice run", "by": "astra", "tick": 3600 * 110},
-                  {"agent": "astra", "text": "ask nick for more quota", "by": "astra", "tick": 3600 * 111}],
+                  {"agent": "astra", "text": "ask codex-b for more quota", "by": "astra", "tick": 3600 * 111}],
         "edited": "by astra, 2m ago", "updated_tick": 3600 * 111,
         "projects": [{"id": 9, "title": "Rocket silo", "owner": "sonnet", "status": "doing", "progress": "4 of 5 steps",
                       "next": "Load the rocket", "goal": None}],
         "open_unowned": 3, "in_progress": 2, "tick": 3600 * 121, "t": 1791702000.0}))
     # the run's chronicle s3 left (tools/stream/chronicle_log.py; viewers Alex and syndesis 22:24): an agent's entry,
-    # one naming the owner (left out by keep), and the harness's record: a platform built and lost with where it flew,
+    # one naming a tool account (left out by keep), and the harness's record: a platform built and lost with where it flew,
     # what destroyed it and its cargo, a rocket
     rows = [{"type": "entry", "seq": 1, "tick": 3600 * 90, "game_time": "1h30m", "agent": "sonnet", "title": "The silo rises",
              "text": "We poured the silo's foundation under a red sky.", "planet": "nauvis",
              "refs": [{"id": 1, "kind": "research", "tick": 3600 * 88, "line": "research finished: rocket-silo"}]},
-            {"type": "entry", "seq": 2, "tick": 3600 * 91, "agent": "opus", "text": "nick said hi", "planet": "nauvis"},
+            {"type": "entry", "seq": 2, "tick": 3600 * 91, "agent": "opus", "text": "codex-b said hi", "planet": "nauvis"},
             {"type": "event", "id": 2, "kind": "platform_created", "tick": 3600 * 95, "platform": "Comet", "at": "nauvis", "by": "luna"},
             {"type": "event", "id": 3, "kind": "rocket", "tick": 3600 * 101, "surface": "nauvis", "to": "platform Comet", "cargo": "empty"},
             {"type": "event", "id": 4, "kind": "platform_lost", "tick": 3600 * 110, "platform": "Comet",
@@ -121,7 +121,7 @@ def main():
         root = Path(d) / "runs"
         root.mkdir()
         make(root)
-        lr = longrun.load(root, agents=["sonnet", "opus"], keep=lambda t: "nick" not in t.lower())
+        lr = longrun.load(root, agents=["sonnet", "opus"], keep=lambda t: "codex-b" not in t.lower())
         ids = [s["id"] for s in lr["shifts"]]
         assert ids == ["s1", "s2", "s3"], ids
         s1, s2, s3 = lr["shifts"]
@@ -150,11 +150,13 @@ def main():
         assert firsts["pack:space-science-pack"]["tick"] == 3600 * 82 and firsts["tech:rocket-silo"]["shift"] == 2
         assert firsts["death"]["label"] == "First agent death (Sonnet)" and firsts["death"]["t"] == "2026-10-11T02:30:00"
         assert [f["tick"] for f in lr["firsts"]] == sorted(f["tick"] for f in lr["firsts"])
-        qa = s1["qa"]  # the viewer once (the resend dropped), the agent's answer naming them, the host's answer
-        assert [(q["kind"], q["who"]) for q in qa] == [("viewer", "fan_1"), ("agent", "sonnet"), ("host", "Rook")], qa
-        assert s1["viewer_lines"] == 1 and firsts["viewer"]["tick"] == 3600 * 20  # owner lines left out
+        qa = s1["qa"]  # the viewer once (the resend dropped), the agent's answer naming them, the owner's line (shown
+        # since d27), the host's answer; the line naming a tool account left out
+        assert [(q["kind"], q["who"]) for q in qa] == [("viewer", "fan_1"), ("agent", "sonnet"), ("viewer", "NickWinter"),
+                                                       ("host", "Rook")], qa
+        assert s1["viewer_lines"] == 2 and firsts["viewer"]["tick"] == 3600 * 20
         assert lr["research"][0] == (1.0, 1) and lr["research"][-1] == (122.0, 3), lr["research"]
-        plan = s3["plan"]  # the plan the shift left: game times on the run's clock, the owner's line left out
+        plan = s3["plan"]  # the plan the shift left: game times on the run's clock, the tool account's line left out
         assert plan["goals"] == "Rocket silo, then Vulcanus" and plan["goals_game"] == "1h10m", plan
         assert [(l["agent"], l["game"], l["by"]) for l in plan["lines"]] == [("sonnet", "1h40m", None), ("opus", "1h50m", "astra")], plan
         assert plan["projects"] == [{"title": "Rocket silo", "owner": "sonnet", "status": "doing", "progress": "4 of 5 steps",
@@ -182,7 +184,7 @@ def main():
         assert len(page) < 80000, len(page)
         assert "Shift videos" not in page and "youtube" not in (out / "runs" / "long" / "shift-1" / "index.html").read_text()
         sp = (out / "runs" / "long" / "shift-1" / "index.html").read_text()  # every shift has a page, video or not
-        assert "fan_1" in sp and "two turrets going up now" in sp and "owner line" not in sp and "nick" not in sp.lower().replace("nickwinter.net", "")
+        assert "fan_1" in sp and "two turrets going up now" in sp and "owner line" in sp  # the owner's line shows (d27)
         assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
         assert "1 built" in page and "0 lost · 1 active (Solstice)" in page and "Space platforms" in page
@@ -205,7 +207,7 @@ def main():
         ch = (out / "chronicle" / "index.html").read_text()
         assert "<h1>Chronicle</h1>" in ch and 'id="shift-2"' in ch and 'id="shift-1"' not in ch, ch[:500]
         assert "The silo rises" in ch and "We poured the silo&#x27;s foundation under a red sky." in ch and "Beside: research finished: rocket-silo" in ch, ch
-        assert "nick said hi" not in ch and "Platform Comet built at Nauvis by luna" in ch and "Rocket launched from Nauvis to platform Comet" in ch, ch
+        assert "codex-b said hi" not in ch and "Platform Comet built at Nauvis by luna" in ch and "Rocket launched from Nauvis to platform Comet" in ch, ch
         assert ("Platform Comet lost flying nauvis-&gt;vulcanus 40%, destroyed by medium metallic asteroid; hit most by medium metallic "
                 "asteroid; cargo lost: 450 iron plate") in ch, ch
         assert ch.index("The silo rises") < ch.index("Platform Comet built") < ch.index("Platform Comet lost"), "game-time order"

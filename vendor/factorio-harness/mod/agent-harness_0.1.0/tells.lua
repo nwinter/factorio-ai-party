@@ -6,7 +6,12 @@
 -- (`tells`), which the stream shows on its logistics ticker.
 return function(api)
   local M = {handlers={}, operator={}}
-  local MAX_LOG, MAX_LEN, MAX_TO = 300, 500, 8
+  -- (d27 batch273 TL, Nick and all nine agents) a tell holds up to MAX_LEN bytes; one over SHORT_LEN needs a summary
+  -- line of at most SUMMARY_CHARS characters: the stream overlay and the hosts show it, the recipients and the site get
+  -- the whole text (Sol's Aquilo launch audit went in parts at 500; Codex agents squeezed spaces out to fit)
+  local MAX_LOG, MAX_LEN, MAX_TO = 300, 2000, 8
+  local SHORT_LEN, SUMMARY_CHARS = 500, 120
+  M.MAX_LEN, M.SHORT_LEN, M.SUMMARY_CHARS = MAX_LEN, SHORT_LEN, SUMMARY_CHARS
   local TEAM = {team=true, everyone=true, all=true}
   local OPERATOR_KEEP = 3
   -- wake: true ends a recipient's wait that ignores messages (wake_on_messages: false, or wake_from without the sender)
@@ -27,6 +32,30 @@ return function(api)
     local cut = #text > limit and {length=#text, kept=limit} or nil
     if cut then text = text:sub(1, limit) end
     return text, cut
+  end
+  -- A tell's text (1..MAX_LEN bytes, one line) and its summary: needed over SHORT_LEN bytes, refused over SUMMARY_CHARS
+  -- characters. Nothing is sent on a refusal (no cut: the agent shortens it or writes the summary).
+  local function tell_text(a)
+    local text, cut = one_line(a.text)
+    if cut then
+      error(string.format('tell text is %d bytes; the limit is %d: shorten it; nothing was sent', cut.length, MAX_LEN), 0)
+    end
+    local summary = a.summary
+    if summary ~= nil then
+      assert(type(summary) == 'string', 'summary must be a string: one line, at most ' .. SUMMARY_CHARS .. ' characters')
+      summary = summary:gsub('[%c]+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+      local chars = select(2, summary:gsub('[^\128-\191]', ''))
+      if chars > SUMMARY_CHARS then
+        error(string.format('tell summary is %d characters; at most %d: shorten it; nothing was sent', chars, SUMMARY_CHARS), 0)
+      end
+      if summary == '' then summary = nil end
+    end
+    if #text > SHORT_LEN and not summary then
+      error(string.format('tell text is %d bytes: a tell over %d bytes needs summary, one line of at most %d characters '
+        .. '(what the stream overlay and the hosts show; recipients get the whole text): fh tell NAME "text" --summary '
+        .. '"..."; nothing was sent', #text, SHORT_LEN, SUMMARY_CHARS), 0)
+    end
+    return text, summary
   end
   -- `to` as names (array, or one string split on commas and spaces), any
   -- with an @, or team/everyone/all. Returns recipient names and team flag.
@@ -60,25 +89,26 @@ return function(api)
   end
   M.schema = {
     tell = {to='a teammate name or display name, several (array or "luna,sol"), or "team" for everyone',
-      text='1..500 bytes, one line (fh tell sends a longer one as numbered parts cut at sentence ends, all delivered together; in a queue step or plan a longer one is cut to 500 and the reply says so)',
+      text='1..2000 bytes, one line; over 2000 is refused, nothing sent',
+      summary='one line, at most 120 characters; needed when text is over 500 bytes (refused without it, nothing sent), optional below: the stream overlay and the hosts show it, recipients and the site get the whole text',
       reply_to='optional seq (or array): the chat line or tell this answers; it closes exactly those as unanswered (without it, a tell to the asker closes theirs only while it is their one open request to you; left_open says when it left several)',
       fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
       wake='true (fh tell --wake): also ends a recipient\'s wait that this tell would not end: a direct wait_ticks, wait_until or sleep that ignores messages (wake_on_messages: false, fh --wait-through-tells) or takes them only from others (wake_from), and an fh --wait that goes on through tells; every time (woken counts your wake tells to each in the last 10 minutes)',
-      returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; resting "gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler check (review in 3 min)" for each recipient its loop rests between turns; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
+      returns='seq and to (away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; resting "gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler check (review in 3 min)" for each recipient its loop rests between turns; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it (its summary when over 500 bytes) as text on the stream\'s logistics ticker, the whole text on the site, never spoken'},
     tells = {since='optional sequence number: the tells you sent or received after it (since=0: all of them); without it, the tells you received', limit='1..100, newest kept (default 30)',
-      returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text} oldest first (those listed leave the team block\'s unread tells): without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
+      returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text,summary?} oldest first (those listed leave the team block\'s unread tells): without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
   }
   function M.handlers.tell(p, a)
     local me = api.who(p)
     assert(a.fyi == nil or type(a.fyi) == 'boolean', 'fyi must be true or false')
     assert(a.wake == nil or type(a.wake) == 'boolean', 'wake must be true or false')
     assert(not (a.wake and a.fyi), 'wake or fyi, not both: fyi wakes nobody')
-    local text, cut = one_line(a.text)
+    local text, summary = tell_text(a)
     local names, team = recipients(a.to, me)
     local s = store()
     s.seq = s.seq + 1
-    local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text, fyi=a.fyi or nil, wake=a.wake or nil,
-      reply_to=a.reply_to}
+    local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text, summary=summary,
+      fyi=a.fyi or nil, wake=a.wake or nil, reply_to=a.reply_to}
     -- (d17 batch14 B1) reply_to: the chat line or tell this answers (owed.lua)
     if a.reply_to ~= nil and api.on_reply then pcall(api.on_reply, p.index, a.reply_to) end
     s.log[#s.log+1] = t
@@ -132,7 +162,7 @@ return function(api)
     local not_woken = {}
     -- (d22 batch122 CE1) without reply_to: the recipients (team: those it names) whose several open requests it left open
     local left = a.reply_to == nil and api.owed_left and api.owed_left(p.index, names, team and text or nil) or nil
-    return {seq=t.seq, to=team and 'team' or names, cut=cut, left_open=left, away=#away > 0 and table.concat(away, '; ') or nil,
+    return {seq=t.seq, to=team and 'team' or names, left_open=left, away=#away > 0 and table.concat(away, '; ') or nil,
       ignoring=#ignoring > 0 and table.concat(ignoring, '; ') or nil, resting=#resting > 0 and table.concat(resting, '; ') or nil, woken=#woken > 0 and woken or nil, not_woken=#not_woken > 0 and not_woken or nil,
       note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat'}
   end
@@ -157,7 +187,7 @@ return function(api)
     for i = math.max(1, #picked - limit + 1), #picked do
       local t = picked[i]
       out[#out+1] = {seq=t.seq, tick=t.tick, ago_s=math.floor((game.tick - t.tick) / 60), from=t.from, away=where and where(t.from) or nil,
-        to=not received and (t.team and 'team' or t.to) or nil, team=t.team, fyi=t.fyi, text=t.text}
+        to=not received and (t.team and 'team' or t.to) or nil, team=t.team, fyi=t.fyi, text=t.text, summary=t.summary}
     end
     return {tells=out, cursor=s.seq, tick=game.tick}
   end
@@ -177,11 +207,11 @@ return function(api)
   -- whose character stands idle). Like a teammate's: the next reply's team
   -- tells, a wake from sleep (woke=told), never the game chat.
   function M.operator.tell(a)
-    local text, cut = one_line(a.text)
+    local text, summary = tell_text(a)
     local names, team = recipients(a.to, nil)
     local s = store()
     s.seq = s.seq + 1
-    local t = {seq=s.seq, tick=game.tick, from='operator', to=names, team=team or nil, text=text}
+    local t = {seq=s.seq, tick=game.tick, from='operator', to=names, team=team or nil, text=text, summary=summary}
     s.log[#s.log+1] = t
     while #s.log > MAX_LOG do table.remove(s.log, 1) end
     local index = {}
@@ -196,7 +226,7 @@ return function(api)
         s.unseen[index[name]] = list
       end
     end
-    return {seq=t.seq, to=team and 'team' or names, cut=cut}
+    return {seq=t.seq, to=team and 'team' or names}
   end
   -- An operator tell rides on every reply to its agent (result.operator; fh
   -- prints it as an OPERATOR: line on stderr and first on stdout) until the

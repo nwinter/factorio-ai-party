@@ -230,10 +230,14 @@ function render() {
 }
 
 function seekWall(t) { video.currentTime = Math.max(0, toVideo(Math.min(D.t1, t))); render(); }
+// batch270: a jump lands 3 s before its event, so counting from the playhead found the same event on a second press;
+// while the playhead is around the event jumped to, count from that event (the site's static/player.js does the same)
+let cursor = null;
 function jump(dir) {
   const t = now();
-  const list = dir > 0 ? events.filter((e) => e.t > t + 1) : events.filter((e) => e.t < t - 3).reverse();
-  if (list.length) seekWall(list[0].t - 3);
+  const ref = cursor !== null && t >= cursor - 4 && t <= cursor + 5 ? cursor : t;
+  const e = dir > 0 ? events.find((x) => x.t > ref + 0.5) : events.filter((x) => x.t < ref - 0.5).pop();
+  if (e) { cursor = e.t; seekWall(e.t - 3); }
 }
 
 function wire() {
@@ -262,8 +266,9 @@ function wire() {
 
 function attach() {
   const track = document.createElement("track");
-  Object.assign(track, { kind: "captions", label: "Hosts and agents", srclang: "en", src: VTT, default: true });
-  video.appendChild(track);
+  Object.assign(track, { kind: "captions", label: "Hosts and agents", srclang: "en", src: VTT });
+  video.appendChild(track);  // off at first: the hosts' lines are burned into the video (the browser's CC turns them on)
+  track.addEventListener("load", () => { video.textTracks[0].mode = "hidden"; });
   if (video.canPlayType("application/vnd.apple.mpegurl")) video.src = SRC;
   else if (window.Hls && Hls.isSupported()) { const h = new Hls({ capLevelToPlayerSize: true }); h.loadSource(SRC); h.attachMedia(video); }
   else $("span").textContent = "This browser cannot play HLS.";

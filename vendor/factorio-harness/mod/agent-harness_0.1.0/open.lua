@@ -227,13 +227,13 @@ return function(api)
           seen[t.from] = true
           if not answered then
             asked = asked + 1
-            if #asked_ex < EXAMPLES then asked_ex[#asked_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.text, 70)) end
+            if #asked_ex < EXAMPLES then asked_ex[#asked_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.summary or t.text, 70)) end
           end
         elseif not ask and not seen_note[t.from] then
           seen_note[t.from] = true
           if not answered and (not unread or unread[t.seq]) then
             notes = notes + 1
-            if #notes_ex < EXAMPLES then notes_ex[#notes_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.text, 70)) end
+            if #notes_ex < EXAMPLES then notes_ex[#notes_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.summary or t.text, 70)) end
           end
         end
       end
