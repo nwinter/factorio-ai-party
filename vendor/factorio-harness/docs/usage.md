@@ -16232,6 +16232,33 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
     the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
 
+## d27 batch262 (IQ, Astra #2536: ingredient_gap and recipe quality)
+Astra, tick 71197962: ingredient_gap on Nauvis's AM3 (40.5,74.5), recipe beacon@legendary, read steel-plate,
+electronic-circuit and advanced-circuit as 0 held with legendary ones inside, and named normal-quality donors.
+- Engine facts, 2.0.77 on the private copy (a test platform): `get_recipe()` returns the recipe and a quality
+  prototype; an idle furnace's `previous_recipe` is {name, quality}, a working one's `get_recipe()` gives both; an
+  assembler set to beacon@legendary takes no normal steel (the insert left nothing). `get_item_count("steel-plate")`
+  and `get_item_count{name="steel-plate"}` count normal only (a chest of 50 normal and 30 legendary read 50 both
+  ways; an assembler input of 7 legendary read 0); `{name, quality}` counts that quality; `get_item_count_filtered{name}`
+  counts every quality (80). A requester's `filters` and a provider's `targeted_items_pickup` rows carry `quality` as a
+  string; a network's `get_item_count(name)` is normal only, `{name, quality}` that quality; `select_pickup_point`
+  takes `name={name, quality}`.
+- gap.lua: the recipe's quality (`recipe_quality` on each machine, `beacon@legendary` in its line); held counts the
+  input at that quality, read once by `get_contents`; `other_quality` the rest of that item there (said in the line);
+  spoil rows matched by their name@quality key; rows carry `quality` when not normal.
+- The donors at that quality: stock.near keeps each holder's stock by name and quality (it kept normal only, and a
+  scan for another quality read normal stock through it); scan's ground through near: the ground watch's cells (every
+  quality) only say whether stacks lie within the radius, then stores.on_ground reads those of the quality asked
+  within it; where_kept takes quality: a chest's request (reqchest.request) and robots' reservations
+  (supply.reserved) of that quality, the networks' stock of it and its pickup point. Without quality those helpers
+  count every quality as before (their other callers are unchanged).
+- On the copy, beacon@legendary with 7 legendary steel and 20 legendary green circuits inside, 100 normal and 15
+  legendary cable and 50 normal red circuits in a chest beside it: main read steel 0/10 and green 0/20 short, cable
+  "100 free", red "50 free"; this branch reads steel@legendary 7/10 (3 short; 30 legendary free in a chest of 80),
+  green 20/20, cable "15 free", red none to spare. Time (create_profiler, x86 under Rosetta): 4.6-8.7 ms on main,
+  6.6-9.4 ms here.
+- Test: tests/d27_batch262.lua (fails on main); d17_batch21 and d19_batch45's machine mocks give get_contents.
+
 ## d27 batch259 (CB, Astra #2483: a dry run's false disconnected bays; PL, Astra #2484: pod_landed scoped to a planet)
 CB. Kestrel II's place_ghosts dry run at tick 69271398 said its bays (-2,54) and (-6,58) "join nothing ... no hub or
 landing pad within 16 tiles"; built, they joined (the hub 539 -> 579 slots at 69274894). dryrun.lua `cargo_bays` read

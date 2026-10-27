@@ -13,24 +13,45 @@ return function(api)
   local CRAFTERS = {['assembling-machine']=true, furnace=true, ['rocket-silo']=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
+  local function qname(q) return type(q) == 'string' and q or q and try(function() return q.name end) or nil end
+  -- (d27 batch262 IQ, Astra #2536: an AM3's beacon@legendary read its legendary steel and circuits as 0 held and named
+  -- normal donors) the recipe's quality: get_recipe() returns it beside the recipe, an idle furnace's previous_recipe
+  -- holds it (2.0.77, the private copy); a craft takes ingredients of that quality only, so held counts that quality
+  -- (get_item_count(name) and {name=} count normal only), other_quality what else of the item lies in the input, and
+  -- the donors are of that quality.
   function M.machine(p, e)
-    local r = try(function() return e.get_recipe() end) or (e.type == 'furnace' and try(function() return e.previous_recipe end))
+    local r, rq = nil, nil
+    local okr = pcall(function() r, rq = e.get_recipe() end)
+    if not (okr and r) and e.type == 'furnace' then
+      local pr = try(function() return e.previous_recipe end)
+      r, rq = pr, pr and try(function() return pr.quality end)
+    end
     local rname = r and (type(r.name) == 'string' and r.name or try(function() return r.name.name end))
     local recipe = rname and prototypes.recipe[rname]
     if not recipe then return {position=e.position, name=e.name, line=string.format('%s %s: no recipe', e.name, at(e.position))}, false end
+    local q = qname(rq) or 'normal'
+    local function key(name) return q == 'normal' and name or name .. '@' .. q end
     local inv = try(function() return e.get_inventory(e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input) end)
     local rows, short, parts = {}, false, {}
     local sp = api.spoil and api.spoil()
     local acc = sp and inv and sp.inventory(inv, {}, 'input') or {}
+    -- the input read once: each item by quality
+    local have, other = {}, {}
+    for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+      if (qname(c.quality) or 'normal') == q then have[c.name] = (have[c.name] or 0) + c.count
+      else other[c.name] = (other[c.name] or 0) + c.count end
+    end
     for _, ing in ipairs(recipe.ingredients or {}) do
       if ing.type == 'item' then
-        local held = inv and try(function() return inv.get_item_count(ing.name) end) or 0
+        local held = have[ing.name] or 0
         local soon = 0
-        for _, x in ipairs(acc) do if x.name == ing.name then soon = soon + math.min(x.count, x.soon or 0) end end
+        for _, x in ipairs(acc) do if x.key == key(ing.name) then soon = soon + math.min(x.count, x.soon or 0) end end
         local usable = held - soon
         local gap = math.max(0, ing.amount - usable)
-        local row = {item=ing.name, needed=ing.amount, held=held, spoil_5min=soon > 0 and soon or nil, usable=usable, short=gap > 0 and gap or nil}
-        local text = string.format('%s %d/%d', ing.name, usable, ing.amount) .. (soon > 0 and string.format(' (%d held, %d of them spoil within 5 min)', held, soon) or '')
+        local row = {item=ing.name, quality=q ~= 'normal' and q or nil, needed=ing.amount, held=held, other_quality=other[ing.name],
+          spoil_5min=soon > 0 and soon or nil, usable=usable, short=gap > 0 and gap or nil}
+        local text = string.format('%s %d/%d', key(ing.name), usable, ing.amount) .. (soon > 0 and string.format(' (%d held, %d of them spoil within 5 min)', held, soon) or '')
+          .. (other[ing.name] and string.format(' (and %d of other quality, which this recipe does not take)', other[ing.name]) or '')
         if gap > 0 then
           -- donors after the machines are read (M.donors); the part waits for them
           short = true; row.short_by = gap
@@ -51,13 +72,13 @@ return function(api)
       end
     end
     local status = api.status and try(function() return api.status(e) end)
-    local m = {position=e.position, name=e.name, recipe=rname, status=status, ingredients=rows, short_of=short or nil}
+    local m = {position=e.position, name=e.name, recipe=rname, recipe_quality=q, status=status, ingredients=rows, short_of=short or nil}
     m.line = function()
       local l = {}
       for k, x in ipairs(parts) do
         l[k] = type(x) == 'table' and string.format('%s: %d short; %s', x.text, x.row.short, x.row.donors or 'donors not read') or x
       end
-      return string.format('%s %s %s%s: %s', e.name, at(e.position), rname, status and ' (' .. status .. ')' or '', table.concat(l, '; '))
+      return string.format('%s %s %s%s: %s', e.name, at(e.position), key(rname), status and ' (' .. status .. ')' or '', table.concat(l, '; '))
     end
     return m, short
   end
@@ -90,7 +111,8 @@ return function(api)
     end
     for _, t in ipairs(todo) do
       -- (d19 batch41 A1) a donor search that fails says so on its row; the other machines still read
-      local okd, donors = pcall(function() return api.where_kept(p, t.row.item, t.row.short_by, api.scan(p, t.row.item, {position=t.m.position, radius=NEAR, near=near})) end)
+      local q = t.row.quality or 'normal'
+      local okd, donors = pcall(function() return api.where_kept(p, t.row.item, t.row.short_by, api.scan(p, t.row.item, {position=t.m.position, radius=NEAR, near=near, quality=q}), q) end)
       t.row.donors = okd and donors or 'donors not read: ' .. tostring(donors)
     end
     for _, m in ipairs(ms) do
@@ -156,6 +178,6 @@ return function(api)
   end
   M.schema = {ingredient_gap={surface='optional planet, surface or platform name (default yours): the machines at position, positions or area there, in chunks our force sees now there by remote view (d20 batch62 X4)',position='{x,y} of a crafting machine (assembler, furnace, biochamber, silo ...)', positions='or 1..32 of them (16 a call; left: the rest)', area='or {left_top, right_bottom} up to 128x128: the machines there short of an ingredient (all: true: every one), 16 a call', all='with area: optional true',
     skip='with area: optional, machines to pass over (more says how many there are)',
-    returns='machines [{position, name, recipe, status, ingredients [{item | fluid, needed (one craft), held, spoil_5min, usable, short, donors}], line}]: per ingredient of the next craft, held in its input, how many of those spoil within 5 min, usable, short; for a short item the places within 64 tiles of the machine that can spare it (a requester or buffer chest only over its own request, robots\' reservations off), with how many, else the logistic networks holding it (stacks on the ground as the ground watch\'s last pass binned them, every 30 s; ground_note when not read); donors for the first 8 short items a call (donors_skipped: how many more); with area and all, a machine short of nothing has its line and no ingredients; lines; read, short; more (area: machines past this call); left (positions not read). Read only'}}
+    returns='machines [{position, name, recipe, recipe_quality, status, ingredients [{item | fluid, quality (not normal), needed (one craft), held, other_quality, spoil_5min, usable, short, donors}], line}]: per ingredient of the next craft, held in its input at the recipe\'s quality (other_quality: the rest of that item there, which the craft does not take), how many of those spoil within 5 min, usable, short; for a short item the places within 64 tiles of the machine that can spare it at that quality (a requester or buffer chest only over its own request, robots\' reservations off), with how many, else the logistic networks holding it (stacks on the ground as the ground watch\'s last pass binned them, every 30 s; ground_note when not read); donors for the first 8 short items a call (donors_skipped: how many more); with area and all, a machine short of nothing has its line and no ingredients; lines; read, short; more (area: machines past this call); left (positions not read). Read only'}}
   return M
 end

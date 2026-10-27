@@ -18,10 +18,11 @@ return function(api)
     return try(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
   end
   -- The chest's request for item: min (sum), max (nil: none), and whether any slot names it.
-  function M.request(pt, item)
+  -- (d27 batch262 IQ) quality: that quality's requests only (a filter's quality is a string, 2.0.77); nil: every quality
+  function M.request(pt, item, quality)
     local min, max, named = 0, nil, false
     for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
-      if name_of(f.name) == item then
+      if name_of(f.name) == item and (quality == nil or (name_of(f.quality) or 'normal') == quality) then
         named = true
         min = min + (f.count or 0)
         if f.max_count then max = (max or 0) + f.max_count end
