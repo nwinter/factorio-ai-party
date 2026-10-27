@@ -11,7 +11,7 @@
 # Exit 0 when deployed (or built and checked with --no-deploy), 1 when a step failed (the log says which).
 # tools/shift-change.sh runs it in the background after the previous shift stops; it never blocks a shift.
 # Stubs for tests: POG_WRANGLER (the deploy command, split on spaces; default npx wrangler), POG_SITE_OUT (build dir),
-# POG_SITE_STATUS (the status.json to update).
+# POG_SITE_STATUS (the status.json to update), POG_SITE_GIT (the checkout whose MERGE_HEAD skips the refresh).
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -50,6 +50,13 @@ until mkdir "$lock" 2>/dev/null; do
 done
 echo $$ > "$lock/pid"
 trap 'rm -rf "$lock"' EXIT
+# (d27 batch265) never from a half-merged tree: the gate merges a branch in this checkout, runs the tests, then
+# commits; a refresh in between (the hourly loop at 08:04) built the branch's files. While MERGE_HEAD exists: one
+# line, exit 0, nothing built or deployed (the next hour's run builds). POG_SITE_GIT: the checkout to look at (tests).
+if git -C "${POG_SITE_GIT:-$root}" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+  step "skipped: a merge is in progress in ${POG_SITE_GIT:-$root} (MERGE_HEAD); nothing built or deployed"
+  exit 0
+fi
 # (d26 batch241) OUT.deployed: the build in OUT is the one production has (site/chart_deploy.py deploys the chart only
 # into such a build); gone from the start of a build until its production deploy
 rm -f "$out.deployed"
