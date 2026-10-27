@@ -41,10 +41,10 @@ local p={position={x=0,y=0},surface=surface,force=force}
 surface.name='nauvis'
 game={tick=0,surfaces={nauvis=surface}}
 local L=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
-  status_name=function(e) return names[e.status] end}
+  status_name=function(e) return names[e.status] end,research_rate=function() return 1,3600 end}
 local r=L.view(p,{})
--- 75 units left x 10 s each at 1 working lab: 750 s.
-eq(r.research,'logistics 25% needs automation+logistic, eta 12m30s at 1 working labs')
+-- 75 units left x 600 work each at research's measured 1 a tick: 45000 ticks, 750 s.
+eq(r.research,'logistics 25% needs automation+logistic, eta 12m30s at 1 working labs (rate over the last 1m00s)')
 eq(r.labs,'4 in 2 groups within 96 tiles of (0,0)')
 eq(r.research_labs,'1 of 4 labs of ours working, every surface (nauvis 1 of 4); groups: within 96 tiles of (0,0) on nauvis')
 eq(#r.groups,2)

@@ -74,22 +74,16 @@ return function(api)
     else net = '; no logistic network there' end
     return string.format('lab %s lacks %s: %s%s', at(lab.position), name, #feeds > 0 and 'fed by ' .. table.concat(feeds, ' | ') or 'no inserter drops into it', net)
   end
-  -- (d26 batch248 R1) every lab of ours, every surface, for the research line: {working, total, speed, rows}
-  local speeds = {}
-  local function lab_speed(e)
-    local v = speeds[e.name]
-    if v == nil then v = try(function() return e.prototype.researching_speed end) or 1; speeds[e.name] = v end
-    return v
-  end
+  -- (d26 batch248 R1) every lab of ours, every surface, for the research line: {working, total, rows}
   local function all_labs(force)
-    local out = {working=0, total=0, speed=0, rows={}}
+    local out = {working=0, total=0, rows={}}
     for _, s in pairs(game.surfaces) do
       local list = api.census_typed and try(function() return api.census_typed(force, s, 'lab') end)
       if not list then list = try(function() return s.find_entities_filtered{type='lab', force=force, limit=MAX_LABS} end) or {} end
       if #list > 0 then
         local w = 0
         for _, e in ipairs(list) do
-          if e.valid and api.status_name(e) == 'working' then w = w + 1; out.speed = out.speed + lab_speed(e) end
+          if e.valid and api.status_name(e) == 'working' then w = w + 1 end
         end
         out.rows[#out.rows+1] = {surface=s.name, n=#list, working=w}
         out.working, out.total = out.working + w, out.total + #list
@@ -230,11 +224,13 @@ return function(api)
       for i, n in ipairs(packs) do names[i] = short(n) end
       research = string.format('%s %d%% needs %s', tech.name, math.floor(progress * 100), table.concat(names, '+'))
       local every = all_labs(force)
-      local speed = every.speed * (1 + (force.laboratory_speed_modifier or 0))
-      if every.working > 0 and speed > 0 and tech.research_unit_energy then
-        local left = (1 - progress) * tech.research_unit_count * tech.research_unit_energy / 60 / speed
-        research = research .. string.format(', eta %s at %d working labs', fmt(math.ceil(left)), every.working)
-      else research = research .. ', stalled: no lab is working' end
+      -- the ETA at research's measured rate (research {}'s done_in)
+      local rate, ticks = (api.research_rate or function() end)(force.name)
+      if every.working == 0 then research = research .. ', stalled: no lab is working'
+      elseif rate and rate > 0 then
+        research = research .. string.format(', eta %s at %d working labs (rate over the last %s)',
+          fmt(math.ceil((1 - progress) * tech.research_unit_count * tech.research_unit_energy / rate / 60)), every.working, fmt(math.ceil(ticks / 60)))
+      else research = research .. string.format(', %d working labs, %s', every.working, rate and 'no progress measured' or 'no rate measured yet') end
       local per = {}
       for _, r in ipairs(every.rows) do per[#per+1] = string.format('%s %d of %d', r.surface, r.working, r.n) end
       research_labs = string.format('%d of %d labs of ours working, every surface (%s); groups: %s', every.working, every.total,

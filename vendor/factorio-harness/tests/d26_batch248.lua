@@ -89,15 +89,23 @@ do
   local tech={name='mining-productivity-3',research_unit_ingredients={{name='automation-science-pack',amount=1}},research_unit_count=1000,research_unit_energy=3600}
   local force={name='player',current_research=tech,research_progress=0.5,laboratory_speed_modifier=0}
   local census={nauvis=nauvis_labs,gleba=gleba_labs}
+  local rate
   local L=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
-    status_name=function(e) return names[e.status] end,census_typed=function(f,s,t) eq(t,'lab'); return census[s.name] end}
+    status_name=function(e) return names[e.status] end,census_typed=function(f,s,t) eq(t,'lab'); return census[s.name] end,
+    research_rate=function(name) eq(name,'player'); return rate,3600 end}
+  -- no rate yet (under 30 s of samples), then no progress, then research {}'s measured rate
   local r=L.view({position={x=-241,y=495},surface=nauvis,force=force},{})
-  -- 500 units left x 60 s at speed 2+2+2+2 (Nauvis) + 1 (Gleba) = 9: 3333.3 s
-  eq(r.research,'mining-productivity-3 50% needs automation, eta 55m34s at 5 working labs')
+  eq(r.research,'mining-productivity-3 50% needs automation, 5 working labs, no rate measured yet')
+  rate=0
+  eq(L.view({position={x=-241,y=495},surface=nauvis,force=force},{}).research,'mining-productivity-3 50% needs automation, 5 working labs, no progress measured')
+  rate=9
+  r=L.view({position={x=-241,y=495},surface=nauvis,force=force},{})
+  -- 500 units x 3600 work left at 9 a tick: 200000 ticks, 3333.3 s
+  eq(r.research,'mining-productivity-3 50% needs automation, eta 55m34s at 5 working labs (rate over the last 1m00s)')
   eq(r.research_labs,'5 of 6 labs of ours working, every surface (nauvis 4 of 5, gleba 1 of 1); groups: within 96 tiles of (-241,495) on nauvis')
   eq(r.labs,'0 in 0 groups within 96 tiles of (-241,495)')
   -- the census lists: no whole-surface find (the area's own find only)
-  eq(#finds,1); eq(finds[1],'nauvis near')
+  eq(#finds,3); for _,x in ipairs(finds) do eq(x,'nauvis near') end
   -- a surface the census pass has not walked: found there
   census.gleba=nil
   r=L.view({position={x=-241,y=495},surface=nauvis,force=force},{})

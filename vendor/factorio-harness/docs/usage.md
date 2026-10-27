@@ -16071,21 +16071,31 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   96 tiles of her while her 4 biolabs worked and research went 95.2 -> 95.4% in 8 s; 25 of 79 labs reads in shifts
   69-76 said stalled): every lab of ours works on the current research wherever it stands, so `labs` (and
   `observe {scope: labs}`) builds the `research` line (working count, ETA, `stalled`) from every lab of ours on every
-  surface: the census pass's lab lists (a find on a surface it has not walked), the ETA at the working labs'
-  researching speeds summed (a biolab 2, a lab 1) times the force's lab speed bonus. `research_labs`: `26 of 30 labs of
+  surface: the census pass's lab lists (a find on a surface it has not walked), the ETA at research's measured rate
+  (research {}'s done_in): `eta 2h37m at 30 working labs (rate over the last 1m00s)`; `N working labs, no rate measured
+  yet` (under 30 s of samples) or `no progress measured`. On a copy of world n's 16:11 save, Luna at (516,225):
+  main read `stalled: no lab is working`, `0 in 0 groups` while all 30 biolabs on Nauvis worked; the branch
+  `eta 2h37m at 30 working labs`, research {} `done_in 2h37m`. The read cost the same (4-13 ms as a bot, team block
+  included). `research_labs`: `26 of 30 labs of
   ours working, every surface (nauvis 26 of 26, gleba 0 of 4); groups: within 96 tiles of (15,-147) on nauvis`. `labs` names the area: `7 in 2 groups within 96 tiles of (15,-147)`.
 - R2, pods (shift80: Weaver's pod with 1,000 agricultural science packs, sent 68 ticks after Weaver left Nauvis, landed
   in pad (52,54); Luna's delivery_watch #528 from Weaver read "received 0"; 12 of 2,355 down pods in the save's ledger
   were sent after their platform left, none in freight's receipts): pods.lua read only the platforms at a space
   location, while freight takes a stop's pods for 600 ticks after it ends (POD_AFTER). A platform is now read for 660
   ticks after it was last seen at a stop (storage pods_stops, per force and platform index), so freight's receipts
-  and delivery_watch `from` follow such a pod.
+  and delivery_watch `from` follow such a pod. On the copy: Weaver at Nauvis with 1,000 agricultural science packs,
+  sent on, its hub's pod (create_cargo_pod, 100 packs to pad (52,54)) sent 68-70 ticks after it left: on main the watch
+  from Weaver stayed open with 0 arrivals and freight's stop had no pods; on the branch the watch read received 100 of
+  100 in 1 pod and the stop's receipts had it. The platform loop costs 0.13-0.16 ms more in a sample (once a second)
+  while a platform is within 11 s of leaving (0.08 ms a find on its surface).
 - R3, an idle furnace's last recipe (the steel furnace at (-65,83) on Nauvis read "none: 20013 completions" in
   `uptime` and no rate in `inspect`): `previous_recipe` is `{name=LuaRecipePrototype, quality}` and type() of the
   prototype is userdata; the code took a non-table for a name. Read as a name (a string) or the prototype's name in
   craftrate (inspect's rate), uptime, platbom (platform_production's makers), invbar (configure {bar}'s refusal),
   reqrate (requester_rate's users), supply's makers of an ingredient, inputs, beltfit, thrust, stock (wait output and
-  chances) and runtime's feeding and fill wants.
+  chances) and runtime's feeding and fill wants. On the copy (2.0.77): `force.recipes[prototype]` raises "string
+  expected, got userdata", `prototypes.recipe[prototype]` gives nil. The steel furnace at (-65,83): main `uptime` "none:
+  20013 completions", inspect no rate; the branch "copper-plate: 20013 completions", rate 37.5/min.
 - R7, the science line says when it was read: `science on nauvis (read 4m50s to 30s ago): ...` (the job's start, labs
   first, to its end; one age when built within a second).
 - R8, `flight_watch {id}` for a watch no longer kept: `no flight watch #9: #9 on Asterion (began at tick 500, ended at
