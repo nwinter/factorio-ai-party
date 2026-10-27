@@ -6,9 +6,9 @@ mode" dialog, and sat until the operator's esc and prompt at 23:55): python3 too
 Fake panes (no herdr, no game), fixed epoch times in 2023 (no clock), a temp run folder:
 1. Sol: its stop line and the dialog, herdr reading the pane idle, a background loop's request in its journal every
    20 s. Nothing before --idle-min; then one esc (no option chosen, no other key) and one message naming the line;
-   a minute later a turn running: resumed.
-2. Keeps failing: the stop shown again after the message is logged once; typed again only 20 min after the last try,
-   and the next failure is not logged again.
+   the CLI's turn makes a request of its own (a tells read, not the loop's platform_defense): resumed.
+2. Keeps failing: the stop shown again after each message is logged once a try; (d26 batch252) typed again 5, 10 and
+   20 min after the last try, 4 tries at most, then logged as spent; the cover told once at 20 min.
 3. Not a stop: a turn running ("Reconnecting" mid-turn), herdr reading a Claude pane working, a usage-limit screen
    with no rest, Claude's "Request was aborted", a rest running, an agy pane, after the deadline, the old stop line
    above a message already typed: nothing pressed or typed.
@@ -73,6 +73,7 @@ MUSE_STOP = """◆ Ran 2 commands · 1.2s
 class Pane:
     def __init__(self, kind, screen, status="idle", react="work", dialog=False, sticky=False):
         self.kind, self.screen, self.status, self.react = kind, screen, status, react
+        self.dir = None   # its agent folder: a turn's request goes into its journal
         self.dialog, self.sticky = dialog, sticky   # sticky: esc does not close it
         self.typed, self.keys = [], []
 
@@ -83,6 +84,11 @@ class Panes:
 
     def __init__(self, panes):
         self.p = panes
+        self.now = T0
+
+    def journal(self, p, action):
+        with open(os.path.join(p.dir, "journal.jsonl"), "a") as j:
+            j.write(json.dumps({"event": "request", "at": iso(self.now + 5), "request": {"action": action}}) + "\n")
 
     def status(self, pane):
         return self.p[pane].status
@@ -98,10 +104,14 @@ class Panes:
         p.screen += "\n\n› " + text[:70] + "\n  " + text[70:140] + "\n  " + text[140:]   # wrapped
         if p.react == "work":
             p.screen += "\n\n• Working (3s • esc to interrupt)"
+            self.journal(p, "tells")
         elif p.react == "stop":
             p.screen += "\n\n■ Selected model is at capacity. Please try a different model."
-        else:
+        elif p.react == "quiet":
             p.screen += "\n\n• Read tells; nothing new."
+            self.journal(p, "tells")
+        else:   # "show": a turn shown, no request of its own
+            p.screen += "\n\n• Working (3s • esc to interrupt)"
         return "agent prompt", True, ""
 
     def keys(self, pane, *keys):
@@ -133,6 +143,7 @@ class Run:
                     json.dump({"since": T0, "until": rest_until, "reason": "quota"},
                               open(os.path.join(d, "resting.json"), "w"))
                 self.panes[pid] = pane
+                pane.dir = d
                 f.write(f"{name} {pid} {pane.kind}\n")
         self.fake = Panes(self.panes)
         self.rows = []
@@ -146,6 +157,7 @@ class Run:
         out = []
         t = t0
         while t <= t1:
+            self.fake.now = t
             out += r.step(t, self.rows.append)
             t += step
         return out
@@ -165,6 +177,7 @@ def sol():
         rows = run.poll(r, T0, T0 + IDLE - 60)
         check(rows == [] and sol.keys == [] and sol.typed == [],
               "Sol: nothing pressed or typed before the nudge time (10 min), its journal busy with a background loop")
+        run.fake.now = T0 + IDLE
         rows = r.step(T0 + IDLE, run.rows.append)
         check(sol.keys == ["esc"], "Sol: one esc for the Daybreak dialog, no option chosen")
         check(len(sol.typed) == 1 and sol.typed[0] == "Operator (automatic): your last turn stopped on a provider error: "
@@ -174,7 +187,8 @@ def sol():
         check(row["action"] == "typed" and row["resume"] and row["provider_stop"] and row["stopped_min"] == 10
               and "esc for the dialog on top" in row["line"] and row["agent"] == "sol", "Sol: the try logged")
         rows = run.poll(r, T0 + IDLE + 30, T0 + IDLE + 60, 30)
-        check([x["action"] for x in rows] == ["resumed"] and len(sol.typed) == 1, "Sol: a minute later a turn running: resumed")
+        check([x["action"] for x in rows] == ["resumed"] and len(sol.typed) == 1 and rows[0]["verified"] == "tells",
+              "Sol: its turn's request of its own (tells): resumed")
         run.poll(r, T0 + IDLE + 120, T0 + 3 * 3600, 300)
         check(len(sol.typed) == 1 and sol.keys == ["esc"], "Sol: nothing more while it works")
 
@@ -183,19 +197,25 @@ def keeps_failing():
     with tempfile.TemporaryDirectory() as tmp:
         sol = Pane("codex", SOL_STOP, react="stop")
         run = Run(tmp, [("sol", sol)])
-        r = run.resumer()
+        told = []
+        r = run.resumer(cover=lambda name, now: "astra", send=lambda to, text: told.append((to, text)))
         run.poll(r, T0, T0 + IDLE + 120)
         check(len(sol.typed) == 1 and [x["action"] for x in run.rows] == ["typed", "still_stopped"]
               and "provider stop again 1 min after try 1" in run.rows[1]["line"],
               "keeps failing: the stop after the message logged once")
-        run.poll(r, T0 + IDLE + 180, T0 + IDLE + 1140)
-        check(len(sol.typed) == 1, "keeps failing: no second try within 20 min")
-        run.poll(r, T0 + IDLE + 1200, T0 + IDLE + 1320)
-        check(len(sol.typed) == 2 and [x["action"] for x in run.rows] == ["typed", "still_stopped", "typed"],
-              "keeps failing: tried again at 20 min; the next failure not logged again")
-        run.poll(r, T0 + IDLE + 1380, T0 + IDLE + 4 * 1200 + 60)
-        check(len(sol.typed) == 5 and sum(x["action"] == "still_stopped" for x in run.rows) == 1,
-              "keeps failing: one try every 20 min after it")
+        run.poll(r, T0 + IDLE + 180, T0 + IDLE + 240)
+        check(len(sol.typed) == 1, "keeps failing: no second try within 5 min")
+        run.poll(r, T0 + IDLE + 300, T0 + IDLE + 360)
+        check(len(sol.typed) == 2 and [x["action"] for x in run.rows][-2:] == ["typed", "still_stopped"],
+              "keeps failing: tried again at 5 min, its failure logged")
+        run.poll(r, T0 + IDLE + 420, T0 + IDLE + 840)
+        check(len(sol.typed) == 2, "keeps failing: the third try waits 10 min")
+        run.poll(r, T0 + IDLE + 900, T0 + IDLE + 2040)
+        check(len(sol.typed) == 3 and [(x["action"], x.get("to")) for x in run.rows if x["action"] == "cover_alert"] == [("cover_alert", "astra")]
+              and len(told) == 1, "keeps failing: third try at 10 min; the cover told once at 20 min")
+        run.poll(r, T0 + IDLE + 2100, T0 + 6 * 3600)
+        check(len(sol.typed) == 4 and sum(x["action"] == "tries_spent" for x in run.rows) == 1 and len(told) == 1,
+              "keeps failing: the fourth try at 20 min, then nothing more typed (4 tries), spent logged once")
 
 
 def not_a_stop():
@@ -226,8 +246,8 @@ def not_a_stop():
         pane = Pane("codex", SOL_STOP, react="quiet")
         run = Run(tmp, [("a", pane)])
         run.poll(run.resumer(), T0, T0 + 4 * 3600)
-        check(len(pane.typed) == 1 and [x["action"] for x in run.rows] == ["typed", "no_stop"],
-              "not a stop: the old line above the message typed (its turn ended with no error)")
+        check(len(pane.typed) == 1 and [x["action"] for x in run.rows] == ["typed", "resumed"],
+              "not a stop: the old line above the message typed (its turn read its tells and ended with no error)")
     check(pr.provider_stop("codex", "Hide future rate limit reminders about switching models\n› x") is None,
           "not a stop: Codex's switch-model reminder")
 
@@ -246,8 +266,9 @@ def other_clis():
         pane = Pane("codex", SOL_STOP, dialog=True, sticky=True)
         run = Run(tmp, [("sol", pane)])
         run.poll(run.resumer(), T0, T0 + IDLE + 1200 + 60)
-        check(pane.typed == [] and pane.keys == ["esc", "esc"] and [x["action"] for x in run.rows] == ["dialog_up"],
-              "a dialog still up after esc: logged once, nothing typed, esc again 20 min later")
+        check(pane.typed == [] and pane.keys == ["esc", "esc"] and [x["action"] for x in run.rows] == ["dialog_up", "cover_alert"]
+              and run.rows[1]["sent"] is False, "a dialog still up after esc: logged once, nothing typed, esc again 20 min "
+              "later; at 20 min the alert finds no cover (none given)")
     with tempfile.TemporaryDirectory() as tmp:
         pane = Pane("codex", SOL_STOP, dialog=True)
         run = Run(tmp, [("sol", pane)])

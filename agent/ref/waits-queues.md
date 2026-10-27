@@ -86,7 +86,9 @@
   `woke: alert` names it), `tell` (wait only), `platform_arrived Sunward gleba`, or a wait_until condition as JSON. A
   sleep's reply says first whether your queue keeps running, your action keeps going until a tick, or your character
   stands idle; its first and last replies (and the operator's idle nudge) carry `open for you: ...`: your board items,
-  alert groups and idle or starved machines in your fresh claims, and requests and tells to you unanswered.
+  alert groups and idle or starved machines in your fresh claims, requests and tells to you unanswered (they ask:
+  "?", please, can you, confirm ...), board items of yours overdue for review, and unread notes asking nothing (a
+  chat_ack or a tells read clears those).
   `--then ACTION [JSON]` runs one read action when the sleep ends and returns it with the wake; a sleep a newer one
   replaced runs none, and its `note` names the newer sleep. `sleep {orders: false}` starts no standing order during
   the sleep. A tell or board line shown in a sleep reply that your next sleep followed within 5 s comes again in

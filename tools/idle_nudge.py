@@ -51,7 +51,12 @@ the agent's pane (Grok: Try Again in its limit dialog; the agy loop resumes itse
 nudges.jsonl, and ends the rest; a CLI still at its limit screen a minute later is logged once and tried again at the
 next nudge. (d25 batch220 QAE1, Sol's Codex stopped on "Selected model is at capacity" 23:25-23:55) A CLI whose pane
 shows a provider error and no turn running for --idle-min gets one message from the same module (a promo or setup
-dialog on top gets one esc first), at most once per 20 min. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
+dialog on top gets one esc first); (d26 batch252 CA) at most 4, 5, 10 and 20 min apart, resumed only on a request
+of its own in its journal, and still stopped 20 min after it was seen, a facts-only tell to its cover (an active coverer
+of one of its claims, else the handoff's lead), and one when it is back. (d26 batch252 IN) The open line's notes that
+ask nothing (open.lua) come last in the nudge and never make it repeat; a board item newly overdue for review does.
+(d26 batch252 cp2, Astra 18:00) The nudge says "your character idle" and "Body queue", then the agent's other lanes
+(idle.lua lanes: remote, platform:NAME) running or with steps done in the window, with plan, step and steps done. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
 fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
 team (on request) and exits; --dry-run logs without sending.
 """
@@ -81,6 +86,41 @@ def queue_text(q):
     if q.get("state") == "running":
         return "running"
     return "empty" if q.get("state") == "empty" else "none"
+
+
+def lane_text(l, window):
+    """(d26 batch252 cp2) One lane of the idle report (idle.lua lanes): its state, plan, step and steps done."""
+    bits = []
+    if l.get("state") == "running":
+        plan = l.get("plan") or {}
+        if plan.get("id") is not None:
+            bits.append(f"plan {plan['id']}" + (f" {plan['name']}" if plan.get("name") else ""))
+        step = l.get("step") or {}
+        if step.get("action"):
+            bits.append(f"step {step['action']}" + (f" {step['label']}" if step.get("label") else "")
+                        + (f", {step['left_s']} s left" if step.get("left_s") is not None else ""))
+        if l.get("loop"):
+            bits.append("repeating")
+    elif l.get("state") == "paused" and l.get("steps"):
+        bits.append(f"{l['steps']} steps")
+    if l.get("state") != "running" and l.get("done") and (l.get("plan") or {}).get("id") is not None:
+        plan = l["plan"]
+        bits.append(f"last plan {plan['id']}" + (f" {plan['name']}" if plan.get("name") else ""))
+    if l.get("done"):
+        bits.append(f"{l['done']} step{'' if l['done'] == 1 else 's'} done in {window} min")
+    return f"{l.get('lane')} {l.get('state')}" + (f" ({'; '.join(bits)})" if bits else "")
+
+
+def lanes_text(row):
+    """(d26 batch252 cp2, Astra 18:00: "idle 11 min / no queue" while its remote and platform:Asterion plans had just run
+    600 s and K2 plan 79 was active) the agent's other queue lanes (remote, platform:NAME) running now or with steps done
+    in the window; '' from a harness without lanes."""
+    lanes = row.get("lanes")
+    if not isinstance(lanes, list):
+        return ""
+    window = (row.get("counted") or {}).get("minutes") or 10
+    shown = [lane_text(l, window) for l in lanes if l.get("lane") != "body" and (l.get("state") == "running" or l.get("done"))]
+    return " Other lanes: " + ("; ".join(shown) if shown else "none running") + "."
 
 
 def orders_text(o):
@@ -160,16 +200,17 @@ def nudge_text(row, standing_s=None):
                 else "")
         doing = f"in {act}{held}{sleep}"
     else:
-        doing = f"no action, no queue step{sleep}"
+        doing = f"no action, no body queue step{sleep}"
     standing = standing_s if standing_s is not None else row.get("standing_s")
     counted = (row.get("counted") or {}).get("text")
-    essential = (f"Operator (automatic, facts only): idle for {minutes(standing)} min ({doing}). "
-                 "Unread for you: " + ", ".join(unread) + f". Queue: {queue_text(row.get('queue'))}.")
-    return fit(essential, [orders_text(row.get("orders")), watches_text(row.get("measures")),
+    # (d26 batch252 cp2) the character's own idleness, apart from the agent's other lanes
+    essential = (f"Operator (automatic, facts only): your character idle for {minutes(standing)} min ({doing}). "
+                 "Unread for you: " + ", ".join(unread) + f". Body queue: {queue_text(row.get('queue'))}.")
+    return fit(essential, [lanes_text(row), orders_text(row.get("orders")), watches_text(row.get("measures")),
                            reason_text(row.get("sleep_reason")), open_text(row.get("open")),
                            f" Counted, {str(counted).rstrip('.')}." if counted else "",
-                           " Idle: a wait or sleep counts; a game action that changed something, a move to a new spot or "
-                           "20 s of work in 2 min ends it." if counted else ""])
+                           " Idle: your character's; a wait or sleep counts; a game action that changed something, a move "
+                           "to a new spot or 20 s of work in 2 min ends it." if counted else ""])
 
 
 def reason_text(reason):
@@ -214,7 +255,9 @@ def open_text(line):
     if not sep:
         return " " + line[0].upper() + line[1:] + "."
     items = top_items(rest)
-    items = [x for x in items if "unanswered" in x] + [x for x in items if "unanswered" not in x]
+    # (d26 batch252 IN) what asks or is due first (unanswered, then overdue for review), notes that ask nothing last
+    rank = lambda x: 0 if "unanswered" in x else 1 if "overdue for review" in x else 3 if "asking nothing" in x else 2
+    items = sorted(items, key=rank)
     return " " + head[0].upper() + head[1:] + ": " + "; ".join(items) + "."
 
 
@@ -305,6 +348,12 @@ def waiting_items(line):
 AGE = re.compile(r"\b(\d+[hm])?\d+[ms]\d*s? ago")
 
 
+def overdue_ids(row):
+    """(d26 batch252 IN) The board items of the agent's that open.lua lists as overdue for review: {"1301", ...}."""
+    return {i for item in waiting_items(row.get("open")) if "overdue for review" in item
+            for i in re.findall(r"board #(\d+)", item)}
+
+
 def asks(row):
     """(d24 batch168) What asks something of the agent now: the harness's unanswered requests and tells to it (open.lua:
     teammates' board requests and tells, never the operator's, so a nudge's own tell is not one), their count, and the
@@ -354,6 +403,7 @@ class Nudger:
         self.stretch = {}  # agent -> nudges sent in its idle stretch
         self.base = {}  # agent -> {"asks", "n", "mentions", "flagged"} at its last nudge
         self.waits = {}  # agent -> {"kind", "start", "left", "t"}: its own sleep or wait with a known end
+        self.report = None  # (d26 batch252) the last idle report (its agents: the cover rule's team)
 
     def agent_dir(self, name):
         return os.path.join(self.run_dir, name) if self.run_dir else None
@@ -510,7 +560,8 @@ class Nudger:
 
     def change(self, row):
         """(d24 batch168) what is new and actionable since its last nudge: a request or tell to it among the harness's
-        unanswered items, a mention, a watch newly late, stalled, invalid or with its final unread; '' when nothing."""
+        unanswered items, a mention, a watch newly late, stalled, invalid or with its final unread, (d26 batch252) a board
+        item of its newly overdue for review; '' when nothing. A note that asks nothing is never one."""
         b = self.base.get(row["name"])
         if not b:
             return ""
@@ -520,6 +571,8 @@ class Nudger:
             out.append("a new request or tell to it")
         if mentions > b["mentions"]:
             out.append("a new mention")
+        if overdue_ids(row) - b.get("overdue", set()):
+            out.append("a board item newly overdue for review")
         if {m.get("id") for m in flagged(row.get("measures"))} - b["flagged"]:
             out.append("a watch overdue")
         return ", ".join(out)
@@ -561,20 +614,37 @@ class Nudger:
             return f"not answering ({why}): idle nudges every {every / 60:g} min while it does not answer"
         return None
 
+    def active_at(self, n, now):
+        """When `n` last made a request of its own, if within ACTIVE_S and not resting; else None."""
+        at = own_request_at(self.run_dir, n)
+        rest = self.run_dir and pacing.resting(os.path.join(self.run_dir, n), now)
+        return at if at is not None and not rest and now - at <= self.ACTIVE_S else None
+
     def lead_for(self, name, report, now):
         """The lead a handoff goes to: the first of --lead that is active (a request of its own in the last ACTIVE_S, not
         resting), else the team member with the most recent request of its own; never the agent itself."""
         names = [r["name"] for r in report.get("agents") or [] if r["name"] != name and (not self.members or r["name"] in self.members)]
 
         def active_at(n):
-            at = own_request_at(self.run_dir, n)
-            rest = self.run_dir and pacing.resting(os.path.join(self.run_dir, n), now)
-            return at if at is not None and not rest and now - at <= self.ACTIVE_S else None
+            return self.active_at(n, now)
         for n in self.leads:
             if n != name and active_at(n) is not None:
                 return n
         best = max(((active_at(n), n) for n in names if active_at(n) is not None), default=None)
         return best[1] if best else None
+
+    def cover_for(self, name, now, claims=()):
+        """(d26 batch252 CA) Who hears that `name` stays stopped on a provider error (pane_resume's alert): an active
+        coverer of one of its active claims (board_update cover: the board read's covers), else the handoff's lead
+        (lead_for, over the last idle report's agents, else the team)."""
+        for c in claims or ():
+            if c.get("owner") == name and c.get("status") in ("open", "claimed", "doing", "blocked"):
+                for x in c.get("covers") or []:
+                    n = x.get("name") if isinstance(x, dict) else None
+                    if n and n != name and self.active_at(n, now) is not None:
+                        return n
+        report = self.report or {"agents": [{"name": m} for m in self.members]}
+        return self.lead_for(name, report, now)
 
     def handoff(self, row, why, report, now, send, write):
         """(d24 batch168) Once per episode (it rests or does not answer, until a request of its own), a cover request to
@@ -613,6 +683,7 @@ class Nudger:
     def step(self, report, now, send, write):
         """One poll: nudge every agent that is due; write a log row for each nudge sent (or that failed to send); a
         handoff to the active lead for one that rests (not a short pace rest) or does not answer."""
+        self.report = report
         out = []
         for row in report.get("agents") or []:
             self.observe(row, now)
@@ -655,7 +726,7 @@ class Nudger:
                 self.since[row["name"]] = {"tell_delivered": False, "requests": False}
                 keys, n, mentions = asks(row)
                 self.stretch[row["name"]] = k + 1
-                self.base[row["name"]] = {"asks": keys, "n": n, "mentions": mentions,
+                self.base[row["name"]] = {"asks": keys, "n": n, "mentions": mentions, "overdue": overdue_ids(row),
                                           "flagged": {m.get("id") for m in flagged(row.get("measures"))}}
             except Exception as e:
                 entry.update(sent=False, error=f"{type(e).__name__}: {e}"[:200])
@@ -783,7 +854,14 @@ def main():
         f"grace {a.grace_min} min, deadline {time.strftime('%H:%M', time.localtime(n.deadline)) if n.deadline else '?'}"
         + (" (dry run)" if a.dry_run else ""))
     # (d25 batch213) the panes are read in a dry run too; nothing is typed there
-    resumer = Resumer(a.run, HerdrPanes(), n.every_s, n.deadline, a.dry_run, idle_s=n.idle_s) if os.path.isfile(
+    def claims():
+        try:
+            return (h.dispatch("board", {"kind": "claim", "limit": 100}) or {}).get("items") or []
+        except Exception:  # noqa: BLE001 (an older runtime, a failed read: no claim covers, the lead rule)
+            return []
+    # (d26 batch252 CA) an agent still stopped on a provider error 20 min after it was seen: its cover hears it (a tell)
+    resumer = Resumer(a.run, HerdrPanes(), n.every_s, n.deadline, a.dry_run, idle_s=n.idle_s,
+                      cover=lambda name, now: n.cover_for(name, now, claims()), send=send) if os.path.isfile(
         os.path.join(a.run, "panes.txt")) else None
     while True:
         now = time.time()

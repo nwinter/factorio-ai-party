@@ -39,10 +39,17 @@ whose pane's last 40 lines show a provider stop (STOP, per CLI, after the last m
 with herdr not reading it working (claude, codex, grok), for --idle-min (the nudge time) in a row. A usage-limit
 screen (LIMIT) is never one. Then: a known promo or setup dialog on the screen (DIALOGS) gets one esc, and nothing
 else is pressed in it; a dialog still up after the esc is logged and nothing is typed. Then one message, "Operator
-(automatic): your last turn stopped on a provider error: <the line>; continue from your tells and notes.". A minute
-later a turn running (or herdr working) is logged as resumed; a provider stop after the message is logged once per
-stop, and it tries again at most once per 20 min (RETRY_S) while the stop stays. The journal is not read for this:
-a background loop makes requests while the CLI is stopped.
+(automatic): your last turn stopped on a provider error: <the line>; continue from your tells and notes.".
+(d26 batch252 CA, viewer Aurora site:4965; Sol's d25-d26 night: five capacity stops, 23:28-23:54 and 00:46-01:02
+resumed by hand, 01:16-01:53 by the deadline prompt only, 02:40-02:51 and 07:08-07:18 by this module) A resume is a
+request of its own in its journal after the message whose action the journal did not hold while the CLI was stopped
+(the background loop's, platform_defense for Sol), not a keypress or a turn shown: a turn shown with no such request,
+the stop shown again, or neither, is logged once a try. The next message goes 5, 10, then 20 min after the last
+(BACKOFF_S; never mid-turn), 4 at most (MAX_TRIES; then logged as spent). A stop not resumed 20 min (ALERT_S) after it
+was first seen is told once to its cover (idle_nudge's cover_for: an active coverer of one of its claims, else the
+handoff's lead), facts only: since when, the line, the tries and their times, no request of its own since; once it
+resumes, the cover hears it is back, once. A purchase or credit screen (PURCHASE) on the pane: nothing pressed or
+typed, in either rule (d23: Buy more credits is never chosen).
 
 Under POG_TEST=1 (tools/testsafe.py) HerdrPanes refuses: tests drive Resumer with fake panes.
 """
@@ -100,8 +107,18 @@ NOT_STOP = re.compile(r"rate limit reminders|Approaching rate limits")
 # "1 Set up security" and esc dismiss; its model-upgrade and switch-model notices): one esc, never an option chosen
 DIALOGS = re.compile(r"Set up security|[Ss]ecurity setup|Codex just got an upgrade|Approaching rate limits")
 END = "continue from your tells and notes."
-RETRY_S = 1200     # a provider-stop message at most once per 20 min
+RETRY_S = 1200     # a dialog still up after esc: esc again 20 min later
 STOP_TAIL = 40     # the screen's last lines searched for a stop (a dialog on top takes ~10)
+# (d26 batch252 CA, viewer Aurora site:4965) a provider-stop episode gets at most MAX_TRIES messages, the next one
+# BACKOFF_S after the last (5, 10, 20 min); a resume is a request of its own in the journal after the try whose action
+# the journal did not already hold while the CLI was stopped (a background loop's), not a keypress or a turn shown; a
+# stop still unresumed ALERT_S after it was first seen is told once to its cover, and its return once.
+MAX_TRIES = 4
+BACKOFF_S = (300, 600, 1200)
+ALERT_S = 1200
+# A purchase or credit screen (d23 rule: Buy more credits is never chosen): nothing pressed or typed while it shows
+PURCHASE = re.compile(r"Buy more credits|Buy credits|Add credits|Purchase|Add funds|Upgrade (?:your )?plan|[Pp]ayment method")
+ALERT_TAG = "Operator (automatic, facts only):"
 
 
 def when(t, now=None):
@@ -120,6 +137,28 @@ def message(row, now=None):
 
 def stop_message(line):
     return f"{TAG} last turn stopped on a provider error: {line}; {END}"
+
+
+def alert_text(name, ep, now, running):
+    """The cover's tell while `name` stays stopped: facts only, one line."""
+    n = ep["tries"]
+    tried = f"{n} resume{'' if n == 1 else 's'} tried" + (f" ({', '.join(when(t, now) for t in ep['at'])})" if n else "")
+    if n >= MAX_TRIES:
+        tried += "; no more will be typed"
+    bg = sorted(a for a in ep.get("bg") or () if a)
+    since = when(ep.get("last_own") or ep["seen"], now)
+    text = (f"{ALERT_TAG} {name}'s pane has shown a provider error since {when(ep['seen'], now)} ({ep['line'][:140]}); "
+            f"{tried}; no request of its own since {since}"
+            + (f" (its journal since holds only {', '.join(bg[:3])} requests)" if bg else "")
+            + ("; its pane shows a turn running now." if running else "."))
+    return text[:480]
+
+
+def back_text(name, ep, at, action, now):
+    """Its return, told once to the cover that heard the alert."""
+    n = ep["tries"]
+    return (f"{ALERT_TAG} {name} is back: a request of its own ({action}) at {when(at, now)}, after a provider error on "
+            f"its pane from {when(ep['seen'], now)} ({round((at - ep['seen']) / 60)} min; {n} resume{'' if n == 1 else 's'} tried).")
 
 
 def after_typed(lines):
@@ -251,8 +290,10 @@ class Resumer:
     """The rule, apart from herdr (tests give fake panes)."""
 
     def __init__(self, run_dir, panes, every_s=1200, deadline=None, dry=False, end_rest=None, pause=time.sleep,
-                 idle_s=600):
+                 idle_s=600, cover=None, send=None):
         self.run_dir = run_dir
+        self.cover = cover     # (d26 batch252) cover(name, now): who hears that an agent stays stopped, or None
+        self.send = send       # send(to, text): an operator tell (idle_nudge's; a dry run sends nothing)
         self.idle_s = idle_s   # (d25 batch220) the nudge time: a provider stop this long gets a message
         self.stops = {}        # agent -> its provider-stop episode: {line, seen, t, tries, phase, logged}
         self.panes = panes
@@ -278,8 +319,8 @@ class Resumer:
                                          "logged": set(), "row": row}
             if not st or st["phase"] == "over":
                 if not row and kind != "agy" and not (self.deadline and now >= self.deadline):
-                    entry = self.stopped(name, pane, kind, now)
-                    if entry:
+                    entries = self.stopped(name, pane, kind, now) or []
+                    for entry in entries if isinstance(entries, list) else [entries]:
                         entry.update({"agent": name, "kind": kind, "resume": True, "provider_stop": True,
                                       "t": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now))})
                         if self.dry:
@@ -382,6 +423,11 @@ class Resumer:
                                                   f"({busy}); again each poll"})
         n = st["tries"] + 1
         screen = self.panes.read(st["pane"]) or ""
+        if not (st["kind"] == "grok" and DIALOG.search(screen)) and PURCHASE.search("\n".join(screen.splitlines()[-STOP_TAIL:])):
+            st["t"], st["phase"] = now, "limit"   # (d26 batch252) looked at again at the next nudge
+            return self.once(st, "purchase", {"action": "purchase_screen", "try": n,
+                                              "line": f"resume {name}: rest until {clock} passed; a purchase or credit "
+                                                      "screen is on its pane; nothing pressed or typed"})
         if st["kind"] == "grok" and DIALOG.search(screen):
             how, ok, said = self.try_again(st["pane"])
             text = None
@@ -406,45 +452,126 @@ class Resumer:
         return entry
 
     def stopped(self, name, pane, kind, now):
-        """(d25 batch220) One poll of the provider-stop rule for an agent with no rest: the row to log, or None."""
+        """(d25 batch220; d26 batch252 CA) One poll of the provider-stop rule for an agent with no rest: the rows to log."""
         ep = self.stops.get(name)
+        d = os.path.join(self.run_dir, name)
         screen = self.panes.read(pane) or ""
         line = provider_stop(kind, screen)
         working = kind in HERDR_TRACKS and self.panes.status(pane) == "working"
         busy = BUSY.search("\n".join(screen.splitlines()[-TAIL:]))
-        if ep and ep["t"] is not None and now - ep["t"] >= CHECK_S and ep["phase"] == "typed":
-            ep["phase"] = "checked"
-            if busy or working:
-                self.stops.pop(name, None)
-                return {"action": "resumed", "tries": ep["tries"], "line": f"resume {name}: resumed after the provider-stop "
-                        f"message ({'a turn running' if busy else 'herdr reads its pane working'} "
-                        f"{round((now - ep['t']) / 60)} min after try {ep['tries']})"}
-            if line:
-                ep["line"] = line
-                if "failing" not in ep["logged"]:
-                    ep["logged"].add("failing")
-                    return {"action": "still_stopped", "tries": ep["tries"], "stop": line,
-                            "line": f"resume {name}: its pane shows a provider stop again {round((now - ep['t']) / 60)} "
-                                    f"min after try {ep['tries']} ({line}); next try {RETRY_S // 60} min after the last"}
-                return None
-            self.stops.pop(name, None)
-            return {"action": "no_stop", "tries": ep["tries"],
-                    "line": f"resume {name}: no turn running and no provider stop {round((now - ep['t']) / 60)} min "
-                            f"after try {ep['tries']}"}
-        if busy or working or not line:
-            if ep and ep["phase"] != "typed":
-                self.stops.pop(name, None)   # the CLI moved, or the stop is gone: the episode ends
+        running = bool(busy or working)
+        if ep and ep["tries"]:
+            return self.after_try(name, d, pane, ep, now, screen, line, running)
+        if running or not line:
+            self.stops.pop(name, None)   # before any try: the CLI moved, or the stop is gone; the episode ends
             return None
         if not ep:
-            ep = self.stops[name] = {"line": line, "seen": now, "t": None, "tries": 0, "phase": "seen", "logged": set()}
+            ep = self.stops[name] = {"line": line, "seen": now, "t": None, "tries": 0, "at": [], "logged": set()}
         ep["line"] = line
-        if now - ep["seen"] < self.idle_s or ep["phase"] == "typed":
+        if now - ep["seen"] < self.idle_s:
             return None
-        if ep["t"] is not None and now - ep["t"] < RETRY_S:
+        rows = [] if ep["t"] is not None and now - ep["t"] < RETRY_S else [self.try_stop(name, d, pane, ep, now, screen)]
+        rows.append(self.alert(name, d, ep, now, running))
+        return [r for r in rows if r]
+
+    def own_new(self, d, ep):
+        """The first request of its own after the last try whose action the journal did not hold while it was stopped,
+        as (at, action), or None."""
+        for at, action in pacing.requests_since(d, ep["t"]):
+            if action not in ep["bg"]:
+                return at, action
+        return None
+
+    def after_try(self, name, d, pane, ep, now, screen, line, running):
+        """After a message: resumed once the journal shows a request of its own; else the try's outcome logged once,
+        the next try after its back-off (never mid-turn), and the cover's alert."""
+        new = self.own_new(d, ep)
+        if new:
+            self.stops.pop(name, None)
+            at, action = new
+            entry = {"action": "resumed", "tries": ep["tries"], "verified": action,
+                     "line": f"resume {name}: resumed: a request of its own ({action}) {round((at - ep['t']) / 60)} min "
+                             f"after try {ep['tries']}, {round((at - ep['seen']) / 60)} min after the stop was seen"}
+            if ep.get("cover"):
+                text = back_text(name, ep, at, action, now)
+                entry["cover_back"] = {"to": ep["cover"], "text": text, "sent": self.tell(ep["cover"], text)}
+                entry["line"] += f"; told {ep['cover']} it is back"
+            return [entry]
+        if now - ep["t"] < CHECK_S:
             return None
+        rows, n, mins = [], ep["tries"], round((now - ep["t"]) / 60)
+        if line and ("stop", n) not in ep["logged"]:
+            ep["logged"].add(("stop", n))
+            ep["line"] = line
+            rows.append({"action": "still_stopped", "tries": n, "stop": line,
+                         "line": f"resume {name}: its pane shows a provider stop again {mins} min after try {n} ({line})"})
+        elif not line and running and ("turn", n) not in ep["logged"]:
+            ep["logged"].add(("turn", n))
+            rows.append({"action": "turn_running", "tries": n,
+                         "line": f"resume {name}: a turn running {mins} min after try {n}; no request of its own in its "
+                                 "journal yet (not counted as resumed)"})
+        elif not line and not running and ("quiet", n) not in ep["logged"]:
+            ep["logged"].add(("quiet", n))
+            rows.append({"action": "no_request", "tries": n,
+                         "line": f"resume {name}: no turn running, no provider stop and no request of its own {mins} min "
+                                 f"after try {n}"})
+        if n < MAX_TRIES and not running and now - ep["t"] >= BACKOFF_S[min(n, len(BACKOFF_S)) - 1]:
+            rows.append(self.try_stop(name, d, pane, ep, now, screen))
+        elif n >= MAX_TRIES and "gave_up" not in ep["logged"] and now - ep["t"] >= BACKOFF_S[-1]:
+            ep["logged"].add("gave_up")
+            rows.append({"action": "tries_spent", "tries": n,
+                         "line": f"resume {name}: {n} tries made since {when(ep['seen'], now)} and no request of its own; "
+                                 "nothing more typed this episode"})
+        rows.append(self.alert(name, d, ep, now, running))
+        return [r for r in rows if r]
+
+    def tell(self, to, text):
+        """An operator tell through idle_nudge's send; True when it went (a dry run: False, nothing sent)."""
+        if self.dry or not self.send:
+            return False
+        try:
+            self.send(to, text)
+            return True
+        except Exception:   # noqa: BLE001 (logged in the row as not sent)
+            return False
+
+    def alert(self, name, d, ep, now, running):
+        """Once per episode, ALERT_S after the stop was first seen: the facts to its cover."""
+        if "alert" in ep["logged"] or now - ep["seen"] < ALERT_S:
+            return None
+        ep["logged"].add("alert")
+        if "bg" not in ep:
+            ep["bg"] = {a for _, a in pacing.requests_since(d, ep["seen"])}
+        older = [at for at, a in pacing.requests_since(d, ep["seen"] - 3 * 3600) if at <= ep["seen"] and a not in ep["bg"]]
+        ep["last_own"] = older[-1] if older else None
+        to = self.cover(name, now) if self.cover else None
+        text = alert_text(name, ep, now, running)
+        entry = {"action": "cover_alert", "to": to, "text": text, "tries": ep["tries"]}
+        if not to:
+            entry.update(sent=False, line=f"resume {name}: stopped {round((now - ep['seen']) / 60)} min; no active cover "
+                                          "to tell (a claim's coverer, --lead, or a member with a request of its own in 10 min)")
+            return entry
+        entry["sent"] = self.tell(to, text)
+        if entry["sent"] or self.dry:
+            ep["cover"] = to
+        entry["line"] = (f"resume {name}: stopped {round((now - ep['seen']) / 60)} min; "
+                         + (f"told {to} (cover)" if entry["sent"] else f"dry run: would tell {to}" if self.dry
+                            else f"tell to {to} failed"))
+        return entry
+
+    def try_stop(self, name, d, pane, ep, now, screen):
+        """One message for the stop (a known dialog on top gets one esc first; a purchase screen: nothing)."""
         n = ep["tries"] + 1
+        tail = "\n".join(screen.splitlines()[-STOP_TAIL:])
+        if PURCHASE.search(tail):
+            ep["t"] = now
+            if "purchase" in ep["logged"]:
+                return None
+            ep["logged"].add("purchase")
+            return {"action": "purchase_screen", "try": n, "stop": ep["line"],
+                    "line": f"resume {name}: a purchase or credit screen is on its pane; nothing pressed or typed"}
         esc = ""
-        if DIALOGS.search("\n".join(screen.splitlines()[-STOP_TAIL:])):   # a dialog sits at the bottom
+        if DIALOGS.search(tail):   # a dialog sits at the bottom
             if self.dry:
                 esc = "esc (dry run) for the dialog on top; "
             else:
@@ -456,20 +583,27 @@ class Resumer:
                     if "dialog" in ep["logged"]:
                         return None
                     ep["logged"].add("dialog")
-                    return {"action": "dialog_up", "try": n, "stop": line,
+                    return {"action": "dialog_up", "try": n, "stop": ep["line"],
                             "line": f"resume {name}: a dialog is still on its pane after esc; nothing typed; next try "
                                     f"{RETRY_S // 60} min later"}
                 esc = "esc for the dialog on top; "
-        text = stop_message(line)
+        if n == 1:   # what the journal holds while it is stopped: a background loop's actions, not a resume
+            ep["bg"] = {a for _, a in pacing.requests_since(d, ep["seen"])}
+        text = stop_message(ep["line"])
         how, ok, said = ("dry run", True, "") if self.dry else self.panes.prompt(pane, text)
-        ep["t"], ep["tries"] = now, n
-        ep["phase"] = "typed" if ok else "seen"
-        entry = {"action": "typed" if ok else "not_typed", "try": n, "how": how, "text": text, "stop": line,
+        entry = {"action": "typed" if ok else "not_typed", "try": n, "how": how, "text": text, "stop": ep["line"],
                  "stopped_min": round((now - ep["seen"]) / 60), "sent": ok and not self.dry}
         if said:
             entry["output"] = said
-        entry["line"] = (f"resume {name}: provider stop for {entry['stopped_min']} min ({line}); {esc}"
-                         + (f"{'dry run: would type' if self.dry else 'typed'} ({how})" if ok else
+        if ok:
+            ep["t"], ep["tries"] = now, n
+            ep["at"].append(now)
+        else:
+            ep["t"] = now   # the next poll after RETRY_S tries again
+        nxt = (f"; next try {BACKOFF_S[min(n, len(BACKOFF_S)) - 1] // 60} min later unless it resumes" if n < MAX_TRIES
+               else "; the last try this episode")
+        entry["line"] = (f"resume {name}: provider stop for {entry['stopped_min']} min ({ep['line']}); {esc}"
+                         + (f"{'dry run: would type' if self.dry else 'typed'} ({how}), try {n} of {MAX_TRIES}{nxt}" if ok else
                             f"try {n} failed ({how}: {said}); next try {RETRY_S // 60} min later"))
         return entry
 

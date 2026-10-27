@@ -17451,7 +17451,7 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   alert_line=function(p,from,filter,known) return M.urgent.alert(p,from,filter,known) end,alert_known=function(p) return M.urgent.alert_known(p) end,alert_held=function(k) return M.urgent.held_text(k) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
-  open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position}) end}
+  open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position},p.index) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
@@ -17577,7 +17577,7 @@ function M.measure_row(index)
 end
 M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
   measure=function(index) return (M.measures.running(index)) end,measures=function(index) return M.measures.list(index) end,
-  open=function(index,name) local p=M.lookup(index); return p and M.open.line(name,p.force,p.valid and {surface=p.surface.name,position=p.position} or nil) or nil end,
+  open=function(index,name) local p=M.lookup(index); return p and M.open.line(name,p.force,p.valid and {surface=p.surface.name,position=p.position} or nil,index) or nil end,
   mention_counts=function() return M.board.operator('mention_counts',{}) end,
   unread=function(index) return M.chat.unread(index,'peek') end,
   orders=function(index) return M.orders.report(index) end,
@@ -19879,7 +19879,7 @@ M.urgent=require('urgent'){timed=M.timed,state=state,loss_own=function(i) return
   cut_line=function(c,reader) return M.powercut.line(c,reader) end,cut_fixed=function(c) return M.powercut.fixed(c) end}
 -- What is open for an agent (open.lua; d15 H3): its board items, alert groups and idle machines in its fresh claims,
 -- requests and tells it has not answered; on a sleep's replies and in the idle report (the idle nudge).
-M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
+M.open=require('open'){state=state,overdue_reviews=function(name) return M.board.overdue_reviews(name) end,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
 M.platwait=require('platwait'){state=state}

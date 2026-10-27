@@ -6,7 +6,13 @@
 --   machines: machines idle or starved in its fresh claims (the factory survey's cached non-working positions, up to 16
 --     per machine name and status on a surface, so a count can be low; never a scan here);
 --   unanswered: board requests teammates gave it that it has not noted or edited, and tells to it (not fyi, not to the
---     whole team) from the last 30 minutes that it has not told the sender (or the team) anything since.
+--     whole team) from the last 30 minutes that ask something and that it has not told the sender (or the team)
+--     anything since;
+--   notes: (d26 batch252 IN, viewer Aurora site:4852: Sonnet's "No action needed" tower tell and Haiku's thanks read as
+--     unanswered after a chat_ack all) tells to it that ask nothing (no '?' and none of ASKS: a thank-you, a status
+--     note), while unread (a chat_ack or a tells read marks them read); once read, neither part lists them;
+--   overdue: its active board items whose newest evidence names a next check now past (board.lua overdue_reviews), oldest
+--     first: work due, whatever was read or acknowledged.
 -- Facts only: what the board, the alert panel, the machines' status icons and the tells show.
 return function(api)
   local M = {}
@@ -22,6 +28,17 @@ return function(api)
     waiting_for_space_in_destination='output blocked', no_fuel='no fuel', no_power='no power', no_recipe='no recipe',
     no_minable_resources='out of ore', low_input_fluid='low input fluid'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- A tell asks something when it holds '?' or one of these (whole words, any case).
+  local ASKS = {'please', 'pls', 'can you', 'could you', 'would you', 'will you', 'let me know', 'confirm', 'tell me',
+    'reply', 'answer', 'need you', 'need your'}
+  local ASK_PATS = {}
+  for i, w in ipairs(ASKS) do ASK_PATS[i] = '%f[%a]' .. w:gsub(' ', '%%s+') .. '%f[%A]' end
+  function M.asks(text)
+    local s = tostring(text or ''):lower()
+    if s:find('?', 1, true) then return true end
+    for _, pat in ipairs(ASK_PATS) do if s:find(pat) then return true end end
+    return false
+  end
   local function ago(ticks)
     local sec = math.floor(math.max(0, ticks) / 60)
     if sec >= 3600 then return string.format('%dh%02dm', math.floor(sec / 3600), math.floor(sec / 60) % 60) end
@@ -58,7 +75,15 @@ return function(api)
     for _, c in ipairs(claims) do if c.surface == surface and inside(c.item.area, pos) then return c.item end end
   end
   -- Parts as {count, examples}; M.line joins them.
-  function M.parts(me, force, where)
+  -- {count, examples}: my board items overdue for review, the longest overdue first.
+  local function overdue(me)
+    local rows = api.overdue_reviews and try(function() return api.overdue_reviews(me) end) or {}
+    table.sort(rows, function(a, b) return a.age > b.age end)
+    local ex = {}
+    for i = 1, math.min(EXAMPLES, #rows) do ex[i] = clip(rows[i].line, 90) end
+    return {#rows, ex}
+  end
+  function M.parts(me, force, where, index)
     local board = api.state().board
     local items = {}
     for _, i in pairs(board and board.items or {}) do items[#items+1] = i end
@@ -171,8 +196,16 @@ return function(api)
         if #full_ex < EXAMPLES then full_ex[#full_ex+1] = string.format('%s %s %d/%d slots used (%s)', r.name, at(r.position), r.used, r.total, clip(r.fills, 60)) end
       end
     end
-    -- Tells to me in the window that I have not answered (told the sender or the team since).
+    -- Tells to me in the window that I have not answered (told the sender or the team since): those that ask, and the
+    -- notes still unread (index: my player's, for my unread tells; without it every note counts as unread).
     local tells = try(function() return api.state().tells.log end) or {}
+    local box = index and try(function() return api.state().mentions[index] end)
+    local unread
+    if index then
+      unread = {}
+      for _, u in ipairs(box and box.unread or {}) do if u.seq then unread[u.seq] = true end end
+    end
+    local notes, notes_ex, seen_note = 0, {}, {}
     local last_to = {}
     for _, t in ipairs(tells) do
       if t.from == me then
@@ -186,22 +219,32 @@ return function(api)
       if game.tick - t.tick > TELL_WINDOW then break end
       local to_me = false
       for _, n in ipairs(t.to or {}) do if n == me then to_me = true end end
-      if to_me and not t.team and not t.fyi and t.from ~= me and t.from ~= 'operator' and not seen[t.from] then
-        seen[t.from] = true
+      if to_me and not t.team and not t.fyi and t.from ~= me and t.from ~= 'operator' then
         local answered = (last_to[t.from] or -1) > t.tick or (last_to['*team*'] or -1) > t.tick
-        if not answered then
-          asked = asked + 1
-          if #asked_ex < EXAMPLES then asked_ex[#asked_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.text, 70)) end
+        local ask = M.asks(t.text)
+        -- the latest that asks of each sender, and the latest note
+        if ask and not seen[t.from] then
+          seen[t.from] = true
+          if not answered then
+            asked = asked + 1
+            if #asked_ex < EXAMPLES then asked_ex[#asked_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.text, 70)) end
+          end
+        elseif not ask and not seen_note[t.from] then
+          seen_note[t.from] = true
+          if not answered and (not unread or unread[t.seq]) then
+            notes = notes + 1
+            if #notes_ex < EXAMPLES then notes_ex[#notes_ex+1] = string.format('tell from %s %s ago: %s', t.from, ago(game.tick - t.tick), clip(t.text, 70)) end
+          end
         end
       end
     end
     -- Project steps open to it (board.lua open_steps: of projects with open_steps or no owner), nearest first.
     local steps = where and api.open_steps and try(function() return api.open_steps(me, EXAMPLES, where.position) end) or nil
     return {board={own, own_ex}, board_stale=own_stale, alerts={alerts, alerts_ex}, machines={idle, idle_ex}, machines_near=idle_near,
-      full_chests={full, full_ex}, unanswered={asked, asked_ex}, unowned={unowned, unowned_ex}, steps=steps, claims=#claims}
+      full_chests={full, full_ex}, unanswered={asked, asked_ex}, notes={notes, notes_ex}, overdue=overdue(me), unowned={unowned, unowned_ex}, steps=steps, claims=#claims}
   end
-  function M.line(me, force, where)
-    local x = M.parts(me, force, where)
+  function M.line(me, force, where, index)
+    local x = M.parts(me, force, where, index)
     local parts = {}
     local mine = part(x.board[1], 'board item of yours', 'board items of yours', x.board[2])
     if x.board_stale > 0 then
@@ -215,9 +258,11 @@ return function(api)
       part(x.machines[1], 'machine idle or starved ' .. here, 'machines idle or starved ' .. here, x.machines[2]),
       part(x.full_chests[1], 'full chest in your claims that output waits on', 'full chests in your claims that output waits on', x.full_chests[2]),
       part(x.unanswered[1], 'request or tell to you unanswered', 'requests or tells to you unanswered', x.unanswered[2]),
+      part(x.overdue[1], 'board item of yours overdue for review', 'board items of yours overdue for review', x.overdue[2]),
+      part(x.notes[1], 'unread note to you asking nothing', 'unread notes to you asking nothing', x.notes[2]),
       part(x.unowned[1], 'unowned board item open to take', 'unowned board items open to take', x.unowned[2]),
       x.steps and #x.steps > 0 and ('project steps open to take: ' .. table.concat(x.steps, '; ')) or nil}
-    for k = 1, 7 do if list[k] then parts[#parts+1] = list[k] end end
+    for k = 1, 9 do if list[k] then parts[#parts+1] = list[k] end end
     if #parts == 0 then
       return 'open for you: none (no board items of yours, ' .. (x.claims == 0 and (x.machines_near and 'no fresh claims and no idle machines near you' or 'no fresh claims')
         or 'no alert groups or idle machines in your claims') .. ', no unanswered requests or tells)'
