@@ -347,8 +347,8 @@
   into a pad there with what the pad showed after (as the drops read's pad line); with `item`, that item over
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what its requests from that planet keep, what goes
-  down there, what is left aboard). At a stop the hub keeps only what its requests from that planet ask (as
-  `requests` says). A
+  down there, what is left aboard). At a stop the hub keeps of an item what its requests from that planet
+  allow, their maxes added up (no max: all it holds; as `requests` says). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
   `shipment {platform, ready: true}`: freight readiness for the planet it stops at (else the stop it flies to): its
   gate (as `platform_gate`), the requests from there not delivered, each silo of ours there (its rocket; automatic
@@ -509,6 +509,21 @@
   `silo_spoils` (a spoilable item a platform asks this planet for, in the silo's rocket or its network's chests, that
   spoils before that platform's next arrival here: how many, the first's time left, where).
   Example: `./fh call silo --args '{"position":{"x":65.5,"y":14.5},"why":true}'`
+- `launch_budget {surface?, platform?, manifest?, reserve?, network?}` (read only): the rockets that our platforms'
+  requests importing from a planet ask for, against the networks of its silos now. Each request a hub lacks (sections
+  switched on): asks (its min), holds (landed), on the way (in rockets launched to it), unlaunched (asks less both),
+  payload (its min payload, else a full rocket by weight; 2.0.77 launched 300 for a 220 gap under min payload 300),
+  pods (unlaunched / payload, rounded up) and cargo (pods x payload, with what is over). `platform` names the candidate;
+  `manifest {"item": total}` (`item@quality`, or `{count, min_payload}`) gives totals its hub is to hold in place of
+  its requests for those items, and the hub slots that cargo takes. Each silo: its network, productivity and the
+  ingredients a rocket takes (parts / (1 + productivity): 31.25 at +60%), parts built. `budgets` for the candidate
+  alone, with the asks of platforms in orbit now, and with every platform's (flying here or elsewhere): pods, then per
+  item the cargo, `for_rockets` (pods x the least productive silo's per launch), `reserve` (yours, added), what the
+  silos' networks hold by exact quality (provider and storage chests less robots' reservations), `short`, and a short
+  item's stock in the planet's other networks (not counted). `unknowns` names what it does not count: anything made
+  after `read_tick`, other consumers, what a platform not here uses or drops before it stops here, the game's choice
+  of silo, and built parts.
+  Example: `./fh call launch_budget --args '{"surface":"aquilo","platform":"Asterion","manifest":{"uranium-rounds-magazine":2150},"reserve":{"rocket-fuel":600}}'`
 - `cargo {items | position, silo?, to_platform?, incoming?}`: weighs a rocket cargo list (or a chest, silo or pad at
   `position`): each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets, and
   one split into rockets that keeps each within both. With `silo` (and `to_platform`) it adds when that list can go up

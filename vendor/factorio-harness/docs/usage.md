@@ -16366,3 +16366,44 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Host only (tools/stream/vx_review.py; docs/STREAM-NOTES.md "Narration lag: announcements against later mentions"):
   the event-to-line lag counts the lines whose own cue names the platform; later lines that mention it from other cues
   are reported apart (mention_n, mention_median_s). Test: tools/stream/test_vx_review.py.
+## d27 batch260
+- HR (Sol #2494: circuits-settings.md said a hub keeps what its requests from the stop's planet ask, with Swift's
+  `500..2000` keeping 501; a Nauvis pad pilot of 500..1000 magazines moved none, since Cinder held its 1613 under
+  `500..inf from nauvis`): the reference now says the maxes set what a hub keeps. Checked on a copy of world n's 04:42
+  save (2.0.77, Limestone at Nauvis with no schedule, small-lamp, the pad at (52,54)):
+  - small-lamp `0..60 from nauvis` in two sections, 100 held, the pad asking 1000: 100 stayed for 6000 ticks (the two
+    maxes add up to 120).
+  - one of them cleared and the pad's ask cleared: 40 went down within 1800 ticks, 60 stayed (the max sends all above it
+    down, the pad asking 0).
+  - `50..inf from nauvis`, the pad asking 1000: all 60 stayed for 4670 ticks (no max keeps all; the min keeps nothing by
+    itself).
+  - the request cleared, the pad asking 1000: all 60 went down within 1800 ticks.
+  - agent/ref/circuits-settings.md and space-age.md say it with these cases; KEEP_RULE (`sends_down_rule`) adds the
+    sections and the min; space.lua's comment above it. The B6 entry of d17 batch31 above ("keeps what its requests
+    ask") is the rule before d24 batch137.
+- LB (Sol #2491: the K2 cargo staging audit pieced a launch budget together from repeated requests, platform, silo,
+  inspect and recipes reads): a new read, `launch_budget {surface?, platform?, manifest?, reserve?, network?}`,
+  launchbudget.lua (silo.lua's want, count_q, qualities and on_the_way; the census pass's silos).
+  - Each request importing from the planet (sections switched on, min over 0) that a hub lacks: asks, holds (landed),
+    on the way (in rockets launched to it), unlaunched, payload (min payload, else a full rocket by weight, capped at a
+    full rocket), pods (unlaunched / payload rounded up), cargo (pods x payload) and what is over. Grouped: the
+    candidate (`platform`; `manifest {"item": total | {count, min_payload}}` in place of its requests for those items,
+    with the hub slots that cargo takes), then other platforms in orbit, flying here, elsewhere (48 lines listed).
+  - Each silo: its network, productivity (modules and beacons with the recipe's research, capped), parts per rocket,
+    ingredients a launch takes (parts / (1 + productivity)), parts built, ready, filling for. Totals use the least
+    productive silo's ingredients a launch, rounded up over the pods.
+  - budgets: the candidate alone; with platforms in orbit now; with every platform (or the two without a candidate):
+    per item the cargo, `for_rockets`, `reserve`, `needs`, `networks_hold` (the silos' networks by exact quality: the
+    game's get_item_count, provider and storage less reservations), `short`, and a short item's stock in the planet's
+    other networks (not counted). `unknowns` lists what is not counted (production after read_tick, other consumers,
+    route consumption, the game's choice of silo, built parts).
+  - On the copy (Aquilo, world n's save): network 348, both silos +60% (31.25 a rocket); Kestrel IVb's 1200 magazines
+    at payload 100 read 12 pods, as `silo {requests}` gave the same rows.
+- Cost (the copy of world n's 04:42 save; that copy ran a read loop over every platform's import filters in 2.8-3.9 ms
+  where world n ran it in 2.4 ms): the read 3.7-5.2 ms (the platform loop 2.6-4.5 of it); a call through dispatch with
+  its reply 9.0-11.1 ms on Aquilo with a manifest, Nauvis and Fulgora (32.7 ms the first after a deploy), where `silo
+  {surface: aquilo}` took 11.2-15.0 ms the same way. Reply 4.9 KB. No tick work.
+- Bundle (compacted): 6,226,059 bytes on main, 6,244,175 with this branch (limit 8,388,608).
+- Docs: agent/ref/space-age.md (`launch_budget` after `silo`), the index (`launch_budget` paid for by the space-age
+  label without "platforms, planets": the codex core is 21997 bytes). Test: tests/d27_batch260.lua (fails on main: no
+  launchbudget.lua, and KEEP_RULE without the sections).

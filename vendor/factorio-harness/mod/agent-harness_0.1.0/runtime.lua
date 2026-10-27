@@ -2342,6 +2342,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.flightwatch and M.flightwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.signalwatch and M.signalwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.sight and M.sight.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.launchbudget and M.launchbudget.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.removeghosts and M.removeghosts.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
@@ -14182,6 +14183,9 @@ M.silo=require('silo'){starterpack=function() return M.starterpack end,editlog=f
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
+-- (d27 batch260 LB, Sol #2491) launch_budget: the rockets the platforms' requests from a planet ask for against its silos' networks (launchbudget.lua)
+M.launchbudget=require('launchbudget'){silo=M.silo,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
+function handlers.launch_budget(p,a) return M.timed('launch_budget.read',M.launchbudget.read,p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
 M.rocketload=require('rocketload'){trash=M.trash,starter_line=function(e) return M.silo.starter_line(e) end,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
@@ -17876,7 +17880,7 @@ passive.remove_ghosts=true
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename','blueprint_retire','blueprint_status'}) do passive[name]=true end
 -- (d20 batch59 U2) an import, into your slot or the team library, reads a string: no walk, no queue stop.
 passive.blueprint_import=true
-local reads={losses=true,platform=true,damage_log=true,shortages=true,reservations=true,nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={launch_budget=true,losses=true,platform=true,damage_log=true,shortages=true,reservations=true,nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 reads.heat_budget=true

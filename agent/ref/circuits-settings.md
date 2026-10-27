@@ -183,10 +183,15 @@
     request's import planet; `construction_requests: true` switches the hub's Request missing construction materials
     on. A set entry's `min_payload` is the custom minimum payload; an edit that does not name it keeps it, and one
     removed by `clear` or `clear_all` comes back when the item is set again without it (`min payload N kept from the
-    request cleared before`); `min_payload: false` clears it. At a stop the hub keeps what its requests importing
-    from that planet ask; the rest that the landing pads there ask for (their ask less what they hold) goes down. A
-    request from another planet keeps nothing there: Cinder at Nauvis sent all 85 foundation down under `50..inf from
-    fulgora`, while Swift at Nauvis kept 501 magazines under `500..2000 from nauvis`. A change of what its requests keep
+    request cleared before`); `min_payload: false` clears it. At a stop the hub keeps of an item what its active
+    requests importing from that planet allow, their maxes added up over every section; a request's min is what the
+    hub asks rockets for, and keeps nothing by itself. No max (`inf`) keeps all it holds: Limestone at Nauvis kept all
+    60 under `50..inf from nauvis` with the pad asking 1000 (2.0.77, d27). Above the max all goes down to the landing
+    pads there, asked or not: Limestone with small-lamp `0..60 from nauvis` in two sections kept all 100 with the pad
+    asking 1000; with one cleared, 40 went down to a pad asking 0 and 60 stayed. An item no such request names goes
+    down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing
+    there: Cinder at Nauvis sent all 85 foundation down under `50..inf from fulgora`. `sends_down_rule` in a reply
+    with `sends_down` gives the rule and its cases. A change of what its requests keep
     gives `sends_down`: per item, what they would keep and kept by planet, and how many go down to which stop's pads
     (where it waits first, then its schedule's) or stay aboard. What the hub holds over its max for an item (the maxes
     of its active requests for it added up) goes to its trash (10 slots) within a second, and down at the first stop,
