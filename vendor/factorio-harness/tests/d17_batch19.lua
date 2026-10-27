@@ -172,15 +172,16 @@ end
 print('d17_batch19 C1 silo_stage plans takes, crafts and the load: ok')
 
 -- C2 (Sol: three silos and eight cargo bays by hand-written 14-step plans, two batches overshot): assembler_batch plans
--- a finite batch: output and input held, the requester cleared and asked for exactly what is to come, input on, wait for
--- the products, input off, output released. Sol's 8 cargo bays at (107.5,-94.5).
+-- a finite batch: input held, the requester cleared and asked for exactly what is to come, input on, wait for the crafts
+-- on the machine's products-finished counter (d27 batch278: the output is no longer held), input off. Sol's 8 cargo
+-- bays at (107.5,-94.5).
 BATCH_FIXTURE=function(req_held,in_held)
   defines={inventory={assembling_machine_input=2,assembling_machine_output=3}}
   local function inv(t) return {get_item_count=function(n) return t[n] or 0 end} end
   local recipe={name='cargo-bay',products={{type='item',name='cargo-bay',amount=1}},
     ingredients={{type='item',name='steel-plate',amount=20},{type='item',name='low-density-structure',amount=20},{type='item',name='processing-unit',amount=5}}}
   local m={valid=true,unit_number=1,name='assembling-machine-2',type='assembling-machine',position={x=107.5,y=-94.5},force='player',
-    bounding_box={left_top={x=106,y=-96},right_bottom={x=109,y=-93}},get_recipe=function() return recipe end}
+    bounding_box={left_top={x=106,y=-96},right_bottom={x=109,y=-93}},get_recipe=function() return recipe end,products_finished=12}
   local req={valid=true,unit_number=2,name='requester-chest',position={x=107.5,y=-97.5},prototype={logistic_mode='requester'},
     get_item_count=function(n) return (req_held or {})[n] or 0 end}
   local input={valid=true,unit_number=3,type='inserter',position={x=107.5,y=-96.5},pickup_target=req,drop_target=m}
@@ -199,15 +200,18 @@ do
   local r=B.run({},{position={x=107.5,y=-94.5},count=8,dry_run=true})
   eq(r.crafts,8); eq(r.requester,'(107.5,-97.5)'); eq(r.input,'(107.5,-96.5)'); eq(r.output,'(109.5,-94.5)')
   has(r.plan[1],'8 cargo-bay: 8 crafts of cargo-bay in assembling-machine-2 (107.5,-94.5) (it holds 0 of it now)')
-  has(r.plan[4],'steel-plate: 160 for 8 crafts, the machine holds 0, the requester 40: 120 to come')
-  has(r.plan[6],'processing-unit: 40 for 8 crafts, the machine holds 10, the requester 0: 30 to come')
+  local text=table.concat(r.plan,'\n')
+  has(text,'steel-plate: 160 for 8 crafts, the machine holds 0, the requester 40: 120 to come')
+  has(text,'processing-unit: 40 for 8 crafts, the machine holds 10, the requester 0: 30 to come')
+  has(text,'counted by its products-finished counter (its GUI\'s crafts, productivity bonus crafts too): 12 now, the batch done at 20; the products are not held in it: they go out through output inserter (109.5,-94.5) (it drops on the ground or a belt)')
   local labels={}
   for i,st in ipairs(r.steps) do labels[i]=st.label end
-  eq(table.concat(labels,' / '),'hold output / input held / clear requester / stage / staged steel-plate / staged low-density-structure / staged processing-unit / staged / input on / made / input off / release output')
-  local stage=r.steps[4].args.set
+  eq(table.concat(labels,' / '),'input held / clear requester / stage / staged steel-plate / staged low-density-structure / staged processing-unit / staged / input on / made / input off')
+  local stage=r.steps[3].args.set
   eq(stage[1].item,'steel-plate'); eq(stage[1].min,160); eq(stage[1].max,160,'what it holds plus what is to come')
-  eq(r.steps[1].args.logistic,'cargo-bay < -2147483648'); eq(r.steps[2].args.logistic:sub(-13),'< -2147483648'); eq(r.steps[12].args.logistic,false)
-  eq(r.steps[10].args.at_least,8)
+  eq(r.steps[1].args.logistic:sub(-13),'< -2147483648'); eq(r.steps[10].args.logistic:sub(-13),'< -2147483648')
+  eq(r.steps[9].args['until'],'produced'); eq(r.steps[9].args.at_least,8); eq(r.steps[9].args.counter_from,12)
+  eq(r.counter.now,12); eq(r.counter.done_at,20)
   eq(sub(),nil)
   -- more than the batch needs already there: said
   B=BATCH_FIXTURE({['steel-plate']=200})
