@@ -941,10 +941,11 @@ return function(api)
       local hatch=pcall(function() return prototypes.item[item].spoil_to_trigger_result end) and prototypes.item[item].spoil_to_trigger_result
       return left<c.seconds,string.format('%s: its input\'s first %s %s in %ds',where,item,hatch and 'hatches' or 'spoils',math.max(0,math.floor(left+0.5)))
     end,
-    -- pod_landed {platform, item?, at_least?} (batch28 B1, Luna: polled silo, shipment and where_is for Spindle's packs
-    -- and two fuel pods): pods sent down from the platform that landed since the wait began (freight's receipts: received
-    -- by a landing pad, or landed as a cargo pod container); with item, how many of it they carried; met at at_least
-    -- (default 1: one pod, or one of the item).
+    -- pod_landed {platform, item?, at_least?, location?} (batch28 B1, Luna: polled silo, shipment and where_is for Spindle's
+    -- packs and two fuel pods): pods sent down from the platform that landed since the wait began (freight's receipts:
+    -- received by a landing pad, or landed as a cargo pod container); with item, how many of it they carried; met at
+    -- at_least (default 1: one pod, or one of the item). (d27 batch259 PL, Astra #2484) location: only pods landed on
+    -- that planet.
     pod_landed=function(p,c,estimate,record)
       assert(record,'pod_landed counts from the start of a wait: a wait_until step or a direct wait_until')
       local pl=M.platform_named(p,c.platform)
@@ -970,25 +971,30 @@ return function(api)
       local want=c.at_least or 1
       local what=c.item and (c.quality and c.quality~='any' and c.item..' ('..c.quality..' quality)' or c.item) or nil
       if api.pods_landed then
-        local r=api.pods_landed(c.platform,since,c.item,c.quality~='any' and c.quality or nil)
+        local r=api.pods_landed(c.platform,since,c.item,c.quality~='any' and c.quality or nil,c.location)
         local have=c.item and r.items or r.pods
+        local other={}
+        for planet,n in pairs(r.elsewhere or {}) do other[#other+1]=string.format('%d on %s',n,planet) end
+        table.sort(other)
         -- (d25 batch207 QT1, Sol #2344) a pod counts once its cargo is delivered (about 80 ticks after it lands)
-        return have>=want,string.format('%d pod%s from %s landed and delivered %s%s%s%s%s',r.pods,r.pods==1 and '' or 's',c.platform,from,
+        return have>=want,string.format('%d pod%s from %s landed%s and delivered %s%s%s%s%s%s',r.pods,r.pods==1 and '' or 's',c.platform,
+          c.location and ' on '..c.location or '',from,
           what and string.format(' with %d %s',r.items,what) or '',r.last and string.format(' (the last delivered at tick %d, %s on %s)',r.last.delivered or r.last.landed,tostring(r.last.dest or 'where not read'),r.last.planet) or '',
           (r.landing or 0)>0 and string.format('; %d more landed, cargo not delivered yet',r.landing) or '',
-          r.complete and '' or string.format('; the pod ledger keeps journeys sent from tick %d on: pods landed before that are not counted',r.oldest or 0)),
+          r.complete and '' or string.format('; the pod ledger keeps journeys sent from tick %d on: pods landed before that are not counted',r.oldest or 0),
+          #other>0 and '; not counted, landed elsewhere: '..table.concat(other,', ') or ''),
           estimate and {value=have,scope='pods:'..c.platform..':'..tostring(what)} or nil
       end
       local list=api.receipts and api.receipts(pl,since) or {}
       local pods,items,last=0,0,nil
       for _,r in ipairs(list) do
-        if r.kind~='gone' and r.kind~='lost' then
+        if r.kind~='gone' and r.kind~='lost' and (not c.location or r.stop==c.location) then
           local n=c.item and ((r.cargo or {})[c.item] or 0) or 1
           if n>0 then pods=pods+1; items=items+(c.item and n or 0); last=r end
         end
       end
       local have=c.item and items or pods
-      return have>=want,string.format('%d pod%s from %s landed %s%s%s',pods,pods==1 and '' or 's',c.platform,from,
+      return have>=want,string.format('%d pod%s from %s landed%s %s%s%s',pods,pods==1 and '' or 's',c.platform,c.location and ' on '..c.location or '',from,
         c.item and string.format(' with %d %s',items,c.item) or '',last and string.format(' (the last %s)',tostring(last.where)) or ''),
         estimate and {value=have,scope='pods:'..c.platform..':'..tostring(c.item)} or nil
     end,
@@ -1300,6 +1306,9 @@ return function(api)
         'pod_landed since_tick is a whole game tick 0..now ('..game.tick..'): pods landed after it count')
       assert(not ((c.drop_id or c.last_drop) and c.since_tick~=nil),'drop_id and last_drop wait for one drop: no since_tick')
       assert(c.quality==nil or c.item~=nil,'pod_landed quality goes with item; without it (or with "any") every quality of item counts')
+      -- (d27 batch259 PL) location: only pods landed on that planet count (a drop is one pod: its own landing says where)
+      assert(c.location==nil or (type(c.location)=='string' and game.planets[c.location]~=nil),'pod_landed location is a planet name (only pods landed there count)')
+      assert(not ((c.drop_id or c.last_drop) and c.location~=nil),'drop_id and last_drop wait for one drop: no location (its own landing says where)')
     end
     if kind=='spoil_within' then
       assert(c.position~=nil,'spoil_within requires position (an assembler, furnace or biochamber)')

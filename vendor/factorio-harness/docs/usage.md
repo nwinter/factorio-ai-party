@@ -16232,6 +16232,37 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
     the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
 
+## d27 batch259 (CB, Astra #2483: a dry run's false disconnected bays; PL, Astra #2484: pod_landed scoped to a planet)
+CB. Kestrel II's place_ghosts dry run at tick 69271398 said its bays (-2,54) and (-6,58) "join nothing ... no hub or
+landing pad within 16 tiles"; built, they joined (the hub 539 -> 579 slots at 69274894). dryrun.lua `cargo_bays` read
+hubs, pads and bays only within 16 tiles of the plan, and the hub at (0,0) stood 50 tiles from the end of a chain of
+24 built bays.
+- The game's rule, 2.0.77, on a test platform of a private copy (hub slots read after each `create_entity`, 59 own, 20 a
+  normal bay): a bay joins where its box shares an edge with the hub or a joined bay, by any overlap (flush, shifted
+  2 or 6 tiles along the edge, or half past its end: +20 each); a corner alone joins nothing (+0); a chain of any
+  length counts (Kestrel II: 539 = 59 + 24 x 20, the farthest at y=54); a bay 30 tiles off joins nothing; a bay that
+  bridges to an unjoined built one joins it too (79 -> 119); removing the middle bay drops the far one again (79); a
+  ghost in the gap joins nothing until built. `can_place_entity` (manual) says true for an unjoined bay as well.
+- The check now follows the chains: the area around the plan as before, then from each planned bay, hub, pad and bay
+  found, one small find of the bays and hubs touching it (two finds: types, then cargo-bay ghosts), at most 160
+  entities. Joining is one pass along those edges: built bays first (the slots now, and a bay's slots read from the
+  hub over every built bay joined to it), then ghosts and the plan. New lines: a built bay the plan links up ("(built,
+  joined to nothing now) joins ... once the plan is built", counted in the slots after), "once the ghost bays on the
+  way are built", "meets X at a corner only", and a chain past the reads ("none found along its chains within 160 ...").
+- Cost (the private copy, x86 under Rosetta, game.create_profiler): Kestrel II's dry run 4.6 ms against main's 4.0;
+  132 bays beside the hub 7.5 ms against main's 4.5 (two finds of 25 entities: 0.2 ms).
+- Kestrel II on the copy (tick 68004291) with this runtime: "(-2,54) joins space-platform-hub (0,0) through cargo-bay
+  (-2,50)", "(-6,58) ... through cargo-bay (-6,54)", "539 slots now (59 its own, 24 built bays joined), 579 after the 2
+  planned bays joining it".
+
+PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 700 dropped on Fulgora at 69269968.
+- `wait_until {until: "pod_landed", ..., location: PLANET}` counts only pods landed on that planet (the pod ledger's
+  per-planet lists; freight's receipts by the stop they left); saw says "landed on aquilo" and "not counted, landed
+  elsewhere: 1 on fulgora"; the wait line names it. Without location, every planet as before. location is refused
+  with drop_id or last_drop (one drop's own landing says where) and when it is not a planet.
+- `location` is the argument platform_arrived and platform_left already take (a planet), so no new argument name.
+- Test: tests/d27_batch259.lua (CB and PL; both fail on main).
+
 ## d26 batch257 (IB: idle air back in shift83; the launch shot)
 - Host only (tools/stream; docs/STREAM-NOTES.md "Rocket launches over standing characters"): no runtime change, agents
   read nothing new. The stream service reads the rocket silos' states every poll (harness SILOS_LUA: 0.15 ms for 15
