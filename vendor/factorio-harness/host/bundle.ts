@@ -35,7 +35,10 @@ end
   // it, and fh help keeps one describe per id instead of pulling 280 KB from the game on each call. On the first line,
   // so line numbers in errors stay the bundle's own.
   const source = `local BUNDLE_ID = '${bundleId(body)}'; ` + body;
-  if (Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
+  // The limit is the deployed bundle's, and deploys are compacted (cli.ts); compact false is only the size the test
+  // compares against (d26 batch251: the full text reached 8,382,920 of 8,388,608 bytes on main e3ab156c while the
+  // compacted bundle was 6,185,723).
+  if (options.compact !== false && Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
   return source;
 }
 /** The first 16 hex digits of the bundle text's SHA-256. */

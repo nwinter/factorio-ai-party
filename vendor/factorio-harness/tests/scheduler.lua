@@ -135,8 +135,13 @@ tick(); check(calls[1]=='craft'); check(not h.queue_status(p).paused)
 calls={}
 h.queue_submit(p,{steps={{action='broken',on_fail='goto:out'},{action='walk'},{action='craft',label='out'}}})
 tick(); check(calls[1]=='craft' and #calls==1)
-h.queue_submit(p,{steps={{action='broken',on_fail='goto:nowhere'},{action='craft'}}})
-tick(); q=h.queue_status(p); check(q.paused); check(q.last_failure.result.goto_error~=nil)
+-- (d26 batch251 GL) a goto naming no step after it is refused at submit; one whose label is gone by the time it runs
+-- (a plan queued before that check) pauses the queue and says so
+local ok_nowhere,err_nowhere=pcall(h.queue_submit,p,{steps={{action='broken',on_fail='goto:nowhere'},{action='craft'}}})
+check(not ok_nowhere and tostring(err_nowhere):find('nowhere labels no step of the plan',1,true))
+h.queue_submit(p,{steps={{action='broken',on_fail='goto:gone'},{action='craft',label='gone'}}})
+state.queues[p.index].pending[2]=nil
+tick(); q=h.queue_status(p); check(q.paused); check(q.last_failure.result.goto_error=='label not pending: gone')
 -- A guard interrupts the running step once and runs its reaction.
 h.queue_cancel(p,{}); calls={}; world.hurt=false
 h.queue_submit(p,{guards={{when={['until']='hurt'},steps={{action='craft'}}}},
