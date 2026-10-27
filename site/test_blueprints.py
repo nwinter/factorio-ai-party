@@ -197,7 +197,7 @@ def main():
         assert '<ul class="bp-list" id="bp-list">' in page, page
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "Updates", "How it was made", "About", "GitHub"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "About", "Polls", "Updates", "How it was made", "GitHub"], nav
     picture_tests()
     filter_tests()
     print("site blueprints: ok (the library page from the newest shift's copy, strings to copy, linked from the nav; "

@@ -111,11 +111,24 @@ section { margin-bottom: 1rem; }
 .site-header .brand { color: var(--fx-heading); }
 .brand-mark { width: 26px; height: 26px; border-radius: var(--fx-r-1); background: var(--fx-orange) url(/favicon.svg) center/cover;
   box-shadow: var(--fx-slot-shadow), 0 0 0 1px #000; }
-.site-nav { display: flex; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.site-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; margin-left: auto; }
 .site-header .site-nav a { color: var(--fx-text); text-decoration: none; padding: 4px 12px; border-radius: var(--fx-r-2); font-weight: 600; font-size: .98rem; white-space: nowrap; }
 .site-header .site-nav a:hover { color: var(--fx-orange); }
 .site-header .site-nav a[aria-current] { color: var(--fx-heading); background: var(--fx-deep); box-shadow: var(--fx-slot-shadow); }
 .theme-toggle { width: 32px; min-width: 32px; height: 32px; }
+/* "More" (batch270): Polls, Updates, How it was made, GitHub; a dot and "open" when a poll is open */
+.nav-toggle { display: none; }
+.nav-more { position: relative; }
+.nav-more > summary { list-style: none; cursor: pointer; color: var(--fx-text); padding: 4px 12px; border-radius: var(--fx-r-2); font-weight: 600; font-size: .98rem; white-space: nowrap; display: flex; align-items: center; }
+.nav-more > summary::-webkit-details-marker { display: none; }
+.nav-more > summary::after { content: ""; border: 4px solid transparent; border-top-color: currentColor; margin: 4px 0 0 6px; }
+.nav-more > summary:hover { color: var(--fx-orange); }
+.nav-more.is-current > summary { color: var(--fx-heading); background: var(--fx-deep); box-shadow: var(--fx-slot-shadow); }
+.nav-more-list { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; min-width: 210px; display: flex; flex-direction: column; gap: 2px; padding: 6px; background: #2b2a2b; border: 1px solid #000; border-radius: var(--fx-r-2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 8px 20px rgba(0, 0, 0, .5); }
+.site-header .nav-more-list a { padding: 8px 12px; }
+.nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fx-orange); margin-left: 6px; box-shadow: 0 0 0 2px rgba(255, 159, 28, .3); }
+.nav-dot:not([hidden]) { display: inline-block; }
+.nav-chip { margin-left: 6px; font-size: .75rem; font-weight: 700; color: #141414; background: var(--fx-orange); border-radius: 3px; padding: 0 5px; }
 @media (max-width: 640px) {
   .header-row { gap: 4px 8px; padding-bottom: 6px; }
   .site-nav { order: 3; width: 100%; margin-left: -12px; }
@@ -822,9 +835,16 @@ html { scroll-padding-top: 76px; }
   /* the header scrolls away on phones (two rows of links would take a fifth of the screen), and every link shows */
   .site-header { position: static; }
   html { scroll-padding-top: 8px; }
-  .site-nav { flex-wrap: wrap; overflow: visible; margin-left: -8px; }
-  .site-header .site-nav a { padding: 8px 10px; min-height: 36px; display: inline-flex; align-items: center; }
+  .site-nav { flex-wrap: wrap; justify-content: flex-start; margin-left: -8px; }
+  .site-header .site-nav a, .nav-more > summary { padding: 8px 10px; min-height: 36px; display: inline-flex; align-items: center; }
   .theme-toggle { width: 36px; min-width: 36px; height: 36px; }
+  /* the Menu button shows the whole list, More's links in it (with no script every link shows) */
+  html.js .nav-toggle { display: inline-flex; align-items: center; margin-left: auto; min-height: 36px; }
+  html.js .theme-toggle { margin-left: 0; }
+  html.js .site-nav { display: none; }
+  html.js .site-header.nav-open .site-nav { display: flex; }
+  .site-header.nav-open .nav-more > summary { display: none; }
+  .site-header.nav-open .nav-more-list, .nav-more-list { position: static; flex-direction: row; flex-wrap: wrap; min-width: 0; padding: 0; background: none; border: 0; box-shadow: none; }
   /* tap targets */
   .jump { gap: 0 4px; }
   .jump a, .shift-nav a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 6px; }
