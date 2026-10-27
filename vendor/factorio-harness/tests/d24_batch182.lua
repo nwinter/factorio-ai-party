@@ -166,11 +166,18 @@ do
   r=S.supply_fresh(surf,force,'nutrients')
   has(r.used_by[#r.used_by-1],'burned as fuel (counted in used; the game keeps no count per burner): no heating tower, boiler or burner generator here holds or burns it')
   -- ammo: turrets holding it
-  local gun={valid=true,name='gun-turret',type='ammo-turret',position={x=0,y=9},unit_number=101,force=force,get_item_count=function(n) return n=='firearm-magazine' and 10 or 0 end}
+  local gun={valid=true,name='gun-turret',type='ammo-turret',position={x=0,y=9},unit_number=101,force=force,get_item_count=function(n) return (type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)=='firearm-magazine' and 10 or 0 end}
   ents[#ents+1]=gun
   r=S.supply_fresh(surf,force,'firearm-magazine')
   has(table.concat(r.used_by,' | '),'fired as ammo (counted in used; the game keeps no count per turret): 1 of 1 turrets hold 10')
   has(r.used_by[#r.used_by],'not counted in used: what is carried off the surface')
+  -- (d26 batch249 R10) a turret holding rare magazines: counted (every quality, as 2.0.77 counts {name} alone), named
+  prototypes.quality={normal={level=0},rare={level=2}}; require('qflow').reset()
+  ents[#ents+1]={valid=true,name='gun-turret',type='ammo-turret',position={x=2,y=9},unit_number=102,force=force,get_item_count=function(n)
+    if type(n)=='table' and n.name=='firearm-magazine' and (n.quality==nil or n.quality=='rare') then return 4 end return 0 end}
+  r=S.supply_fresh(surf,force,'firearm-magazine')
+  has(table.concat(r.used_by,' | '),'fired as ammo (counted in used; the game keeps no count per turret): 2 of 2 turrets hold 14 (normal 10, rare 4)')
+  prototypes.quality=nil; require('qflow').reset()
   defines=nil
 end
 print('d24_batch182 QY1 supply returned and used_by: the egg recipe from made, burners, turrets, what used leaves out: ok')

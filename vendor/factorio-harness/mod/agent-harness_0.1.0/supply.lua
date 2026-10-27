@@ -808,14 +808,16 @@ return function(api)
     for _, pl in pairs(try(function() return force.platforms end) or {}) do
       if try(function() return pl.valid and pl.space_location and pl.space_location.name end) == planet then
         local inv = try(function() return pl.hub and pl.hub.valid and pl.hub.get_inventory(defines.inventory.hub_main) end)
-        local n = inv and try(function() return inv.get_item_count(item) end) or 0
-        if n > 0 then rows[#rows+1] = {platform=pl.name, n=n}; total = total + n end
+        -- (d26 batch249 R10) every quality, the qualities named when any is above normal
+        local n, by = 0, nil
+        if inv then n, by = qflow.held(inv, item) end
+        if n > 0 then rows[#rows+1] = {platform=pl.name, n=n, qualities=qflow.label(by)}; total = total + n end
       end
     end
     if total == 0 then return nil end
     table.sort(rows, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.platform < b.platform end)
     local parts = {}
-    for i, r in ipairs(rows) do parts[i] = r.platform .. ' ' .. r.n end
+    for i, r in ipairs(rows) do parts[i] = r.platform .. ' ' .. r.n .. (r.qualities and ' (' .. r.qualities .. ')' or '') end
     return {total=total, rows=rows, line='in orbit on ' .. table.concat(parts, ', ')}
   end
   -- Where the item sits: the total and each kind of place that holds it.
@@ -2485,12 +2487,13 @@ return function(api)
     end
     if try(function() return prototypes.item[item].type end) == 'ammo' then
       local turrets = try(function() return surface.find_entities_filtered{type='ammo-turret', force=force, position=area and area.position, radius=area and area.radius, limit=4096} end) or {}
-      local n, held = 0, 0
+      -- (d26 batch249 R10) every quality: a turret fires what it holds of any
+      local n, held, acc = 0, 0, {}
       for _, e in ipairs(turrets) do
-        local c = try(function() return e.get_item_count(item) end) or 0
-        if c > 0 then n, held = n + 1, held + c end
+        local c, by = qflow.held(e, item)
+        if c > 0 then n, held = n + 1, held + c; qflow.add(acc, c, by) end
       end
-      lines[#lines+1] = string.format('fired as ammo (counted in used; the game keeps no count per turret): %d of %d turrets hold %d', n, #turrets, held)
+      lines[#lines+1] = string.format('fired as ammo (counted in used; the game keeps no count per turret): %d of %d turrets hold %s', n, #turrets, qflow.text(held, qflow.by_of(acc)))
     end
     local h = api.spoil and api.spoil.hatch and api.spoil.hatch(item)
     local spoils = api.spoil and api.spoil.spoils and api.spoil.spoils(item)

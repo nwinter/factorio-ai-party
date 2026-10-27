@@ -85,6 +85,49 @@ function M.label(by, fmt)
   for _, r in ipairs(by) do parts[#parts+1] = r.quality .. ' ' .. (fmt and fmt(r.n) or tostring(math.floor(r.n + 0.5))) end
   return table.concat(parts, ', ')
 end
+-- (d26 batch249 R10, the batch227 review 3c) a holder's count of an item (an entity or an inventory) at every quality,
+-- in the forms measured on a copy (2.0.77; a chest of 600 uncommon iron-plate read 0 by its bare name): an entity's
+-- get_item_count{name} with no quality, an inventory's get_item_count_filtered{name}. total, and by as count_by gives
+-- (nil when all of it is normal). line(l, name): a transport line's, summed over {name, quality} pairs.
+local ANY, ONE = {name=nil}, {name=nil, quality=nil}
+function M.held(holder, name)
+  ANY.name = name
+  -- (no closure: where_is reads ~2000 holders a call; the method's own read was outside pcall before too)
+  local ok, n = pcall(holder.object_name == 'LuaInventory' and holder.get_item_count_filtered or holder.get_item_count, ANY)
+  if not ok or type(n) ~= 'number' or n == 0 then return 0, nil end
+  local okn, normal = pcall(holder.get_item_count, name)
+  if okn and normal == n then return n, nil end
+  local by = {}
+  for _, q in ipairs(M.qualities()) do
+    ONE.name, ONE.quality = name, q
+    local okq, k = pcall(holder.get_item_count, ONE)
+    if okq and type(k) == 'number' and k > 0 then by[#by+1] = {quality=q, n=k} end
+  end
+  return n, by
+end
+function M.line(l, name)
+  local n = 0
+  for _, q in ipairs(M.qualities()) do
+    ONE.name, ONE.quality = name, q
+    local ok, k = pcall(l.get_item_count, q == 'normal' and name or ONE)
+    if ok and type(k) == 'number' then n = n + k end
+  end
+  return n
+end
+-- several holders' by summed into acc ({quality: n}, normal for a nil by); by_of(acc): acc as by (nil when all normal)
+function M.add(acc, n, by)
+  if by then for _, r in ipairs(by) do acc[r.quality] = (acc[r.quality] or 0) + r.n end
+  elseif n > 0 then acc.normal = (acc.normal or 0) + n end
+  return acc
+end
+function M.by_of(acc)
+  local by = {}
+  for _, q in ipairs(M.qualities()) do if (acc[q] or 0) > 0 then by[#by+1] = {quality=q, n=acc[q]} end end
+  if #by == 0 or (#by == 1 and by[1].quality == 'normal') then return nil end
+  return by
+end
+-- n with its qualities when any is above normal: '200 (normal 150, rare 50)', else '200'
+function M.text(n, by) return by and string.format('%d (%s)', n, M.label(by)) or tostring(n) end
 -- the qualities in by, as a list of names (nil for nil)
 function M.names(by)
   if not by then return nil end

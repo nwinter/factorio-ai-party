@@ -3925,7 +3925,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   first, `limit` default 15, `more` past it). Belts and inserter hands are totals only. It scans the surface's
   storage and belt entities once per call. Cargo pods from our platforms still in the air toward that surface are
   `in_flight` (by_kind too): `{platform, state (awaiting_launch, ascending, surface_transition, descending, parking),
-  count, lands (landing pad (52,54), or the ground)}` (pods.lua, as in the arrival line).
+  count, lands (landing pad (52,54), or the ground)}` (pods.lua, as in the arrival line). Counts are of every quality
+  (d26 batch249); a place's `qualities` and the reply's say them when any is above normal.
 - `construction_robots {position?, network?, surface?}` (read; Astra, shift13: Fulgora's only construction robot
   stalled 3 times holding removed modules with no storage slot for them, and finding out why took about 15 minutes):
   the construction robots of the logistic network covering `position` (default where you stand), or of network id
@@ -16119,6 +16120,42 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
     the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
 
+## d26 batch249 (the batch227 review's refusals and small items: R5, R6, R9, R10, R11)
+- R5: a position named on a surface where its chunk was never charted (inspect, scan, an entity not found there) adds
+  what of ours stands at that point on another planet: `chunk (-9,15) was never charted on gleba; at (-269.5,486.5)
+  ours stand on another planet: requester-chest on nauvis (surface: "nauvis")` (one point find a planet, on the
+  refusal only).
+- R6: `chat_ack` (and every board, players and votes call but plan_run, which fills the body queue) works seated.
+- R9: `platform_plan {support: {positions}}` takes what of ours covers the tile at each position, or touches that tile
+  corner (a find by the tile's area); a footprint tile of a 3x3 machine was refused "nothing of ours at".
+- R10: 2.0.77 counts `get_item_count(name)` at normal quality only. Where the reply means all of it, the count is now
+  of every quality (qflow.held: an entity's `get_item_count{name}`, an inventory's `get_item_count_filtered{name}`, the
+  forms measured on a copy; a belt line summed over `{name, quality}`), with the qualities named when any is above
+  normal (`200 (normal 150, rare 50)`):
+  - supply's "fired as ammo ... turrets hold N"; "in orbit on PLATFORM N" (supply and labs);
+  - floor phases' hub foundation stock ("the hub holds no space-platform-foundation (of any quality)");
+  - a platform's defense ghosts waiting on foundation (the hub's foundation; a turret ghost's item at the ghost's
+    quality, `gun-turret@rare`);
+  - platform_plan ready's items (an entity ghost's item at its quality, `item@quality`; tile ghosts' foundation at
+    every quality);
+  - `where_is`: holders, module slots, belts and robot cargo at every quality; each place's `qualities` and the reply's
+    `qualities` when any is above normal;
+  - boilers' fuel sources (chests and belts).
+  - Counted at the quality asked: reservations' requester rows (`iron-plate@rare asks 10, holds 4`), a requests dry
+    run's robot trips. Left normal by design: supply's own where (its notes say normal quality) and its request rows.
+- R11 refusals, each saying what was wrong and what is accepted:
+  - craft and configure: `recipe is unavailable: "electronic-circuit@rare": a recipe name holds no quality; hand
+    crafting makes normal quality only (recipe "electronic-circuit")`; `no recipe is named X; no recipe makes the
+    item X` (or the recipes that make it, or the nearest names); `X is not unlocked yet; research T unlocks it`;
+  - `unknown observe scope "research"; scope is one of: ...; research is an action of its own (research {})`;
+  - `losses {surface: "Asterion"}`: `Asterion is a platform (its surface: platform-16): surface="platform-16" names its
+    surface`; a name that is no surface lists the planets (every "unknown surface" refusal);
+  - stock `items` take name@quality (that row at that quality); `quality: "all"` is refused naming the qualities;
+  - inspect `{area, name}` takes names joined by commas as the list;
+  - transfer of a quality not held: `no iron-plate@uncommon in inventory; the target has 0; you hold 10 iron-plate of
+    other qualities`.
+- Tests: tests/d26_batch249.lua, tests/d26_batch249b.lua; tests/vehicles.lua, d24_batch165, d24_batch182, supply and
+  networks gained cases with 2.0.77's counting in their fakes.
 ## d26 batch255 (narration lag trace)
 - Host only (tools/stream/vx_review.py; docs/STREAM-NOTES.md "Narration lag: announcements against later mentions"):
   the event-to-line lag counts the lines whose own cue names the platform; later lines that mention it from other cues

@@ -184,7 +184,7 @@ do
   defines={inventory={chest=1}}
   prototypes={item={nutrients={},seeds={}}}
   local function inv(t,free)
-    return {get_item_count=function(n) return t[n] or 0 end,count_empty_stacks=function() return free end,can_insert=function() return free>0 end}
+    return {get_item_count_filtered=function(f) return t[f.name] or 0 end,get_item_count=function(n) return t[(type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)] or 0 end,count_empty_stacks=function() return free end,can_insert=function() return free>0 end}
   end
   local provider={valid=true,name='passive-provider-chest',type='logistic-container',unit_number=1,position={x=0.5,y=0.5}}
   local full={valid=true,name='requester-chest',type='logistic-container',unit_number=2,position={x=10.5,y=0.5},get_inventory=function() return inv({nutrients=0,seeds=4800},0) end}

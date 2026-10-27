@@ -48,6 +48,8 @@ return function(api)
     for _, list in pairs(unlockers) do table.sort(list) end
     return unlockers
   end
+  -- (d26 batch249 R11) the technologies that unlock a recipe (nil: none)
+  function M.unlocked_by(recipe) return by_recipe()[recipe] end
   -- The gear items a technology's recipes make, as text (nil: none).
   function M.unlocks_gear(tech)
     local made, seen = {}, {}

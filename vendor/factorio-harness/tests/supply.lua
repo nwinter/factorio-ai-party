@@ -492,12 +492,19 @@ end
 do
   defines.inventory=defines.inventory or {}; defines.inventory.hub_main=defines.inventory.hub_main or 1
   local function plat(name,loc,n)
-    return {valid=true,name=name,space_location=loc and {name=loc} or nil,hub={valid=true,get_inventory=function() return {get_item_count=function(i) return i=='calcite' and n or 0 end} end}}
+    return {valid=true,name=name,space_location=loc and {name=loc} or nil,hub={valid=true,get_inventory=function() return {get_item_count=function(i) return (type(i)=='table' and (i.quality or 'normal')=='normal' and i.name or i)=='calcite' and n or 0 end} end}}
   end
   local f={platforms={plat('Starling','nauvis',102),plat('Wayfarer',nil,500),plat('Sunward','vulcanus',40)}}
   local o=S.orbit_stock({name='nauvis',planet={name='nauvis'}},f,'calcite')
   eq(o.total,102); eq(o.line,'in orbit on Starling 102')
   eq(S.orbit_stock({name='nauvis',planet={name='nauvis'}},f,'coal'),nil)
+  -- (d26 batch249 R10) every quality in the hub, named when any is above normal (a bare name counted normal only)
+  local saved=prototypes.quality; prototypes.quality={normal={level=0},uncommon={level=1}}; require('qflow').reset()
+  local up={valid=true,name='Petrel',space_location={name='nauvis'},hub={valid=true,get_inventory=function() return {get_item_count=function(i)
+    if type(i)=='table' and i.name=='calcite' and (i.quality==nil or i.quality=='uncommon') then return 30 end return 0 end} end}}
+  o=S.orbit_stock({name='nauvis',planet={name='nauvis'}},{platforms={up}},'calcite')
+  eq(o.total,30); eq(o.line,'in orbit on Petrel 30 (uncommon 30)')
+  prototypes.quality=saved; require('qflow').reset()
 end
 print('supply: ok')
 

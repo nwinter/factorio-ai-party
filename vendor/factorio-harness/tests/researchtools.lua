@@ -72,7 +72,7 @@ local function character(pos)
   c.items=items
   c.insert=function(s) items[s.name]=(items[s.name] or 0)+s.count; return s.count end
   c.get_main_inventory=function() return inv end
-  c.get_item_count=function(n) return items[n] or 0 end
+  c.get_item_count=function(n) return items[(type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)] or 0 end
   c.can_reach_entity=function() return true end
   c.destroy=function() c.valid=false end
   return c
@@ -80,12 +80,12 @@ end
 -- The map for where_is: chests, labs, a machine, belts, an inserter hand.
 local function holder(type_,name,x,y,counts)
   return {valid=true,type=type_,name=name,force=force,surface=surface,position={x=x,y=y},
-    get_item_count=function(item) return counts[item] or 0 end}
+    get_item_count=function(item) return counts[(type(item)=='table' and (item.quality or 'normal')=='normal' and item.name or item)] or 0 end}
 end
 local function belt(n)
   return {valid=true,type='transport-belt',name='transport-belt',force=force,position={x=0,y=0},
     get_max_transport_line_index=function() return 2 end,
-    get_transport_line=function(i) return {get_item_count=function(item) return item=='automation-science-pack' and n or 0 end} end}
+    get_transport_line=function(i) return {get_item_count=function(item) return (type(item)=='table' and (item.quality or 'normal')=='normal' and item.name or item)=='automation-science-pack' and n or 0 end} end}
 end
 local map={
   holder('container','steel-chest',100,0,{['automation-science-pack']=1118}),

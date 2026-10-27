@@ -1512,12 +1512,28 @@ function M.saw_chunk(p,pos)
   end
   m.by[key]=game.tick
 end
+-- (d26 batch249 R5, the batch227 review: Luna's 14 inspects at (-269.5,486.5) named gleba over 7 shifts, "never
+-- charted", while our requester chest stood there on Nauvis) the other planets where something of ours stands at that
+-- point: one point find a planet, on a refusal only
+function M.ours_elsewhere(p,pos)
+  local out={}
+  for _,s in pairs(game.surfaces) do
+    if s~=p.surface and s.planet then
+      local names={}
+      for _,e in ipairs(s.find_entities_filtered{position=pos,force=p.force,limit=4}) do
+        if e.type~='character' then names[#names+1]=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.name end
+      end
+      if #names>0 then out[#out+1]=string.format('%s on %s (surface: "%s")',table.concat(names,', '),s.name,s.name) end
+    end
+  end
+  return #out>0 and string.format(' on %s; at (%g,%g) ours stand on another planet: %s',p.surface.name,pos.x,pos.y,table.concat(out,'; ')) or ''
+end
 -- What a player's map says of the chunk at pos: in sight now, charted and out of sight (with the tick our reads last saw
 -- it), or never charted.
 function M.ground_state(p,pos)
   local c=chunk_of(pos)
   if own_platform(p) or p.force.is_chunk_visible(p.surface,c) then return string.format('chunk (%d,%d) is in sight now (tick %d)',c.x,c.y,game.tick) end
-  if not p.force.is_chunk_charted(p.surface,c) then return string.format('chunk (%d,%d) was never charted',c.x,c.y) end
+  if not p.force.is_chunk_charted(p.surface,c) then return string.format('chunk (%d,%d) was never charted',c.x,c.y)..M.ours_elsewhere(p,pos) end
   local m=state().chunk_seen
   local t=m and m.by[p.force.name..'|'..p.surface.name..'|'..c.x..','..c.y]
   return string.format('chunk (%d,%d) is charted and not in sight now; %s',c.x,c.y,
@@ -2150,7 +2166,7 @@ function handlers.describe(_,a)
         dry_run='an entity: mine nothing; the entity it picked (name, unit_number, position), minable (false: why, the game\'s reason: every elevated rail must be held up by a rail support (reach 11) or a rail ramp\'s elevated end (reach 9) within reach along the track, and the game keeps a rail while another is held up only through it, a support while one is held up only by it: what holds it, the rails held up only through it (they go first, outermost first) and which of those can go now; the minable flag; the live mine refuses with the same), in_reach and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither); the live reply carries heat_loss too when it is not none. With tiles: mine nothing; each tile: tile, restores, seconds, in_reach, distance; items, seconds, skipped (why), natural (natural tiles in the area)',
         radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='moved 0 and timed now; last.moved (how many more of its products you hold) and last.inv when it ends; target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
-      stock={unrequested='true: requester and buffer chests in our logistic networks on the surface (surface= another) holding items they do not request (item= one): per chest what and how many, where, its network, what it asks, and whether trash unrequested sends them to storage; the most first, 32 rows; items: per item the count and chests; 512 requester points a call (page: the next; next says it). Read only',items='optional 1..32 item names instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more). An item that places a vehicle (spidertron, car, tank, locomotive, wagons): total is what is stored (as items); scope_line and placed give our vehicles of it placed, on every surface, as where_is does',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest); holders_left_out: the kinds it left out, with their count and places; when no place passes it the summary says so with those)',quality='default normal; places and position reads count that quality; a planet\'s whole count (surface alone, or item without radius) is of normal quality only: with another quality, surface alone is refused (naming the reads that count it) and the default total is the 128 tiles round you (quality_note)',
+      stock={unrequested='true: requester and buffer chests in our logistic networks on the surface (surface= another) holding items they do not request (item= one): per chest what and how many, where, its network, what it asks, and whether trash unrequested sends them to storage; the most first, 32 rows; items: per item the count and chests; 512 requester points a call (page: the next; next says it). Read only',items='optional 1..32 item names (name@quality: that row at that quality) instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more). An item that places a vehicle (spidertron, car, tank, locomotive, wagons): total is what is stored (as items); scope_line and placed give our vehicles of it placed, on every surface, as where_is does',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest); holders_left_out: the kinds it left out, with their count and places; when no place passes it the summary says so with those)',quality='default normal; places and position reads count that quality; a planet\'s whole count (surface alone, or item without radius) is of normal quality only: with another quality, surface alone is refused (naming the reads that count it) and the default total is the 128 tiles round you (quality_note)',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={spoiling='optional true: a recipe with a spoilable ingredient queues every craft asked; without it only the crafts that finish before the first held stack of it spoils (the hand queue ahead, then each craft at your crafting speed), and spoil says how many; products_spoil: how long each spoilable product lasts fresh once it lands',force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',surface='optional planet or platform name: that surface by remote view, as inspect and supply (d18 batch40 A3)',
@@ -2397,7 +2413,7 @@ function handlers.describe(_,a)
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
   description.actions.inspect.surface='optional planet or surface name: inspect there by remote view (a visible chunk)'
-  description.actions.inspect.name='with area or radius: an entity name or a list of 1..16: those entities there (an entity name given in types counts as one); a queue step and dry_run check the count'  -- (d25 batch214 QZ2)
+  description.actions.inspect.name='with area or radius: an entity name, a list of 1..16, or names joined by commas: those entities there (an entity name given in types counts as one); a queue step and dry_run check the count'  -- (d25 batch214 QZ2)
   description.actions.inspect.note=description.actions.inspect.note..'; circuit (an entity with circuit settings or wires): enable/logistic conditions as text with _met, disabled, logistic_reads (the logistic network the condition reads, whose logistic area holds the entity\'s centre, with its count of the item; none: never met, and the nearest roboport area\'s distance), '..
     'settings and off (switches, modes, signals by the names circuit_set takes), a combinator\'s settings and output, wires per color (red, green, copper; '..
     'a combinator\'s red_input ... green_output, a power switch\'s copper_left/right) with each far end {entity, position, side}, networks {id, signals} (the signals on each now)'
@@ -4324,6 +4340,14 @@ function handlers.nearest_water(p,a)
   return out
 end
 function handlers.stock(p,a)
+  -- (d26 batch249, the batch227 review 1b: quality "all" passed the engine's "Unknown quality name: all")
+  if a.quality~=nil and not (type(a.quality)=='string' and prototypes.quality[a.quality]) then
+    local qs={}
+    for name,q in pairs(prototypes.quality) do if name~='quality-unknown' then qs[#qs+1]={name,q.level or 0} end end
+    table.sort(qs,function(x,y) return x[2]<y[2] end)
+    for i,q in ipairs(qs) do qs[i]=q[1] end
+    error(string.format('quality %s: no quality of that name; quality is one of %s (one a call; a planet\'s whole count is normal only)',tostring(a.quality),table.concat(qs,', ')),0)
+  end
   if a.network~=nil then
     assert(type(a.network)=='number','network is a logistic network number (the networks read lists them)')
     local surface=p.surface
@@ -4439,11 +4463,14 @@ function handlers.stock(p,a)
   assert(type(a.items)=='table' and #a.items>=1 and #a.items<=M.NAMES_MAX,'items: 1..'..M.NAMES_MAX..' item names')
   assert(a.item==nil and a.places==nil and a.network==nil,'items is one row an item: no item, places or network with it')
   local rows,lines={},{}
-  for _,name in ipairs(a.items) do
-    assert(type(name)=='string' and prototypes.item[name],'items: unknown item '..tostring(name))
+  for i,name in ipairs(a.items) do
+    -- (d26 batch249 R11, Sol shift80: items ["asteroid-collector@legendary", ...] refused) name@quality as stock {item}
+    -- takes it, that row at that quality
     local args={}
     for k,v in pairs(a) do if k~='items' then args[k]=v end end
     args.item=name
+    if type(name)=='string' then M.argforms.item_quality('stock',args,true,'items['..i..']') end
+    assert(type(args.item)=='string' and prototypes.item[args.item],'items: unknown item '..tostring(name)..' (an item name, or name@quality)')
     local ok,out=pcall(M.stock_one,p,args)
     if ok then
       local line=out.summary or out.line or out.surface_line or string.format('%s: %s',name,tostring(out.total))
@@ -4647,7 +4674,16 @@ function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
   if a.scope then
-    assert(views[a.scope],'unknown observe scope')
+    -- (d26 batch249 R11: scopes character, research and platform refused with no list) the scopes, and the action of
+    -- that name where there is one
+    if not views[a.scope] then
+      local list={}
+      for v in pairs(views) do list[#list+1]=v end
+      table.sort(list)
+      local sc=type(a.scope)=='string' and a.scope or tostring(a.scope)
+      error(string.format('unknown observe scope "%s"; scope is one of: %s%s',sc,table.concat(list,', '),
+        sc=='platform' and '; observe {platform: NAME} reads a platform' or type(a.scope)=='string' and handlers[a.scope] and '; '..sc..' is an action of its own ('..sc..' {})' or ''),0)
+    end
     return handlers[a.scope](p,a)
   end
   if a.platform then return M.platformview.read(p,a) end
@@ -6061,8 +6097,47 @@ do local function craft_shortfall(p,name,count,notes)
   table.sort(out)
   return #out>0 and table.concat(out,', ') or nil
 end
+-- (d26 batch249 R11, the batch227 review 1c: craft {recipe: "electronic-circuit@rare"} and {recipe:
+-- "artillery-targeting-remote"} read a bare "recipe is unavailable") why: a quality in the name, no such recipe (the
+-- item's own recipes, or the nearest names), or not unlocked (the technologies that unlock it). On a refusal only.
+function M.recipe_refusal(p,name,action)
+  local ok,text=pcall(M.recipe_why,p,name,action)
+  return ok and text or 'recipe is unavailable'
+end
+function M.recipe_why(p,name,action)
+  local head='recipe is unavailable: '
+  if type(name)~='string' then return head..'recipe is a recipe name (a string)' end
+  local base,q=name:match('^([^@]+)@(.+)$')
+  if base and p.force.recipes[base] then
+    return head..string.format('"%s": a recipe name holds no quality; %s',name,action=='craft'
+      and string.format('hand crafting makes normal quality only (recipe "%s")',base) or string.format('configure takes recipe "%s", quality "%s"',base,q))
+  end
+  local r=p.force.recipes[name]
+  if not r then
+    local makers={}
+    if prototypes.item[name] then
+      for rn,rp in pairs(prototypes.recipe) do
+        for _,pr in ipairs(rp.products or {}) do if pr.name==name and #makers<4 then makers[#makers+1]=rn end end
+      end
+      table.sort(makers)
+      return head..string.format('no recipe is named %s; %s',name,#makers>0 and 'the item '..name..' is made by recipe '..table.concat(makers,', ')
+        or 'no recipe makes the item '..name)
+    end
+    -- nearest: names holding it, then names it holds, then a shared first 6 letters at about its length
+    local near,score={},{}
+    for rn in pairs(prototypes.recipe) do
+      local sc=rn:find(name,1,true) and 0 or name:find(rn,1,true) and 1 or (math.abs(#rn-#name)<=3 and rn:sub(1,6)==name:sub(1,6)) and 2 or nil
+      if sc then near[#near+1]=rn; score[rn]=sc*1000+math.abs(#rn-#name) end
+    end
+    table.sort(near,function(x,y) return score[x]<score[y] or (score[x]==score[y] and x<y) end)
+    return head..string.format('no recipe is named %s%s',name,#near>0 and '; nearest names: '..table.concat(near,', ',1,math.min(4,#near)) or '')
+  end
+  local okb,by=pcall(M.gapfacts.unlocked_by,name)
+  if not okb then return head..name..' is not unlocked yet' end
+  return head..string.format('%s is not unlocked yet; %s',name,by and 'research '..table.concat(by,' or ')..' unlocks it' or 'no technology unlocks it')
+end
 local function begin_craft(p,recipe,count,force,notes,shorts,fromq)
-  assert(type(recipe)=='string' and p.force.recipes[recipe] and p.force.recipes[recipe].enabled,'recipe is unavailable')
+  if not (type(recipe)=='string' and p.force.recipes[recipe] and p.force.recipes[recipe].enabled) then error(M.recipe_refusal(p,recipe,'craft'),0) end
   -- Say why a machine-only recipe fails (shake3: Grok's engine-unit read
   -- "not hand-craftable now" with force and the ingredients held).
   local r,categories=p.force.recipes[recipe],p.character and p.character.prototype.crafting_categories
@@ -8020,8 +8095,14 @@ do
     local names
     if a.name~=nil then
       names=type(a.name)=='table' and a.name or {a.name}
+      -- (d26 batch249 R11, Luna: name "underground-belt,fast-underground-belt,express-underground-belt" refused whole)
+      -- names joined by commas are that list
+      if type(a.name)=='string' and a.name:find(',',1,true) then
+        names={}
+        for part in a.name:gmatch('[^,]+') do local n=part:match('^%s*(.-)%s*$'); if n~='' then names[#names+1]=n end end
+      end
       assert(#names>=1 and #names<=M.TYPES_MAX,'name is an entity name or a list of 1..'..M.TYPES_MAX)
-      for _,n in ipairs(names) do assert(type(n)=='string' and prototypes.entity[n],'unknown entity name '..tostring(n)) end
+      for _,n in ipairs(names) do assert(type(n)=='string' and prototypes.entity[n],'unknown entity name '..tostring(n)..' (name: an entity name, a list of them, or names joined by commas)') end
     end
     local as_names
     if types~=nil then
@@ -8508,7 +8589,7 @@ local function configure_check(p,a,e,near)
   local ghost=e.type=='entity-ghost'
   assert((ghost and e.ghost_type or e.type)=='assembling-machine','only assembling machines (and their ghosts) support recipe configuration')
   local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
-  assert(recipe and recipe.enabled,'recipe is unavailable')
+  if not (recipe and recipe.enabled) then error(M.recipe_refusal(p,a.recipe,'configure'),0) end
   assert((ghost and e.ghost_prototype or e.prototype).crafting_categories[recipe.category],'recipe incompatible with machine')
   if ghost then return end
   local current,current_quality=e.get_recipe()
@@ -12999,8 +13080,15 @@ transfer_directed=function(p,a)
     local out=transfer_one(p,a,a.position)
     if a.item and a.count~=nil then out.requested=integer(a.count,1,1,10000,'count') end
     if a.partial then return short_facts(out,a,1) end
-    assert(not out.none_held,out.none_held and string.format('no %s in inventory%s; the target has %d',a.item,
-      prototypes.item[a.item] and prototypes.item[a.item].type=='ammo' and ' or ammo slots' or '',out.target_has))
+    -- (d26 batch249, the batch227 review: Gemini asked for iron-plate@uncommon holding 10 normal) the quality asked, and
+    -- what is held of the item at the others
+    if out.none_held then
+      local q=type(a.quality)=='string' and a.quality or 'normal'
+      local okall,all=pcall(function() return p.get_main_inventory().get_item_count_filtered{name=a.item} end)
+      error(string.format('no %s in inventory%s; the target has %d%s',q=='normal' and a.item or a.item..'@'..q,
+        prototypes.item[a.item] and prototypes.item[a.item].type=='ammo' and ' or ammo slots' or '',out.target_has,
+        okall and type(all)=='number' and all>0 and string.format('; you hold %d %s of other qualities',all,a.item) or ''),0)
+    end
     return M.give_short(out,a,1)
   end
   assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=M.POSITIONS_MAX,'positions requires 1..'..M.POSITIONS_MAX..' entries')
@@ -18107,8 +18195,17 @@ end
 function M.surface_hint(action,args,msg)
   if type(args)~='table' or type(args.surface)~='string' then return msg end
   local takes=M.takes(action,'platform')
-  if not (tostring(msg):find('no surface',1,true) or (takes and tostring(msg):find('surface',1,true))) then return msg end
+  -- (d26 batch249 R11: losses {surface: "Asterion"} read "unknown surface Asterion") that text too; a name that is no
+  -- platform's gets the planets' names
+  local unknown=tostring(msg):find('unknown surface',1,true)
+  if not (unknown or tostring(msg):find('no surface',1,true) or (takes and tostring(msg):find('surface',1,true))) then return msg end
   local s=M.platform_surface_name(args.surface)
+  if unknown and not s and not game.get_surface(args.surface) then
+    local list={}
+    for _,x in pairs(game.surfaces) do if x.planet then list[#list+1]=x.name end end
+    table.sort(list)
+    return string.format('%s; surfaces: %s, or a platform\'s (platform-N, or its name where the action takes platform)',msg,table.concat(list,', '))
+  end
   if not s or s==args.surface then return msg end
   return string.format('%s; %s is a platform (its surface: %s): %s',msg,args.surface,s,
     takes and action..' takes it as platform="'..args.surface..'"' or 'surface="'..s..'" names its surface')
@@ -18753,7 +18850,7 @@ dispatch_request=function(request)
     error('unsupported action'..(#near>0 and '; closest: '..table.concat(near,', ') or '')..'; call describe',0)
   end
   -- equipment too: the vehicle's grid and the armor's open seated, as their GUIs do (operator 09:13).
-  M.seated_ok=(M.read_call(request.action,request.args) or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='spider_kite' or request.action=='shoot'
+  M.seated_ok=(M.read_call(request.action,request.args) or passive[request.action] or (M.talk(request.action) and not M.board.needs_character[request.action]) or M.away(request.args) or request.action=='vehicle' or request.action=='spider_kite' or request.action=='shoot'
     or request.action=='equipment' or (request.action:match('^queue_') and ((request.args or {}).lane=='remote' or M.platform_lane(request.args)))) and true or nil
   local args_ok,args_err=pcall(check_args,request.action,request.args)
   if not args_ok then

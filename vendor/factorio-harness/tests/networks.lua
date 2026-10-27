@@ -70,12 +70,12 @@ local nearb=boiler(4,22,nil,400); boiler(400,400,999,400)
 -- Coal nearby: a chest with 400 and an iron chest with 50, a belt of two tiles with 4 a lane; an inserter feeds one
 -- low boiler from the chest; a chest of iron plates holds no fuel.
 chest_coal=400
-local coalchest=add{type='container',name='wooden-chest',unit_number=801,position={x=40.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='coal' and chest_coal or 0 end} end,
+local coalchest=add{type='container',name='wooden-chest',unit_number=801,position={x=40.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return (type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)=='coal' and chest_coal or 0 end} end,
   get_item_count=function(n) return n=='coal' and chest_coal or 0 end}
-add{type='container',name='iron-chest',unit_number=802,position={x=80.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='coal' and 50 or 0 end} end}
-add{type='container',name='wooden-chest',unit_number=803,position={x=41.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='iron-plate' and 50 or 0 end} end}
+add{type='container',name='iron-chest',unit_number=802,position={x=80.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return (type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)=='coal' and 50 or 0 end} end}
+add{type='container',name='wooden-chest',unit_number=803,position={x=41.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return (type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)=='iron-plate' and 50 or 0 end} end}
 for i=1,2 do add{type='transport-belt',name='transport-belt',position={x=30.5,y=10.5+i},get_max_transport_line_index=function() return 2 end,
-  get_transport_line=function() return {get_item_count=function(n) return n=='coal' and 4 or 0 end} end} end
+  get_transport_line=function() return {get_item_count=function(n) return (type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)=='coal' and 4 or 0 end} end} end
 local lb1_feeder=add{type='inserter',name='burner-inserter',position={x=60,y=14},drop_target=lb1,pickup_target=coalchest}
 -- 30 assemblers on network 7: 3 on low power, 1 without power; 2 stone furnaces (no network).
 for i=1,30 do add{type='assembling-machine',name='assembling-machine-2',position={x=i,y=60},electric_network_id=7,status=i<=3 and 2 or (i==4 and 1 or 0)} end
@@ -390,7 +390,7 @@ do
   for k=1,20 do
     local t=put{type='transport-belt',name='transport-belt',unit_number=2000+k,position={x=-25+k*2,y=36}}
     t.get_max_transport_line_index=function() return 1 end
-    t.get_transport_line=function() return {get_item_count=function(n) return n=='coal' and coal_per_tile or 0 end} end
+    t.get_transport_line=function() return {get_item_count=function(n) return (type(n)=='table' and (n.quality or 'normal')=='normal' and n.name or n)=='coal' and coal_per_tile or 0 end} end
     tiles[k]=t
   end
   for k=1,20 do tiles[k].belt_neighbours={inputs=k>1 and {tiles[k-1]} or {},outputs=k<20 and {tiles[k+1]} or {}} end
@@ -800,3 +800,21 @@ do
   has(N2.lines(f,'nauvis',8)[2],'requesters ask iron-plate 400 (300 short)')
 end
 print('networks BT1 kept prototype figures and requester fallback: ok')
+-- (d26 batch249 R10) fuel sources count every quality (fuel of any quality burns), the qualities named when any is above
+-- normal: 2.0.77 counts a bare name at normal only, so a chest of uncommon coal read none
+do
+  local saved=prototypes; prototypes={quality={normal={level=0},uncommon={level=1}}}; require('qflow').reset()
+  local function count(stacks) return function(q)
+    local name,qual,any
+    if type(q)=='table' then name,qual=q.name,q.quality; any=qual==nil else name,qual=q,'normal' end
+    local n=0; for _,s in ipairs(stacks) do if s[1]==name and (any or s[2]==qual) then n=n+s[3] end end; return n end end
+  local chest={valid=true,name='iron-chest',position={x=3.5,y=0.5},get_inventory=function() return {get_item_count=count({{'coal','uncommon',60},{'coal','normal',5}})} end}
+  local belt={valid=true,position={x=1.5,y=0.5},get_max_transport_line_index=function() return 1 end,
+    get_transport_line=function() return {get_item_count=count({{'coal','uncommon',7}})} end}
+  local s={find_entities_filtered=function(f) if f.type=='transport-belt' or type(f.type)=='table' and f.type[1]=='transport-belt' then return {belt} end return {chest} end}
+  local chests,belts=N.fuel_sources(s,'player',{x=0,y=0},{'coal'})
+  eq(chests[1].text,'iron-chest (4,1) coal 65 (normal 5, uncommon 60)')
+  eq(belts.by.coal,7); eq(belts.tiles,1)
+  prototypes=saved; require('qflow').reset()
+end
+print('networks R10 fuel sources at every quality: ok')

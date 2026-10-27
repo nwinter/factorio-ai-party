@@ -942,7 +942,9 @@ return function(api)
         local name=type(w)=='table' and (w.item or w.name)
         local min=type(w)=='table' and tonumber(w.min) or nil
         if where and type(name)=='string' and min and min>0 then
-          local held=try(function() return where.get_item_count(name) end) or 0
+          -- (d26 batch249 R10) what it holds of the quality asked
+          local q=type(w.quality)=='string' and w.quality or 'normal'
+          local held=try(function() return where.get_item_count(q=='normal' and name or {name=name,quality=q}) end) or 0
           if min>held then jobs[#jobs+1]={kind='deliver',pos=where.position,item=name,count=min-held} end
         end
       end
@@ -1365,23 +1367,30 @@ return function(api)
         end
         if #holes>0 then
           local gname=try(function() return g.ghost_name end) or '?'
-          turrets_need[gname]=(turrets_need[gname] or 0)+1
+          -- (d26 batch249 R10) by the ghost's quality: it waits for that quality's item
+          local gq=try(function() return g.quality.name end) or 'normal'
+          local key=gq=='normal' and gname or gname..'@'..gq
+          turrets_need[key]=(turrets_need[key] or 0)+1
           if #rows<8 then rows[#rows+1]=string.format('%s ghost (%g,%g) on %d empty tile%s %s',gname,g.position.x,g.position.y,#holes,#holes==1 and '' or 's',table.concat(holes,' ',1,math.min(6,#holes))) end
         end
       end
     end
     if #empty==0 then return nil end
-    local held=inv and (try(function() return inv.get_item_count('space-platform-foundation') end) or 0) or 0
+    -- (d26 batch249 R10) foundation of every quality, named when any is above normal
+    local held,held_by=0,nil
+    if inv then held,held_by=qflow.held(inv,'space-platform-foundation') end
     local short=math.max(0,#empty-held)
     local items={}
-    for gname,n in pairs(turrets_need) do
+    for key,n in pairs(turrets_need) do
+      local gname,gq=key:match('^([^@]+)@?(.*)$')
+      gq=gq~='' and gq or 'normal'
       local it=try(function() return prototypes.entity[gname].items_to_place_this[1].name end) or gname
-      local have=inv and (try(function() return inv.get_item_count(it) end) or 0) or 0
-      if have<n then items[#items+1]=string.format('%d %s (hub has %d)',n-have,it,have) end
+      local have=inv and (try(function() return inv.get_item_count{name=it,quality=gq} end) or 0) or 0
+      if have<n then items[#items+1]=string.format('%d %s%s (hub has %d)',n-have,it,gq=='normal' and '' or '@'..gq,have) end
     end
     table.sort(items)
-    return string.format('defense ghosts wait on foundation: %s; their footprints take %d foundation tiles (* marks the %d with a foundation ghost planned), the hub holds %d space-platform-foundation: the least to bring %s%s',
-      table.concat(rows,'; '),#empty,planned_n,held,short>0 and short..' space-platform-foundation' or 'no more foundation',#items>0 and ', '..table.concat(items,', ') or '')
+    return string.format('defense ghosts wait on foundation: %s; their footprints take %d foundation tiles (* marks the %d with a foundation ghost planned), the hub holds %s space-platform-foundation: the least to bring %s%s',
+      table.concat(rows,'; '),#empty,planned_n,qflow.text(held,held_by),short>0 and short..' space-platform-foundation' or 'no more foundation',#items>0 and ', '..table.concat(items,', ') or '')
   end
   function M.blockers(pl)
     local hub=pl.hub
