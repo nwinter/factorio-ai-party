@@ -77,6 +77,30 @@ needs Google permissions that have not been granted yet (see "Permissions" below
   are HEVC 1920x1080 at 30 fps with AAC 48 kHz stereo. The dry run gave 68 uploads, 1,043 GB, about 12 hours at
   200 Mbit/s, and 68 of the 100 uploads a day.
 
+## The public archive (tools/yt_archive.py, batch265; Nick d27 07:05)
+
+Every shift video is unlisted and in one public playlist, "Factorio AI Party", in shift order. Three are public:
+shift 1, shift 63 (the Space Age victory) and the latest shift with a video. When a newer shift's video goes up it
+becomes public and the previous latest goes back to unlisted.
+
+- `python3 tools/yt_archive.py plan [--refresh]`: what `apply` would change and its units (`--refresh` reads
+  YouTube's state first: playlists.list, videos.list per 50 ids, playlistItems.list; 1 unit a call).
+- `apply`: the changes in order. First a description line naming the stream owner is removed while the video is
+  still private (videos.list + videos.update part=snippet). Then the playlist, the public ones, the demotions, the
+  rest unlisted, and playlist inserts at their place in shift order. Each change is written to
+  `video-work/yt-archive-state.json` as it succeeds, so a rerun continues. At the end it writes
+  `site/content/videos.json` (git-ignored) with the videos YouTube shows.
+- `rotate`: uploads the finished shifts with no video, the newest first, then the backlog oldest first. Each goes
+  through `archive_upload.py --privacy private`, then `apply`. The backlog keeps 200 units for each shift end left
+  today, and a shift is skipped when its copy and join would leave the SSD under 35 GB free.
+- `follow`: runs `rotate` after each new `shiftN up` line in the autopilot's log, and once at the start of each
+  Pacific day for the backlog's next share.
+- `quota`: today's ledger, `video-work/yt-quota.json`, per Pacific day (the quota resets at midnight Pacific).
+
+Units: videos.update, playlistItems.insert, playlists.insert and thumbnails.set cost 50; a list call costs 1. An
+upload counts in the uploads bucket (100 a day); `--upload-units 1600` budgets the older figure instead. At 1,600
+units an upload, six shifts a day (1,800 units each with their follow-ups) would not fit in 10,000.
+
 ## Chapters and description
 
 YouTube's rules are that the first chapter is at 0:00, there are at least three, and each is at least 10 s long. The
