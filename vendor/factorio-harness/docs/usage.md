@@ -16147,3 +16147,8 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     - one planned heat pipe on Nauvis: 2.7-3.2 ms.
     The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
     the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
+
+## d26 batch255 (narration lag trace)
+- Host only (tools/stream/vx_review.py; docs/STREAM-NOTES.md "Narration lag: announcements against later mentions"):
+  the event-to-line lag counts the lines whose own cue names the platform; later lines that mention it from other cues
+  are reported apart (mention_n, mention_median_s). Test: tools/stream/test_vx_review.py.
