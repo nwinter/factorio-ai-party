@@ -58,6 +58,7 @@ import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, fro
 import updates as op_updates  # noqa: E402  (site/updates.py: /updates/, the operator's changes and their status)
 import legal  # noqa: E402  (site/legal.py: /privacy/ and /terms/, d23, for the YouTube uploader's OAuth verification)
 import videos_page  # noqa: E402  (site/videos_page.py: /videos/, every shift's video on YouTube and R2; batch265)
+import gameicons  # noqa: E402  (site/gameicons.py: the game's icons, static/game/; Graphics copyright Wube Software)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -86,23 +87,22 @@ _REDACTIONS = [
 ]
 
 
-# Names of the owner, their accounts and personal tools that appear in some studies. The build fails if any reach
-# dist/; site.json's per-study `rewrite` list is where they get replaced.
-_BLOCKED = re.compile(r"\bNick\b|(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
-# Chat and host lines from the owner's own channel account, or that name it, are left off the site.
-_OWNER = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
+# The owner's accounts and personal tools that appear in some studies. The build fails if any reach dist/;
+# site.json's per-study `rewrite` list is where they get replaced. The owner's name may appear (Nick d27 10:10: the
+# domain makes it obvious; the site neither adds it nor strips it).
+_BLOCKED = re.compile(r"(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
 
 
 def load_long(runs_dir):
-    """The long run as the site shows it (build.py and og_card.py): redacted, the owner's lines and the viewer lines
-    deleted on YouTube or in site/hidden-viewers.json left out."""
+    """The long run as the site shows it (build.py and og_card.py): redacted, lines naming an account or personal tool
+    and the viewer lines deleted on YouTube or in site/hidden-viewers.json left out."""
     hidden = moderation.load(runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")  # tests: their own
     return longrun.load(runs_dir, clean, start=CONTENT.get("run_start"), keep=keep_line, agents=list(AGENTS),
                         hide=hidden.hides)
 
 
 def keep_line(text):
-    return not (_BLOCKED.search(text or "") or _OWNER.search(text or ""))
+    return not _BLOCKED.search(text or "")
 
 
 def clean(text):
@@ -532,6 +532,28 @@ def nav_items():
                                                   (GITHUB_URL, "GitHub")]
 
 
+# Under "More" in the nav (batch270, Nick d27 10:10: Polls was the second item and used once; highlighted on the
+# homepage and in the nav when a poll is open instead): the pages a returning viewer looks for less often.
+NAV_MORE = ("/polls/", "/updates/", "/how/", GITHUB_URL)
+
+
+def nav_html(active):
+    """The main nav: the pages people come back for, then "More" (a disclosure; on a phone the Menu button shows the
+    whole list). The More page that is open marks its summary too."""
+    def link(href, label):
+        cur = " aria-current=page" if href == active else ""
+        rel = " rel=noopener" if href.startswith("http") else ""
+        return f'<a href="{href}"{cur}{rel}>{label}</a>'
+    items = nav_items()
+    main = "".join(link(h, l) for h, l in items if h not in NAV_MORE)
+    more = "".join(link(h, l) for h, l in items if h in NAV_MORE)
+    if not more:
+        return main
+    cur = " is-current" if active in NAV_MORE else ""
+    return (main + f'<details class="nav-more{cur}"><summary>More<span class="nav-dot" hidden></span></summary>'
+            f'<div class="nav-more-list">{more}</div></details>')
+
+
 def updates_nav():
     return [("/updates/", "Updates")] if UPDATES and Path(UPDATES).is_file() else []
 
@@ -562,9 +584,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
     site_title = CONFIG.get("site_title", "Factorio AI Party")
     full = site_title if title == site_title else f"{title} · {site_title}"
     description = description or CONFIG.get("description", "")
-    nav = "".join(
-        f'<a href="{href}"{" aria-current=page" if href == active else ""}{" rel=noopener" if href.startswith("http") else ""}>{label}</a>'
-        for href, label in nav_items())
+    nav = nav_html(active)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -578,15 +598,16 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
 <link rel="stylesheet" href="/static/factorio-ui.css">
 <link rel="stylesheet" href="/static/style.css">
-<script>try{{var t=(location.search.match(/[?&]theme=(light|dark)/)||[])[1]||localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+<script>document.documentElement.classList.add('js');try{{var t=(location.search.match(/[?&]theme=(light|dark)/)||[])[1]||localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
 {extra_head}
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-header fx-root">
+<header class="site-header fx-root" data-api="{esc(CONFIG.get("live_api_url") or "")}">
   <div class="wrap header-row">
     <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>{esc(site_title)}</a>
-    <nav class="site-nav" aria-label="Main">{nav}</nav>
+    <button class="nav-toggle fx-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menu<span class="nav-dot" hidden></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="Main">{nav}</nav>
     <button class="theme-toggle fx-btn fx-btn--icon" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
     </button>
@@ -599,6 +620,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
   <div class="wrap">
     <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
     Built from the project's run logs. <a href="/how/">How it was made</a>. <a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub</a>. <a href="/privacy/">Privacy</a>. <a href="/terms/">Terms</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
+    <p class="credit">Factorio is a game by Wube Software. {gameicons.CREDIT}.</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -607,9 +629,39 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 """
 
 
-def stat(label, value, sub=""):
-    return (f'<div class="stat"><div class="stat-value">{esc(str(value))}</div>'
-            f'<div class="stat-label">{esc(label)}</div>{f"<div class=stat-sub>{esc(sub)}</div>" if sub else ""}</div>')
+def stat(label, value, sub="", icon="", sub_html=""):
+    """A number tile. icon: a game icon's <img> beside the number; sub_html: markup under the label (planet icons)."""
+    sub = f"<div class=stat-sub>{esc(sub)}</div>" if sub else (f"<div class=stat-sub>{sub_html}</div>" if sub_html else "")
+    return (f'<div class="stat{" stat-icon" if icon else ""}"><div class="stat-value">{icon}{esc(str(value))}</div>'
+            f'<div class="stat-label">{esc(label)}</div>{sub}</div>')
+
+
+def planet_icons(names, size=22):
+    """Planets as the game's icons with their names for screen readers and on hover."""
+    return "".join(f'<span class="planet-ico" title="{esc(p.capitalize())}">{gameicons.place(p, size, p.capitalize()) or esc(p.capitalize())}</span>'
+                   for p in names)
+
+
+def journey(lr):
+    """The planets in the order the run reached them, with the game's pictures: Nauvis, each planet's first arrival
+    (the score log), then the edge and the Shattered Planet when a platform arrived there."""
+    stops = [("nauvis", None, None, "the start")]
+    for f in lr["firsts"]:
+        k = f["key"]
+        if k.startswith("planet:") or k in ("arrive:solar-system-edge", "arrive:shattered-planet"):
+            name = k.split(":", 1)[1]
+            stops.append((name, f["tick"], f["shift"], f["label"]))
+    if len(stops) < 2:
+        return ""
+    items = []
+    for name, tick, n, label in stops:
+        pic = gameicons.place(name, 88, "", big=True)
+        title = "Solar system edge" if name == "solar-system-edge" else name.replace("-", " ").capitalize()
+        when = (f'game time {esc(longrun.game_time(tick))} · <a href="/runs/long/shift-{n}/">shift {n}</a>'
+                if tick is not None else "the start")
+        items.append(f'<li><span class="j-pic">{pic}</span><b>{esc(title)}</b><span class="muted small">{when}</span></li>')
+    return (f'<section class="journey" aria-labelledby="journey-h"><h2 id="journey-h">The journey</h2>'
+            f'<ol class="journey-list">{"".join(items)}</ol></section>')
 
 
 # ---------------------------------------------------------------- pages
@@ -788,6 +840,7 @@ UPDATES = SITE / "content" / "operator-updates.json"  # /updates/ (site/updates.
 VIDEOS = {}
 # Shifts that play on R2 (site/videos_page.py refresh writes site/content/r2.json after checking each one answers)
 R2 = {}
+VIDEO_STRIP = ""  # the homepage's way into /videos/ (site/videos_page.py home_strip)
 YT_ID = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
 
 
@@ -855,9 +908,10 @@ def video_link(n, t, lead=20):
 
 
 def r2_link(s):
-    """ · a link to the shift in the archive player on R2 (its timeline, captions and chat), or ""."""
+    """ · a link to the shift's player on this site (/videos/shift-N/: the video from R2 with its timeline, the
+    factory's numbers and the chat), or ""."""
     x = R2.get(s["id"]) if s else None
-    return (f' · <a href="{esc(x["player"])}">Archive player</a> (the shift with its timeline, captions and chat)'
+    return (f' · <a href="/videos/shift-{s["n"]}/">Watch it here</a> with its timeline, numbers and chat'
             if x else "")
 
 
@@ -921,14 +975,14 @@ def pack_rate_series(spm_packs, lo=None, hi=None):
 
 def firsts_table(firsts, shift_links=True, filters=False):
     if not firsts:
-        return '<p class="muted">None yet.</p>'
+        return '<p class="muted">None yet.</p>' if shift_links else '<p class="muted">No first of the run in this shift.</p>'
     kinds = [k for k in KIND_LABEL if any(f["kind"] == k for f in firsts)]
     bar = ('<div class="kind-filter" role="group" aria-label="Show milestones of one kind" hidden>'
            '<button type="button" class="fx-btn small" data-kind="" aria-pressed="true">All</button>'
            + "".join(f'<button type="button" class="fx-btn small" data-kind="{k}" aria-pressed="false">{KIND_LABEL[k]}</button>'
                      for k in kinds) + '</div>') if filters and len(kinds) > 1 else ""
     rows = "".join(
-        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row">{esc(f["label"])}{video_link(f["shift"], f["t"], 20 if f["kind"] == "team" else 120)}</th>'
+        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row"><span class="ms">{gameicons.first_icon(f, 24)}<span>{esc(f["label"])}</span></span>{video_link(f["shift"], f["t"], 20 if f["kind"] == "team" else 120)}</th>'
         f'<td class="num">{esc(longrun.game_time(f["tick"]))}</td><td class="num">{esc(_pt(f["t"]))}</td>'
         + (f'<td class="num"><a href="/runs/long/shift-{f["shift"]}/">{f["shift"]}</a></td>' if shift_links else "") + "</tr>"
         for f in firsts)
@@ -972,12 +1026,17 @@ def shift_stats(s):
     return "".join([
         stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
         stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
-        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else "")),
-        stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
-        stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average"),
-        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average"),
-        stat("plates / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["plates"]), "iron, copper, steel, shift average"),
-        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["circuits"]), "green, red, blue, shift average"),
+        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else ""),
+             icon=gameicons.item("lab", 28)),
+        stat("rockets", f'{s["rockets"]:,}', f'+{s["rockets_new"]:,}', icon=gameicons.item("rocket-part", 28)),
+        stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average",
+             icon=gameicons.item("automation-science-pack", 28)),
+        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average",
+             icon=gameicons.item("space-science-pack", 28)),
+        stat("plates / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["plates"]), "iron, copper, steel, shift average",
+             icon=gameicons.item("iron-plate", 28)),
+        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["circuits"]), "green, red, blue, shift average",
+             icon=gameicons.item("electronic-circuit", 28)),
         stat("packs made", f'{s["made_total"]:,}'),
         stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}'),
         stat("viewer messages", s["viewer_lines"])])
@@ -1088,6 +1147,9 @@ def build_shift_page(s, v, lr):
     next_l = f'<a href="{shift_href(done[i + 1])}">Shift {done[i + 1]["n"]} →</a>' if i + 1 < len(done) else ""
     nav = f'<p class="shift-nav">{prev_l}<a href="/runs/long/">All shifts</a>{next_l}</p>'
     now = ""
+    watch = (f'<p class="shift-watch"><a class="fx-btn" href="/videos/shift-{s["n"]}/">▶ Watch shift {s["n"]}</a> '
+             f'<span class="muted small">{"with its timeline, the factory&#x27;s numbers and the chat beside the video" if R2.get(s["id"]) else "on this site"}</span></p>'
+             if v or R2.get(s["id"]) else "")
     video = ""
     if v:
         watch = f"https://www.youtube.com/watch?v={esc(v['id'])}"
@@ -1118,6 +1180,7 @@ def build_shift_page(s, v, lr):
 <h1>Shift {s["n"]}{now}</h1>
 <p class="meta">{esc(_when(s["started"], s["ended"]))} Pacific · game time {esc(s["game0"])} to {esc(s["game1"])}</p>
 {nav}
+{watch}
 <div class="stats">{shift_stats(s)}</div>
 {video}
 <h2>Milestones</h2>
@@ -1125,7 +1188,7 @@ def build_shift_page(s, v, lr):
 {f'<p><a href="/chronicle/#shift-{s["n"]}">This shift in the Chronicle</a>: the agents\' own account, beside the platforms built and lost.</p>' if s["n"] in lr.get("chronicle_shifts", ()) else ""}
 {f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
 {plan_html(s["plan"]) if s.get("plan") else ""}
-{f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
+{f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{gameicons.tech(t["name"], 22)}{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
 {long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
 <div class="two-col shift-cols">
 <section>{packs_bars(s["made"], "Packs made") or '<h2>Packs made</h2><p class="muted">None.</p>'}
@@ -1168,7 +1231,7 @@ def platforms_table(plats, losses=None):
         f'<tr><th scope="row">{esc(p["name"])}</th>'
         f'<td data-l="Built">{esc(_pt(p["built"]))} <span class="muted">({esc(longrun.game_time(p["built_tick"]))}, '
         f'<a href="/runs/long/shift-{p["built_shift"]}/">shift {p["built_shift"]}</a>)</span></td>'
-        f'<td data-l="Stopped at">{esc(", ".join(x.capitalize() for x in p["places"]) or "–")}</td>'
+        f'<td data-l="Stopped at">{planet_icons(p["places"], 20) or "–"}</td>'
         f'<td data-l="Lost">' + (f'{esc(_pt(p["lost"]))} <span class="muted">({esc(longrun.game_time(p["lost_tick"]))}, '
                                  f'<a href="/runs/long/shift-{p["lost_shift"]}/">shift {p["lost_shift"]}</a>)</span>'
                                  + (f'<br><span class="small">{esc(clean(losses[p["name"]]))}</span>' if losses.get(p["name"]) else "")
@@ -1208,7 +1271,7 @@ def key_times(lr, heading='<h2 id="key-times">Key times</h2>'):
         cur = next((s for s in done if s["n"] == f["shift"]), None)
         on_air = before + (_hours(cur["started"], f["t"]) if cur else 0)
         name = lab if key != "planet:" else f["label"].replace(" reached", "")
-        tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{esc(name)}</span>'
+        tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{gameicons.first_icon(f, 24)}{esc(name)}</span>'
                      f'<span class="k-val">{esc(longrun.game_time(f["tick"]))}</span>'
                      f'<span class="k-sub">game time · {on_air:.1f} h on stream · {esc(_pt(f["t"]))}</span></a>')
     return (f'{heading}<div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
@@ -1220,7 +1283,7 @@ def packs_bars(made, title="Science packs made"):
     if not have:
         return ""
     top = max(v for _, _, v in have)
-    items = "".join(f'<li><span class="bar-label">{esc(lab)}</span><span class="bar-track"><span class="bar" '
+    items = "".join(f'<li><span class="bar-label">{gameicons.item(item, 22)}{esc(lab)}</span><span class="bar-track"><span class="bar" '
                     f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
                     f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
     return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
@@ -1232,12 +1295,14 @@ def run_summary(lr):
     done = [s for s in lr["shifts"] if not s.get("empty")]
     last = done[-1]
     planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
-    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]), stat("technologies", last["research"]),
-                     stat("rockets", last["rockets"]), stat("science packs", f'{sum(lr["made"].values()):,}'),
-                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets))])
+    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]),
+                     stat("technologies", last["research"], icon=gameicons.item("lab", 28)),
+                     stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
+                     stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
+                     stat("planets reached", len(planets), sub_html=planet_icons(planets))])
     latest = list(reversed(lr["firsts"][-6:]))
-    items = "".join(f'<li><a href="/runs/long/shift-{f["shift"]}/">{esc(f["label"])}</a>'
-                    f'<span class="muted small">{esc(longrun.game_time(f["tick"]))} · {esc(_pt(f["t"]))} · shift {f["shift"]}</span></li>'
+    items = "".join(f'<li>{gameicons.first_icon(f, 28)}<span><a href="/runs/long/shift-{f["shift"]}/">{esc(f["label"])}</a>'
+                    f'<span class="muted small">{esc(longrun.game_time(f["tick"]))} · {esc(_pt(f["t"]))} · shift {f["shift"]}</span></span></li>'
                     for f in latest)
     return f"""
 <section id="run-summary" class="run-summary" aria-labelledby="sum-h">
@@ -1261,15 +1326,15 @@ def records(done):
         s = (min if low else max)(have, key=lambda x: x[key])
         return fmt(s[key]), s
     out = []
-    for lab, key, fmt, low in [("Most rockets in a shift", "rockets_new", str, False),
-                               ("Most technologies in a shift", "research_new", str, False),
-                               ("Best SPM (shift average)", "spm", fmt_num, False),
-                               ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False),
-                               ("Most viewer messages in a shift", "viewer_lines", str, False),
-                               ("Fewest deaths in a shift", "deaths", str, True)]:
+    for lab, key, fmt, low, ico in [("Most rockets in a shift", "rockets_new", lambda v: f"{v:,}", False, "rocket-part"),
+                                    ("Most technologies in a shift", "research_new", str, False, "lab"),
+                                    ("Best SPM (shift average)", "spm", fmt_num, False, "automation-science-pack"),
+                                    ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False, "space-science-pack"),
+                                    ("Most viewer messages in a shift", "viewer_lines", str, False, ""),
+                                    ("Fewest deaths in a shift", "deaths", str, True, "")]:
         b = best(key, fmt, low)
         if b and (low or b[1][key]):
-            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{esc(b[0])}</span>'
+            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{gameicons.item(ico, 24) if ico else ""}{esc(b[0])}</span>'
                        f'<span class="r-label">{esc(lab)}</span><span class="r-shift">Shift {b[1]["n"]}</span></a>')
     return f'<div class="records">{"".join(out)}</div>' if out else ""
 
@@ -1285,14 +1350,15 @@ def build_long_run(lr):
     stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
                      stat("on stream", f"{on_air:.0f} h"),
                      stat("game time", last["game1"]),
-                     stat("technologies", last["research"], f'last: {last["researching"]}' if last.get("researching") else ""),
-                     stat("rockets", last["rockets"]),
-                     stat("science packs", f'{sum(lr["made"].values()):,}'),
-                     stat("platforms", f'{len(lr["platforms"])} built', f'{len(lost_p)} lost · {len(active)} active'
-                          + (f' ({", ".join(p["name"] for p in active)})' if active else "")),
-                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets)),
+                     stat("technologies", last["research"], f'researching {last["researching"]}' if last.get("researching") else "",
+                          icon=gameicons.item("lab", 28)),
+                     stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
+                     stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
+                     stat("platforms built", len(lr["platforms"]), f'{len(lost_p)} lost · {len(active)} active',
+                          icon=gameicons.item("space-platform-hub", 28)),
+                     stat("planets reached", len(planets), sub_html=planet_icons(planets)),
                      stat("agent deaths", sum(s["deaths"] for s in done)),
-                     stat("viewer messages", sum(s["viewer_lines"] for s in done))])
+                     stat("viewer messages", f'{sum(s["viewer_lines"] for s in done):,}')])
     rows = []
     # Run ids (shakeN) name the test history; without the archive the shift number is enough.
     ids = archive()
@@ -1311,9 +1377,10 @@ def build_long_run(lr):
         firsts = by_shift.get(s["n"], [])
         notable = [f for f in firsts if f["kind"] != "research" or f["key"].startswith("tech:planet") or f["key"] in
                    ("tech:rocket-silo", "tech:space-science-pack", "tech:oil-processing")]
-        ms = "".join(f"<li>{esc(f['label'])}</li>" for f in notable[:5])
+        ms = "".join(f"<li>{gameicons.first_icon(f, 18)}{esc(f['label'])}</li>" for f in notable[:5])
         more = f'<li class="muted"><a href="{shift_href(s)}">+{len(firsts) - len(notable[:5])} more</a></li>' if len(firsts) > len(notable[:5]) else ""
-        video = ' <span class="fx-chip">video</span>' if shift_video(s) else ""
+        video = (f' <a class="fx-chip" href="/videos/shift-{s["n"]}/" title="Watch shift {s["n"]}">▶ video</a>'
+                 if shift_video(s) or R2.get(s["id"]) else "")
         now = ""
         rows.append(
             f'<tr><th scope="row"><a href="{shift_href(s)}">Shift {s["n"]}</a>{rid}{now}{video}</th>'
@@ -1343,6 +1410,7 @@ def build_long_run(lr):
 <p class="meta">One save · started {esc(_pt(first["started"]))} Pacific · game clock paused between shifts</p>
 <nav class="jump" aria-label="On this page"><a href="#key-times">Key times</a><a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a><a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
 <div class="stats stats-compact">{stats}</div>
+{journey(lr)}
 {key_times(lr)}
 <h2 id="records">Records</h2>
 {records(done)}
@@ -1447,7 +1515,7 @@ def build_home(runs, all_worlds):
                   ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
     links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
                     for href, t, d in cards)
-    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + (run_summary(LONG) if LONG else "") + f"""
+    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1", VIDEO_STRIP) + (run_summary(LONG) if LONG else "") + f"""
 <section class="home-more" aria-labelledby="more-h">
   <h2 id="more-h">The project</h2>
   <p class="lede">AI agents playing Factorio together, by the same rules as you: no spawned items, no teleporting,
@@ -1522,6 +1590,12 @@ def build_about_compact():
   <h2 id="team">The team</h2>
   <p class="muted small">Names and colours chosen by each agent.</p>
   <ul class="team">{team}</ul>
+</section>
+<section id="credits">
+  <h2>Credits</h2>
+  <p>Factorio and Factorio: Space Age are games by <a href="https://factorio.com/" rel="noopener">Wube Software</a>.
+  {gameicons.CREDIT}: the game's icons and pictures on this site are used with Wube's permission for a free,
+  non-commercial project.</p>
 </section>
 """
     return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
@@ -1667,7 +1741,14 @@ def build_about(runs, all_worlds):
   briefly and keep playing, and they can vote to mute a viewer. The site chat needs no account: pick any name, no
   links.</p>
 </section>
-{history}"""
+{history}
+<section id="credits">
+  <h2>Credits</h2>
+  <p>Factorio and Factorio: Space Age are games by <a href="https://factorio.com/" rel="noopener">Wube Software</a>.
+  {gameicons.CREDIT}: the game's icons and pictures on this site are used with Wube's permission for a free,
+  non-commercial project.</p>
+</section>
+"""
     return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
 
 
@@ -1756,7 +1837,7 @@ LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/sta
              '<script src="/static/live.js" defer></script>\n<script src="/static/polls.js" defer></script>')
 
 
-def live_app(heading, sample_href):
+def live_app(heading, sample_href, below_player=""):
     """The live show: player, chat, status strip and dashboard (static/live.js fills it from the live API). The
     homepage and /live/ both use it."""
     vid = CONFIG.get("youtube_video_id") or ""
@@ -1818,6 +1899,7 @@ def live_app(heading, sample_href):
   </aside>
 </div>
 <section id="polls" class="polls-card fx-root fx-panel live-panel" data-mode="card" data-api="{esc(api)}" aria-label="Poll" hidden><div class="polls-list"></div></section>
+{below_player}
 <section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p>
 <p id="next-shift" class="live-next" hidden></p></section>
 <div id="offline" class="live-offline"></div>
@@ -1939,10 +2021,21 @@ def main():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
 
+    thumbs, helpers = {}, {"esc": esc, "clean": clean, "keep_line": keep_line, "pt": _pt, "hours": _hours,
+                            "shift_href": shift_href, "video_offset": video_offset, "game_time": longrun.game_time,
+                            "live_banner": live_banner}
     if LONG:
-        global VIDEOS, R2
+        global VIDEOS, R2, VIDEO_STRIP
         VIDEOS = load_videos(args.videos) if args.videos else {}
         R2 = load_r2(args.r2) if args.r2 else {}
+        for s in LONG["shifts"]:  # the shift thumbnails (site/videos_page.py refresh), for /videos/ and the homepage
+            jpg = Path(args.thumbs or "/nonexistent") / f"shift-{s['n']}.jpg"
+            if args.thumbs and not s.get("empty") and jpg.is_file():
+                (out / "static" / "thumbs").mkdir(parents=True, exist_ok=True)
+                shutil.copy(jpg, out / "static" / "thumbs" / jpg.name)
+                thumbs[s["n"]] = jpg.name
+        if VIDEOS or R2:
+            VIDEO_STRIP = videos_page.home_strip(LONG, VIDEOS, R2, thumbs, helpers)
     write("index.html", build_home(runs, all_worlds))
     if LONG:
         LONG["platform_losses"] = chron.platform_losses(LONG, args.runs_dir)  # the platform table's loss details
@@ -1962,20 +2055,6 @@ def main():
                 if card:
                     (out / "static" / "og").mkdir(parents=True, exist_ok=True)
                     shutil.copy(card, out / "static" / "og" / f"shift-{s['n']}.png")
-        if VIDEOS or R2:
-            thumbs = {}
-            for s in LONG["shifts"]:
-                jpg = Path(args.thumbs or "/nonexistent") / f"shift-{s['n']}.jpg"
-                if args.thumbs and not s.get("empty") and jpg.is_file():
-                    (out / "static" / "thumbs").mkdir(parents=True, exist_ok=True)
-                    shutil.copy(jpg, out / "static" / "thumbs" / jpg.name)
-                    thumbs[s["n"]] = jpg.name
-            helpers = {"esc": esc, "clean": clean, "keep_line": keep_line, "pt": _pt, "hours": _hours,
-                       "shift_href": shift_href, "video_offset": video_offset, "game_time": longrun.game_time,
-                       "live_banner": live_banner}
-            write("videos/index.html", page("Every shift on video", videos_page.build_page(LONG, VIDEOS, R2, thumbs, helpers),
-                                            "/videos/", "Every shift of the run on video, in order, with chapters and "
-                                            "the moments to watch.", path="/videos/"))
         team =[k for k in AGENTS if not AGENTS[k].get("earlier")]
         stats = agent_pages.collect(LONG, args.runs_dir, team, args.stats_cache, [agent(k)["name"] for k in AGENTS])
         body, head = agent_pages.build_agents(stats, agent, avatar, esc, CONFIG.get("live_api_url"))
@@ -1987,6 +2066,22 @@ def main():
         body, head = agent_pages.build_timeline(events, agent, avatar, esc, game_time)
         write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
                                           extra_head=head, path="/timeline/"))
+        if VIDEOS or R2:  # /videos/ and a player page per shift with a video (site/videos_page.py)
+            write("videos/index.html", page("Every shift on video", videos_page.build_page(LONG, VIDEOS, R2, thumbs, helpers),
+                                            "/videos/", "Every shift of the run on video, in order, with chapters and "
+                                            "the moments to watch.", path="/videos/"))
+            # the timeline's rows by shift, with their /timeline/#eN anchors, for the player's events card
+            rows = {}
+            for i, (tick, n, kind, text, who) in enumerate(events):
+                rows.setdefault(n, []).append((tick, kind, f"{agent(who)['name']} died" if who else text, i, who))
+            shelf = videos_page.Shelf(LONG, VIDEOS, R2, thumbs, helpers)
+            for n in shelf.watchable:
+                body, head = videos_page.build_watch(n, LONG, VIDEOS, R2, thumbs, helpers, rows.get(n, []), video_embed)
+                write(f"videos/shift-{n}/index.html",
+                      page(f"Shift {n} on video", body, "/videos/", f"Shift {n} of the run on video: "
+                           f"{shelf.title(n) or 'four hours of nine AI agents building one factory'}.", extra_head=head,
+                           path=f"/videos/shift-{n}/", og=(lambda c: (c, f"/static/og/shift-{n}.png") if c else None)(
+                               shift_card(shelf.by_n[n], LONG))).replace("<body>", '<body class="watch">', 1))
         # the run's chronicle: the agents' entries beside the harness's record (viewers Alex and syndesis 22:24)
         body, head = chron.build_page(chron.by_shift(LONG, args.runs_dir, clean, keep_line), agent, avatar, esc, game_time, team)
         write("chronicle/index.html", page("Chronicle", body, "/chronicle/",
@@ -2043,12 +2138,19 @@ def main():
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
     how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve
-    write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
+    lost = [("/", "The live show"), ("/runs/long/", "The run so far"), ("/videos/", "Every shift on video"),
+            ("/search/", "Search"), ("/about/", "About the project")]
+    have = {h for h, _ in nav_items()} | {"/"}
+    write("404.html", page("Not found", '<h1>Not found</h1><p class="lede">That page doesn\'t exist, or it moved.</p><ul class="lost">'
+                           + "".join(f'<li><a href="{h}">{esc(t)}</a></li>' for h, t in lost if h in have) + "</ul>", None))
     for f in (SITE / "static").iterdir():
         if not f.is_file() or f.name.startswith("."):
             continue  # only the site's own files (not editor or tool folders)
         (out / "static").mkdir(exist_ok=True)
         shutil.copy(f, out / "static" / f.name)
+    if gameicons.GAME.is_dir():  # the game's icons (tools/game_icons.py)
+        shutil.copytree(gameicons.GAME, out / "static" / "game", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns(".*", "README.md"))
     # Art kit from the stream overlay: the CSS (font comes from the <link> in page(), not a blocking @import)
     # and the avatar renderer for the live page; one portrait file per agent for the static pages.
     kit = (ART / "factorio-ui.css").read_text()

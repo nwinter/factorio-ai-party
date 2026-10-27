@@ -170,7 +170,10 @@ def main():
         page = (out / "blueprints" / "index.html").read_text()
         names = re.findall(r'<li class="bp-entry" id="([^"]+)"', page)
         assert names == ["astra.tern-inner-freighter.v1", "Sol-defense-island"], names  # newest saved first; a bad name left out
-        assert "34x29 tiles" in page and "214: transport-belt x99, fast-inserter x33" not in page and "214: transport-belt x99 fast-inserter x33" in page, page
+        assert "34x29 tiles" in page and '<span class="bp-n">214</span>' in page, page
+        # the entities as the game's icons with their counts (batch270), the name on hover
+        assert '<span class="bp-ent" title="transport belt"><img class="gi" src="/static/game/item/transport-belt.webp"' in page
+        assert '<span>×99</span>' in page and '<span>×33</span>' in page
         assert "Saved on</dt><dd>platform 3" in page and "2, last 1h02m ago (by sol)" in page and "0, never placed" in page, page
         assert "Four guns &amp; four lasers &lt;central requester&gt;" in page, page
         assert '<textarea id="bp-1" readonly' in page and "0eNqVk91ugzAMhd" in page and 'data-for="bp-1"' in page, page
@@ -197,7 +200,7 @@ def main():
         assert '<ul class="bp-list" id="bp-list">' in page, page
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "Updates", "How it was made", "About", "GitHub"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "About", "Polls", "Updates", "How it was made", "GitHub"], nav
     picture_tests()
     filter_tests()
     print("site blueprints: ok (the library page from the newest shift's copy, strings to copy, linked from the nav; "

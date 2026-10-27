@@ -350,6 +350,17 @@ return function(api)
       record.out={while_asleep=record.while_asleep,slept_s=0,until_tick=record.until_tick,woke='condition',saw=record.met_condition.saw,
         met=#members>1 and record.met_condition.text or nil}
     end
+    -- (d27 batch275 HW) teammates' tells unread before it began, which no sleep has reported: it ends at once on them
+    -- (board.lua unread_for_sleep), as a tell sent during it would; not with wake_on_messages false or a wake filter
+    if not record.woke and record.wake_messages ~= false and not record.wake_filter and api.unread_for_sleep then
+      local list, line = api.unread_for_sleep(p.index)
+      if list then
+        local t = list[#list]
+        record.woke = 'told'; out.already_unread = #list
+        record.out = {while_asleep=record.while_asleep, slept_s=0, until_tick=record.until_tick, woke='told', tell=line,
+          woke_by={kind='tell', seq=t.seq, from=t.from, unread=true}}
+      end
+    end
     if api.wait_info then api.wait_info(out,record); if record.out then api.wait_info(record.out,record) end end
     sleeps()[p.index] = record
     -- What is open for the sleeper (open.lua), once here and once on the reply that reads its wake.

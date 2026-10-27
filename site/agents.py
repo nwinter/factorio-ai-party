@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import agent_stats  # noqa: E402
 # tools/stream/tokens.py (agent_stats puts tools/stream at the end of the path: site/highlights.py stays the site's)
 import tokens as token_logs  # noqa: E402
+import gameicons  # noqa: E402  (site/gameicons.py: the game's icons; Graphics copyright Wube Software)
 
 # (key, label, kind): kind "n" a count, "tiles" a distance, "pct" a share
 CARD = [("shifts", "Shifts", "n"), ("actions", "Game actions", "n"), ("built", "Buildings placed", "n"),
@@ -186,6 +187,11 @@ def records(data):
 
 
 STYLE = """<style>
+.by-shift > summary { cursor: pointer; list-style: none; }
+.by-shift > summary::-webkit-details-marker { display: none; }
+.by-shift > summary h3 { display: inline; }
+.by-shift > summary::after { content: " (show)"; color: var(--accent); font-size: .9rem; }
+.by-shift[open] > summary::after { content: " (hide)"; }
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 16px; }
 .agent-card { padding: 14px 16px; border-top: 4px solid var(--ac); }
 .agent-card .voice { margin: .15rem 0 0; color: var(--muted); font-size: .82rem; }
@@ -227,6 +233,8 @@ table.compare td .tspark span { width: 7px; background: var(--ac, var(--accent))
 table.timeline-table td { font-variant-numeric: tabular-nums; }
 table.timeline-table tr:target > * { background: var(--hl); }
 table.timeline-table td.kind { white-space: nowrap; color: var(--muted); }
+.tl-ev { display: inline-flex; align-items: center; gap: 6px; }
+.tl-shift select { font: inherit; padding: 2px 6px; }
 table.timeline-table tr[data-kind=rocket] td.kind, table.timeline-table tr[data-kind=platform] td.kind,
 table.timeline-table tr[data-kind=planet] td.kind { color: var(--accent); font-weight: 600; }
 </style>"""
@@ -475,8 +483,9 @@ def hauling_table(data, agent, avatar, esc):
     else:
         note = f"Queue and standing order steps counted in shift{'s' if len(game) > 1 else ''} " \
                f"{', '.join(str(n) for n in game)}; other shifts count direct moves only."
-    by_shift = (f'<h3 id="hauling-shifts">Items by shift</h3><div class="table-wrap"><table class="compare hauling-shifts">'
-                f'<thead><tr>{shead}</tr></thead><tbody>{"".join(sbody)}</tbody></table></div>')
+    by_shift = (f'<details class="by-shift"><summary><h3 id="hauling-shifts">Items by shift</h3></summary>'
+                f'<div class="table-wrap"><table class="compare hauling-shifts">'
+                f'<thead><tr>{shead}</tr></thead><tbody>{"".join(sbody)}</tbody></table></div></details>')
     return f'<p class="small muted">{esc(note)}</p>{run}{by_shift}'
 
 
@@ -513,9 +522,10 @@ def machines_section(data, agent, avatar, esc):
         f'<td data-v="{m.get("machines") or 0}">{fmt(m.get("machines"))}</td>'
         f'<td data-v="{m.get("machines_working") or 0}">{fmt(m.get("machines_working"))}</td></tr>'
         for n, m in team)
-    by_shift = (f'<h3 id="machines-shifts">Team by shift</h3><div class="table-wrap"><table class="compare machines-shifts">'
+    by_shift = (f'<details class="by-shift"><summary><h3 id="machines-shifts">Team by shift ({len(team)} shifts)</h3></summary>'
+                f'<div class="table-wrap"><table class="compare machines-shifts">'
                 f'<thead><tr><th scope="col">Shift</th><th scope="col">Items made</th><th scope="col">Moved by machines</th>'
-                f'<th scope="col">Machines</th><th scope="col">Working</th></tr></thead><tbody>{trows}</tbody></table></div>'
+                f'<th scope="col">Machines</th><th scope="col">Working</th></tr></thead><tbody>{trows}</tbody></table></div></details>'
                 ) if trows else ""
     return f'<h2 id="machines">Machines built</h2>{run}{by_shift}'
 
@@ -583,16 +593,21 @@ def build_agents(data, agent, avatar, esc, api=None):
                     f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(agent(k)["name"])}</a>'
                     f'{f" <span class=r-shift>shift {n}</span>" if n else " <span class=r-shift>still alive</span>"}</li>')
     cards = "".join(card(k, data["totals"][k], data, agent, avatar, esc) for k in order)
+    machines, tokens = machines_section(data, agent, avatar, esc), tokens_section(data, agent, avatar, esc)
     body = (f'<h1>Agents</h1><p class="lede">{esc(span)} of the long run. Counted from each agent\'s game requests, '
             f'the director\'s death log and the stream\'s voice log.</p>'
+            # (batch270) the cards with the portraits first after the records; the long tables after them
+            f'<nav class="jump" aria-label="On this page"><a href="#records">Records</a><a href="#cards">The team</a>'
+            f'<a href="#compare">Comparison</a><a href="#makers">By maker</a><a href="#hauling">Hand hauling</a>'
+            f'{"<a href=#machines>Machines built</a>" if machines else ""}{"<a href=#tokens>Tokens</a>" if tokens else ""}'
+            f'<a href="#notes">Definitions</a></nav>'
             f'<h2 id="records">Records</h2><ul class="records">{"".join(recs)}</ul>'
+            # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
+            f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
             f'<h2 id="compare">Comparison</h2>{compare_table(data, agent, avatar, esc)}'
             f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
             f'<h2 id="hauling">Hand hauling</h2>{hauling_table(data, agent, avatar, esc)}'
-            f'{machines_section(data, agent, avatar, esc)}'
-            f'{tokens_section(data, agent, avatar, esc)}'
-            # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
-            f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
+            f'{machines}{tokens}'
             f'<h2 id="notes">Definitions</h2><dl class="kv defs">'
             + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in DEFS) + "</dl>" + SORT_JS)
     return body, STYLE
@@ -634,13 +649,15 @@ DEFS = [("Game actions", "requests that change the game: moves, builds, crafts, 
 # ---------------------------------------------------------------- timeline
 
 def timeline_events(long, runs_dir, keys, techs, data, platforms=None):
-    """[(game tick, shift n, kind, text, agent key or None)] in order: research finished, rockets, platforms built and
-    lost, planets reached (from the score logs), deaths (from the agents' stats). platforms: (rows, covered) from
+    """[(game tick, shift n, kind, text, agent key or None)] in order: research finished, rockets (one row a shift, at
+    its first launch: "Rockets 39 to 1,560"; batch270, there were 8,000 rows), platforms built and lost, planets
+    reached (from the score logs), deaths (from the agents' stats). platforms: (rows, covered) from
     site/chronicle.py timeline_rows (viewer syndesis 22:24): the harness's platform events with where, what destroyed
     a platform and its cargo; the score rows then leave out the platforms those cover in each shift."""
     runs_dir = Path(runs_dir)
     out = []
     p_rows, covered = platforms or ([], {})
+    rocket_at = {}
     for t, n, kind, text in p_rows:
         out.append((t, n, kind, text, None))
     prev = None
@@ -668,7 +685,12 @@ def timeline_events(long, runs_dir, keys, techs, data, platforms=None):
                     out.append((t, s["n"], "research", techs(tech), None))
                 if row["rockets"] > prev["rockets"]:
                     a, b = prev["rockets"] + 1, row["rockets"]
-                    out.append((t, s["n"], "rocket", f"Rocket {a}" if a == b else f"Rockets {a} to {b}", None))
+                    if s["n"] in rocket_at:  # the shift's row: its first launch, to the latest count
+                        i, a0 = rocket_at[s["n"]]
+                        out[i] = (out[i][0], s["n"], "rocket", f"Rockets {a0:,} to {b:,}", None)
+                    else:
+                        rocket_at[s["n"]] = (len(out), a)
+                        out.append((t, s["n"], "rocket", f"Rocket {a:,}" if a == b else f"Rockets {a:,} to {b:,}", None))
                 cov = covered.get(s["id"]) or set()
                 for pf in sorted(row["platforms"] - prev["platforms"]):
                     if ("built", pf) not in cov:
@@ -694,29 +716,59 @@ KIND_ONE = {"research": "Research", "rocket": "Rocket", "platform": "Platform", 
 
 FILTER_JS = """<script>
 document.addEventListener('DOMContentLoaded', function () {
-  var boxes = document.querySelectorAll('.tl-filters input');
+  var boxes = document.querySelectorAll('.tl-filters input'), sel = document.getElementById('tl-shift');
+  var count = document.getElementById('tl-count'), rows = document.querySelectorAll('table.timeline-table tbody tr');
+  // a link to a row (/timeline/#eN, from the search or the player) shows it whatever the filters
+  var target = location.hash && document.getElementById(location.hash.slice(1));
   function apply() {
-    var on = {}; boxes.forEach(function (b) { on[b.value] = b.checked; });
-    document.querySelectorAll('table.timeline-table tbody tr').forEach(function (r) { r.hidden = !on[r.dataset.kind]; });
+    var on = {}, n = sel ? sel.value : '', shown = 0;
+    boxes.forEach(function (b) { on[b.value] = b.checked; });
+    rows.forEach(function (r) { r.hidden = r !== target && (!on[r.dataset.kind] || (n && r.dataset.n !== n)); if (!r.hidden) shown++; });
+    if (count) count.textContent = shown + ' of ' + rows.length + ' events';
   }
-  boxes.forEach(function (b) { b.addEventListener('change', apply); }); apply();
+  boxes.forEach(function (b) { b.addEventListener('change', apply); });
+  if (sel) sel.addEventListener('change', apply);
+  apply();
 });
 </script>"""
 
 
-def build_timeline(events, agent, avatar, esc, game_time):
+KIND_ICON = {"research": ("", "automation"), "rocket": ("", None), "platform": ("", None), "planet": ("Reached Vulcanus", None)}
+
+
+def event_icon(kind, text, name=None):
+    """The game's icon for a timeline row (site/gameicons.py), or ""."""
+    if kind == "research":
+        return gameicons.tech(name or text, 22)
+    if kind == "rocket":
+        return gameicons.item("rocket-part", 22)
+    if kind == "platform":
+        return gameicons.item("space-platform-hub", 22)
+    if kind == "planet":
+        return gameicons.place(text.split(" ")[-1].lower(), 22)
+    return ""
+
+
+def build_timeline(events, agent, avatar, esc, game_time, names=None):
+    """names: {research label: technology name} for the icons (the label alone finds most)."""
     counts = {k: sum(1 for e in events if e[2] == k) for k, _ in KINDS}
-    filters = "".join(f'<label><input type="checkbox" value="{k}" checked> {esc(label)} ({counts[k]})</label>'
-                      for k, label in KINDS)
+    filters = "".join(f'<label><input type="checkbox" value="{k}" checked> {event_icon(k, *KIND_ICON[k]) if k in KIND_ICON else ""}'
+                      f'{esc(label)} ({counts[k]:,})</label>' for k, label in KINDS)
+    shifts = sorted({e[1] for e in events})
+    pick = ('<label class="tl-shift">Shift <select id="tl-shift"><option value="">All</option>'
+            + "".join(f'<option value="{n}">{n}</option>' for n in shifts) + '</select></label>') if len(shifts) > 1 else ""
     rows = []
     for i, (tick, n, kind, text, who) in enumerate(events):
         chip = (f'<a class="chip" href="/agents/#{esc(who)}">{avatar(who, "sm")}{esc(agent(who)["name"])}</a> '
                 if who else "")
         # id e<i>: the site search links an event (search.py uses the same order)
-        rows.append(f'<tr id="e{i}" data-kind="{kind}"><td>{esc(game_time(tick))}</td><td>{n}</td>'
-                    f'<td class="kind">{esc(KIND_ONE[kind])}</td><td>{chip}{esc(text)}</td></tr>')
-    body = (f'<h1>Timeline</h1><p class="lede">The long run\'s events in game time.</p>'
-            f'<fieldset class="tl-filters"><legend class="small muted">Show</legend>{filters}</fieldset>'
+        rows.append(f'<tr id="e{i}" data-kind="{kind}" data-n="{n}"><td class="num">{esc(game_time(tick))}</td>'
+                    f'<td class="num"><a href="/runs/long/shift-{n}/">{n}</a></td><td class="kind">{esc(KIND_ONE[kind])}</td>'
+                    f'<td><span class="tl-ev">{event_icon(kind, text, (names or {}).get(text))}{chip}{esc(text)}</span></td></tr>')
+    body = (f'<h1>Timeline</h1><p class="lede">The long run\'s events in game time: every technology, the rockets of '
+            f'each shift, platforms built and lost, planets reached and the agents\' deaths.</p>'
+            f'<fieldset class="tl-filters"><legend class="small muted">Show</legend>{filters}{pick}</fieldset>'
+            f'<p class="muted small" id="tl-count" aria-live="polite"></p>'
             f'<div class="table-wrap"><table class="timeline-table"><thead><tr><th scope="col">Game time</th>'
             f'<th scope="col">Shift</th><th scope="col">Kind</th><th scope="col">Event</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')

@@ -17448,7 +17448,7 @@ function M.platform_recent(name)
   parts[#parts+1]=r and string.format('its latest launch up: #%d from %s %ds ago (%s)',r.id,surf,math.floor((game.tick-r.tick)/60),r.cargo) or 'no launch to it recorded since the harness was deployed'
   return table.concat(parts,'; ')
 end
-M.waits=require('waits'){state=state,measure=function(index) return M.measure_row(index) end,reason=function(v) return M.measures.reason(v) end,watch_flags=function(index) return M.measures.flags(index) end,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+M.waits=require('waits'){state=state,measure=function(index) return M.measure_row(index) end,reason=function(v) return M.measures.reason(v) end,watch_flags=function(index) return M.measures.flags(index) end,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,unread_for_sleep=function(i) return M.board.unread_for_sleep(i) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
