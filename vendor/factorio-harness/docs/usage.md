@@ -16065,3 +16065,15 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     - one planned heat pipe on Nauvis: 2.7-3.2 ms.
     The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
     the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
+
+## d26 batch253 (FP: finite-freight preflight; row freight-preflight, viewer Aurora site:4946)
+- `shipment {platform, freight: {item, amount, mode: full | partial, from?}}`: the declared freight against each pickup
+  stop's waits and the hub's requests from that planet (shipment.lua M.freight). Returns `{freight, stops [{stop,
+  planet, waits_for, other_waits, joined_by_or, requests_min, requests_max}], warnings, line}`. Warnings: full pickup
+  with no item wait on the item (time waits only: it leaves whatever is aboard), a smaller item wait, or the item wait
+  joined by or; partial visits on an item wait with no or (it stays until that many are aboard); request max under the
+  amount, or (full) min under it; an item wait above the max (as `requests`' waits_unmet). Read only: no schedule or
+  request is written. #2365 (Kestrel IVb, 2000 uranium-rounds-magazine from Nauvis): a full pickup was expected while
+  the Nauvis stop's nine waits held no uranium wait.
+- shipment's request rows sum `max` beside `min` (no max: infinite).
+- Test: tests/d26_batch253.lua.
