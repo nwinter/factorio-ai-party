@@ -137,7 +137,7 @@ def main():
     src = (REPO / "site" / "build.py").read_text()
     pat = re.search(r'_BLOCKED = re\.compile\(r"(.*?)"\)', src).group(1)
     names = re.findall(r"[A-Za-z][A-Za-z-]+", pat.replace("(?i:", "").replace("\\b", " "))
-    assert len(names) >= 8, names
+    assert len(names) >= 7, names  # the account and tool names (the owner's name left the list d27)
     for n in names:
         assert not updates.owner_ok(f"engineer {n}") and not updates.owner_ok(f"engineer {n.lower()}"), n
     for role in ("operator", "engineer batch233", "analyst", "the stream's owner"):

@@ -38,8 +38,17 @@ add up each counter's rises between score rows and count a fall as 0 (a lost pla
 with it, which made the old per-minute chart go below 0); the packs-made rates come from that total. SPM (science per
 minute as players say it) is research units a minute: the labs' use of packs in sets, from the score's `consumed`
 (packs the labs used); every 2.0 technology takes one of each of its packs per unit, so it is the most-used pack that
-does not spoil (the agricultural pack's count runs ahead of the others). Score logs without `consumed` show no SPM. Lines from the owner's channel
-account, or that name it, are left out (`keep_line` in `build.py`).
+does not spoil (the agricultural pack's count runs ahead of the others). Score logs without `consumed` show no SPM. Lines that name one of
+the owner's accounts or personal tools are left out (`keep_line` in `build.py`); the owner's name may appear (Nick
+d27 10:10: the site neither adds it nor strips it).
+
+The game's icons and pictures (Nick d27 10:10: Wube allows free, non-commercial use with the credit "Graphics
+copyright Wube Software", which is in every page's footer and on /about/) are in `site/static/game/`:
+`tech/`, `item/` and `place/` WebP files at 64 px (a planet's starmap picture at 160 px as `NAME-big`) and
+`index.json`, written by `tools/game_icons.py --data DIR` from the game's data folder (prototypes and graphics; the
+box's install, copied with scp) for the technologies, the items the run's score logs name and the planets. Pages
+draw them through `site/gameicons.py` (a technology level without its own picture uses the one below it; a name
+with no icon keeps its text). Rerun the tool when the run reaches something new.
 
 With the long run come `/agents/` and `/timeline/` (`site/agents.py`). `/agents/`: a card per agent (model, maker,
 harness, the stream voice, its numbers across the shifts), records and a sortable comparison table, from
@@ -69,12 +78,19 @@ saves once per 10 game minutes in `runs/RUN/basemap/TICK.json` (`tools/stream/ba
 `/runs/long/timelapse.json` (about 12 KB a snapshot, loaded when the section scrolls into view), a slider with a
 mark per shift and Play. No snapshots, no section.
 
-`/videos/` (`site/videos_page.py`, batch265) lists every shift. Each row has its title, date, length, YouTube link
-(from `site/content/videos.json`, which `tools/yt_archive.py` writes) and its archive player on R2. The page starts
-with the three public videos and the run's firsts as moments to watch, each linking a minute before the moment.
-`python3 site/videos_page.py refresh` runs in `tools/site-refresh.sh` before the build. It writes
-`site/content/r2.json` with only the shifts whose R2 master playlist answers HTTP 200, and the 480x270 thumbnails in
-`site/og/thumbs/`. Both are git-ignored.
+`/videos/` (`site/videos_page.py`, batch265; redesigned in batch270) lists every shift as a card, newest day first:
+its picture with a play button and the video's length, its headline, the run's firsts in it as chips with the game's
+icons, its numbers (technologies, rockets, SPM, platforms built or lost, deaths), chapters, and Watch (this site's
+player), YouTube and the shift's page. Above them the three public videos and the run's firsts as moments to watch,
+each a minute before the moment. Every shift with a video has a player page, `/videos/shift-N/` (`static/player.js`):
+the R2 rendition with hls.js beside its lanes (on air, danger, progress, chat, voices), who is on air and speaking,
+the factory's numbers as of that second with small charts, the shift's rows of `/timeline/` (each a jump into the
+video and a link to its row) and the chat; previous and next shift and back to the list; captions off until CC (the
+hosts' lines are in the picture); a shift only on YouTube gets its embed. The homepage shows the latest four under
+the live player. Video data: `site/content/videos.json` (`tools/yt_archive.py`) and `site/content/r2.json`;
+`python3 site/videos_page.py refresh` runs in `tools/site-refresh.sh` before the build and writes `r2.json` with only
+the shifts whose R2 master playlist answers HTTP 200, and the 480x270 thumbnails in `site/og/thumbs/`. Both are
+git-ignored.
 
 ### Archive switch and run start (`site/content/site.json`)
 
@@ -184,7 +200,7 @@ pass its text through `clean()`.
 Some studies describe the owner's own machine setup (account routes, personal config, tool names). Those passages
 are rewritten at build time by the study's `rewrite` list in `site.json` (regex, replacement pairs). Each pattern
 must still match or the build stops, so an edit to the study can't slip the original text through. The build also
-fails if any name in `_BLOCKED` in `build.py` (the owner's name, account and personal-tool names) reaches `dist/`.
+fails if any name in `_BLOCKED` in `build.py` (the owner's account and personal-tool names) reaches `dist/`.
 
 The only third-party request is the Titillium Web font from Google Fonts, which the art kit uses. Without it the
 pages fall back to Segoe UI or the system font.
