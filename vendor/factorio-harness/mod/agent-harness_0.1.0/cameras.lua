@@ -232,10 +232,135 @@ return function(api)
     assert(p and p.valid, 'player does not exist')
     return p
   end
+  -- What a camera or a panel shows: follow a bot or player, or a fixed position (and surface); zoom and pan speed.
+  local function read_target(args, min_zoom)
+    min_zoom = min_zoom or MIN_ZOOM
+    local cam = {zoom=1, smooth=args.smooth ~= false}
+    if args.follow ~= nil then
+      assert(type(args.follow) == 'string', 'follow must be a bot or player name')
+      assert(locate(args.follow), 'no bot or player named ' .. args.follow)
+      cam.follow = args.follow
+    else
+      local pos = args.position
+      assert(type(pos) == 'table' and type(pos.x) == 'number' and type(pos.y) == 'number', 'follow or position {x,y} is required')
+      cam.position = {x=pos.x, y=pos.y}
+      -- A fixed view on another planet or platform (default: where the director is).
+      if args.surface ~= nil then
+        assert(type(args.surface) == 'string' and game.get_surface(args.surface), 'no surface named ' .. tostring(args.surface))
+        cam.surface = args.surface
+      end
+    end
+    if args.speed ~= nil then
+      assert(type(args.speed) == 'number' and args.speed > 0 and args.speed <= 60, 'speed must be a number of tiles per second, over 0 and at most 60')
+      cam.speed = args.speed
+    end
+    if args.zoom ~= nil then
+      assert(type(args.zoom) == 'number' and args.zoom >= min_zoom and args.zoom <= MAX_ZOOM, string.format('zoom must be %g..%g', min_zoom, MAX_ZOOM))
+      cam.zoom = args.zoom
+    end
+    return cam
+  end
+  -- (d27 batch285 B) Camera panels: GUI camera elements on a director client's screen, each one more view drawn by the
+  -- same client (one simulation; a second camera client took 4-5.5 GB and slowed world n). The stream places a panel
+  -- where OBS crops it out of the on-air picture and captures it into an inset. args.panel (1-4) with args.player the
+  -- host client, args.rect {x, y, w, h} (or [x, y, w, h]) in the host's screen pixels on the first call (kept after);
+  -- follow, position, surface, zoom and speed as for a camera. No map (a camera element draws the world) and no move.
+  local PANEL = 'pog_panel_'
+  -- A panel is a few hundred pixels wide: the zoom that shows what a whole client shows is that much lower.
+  local PANEL_MIN_ZOOM = 0.05
+  local function panels(index)
+    local s = api.state()
+    s.camera_panels = s.camera_panels or {}
+    if index == nil then return s.camera_panels end
+    s.camera_panels[index] = s.camera_panels[index] or {}
+    return s.camera_panels[index]
+  end
+  local function panel_target(p, cam)
+    local target, surface = cam.position, cam.surface and game.get_surface(cam.surface)
+    if cam.follow then target, surface = locate(cam.follow) end
+    return target, surface or p.surface
+  end
+  -- The host's element for panel n, made (or remade) at its rect: style sizes are GUI units (pixels / display scale),
+  -- the location is in pixels.
+  local function panel_element(p, n, cam, surface)
+    local el = p.gui.screen[PANEL .. n]
+    if el and el.valid then return el end
+    local at = cam.at or {x=0, y=0}
+    el = p.gui.screen.add{type='camera', name=PANEL .. n, position={x=at.x, y=at.y}, surface_index=surface.index,
+      zoom=cam.view_zoom or cam.zoom}
+    el.ignored_by_interaction = true
+    local r, scale = cam.rect, p.display_scale or 1
+    el.style.width = math.floor(r.w / scale + 0.5)
+    el.style.height = math.floor(r.h / scale + 0.5)
+    el.location = {x=r.x, y=r.y}
+    return el
+  end
+  local function update_panel(p, n, cam, now)
+    local target, surface = panel_target(p, cam)
+    if not (target and surface) then return end
+    local el = panel_element(p, n, cam, surface)
+    local here = cam.at
+    if el.surface_index ~= surface.index then el.surface_index = surface.index; here = nil end
+    if not here or not cam.smooth or (now and not cam.view_zoom) or distance(here, target) > JUMP then
+      here = {x=target.x, y=target.y}
+    elseif distance(here, target) > 0.02 then
+      local k = EASE
+      if cam.speed then k = math.min(EASE, cam.speed / 60 / distance(here, target)) end
+      here = {x=here.x + (target.x - here.x) * k, y=here.y + (target.y - here.y) * k}
+    end
+    if not (cam.at and cam.at.x == here.x and cam.at.y == here.y) then el.position = here end
+    cam.at = here
+    local z = cam.view_zoom or cam.zoom
+    if cam.smooth and math.abs(z - cam.zoom) > 0.002 then z = z + (cam.zoom - z) * EASE else z = cam.zoom end
+    if z ~= cam.view_zoom then cam.view_zoom = z; el.zoom = z end
+  end
+  local function describe_panel(index, n)
+    local cam = (panels()[index] or {})[n]
+    if not cam then return nil end
+    local p = game.get_player(index)
+    local pos, surface = panel_target(p, cam)
+    return {player=index, panel=n, follow=cam.follow, position=pos, surface=surface and surface.name or nil,
+      zoom=cam.zoom, smooth=cam.smooth, rect=cam.rect}
+  end
+  local function set_panel(p, args)
+    local n = args.panel
+    assert(type(n) == 'number' and n == math.floor(n) and n >= 1 and n <= 4, 'panel must be 1..4')
+    local list = panels(p.index)
+    local old = list[n]
+    if args.release == true then
+      local el = p.gui.screen[PANEL .. n]
+      if el and el.valid then el.destroy() end
+      list[n] = nil
+      return {ok=true, player=p.index, panel=n, released=old ~= nil}
+    end
+    assert(args.map ~= true, 'a panel draws the world: no map camera')
+    assert(args.move == nil, 'a panel takes no move')
+    local r = args.rect or (old and old.rect)
+    if type(r) == 'table' and r[1] ~= nil then r = {x=r[1], y=r[2], w=r[3], h=r[4]} end
+    assert(type(r) == 'table' and type(r.x) == 'number' and type(r.y) == 'number' and type(r.w) == 'number' and
+      type(r.h) == 'number' and r.w > 0 and r.h > 0, 'a panel needs rect {x, y, w, h} in screen pixels on its first call')
+    local cam = read_target(args, PANEL_MIN_ZOOM)
+    cam.rect = {x=r.x, y=r.y, w=r.w, h=r.h}
+    if old then
+      cam.at, cam.view_zoom = old.at, old.view_zoom
+      local o = old.rect
+      if o.x ~= r.x or o.y ~= r.y or o.w ~= r.w or o.h ~= r.h then
+        local el = p.gui.screen[PANEL .. n]
+        if el and el.valid then el.destroy() end  -- made again at the new rect
+      end
+    end
+    list[n] = cam
+    update_panel(p, n, cam, true)
+    return {ok=true, player=p.index, panel=n, camera=describe_panel(p.index, n)}
+  end
   function M.set(args)
     if type(args) == 'string' then args = helpers.json_to_table(args) end
     assert(type(args) == 'table', 'camera takes a JSON object')
     local p = director(args.player)
+    if args.panel ~= nil then
+      assert(not (api.controlled(p.index)), 'player ' .. p.index .. ' is an attached agent, not a director')
+      return set_panel(p, args)
+    end
     local cams = store()
     alerts_back(p)  -- after a map shot (a map shot turns them off again below)
     if args.release == true then
@@ -259,29 +384,7 @@ return function(api)
       alerts_off(p)
       return {ok=true, player=p.index, camera=M.describe(p.index)}
     end
-    local cam = {zoom=1, smooth=args.smooth ~= false}
-    if args.follow ~= nil then
-      assert(type(args.follow) == 'string', 'follow must be a bot or player name')
-      assert(locate(args.follow), 'no bot or player named ' .. args.follow)
-      cam.follow = args.follow
-    else
-      local pos = args.position
-      assert(type(pos) == 'table' and type(pos.x) == 'number' and type(pos.y) == 'number', 'follow or position {x,y} is required')
-      cam.position = {x=pos.x, y=pos.y}
-      -- A fixed view on another planet or platform (default: where the director is).
-      if args.surface ~= nil then
-        assert(type(args.surface) == 'string' and game.get_surface(args.surface), 'no surface named ' .. tostring(args.surface))
-        cam.surface = args.surface
-      end
-    end
-    if args.speed ~= nil then
-      assert(type(args.speed) == 'number' and args.speed > 0 and args.speed <= 60, 'speed must be a number of tiles per second, over 0 and at most 60')
-      cam.speed = args.speed
-    end
-    if args.zoom ~= nil then
-      assert(type(args.zoom) == 'number' and args.zoom >= MIN_ZOOM and args.zoom <= MAX_ZOOM, string.format('zoom must be %g..%g', MIN_ZOOM, MAX_ZOOM))
-      cam.zoom = args.zoom
-    end
+    local cam = read_target(args)
     if args.move ~= nil then
       assert(cam.position, 'a move is a fixed view: position, not follow')
       cam.move = check_move(args.move)
@@ -312,7 +415,12 @@ return function(api)
     local out = {}
     for index in pairs(store()) do out[#out+1] = M.describe(index) end
     table.sort(out, function(a, b) return a.player < b.player end)
-    return {ok=true, tick=game.tick, cameras=out}
+    local pan = {}
+    for index, list in pairs(panels()) do
+      for n in pairs(list) do pan[#pan+1] = describe_panel(index, n) end
+    end
+    table.sort(pan, function(a, b) return a.player < b.player or a.player == b.player and a.panel < b.panel end)
+    return {ok=true, tick=game.tick, cameras=out, panels=pan[1] and pan or nil}
   end
   function M.update(p, cam, now)
     if cam.move then
@@ -364,6 +472,13 @@ return function(api)
         -- A reconnect can bring back a character or reset the view settings.
         if recheck or p.controller_type ~= defines.controllers.spectator then make_director(p) end
         M.update(p, cam, false)
+      end
+    end
+    for index, list in pairs(panels()) do
+      local p = game.get_player(index)
+      if not (p and p.valid) then panels()[index] = nil
+      elseif p.connected then
+        for n, cam in pairs(list) do pcall(update_panel, p, n, cam, false) end
       end
     end
     -- Every connected director, with a camera or not (a camera client before its

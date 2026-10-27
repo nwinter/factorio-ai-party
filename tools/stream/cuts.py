@@ -44,6 +44,16 @@ def crop_for(src_w, src_h, rect_w, rect_h):
     return out
 
 
+def crop_of(src, src_w, src_h, rect_w, rect_h, panels=None):
+    """The crop of capture src in a rect_w x rect_h hole: a camera panel's rect out of the main client's window when src
+    shows one (panels: {source: [x, y, w, h]}, tools/cams.py panel_sources), else crop_for's centre crop."""
+    if panels and src in panels and src_w and src_h:
+        x, y, w, h = panels[src]
+        return {"cropLeft": int(x), "cropRight": max(0, int(src_w - x - w)), "cropTop": int(y),
+                "cropBottom": max(0, int(src_h - y - h))}
+    return crop_for(src_w, src_h, rect_w, rect_h)
+
+
 def view_frac(layout, client=(1920, 1080)):
     """Share of a client's width the on-air hole shows after the crop (the director's fight zoom scales by it)."""
     _, _, w, h = layout["cams"]["main"]
@@ -67,9 +77,12 @@ VERTICAL = {"canvas": "Aitum Vertical", "scene": "stream vertical",  # tools/ver
 
 class Cuts:
     def __init__(self, obs, layout=None, scene="stream", sources=SOURCES, slots=SLOTS, log=print, start=True,
-                 vertical=VERTICAL, trio=None):
+                 vertical=VERTICAL, trio=None, panels=None):
         """vertical: the 9:16 scene in Aitum Vertical's canvas, restacked the same way when it exists (None: off).
-        trio: the holes of the three-tile layout (default layout-3cam.json's cams)."""
+        trio: the holes of the three-tile layout (default layout-3cam.json's cams).
+        panels: {source: [x, y, w, h]} (d27 batch285 B, tools/cams.py POG_CAM_PANELS): a capture of the main client's
+        window that shows one camera panel, cropped to that rect in whatever hole it is in."""
+        self.panels = dict(panels or {})
         self.obs = obs
         self.targets = [{"name": scene, "ref": {"sceneName": scene}, "layout": layout or json.load(open(LAYOUT)),
                          "trio": trio or json.load(open(TRIO))["cams"], "placed": {}}]
@@ -170,7 +183,7 @@ class Cuts:
             role = "trio:" + hole[src] if src in hole else "inset" if src == inset else "main"
             if target["placed"].get(src) != role:
                 # kept as placed only once cropped from a known size: a capture not hooked yet is placed again next time
-                if self.place(target, iid, role):
+                if self.place(target, iid, role, src):
                     target["placed"][src] = role
                 else:
                     target["placed"].pop(src, None)
@@ -188,7 +201,7 @@ class Cuts:
                 cur.remove(iid)
                 cur.insert(idx, iid)
 
-    def place(self, target, iid, role):
+    def place(self, target, iid, role, src=None):
         """The capture into its role's hole, cropped to the hole's shape; True when its source size was known.
         (d24 batch136 PH2) A game capture reads 0 x 0 until it hooks its client: then the hole is set and the crop left as
         it is. Before, crop_for(0, 0, ...) wrote no crop and the role was kept as placed, so a capture that hooked later
@@ -199,8 +212,8 @@ class Cuts:
         known = bool(t.get("sourceWidth") and t.get("sourceHeight"))
         tr = dict(positionX=float(x), positionY=float(y), boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=float(w),
                   boundsHeight=float(h), boundsAlignment=0, alignment=5)
-        if known:
-            tr.update(crop_for(t["sourceWidth"], t["sourceHeight"], w, h))
+        if known:  # a camera panel: its rect out of the main client's window (crop_of)
+            tr.update(crop_of(src, t["sourceWidth"], t["sourceHeight"], w, h, self.panels))
         o.call("SetSceneItemTransform", dict(ref, sceneItemId=iid, sceneItemTransform=tr))
         return known
 
