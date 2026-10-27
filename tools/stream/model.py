@@ -865,7 +865,11 @@ class Model:
         self.tick = 0
         self.tick_t = None  # when self.tick was read (ingest)
         self.paused = False
-        self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6)}
+        # recent: technologies finished while this service runs, newest first; top_done: the most advanced finished
+        # ones the game lists (the extras read), which carry no recency (d27 batch258 RR: seeded into recent at each
+        # start, they aired as "Legendary quality is their newest research", 177 game hours after it finished)
+        self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6), "top_done": []}
+        self.research_ticks = {}  # technology -> {tick, game_time, t}: its finish, from the chronicle (set_research_history)
         self.done_at = {}    # technology -> when this stream saw it finish (unused_unlocks)
         self.research_news = {}  # technology -> {name, label, t}: finished while this stream ran (the research card)
         self.unlocks = {}        # technology -> {unlocks, more} from research.lua's board event
@@ -1330,7 +1334,10 @@ class Model:
             if ag.seen:
                 ag.bump(2, now)
                 ag.last_activity_t = now
-            ag.last_said = dict(said, t=now)
+            # (d27 batch258 RR item 3) the first read after a start is the agent's last line, maybe hours old: it keeps
+            # its time by game tick (the hosts' intent and last_said take lines under 10 minutes old as fresh)
+            old = not ag.seen and isinstance(said.get("tick"), (int, float)) and self.tick
+            ag.last_said = dict(said, t=self.tick_time(said["tick"]) if old else now)
         ag.seen = True
 
     def notice(self, text, now=None):
@@ -1552,17 +1559,15 @@ class Model:
     def _ingest_research(self, r, now):
         done = set(r.get("done") or [])
         res = self.research
+        res["top_done"] = [n for n in r.get("top_done") or [] if isinstance(n, str)]
         if not self.research_started:
-            # seed "recent" with the most advanced technologies already finished (no timestamps known)
-            for name in reversed(r.get("top_done") or []):
-                res["recent"].appendleft({"name": name, "label": tech_label(name), "t": None})
-            self.research_started = True
+            self.research_started = True  # what is done at the first read is not news
         elif len(done - res["done"]) > RESEARCH_BURST:
             pass  # (NP) a short first read: the rest are old, not "Research complete" now
         else:
             for name in sorted(done - res["done"]):
                 self.done_at[name] = now
-                res["recent"].appendleft({"name": name, "label": tech_label(name), "t": now})
+                res["recent"].appendleft({"name": name, "label": tech_label(name), "t": now, "tick": self.tick})
                 self.alert("research", f"Research complete: {tech_label(name)}", key=f"research:{name}", ttl=40)
                 self.research_news[name] = {"name": name, "label": tech_label(name), "t": now}
                 # credit whoever has been busiest lately (labs are fed by the team; this keeps cameras lively)
@@ -1590,10 +1595,51 @@ class Model:
                     not all(n in self.entities_counted for n in names):
                 continue
             t = self.done_at.get(tech)
+            ago = self.research_ago(tech)  # (RR) the chronicle's finish tick for one done before this stream
             out.append((t or 0, {"tech": tech_label(tech), "unlocks": label, "built": 0,
-                                 "researched": f"{round((now - t) / 60)} minutes ago" if t else "before this stream"}))
+                                 "researched": f"{round((now - t) / 60)} minutes ago" if t else
+                                 f"{ago} of game time ago, before this stream" if ago else "before this stream"}))
         out.sort(key=lambda x: x[0])
         return [x for _, x in out][:4]
+
+    def set_research_history(self, chronicle_path):
+        """(RR) Each technology's finish tick from the chronicle files along the run chain (serve.py)."""
+        for name, row in (chronicle_log.research_finished(chronicle_path) if chronicle_path else {}).items():
+            self.note_research_tick(name, row)
+
+    def note_research_tick(self, name, row):
+        if isinstance(row.get("tick"), (int, float)) and row["tick"] > (self.research_ticks.get(name) or {}).get("tick", -1):
+            self.research_ticks[name] = {"tick": int(row["tick"]), "game_time": row.get("game_time"), "t": row.get("t")}
+
+    def research_tick(self, name, seen=None):
+        """When a technology finished, in game ticks: the chronicle's row, else the tick this service saw it done."""
+        got = (self.research_ticks.get(name) or {}).get("tick")
+        return got if got is not None else seen
+
+    def research_ago(self, name, seen=None):
+        """How long ago (game time) a technology finished, for a card ("4 min", "2 h 15 min", "177 h"); None unknown."""
+        tick = self.research_tick(name, seen)
+        if tick is None or not self.tick:
+            return None
+        sec = max(0, (self.tick - tick) / 60)
+        if sec < 60:
+            return "under 1 min"
+        return f"{round(sec / 60)} min" if sec < 90 * 60 else fmt_age(sec) if sec < 10 * 3600 else f"{round(sec / 3600)} h"
+
+    def research_row(self, r):
+        """A technology for the snapshot: {name, label, t (wall time this service saw it finish; only `recent` has
+        it), tick, game_time (its finish), ago_s (game seconds since), ago} where known."""
+        out = {"name": r["name"], "label": r.get("label") or tech_label(r["name"])}
+        if r.get("t"):
+            out["t"] = r["t"]
+        tick = self.research_tick(r["name"], r.get("tick"))
+        if tick is not None:
+            out["tick"] = tick
+            out["game_time"] = fmt_game_time(tick / 60)
+            if self.tick:
+                out["ago_s"] = round(max(0, (self.tick - tick) / 60))
+                out["ago"] = self.research_ago(r["name"], r.get("tick"))
+        return out
 
     def _ingest_board(self, b):
         """`board` read: current items (newest first) and the open unowned request count."""
@@ -2548,6 +2594,8 @@ class Model:
         stream's own loss line (_platform_destroyed) takes them."""
         if chronicle_log.event_key(ev) in self.chronicle_earlier:
             return
+        if ev.get("kind") == "research" and ev.get("name"):
+            self.note_research_tick(ev["name"], {"tick": ev.get("tick"), "game_time": ev.get("game_time"), "t": now})
         row = {k: ev.get(k) for k in ("id", "kind", "tick", "game_time", "line", "platform", "agent", "where", "by",
                                       "cargo", "cargo_items", "hit_by") if ev.get(k) is not None}
         row["t"] = now
@@ -2928,7 +2976,9 @@ class Model:
             # the hosts read a new entry)
             "chronicle": {"entries": list(self.chronicle_entries)[-8:], "events": list(self.chronicle_events)[-12:]},
             "research": {"current": res["current"], "label": research_label(res["current"], res.get("repeating")), "progress": res["progress"],
-                         "done_count": len(res["done"]), "recent": list(res["recent"])[:4],
+                         "done_count": len(res["done"]), "recent": [self.research_row(r) for r in list(res["recent"])[:4]],
+                         "top_done": [self.research_row({"name": n}) for n in [n for n in res["top_done"] if n not in
+                                      {r["name"] for r in res["recent"]}][:4]],
                          "repeating": res.get("repeating") or []},
             "unused_unlocks": self.unused_unlocks(now),
             "research_news": self.research_news_snapshot(now),

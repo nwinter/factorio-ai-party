@@ -657,6 +657,8 @@ def main():
         # each platform's creation and departures along the run chain: a first departure is a maiden flight
         import chronicle_log
         model.set_platform_history(chronicle_log.path_for(os.path.dirname(os.path.abspath(a.run))))
+        # (d27 batch258 RR) when each technology finished: the research card and the hosts say how long ago
+        model.set_research_history(chronicle_log.path_for(os.path.dirname(os.path.abspath(a.run))))
     hub = Hub()
     names = [n for k, cfg in (run.get("agents") or {}).items() for n in (k, (cfg or {}).get("display_name")) if n]
     roster = [(k, (cfg or {}).get("display_name")) for k, cfg in (run.get("agents") or {}).items()]

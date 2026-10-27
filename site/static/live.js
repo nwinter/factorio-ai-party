@@ -909,10 +909,17 @@
       (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '') + allJobsHtml(s, byName) + remindersHtml(s.reminders, byName);
 
     // research
-    var recent = (r.recent || []).map(function (t) { return '<li>' + esc(t.label || label(t.name)) + '</li>'; }).join('');
+    // (d27 batch258 RR, viewer Foobator) "Latest" is only what finished while the stream service runs (a `t`); the most
+    // advanced technologies done before it (top_done) are listed apart with when they finished, in game time
+    function when(t) {
+      return t.game_time ? ' <span class="fx-muted">' + esc(t.ago ? t.ago + ' ago, at ' + t.game_time : 'at ' + t.game_time) + '</span>' : '';
+    }
+    var recent = (r.recent || []).filter(function (t) { return t.t; }).map(function (t) { return '<li>' + esc(t.label || label(t.name)) + when(t) + '</li>'; }).join('');
+    var earlier = (r.top_done || []).map(function (t) { return '<li>' + esc(t.label || label(t.name)) + when(t) + '</li>'; }).join('');
     var research = r.current ? '<div class="live-research-label"><span><strong>' + esc(r.label || label(r.current)) + '</strong></span><span class="live-research-pct">' + pct + '%</span></div>' +
       '<div class="fx-progress fx-progress--research" style="--fx-value:' + pct + '%" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100" aria-label="Research progress"></div>' : '<p class="fx-muted">Nothing being researched.</p>';
-    research += '<p class="small">' + esc(r.done_count || 0) + ' technologies done</p>' + (recent ? '<h4>Latest</h4><ol class="research-recent">' + recent + '</ol>' : '');
+    research += '<p class="small">' + esc(r.done_count || 0) + ' technologies done</p>' + (recent ? '<h4>Latest</h4><ol class="research-recent">' + recent + '</ol>' : '') +
+      (earlier ? '<h4>Most advanced done</h4><p class="small fx-muted">Finished before this stream started (game time).</p><ul class="research-earlier">' + earlier + '</ul>' : '');
     // (d20 batch57 S4, viewer Foobator 18:25: "the current level of ever increasing recurring research") each infinite
     // technology researched at least once, the highest level first: the level reached; the tech tree names the next one
     var reps = Array.isArray(r.repeating) ? r.repeating : [];

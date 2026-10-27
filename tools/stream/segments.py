@@ -454,8 +454,13 @@ class Segments:
     def build_research(self, params, snap, now):
         r = snap.get("research") or {}
         pct = round(r["progress"] * 100) if r.get("progress") is not None else None
+        # (d27 batch258 RR) recent: finished while this stream runs; done_before_this_stream: the most advanced ones
+        # done before it, by how long ago in game time where the chronicle knows (seeded as recent at each start, they
+        # aired as "the newest research")
+        when = lambda x: f"{x['label']} ({x['ago']} ago)" if x.get("ago") else x["label"]
         facts = {"current": r.get("label"), "progress_pct": pct, "done_count": r.get("done_count") or 0,
-                 "recent": [x["label"] for x in (r.get("recent") or [])[:4]]}
+                 "recent": [when(x) for x in (r.get("recent") or [])[:4] if x.get("t")],
+                 "done_before_this_stream": [when(x) for x in (r.get("top_done") or [])[:3]]}
         title = f"Research: {r['label']}" + (f" {pct}%" if pct is not None else "") if r.get("label") else "Research"
         return title, facts, None
 
