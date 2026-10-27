@@ -61,11 +61,11 @@ do
   eq(r.changed,3,'the two poles and the assembler'); eq(orders,3)
   eq(small.marked,true); eq(medium.marked,true); eq(asm.marked,true)
   eq(#r.positions,7,'a row a position, in order')
-  eq(row(r,1).status,'marked'); eq(row(r,1).name,'small-electric-pole'); eq(row(r,1).unit_number,101); eq(row(r,1).x,10.5)
-  eq(row(r,2).status,'marked'); eq(row(r,2).unit_number,102,'the entity\'s unit_number, given or not')
-  eq(row(r,3).status,'marked','any point of its footprint'); eq(row(r,3).name,'assembling-machine-2')
+  eq(row(r,1).status,'marked'); eq(row(r,1).entity,'small-electric-pole 101'); eq(row(r,1).at,'(10.5,10.5)')
+  eq(row(r,2).status,'marked'); eq(row(r,2).entity,'medium-electric-pole 102','the entity\'s unit_number, given or not')
+  eq(row(r,3).status,'marked','any point of its footprint'); eq(row(r,3).entity,'assembling-machine-2 104'); eq(row(r,3).at,'(21.4,21.4)')
   eq(row(r,4).status,'already_marked'); has(r.already_marked,'1 already marked')
-  eq(row(r,5).status,'missing','a stale unit_number edits nothing'); eq(row(r,5).unit_number,999)
+  eq(row(r,5).status,'missing','a stale unit_number edits nothing'); eq(row(r,5).entity,nil)
   has(row(r,5).why,'unit_number 999 is not here (stale)'); eq(row(r,5).here,'small-electric-pole 101')
   eq(row(r,6).status,'missing'); eq(row(r,6).why,nil); eq(row(r,6).here,nil)
   eq(row(r,7).status,'marked'); eq(row(r,7).same_as,2,'the same pole as position 2, marked once')
@@ -89,8 +89,8 @@ do
   r=H.deconstruct(p,{positions={{x=16.5,y=10.5},{x=22.5,y=10.5},{x=18.5,y=10.5}}})
   eq(row(r,1).status,'refused'); has(row(r,1).why,'another force\'s (enemy)'); eq(theirs.marked,false)
   has(r.not_marked[1],'small-electric-pole 105 (16.5,10.5): another force\'s (enemy)')
-  eq(row(r,2).status,'marked'); eq(row(r,2).name,'small-electric-pole'); eq(onore.marked,true); eq(ore.marked,false); eq(item.marked,false)
-  eq(row(r,3).status,'marked','a neutral rock, as an area marks it'); eq(rock.marked,true)
+  eq(row(r,2).status,'marked'); eq(row(r,2).entity,'small-electric-pole 106'); eq(onore.marked,true); eq(ore.marked,false); eq(item.marked,false)
+  eq(row(r,3).status,'marked','a neutral rock, as an area marks it'); eq(row(r,3).entity,'big-rock'); eq(rock.marked,true)
   -- not minable now: refused with the game's reason
   small.minable=false
   r=H.deconstruct(p,{positions={{x=10.5,y=10.5}}})
@@ -127,6 +127,10 @@ do
   r=H.cancel_deconstruction(p,{positions={{x=12.5,y=10.5,unit_number=102}}})
   eq(row(r,1).status,'cancelled'); eq(medium.marked,false)
 
+  -- the row's point as text: integers, halves, negatives and other fractions
+  r=H.deconstruct(p,{positions={{x=-3,y=-0.5},{x=-12.5,y=7},{x=0.25,y=1e6-1}}})
+  eq(row(r,1).at,'(-3,-0.5)'); eq(row(r,2).at,'(-12.5,7)'); eq(row(r,3).at,'(0.25,999999)')
+
   -- never an area: both, neither, tiles and items on the ground are refused; at most 64 points
   fails(function() H.deconstruct(p,{positions={{x=1,y=1}},area={left_top={x=0,y=0},right_bottom={x=2,y=2}}}) end,'deconstruct takes area or positions (one of them)')
   fails(function() H.deconstruct(p,{}) end,'deconstruct takes area or positions (one of them)')
@@ -138,7 +142,13 @@ do
   fails(function() H.deconstruct(p,{positions=many}) end,'positions: 1..64')
   fails(function() H.deconstruct(p,{positions={}}) end,'positions: 1..64')
   fails(function() H.deconstruct(p,{positions={{x=1,y=1,unit_number='101'}}}) end,'positions[1].unit_number must be a number')
-  eq(H.limits.DECON_POSITIONS,64)
+  eq(H.limits.DECON_POSITIONS,64); eq(H.limits.DECON_DRY,16)
+  -- a dry run takes 16 points; marks and cancels 64
+  local seventeen={}
+  for i=1,17 do seventeen[i]={x=40.5+i,y=40.5} end
+  fails(function() H.deconstruct(p,{positions=seventeen,dry_run=true}) end,'positions: a dry run takes 1..16 (marks and cancels 1..64)')
+  eq(#H.deconstruct(p,{positions=seventeen}).positions,17)
+  eq(#H.deconstruct(p,{positions=seventeen,cancel=true}).positions,17)
   game,defines,storage=nil,nil,nil
 end
 print('d27_batch268 DP deconstruct positions: ok')

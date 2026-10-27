@@ -149,6 +149,8 @@ return function(api)
   local MAX_REASON = 200
   -- (d25 batch208 QU1) list lengths a call takes, also a queue step's check (H.limits, runtime.lua step_lengths)
   local SAVE_POSITIONS, FILTER_NAMES, DECON_POSITIONS = 256, 32, 64
+  -- (d27 batch268) a positions dry run's points: its robot_dispatch read took 9.6-10.5 ms for 32 on the private copy
+  local DECON_DRY = 16
   local function retired_line(e)
     local r = e and e.retired
     if not r then return nil end
@@ -1096,18 +1098,27 @@ return function(api)
   -- one entity at each point, as a target names it (its centre or a tile of its footprint), through the same filters,
   -- refusals and reply as an area; unit_number, when given, must be that entity's or nothing is done there.
   local NOT_AT={resource=true,['item-entity']=true,['item-request-proxy']=true,['deconstructible-tile-proxy']=true,['tile-ghost']=true,character=true}
-  local function at_positions(p,a,filters)
+  local function at_positions(p,a,filters,dry)
     local q=a.positions
     assert(type(q)=='table' and #q>=1 and #q<=DECON_POSITIONS,'positions: 1..'..DECON_POSITIONS..' {x, y, unit_number?}')
+    assert(not dry or #q<=DECON_DRY,'positions: a dry run takes 1..'..DECON_DRY..' (marks and cancels 1..'..DECON_POSITIONS..')')
     local list,owner,rows,first={},{},{},{}
     local own=api.own_platform and api.own_platform(p)
     local function named(e) return e.unit_number and string.format('%s %d',e.name,e.unit_number) or e.name end
+    -- a row's numbers as text, as numtext.lua writes them (integers and halves by %d: the game's JSON writing of a
+    -- number cost about 30 us on the private copy, 192 of them most of a 64-row reply)
+    local function num(x)
+      local i=math.floor(x)
+      if x==i and x>-1e15 and x<1e15 then return string.format('%d',x) end
+      if x-i==0.5 and x>-1e15 and x<1e15 then return x<0 and string.format('-%d.5',-x-0.5) or string.format('%d.5',i) end
+      return x..''
+    end
     local function list_of(es) local t={} for i=1,math.min(4,#es) do t[i]=named(es[i]) end return table.concat(t,', ')..(#es>4 and ', ...' or '') end
     for k,v in ipairs(q) do
       local pos=api.position(v)
       local unit=type(v)=='table' and v.unit_number or nil
       if unit~=nil and type(unit)~='number' then error('positions['..k..'].unit_number must be a number',0) end
-      local row={x=pos.x,y=pos.y,unit_number=unit}
+      local row={at='('..num(pos.x)..','..num(pos.y)..')'}
       rows[k]=row
       if not (own or p.force.is_chunk_charted(p.surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)})) then
         row.status,row.why='refused','an uncharted chunk'
@@ -1124,7 +1135,7 @@ return function(api)
         if #match==1 then
           local e=match[1]
           local key=e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)
-          row.name,row.unit_number=e.name,e.unit_number
+          row.entity=named(e)
           if first[key] then row.same_as=first[key]
           else first[key]=k; list[#list+1]=e; owner[#list]=k end
         elseif #match>1 then
@@ -1188,7 +1199,7 @@ return function(api)
       deconstruct_tiles(p,a,box,cancel,out,dry); return out
     end
     local list,owner,rows
-    if at then list,owner,rows=at_positions(p,a,filters) else list=candidates(p,box) end
+    if at then list,owner,rows=at_positions(p,a,filters,dry) else list=candidates(p,box) end
     -- (DP) what was done to each position's entity, by its index in list: {status, why}; the first note stands
     local st=at and {} or nil
     local function note(i,s,why) if st and not st[i] then st[i]={s,why} end end
@@ -1939,6 +1950,6 @@ return function(api)
   end
   -- (d25 batch208 QU1) the lengths above, for a queue step's check (runtime.lua step_lengths); not an action
   H.limits={NAME=MAX_NAME,DESCRIPTION=MAX_DESCRIPTION,STRING=MAX_STRING,REASON=MAX_REASON,NOTE=MAX_NOTE,
-    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,DECON_POSITIONS=DECON_POSITIONS,entry_name=entry_name,LIBRARY=MAX_LIBRARY}
+    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,DECON_POSITIONS=DECON_POSITIONS,DECON_DRY=DECON_DRY,entry_name=entry_name,LIBRARY=MAX_LIBRARY}
   return H
 end
