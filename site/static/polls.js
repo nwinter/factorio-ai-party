@@ -128,6 +128,7 @@
       return;
     }
     var open = data.open || [], closed = data.closed || [];
+    if (window.PogNav) window.PogNav.polls(open.length);  // the nav's "open" (site.js)
     if (mode === 'card') {
       // d17 08:30: the card shows open polls only. With none open: one line for a poll closed in the past day
       // (its winner, a link to the past polls), else nothing.

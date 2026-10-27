@@ -532,6 +532,28 @@ def nav_items():
                                                   (GITHUB_URL, "GitHub")]
 
 
+# Under "More" in the nav (batch270, Nick d27 10:10: Polls was the second item and used once; highlighted on the
+# homepage and in the nav when a poll is open instead): the pages a returning viewer looks for less often.
+NAV_MORE = ("/polls/", "/updates/", "/how/", GITHUB_URL)
+
+
+def nav_html(active):
+    """The main nav: the pages people come back for, then "More" (a disclosure; on a phone the Menu button shows the
+    whole list). The More page that is open marks its summary too."""
+    def link(href, label):
+        cur = " aria-current=page" if href == active else ""
+        rel = " rel=noopener" if href.startswith("http") else ""
+        return f'<a href="{href}"{cur}{rel}>{label}</a>'
+    items = nav_items()
+    main = "".join(link(h, l) for h, l in items if h not in NAV_MORE)
+    more = "".join(link(h, l) for h, l in items if h in NAV_MORE)
+    if not more:
+        return main
+    cur = " is-current" if active in NAV_MORE else ""
+    return (main + f'<details class="nav-more{cur}"><summary>More<span class="nav-dot" hidden></span></summary>'
+            f'<div class="nav-more-list">{more}</div></details>')
+
+
 def updates_nav():
     return [("/updates/", "Updates")] if UPDATES and Path(UPDATES).is_file() else []
 
@@ -562,9 +584,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
     site_title = CONFIG.get("site_title", "Factorio AI Party")
     full = site_title if title == site_title else f"{title} · {site_title}"
     description = description or CONFIG.get("description", "")
-    nav = "".join(
-        f'<a href="{href}"{" aria-current=page" if href == active else ""}{" rel=noopener" if href.startswith("http") else ""}>{label}</a>'
-        for href, label in nav_items())
+    nav = nav_html(active)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -578,15 +598,16 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
 <link rel="stylesheet" href="/static/factorio-ui.css">
 <link rel="stylesheet" href="/static/style.css">
-<script>try{{var t=(location.search.match(/[?&]theme=(light|dark)/)||[])[1]||localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+<script>document.documentElement.classList.add('js');try{{var t=(location.search.match(/[?&]theme=(light|dark)/)||[])[1]||localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
 {extra_head}
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-header fx-root">
+<header class="site-header fx-root" data-api="{esc(CONFIG.get("live_api_url") or "")}">
   <div class="wrap header-row">
     <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>{esc(site_title)}</a>
-    <nav class="site-nav" aria-label="Main">{nav}</nav>
+    <button class="nav-toggle fx-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menu<span class="nav-dot" hidden></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="Main">{nav}</nav>
     <button class="theme-toggle fx-btn fx-btn--icon" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
     </button>
@@ -1833,7 +1854,8 @@ def live_app(heading, sample_href, below_player=""):
     </div>
   </aside>
 </div>
-{below_player}<section id="polls" class="polls-card fx-root fx-panel live-panel" data-mode="card" data-api="{esc(api)}" aria-label="Poll" hidden><div class="polls-list"></div></section>
+<section id="polls" class="polls-card fx-root fx-panel live-panel" data-mode="card" data-api="{esc(api)}" aria-label="Poll" hidden><div class="polls-list"></div></section>
+{below_player}
 <section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p>
 <p id="next-shift" class="live-next" hidden></p></section>
 <div id="offline" class="live-offline"></div>
