@@ -13084,7 +13084,7 @@ transfer_directed=function(p,a)
     -- what is held of the item at the others
     if out.none_held then
       local q=type(a.quality)=='string' and a.quality or 'normal'
-      local okall,all=pcall(function() return p.get_main_inventory().get_item_count{name=a.item} end)
+      local okall,all=pcall(function() return p.get_main_inventory().get_item_count_filtered{name=a.item} end)
       error(string.format('no %s in inventory%s; the target has %d%s',q=='normal' and a.item or a.item..'@'..q,
         prototypes.item[a.item] and prototypes.item[a.item].type=='ammo' and ' or ammo slots' or '',out.target_has,
         okall and type(all)=='number' and all>0 and string.format('; you hold %d %s of other qualities',all,a.item) or ''),0)

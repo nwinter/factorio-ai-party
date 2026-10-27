@@ -1758,7 +1758,10 @@ return function(api)
     local rows, miss = {}, {}
     for item, n in pairs(need) do
       local name, q = item:match('^([^@]+)@(.+)$')
-      local held = inv and try(function() return inv.get_item_count(any_q[item] and {name=item} or q and {name=name, quality=q} or item) end) or 0
+      local held = inv and try(function()
+        if any_q[item] then return inv.get_item_count_filtered{name=item} end
+        return inv.get_item_count(q and {name=name, quality=q} or item)
+      end) or 0
       rows[#rows+1] = {item=item, need=n, hub=held, missing=math.max(0, n - held)}
       if n > held then miss[#miss+1] = string.format('%s %d (hub holds %d)', item, n - held, held) end
     end

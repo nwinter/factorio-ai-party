@@ -2304,7 +2304,7 @@ return function(api)
       for i = 1, e.valid and (try(function() return e.get_max_transport_line_index() end) or 0) or 0 do
         local line = try(function() return e.get_transport_line(i) end)
         for _, name in ipairs(names) do
-          local n = line and try(function() return line.get_item_count{name=name} end) or 0
+          local n = line and qflow.line(line, name) or 0
           if n > 0 then belts.by[name] = (belts.by[name] or 0) + n; held = held + n end
         end
       end

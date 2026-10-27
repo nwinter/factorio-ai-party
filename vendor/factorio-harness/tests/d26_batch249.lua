@@ -22,6 +22,14 @@ local function counter(stacks)
   end
 end
 
+-- An inventory as 2.0.77 has it: get_item_count as counter, get_item_count_filtered{name} every quality.
+local function inventory(stacks,extra)
+  local c=counter(stacks)
+  local t={object_name='LuaInventory',get_item_count=c,get_item_count_filtered=function(f) return c({name=f.name}) end}
+  for k,v in pairs(extra or {}) do t[k]=v end
+  return t
+end
+
 -- R10: qflow.held counts every quality and names them when any is above normal.
 do
   prototypes={quality=QUALITIES}
@@ -35,6 +43,11 @@ do
   eq((Q.held({get_item_count=counter({})},'iron-plate')),0)
   local acc=Q.add(Q.add({},5,nil),3,{{quality='rare',n=3}})
   eq(Q.label(Q.by_of(acc)),'normal 5, rare 3'); eq(Q.by_of(Q.add({},4,nil)),nil)
+  -- an inventory: its filtered count (every quality); its get_item_count{name} is not read
+  local inv=inventory({{'iron-plate','uncommon',600}}); inv.get_item_count=function(q) assert(type(q)~='table' or q.quality~=nil,'{name} alone on an inventory'); return counter({{'iron-plate','uncommon',600}})(q) end
+  n,by=Q.held(inv,'iron-plate'); eq(n,600); eq(Q.label(by),'uncommon 600')
+  -- a transport line: summed over {name, quality} pairs
+  eq(Q.line({get_item_count=counter({{'coal','normal',3},{'coal','epic',2}})},'coal'),5)
   prototypes=nil; Q.reset()
 end
 print('d26_batch249 R10 qflow.held: ok')
@@ -113,7 +126,7 @@ do
   local tile={valid=true,type='tile-ghost',ghost_name='space-platform-foundation',position={x=2.5,y=2.5},unit_number=72,
     ghost_prototype={items_to_place_this={{name='space-platform-foundation',count=1}}}}
   local hub={valid=true,name='space-platform-hub',type='space-platform-hub',position={x=0,y=0},bounding_box=box(0,0,2)}
-  local inv={get_item_count=counter({{'gun-turret','normal',5},{'gun-turret','rare',1},{'space-platform-foundation','uncommon',40}})}
+  local inv=inventory({{'gun-turret','normal',5},{'gun-turret','rare',1},{'space-platform-foundation','uncommon',40}})
   hub.get_inventory=function() return inv end
   local surface={get_tile=function() return {name='space-platform-foundation'} end,find_tiles_filtered=function() return {} end,
     find_entities_filtered=function(f)
@@ -148,7 +161,7 @@ do
   local g={valid=true,ghost_name='gun-turret',ghost_type='ammo-turret',position={x=1,y=1},quality={name='rare'},
     bounding_box={left_top={x=0,y=0},right_bottom={x=2,y=2}}}
   local pl={surface={get_tile=function(x,y) return {name=(x==0 and y==0) and 'empty-space' or 'space-platform-foundation'} end}}
-  local inv={get_item_count=counter({{'space-platform-foundation','rare',30},{'gun-turret','normal',4}})}
+  local inv=inventory({{'space-platform-foundation','rare',30},{'gun-turret','normal',4}})
   local line=SP.defense_waits(pl,{g},{},inv)
   has(line,'the hub holds 30 (rare 30) space-platform-foundation: the least to bring no more foundation')
   has(line,', 1 gun-turret@rare (hub has 0)')
@@ -162,8 +175,8 @@ do
   game={tick=60,get_surface=function() return nil end}
   defines={inventory={chest=1}}
   local R=dofile('mod/agent-harness_0.1.0/reservations.lua')({})
-  local inv={get_item_count=counter({{'iron-plate','rare',4},{'iron-plate','normal',100}}),count_empty_stacks=function() return 3 end,
-    get_insertable_count=function() return 100 end}
+  local inv=inventory({{'iron-plate','rare',4},{'iron-plate','normal',100}},{count_empty_stacks=function() return 3 end,
+    get_insertable_count=function() return 100 end})
   local chest={valid=true,type='logistic-container',name='requester-chest',position={x=5.5,y=5.5},unit_number=9,get_inventory=function() return inv end}
   local pt={owner=chest,filters={{name='iron-plate',quality='rare',count=10}},targeted_items_deliver={}}
   local ln={valid=true,network_id=4,requester_points={pt},provider_points={},storage_points={},logistic_robots={}}

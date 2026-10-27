@@ -123,6 +123,7 @@ do
   local inv={get_item_count=function(q)
       if type(q)=='table' then return q.name=='iron-plate' and (q.quality==nil or q.quality=='normal') and 10 or 0 end
       return q=='iron-plate' and 10 or 0 end,
+    get_item_count_filtered=function(f) return f.name=='iron-plate' and 10 or 0 end,
     get_contents=function() return {{name='iron-plate',quality='normal',count=10}} end,find_item_stack=function() return nil end,remove=function() return 0 end}
   p.get_main_inventory=function() return inv end
   p.get_item_count=inv.get_item_count

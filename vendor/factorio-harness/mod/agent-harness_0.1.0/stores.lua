@@ -22,7 +22,6 @@ return function(api)
   -- (d26 batch249 R10) every quality, and by (qflow.held) when any of it is above normal; the bare name counted normal
   -- only. (d19 batch44 A1) no closure a call: 1987 holders a Nauvis call
   local function count_in(e, item) return qflow.held(e, item) end
-  local ANY = {name=nil}
   -- How many of a spoilable item in an entity's inventories spoil within `ticks` (d17 batch12 C7, Grok: yumako mash read
   -- 559, then 167 minutes later; a total read as a reserve): each stack's own spoil tick.
   M.SOON_TICKS, M.SOON_PLACES = 7200, 400
@@ -97,8 +96,7 @@ return function(api)
         for _, r in ipairs(ok and robots or {}) do
           if read >= M.MAX_ROBOTS then capped = true; break end
           read = read + 1
-          ANY.name = item
-          local okc, k = pcall(function() return r.get_inventory(cargo).get_item_count(ANY) end)
+          local okc, k = pcall(function() return (qflow.held(r.get_inventory(cargo), item)) end)
           if okc and type(k) == 'number' and k > 0 then n = n + k; carrying = carrying + 1 end
         end
       end
@@ -278,8 +276,7 @@ return function(api)
         -- what of it sits in the module slots (a machine, beacon, drill or lab)
         local mods = (kind == 'machine' or kind == 'beacon' or kind == 'drill' or kind == 'lab') and
           (pcall(function() return e.get_module_inventory() end) and e.get_module_inventory()) or nil
-        ANY.name = item
-        local in_mods = mods and select(2, pcall(function() return mods.get_item_count(ANY) end)) or 0
+        local in_mods = mods and (qflow.held(mods, item)) or 0
         if type(in_mods) ~= 'number' then in_mods = 0 end
         places[#places+1] = {kind=kind, entity=e.name, position={x=e.position.x, y=e.position.y}, count=n, qualities=qflow.label(by),
           in_module_slots=in_mods > 0 and in_mods or nil, distance=dist(e.position)}
@@ -302,8 +299,7 @@ return function(api)
     for _, e in ipairs(idx and {} or surface.find_entities_filtered{force=p.force, type=BELTS}) do
       local ok, lines = pcall(function() return e.get_max_transport_line_index() end)
       for i = 1, ok and lines or 0 do
-        ANY.name = item
-        local ok2, n = pcall(function() return e.get_transport_line(i).get_item_count(ANY) end)
+        local ok2, n = pcall(function() return qflow.line(e.get_transport_line(i), item) end)
         if ok2 and type(n) == 'number' then on_belts = on_belts + n end
       end
     end

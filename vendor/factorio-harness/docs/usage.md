@@ -16075,9 +16075,10 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - R6: `chat_ack` (and every board, players and votes call but plan_run, which fills the body queue) works seated.
 - R9: `platform_plan {support: {positions}}` takes what of ours covers the tile at each position, or touches that tile
   corner (a find by the tile's area); a footprint tile of a 3x3 machine was refused "nothing of ours at".
-- R10: 2.0.77 counts `get_item_count(name)` at normal quality only and `{name}` at every quality. Where the reply means
-  all of it, the count is now of every quality, with the qualities named when any is above normal (`200 (normal 150,
-  rare 50)`):
+- R10: 2.0.77 counts `get_item_count(name)` at normal quality only. Where the reply means all of it, the count is now
+  of every quality (qflow.held: an entity's `get_item_count{name}`, an inventory's `get_item_count_filtered{name}`, the
+  forms measured on a copy; a belt line summed over `{name, quality}`), with the qualities named when any is above
+  normal (`200 (normal 150, rare 50)`):
   - supply's "fired as ammo ... turrets hold N"; "in orbit on PLATFORM N" (supply and labs);
   - floor phases' hub foundation stock ("the hub holds no space-platform-foundation (of any quality)");
   - a platform's defense ghosts waiting on foundation (the hub's foundation; a turret ghost's item at the ghost's

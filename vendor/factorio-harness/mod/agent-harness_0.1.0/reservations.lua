@@ -399,7 +399,7 @@ return function(api)
             -- (d26 batch249 R10) what it holds of the quality it asks for (none named: every quality)
             local q = f.quality
             if q ~= nil and type(q) ~= 'string' then q = try(function() return q.name end) end
-            local held = inv and try(function() return inv.get_item_count(q and {name=name, quality=q} or {name=name}) end) or 0
+            local held = inv and try(function() if q then return inv.get_item_count{name=name, quality=q} end return inv.get_item_count_filtered{name=name} end) or 0
             local short = math.max(0, f.count - held - (coming[name] or 0))
             if short > 0 or (coming[name] or 0) > 0 then
               local full = room(e, name) == false
