@@ -357,6 +357,12 @@
   inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
   hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
   minute.
+  `shipment {platform, freight: {item, amount, mode, from?}}`: a set amount declared as `full` pickup (it waits at the
+  stop until amount is aboard) or `partial` visits (it takes what is there and comes back), against each pickup stop
+  (`from`, else the stops its requests import item from): its item wait, its other waits, or-joined, and the hub's
+  requests from there (min, max summed). Warnings name the stop and the numbers: a full pickup with no item wait or a
+  smaller one, or one joined by or; partial visits on a lone item wait; a request max or (full) min under amount; an
+  item wait above the max. It changes no schedule or request.
   `shipment {ledger: true, surface?, direction?, platform?, item?, silo?, from_tick?, to_tick?, limit?}`: the pod ledger, every
   cargo pod sent up (a rocket) or down (a hub's pod for landing pad requests or hub trash, and drops) on a planet, the
   last 1000 a planet, kept after the platform leaves: pod unit number, platform and its stop, sent and landed ticks,

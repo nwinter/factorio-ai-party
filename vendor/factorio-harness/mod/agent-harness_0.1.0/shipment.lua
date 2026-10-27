@@ -94,8 +94,8 @@ return function(api)
             local cmp = CMP[type(v) == 'table' and type(v.comparator) == 'string' and v.comparator or '='] or '='
             local key = name .. '@' .. q .. (cmp ~= '=' and cmp or '')
             out[from] = out[from] or {}
-            local r = out[from][key] or {item=name, quality=q, comparator=cmp, min=0, custom_minimum=f.minimum_delivery_count}
-            r.min = r.min + f.min
+            local r = out[from][key] or {item=name, quality=q, comparator=cmp, min=0, max=0, custom_minimum=f.minimum_delivery_count}
+            r.min, r.max = r.min + f.min, r.max + (f.max or math.huge)
             out[from][key] = r
           end
         end
@@ -720,7 +720,50 @@ return function(api)
     out.note = 'the platform\'s gate, the requests from that planet, its silos and landing pads as the game shows them now; a silo with automatic requests sends a rocket once it holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload); read only'
     return out
   end
+  -- (d26 batch253 FP, #2365) freight: a set amount, full pickup or partial visits, against each pickup stop's waits
+  -- and the hub's requests from there; read only
+  function M.freight(p, a)
+    local f = a.freight
+    assert(type(f) == 'table' and type(f.item) == 'string' and (f.mode == 'full' or f.mode == 'partial') and type(a.platform) == 'string', 'freight is {item, amount, mode: full or partial, from?} with platform')
+    local name, q = f.item:match('^([^@]+)@?(.*)$')
+    q = q ~= '' and q or 'normal'
+    assert(prototypes.item[name], 'freight.item is an item name')
+    local n = api.integer(f.amount, nil, 1, 2^31, 'freight.amount')
+    local pl
+    for _, x in pairs(p.force.platforms) do if x.valid and x.name == a.platform then pl = x end end
+    assert(pl, 'no platform of ours named ' .. a.platform)
+    local reqs, warn, stops = requests(pl), {}, {}
+    local function W(...) warn[#warn+1] = string.format(...) end
+    for i, r in ipairs((pget(pl, 'schedule') or {}).records or {}) do
+      local m = r.station and (reqs[r.station] or {})[name .. '@' .. q]
+      if r.station and (f.from == r.station or not f.from and m) then
+        local need, other, ors = nil, {}, false
+        for k, w in ipairs(r.wait_conditions or {}) do
+          ors = ors or k > 1 and w.compare_type == 'or'
+          local c = type(w.condition) == 'table' and w.condition or {}
+          local sig, cmp = c.first_signal or {}, CMP[c.comparator or '<']
+          if w.type == 'item_count' and sig.name == name and qname(sig.quality) == q and c.constant and not c.second_signal and cmp:find('^[>=]') then
+            need = math.max(need or 0, c.constant + (cmp == '>' and 1 or 0))
+          else other[#other+1] = w.ticks and string.format('%s %g s', w.type, w.ticks / 60) or w.type end
+        end
+        local at, ow = 'stop ' .. i .. ' (' .. r.station .. ')', table.concat(other, ', ')
+        stops[#stops+1] = {stop=i, planet=r.station, waits_for=need, other_waits=ow, joined_by_or=ors or nil, requests_min=m and m.min, requests_max=m and m.max < math.huge and m.max or nil}
+        if f.mode == 'full' and not need then W('%s: no wait on %s (waits: %s): it leaves then, whatever is aboard', at, f.item, ow)
+        elseif f.mode == 'full' and need < n then W('%s: waits for %d %s, under the %d declared', at, need, f.item, n)
+        elseif f.mode == 'full' and ors then W('%s: its %s wait is joined by or (%s): that can send it on first', at, f.item, ow)
+        elseif f.mode == 'partial' and need and not ors then W('%s: partial visits, but it waits for %d %s with no or: it stays until they are aboard', at, need, f.item) end
+        if not m then W('%s: the hub requests no %s from there', at, f.item)
+        elseif m.max < n then W('%s: its requests keep at most %d %s, under the %d declared', at, m.max, f.item, n)
+        elseif f.mode == 'full' and m.min < n then W('%s: its requests ask %d %s, under the %d declared', at, m.min, f.item, n) end
+        if m and need and m.max < need then W('%s: it waits for %d %s; its requests keep at most %d', at, need, f.item, m.max) end
+      end
+    end
+    if #stops == 0 then W('no stop at %s, nor one its requests import %s from', tostring(f.from), f.item) end
+    return {freight={item=f.item, amount=n, mode=f.mode, from=f.from}, stops=stops, warnings=warn[1] and warn or nil,
+      line=string.format('%s %s %d %s: %d stops, %d mismatches', pl.name, f.mode, n, f.item, #stops, #warn)}
+  end
   function M.read(p, a)
+    if a.freight ~= nil then return M.freight(p, a) end
     -- (d20 batch62 X2, Sol #1529) surface is the ledger's: without ledger it is refused, never dropped
     assert(a.surface == nil or a.ledger ~= nil, 'surface goes with ledger: true (that surface\'s launches and drops)')
     -- (d18 batch36 D3) the surface's cargo ledger: launches up and drops down in time order (ledger.lua)
@@ -860,6 +903,7 @@ return function(api)
   M.schema = {shipment = {ledger='optional true, alone or with surface (default yours): the surface\'s cargo ledger in time order: each rocket launched up (up #id: the silo, the cargo, the platform and what its hub asked of the planet then, by automatic requests or by whom) and each drop down (drop #id: from which platform, the items, what the pad asked for them then, where the pod landed, what the pad held and what robots took from it in the 20 s after, the verdict); lines, note (what it cannot know). And pods (d24 batch179): the pod ledger, every cargo pod sent up (a rocket) or down (a hub\'s pod for landing pad requests or hub trash, and drops) on that planet, the last 1000 a planet, kept after the platform leaves, oldest first: [{id, pod (unit number), direction, silo (a rocket\'s: {unit_number, surface, position} as the game names it; unknown: sent before the ledger kept silos; not read), platform, stop, surface, sent_tick, landed_tick, destination (landing pad (x,y), hub, ground (x,y)), items (name@quality*count), by (a drop\'s sender), pad_free_before and pad_free_after (main and trash slots), ground (items the full pad did not take, on the ground beside it), line}], pods_total, pods_line; filters direction, platform, item, from_tick, to_tick, limit (lines only without them)', surface='with ledger: a surface name (default yours; with platform and no surface: every planet)',
     direction='with ledger: up or down', silo='with ledger: a silo\'s unit number: the rockets it launched (pods[].silo gives each rocket\'s silo {unit_number, surface, position}, or unknown for rockets sent before the ledger kept silos)', from_tick='with ledger: journeys sent at or after this tick', to_tick='with ledger: journeys sent at or before this tick', limit='with ledger: 1..128 (default 32): the newest that many journeys',
     platform='a platform name (with ledger: its journeys)', item='or an item name: that item on every platform (with ledger: journeys carrying it; name@quality for one quality)',
+    freight='optional {item (name@quality), amount, mode: full (waits until amount is aboard) or partial (takes what is there, comes back), from (planet; default the stops it imports item from)}, with platform: {freight, stops [{stop, planet, waits_for, other_waits, joined_by_or, requests_min, requests_max}], warnings, line}; changes nothing',
     ready='optional true, with platform: the freight readiness read for the planet it stops at (else the stop it flies to): its gate (a circuit wait with what the hub\'s wires read), the requests from there not delivered, each silo there (its rocket, automatic requests and why it waits: what the rocket holds against the payload it waits for, the request flag; the circuit and logistic conditions of inserters and loaders within 8 tiles with what each reads now), the landing pads there (free slots each; per item the hub would send down: count, slots, what the pads can take of it now). Returns {lines, planet, silos, down, pad_free_slots}',
     returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling), led by a silo that can fill it, then each silo of ours on that planet: can fill it or why not, its network, what that network can give, the payload a rocket waits for, its rocket parts (a stop not reached: by the networks\' stock now); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where); the platform\'s last 2 drops into a pad there with what the pad showed after (landed, then taken by construction robots: how many, the first orders they flew to; as the drops read\'s pad line); cargo conflict lines: an item the hub holds that the landing pads of two or more coming stops ask, each stop in the order reached with what its pads ask and hold, what goes down there and what is left aboard after it. rows [{platform, planet, item, direction up|down, state, ...; up rows: quality, comparator, custom_minimum, hub (what the hub holds of the qualities the request takes), picked_silo {name, position} (a silo whose automatic requests fill a rocket for this platform now), silos [{name, position, auto, network, can_give, payload, parts, flag, can_fill}] (a waiting request)}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
   return M

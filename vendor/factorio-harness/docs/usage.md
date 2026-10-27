@@ -16192,6 +16192,17 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   tick 900) is no longer kept: dropped at tick 1000 (1m00s ago), cleared by sol` from the dropped records (the last 4
   a platform); `none set with that number (the last set is #12)`; or set and since dropped before those kept.
 - Tests: tests/d26_batch248.lua (each part fails on main), tests/labs.lua and tests/scienceline.lua updated.
+## d26 batch253 (FP: finite-freight preflight; row freight-preflight, viewer Aurora site:4946)
+- `shipment {platform, freight: {item, amount, mode: full | partial, from?}}`: the declared freight against each pickup
+  stop's waits and the hub's requests from that planet (shipment.lua M.freight). Returns `{freight, stops [{stop,
+  planet, waits_for, other_waits, joined_by_or, requests_min, requests_max}], warnings, line}`. Warnings: full pickup
+  with no item wait on the item (time waits only: it leaves whatever is aboard), a smaller item wait, or the item wait
+  joined by or; partial visits on an item wait with no or (it stays until that many are aboard); request max under the
+  amount, or (full) min under it; an item wait above the max (as `requests`' waits_unmet). Read only: no schedule or
+  request is written. #2365 (Kestrel IVb, 2000 uranium-rounds-magazine from Nauvis): a full pickup was expected while
+  the Nauvis stop's nine waits held no uranium wait.
+- shipment's request rows sum `max` beside `min` (no max: infinite).
+- Test: tests/d26_batch253.lua.
 ## d26 batch255 (narration lag trace)
 - Host only (tools/stream/vx_review.py; docs/STREAM-NOTES.md "Narration lag: announcements against later mentions"):
   the event-to-line lag counts the lines whose own cue names the platform; later lines that mention it from other cues
