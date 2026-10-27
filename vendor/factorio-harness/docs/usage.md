@@ -16488,6 +16488,6 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     the legs (6.5-9.0 ms of a 64-point dry run in the first set). That is engine work, not number writing. An area dry
     run over the same block took 11.8-15.1 ms (handler). So a dry run takes 16 points.
   - Not measured on world n.
-- Bundle (compacted): 6,258,869 bytes on main, 6,263,524 with this branch (limit 8,388,608).
+- Bundle (compacted): 6,258,869 bytes on main, 6,263,977 with this branch (limit 8,388,608).
 - Docs: agent/ref/building.md (`deconstruct`). Test: tests/d27_batch268.lua (fails on main: deconstruct takes only
   area).
