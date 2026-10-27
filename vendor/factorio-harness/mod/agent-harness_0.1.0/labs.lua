@@ -8,7 +8,7 @@ return function(api)
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
   M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
     position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
-    returns='research line (name, progress, eta at the working labs, or stalled: every lab of ours on every surface, research_labs per surface) and per lab group (the area\'s): labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network there and what it holds of it, and the chest its robots would take it from'}}
+    returns='research line (name, progress, eta at the working labs: every lab of ours, research_labs per surface) and per lab group of the area: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network there and what it holds of it, and the chest its robots would take it from'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
     if s >= 3600 then return string.format('%dh%02dm', math.floor(s / 3600), math.floor(s / 60) % 60) end
@@ -74,11 +74,7 @@ return function(api)
     else net = '; no logistic network there' end
     return string.format('lab %s lacks %s: %s%s', at(lab.position), name, #feeds > 0 and 'fed by ' .. table.concat(feeds, ' | ') or 'no inserter drops into it', net)
   end
-  -- (d26 batch248 R1, Luna shift70 22:19: "stalled: no lab is working", "0 in 0 groups" from the labs within 96 tiles of
-  -- her character while research went 95.2 -> 95.4% in 8 s; 25 of 79 labs reads in shifts 69-76 said so) every lab of
-  -- ours works on the current research wherever it stands: the research line counts them all, on every surface (the
-  -- census pass's lists; a find on a surface it has not walked). {working, total, speed (the working labs' researching
-  -- speeds summed), rows [{surface, n, working}]}.
+  -- (d26 batch248 R1) every lab of ours, every surface, for the research line: {working, total, speed, rows}
   local speeds = {}
   local function lab_speed(e)
     local v = speeds[e.name]
@@ -99,10 +95,9 @@ return function(api)
         out.working, out.total = out.working + w, out.total + #list
       end
     end
-    table.sort(out.rows, function(x, y) return x.n > y.n or (x.n == y.n and x.surface < y.surface) end)
+    table.sort(out.rows, function(x, y) return x.n > y.n end)
     return out
   end
-  M.all_labs = all_labs
   function M.view(p, a)
     local force, surface = p.force, p.surface
     if a.surface~=nil then
@@ -242,9 +237,8 @@ return function(api)
       else research = research .. ', stalled: no lab is working' end
       local per = {}
       for _, r in ipairs(every.rows) do per[#per+1] = string.format('%s %d of %d', r.surface, r.working, r.n) end
-      research_labs = string.format('%d of %d labs of ours working, every surface (%s): research counts them all; the groups below are %s',
-        every.working, every.total, #per > 0 and table.concat(per, ', ') or 'none built',
-        centre and string.format('the labs within %d tiles of %s on %s', radius, at(centre), surface.name) or 'the visible labs on ' .. surface.name)
+      research_labs = string.format('%d of %d labs of ours working, every surface (%s); groups: %s', every.working, every.total,
+        table.concat(per, ', '), centre and string.format('within %d tiles of %s on %s', radius, at(centre), surface.name) or surface.name)
     end
     local why = {}
     for _, r in ipairs(why_rows) do why[#why+1] = try(function() return lab_why(r.lab, r.name, surface, force, seen) end) end

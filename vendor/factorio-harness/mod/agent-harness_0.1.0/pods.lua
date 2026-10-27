@@ -4,17 +4,13 @@
 -- ascending on the platform's surface (about 50 tiles from the hub), then descending on the planet's surface (from
 -- about 260 tiles off toward the pad), parking at the pad, and is gone once its cargo is delivered: about 20 s in
 -- all. It is the same entity on both surfaces, so a pod seen while it rises is followed down by reference. Once a
--- second the surfaces of the platforms stopped at a space location, or that left one in the last 11 s, are read for
--- pods (0.12 ms for world n's two platforms on the copy, against 7.6 ms for one search of all Nauvis); a pod is
--- forgotten when it is gone or after two minutes. Read only: what a player sees of pods in the sky.
+-- second the surfaces of the platforms stopped at a space location are read for pods (0.12 ms for world n's two
+-- platforms on the copy, against 7.6 ms for one search of all Nauvis); a pod is forgotten when it is gone or after
+-- two minutes. Read only: what a player sees of pods in the sky.
 return function(api)
   local M = {}
   local SAMPLE, KEEP, MAX = 60, 7200, 256
-  -- (d26 batch248 R2, shift80: Weaver's pod with 1,000 agricultural science packs was sent 68 ticks after Weaver left
-  -- Nauvis and landed in pad (52,54); Luna's delivery_watch #528 from Weaver read "received 0", and 12 of the save's
-  -- 2,355 down pods, all sent after their platform left, were in no freight receipt) a platform is read for AFTER ticks
-  -- after it was last seen at a space location too: freight.lua looks for a stop's pods for 600 ticks after it ends
-  -- (POD_AFTER), and a stop's end is seen up to a sample late.
+  -- (d26 batch248 R2) and AFTER ticks after its last stop: freight's POD_AFTER, seen a sample late
   local AFTER = 600 + SAMPLE
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
@@ -68,20 +64,12 @@ return function(api)
     for _, f in pairs(game.forces) do
       local seen = left[f.index]
       for _, pl in pairs(try(function() return f.platforms end) or {}) do
-        local s
-        if pl.valid then
-          local at = try(function() return pl.space_location end)
-          local i = try(function() return pl.index end)
-          if at then
-            s = try(function() return pl.surface end)
-            if i then
-              if not seen then seen = {}; left[f.index] = seen end
-              seen[i] = tick
-            end
-          elseif i and seen and seen[i] then
-            -- on its way: read while a pod sent just after the stop may still leave the platform
-            if tick - seen[i] <= AFTER then s = try(function() return pl.surface end) else seen[i] = nil end
-          end
+        local s, i = nil, pl.valid and f.index and pl.index
+        if pl.valid and pl.space_location then
+          s = pl.surface
+          if i then seen = seen or {}; left[f.index] = seen; seen[i] = tick end
+        elseif i and seen and seen[i] then
+          if tick - seen[i] <= AFTER then s = pl.surface else seen[i] = nil end
         end
         if s and s.valid then
           for _, pod in pairs(s.find_entities_filtered{type='cargo-pod'}) do

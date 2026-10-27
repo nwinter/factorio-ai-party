@@ -83,7 +83,7 @@ return function(api)
     local inv_name = INPUT[e.type]
     if not inv_name then return nil end
     local recipe = try(function() return e.get_recipe() end) or (e.type == 'furnace' and try(function() return e.previous_recipe end))
-    -- (d26 batch248 R3) a furnace's {name=LuaRecipePrototype (userdata), quality}: the prototype
+    -- (d26 batch248 R3) a furnace's {name=prototype (userdata), quality}
     if type(recipe) == 'table' and recipe.name then
       local n = recipe.name
       if type(n) ~= 'string' then n = try(function() return n.name end) end

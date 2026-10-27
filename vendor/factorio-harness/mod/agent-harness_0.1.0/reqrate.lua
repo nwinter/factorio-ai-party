@@ -10,7 +10,7 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
-  -- (d26 batch248 R3) a table or a prototype (userdata: an idle furnace's previous_recipe.name) gives its name
+  -- (d26 batch248 R3) a name, or a table or prototype (userdata)
   local function name_of(v) if v == nil or type(v) == 'string' then return v end return try(function() return v.name end) end
   -- What the chest asks: {item = min}, summed over its active sections.
   local function asks(e)

@@ -111,7 +111,7 @@ return function(api)
   local function recipe_of(e)
     local r = try(function() return e.get_recipe() end)
     if not r and e.type == 'furnace' then
-      -- (d26 batch248 R3) previous_recipe is {name=LuaRecipePrototype (userdata), quality}: the prototype
+      -- (d26 batch248 R3) {name=prototype (userdata), quality}
       local prev = try(function() return e.previous_recipe end)
       local n = prev and prev.name
       if n and type(n) ~= 'string' then n = try(function() return n.name end) end

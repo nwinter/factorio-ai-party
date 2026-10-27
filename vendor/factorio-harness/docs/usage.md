@@ -16073,8 +16073,7 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   `observe {scope: labs}`) builds the `research` line (working count, ETA, `stalled`) from every lab of ours on every
   surface: the census pass's lab lists (a find on a surface it has not walked), the ETA at the working labs'
   researching speeds summed (a biolab 2, a lab 1) times the force's lab speed bonus. `research_labs`: `26 of 30 labs of
-  ours working, every surface (nauvis 26 of 26, gleba 0 of 4): research counts them all; the groups below are the labs
-  within 96 tiles of (15,-147) on nauvis`. `labs` names the area: `7 in 2 groups within 96 tiles of (15,-147)`.
+  ours working, every surface (nauvis 26 of 26, gleba 0 of 4); groups: within 96 tiles of (15,-147) on nauvis`. `labs` names the area: `7 in 2 groups within 96 tiles of (15,-147)`.
 - R2, pods (shift80: Weaver's pod with 1,000 agricultural science packs, sent 68 ticks after Weaver left Nauvis, landed
   in pad (52,54); Luna's delivery_watch #528 from Weaver read "received 0"; 12 of 2,355 down pods in the save's ledger
   were sent after their platform left, none in freight's receipts): pods.lua read only the platforms at a space

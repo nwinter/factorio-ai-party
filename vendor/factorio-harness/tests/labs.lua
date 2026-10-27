@@ -46,7 +46,7 @@ local r=L.view(p,{})
 -- 75 units left x 10 s each at 1 working lab: 750 s.
 eq(r.research,'logistics 25% needs automation+logistic, eta 12m30s at 1 working labs')
 eq(r.labs,'4 in 2 groups within 96 tiles of (0,0)')
-eq(r.research_labs,'1 of 4 labs of ours working, every surface (nauvis 1 of 4): research counts them all; the groups below are the labs within 96 tiles of (0,0) on nauvis')
+eq(r.research_labs,'1 of 4 labs of ours working, every surface (nauvis 1 of 4); groups: within 96 tiles of (0,0) on nauvis')
 eq(#r.groups,2)
 has(r.groups[1],'labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2)')
 has(r.groups[1],'feeders: 3 inserters (1 lab-to-lab)')

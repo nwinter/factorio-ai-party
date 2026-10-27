@@ -303,8 +303,7 @@ return function(api)
     local told = h.science
     if told and (game.tick - told.tick < PUSH_TICKS or told.key == c.key) then return nil end
     h.science = {tick=game.tick, key=c.key}
-    -- (d26 batch248 R7, Sol shift79 11:04Z: "Old sleep science10working was stale versus live labs"; Luna shift73: "still
-    -- reports 7/26 working, stale machine snapshot") when its facts were read: the job's start (the labs first) to its end.
+    -- (d26 batch248 R7) when its facts were read: the job's start to its end
     if not c.start then return c.text end
     local from, to = game.tick - c.start, game.tick - c.tick
     local when = from - to >= 60 and string.format('read %s to %s ago', ago(from), ago(to)) or string.format('read %s ago', ago(to))

@@ -25,7 +25,7 @@ return function(api)
   local function recipe_of(m)
     local r = try(function() return m.get_recipe() end)
     if not r and m.type == 'furnace' then r = try(function() return m.previous_recipe end) end
-    -- (d26 batch248 R3) a furnace's {name=LuaRecipePrototype (userdata), quality}: the prototype
+    -- (d26 batch248 R3) a furnace's {name=prototype (userdata), quality}
     if type(r) == 'table' and r.name and not r.ingredients then
       local n = r.name
       if type(n) ~= 'string' then n = try(function() return n.name end) end

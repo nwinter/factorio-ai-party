@@ -61,7 +61,7 @@ return function(api)
     if not ok then r, q = nil, nil end
     if not r and e.type == 'furnace' then
       local prev = try(function() return e.previous_recipe end)
-      -- (d26 batch248 R3) previous_recipe.name is a LuaRecipePrototype (userdata), or a name
+      -- (d26 batch248 R3) .name is a prototype (userdata)
       local n = prev and (type(prev.name) == 'string' and prev.name or try(function() return prev.name.name end))
       r, q = n and try(function() return e.force.recipes[n] end), prev and prev.quality
     end

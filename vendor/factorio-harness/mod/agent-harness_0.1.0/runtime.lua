@@ -11422,12 +11422,8 @@ function feeding.recipe_of(e)
   if ok and r then return r.name end
   if e.type=='furnace' then
     local okp,prev=pcall(function() return e.previous_recipe end)
-    local name=okp and prev and prev.name
-    if name~=nil and type(name)~='string' then
-      local okn,n=pcall(function() return name.name end)
-      name=okn and n or nil
-    end
-    return type(name)=='string' and name or nil
+    local okn,name=pcall(function() local n=prev.name return type(n)=='string' and n or n.name end)
+    return okp and okn and type(name)=='string' and name or nil
   end
 end
 -- What a burner's fuel slots hold: {name=count}, or nil when empty (or no burner).
@@ -11531,12 +11527,8 @@ function feeding.wants(p,e,a)
     local ok,r=pcall(e.get_recipe); recipe=ok and r or nil
     if not recipe and e.type=='furnace' then
       local okp,prev=pcall(function() return e.previous_recipe end)
-      local name=okp and prev and prev.name
-      if name~=nil and type(name)~='string' then
-        local okn,n=pcall(function() return name.name end)
-        name=okn and n or nil
-      end
-      if type(name)~='string' then name=nil end
+      local okn,name=pcall(function() local n=prev.name return type(n)=='string' and n or n.name end)
+      name=okp and okn and type(name)=='string' and name or nil
       recipe=name and prototypes.recipe and prototypes.recipe[name] or nil
     end
     for _,ing in ipairs(recipe and recipe.ingredients or {}) do

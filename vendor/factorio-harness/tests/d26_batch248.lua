@@ -94,7 +94,7 @@ do
   local r=L.view({position={x=-241,y=495},surface=nauvis,force=force},{})
   -- 500 units left x 60 s at speed 2+2+2+2 (Nauvis) + 1 (Gleba) = 9: 3333.3 s
   eq(r.research,'mining-productivity-3 50% needs automation, eta 55m34s at 5 working labs')
-  eq(r.research_labs,'5 of 6 labs of ours working, every surface (nauvis 4 of 5, gleba 1 of 1): research counts them all; the groups below are the labs within 96 tiles of (-241,495) on nauvis')
+  eq(r.research_labs,'5 of 6 labs of ours working, every surface (nauvis 4 of 5, gleba 1 of 1); groups: within 96 tiles of (-241,495) on nauvis')
   eq(r.labs,'0 in 0 groups within 96 tiles of (-241,495)')
   -- the census lists: no whole-surface find (the area's own find only)
   eq(#finds,1); eq(finds[1],'nauvis near')

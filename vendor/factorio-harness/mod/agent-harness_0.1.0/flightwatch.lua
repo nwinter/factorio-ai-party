@@ -111,8 +111,7 @@ return function(api)
     l[#l+1] = {id=w.id, index=w.index, force=w.force, set=w.set, began=M.began(w), ended=w.ended, why=why, tick=tick or game.tick}
     while #l > M.DROPPED_KEEP do table.remove(l, 1) end
   end
-  -- (d26 batch248 R8: six reads by id in shifts 69-80 got a bare "no flight watch #N") an id no longer on the list: what
-  -- the dropped records keep of it (its platform, began, ended, when and why it was dropped), or that none had it.
+  -- (d26 batch248 R8) an id no longer listed: its dropped record
   local function missing(st, id, force)
     local head = 'no flight watch #' .. tostring(id)
     for key, l in pairs(st.dropped or {}) do

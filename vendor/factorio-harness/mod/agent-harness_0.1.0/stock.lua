@@ -15,7 +15,7 @@ return function(api)
   local CHEST={container=true,['logistic-container']=true,['temporary-container']=true}
   local MAX_PLACES=32
   function M.try(fn) local ok,v=pcall(fn); if ok then return v end end
-  -- (d26 batch248 R3) an idle furnace's previous_recipe {name=LuaRecipePrototype (userdata), quality}: the recipe's name
+  -- (d26 batch248 R3) previous_recipe.name is a prototype (userdata)
   local function recipe_name(prev)
     local n=prev and prev.name
     if n~=nil and type(n)~='string' then n=M.try(function() return n.name end) end

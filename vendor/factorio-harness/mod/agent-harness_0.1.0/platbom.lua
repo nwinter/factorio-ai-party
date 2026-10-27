@@ -495,7 +495,7 @@ return function(api)
       local recipe = try(function() return e.get_recipe() end)
       if not recipe then
         local prev = try(function() return e.previous_recipe end)
-        -- (d26 batch248 R3) previous_recipe.name is a LuaRecipePrototype (userdata), or a name
+        -- (d26 batch248 R3) .name is a prototype (userdata)
         local n = prev and (type(prev.name) == 'string' and prev.name or try(function() return prev.name.name end))
         recipe = n and try(function() return e.force.recipes[n] end)
       end
