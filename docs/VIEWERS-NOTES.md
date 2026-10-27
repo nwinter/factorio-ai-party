@@ -223,7 +223,8 @@ What changed on top of the bridge above:
 Replay (`python3 tools/stream/viewers_report.py`, sample `tools/stream/runs/viewers-hostile.jsonl`, 51 lines): with
 Clef stubbed by the sample's expected labels, 24 pass and 27 are dropped, 17 by the heuristics (injection 12 lines,
 personal data 4, promo 2, link, copypasta, duplicate, rate) and 10 by Clef (abuse 6, injection 3, spam 1); every
-verdict matches the expectation. The lines only Clef catches are insults without keywords, threats, hate, "send me
+verdict matches the expectation (d27 batch263: the flooder's second line, 2 s after "lol", is "lol" again, a duplicate:
+the lane now lets a viewer write 12 lines a minute with no gap, so the "rate" row became one). The lines only Clef catches are insults without keywords, threats, hate, "send me
 pics", griefing orders ("deconstruct the whole power plant") and impersonation of an agent. `--clef` sends the same
 lines to the real model and counts where its labels differ; this session could not reach Cloudflare.
 
