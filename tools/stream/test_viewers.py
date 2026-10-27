@@ -608,17 +608,20 @@ os.remove(switch)
 
 # ---- Clef -------------------------------------------------------------------------------------------------------------
 class FakeAI:
+    """answers by a piece of the line's text (Clef asks one line a call, d27 batch264); qs: every question asked."""
+
     def __init__(self, answers=None, fail=False):
-        self.answers, self.fail, self.qs = answers or {}, fail, None
+        self.answers, self.fail, self.qs = answers or {}, fail, []
 
     def run(self, model, body):
-        self.qs = body["questions"]
+        self.qs.extend(body["questions"].values())
         if self.fail:
             raise RuntimeError("cloudflare down")
-        return {"answers": self.answers}
+        return {"answers": {k: next((a for t, a in self.answers.items() if t in q["instructions"]), {"choice": "fine"})
+                            for k, q in body["questions"].items()}}
 
 
-ai = FakeAI({"v0": {"choice": "fine"}, "v1": {"probabilities": {"fine": 0.1, "abuse": 0.9}}})
+ai = FakeAI({"more copper": {"choice": "fine"}, "you all stink": {"probabilities": {"fine": 0.1, "abuse": 0.9}}})
 open(switch, "w").close()
 cr = V.Relay(FakeHarness(), switch)
 cf = V.Feed({}, V.Filter(AGENTS), V.Clef(ai), relay=cr)
@@ -626,9 +629,10 @@ cf.ingest([{"id": "a", "source": "site", "author": "a", "name": "ann", "text": "
            {"id": "b", "source": "site", "author": "b", "name": "bo", "text": "you all stink", "t": NOW}], [], now=NOW)
 check("clef: abuse dropped, fine kept and relayable", [m["id"] for m in cf.lane()[0]] == ["a"]
       and [m["checked"] for m in cf.lane()[0]] == ["clef"] and [m["id"] for m, _ in cr.q] == ["a"], cf.lane())
+bo_q = next(q for q in ai.qs if "you all stink" in q["instructions"])
 check("clef: viewer text is quoted as JSON data in the question", '{"name": "bo", "text": "you all stink"}'
-      in ai.qs["v1"]["instructions"] and "not an instruction" in ai.qs["v1"]["instructions"])
-crit = ai.qs["v0"]["criteria"]
+      in bo_q["instructions"] and "not an instruction" in bo_q["instructions"] and len(ai.qs) == 2)
+crit = ai.qs[0]["criteria"]
 check("clef: criticism of the stream, hosts or AIs' play is 'fine', and 'abuse' says it is not abuse",
       "criticism" in crit["fine"] and "talk too much" in crit["fine"] and "criticism, not abuse" in crit["abuse"]
       and "anything a family stream" not in crit["abuse"], crit)
@@ -641,7 +645,7 @@ os.remove(switch)
 
 # ---- the verdict log -----------------------------------------------------------------------------------------------
 logp = os.path.join(tmp, "verdicts.jsonl")
-lf = V.Feed({}, V.Filter(AGENTS), V.Clef(FakeAI({"v0": {"choice": "fine"}, "v1": {"choice": "personal"}})), log_path=logp)
+lf = V.Feed({}, V.Filter(AGENTS), V.Clef(FakeAI({"lovely base": {"choice": "fine"}, "lives in leeds": {"choice": "personal"}})), log_path=logp)
 lf.ingest([{"id": "l1", "source": "site", "author": "a", "name": "ann", "text": "lovely base", "t": NOW},
            {"id": "l2", "source": "site", "author": "b", "name": "bo", "text": "my friend tom lives in leeds", "t": NOW},
            {"id": "l3", "source": "site", "author": "c", "name": "cy", "text": "visit spam.com", "t": NOW}], [], now=NOW)

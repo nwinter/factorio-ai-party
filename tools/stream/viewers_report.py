@@ -77,7 +77,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("sample", nargs="?", default=os.path.join(HERE, "runs", "viewers-hostile.jsonl"))
     ap.add_argument("--clef", action="store_true", help="label with the real clef-flash (costs a fraction of a cent)")
-    ap.add_argument("--batch", type=int, default=1, help="messages per Clef request (default 1, the costliest case)")
+    ap.add_argument("--batch", type=int, default=1, help="messages per poll (default 1; Clef is asked one line a call either way since d27 batch264)")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
     out, ai, feed = replay(a.sample, a.clef, a.batch)

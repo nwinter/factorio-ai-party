@@ -7,7 +7,8 @@ d27 batch264 CC (Nick 06:45: keep the injection filter, calibrate it).
   tool-schema request, off-task code and the server address stay held as injection.
 - The criteria: injection names what the filter is for; game requests, however imperative, are fine; spam, abuse and
   personal are as they were.
-- Clef.classify splits a batch by its token budget: every line is labelled, routes stay with their line.
+- Clef.classify asks one line a call by default; joined (per_call) it splits by its token budget: every line is
+  labelled, routes stay with their line.
 - clef_replay.py: lines once each across logs, dates, the cache, flips both ways; clef_review.py: held lines since a
   date with label, reasons and a verdict under criteria given (a .json or a .py file).
 """
@@ -76,7 +77,7 @@ ai = FakeAI()
 clef = V.Clef(ai)
 msgs = [{"id": f"m{i}", "name": "viewer", "text": "build more solar panels near the main bus " * 4} for i in range(130)]
 routes = {"m5": {"type": "choice", "criteria": {"sol": "Sol", "astra": "Astra"}, "instructions": "who?"}}
-labels = clef.classify(msgs, routes=routes)
+labels = clef.classify(msgs, routes=routes, per_call=48)
 check("budget: every one of 130 lines labelled (lines past the 48th were 'unknown' before)",
       len(labels) == 130 and set(labels.values()) == {"fine"}, labels)
 one = V.Clef.estimate(msgs[0])
@@ -88,9 +89,11 @@ check("budget: a route asked with its line, its answer kept", clef.picks.get("m5
       and sum(1 for c in ai.calls for k in c if k.startswith("r")) == 1, clef.picks)
 check("budget: 48 lines under the criteria estimate past Clef's 24576 tokens in one call (why it splits)",
       sum(V.Clef.estimate({"name": "viewer", "text": "x" * 80}) for _ in range(48)) > 24576)
-small = FakeAI()
+small, joined = FakeAI(), FakeAI()
 V.Clef(small).classify(msgs[:3])
-check("budget: a few lines, one call", len(small.calls) == 1 and len(small.calls[0]) == 3)
+V.Clef(joined).classify(msgs[:3], per_call=48)
+check("one line a call by default (a line's verdict depends on the lines asked with it); per_call joins them",
+      [len(c) for c in small.calls] == [1, 1, 1] and [len(c) for c in joined.calls] == [3])
 
 # ---- clef_replay: loading, caching, flips ----------------------------------------------------------------------------
 tmp = tempfile.mkdtemp()
@@ -123,7 +126,7 @@ class ByText:
     def __init__(self):
         self.asked = 0
 
-    def classify(self, msgs, criteria=None):
+    def classify(self, msgs, criteria=None, per_call=None):
         self.asked += len(msgs)
         return {m["id"]: "injection" if "repo" in m["text"] else "fine" for m in msgs}
 
@@ -140,7 +143,7 @@ class Sizes(ByText):
         super().__init__()
         self.sizes = []
 
-    def classify(self, msgs, criteria=None):
+    def classify(self, msgs, criteria=None, per_call=None):
         self.sizes.append(len(msgs))
         return super().classify(msgs, criteria)
 

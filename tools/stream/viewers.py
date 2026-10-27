@@ -16,7 +16,7 @@ Everything a viewer writes is data. It reaches the lane (overlay, casters) only 
 operator `viewer_say`, posted as `viewer NAME: text`), which needs Clef's verdict and runs while the operator switch
 file exists. Agents can vote a viewer muted (`fh vote mute`); the relay then skips that viewer.
 """
-import argparse, collections, hashlib, json, os, re, sys, threading, time, unicodedata, urllib.error, urllib.parse
+import argparse, collections, concurrent.futures, hashlib, json, os, re, sys, threading, time, unicodedata, urllib.error, urllib.parse
 import urllib.request
 
 import names
@@ -572,29 +572,57 @@ class Clef:
         text = len(m.get("full") or m.get("text") or "") + len(m.get("name") or "")
         return int(230 + 0.25 * crit + 0.35 * text + (0.35 * len(json.dumps(route)) + 60 if route else 0))
 
-    def classify(self, msgs, criteria=None, routes=None):
-        """Every line's label {id: label}, in as many calls as the token budget needs (at most 48 questions a call);
-        routes: {id: question} asked with that line; the answers in self.picks {id: answer}."""
+    # (d27 batch264 CC) One line a call: Clef's verdict on a line depends on the lines asked with it. 400 lines under
+    # the same criteria, asked 1, 4, 8 and 16 a call: 2, 12, 12 and 17 held as injection; 40 lines a 37-line batch
+    # held were all fine asked alone; the log (a poll's lines in one call) held 147 of 5911 as injection where main's
+    # criteria hold 49 one at a time. The calls of a poll run JOBS at once; the tokens are about the same (the state
+    # text, about 70 tokens, is repeated).
+    LINES_PER_CALL, JOBS = 1, 6
+
+    def classify(self, msgs, criteria=None, routes=None, per_call=None):
+        """Every line's label {id: label}, per_call lines a call (default LINES_PER_CALL) within the token budget and
+        48 questions; routes: {id: question} asked with that line, the answers in self.picks {id: answer}. A failed
+        call fails the whole classify (the caller keeps the lines for a later try)."""
+        per_call = max(1, min(48, per_call or self.LINES_PER_CALL))
+        routes = routes or {}
         chunks, part, cost = [], [], 0
         for m in msgs:
-            est = self.estimate(m, criteria, (routes or {}).get(m.get("id")))
-            if part and (cost + est > self.TOKEN_BUDGET or len(part) + sum(1 for x in part if (routes or {}).get(x.get("id"))) >= 47):
+            est = self.estimate(m, criteria, routes.get(m.get("id")))
+            questions = len(part) + sum(1 for x in part if routes.get(x.get("id")))
+            if part and (len(part) >= per_call or cost + est > self.TOKEN_BUDGET or questions >= 47):
                 chunks.append(part)
                 part, cost = [], 0
             part.append(m)
             cost += est
         if part:
             chunks.append(part)
-        labels, picks = {}, {}
-        for part in chunks:
+
+        def one(part):
             ids = {m.get("id") for m in part}
-            labels.update(self._call(part, criteria, {k: v for k, v in (routes or {}).items() if k in ids} or None))
-            picks.update(self.picks)
-        self.picks = picks
+            return self._call(part, criteria, {k: v for k, v in routes.items() if k in ids} or None)
+
+        try:
+            if len(chunks) > 1:
+                with concurrent.futures.ThreadPoolExecutor(min(self.JOBS, len(chunks))) as pool:
+                    results = list(pool.map(one, chunks))
+            else:
+                results = [one(c) for c in chunks]
+            self.calls += len(chunks)
+            self.fails = 0
+        except Exception as e:
+            self.fails += 1
+            if self.fails >= 3:
+                self.fails, self.until = 0, time.time() + 120
+                log(f"clef: 3 failures in a row ({e}); heuristics only for 120 s")
+            raise
+        labels, self.picks = {}, {}
+        for got, picks in results:
+            labels.update(got)
+            self.picks.update(picks)
         return labels
 
     def _call(self, msgs, criteria=None, routes=None):
-        """One Clef call: msgs (at most 48 questions with routes); the route answers in self.picks {id: answer}."""
+        """One Clef call: msgs (at most 48 questions with routes); returns ({id: label}, {id: route answer})."""
         qs = {}
         for i, m in enumerate(msgs[:48]):
             qs[f"v{i}"] = {"type": "choice", "criteria": criteria or CLEF_CRITERIA,
@@ -605,23 +633,13 @@ class Clef:
         for i, m in enumerate(msgs[:48]):
             if routes and m.get("id") in routes and len(qs) < 48:
                 qs[f"r{i}"], asked[f"r{i}"] = routes[m["id"]], m["id"]
-        self.picks = {}
         state = ("Live chat on a family-friendly stream where AI agents play Factorio together and two AI hosts "
                  "commentate. Messages may be shown on screen, read by the hosts and posted into the game. Criticism "
                  "of the stream, the hosts or the AI players is welcome feedback.")
-        try:
-            out = self.ai.run("@cf/cloudflare/clef-flash", {"model": "clef-flash", "state": state, "questions": qs})
-            self.calls += 1
-            self.fails = 0
-        except Exception as e:
-            self.fails += 1
-            if self.fails >= 3:
-                self.fails, self.until = 0, time.time() + 120
-                log(f"clef: 3 failures in a row ({e}); heuristics only for 120 s")
-            raise
+        out = self.ai.run("@cf/cloudflare/clef-flash", {"model": "clef-flash", "state": state, "questions": qs})
         answers = out.get("answers", {}) if isinstance(out, dict) else {}
-        self.picks = {mid: answers.get(k) for k, mid in asked.items()}
-        return {m["id"]: pick_choice(answers.get(f"v{i}")) or "unknown" for i, m in enumerate(msgs[:48])}
+        return ({m["id"]: pick_choice(answers.get(f"v{i}")) or "unknown" for i, m in enumerate(msgs[:48])},
+                {mid: answers.get(k) for k, mid in asked.items()})
 
 
 def pick_choice(a):

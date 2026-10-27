@@ -134,7 +134,7 @@ def ask(clef, part, criteria, tries=3):
     """One Clef call for part, retried; every line 'unknown' after the last failure."""
     for attempt in range(tries):
         try:
-            return clef.classify(part, criteria)
+            return clef.classify(part, criteria, per_call=len(part))
         except Exception as e:  # a failed call is retried, then the lines count as unknown
             if attempt == tries - 1:
                 print(f"clef: {len(part)} line(s) failed: {e}", file=sys.stderr)

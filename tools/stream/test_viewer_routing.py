@@ -146,9 +146,12 @@ batch = [line(10, "ann", "the steel furnaces are starving again", NOW), line(11,
          line(14, "ed", "the base looks great", NOW), line(15, "fu", "the trains keep stopping at the junction", NOW),
          line(16, "gi", "sol, check the rails", NOW)]
 feed.ingest(batch, [], now=NOW)
-check("one Clef call for both questions", ai.calls == 1, ai.calls)
-asked = sorted(k for k in ai.qs[0] if k.startswith("r"))
-check("routing questions only for unaddressed lines without a claimed place", len(asked) == 5 and asked == ["r0", "r2", "r3", "r4", "r5"] and len([k for k in ai.qs[0] if k.startswith("v")]) == 7, sorted(ai.qs[0]))
+# (d27 batch264 CC) one Clef call a line (a line's verdict depends on the lines asked with it), its routing question in
+# the same call
+check("one Clef call a line, both questions in it", ai.calls == 7 and all(sorted(q) in (["v0"], ["r0", "v0"]) for q in ai.qs), ai.qs)
+asked = sorted(m["text"] for m in batch for q in ai.qs if "r0" in q and json.dumps(m["text"]) in q["v0"]["instructions"])
+check("routing questions only for unaddressed lines without a claimed place",
+      asked == sorted(batch[i]["text"] for i in (0, 2, 3, 4, 5)), asked)
 for k in range(8):
     relay.step(NOW + 1 + k)
 d = {r["id"]: r for r in feed.lane()[1]["delivery"]}
