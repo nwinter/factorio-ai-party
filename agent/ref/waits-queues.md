@@ -64,7 +64,11 @@
   take each; `saw` names the first that holds as `#N` with its saw, then the others', and `matched` {index, until,
   saw} is in `last` and the step's history), e.g. `{"until":"any","conditions":[{"until":"platform_progress",
   "platform":"Asterion","at_least":0.002},{"until":"item_count","platform":"Asterion","item":
-  "promethium-asteroid-chunk","at_least":25}]}`; also `no_enemy_structures`, `no_enemies`, `units_clear`, `turrets_idle`, `ammo_below`,
+  "promethium-asteroid-chunk","at_least":25}]}`; `tick_at_least` (`tick`: a whole game tick, up to 1296000 ticks
+  ahead: met once the game reaches it, at the first check when it has passed; a pause, resume or requeue never moves
+  it; a wait with no `timeout` runs to it, a direct one up to 54000 ticks; in `any` it ends the wait by then; every lane
+  and a guard's `when`), e.g. `{"until":"any","conditions":[{"until":"item_count","surface":"nauvis","network":{"x":-11,
+  "y":-205},"item":"processing-unit","at_least":3000},{"until":"tick_at_least","tick":70235005}]}`; also `no_enemy_structures`, `no_enemies`, `units_clear`, `turrets_idle`, `ammo_below`,
   `fuel_below`, `health_below`, `health_above`, `damaged`, `ghosts_waiting` (`./fh help wait_until`). `until` also
   takes the `--until` words (`"item_count yumako>=40"`), and `ticks` or `timeout_ticks` for `timeout` (1..54000 ticks,
   default 3600; with `--wait` it comes from `--wait-timeout`: `600000` is 10 minutes, 15 at most); hitting it fails
@@ -130,7 +134,15 @@
   that moves fewer than asked (a full target) succeeds short; `min_moved: N` fails it below N moved. A transfer,
   collect, feed, rearm or refuel step with a position and no `walk` runs with `walk: true`: it walks into reach from
   any distance, with move_to's enemy checks (`walk: false` keeps it from walking; standing orders keep `max_walk`). `guards` (up to 8
-  `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing;
+  `{when, goto | steps, scope?}`) are checked every 10 ticks while the lane is not paused. `scope: "plan"` (the default)
+  retires a guard in the tick the lane has no step left (none running or pending, no repeating plan; a lane paused
+  keeps them until `queue_resume`): a `guards_retired` history row and a team block line name it; a plan guard on a
+  lane that would have no step left is refused. `scope: "standing"` keeps it armed until it fires, is removed or the
+  queue is cancelled; `queue_status` `guards_after_plan` and a sleep's `queue_done` line name the standing guards
+  still armed. `queue_status` `guards` give each one's `scope`, and with a `tick_at_least` its `deadline_tick` and
+  `ticks_left`. Guards set before scopes are standing. A guard with `tick_at_least` in its `when` is checked every tick
+  from that tick: on a remote or platform lane it fires then even while the lane is paused or held, and its steps or
+  goto run; on the body lane `queue_resume` fires it before any step. `dry_run: true` checks the plan and queues nothing;
   `world_checks` reads each `platform_schedule` step as the call reads it now (`refused if it ran now:` the call's own
   refusal, e.g. new waits holding now without `go: true`; `when it runs:` what a refusal then turns on) and the first 4
   `requests` steps on a platform as their dry run (`waits_unmet`, `sends_down`), with the steps before each not applied.
@@ -154,7 +166,8 @@
 - `queue_edit {id, steps?, to?}`: `id: "job-12"` deletes a pending step (`steps`: replace it, `to: N`: move it); the
   active step is untouched. Example: `./fh call queue_edit --args '{"id":"job-12","to":1}'`
 - `queue_edit {lane?, expected_revision, guards: {remove?, replace?, add?}}`: the guards only, by id (`guard-N`,
-  queue_status `guards`): `remove: ["guard-3"]`, `replace: [{id, when, goto|steps}]`, `add: [guards]`. The active step,
+  queue_status `guards`): `remove: ["guard-3"]`, `replace: [{id, when, goto|steps, scope?}]` (it keeps the guard's
+  scope unless it gives one), `add: [guards]`. The active step,
   its wait and the pending steps go on; a guard not named keeps its baseline (platform_loss, platform_hit and
   platform_foundation_loss their since tick); one replaced or added starts its own. The reply gives `revision` and each
   guard's `baseline`. Example:

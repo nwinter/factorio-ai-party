@@ -1583,7 +1583,7 @@ fh queue cancel --args '{"lane":"remote"}'
 ```
 
 The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
-`platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
+`platform_left`, `researched` or `tick_at_least`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
 `circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform` (`configure`, `circuit_set`,
 `circuit`, `wire`, `requests`, `place_ghosts` and `deconstruct` with `surface` too, d20 batch62 X3); `min_payload` (it names its
 platforms); and read actions that need no body. `observe` requires `platform` or a scope other
@@ -1633,6 +1633,28 @@ fh queue repeat --file plan.json
   pauses, `skip` continues, `goto:<label>` continues at that pending label. Skipping acquires no items.
   `transfer {direction: "from_entity", position, item, count}` or `collect` takes stock; `craft` does not withdraw it
   from a chest.
+- Guard scope (d27 batch261, Sol #2505: Astra's dock-capture guards outlived the plan's cleanup and fired at the next
+  departure against the removed arm): `guards: [{when, goto | steps, scope?}]`. `scope: "plan"` (the default) retires
+  the guard in the tick its lane has no step left: none running or pending and no repeating plan (a standing order's
+  run is not the plan's; a lane paused with nothing pending keeps them until `queue_resume`). The history gets a
+  `guards_retired` row (`guards`, `line`) and the team block one line, `queue plan #N finished at tick T; guards retired
+  with it (scope plan): guard-1 platform_left, ...; still armed (scope standing): ...`. `scope: "standing"` keeps the
+  guard until it fires, `queue_edit` removes it or the queue is cancelled; `queue_status` `guards_after_plan` and the
+  sleep's `queue_done` line (`finished; 1 guard still armed (scope standing): guard-3 platform_left`) name them, and the
+  compact reply's `guard_ids` marks them `(standing)`. Guards armed before this runtime have no scope and stay
+  standing. A scope-plan guard on a lane that would have no step left is refused (`guards[1]: scope plan (the default)
+  retires a guard when the lane has no step left, ...`). `queue_edit` guards `replace` keeps the guard's scope unless
+  it gives one.
+- Deadlines (d27 batch261, Astra #2508: Luna's 15-minute boost had a relative timeout that started late and restarted
+  at a resume, and its gate was restored 4m21s after the cutoff): `wait_until {until: "tick_at_least", tick}` is met
+  once `game.tick` reaches `tick` (a whole tick, at most 1296000 ticks ahead), at the first check when it has passed.
+  Nothing restarts it: a requeued step reads the same tick. A wait step with no `timeout` runs to it (its check lands
+  on that tick), a direct `wait_until` up to 54000 ticks; inside `any` it ends the wait by then. Every lane takes it,
+  as a step, a member of `all` or `any`, and a guard's `when`. A guard with it is checked every tick from its tick
+  (not only at the 10-tick check), so on the body lane `queue_resume` fires it before any step runs; on a remote or
+  platform lane it fires at its tick even while the lane is paused or held, and its steps (or goto) run then
+  (`while_paused: true` on its history row). `queue_status` `guards` give `scope`, `deadline_tick` and `ticks_left`;
+  `queue_edit` guard rows say `deadline tick N: K ticks left (MmSSs); a pause or resume never moves it`.
 - A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
   inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures

@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-27 05:39",
+ "notices_checked": "2026-10-27 06:40",
  "backlog_reviewed": "2026-10-26 20:36",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
@@ -158,7 +158,8 @@
   {"id": "hub-retention-doc", "title": "Hub retention reference says maxima, as the game does", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2494"}], "status": "in progress", "dates": {"asked": "2026-10-26 23:10", "in progress": "2026-10-27 05:34"}, "work": "batch260", "priority": "normal", "owner": "engineer batch260", "next_review": "2026-10-27 11:34"},
   {"id": "launch-budget", "title": "A read-only launch budget across fleet requests", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2491"}], "status": "in progress", "dates": {"asked": "2026-10-26 22:30", "in progress": "2026-10-27 05:34"}, "work": "batch260", "priority": "normal", "owner": "engineer batch260", "next_review": "2026-10-27 11:34"},
   {"id": "queue-guard-retire", "title": "Guards of a finished finite queue retire with it", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2505"}], "status": "in progress", "dates": {"asked": "2026-10-27 01:15", "in progress": "2026-10-27 05:34"}, "work": "batch261", "priority": "normal", "owner": "engineer batch261", "next_review": "2026-10-27 11:34"},
-  {"id": "queue-absolute-deadline", "title": "Finite queue deadlines hold across pauses", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2508"}], "status": "in progress", "dates": {"asked": "2026-10-27 01:55", "in progress": "2026-10-27 05:34"}, "work": "batch261", "priority": "normal", "owner": "engineer batch261", "next_review": "2026-10-27 11:34"}
+  {"id": "queue-absolute-deadline", "title": "Finite queue deadlines hold across pauses", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2508"}], "status": "in progress", "dates": {"asked": "2026-10-27 01:55", "in progress": "2026-10-27 05:34"}, "work": "batch261", "priority": "normal", "owner": "engineer batch261", "next_review": "2026-10-27 11:34"},
+  {"id": "recipe-quality-gap", "title": "ingredient_gap counts and donors by recipe quality", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2536"}], "status": "in progress", "dates": {"asked": "2026-10-27 06:20", "in progress": "2026-10-27 06:41"}, "work": "batch262", "priority": "normal", "owner": "engineer batch262", "next_review": "2026-10-27 12:41"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
