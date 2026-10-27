@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-26 17:42",
+ "notices_checked": "2026-10-26 18:32",
  "backlog_reviewed": "2026-10-26 11:37",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
@@ -213,6 +213,7 @@
   {"t": "2026-10-26 16:04", "kind": "deploy", "text": "Harness runtime deployed (dce8ea1c).", "affected": "harness runtime"},
   {"t": "2026-10-26 16:04", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-26 16:04"},
   {"t": "2026-10-26 16:29", "kind": "deploy", "text": "Harness runtime deployed (9b9e2ae8).", "affected": "harness runtime"},
-  {"t": "2026-10-26 17:42", "kind": "deploy", "text": "Harness runtime deployed (ba5d60c4).", "affected": "harness runtime"}
+  {"t": "2026-10-26 17:42", "kind": "deploy", "text": "Harness runtime deployed (ba5d60c4).", "affected": "harness runtime"},
+  {"t": "2026-10-26 18:32", "kind": "shift", "text": "Shift 83 change began.", "affected": "stream and agents", "recovered": null}
  ]
 }

@@ -16068,6 +16068,38 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   whole read in one tick. Earlier forms of this read were 92-127 ms (a find round each cut-off heater, a path box
   of 128) and 40 ms; the bounds above came from those.
 - Test: tests/d26_batch242.lua (in lua.test.ts), failing on main (no preview).
+## d26 batch251 (GL, Sol #2466: unresolved goto labels passed the queue checks)
+- Case: `queue_submit {dry_run: true, lane: "remote", mode: "append", steps: [{action: "wait_ticks", args: {ticks: 1},
+  on_fail: "goto:missing-label"}]}` passed (Sol, tick 68211112), and an Asterion draft's dry run at tick 68087211
+  passed with step 11's on_fail goto:sink-source-stop on no step (Sol's own audit caught it). At run time a goto that
+  finds no pending step of its label pauses the queue (`goto_error: label not pending: L`).
+- How the scheduler resolves a goto (scheduler.lua jump): the first step of that label among the steps pending when
+  it runs. A step's on_fail goto runs while that step is the active one, so it reaches only a later step of its own
+  list, or a step pending behind that list (mode next and ahead; with ahead, the restarted active step too). A step
+  before it has run; a loop's next round is put pending only once the round is empty, so a goto back to the top of
+  a round never resolves. A guard's goto runs when it fires: any step of the plan, the steps that stay pending, the
+  loop, or a guard's own steps (pending once that guard fired).
+- check_gotos (scheduler.lua) against those, every unresolved goto refused at once, ` | ` between them, each with its
+  step path, the label, where the label is when it is on an earlier step, and the labels after it (for a guard: the
+  plan's, the pending steps', the loop's and the guards' steps' labels):
+  `steps[1] (wait_ticks): on_fail goto:missing-label names no step after it (a goto continues at the first pending
+  step of that label after the failed one): missing-label labels no step of the plan; labels after it: none`.
+  - queue_submit and its dry run share one check (submit_checks): the mode, a repeating plan's refusal, capacity,
+    bytes, guards and the gotos. The dry run before took none of the queue checks (a bad mode passed it too).
+  - a guard's replacement steps on their own (`guards[i].steps[j]`), their gotos within them;
+  - queue_repeat: a round's gotos within the round; order_set (scheduler validate): an order's steps within them;
+  - queue_edit: steps inserted (`steps[i]`), a removal or a move (`pending[k] job-N`) that leaves a goto without its
+    label, guards added or replaced (`guards.add[i]`, `guards.replace[i]`) and a removal that takes a kept guard's
+    label (`guard-N after this edit`). A goto already unresolved before the edit is not held against it.
+- Nothing is left to run time: the scheduler would find a label that a later queue_edit or submit puts after the
+  step, but the step and its target can always go in one call (or the target first), so no goto is taken on a
+  warning. A plan queued before this change keeps running as it is; its unresolved goto still pauses the queue.
+- Swept: there is no loop_until and no label-taking `next` in the harness (mode next is covered above); queue_edit's
+  moves are checked; standing orders run their steps alone, checked within them.
+- Test: tests/d26_batch251.lua (in lua.test.ts), failing on main at Sol's case and at the draft's (each alone).
+  tests/scheduler.lua (its goto:nowhere is now refused at submit; the run-time pause is kept with a label removed
+  from the stored queue) and tests/d22_batch117.lua (a guard goto home with no home step; one added) changed.
+
 ## d26 batch240 (IA: idle air and late builds; batch237 findings 1 and 3)
 - Host only (tools/stream; docs/STREAM-NOTES.md "Idle air and late builds"): no runtime change, no new game read. The
   stream service reads two more things from the journals it already tails: each agent's latest build, paste,
