@@ -146,6 +146,14 @@
   `world_checks` reads each `platform_schedule` step as the call reads it now (`refused if it ran now:` the call's own
   refusal, e.g. new waits holding now without `go: true`; `when it runs:` what a refusal then turns on) and the first 4
   `requests` steps on a platform as their dry run (`waits_unmet`, `sends_down`), with the steps before each not applied.
+  `staging`: each `item_count` wait at one requester or buffer chest whose requests name the item, with the chest's
+  requests then (its own now, the plan's `requests` steps before it applied): the slots its waits need at once and its
+  requests ask, against its slots under its bar. Each item and quality takes ceil(count / stack size) slots of its own;
+  what it holds that no request names stays while trash unrequested is off. Robots fill all its requests at once, in
+  any order, and stop once every slot is full. `staging_refused`: waits that need more slots at once than the chest has
+  while nothing takes from it between them (no inserter takes from it, or each is held with `ITEM < -2147483648`, and
+  no step names it); a submit is refused the same. With an inserter taking from it, the items may go as they arrive:
+  said, not refused. Stage in turns (clear the requests, set the next after a wait) or use another chest.
   `lane: "remote"`: the remote lane (`./fh help space-age`; its `configure`, `circuit_set`, `circuit`, `wire`,
   `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do; `flight_watch` too); `lane: "platform:NAME"`: a remote lane of its own for that
   platform (the same steps; a `flight_watch` start without `platform` or `id` watches that platform, and `{read: true}` reads its latest watch), apart from the remote lane and the other platforms' lanes; each queue call takes the same

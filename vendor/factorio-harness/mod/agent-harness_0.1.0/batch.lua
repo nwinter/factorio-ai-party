@@ -186,7 +186,7 @@ return function(api)
     -- (AB) the staged waits wait in the requester: what it must hold at once has to fit its slots (under its bar), with
     -- what else it holds; else the batch is refused, the slots said.
     local rinv = try(function() return req.get_inventory(defines.inventory.chest) end)
-    local refused
+    local refused, slot_info, slot_line
     if rinv then
       local usable = #rinv
       local bar = try(function() return rinv.get_bar() end)
@@ -202,6 +202,10 @@ return function(api)
       for _, c in pairs(try(function() return rinv.get_contents() end) or {}) do
         if type(c) == 'table' and c.name and not (mine[c.name] and (c.quality or 'normal') == quality) then other = other + math.ceil((c.count or 0) / stack_of(c.name)) end
       end
+      -- (d27 batch280 CS, Astra #2600) the slots said whether it fits or not
+      slot_info = {required=slots + other, available=usable}
+      slot_line = string.format('the requester %s holds %d of its %d slots%s at once (%s%s)', at(req.position), slots + other, usable,
+        usable < #rinv and string.format(' (its bar at %d of %d)', usable, #rinv) or '', table.concat(parts, ', '), other > 0 and string.format(', other items %d', other) or '')
       if slots + other > usable then
         refused = string.format('the requester %s has %d slot%s%s; the batch must hold %s there at once%s: %d slots. Refused: a smaller count, or a requester with room',
           at(req.position), usable, usable == 1 and '' or 's', usable < #rinv and string.format(' (its bar at %d of %d)', usable, #rinv) or '',
@@ -273,7 +277,7 @@ return function(api)
     if secs > 900 then
       plan[#plan+1] = string.format('at its crafting speed %g the %d crafts take about %d s: the made wait times out at 900 s first (the plan stops there: queue_status)', speed, crafts, math.floor(secs + 0.5))
     end
-    if refused then plan[#plan+1] = refused end
+    if refused then plan[#plan+1] = refused elseif slot_line then plan[#plan+1] = slot_line end
     if m_own then
       local nosig = m_own.logistic == false or m_own.enable == false
       plan[#plan+1] = string.format('the machine\'s own condition (%s) is switched off for the batch and %s', own_text(m_own),
@@ -305,6 +309,7 @@ return function(api)
         .. '; the machine makes more with it before the input goes off (take it out first: transfer to_player)'
     end
     out.refused = refused
+    out.slots = slot_info
     if a.dry_run then out.line = refused and 'dry run: refused, nothing would be queued: ' .. refused or 'dry run: nothing queued'; out.steps = not refused and steps or nil; return out end
     if refused then error(refused, 0) end
     out.queue = api.submit(p, {steps=steps})
@@ -316,6 +321,6 @@ return function(api)
     requester='optional {x,y}: the requester chest that feeds it (default: the one an inserter takes from into it)',
     input='optional {x,y}: that inserter', output='optional {x,y}: the inserter that takes from the machine (default: the one round it)',
     dry_run='true: the read and the plan (steps), nothing queued',
-    returns='quality (the recipe\'s: item ingredients asked for and waited for at it), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after), counter {now, done_at} (the machine\'s products-finished counter, as its GUI shows: crafts, productivity bonus crafts too), output_stack and feeds_until (one stack of the product in its output; inserters stop feeding it at that many held), destination and room (where the output inserter puts the products; a chest\'s room for them now), machine_condition, output_condition, input_condition (their own logistic condition, and circuit condition with a wire on them: switched off for the batch and set back after), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): the machine\'s and the output inserter\'s own conditions off, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits (produced, counter_from) for the crafts on the machine\'s counter while the products go out, input off (or its own condition set back), the others\' conditions set back. The inserters need a logistic network for their logistic condition'}}
+    returns='slots {required, available} (what the requester must hold at once, each ingredient ceil(count / stack size) slots with what else it holds, against its slots under its bar; over: refused), quality (the recipe\'s: item ingredients asked for and waited for at it), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after), counter {now, done_at} (the machine\'s products-finished counter, as its GUI shows: crafts, productivity bonus crafts too), output_stack and feeds_until (one stack of the product in its output; inserters stop feeding it at that many held), destination and room (where the output inserter puts the products; a chest\'s room for them now), machine_condition, output_condition, input_condition (their own logistic condition, and circuit condition with a wire on them: switched off for the batch and set back after), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): the machine\'s and the output inserter\'s own conditions off, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits (produced, counter_from) for the crafts on the machine\'s counter while the products go out, input off (or its own condition set back), the others\' conditions set back. The inserters need a logistic network for their logistic condition'}}
   return M
 end

@@ -16591,3 +16591,51 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,270,315 bytes on main (5c6ef5ce), 6,278,546 with this branch (limit 8,388,608).
 - Docs: agent/ref/circuits-settings.md (`assembler_batch`). Test: tests/d27_batch278.lua (fails on main: no counter, no
   conditions, no counter_from); tests d17_batch19, d20_batch53, d22_batch77 and d17_batch19_rt take the new steps.
+
+## d27 batch280 (CS, Astra #2600: staging that needs more slots than the chest has)
+
+- Astra's queue plan for an Aquilo railgun-turret batch (30 tungsten plate, 50 superconductor, 20 carbon fiber and 100
+  quantum processors a craft) asked a 48-slot requester for 930 tungsten plate, 1588 superconductor, 620 carbon fiber
+  and 3400 quantum processors and waited for each. The queue dry run passed; the plan stalled after 1500 quantum
+  processors. Splitting the staging across two requesters got it through.
+- Measured on a private copy (2.0.77, world n's d22 save, a rig on Nauvis with roboports and 350 logistic robots):
+  - Stack sizes: tungsten-plate 50, superconductor 200, supercapacitor 100, carbon-fiber 100, quantum-processor 100.
+    Astra's four requests need 19 + 8 + 7 + 34 = 68 slots.
+  - Each quality takes slots of its own: 50 normal and 50 rare quantum processors in a chest filled 2 slots, and 150
+    uncommon 2 more (100 and 50).
+  - Those four requests on an empty 48-slot requester (trash unrequested off), stock to spare: within 19 s it held 930
+    tungsten plate, 1400 superconductor, 621 carbon fiber and 1500 quantum processors, every slot full. Nothing more
+    came in the next 94 s; the robots went back to their roboports.
+  - Robots fill a requester only under its bar: bar 11 (10 slots), 2000 quantum processors asked, 1000 delivered.
+- The queue dry run (`queue_submit dry_run`) now returns `staging` and `staging_refused` (stageslots.lua). For each
+  `item_count` wait (`at_least`, alone or inside `all`) at one requester or buffer chest whose requests name the item,
+  it follows the chest's requests through the plan: the chest's own now, with the plan's `requests` steps before the
+  wait applied (`set`, `clear`, `clear_all`, `active`, `trash_unrequested`). A step with `section`, `add_section`,
+  `remove_section` or `group` is not followed; the chest is not checked past it, and a line says so.
+  - The waits there need their items at once while nothing takes from the chest between them: each item and quality
+    waited for (its largest `at_least`), ceil(count / stack size) slots, with what the chest holds that no request
+    names (it stays while trash unrequested is off). Over its slots under its bar: `staging_refused`, and a submit is
+    refused with the same line, before any step runs.
+  - Its requests then ask (each item's min summed over its active sections, the waited `at_least` where larger): over
+    its slots, a line says robots bring them in any order and the wait can stall. Within the slots, a line gives the
+    slots.
+  - Something takes from the chest: an inserter or loader whose pickup is the chest, unless it is held whatever the
+    count (its own logistic condition `ITEM < -2147483648`, or a `circuit_set` to that before the wait, as
+    assembler_batch holds its input), or a plan step that names the chest's position (a `transfer`, ...). Then the
+    items may go as they arrive (sequential): said, not refused. With trash unrequested on, nothing is refused.
+  - Staging in turns is followed: requests cleared and the next set after a wait. What was waited for before stays in
+    the chest unless something takes it, so it counts in the next wait's slots.
+- `assembler_batch` returns `slots {required, available}` and a plan line with the slots whether the batch fits or not
+  (batch278 refuses a batch that does not fit).
+- Run on the copy (sol's bot, a new 48-slot requester):
+  - Astra's plan as a dry run: `staging` said "its requests then ask 68 of its 48 slots" at the first wait, and
+    `staging_refused` "the waits there need 68 of its 48 slots at once" at the quantum-processor wait. The real submit
+    was refused with that line, and nothing was queued.
+  - The same plan with 1300 quantum processors (47 slots) passed the dry run ("the requests there ask 47 of its 48
+    slots"), was queued and ran: the four waits were met (930, 1590, 621 and 1302 in the chest).
+  - assembler_batch dry runs on an assembler 2 on gears: 1000 gears gave `slots {required: 20, available: 48}`; 2500
+    were refused (50 slots).
+  - Dispatch time of the dry run with Astra's four waits: 3.1-4.7 ms; the same plan without the waits: 1.9-2.2 ms
+    (Rosetta, 5 calls each, twice). It runs on queue_submit only; nothing is added to the tick.
+- Bundle (compacted): 6,270,992 bytes on main (a50e73be), 6,278,546 with batch278, 6,291,600 with this branch (limit
+  8,388,608).

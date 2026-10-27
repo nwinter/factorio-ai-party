@@ -107,6 +107,9 @@ do
   req.get_inventory=function() local t={get_bar=function() return 49 end,get_contents=function() return held end}; return setmetatable(t,{__len=function() return 48 end}) end
   local r=B.run({},{position={x=42.5,y=-24.5},count=10,dry_run=true})
   eq(r.refused,nil); eq(r.line,'dry run: nothing queued')
+  -- (d27 batch280 CS) the slots said when it fits: 799 tungsten 16, 799 superconductor 4, 400 quantum 4
+  eq(r.slots.required,24); eq(r.slots.available,48)
+  has(table.concat(r.plan,'\n'),'the requester (41.5,-20.5) holds 24 of its 48 slots at once (799 tungsten-plate (16 slots), 799 superconductor (4 slots), 400 quantum-processor (4 slots))')
   -- 40 crafts: 4000 - 201 tungsten (80 slots) alone is more than 48
   r=B.run({},{position={x=42.5,y=-24.5},count=40,dry_run=true})
   has(r.refused,'the requester (41.5,-20.5) has 48 slots; the batch must hold 3799 tungsten-plate (76 slots), 3799 superconductor (19 slots), 1900 quantum-processor (19 slots) there at once: 114 slots. Refused')

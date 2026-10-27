@@ -155,7 +155,7 @@
   the output inserter (`destination`, and a chest's `room` for them); the input off again (or its own condition set
   back); the machine's and the output's own conditions set back. The products are not held in the machine: its output
   holds one stack (`output_stack`) and inserters stop feeding it at `feeds_until` held. A batch whose ingredients do not
-  fit the requester's slots at once is refused (`refused`, the slots said). The requester and both inserters are found
+  fit the requester's slots at once is refused (`refused`); `slots {required, available}` says them either way. The requester and both inserters are found
   round the machine unless given. `surplus` names what is already there over the batch's need (the machine would make
   more with it). The inserters need a logistic network for their logistic condition. A requester with trash
   unrequested on has it switched off before its requests are cleared and staged, and on again after the batch
