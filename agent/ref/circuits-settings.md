@@ -1,4 +1,4 @@
-- `circuit_set {position, platform? | surface?, enable | logistic | read | settings | signals | on | arithmetic |
+- `circuit_set {position, platform? | surface?, enable | logistic | clear | read | settings | signals | on | arithmetic |
   decider | selector | set_requests}`: sets an entity's circuit condition, read switches, settings or combinator, in
   reach or by remote view (our entities in visible chunks, all of a platform); `inspect` reads back the conditions,
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
@@ -6,7 +6,9 @@
   (without one the game ignores it, and the line says `condition ignored`). `switch_off: true` sets a condition that
   never holds (`signal-dot < -2147483648`): the entity stops while a wire connects it; `remove_condition: true` takes
   the condition away: it runs whatever its wires read; `enable: false` is refused naming both; `now` says what the
-  entity does after either. A logistic condition reads the network
+  entity does after either. `logistic: false` takes the logistic condition away. `clear: true` takes both away (a
+  chest: its circuit condition). A call with no setting (`{position}` alone) changes nothing and is refused, naming each
+  condition that holds the entity now and the argument that clears it. A logistic condition reads the network
   whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
   the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
   condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds

@@ -16646,8 +16646,20 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     were refused (50 slots).
   - Dispatch time of the dry run with Astra's four waits: 3.1-4.7 ms; the same plan without the waits: 1.9-2.2 ms
     (Rosetta, 5 calls each, twice). It runs on queue_submit only; nothing is added to the tick.
-- Bundle (compacted): 6,270,992 bytes on main (a50e73be), 6,278,546 with batch278, 6,291,600 with this branch (limit
-  8,388,608).
+- Sol #2607 (an assembler_batch deadlock on an assembler 3 making rare asteroid collectors: batch278's fix covers it)
+  also found that `circuit_set {position}` did not clear the output inserter's hold (`asteroid-collector <
+  -2147483648`) and `logistic: false` did. His journal: the call had only a position. circuit_set with no setting
+  planned no step and answered as a read; its `stays_disabled` said the hold was "not set by this call".
+  - A call that sets nothing is now refused, naming each condition that holds the entity now and what clears it: "its
+    logistic condition asteroid-collector < -2147483648 (not met: it holds it off): logistic: false clears it".
+    `logistic: false` takes the logistic condition away; `remove_condition: true` the circuit condition.
+  - `clear: true` takes both away (a chest: its circuit condition), alone; `now` says "runs: no circuit or logistic
+    condition". A provider chest's `read: {contents: true}`, which sets nothing and says why, is not refused.
+  - In shift87's journals, 85 circuit_set calls by astra, grok, muse and sol: one had only a position (Sol's).
+  - On a copy (sol's bot): a powered fast inserter with that hold stayed at 60 plates moved
+    (`disabled_by_control_behavior`); `circuit_set {position}` was refused with the line above; `clear: true` set it
+    working (62 moved within a second).
+- Bundle (compacted): 6,272,393 bytes on main (91ba4ad1), BUNDLE_BRANCH with this branch (limit 8,388,608).
 ## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
 - The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
 - Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
