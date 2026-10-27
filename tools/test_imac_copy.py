@@ -14,6 +14,7 @@ import json, os, re, stat, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+import testsafe  # noqa: E402
 
 
 def stub(d, name, body):
@@ -24,7 +25,7 @@ def stub(d, name, body):
 
 
 def env_with(d, **kw):
-    return dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], **kw)
+    return testsafe.env(PATH=d + os.pathsep + os.environ["PATH"], **kw)
 
 
 def worlds():
