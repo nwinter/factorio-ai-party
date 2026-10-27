@@ -6,7 +6,8 @@
 - the page: the three public videos first (shift 1, shift 63, the latest), every shift in order with its title,
   date, length (the video's, else R2's, else the shift's), YouTube in the playlist, the archive player only where
   R2 has the shift, a shift with neither says the video comes later; chapters link into the video; a chapter or
-  title naming the stream owner never reaches the page; moments to watch link a minute before the moment;
+  title naming an account or tool (build.py keep_line) never reaches the page, the owner's name may; moments to watch
+  link a minute before the moment;
 - thumbnails: a shift-N.jpg only when the shift has one, else a text label;
 - build.py reads the video data only when named: a build given none has no /videos/ and no Videos link even when
   site/content/r2.json, videos.json and site/og/thumbs exist in the checkout (the gate tests in the live checkout,
@@ -25,7 +26,7 @@ SITE = Path(__file__).resolve().parent
 sys.path.insert(0, str(SITE))
 import videos_page as vp  # noqa: E402
 
-OWNER = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
+BLOCKED = re.compile(r"(?i)codex-b")  # build.py keep_line: an account or tool name
 
 
 def shift(n, started, ended):
@@ -47,7 +48,7 @@ def helpers():
     def hours(a, b):
         return (datetime.datetime.fromisoformat(b) - datetime.datetime.fromisoformat(a)).total_seconds() / 3600
     return {"esc": lambda s, quote=True: html.escape(str(s), quote), "clean": lambda s: s,
-            "keep_line": lambda s: not OWNER.search(s or ""), "pt": pt, "hours": hours,
+            "keep_line": lambda s: not BLOCKED.search(s or ""), "pt": pt, "hours": hours,
             "shift_href": lambda s: f"/runs/long/shift-{s['n']}/",
             "video_offset": lambda v, t: 600.0 if t else None, "game_time": lambda tick: f"{tick // 216000}h",
             "live_banner": lambda: ""}
@@ -84,13 +85,14 @@ def main():
         {"key": "edge", "label": "Solar system edge reached", "kind": "space", "tick": 2, "t": "2026-10-23T10:00:00", "shift": 63},
         {"key": "pack:x", "label": "First Z pack", "kind": "science", "tick": 3, "t": "2026-10-24T15:00:00", "shift": 70}]}
     videos = {"shift01": video(1, [{"at": 0, "time": "0:00", "title": "Nine AIs, one empty map"},
-                                   {"at": 9243, "time": "2:34:03", "title": "NickWinter (host) asks: Sol"}]),
+                                   {"at": 9243, "time": "2:34:03", "title": "NickWinter (host) asks: Sol"},
+                                   {"at": 9300, "time": "2:35:00", "title": "codex-b notes"}]),
               "shift02": video(2), "shift63": video(63), "shift69": video(69)}
-    videos["shift02"]["title"] = "Factorio AI Party · Shift 2: Asked by Nick Winter"  # an owner-named title: none shown
+    videos["shift02"]["title"] = "Factorio AI Party · Shift 2: Asked by Nick Winter"  # the owner's name may appear
     r2 = {"shift01": {"shift": 1, "player": vp.player_url("shift01"), "duration_s": 1000.0},
           "shift70": {"shift": 70, "player": vp.player_url("shift70"), "duration_s": 3 * 3600 + 60}}
     body = vp.build_page(lr, videos, r2, {1: "shift-1.jpg"}, helpers())
-    assert not OWNER.search(body.replace("nickwinter.net", "")), "the owner's name on the page"
+    assert not BLOCKED.search(body), "an account name on the page"
     start = body.split('id="start"')[1].split('id="moments"')[0]
     assert re.findall(r"<h3><a [^>]*>Shift (\d+)</a>", start) == ["1", "63", "69"]
     assert "The first shift" in start and "The Space Age victory" in start and "The latest shift" in start
@@ -102,8 +104,8 @@ def main():
     assert "https://www.youtube.com/watch?v=VID01xxxxx&amp;list=PLtest" in row["1"]
     assert "Archive player" in row["1"] and "Archive player" not in row["2"] and "Archive player" in row["70"]
     assert "YouTube</a>" not in row["70"] and "First Z pack" in row["70"], "no video: the shift's own firsts"
-    assert "Asked by" not in row["2"], "a title naming the owner is not shown"
-    assert "1 chapters" in row["1"] and "t=9243s" not in row["1"], "the owner's chapter left out"
+    assert "Asked by Nick Winter" in row["2"], "a title naming the owner is shown (Nick d27 10:10)"
+    assert "2 chapters" in row["1"] and "t=9243s" in row["1"] and "t=9300s" not in row["1"], "only the account's chapter left out"
     assert row["1"].count('src="/static/thumbs/shift-1.jpg"') == 1 and "thumb-text" in row["2"]
     assert "public</span>" in row["1"] and "public</span>" not in row["2"]
     moments = body.split('id="moments"')[1].split('id="all"')[0]

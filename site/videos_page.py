@@ -169,7 +169,7 @@ def build_page(lr, videos, r2, thumbs, h):
     def title_of(n):
         v = vid_of.get(n)
         t = headline(h["clean"](v.get("title", "")), n) if v else ""
-        if not h["keep_line"](t):  # a title naming the stream owner: the shift's firsts instead
+        if not h["keep_line"](t):  # a title naming an account or tool: the shift's firsts instead
             t = ""
         if not t:
             firsts = [f["label"] for f in lr["firsts"] if f["shift"] == n and f["kind"] in MOMENT_KINDS]

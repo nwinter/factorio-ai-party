@@ -85,9 +85,7 @@ becomes public and the previous latest goes back to unlisted.
 
 - `python3 tools/yt_archive.py plan [--refresh]`: what `apply` would change and its units (`--refresh` reads
   YouTube's state first: playlists.list, videos.list per 50 ids, playlistItems.list; 1 unit a call).
-- `apply`: the changes in order. First a description line naming the stream owner is removed while the video is
-  still private (videos.list + videos.update part=snippet). Then the playlist, the public ones, the demotions, the
-  rest unlisted, and playlist inserts at their place in shift order. Each change is written to
+- `apply`: the changes in order: the playlist, the public ones, the demotions, the rest unlisted, and playlist inserts at their place in shift order. Each change is written to
   `video-work/yt-archive-state.json` as it succeeds, so a rerun continues. At the end it writes
   `site/content/videos.json` (git-ignored) with the videos YouTube shows.
 - `rotate`: uploads the finished shifts with no video, the newest first, then the backlog oldest first. Each goes

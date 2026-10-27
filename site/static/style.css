@@ -123,6 +123,11 @@ section { margin-bottom: 1rem; }
 }
 
 .site-footer { border-top: 1px solid var(--line); margin-top: 4rem; padding: 1.5rem 0 2.5rem; color: var(--muted); font-size: .9rem; }
+.site-footer p { margin: .3rem 0; }
+.site-footer .credit { font-size: .82rem; }
+/* the game's icons (site/gameicons.py): 64 px files drawn at 16-48 px */
+.gi { display: inline-block; vertical-align: -.28em; object-fit: contain; flex: none; }
+.gi + .gi { margin-left: 1px; }
 
 /* buttons: the kit's .fx-btn, plus two sizes */
 a.fx-btn { text-decoration: none; }

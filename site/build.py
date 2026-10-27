@@ -58,6 +58,7 @@ import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, fro
 import updates as op_updates  # noqa: E402  (site/updates.py: /updates/, the operator's changes and their status)
 import legal  # noqa: E402  (site/legal.py: /privacy/ and /terms/, d23, for the YouTube uploader's OAuth verification)
 import videos_page  # noqa: E402  (site/videos_page.py: /videos/, every shift's video on YouTube and R2; batch265)
+import gameicons  # noqa: E402  (site/gameicons.py: the game's icons, static/game/; Graphics copyright Wube Software)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -86,23 +87,22 @@ _REDACTIONS = [
 ]
 
 
-# Names of the owner, their accounts and personal tools that appear in some studies. The build fails if any reach
-# dist/; site.json's per-study `rewrite` list is where they get replaced.
-_BLOCKED = re.compile(r"\bNick\b|(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
-# Chat and host lines from the owner's own channel account, or that name it, are left off the site.
-_OWNER = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
+# The owner's accounts and personal tools that appear in some studies. The build fails if any reach dist/;
+# site.json's per-study `rewrite` list is where they get replaced. The owner's name may appear (Nick d27 10:10: the
+# domain makes it obvious; the site neither adds it nor strips it).
+_BLOCKED = re.compile(r"(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
 
 
 def load_long(runs_dir):
-    """The long run as the site shows it (build.py and og_card.py): redacted, the owner's lines and the viewer lines
-    deleted on YouTube or in site/hidden-viewers.json left out."""
+    """The long run as the site shows it (build.py and og_card.py): redacted, lines naming an account or personal tool
+    and the viewer lines deleted on YouTube or in site/hidden-viewers.json left out."""
     hidden = moderation.load(runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")  # tests: their own
     return longrun.load(runs_dir, clean, start=CONTENT.get("run_start"), keep=keep_line, agents=list(AGENTS),
                         hide=hidden.hides)
 
 
 def keep_line(text):
-    return not (_BLOCKED.search(text or "") or _OWNER.search(text or ""))
+    return not _BLOCKED.search(text or "")
 
 
 def clean(text):
@@ -599,6 +599,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
   <div class="wrap">
     <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
     Built from the project's run logs. <a href="/how/">How it was made</a>. <a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub</a>. <a href="/privacy/">Privacy</a>. <a href="/terms/">Terms</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
+    <p class="credit">Factorio is a game by Wube Software. {gameicons.CREDIT}.</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -1523,6 +1524,12 @@ def build_about_compact():
   <p class="muted small">Names and colours chosen by each agent.</p>
   <ul class="team">{team}</ul>
 </section>
+<section id="credits">
+  <h2>Credits</h2>
+  <p>Factorio and Factorio: Space Age are games by <a href="https://factorio.com/" rel="noopener">Wube Software</a>.
+  {gameicons.CREDIT}: the game's icons and pictures on this site are used with Wube's permission for a free,
+  non-commercial project.</p>
+</section>
 """
     return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
 
@@ -1667,7 +1674,14 @@ def build_about(runs, all_worlds):
   briefly and keep playing, and they can vote to mute a viewer. The site chat needs no account: pick any name, no
   links.</p>
 </section>
-{history}"""
+{history}
+<section id="credits">
+  <h2>Credits</h2>
+  <p>Factorio and Factorio: Space Age are games by <a href="https://factorio.com/" rel="noopener">Wube Software</a>.
+  {gameicons.CREDIT}: the game's icons and pictures on this site are used with Wube's permission for a free,
+  non-commercial project.</p>
+</section>
+"""
     return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
 
 
@@ -2049,6 +2063,9 @@ def main():
             continue  # only the site's own files (not editor or tool folders)
         (out / "static").mkdir(exist_ok=True)
         shutil.copy(f, out / "static" / f.name)
+    if gameicons.GAME.is_dir():  # the game's icons (tools/game_icons.py)
+        shutil.copytree(gameicons.GAME, out / "static" / "game", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns(".*", "README.md"))
     # Art kit from the stream overlay: the CSS (font comes from the <link> in page(), not a blocking @import)
     # and the avatar renderer for the live page; one portrait file per agent for the static pages.
     kit = (ART / "factorio-ui.css").read_text()
