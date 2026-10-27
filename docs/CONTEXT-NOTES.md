@@ -194,7 +194,8 @@ tools/context-probe.sh muse muse-spark-1.3 80000    # low point; loops (see abov
 - Muse at 200K and Codex at 140K were not run to their production points; the probes used low points.
 - Claude: the binary says threshold compaction can be "not enforced" when an experiment defers to the API's
   prompt-too-long handling; `tools/context.py report` on a real run shows the actual points.
-- Codex: hooks unused (trust); a `SessionStart ^compact$` hook would be the more direct re-read if ai-session ever
-  passes `--dangerously-bypass-hook-trust` or the hooks get trusted once.
+- Codex: no compaction hooks. (d26 batch250) The tool hooks are trusted per workspace by tools/codex_hooks.py (it
+  writes `[hooks.state."PATH:EVENT:0:0"] trusted_hash` into the route's config.toml, the hash from Codex's own
+  `hooks/list`); a `SessionStart ^compact$` hook could be trusted the same way.
 - Grok and Muse log no token counts at compaction (their hook payloads have no transcript path).
 - The nudge exists only for Claude Code (the harness whose hook payload points at a transcript with usage).

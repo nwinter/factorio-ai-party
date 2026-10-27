@@ -1823,7 +1823,7 @@ fh sleep 900 --until researched                       # ...or until the research
   lines are not consumed by a helper's call either. A runtime from before refuses the argument once; `fh` then stops
   sending it.
 - Urgent alerts end every sleep, `fh wait --until` and direct `wait_ticks`/`wait_until` by default (Nick, d15 06:17: "urgent alerts could wake everyone"; urgent.lua): `woke: urgent` with `urgent` naming it (`fh wait`: `woke: urgent after 12 s (attack on our structures 14 tiles from you: attack #40 at (10,10): ...)`); a direct wait ends with outcome `urgent` (exit 0) and `last.why` `urgent: ...`. What counts, from the shifts 14-16 journals: our structures hit within 40 tiles of your character (`attack on our structures N tiles from you: <the attack line>`); an enemy group gathering to head for a spot within 40 tiles of you (`enemy group of 9 (9 big-biter) gathered at (90,90), 127 tiles from you, heading for (36,0), 36 tiles from you`; it was 64 until Haiku, shift17 09:20: groups heading 52-63 tiles away that gathered 100+ tiles off woke it every few minutes); buildings destroyed by enemies in one of your own fresh (not stale) claims or within 40 tiles of you (`buildings destroyed in your claim #5 "home boilers": loss #3 at (225,222): 7 destroyed (5 transport-belt, 2 boiler) by 4 big-spitter`; friendly fire does not count); a platform you hear about as its alerts route them (creator, recent workers, anyone aboard) losing a building, or its hub taking damage (`platform Sunward: its hub took 200 damage, health 4800 of 5000; hits by 4 medium-asteroid`); a teammate's character dying on your surface (`opus died at (-30,40), killed by big-spitter, 50 tiles from you`); an electric network on your surface with 20 or more machines half or more on low or no power (`power collapse: electric #2 near (-10,40) has 170 of 300 machines on low or no power (160 low, 10 none)`, from the networks' last background view; only a new collapse: the network had power within the last 10 minutes, so a network dark for longer, or never seen with power since the runtime started, does not wake (d15 trajectory analysis: far-east networks kept dark on purpose woke Haiku and Sonnet for hours)). Each wakes an agent once (one attack, group, loss incident, death or network), and again only 5 minutes later if it grew; hits on a hub count from the sleep's start. Everything else stays as before: `--until alert` and its kinds, damage, tells. It reads what the harness already keeps (attacked areas, groups, loss incidents, platform hit counts, the chronicle's deaths, the networks' cached view), no scan. An urgent wake is never repeated: a sleep right after it runs, and the alert it named does not wake it again (Haiku, shift17 09:20: "the next sleep repeats it"; until then an urgent wake repeated like a damage wake). `--no-urgent` (args `wake_on_urgent: false` on `sleep`, `wait_ticks`, `wait_until`) opts out. `--urgent-radius N` (args `wake_on_urgent: {radius: N}`, 1..200 tiles; Grok, d15 14:07: a wait at the artillery was ended by attacks 40 tiles away) counts attacks, enemy groups' targets, losses (those in your claims too) and teammates' deaths only within N tiles of your character, in place of 40; a platform's losses and hub hits and power collapses wake as before. A runtime from before it refuses the table (`wake_on_urgent must be true or false`): fh then runs the wait with the default 40 tiles and says so on stderr. The sleep's `wakes_on` ends `; within N tiles of you)`. An action's `--wait` and `fh wait --max` (waiting for the running action) do not end on it. The sleep's `wakes_on` adds `an urgent alert (attack or enemy group near you, losses in your claims, platform hits, a teammate's death, power collapse)`.
-  - `{until: "alert", kinds: [...]}` (`fh wait --until "alert low_power starved"`, also `fh sleep --until`; commas also separate; Luna, 19:50) wakes on chosen kinds instead: a push alert group of one of those kinds (or its sub-kinds: `lost_source` covers `lost_source.boiler`) addressed to you, as the team alerts route them, that is new since the wait began or whose count grew (`alert` is its text); `starved`: an assembler or furnace in one of your own active claims whose status is `item_ingredient_shortage`, `fluid_ingredient_shortage` or `no_ingredients` and was not when the wait began, looked at every 10 s (at most 500 machines a claim). 1..16 kinds.
+  - `{until: "alert", kinds: [...]}` (`fh wait --until "alert low_power starved"`, also `fh sleep --until`; commas also separate; Luna, 19:50) wakes on chosen kinds instead: a push alert group of one of those kinds (or its sub-kinds: `lost_source` covers `lost_source.boiler`) addressed to you, as the team alerts route them, that is new since the wait began or whose count grew (`alert` is its text); `starved`: an assembler or furnace in one of your own active claims whose status is `item_ingredient_shortage`, `fluid_ingredient_shortage` or `no_ingredients` and was not when the wait began, looked at every 10 s (at most 500 machines a claim); the alert adds `held back by its feeder's condition (its source holds the item): ...` when its feeder is off by its condition while its source holds the item it lacks (d26 batch244). 1..16 kinds.
   - Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok, 21:20: `fh wait --until "alert|platform_arrived NAME planet"` was a client_error): joined by `|` (`fh wait --until "item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"`, `fh sleep 300 --until "alert|platform_arrived Sunward gleba"`), or a JSON list, are sent as `{until: "any", conditions: [...]}` (the runtime also takes a plain list): 1..8 conditions, alerts among them (plain or with kinds), whichever holds first wakes it. `condition` reads `item_count coal | item_count iron-plate`, `saw` lists each one's reading while none holds, and a condition wake names the one that held (`met`; the wait's line: `woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))`). One met at the start ends the sleep at once. `tell` (also `tells`, `mention`, `told`) among them is dropped by both `fh sleep --until` and `fh wait --until` (both wake on tells); `fh sleep 300 --until "tell|alert"` waits for either event. A runtime from before this deploy refuses until=any, and the CLI says so.
   - Stream and live-page agent cards show the current wait's condition, estimated game time remaining and measured
     character idle time in that wait. A missing estimate reads `ETA unknown`; a plain sleep/timer shows its maximum
@@ -4961,7 +4961,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   broker, a recipient whose model has been inside one tool call a minute or more is in `in_tool_call`: `opus: one tool
   call running since 09:07:08 (15 min); tells reach it when it ends` (d26 batch238: Claude Code, Grok and Muse record
   each call with their tool hooks, tools/toolcall.py; a call that is only an `fh sleep` or `fh wait` ends on the tell
-  and is left out; Codex and agy record none). `wake` and `fyi`
+  and is left out; batch250: Codex too, each shell command, from the workspace's `.codex/hooks.json` that
+  tools/codex_hooks.py writes and trusts at launch when start-team runs with `POG_CODEX_HOOKS=1`; agy records none). `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
@@ -5119,6 +5120,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   The operator-only `factory_digest {force?}` read uses completed survey caches and visible endpoint lane readings
   already made by `trace`; it performs no new surface/entity or tile scan. Its two `research_use` lines use the
   completed census, engine vehicle counters, and a small current agent loadout read (details below).
+  (d26 batch244) `held_back {read, held, lines}` a surface: the first 24 machines the cached surveys list as short of
+  an item ingredient, found again at their positions and read now; those still short whose feeder is off by its
+  condition while its source holds the item are counted (the first 2 a surface in words). The tell adds "of N
+  machines short of an item read now, H held back by their feeder's condition (its source holds the item), not missing
+  stock: ..." and the delta a `held|SURFACE` blocker.
   Up to 16 cached planetary surfaces
   (platforms excluded) report survey ages, drill no-resources statuses with counts and up to 3 positions per
   prototype, input-shortage/output-full machine counts by type, boiler/furnace no-fuel and last-buffered-fuel
@@ -6235,6 +6241,16 @@ fh watch    # deploy on every change
   the ingredient each lacks for one craft), machines with no fuel, on low or no power, labs waiting for packs (with the
   research), and what requester chests lack (asked, less held and on the way), by item; kept 10 s. About 18 ms live in
   the container on Nauvis (about 4 ms on n).
+  - (d26 batch244, Astra #2455: two cryogenic plants read short of ice while their feeders were off by the logistic
+    condition cryogenic-science-pack < 2000 beside requesters holding 101 and 103 ice) the short machines are split: `missing
+    stock`, and `held back by its feeder's condition`: an input inserter off by its circuit or logistic condition whose
+    source holds the ingredient while no running input inserter has it at its source or in its hand. Each such group
+    names its first 2 machines (6 in all) with the inserter's position, its condition and the signal's value now, its
+    source and what that holds, as supply's makers_worst says it (supply.lua `held_feeders`, `held_line`), and
+    `held_back` [{recipe, item, machine, position, inserter, inserter_position, source, source_position, source_holds,
+    line}]. The feeders of the first 32 machines short of an item are read (one find and up to 8 inserters each); past
+    that a line says how many were counted as missing stock without that read. The machine's own status is unchanged.
+    The same check is said in game_alerts' `silo_short` line, a wait's `starved` alert and the factory digest.
 - Platform loss alerts (B7, Luna 13:52: Swift lost 28 structures in a minute) list each lost entity (up to 48 an
   incident), read when told: `N rebuilt already`, `a ghost stands at N (the hub rebuilds them with the items): ...` and
   `no ghost at N (a new placement each): ...`. Checked on the copy: of two belts and a solar panel killed on Swift, the
@@ -6744,7 +6760,10 @@ fh watch    # deploy on every change
 - A1 (Sonnet): two silo push alerts in the team block (game_alerts kinds), sent to whoever claims the area, else the
   silo's builder, else the nearest agent:
   - `silo_short.<ingredient>`: rocket parts stalled 2 minutes, short of an ingredient. The line gives the parts, how
-    long since the last part, and what the silo holds of it; `silo {position, why: true}` follows the chain.
+    long since the last part, and what the silo holds of it; `silo {position, why: true}` follows the chain. A silo
+    whose feeder is off by its condition while that feeder's source holds the ingredient adds `held back by its
+    feeder's condition (its source holds it)`: the inserter, its condition and value, its source and what it holds
+    (d26 batch244).
   - `silo_ready_idle`: a built rocket not launched for 3 minutes, with its cargo and the platforms above.
 - A2 (Sonnet): `platforms {eta_to: PLANET}` gives each platform's ETA to that planet through its schedule (batch9
   A4's estimate: the leg at its cruise, the stops' waits and what sends it on), or why there is none. On the copy:
@@ -16080,6 +16099,8 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   with speed leads nowhere) and stays inside the frame's inner box, a stop inside it holds the frame; a vehicle stuck
   20 s with no fight or fire has served its dwell and counts as standing, moving on again is news. director_replay.py
   gives both rule sets the vehicle and build interest bumps. Test: tools/stream/test_spidershot.py.
+- Checkpoint 3 (viewer Aurora 16:30: the frame trailing on a pathed route): the lead follows the reply's remaining route
+  past the live read's next waypoint (work.VehicleFeed keeps it).
 - cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
   the copy): smaller defaults, the flags unchanged.
   - The walk gives the components before as it goes (no second pass); positions and connection points are read only

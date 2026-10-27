@@ -2,8 +2,8 @@
 # Answer first-run folder-trust prompts in agent panes, all panes in one pass (we created the folders):
 #   tools/clear-prompts.sh SECONDS PANE DIR [PANE DIR ...]
 # A pane is done when its trust prompt is answered, its screen shows the agent working, or its workspace journal grew
-# since this script started (the agent made a request, so it is past any prompt). Prints "PANE trust|working|journal"
-# as each pane is done and "PANE timeout" for the rest after SECONDS.
+# since this script started (the agent made a request, so it is past any prompt). Prints "PANE trust|hooks-untrusted|
+# working|journal" as each pane is done and "PANE timeout" for the rest after SECONDS.
 # shake3: launching one pane at a time, five agents showed none of these within the 40 s per-pane wait (44-49 s each),
 # so a team launch took 4.5 minutes. tools/start-team.sh now starts every pane first (POG_NO_WAIT=1) and then waits
 # for all of them together here.
@@ -23,7 +23,11 @@ while [ "$pending" -gt 0 ] && [ "$(date +%s)" -lt "$end" ]; do
     [ -n "${state[$i]}" ] && continue
     pane=${panes[$i]} dir=${dirs[$i]} s=""
     screen=$(herdr pane read "$pane" --source visible --lines 40 2>/dev/null || true)
-    if grep -q "Yes, I trust this folder" <<<"$screen"; then
+    if grep -q "Continue without trusting" <<<"$screen"; then
+      # (d26 batch250) Codex's "Hooks need review" (the workspace's tool hooks not trusted in the route's config.toml,
+      # tools/codex_hooks.py): option 3, the session starts and its hooks do not run. A pane never trusts hooks itself.
+      herdr pane send-text "$pane" 3 >/dev/null; s=hooks-untrusted
+    elif grep -q "Yes, I trust this folder" <<<"$screen"; then
       # Claude lists "No, exit" first; Antigravity preselects "Yes". Move only if Yes is not highlighted.
       grep -qE "^[[:space:]]*(❯|>)[[:space:]]*Yes, I trust" <<<"$screen" || { herdr pane send-keys "$pane" down >/dev/null; sleep 0.3; }
       herdr pane send-keys "$pane" enter >/dev/null; s=trust

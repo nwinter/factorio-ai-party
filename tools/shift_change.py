@@ -31,10 +31,11 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYS = ["POG_BROKER", "POG_FULL_TOOLS", "POG_SPACE_AGE", "POG_YOUTUBE", "POG_CASTER_MODEL", "POG_CASTER_URGENT",
         "POG_CASTER_LOW_MODEL", "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_VIEWER_ROUTE", "POG_TEAM_FILE",
-        "POG_CAMS", "POG_HOURLY"]
+        "POG_CAMS", "POG_HOURLY", "POG_CODEX_HOOKS"]
 # Set in the operator's environment at a shift change, these beat what PREV ran with (POG_CAMS=1 at the Saturday 21:30
 # change for Sunday's one camera, POG_CAMS=3 to go back); the rest carry over from PREV.
-ENV_FIRST = ("POG_CAMS", "POG_HOURLY")  # (d25 batch197) POG_HOURLY=1 at a change turns the hourly piece on
+ENV_FIRST = ("POG_CAMS", "POG_HOURLY", "POG_CODEX_HOOKS")  # (d25 batch197) POG_HOURLY=1 at a change turns the hourly
+# piece on; (d26 batch250) POG_CODEX_HOOKS=1 the Codex agents' tool hooks
 # A harness fault in a reply ("runtime:8746 attempt to compare number with nil"), not an agent's argument error: those
 # carry the same "runtime.lua:NNN:" position (radius out of range, unknown field, out of reach; shake12 had 20 in 7 min).
 LUA_ERROR = re.compile(r"attempt to (compare|index|call|perform arithmetic|concatenate)|bad argument|stack overflow")
