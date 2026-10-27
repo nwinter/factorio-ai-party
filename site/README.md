@@ -69,6 +69,13 @@ saves once per 10 game minutes in `runs/RUN/basemap/TICK.json` (`tools/stream/ba
 `/runs/long/timelapse.json` (about 12 KB a snapshot, loaded when the section scrolls into view), a slider with a
 mark per shift and Play. No snapshots, no section.
 
+`/videos/` (`site/videos_page.py`, batch265) lists every shift. Each row has its title, date, length, YouTube link
+(from `site/content/videos.json`, which `tools/yt_archive.py` writes) and its archive player on R2. The page starts
+with the three public videos and the run's firsts as moments to watch, each linking a minute before the moment.
+`python3 site/videos_page.py refresh` runs in `tools/site-refresh.sh` before the build. It writes
+`site/content/r2.json` with only the shifts whose R2 master playlist answers HTTP 200, and the 480x270 thumbnails in
+`site/og/thumbs/`. Both are git-ignored.
+
 ### Archive switch and run start (`site/content/site.json`)
 
 `"archive": false` leaves the test history out of the build: the experiments, the runs list and every run page in

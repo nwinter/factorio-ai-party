@@ -967,3 +967,26 @@ html { scroll-padding-top: 76px; }
 .upd-tools[hidden], .upd-shown[hidden] { display: none; }
 .upd .fx-chip.upd-new { margin-left: 2px; }
 .upd-cadence { margin-top: 2px; }
+/* /videos/ (site/videos_page.py, batch265): the public three, moments to watch, every shift */
+.v-features { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; margin: .6rem 0 1.2rem; }
+.v-feature { min-width: 0; border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: var(--fx-r-1); padding: 10px 12px; background: var(--surface); }
+.v-feature h3 { margin: .1rem 0 .2rem; }
+.v-feature p { margin: .2rem 0; }
+.v-feature .eyebrow { margin: .5rem 0 0; }
+.v-thumb { display: block; }
+.v-thumb .thumb { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--fx-r-1); background: var(--surface-2); }
+.thumb-text { display: grid !important; place-items: center; color: var(--muted); font-weight: 700; font-size: 1.3rem; }
+.v-links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.v-moments { columns: 2 320px; column-gap: 24px; padding-left: 1.4rem; }
+.v-moments li { break-inside: avoid; margin: 0 0 .3rem; }
+.v-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: .4rem 0 .8rem; }
+.v-tools input { font: inherit; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: var(--fx-r-1); background: var(--surface); color: var(--ink); min-width: min(100%, 260px); }
+.v-list { list-style: none; padding: 0; margin: 0; }
+.v-row { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.v-row[hidden] { display: none; }
+.v-row h3 { margin: 0 0 .15rem; font-size: 1.05rem; }
+.v-row p { margin: .15rem 0; }
+.v-title { color: var(--ink-2); }
+.v-chapters summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+.v-chapters ol { margin: .3rem 0 0; padding-left: 1.4rem; font-size: .9rem; }
+@media (max-width: 600px) { .v-row { grid-template-columns: minmax(0, 1fr); } .v-row .v-thumb { max-width: 320px; } }
