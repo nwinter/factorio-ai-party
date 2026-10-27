@@ -15,6 +15,12 @@ return function(api)
   local CHEST={container=true,['logistic-container']=true,['temporary-container']=true}
   local MAX_PLACES=32
   function M.try(fn) local ok,v=pcall(fn); if ok then return v end end
+  -- (d26 batch248 R3) previous_recipe.name is a prototype (userdata)
+  local function recipe_name(prev)
+    local n=prev and prev.name
+    if n~=nil and type(n)~='string' then n=M.try(function() return n.name end) end
+    return n
+  end
   local function output_of(e)
     if CRAFTER[e.type] then
       local ok,inv=pcall(e.get_output_inventory); return ok and inv or nil
@@ -469,7 +475,7 @@ return function(api)
   -- What one craft of the machine's recipe yields per item (the expected amount for a ranged or chance product).
   local function per_craft(e)
     local ok,recipe=pcall(e.get_recipe)
-    if not (ok and recipe) and e.type=='furnace' then ok,recipe=pcall(function() return e.previous_recipe end) end
+    if not (ok and recipe) and e.type=='furnace' then ok,recipe=pcall(function() return prototypes.recipe[recipe_name(e.previous_recipe)] end) end
     local out={}
     for _,pr in ipairs(ok and recipe and recipe.products or {}) do
       if pr.type=='item' then
@@ -764,7 +770,7 @@ return function(api)
     end
     -- Products a craft makes only by chance: how often.
     local chance,odds={},{}
-    local ok,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe) end)
+    local ok,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and prototypes.recipe[recipe_name(e.previous_recipe)]) end)
     for _,pr in ipairs(ok and recipe and recipe.products or {}) do
       if pr.type=='item' and pr.probability and pr.probability<1 then
         odds[pr.name]=pr.probability

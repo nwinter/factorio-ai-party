@@ -8,7 +8,7 @@ return function(api)
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
   M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
     position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
-    returns='research line (name, progress, eta at the working labs) and per lab group: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network there and what it holds of it, and the chest its robots would take it from'}}
+    returns='research line (name, progress, eta at the working labs: every lab of ours, research_labs per surface) and per lab group of the area: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network there and what it holds of it, and the chest its robots would take it from'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
     if s >= 3600 then return string.format('%dh%02dm', math.floor(s / 3600), math.floor(s / 60) % 60) end
@@ -73,6 +73,24 @@ return function(api)
         owner and string.format(', robots would take it from %s %s', owner.name, at(owner.position)) or '')
     else net = '; no logistic network there' end
     return string.format('lab %s lacks %s: %s%s', at(lab.position), name, #feeds > 0 and 'fed by ' .. table.concat(feeds, ' | ') or 'no inserter drops into it', net)
+  end
+  -- (d26 batch248 R1) every lab of ours, every surface, for the research line: {working, total, rows}
+  local function all_labs(force)
+    local out = {working=0, total=0, rows={}}
+    for _, s in pairs(game.surfaces) do
+      local list = api.census_typed and try(function() return api.census_typed(force, s, 'lab') end)
+      if not list then list = try(function() return s.find_entities_filtered{type='lab', force=force, limit=MAX_LABS} end) or {} end
+      if #list > 0 then
+        local w = 0
+        for _, e in ipairs(list) do
+          if e.valid and api.status_name(e) == 'working' then w = w + 1 end
+        end
+        out.rows[#out.rows+1] = {surface=s.name, n=#list, working=w}
+        out.working, out.total = out.working + w, out.total + #list
+      end
+    end
+    table.sort(out.rows, function(x, y) return x.n > y.n end)
+    return out
   end
   function M.view(p, a)
     local force, surface = p.force, p.surface
@@ -198,24 +216,31 @@ return function(api)
         lines[#lines+1] = table.concat(parts, ', ') .. '; feeders: ' .. table.concat(feed, '; ')
       end
     end
-    local research
+    local research, research_labs
     if not tech then research = 'none: nothing queued'
     else
       local progress = force.research_progress or 0
       local names = {}
       for i, n in ipairs(packs) do names[i] = short(n) end
       research = string.format('%s %d%% needs %s', tech.name, math.floor(progress * 100), table.concat(names, '+'))
-      local ok, speed = pcall(function() return labs[1] and labs[1].prototype.researching_speed or 1 end)
-      speed = (ok and speed or 1) * (1 + (force.laboratory_speed_modifier or 0))
-      if working > 0 and tech.research_unit_energy then
-        local left = (1 - progress) * tech.research_unit_count * tech.research_unit_energy / 60 / speed / working
-        research = research .. string.format(', eta %s at %d working labs', fmt(math.ceil(left)), working)
-      else research = research .. ', stalled: no lab is working' end
+      local every = all_labs(force)
+      -- the ETA at research's measured rate (research {}'s done_in)
+      local rate, ticks = (api.research_rate or function() end)(force.name)
+      if every.working == 0 then research = research .. ', stalled: no lab is working'
+      elseif rate and rate > 0 then
+        research = research .. string.format(', eta %s at %d working labs (rate over the last %s)',
+          fmt(math.ceil((1 - progress) * tech.research_unit_count * tech.research_unit_energy / rate / 60)), every.working, fmt(math.ceil(ticks / 60)))
+      else research = research .. string.format(', %d working labs, %s', every.working, rate and 'no progress measured' or 'no rate measured yet') end
+      local per = {}
+      for _, r in ipairs(every.rows) do per[#per+1] = string.format('%s %d of %d', r.surface, r.working, r.n) end
+      research_labs = string.format('%d of %d labs of ours working, every surface (%s); groups: %s', every.working, every.total,
+        table.concat(per, ', '), centre and string.format('within %d tiles of %s on %s', radius, at(centre), surface.name) or surface.name)
     end
     local why = {}
     for _, r in ipairs(why_rows) do why[#why+1] = try(function() return lab_why(r.lab, r.name, surface, force, seen) end) end
-    return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,lacking=#why > 0 and why or nil,
-      labs=#labs .. ' in ' .. #groups .. ' groups' .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines,
+    return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,research_labs=research_labs,lacking=#why > 0 and why or nil,
+      labs=#labs .. ' in ' .. #groups .. ' groups' .. (centre and string.format(' within %d tiles of %s', radius, at(centre)) or '')
+        .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines,
       limited=#found>=MAX_LABS and 'lab search reached 256 entities; counts cover the visible labs among those found' or nil}
   end
 

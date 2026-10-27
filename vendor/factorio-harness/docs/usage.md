@@ -3988,7 +3988,7 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   about 60 ticks), so later calls show every patch; a call 5 min after a pass began starts the next. A dense ore chunk
   is read 8 rows a tick. Between passes a call takes under 1 ms; the first call after a pass builds the patches again
   (5-9 ms). `min_amount` on oil and the other infinite resources compares their yield %.
-- `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
+- `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`; from every lab of ours on every surface, d26 batch248, with `research_labs` naming them per surface) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 - `labs {surface:"nauvis"}` reads visible labs on that surface, up to 256 found, with `limited` when the search hits the cap. `position` and `radius` select an area there; a radius alone on another surface is refused. With no `surface`, the existing radius around the character applies. The reply names its `surface`, and its centre/radius for an area read; inventory and feeder reads on a named surface require current visibility.
 - `fh call science [--args '{"pack":"logistic-science-pack","surface":"nauvis"}']` (read; an observe scope): per pack the current research needs (or `pack`), over the whole surface and the same for everyone: `line` (made and used in 10 min from the game's statistics, the crafters set to it by name, Space Age ones too, and their states (`makers 14 (12 assembling-machine-2, 2 electromagnetic-plant; 9 working, ...)`), packs in their output, in chests, in landing pads and platform hubs (beside the chests: `chests 185, landing pads 766`; Sol, 23:03: the pad's 766 was left out and Muse read 170 left), on belts and in labs, labs that have none, carried by agents, the largest holders, chests, landing pads and hubs alike (`largest holders: (52,54) cargo-landing-pad 766, ...`)) and `reach`: where else it sits (chests by kind, inserter hands, robots), the inserters taking from its makers (output side full: into what), the inserters feeding the labs (by status, what the waiting ones' sources hold), each logistic network's requesters for it (met, on the way, unmet with reasons, as `supply` gives them) and the worst lab (position, the packs it lacks, its feeder's source, the nearest stock). One scan for all packs (`supply`'s, with labs as the users).
   Each pack also has `chain` (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): its recipe tree from the pack down, built from the same scan's crafters (assemblers, furnaces, silos; no other find), each step with its makers and made and used per minute (the force's item or fluid statistics over 10 minutes). The line follows the ingredient most of a step's makers lack while more than half of them lack one, and ends at the first step whose makers mostly do not, or that no crafter makes: `chain: chemical-science-pack: 9 of 14 makers lack advanced-circuit, made 12/min, used 30/min; advanced-circuit: 12 of 17 makers lack plastic-bar, made 8/min, used 20/min; plastic-bar: 4 of 4 working, made 30/min, used 52/min`. A maker lacks an ingredient when its status is an ingredient shortage and its input holds less than one craft of it. `chain_tree` lists every step down to what nothing makes: `{item, depth, made_per_min, used_per_min, makers, working, states, lacking {ingredient: makers}, miners, miner_states, outputs}`, at most 40 steps (`chain_cut`); a step's makers are the crafters whose recipe (a furnace's last one when idle) makes it, and its children the ingredients of those recipes. Miners make ores and fluids (Grok, 04:55: the chain said stone has no assembler): a mining drill or pumpjack makes its mining target's products, an offshore pump the fluid it pumps; such a step reads `stone: 7 electric-mining-drill, 1 burner-mining-drill (5 working, 2 output full, 1 no resource left) into 6 transport-belt, 2 wooden-chest, made 40/min, used 52/min` (states in words: working, output full, no resource left, else the status; what item drills put into, `the ground` when nothing), and a resource's required fluid (sulfuric acid for uranium) is the step below it, the drills short of it lacking it. A drill whose resource ran out has no mining target; the product it mined last is kept per drill. A step nothing makes reads `no assembler, furnace, silo, mining drill or pump makes it`. The science read's scan and `team.science` find the mining drills and offshore pumps with the crafters.
@@ -4544,7 +4544,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `team.science` (scienceline.lua; operator 03:22: Luna made about 47 reads in 10 minutes to watch copper, power
   and labs): one line per agent, at most every 5 minutes and only when its facts changed (the research, the labs
   working count, the limiting pack and its short step, the headroom in 10% steps, how many boilers are under 20 min
-  and not refilled and the lowest one's step under 20/10/5 min): `science on nauvis: research plastics-2 41%; labs
+  and not refilled and the lowest one's step under 20/10/5 min): `science on nauvis (read 4m50s to 30s ago): research plastics-2 41%; labs
   12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, made 12/min, used 30/min; first short
   step plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit >
   plastic-bar); power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 11 with fuel at their
@@ -16156,6 +16156,42 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     other qualities`.
 - Tests: tests/d26_batch249.lua, tests/d26_batch249b.lua; tests/vehicles.lua, d24_batch165, d24_batch182, supply and
   networks gained cases with 2.0.77's counting in their fakes.
+## d26 batch248 (R1-R3, R7, R8 of the second whole-harness review, batch227)
+- R1, labs (Luna, shift70 22:19Z at (-241,495): "stalled: no lab is working" and "0 in 0 groups" from the labs within
+  96 tiles of her while her 4 biolabs worked and research went 95.2 -> 95.4% in 8 s; 25 of 79 labs reads in shifts
+  69-76 said stalled): every lab of ours works on the current research wherever it stands, so `labs` (and
+  `observe {scope: labs}`) builds the `research` line (working count, ETA, `stalled`) from every lab of ours on every
+  surface: the census pass's lab lists (a find on a surface it has not walked), the ETA at research's measured rate
+  (research {}'s done_in): `eta 2h37m at 30 working labs (rate over the last 1m00s)`; `N working labs, no rate measured
+  yet` (under 30 s of samples) or `no progress measured`. On a copy of world n's 16:11 save, Luna at (516,225):
+  main read `stalled: no lab is working`, `0 in 0 groups` while all 30 biolabs on Nauvis worked; the branch
+  `eta 2h37m at 30 working labs`, research {} `done_in 2h37m`. The read cost the same (4-13 ms as a bot, team block
+  included). `research_labs`: `26 of 30 labs of
+  ours working, every surface (nauvis 26 of 26, gleba 0 of 4); groups: within 96 tiles of (15,-147) on nauvis`. `labs` names the area: `7 in 2 groups within 96 tiles of (15,-147)`.
+- R2, pods (shift80: Weaver's pod with 1,000 agricultural science packs, sent 68 ticks after Weaver left Nauvis, landed
+  in pad (52,54); Luna's delivery_watch #528 from Weaver read "received 0"; 12 of 2,355 down pods in the save's ledger
+  were sent after their platform left, none in freight's receipts): pods.lua read only the platforms at a space
+  location, while freight takes a stop's pods for 600 ticks after it ends (POD_AFTER). A platform is now read for 660
+  ticks after it was last seen at a stop (storage pods_stops, per force and platform index), so freight's receipts
+  and delivery_watch `from` follow such a pod. On the copy: Weaver at Nauvis with 1,000 agricultural science packs,
+  sent on, its hub's pod (create_cargo_pod, 100 packs to pad (52,54)) sent 68-70 ticks after it left: on main the watch
+  from Weaver stayed open with 0 arrivals and freight's stop had no pods; on the branch the watch read received 100 of
+  100 in 1 pod and the stop's receipts had it. The platform loop costs 0.13-0.16 ms more in a sample (once a second)
+  while a platform is within 11 s of leaving (0.08 ms a find on its surface).
+- R3, an idle furnace's last recipe (the steel furnace at (-65,83) on Nauvis read "none: 20013 completions" in
+  `uptime` and no rate in `inspect`): `previous_recipe` is `{name=LuaRecipePrototype, quality}` and type() of the
+  prototype is userdata; the code took a non-table for a name. Read as a name (a string) or the prototype's name in
+  craftrate (inspect's rate), uptime, platbom (platform_production's makers), invbar (configure {bar}'s refusal),
+  reqrate (requester_rate's users), supply's makers of an ingredient, inputs, beltfit, thrust, stock (wait output and
+  chances) and runtime's feeding and fill wants. On the copy (2.0.77): `force.recipes[prototype]` raises "string
+  expected, got userdata", `prototypes.recipe[prototype]` gives nil. The steel furnace at (-65,83): main `uptime` "none:
+  20013 completions", inspect no rate; the branch "copper-plate: 20013 completions", rate 37.5/min.
+- R7, the science line says when it was read: `science on nauvis (read 4m50s to 30s ago): ...` (the job's start, labs
+  first, to its end; one age when built within a second).
+- R8, `flight_watch {id}` for a watch no longer kept: `no flight watch #9: #9 on Asterion (began at tick 500, ended at
+  tick 900) is no longer kept: dropped at tick 1000 (1m00s ago), cleared by sol` from the dropped records (the last 4
+  a platform); `none set with that number (the last set is #12)`; or set and since dropped before those kept.
+- Tests: tests/d26_batch248.lua (each part fails on main), tests/labs.lua and tests/scienceline.lua updated.
 ## d26 batch255 (narration lag trace)
 - Host only (tools/stream/vx_review.py; docs/STREAM-NOTES.md "Narration lag: announcements against later mentions"):
   the event-to-line lag counts the lines whose own cue names the platform; later lines that mention it from other cues

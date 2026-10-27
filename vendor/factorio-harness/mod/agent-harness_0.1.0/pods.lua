@@ -10,6 +10,8 @@
 return function(api)
   local M = {}
   local SAMPLE, KEEP, MAX = 60, 7200, 256
+  -- (d26 batch248 R2) and AFTER ticks after its last stop: freight's POD_AFTER, seen a sample late
+  local AFTER = 600 + SAMPLE
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local s = api.state()
@@ -57,9 +59,18 @@ return function(api)
         list[unit] = nil
       else n = n + 1 end
     end
+    local left = api.state().pods_stops
+    if not left then left = {}; api.state().pods_stops = left end
     for _, f in pairs(game.forces) do
+      local seen = left[f.index]
       for _, pl in pairs(try(function() return f.platforms end) or {}) do
-        local s = pl.valid and try(function() return pl.space_location and pl.surface end)
+        local s, i = nil, pl.valid and f.index and pl.index
+        if pl.valid and pl.space_location then
+          s = pl.surface
+          if i then seen = seen or {}; left[f.index] = seen; seen[i] = tick end
+        elseif i and seen and seen[i] then
+          if tick - seen[i] <= AFTER then s = pl.surface else seen[i] = nil end
+        end
         if s and s.valid then
           for _, pod in pairs(s.find_entities_filtered{type='cargo-pod'}) do
             local unit = pod.valid and pod.unit_number
