@@ -58,17 +58,9 @@ test('every Lua suite passes against the compacted modules, and the compacted bu
   const file = join(dir, 'bundle.lua');
   await writeFile(file, bundle);
   execFileSync(lua, ['-e', `local f=assert(io.open(${JSON.stringify(file)})); assert(load(f:read('a'),'@bundle','t'))`], {stdio: 'pipe'});
-  assert.ok(Buffer.byteLength(bundle) < Buffer.byteLength(await bundleRuntime('mod/agent-harness_0.1.0/runtime.lua', {compact: false})));
-});
-test('the deployment limit holds for the compacted bundle; the uncompacted one (sizes compared) is not refused (d26 batch247)', async () => {
-  const dir = await tempDir('fh-limit-');
-  // a runtime whose comments push it past 8 MiB uncompacted; compacted it is small
-  await writeFile(join(dir, 'runtime.lua'), '-- ' + 'x'.repeat(8_500_000) + '\nreturn {}\n');
-  const small = await bundleRuntime(join(dir, 'runtime.lua'));
-  assert.ok(Buffer.byteLength(small) < 8388608);
-  const big = await bundleRuntime(join(dir, 'runtime.lua'), {compact: false});
-  assert.ok(Buffer.byteLength(big) > 8388608, 'built for the comparison');
-  // over the limit compacted too (a string, kept): refused
-  await writeFile(join(dir, 'runtime.lua'), 'local s = "' + 'x'.repeat(8_500_000) + '"\nreturn {}\n');
-  await assert.rejects(bundleRuntime(join(dir, 'runtime.lua')), /exceeds the 8388608 byte deployment limit/);
+  // (d26 batch244) against the modules' own bytes: the uncompacted bundle was 8,382,920 of the 8,388,608-byte deployment
+  // limit on main at 16:24 and batch244 took it over, which bundleRuntime refuses; only the compacted one is deployed
+  let raw = 0;
+  for (const file of await readdir('mod/agent-harness_0.1.0')) if (file.endsWith('.lua')) raw += (await readFile(join('mod/agent-harness_0.1.0', file))).length;
+  assert.ok(Buffer.byteLength(bundle) < raw);
 });

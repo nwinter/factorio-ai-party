@@ -20,6 +20,43 @@ return function(api)
     end
     rows[key]={force=force.name,surface=surface.index,tick=game.tick,position={x=pos.x,y=pos.y},lanes=lanes}
   end
+  -- (d26 batch244, Astra #2455) the survey's machines short of an item ingredient, read again now (the first
+  -- HELD_CHECKS of the digest, HELD_LINES worded a surface): still short with an input inserter off by its circuit or
+  -- logistic condition while its source holds the item (supply.held_check): held_back {read, held, lines}.
+  local HELD_CHECKS,HELD_LINES=24,2
+  local function held_back(g,index,checks)
+    if not (g.machines and api.held_check) or checks<=0 then return checks end
+    local surface=game.get_surface(index)
+    local names={}
+    for name in pairs(g.machines) do names[#names+1]=name end
+    table.sort(names)
+    local read,held,lines=0,0,{}
+    for _,name in ipairs(names) do
+      for _,pos in ipairs((g.machines[name].positions or {}).item_ingredient_shortage or {}) do
+        if checks<=0 then break end
+        checks=checks-1
+        local ok,e=pcall(surface.find_entity,name,pos)
+        if ok and e and e.valid and api.status_name and api.status_name(e)=='item_ingredient_shortage' then
+          read=read+1
+          local okh,h,items=pcall(api.held_check,e)
+          if okh and h then
+            held=held+1
+            if #lines<HELD_LINES then
+              for _,item in ipairs(items) do
+                if h[item] then
+                  local okl,l=pcall(api.held_line,h[item],item)
+                  lines[#lines+1]=string.format('%s (%g,%g) short of %s: %s',name,e.position.x,e.position.y,item,okl and l or 'an input inserter off by its condition')
+                  break
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+    if read>0 then g.held_back={read=read,held=held,lines=#lines>0 and lines or nil} end
+    return checks
+  end
   function M.operator.factory_digest(a)
     a=a or {}
     local force=game.forces[a.force or 'player']
@@ -59,14 +96,16 @@ return function(api)
     end
     table.sort(keys,function(x,y) return groups[x].surface<groups[y].surface end)
     local out={}
+    local checks=HELD_CHECKS
     for i=1,math.min(#keys,MAX_SURFACES) do
       local g=groups[keys[i]]
       table.sort(g.ends,function(x,y) return x.position.y<y.position.y or x.position.y==y.position.y and x.position.x<y.position.x end)
+      checks=held_back(g,keys[i],checks)
       out[#out+1]=g
     end
     return {tick=game.tick,surfaces=out,research_use=api.use_lines and api.use_lines(force) or nil,
       more_surfaces=#keys>MAX_SURFACES and #keys-MAX_SURFACES or nil,
-      old_end_observations=old,scope='completed cached planetary surveys; belt endpoints observed by trace in the last 5 game minutes (at most 128 remembered); no new scan'}
+      old_end_observations=old,scope='completed cached planetary surveys; belt endpoints observed by trace in the last 5 game minutes (at most 128 remembered); held_back: the first 24 machines the surveys found short of an item, read again now (their feeders); no new scan'}
   end
   return M
 end
