@@ -127,7 +127,8 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   is a loop whatever its size.
 - A remote vehicle's shot (d26 batch245 SP; ONECAM vehicle_stuck, vehicle_progress, vehicle_still_box, vehicle_obs,
   vehicle_settle): framed on its standby before the cut, dwell counted while it is in the frame, the lead no faster
-  than the reads saw it go and inside the frame's inner box, a stop inside that box holds the frame; a vehicle stuck
+  than the reads saw it go, along the reply's route (cp3) and inside the frame's inner box, a stop inside that box
+  holds the frame; a vehicle stuck
   vehicle_stuck s (no fight, no fire) has served its dwell and counts as standing; moving on again is news.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
@@ -1204,8 +1205,10 @@ class OneCam(Director):
 
     # -- (batch222 CD) a vehicle by remote view --------------------------------------------------------------------
     def vehicle_where(self, v, now):
-        """Where a remote vehicle read (VehicleFeed row) has it now: a spidertron walking to its target led along that
-        line at its read speed (a go_to reply's none: vehicle_speed), at most to the target; -> ({x, y}, going)."""
+        """Where a remote vehicle read (VehicleFeed row) has it now: a spidertron walking to its target led along its
+        route at its read speed (a go_to reply's none: vehicle_speed), at most to the route's end; -> ({x, y}, going).
+        (batch245 cp3) A live read names only the next waypoint of a pathed route (shift82 16:16: 12 tiles apart, the
+        lead stopped there and the frame trailed 30-50 tiles): the lead goes on along the reply's remaining route."""
         spot = {"x": float(v["position"]["x"]), "y": float(v["position"]["y"])}
         goal, speed = v.get("target"), v.get("speed")
         if speed is None and goal:
@@ -1215,12 +1218,29 @@ class OneCam(Director):
             speed = min(speed, seen * 1.25 + 1.0)  # (batch245) no faster than the live reads saw it go (a stuck spider)
         if not goal or not isinstance(speed, (int, float)) or speed <= 0 or (seen is not None and speed < 4.0):
             return spot, False
-        d = math.hypot(goal["x"] - spot["x"], goal["y"] - spot["y"])
-        go = min(d, speed / 3.6 * max(0.0, now - v.get("t", now)))
-        if d <= 0:
-            return spot, False
-        return {"x": round(spot["x"] + (goal["x"] - spot["x"]) * go / d, 1),
-                "y": round(spot["y"] + (goal["y"] - spot["y"]) * go / d, 1)}, d - go > 1.0
+        left = speed / 3.6 * max(0.0, now - v.get("t", now))
+        here = spot
+        for q in self.vehicle_path(v, goal):
+            d = math.hypot(q["x"] - here["x"], q["y"] - here["y"])
+            if left < d:
+                f = left / d
+                return {"x": round(here["x"] + (q["x"] - here["x"]) * f, 1),
+                        "y": round(here["y"] + (q["y"] - here["y"]) * f, 1)}, True
+            left -= d
+            here = {"x": float(q["x"]), "y": float(q["y"])}
+        return {"x": round(here["x"], 1), "y": round(here["y"], 1)}, False
+
+    @staticmethod
+    def vehicle_path(v, goal):
+        """(batch245 cp3) The waypoints from the read's target on: the reply's route from the waypoint nearest it (within
+        4 tiles), else the target alone."""
+        route = v.get("route") if isinstance(v.get("route"), list) else []
+        best = None
+        for i, q in enumerate(route):
+            d = math.hypot(q["x"] - goal["x"], q["y"] - goal["y"])
+            if d <= 4.0 and (best is None or d < best[0]):
+                best = (d, i)
+        return [goal] + (route[best[1] + 1:] if best else [])
 
     def seen_speed(self, v, now):
         """(batch245) km/h between its last two live reads within vehicle_obs, or None."""

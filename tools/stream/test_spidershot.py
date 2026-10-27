@@ -16,6 +16,8 @@ Opus kept calling it; 14:41:57-14:42:01 the view ran 30 tiles ahead on a read wi
 5. Stuck vehicle_stuck s (not fighting): its shot has served its dwell, scores like standing, a quiet view may come
    sooner, a call to it is no news; with a fight near it, none of that; moving on again is news.
 6. The clocks' idle seconds count from when its vehicle last walked, not from the character.
+7. (cp3, viewer Aurora 16:30: "the camera kept trailing until the spider left frame") a pathed route's live read names
+   only the next waypoint; the lead goes on along the reply's route, round its turns.
 """
 import os, sys
 
@@ -147,6 +149,31 @@ def clocks_floor():
     print("6. idle clocks count from the vehicle's last walk: ok")
 
 
+def route_lead():
+    """(cp3) shift82 16:16: a pathed route, waypoints about 12 tiles apart; the live read names only the next one. Its
+    reply's route leads the view on, round the turn, 3 s after the read."""
+    import work
+    feed = work.VehicleFeed()
+    route = [{"x": -162.5 - 9 * k, "y": 469.5 + 9 * k} for k in range(4)] + [{"x": -189.5, "y": 496.5 + 12 * k} for k in range(1, 8)]
+    for r in ({"at": "2026-10-26T23:16:29.000Z", "event": "request", "request": {"id": "q", "action": "vehicle",
+               "args": {"remote": True, "vehicle": UNIT}}},
+              {"at": "2026-10-26T23:16:29.050Z", "event": "response", "response": {"id": "q", "ok": True, "result": {
+                  "spidertron": "spidertron", "unit_number": UNIT, "position": {"x": -154.2, "y": 461.2}, "speed": 49,
+                  "route": route}}}):
+        feed.ingest("opus", r)
+    t = feed.rows["opus"]["t"]
+    assert len(feed.rows["opus"]["route"]) == len(route)
+    feed.apply_live({UNIT: {"unit": UNIT, "name": "spidertron", "x": -162.5, "y": 469.5, "speed": 48.0 / 216.0,
+                            "dest": route[1]}}, t + 1)
+    d = director()
+    a = agent("opus", -160, -542, 5, activity="thinking", active=False)
+    a["remote_vehicle"] = v = feed.current("opus", t + 1)
+    d.vehicle_seen[UNIT] = [(t - 2, -134.9, 441.9), (t + 1, -162.5, 469.5)]  # (13 tiles a second between reads)
+    here, going = d.vehicle_where(v, t + 4)  # 3 s on: about 40 tiles along the route, past the turn at (-189.5, 496.5)
+    assert going and abs(here["x"] + 189.5) < 0.5 and 496.5 < here["y"] < 505, here  # 40 tiles: 3 legs and 1.8 on
+    print("7. a pathed route: the lead goes on along the reply's waypoints, round the turn: ok")
+
+
 def main():
     framed_before_cut()
     dwell_in_frame()
@@ -154,6 +181,7 @@ def main():
     stops()
     stuck_scene()
     clocks_floor()
+    route_lead()
     print("spidershot: ok")
 
 

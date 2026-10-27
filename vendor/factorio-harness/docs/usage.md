@@ -16049,6 +16049,8 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   with speed leads nowhere) and stays inside the frame's inner box, a stop inside it holds the frame; a vehicle stuck
   20 s with no fight or fire has served its dwell and counts as standing, moving on again is news. director_replay.py
   gives both rule sets the vehicle and build interest bumps. Test: tools/stream/test_spidershot.py.
+- Checkpoint 3 (viewer Aurora 16:30: the frame trailing on a pathed route): the lead follows the reply's remaining route
+  past the live read's next waypoint (work.VehicleFeed keeps it).
 - cp2 (operator: world n ran about 1.7x the copy for such reads today; a call on Astra's network at most about 15 ms on
   the copy): smaller defaults, the flags unchanged.
   - The walk gives the components before as it goes (no second pass); positions and connection points are read only

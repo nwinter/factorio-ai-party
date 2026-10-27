@@ -40,6 +40,9 @@ VEHICLE_KEEP = 600.0  # seconds a remote vehicle's last read is kept (the direct
 POS_RE = re.compile(r"\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)")
 
 
+ROUTE_KEEP = 200  # (batch245 cp3) waypoints kept of a reply's route (shift82 16:16: about 12 tiles apart)
+
+
 class VehicleFeed:
     """(d26 batch222 CD, viewer Aurora site:4851: "follow a remotely controlled Spidertron while it moves or fights, using
     its position") Each agent's latest vehicle by remote view, from its journal's `vehicle {remote: true, vehicle}`
@@ -102,7 +105,11 @@ class VehicleFeed:
             row = {"vehicle": str(res["spidertron"]), "unit_number": unit,
                    "position": {"x": round(float(p["x"]), 1), "y": round(float(p["y"]), 1)},
                    "speed": res.get("speed") if isinstance(res.get("speed"), (int, float)) else None,
-                   "target": goal if isinstance(goal, dict) and isinstance(goal.get("x"), (int, float)) else None}
+                   "target": goal if isinstance(goal, dict) and isinstance(goal.get("x"), (int, float)) else None,
+                   # (d26 batch245 cp3) the waypoints still to walk: a pathed route's live read names only the next one
+                   "route": [{"x": float(q["x"]), "y": float(q["y"])} for q in route[:ROUTE_KEEP]
+                             if isinstance(q, dict) and isinstance(q.get("x"), (int, float)) and
+                             isinstance(q.get("y"), (int, float))]}
 
         elif isinstance(res.get("remote"), str) and args.get("drive") is not None:
             m = POS_RE.search(res["remote"])
