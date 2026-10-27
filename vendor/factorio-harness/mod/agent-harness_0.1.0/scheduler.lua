@@ -415,9 +415,12 @@ return function(api)
     for _,g in ipairs(q.guards) do if g.scope=='plan' then gone[#gone+1]=g else kept[#kept+1]=g end end
     q.guards=kept
     set_due(q)
-    q.armed_after=#kept>0 and {tick=game.tick,plan=q.plan_seq} or nil
+    -- the tick its last step ended (a lane first seen empty after a runtime update ended earlier)
+    local last=q.history[#q.history]
+    local done=last and last.finished_tick or game.tick
+    q.armed_after=#kept>0 and {tick=done,plan=q.plan_seq} or nil
     local plan=q.plan_seq and 'plan #'..q.plan_seq or 'your plan'
-    local line=string.format('queue %s finished at tick %d',plan,game.tick)
+    local line=string.format('queue %s finished at tick %d',plan,done)
     if #gone>0 then
       local ids={}
       for i,g in ipairs(gone) do ids[i]=g.id end
