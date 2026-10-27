@@ -17283,7 +17283,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   takes=function(action,key) return M.takes(action,key) end,
-  simulate=function(p,items) return M.rocketload.simulate(p,items) end,world_checks=function(p,items) return space.world_checks(p,items) end,
+  simulate=function(p,items) return M.rocketload.simulate(p,items) end,world_checks=function(p,items) return space.world_checks(p,items) end,staging=function(p,items) return M.stageslots.check(p,items) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
     if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
@@ -19066,6 +19066,8 @@ function M.personal_unfilled_lines(p)
   return out
 end
 M.reqchest=require('reqchest'){}
+-- What a queue plan's item_count waits need of a requester at once, against its slots (stageslots.lua; d27 batch280 CS).
+M.stageslots=require('stageslots'){}
 -- A logistic network's reservations, read only (reservations.lua; Luna 06:20).
 M.reservations=require('reservations'){state=state}
 function handlers.reservations(p,a) return M.timed('reservations.read',M.reservations.read,p,a) end  -- (d25 batch217) a part of its own in profile_ticks

@@ -265,13 +265,23 @@ do
 end
 -- The game writes >= back as ≥: read back in ASCII.
 inserter_cb.logistic_condition.comparator='≥'
-eq(astra('circuit_set',{position={x=2,y=0}}).circuit.logistic,'water >= signal-A')
+-- (d27 batch280 CS, Sol #2607: circuit_set {position} left a logistic hold on) a call that sets nothing is refused,
+-- naming each condition that holds it now and what clears it (here the readback in ASCII)
+fails(function() astra('circuit_set',{position={x=2,y=0}}) end,'circuit_set with no setting changes nothing (inspect reads an entity\'s circuit). inserter (2,0) now: its logistic condition water >= signal-A')
+fails(function() astra('circuit_set',{position={x=2,y=0}}) end,': logistic: false clears it; its circuit condition iron-plate < 1000 (no red or green wire: ignored): remove_condition: true clears it; clear: true clears both')
 r=astra('circuit_set',{position={x=2,y=0},enable='signal-A != signal-B'})
 eq(inserter_cb.circuit_condition.second_signal.name,'signal-B'); eq(r.circuit.enable,'signal-A != signal-B')
 -- batch26 A1 (Muse: enable false removed the condition and a reactor's feed ran): refused, two names instead.
 fails(function() astra('circuit_set',{position={x=2,y=0},enable=false}) end,'enable: false is two things: switch_off: true')
 r=astra('circuit_set',{position={x=2,y=0},remove_condition=true}); eq(inserter_cb.circuit_enable_disable,false)
 eq(r.now:match('^runs: no circuit condition'),'runs: no circuit condition')
+-- clear: true: its circuit condition and its logistic condition off; alone
+fails(function() astra('circuit_set',{position={x=2,y=0},clear=true,logistic=false}) end,'clear switches off its circuit and logistic conditions: logistic goes in a call of its own')
+inserter_cb.circuit_enable_disable=true; inserter_cb.connect_to_logistic_network=true
+r=astra('circuit_set',{position={x=2,y=0},clear=true})
+eq(inserter_cb.circuit_enable_disable,false); eq(inserter_cb.connect_to_logistic_network,false)
+eq(r.now,'runs: no circuit or logistic condition')
+fails(function() astra('circuit_set',{position={x=2,y=0}}) end,'inserter (2,0) now: no circuit or logistic condition')
 r=astra('circuit_set',{position={x=2,y=0},switch_off=true})
 eq(inserter_cb.circuit_enable_disable,true); eq(inserter_cb.circuit_condition.first_signal.name,'signal-dot'); eq(inserter_cb.circuit_condition.constant,-2147483648)
 assert(r.now:find('signal%-dot < %-2147483648 never holds') or r.now:find('no red or green wire connects it'),r.now)
