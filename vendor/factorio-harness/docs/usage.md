@@ -16556,6 +16556,23 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,258,869 bytes on main, 6,263,977 with this branch (limit 8,388,608).
 - Docs: agent/ref/building.md (`deconstruct`). Test: tests/d27_batch268.lua (fails on main: deconstruct takes only
   area).
+## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
+- The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
+- Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
+  teammates' tells have stayed unread 2 minutes or more, not yet reported by a sleep, ends at once: `woke: told`,
+  `tell` "N unread tells from before this sleep began (a sleep reports each once; chat_ack marks them read): #seq
+  from, waiting ...: text; ...", `woke_by {kind tell, seq (the newest), from, unread: true}`, and `already_unread: N`
+  on the sleep's own reply. Not with `wake_on_messages: false` or a wake filter (`wake_from`, `wake_on_operator`,
+  `wake_local`). Haiku, shift86 15:24: 8 of Sol's tells unread up to 33 min, hidden by its output filters; its
+  `fh wait --until "tell|alert" --max 900` slept the 900 s ("Nothing new has come in for 15 minutes"). Shifts 80-86
+  replayed under the rule: a sleep ends at once about 5-11 times a shift for Astra, Sol and Luna, 8-10 for Sonnet and
+  Haiku, 0-2 for the others.
+- Ground rules for Claude Code workspaces too (host/rules.ts, tools/launch-agent.sh): AGENTS.md (CLAUDE.md links to
+  it) carries the team's ground rules section, kept current by fh, as for Codex. Opus and Sonnet did not compact in
+  shifts 82-86, so the post-compaction brief never gave them the rules ("rule 27" appears 0 times in their shift86
+  transcripts).
+- Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
+  its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
 
 ## d27 batch278 (AB, Astra #2589: assembler_batch waited for more than the machine can hold)
 
