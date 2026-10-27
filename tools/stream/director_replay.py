@@ -396,8 +396,9 @@ def loop_pos(lp, t, start):
 class World:
     """The agents' states at each second (module doc)."""
 
-    def __init__(self, js, log_rows, fights=None, shells=None, live=False, vehicle_interest=False):
+    def __init__(self, js, log_rows, fights=None, shells=None, live=False, vehicle_interest=False, launches=None):
         import model
+        self.launches, self.last_silos, self.silo_snap = launches, -1e9, None  # (batch257) the silos read, a poll
         self.vehicle_interest = vehicle_interest  # (batch232 VC2: rules that bump interest for a vehicle's new target)
         self.paths = vehicle_paths(js) if live else None  # (batch232) the live vehicle reads, modelled
         self.last_live = -1e9
@@ -542,13 +543,115 @@ class World:
                         # (batch245) the status read's queue lanes: a walk loop's queue repeats
                         "queues": {"body": {"repeating": True, "paused": False, "active": {"action": "move_to"}}}
                         if any(a <= t < b for a, b, _ in j.loops) else None})
-        snap = {"agents": [a for a in out if a["position"]], "alerts": [], "tick": self.tick,
+        if self.launches and t - self.last_silos >= POLL_S:  # (batch257) the service's silos read (launches.py)
+            self.last_silos = t
+            self.silo_snap = self.launches.read(t)
+        snap = {"agents": [a for a in out if a["position"]], "alerts": [], "tick": self.tick, "silos": self.silo_snap,
                 "fights": [dict(f, last=min(f["last"], t)) for f in self.fights if f["first"] <= t <= f["last"] + 240]}
         i = bisect.bisect_right([x[0] for x in self.shells], t)
         new = [dict(sh, eta_ticks=round((sh["land_t"] - t) * 60)) for at, sh in self.shells[:i] if at > t - 1.0]
         if new:
             snap["artillery"] = {"shells": new, "read_at": t, "every": 0.5}
         return snap
+
+
+# (d26 batch257) A launch's silo states from its order, game seconds (launches.py, world n d26): 8 launch_starting,
+# 14 launch_started, 9 engine_starting, 10 arms_retract, 11 rocket_flying, 5 the next rocket rising, 6 arms_advance, then
+# 7 rocket_ready until the next order
+LAUNCH_STEPS = [(8, 0.6), (14, 2.0), (9, 5.6), (10, 1.7), (11, 6.3), (5, 9.6), (6, 1.7)]
+LAUNCH_CYCLE = sum(d for _, d in LAUNCH_STEPS)
+
+
+def silo_positions(js):
+    """{surface: [(x, y)]}: every silo the journals' replies list (the replay's launches.SiloFeed list)."""
+    out = {}
+    for j in js.values():
+        for _, _, args, res, ok in j.requests:
+            rows = (res or {}).get("silos") if isinstance(res, dict) else None
+            for r in rows if isinstance(rows, list) else []:
+                p = r.get("position") if isinstance(r, dict) else None
+                if isinstance(p, dict) and isinstance(p.get("x"), (int, float)) and isinstance(p.get("y"), (int, float)):
+                    surf = r.get("surface") or res.get("surface") or res.get("planet")
+                    if isinstance(surf, str) and (p["x"], p["y"]) not in out.setdefault(surf, []):
+                        out[surf].append((float(p["x"]), float(p["y"])))
+    return out
+
+
+def chronicle_rows(runs):
+    out = []
+    for run in runs:
+        try:
+            with open(os.path.join(run, "chronicle.jsonl")) as f:
+                for line in f:
+                    try:
+                        out.append(json.loads(line))
+                    except ValueError:
+                        pass
+        except OSError:
+            pass
+    return out
+
+
+class Launches:
+    """(batch257) The silos' states as the service's SILOS_LUA would read them, from the chronicle's rockets: each
+    rocket given to a silo of its planet that is free (its last launch's cycle over; else the one free soonest), its
+    states from LAUNCH_STEPS. read(t) is launches.SiloFeed's read at t, with this as its harness."""
+
+    def __init__(self, runs, js):
+        import launches
+        self.rockets, events = airtime.chronicle_rockets(chronicle_rows(runs))
+        self.events = sorted(events, key=lambda r: r["t"])  # as the service reads them: by when they were appended
+        self.positions = silo_positions(js)
+        self.plan = {}  # (surface, x, y) -> [order wall times]
+        free = {(s, x, y): -1e18 for s, ps in self.positions.items() for x, y in ps}
+        used = {k: -1e18 for k in free}
+        for wt, _, surf, _ in self.rockets:
+            mine = [k for k in free if k[0] == surf]
+            if not mine:
+                continue
+            ready = [k for k in mine if free[k] <= wt]
+            k = min(ready, key=lambda k: used[k]) if ready else min(mine, key=lambda k: free[k])
+            free[k], used[k] = max(free[k], wt) + LAUNCH_CYCLE, wt
+            self.plan.setdefault(k, []).append(max(wt, free[k] - LAUNCH_CYCLE))
+        self.feed = launches.SiloFeed(None)
+        for (surf, x, y) in free:
+            self.feed.add(surf, x, y, save=False)
+        self.t = None
+        self.k_ev = 0
+        self.wall = [r[0] for r in self.rockets]
+
+    def status(self, k, t):
+        orders = self.plan.get(k) or []
+        i = bisect.bisect_right(orders, t) - 1
+        if i < 0:
+            return 7
+        dt = t - orders[i]
+        for st, d in LAUNCH_STEPS:
+            if dt < d:
+                return st
+            dt -= d
+        return 7
+
+    def tick_at(self, t):
+        if not self.rockets:
+            return None
+        i = min(max(bisect.bisect_right(self.wall, t) - 1, 0), len(self.rockets) - 1)
+        wt, tick = self.rockets[i][0], self.rockets[i][1]
+        return int(tick + (t - wt) * 60)
+
+
+    def read(self, t):
+        self.t = t
+        new = []
+        while self.k_ev < len(self.events) and self.events[self.k_ev]["t"] <= t:
+            new.append(self.events[self.k_ev])
+            self.k_ev += 1
+        self.feed.note_rockets(new)
+        return self.feed.read(self, t)
+
+    def silos(self, silos):  # the harness's silos() for the feed
+        return {"tick": self.tick_at(self.t), "n": len(self.feed.silos),
+                "s": [self.status((s, float(x), float(y)), self.t) for s, x, y in silos]}
 
 
 def load_rules(rules, tmp):
@@ -578,7 +681,7 @@ def clock_t(day_t, hhmm):
 
 
 def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0, t0=None, t1=None, fights=False,
-           shells=None, vehicles="journal", surface_from=None, timed=False):
+           shells=None, vehicles="journal", surface_from=None, timed=False, launches=True, tuning=None):
     log_rows = log_rows_of(log_path)
     t0 = log_rows[0]["t"] if t0 is None else t0
     t1 = log_rows[-1]["t"] if t1 is None else t1
@@ -588,14 +691,14 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
     with tempfile.TemporaryDirectory() as tmp:
         onecam = load_rules(rules, tmp)
         world = World(js, log_rows, fights_of(js) if fights else None, flare_shells(js) if shells == "flares" else None,
-                      live=vehicles == "live", vehicle_interest=True)  # (batch245: main has model.py's bumps since
+                      live=vehicles == "live", vehicle_interest=True, launches=Launches(runs, js) if launches else None)  # (batch245: main has model.py's bumps since
         # batch232 and 240; "here" only gave main's replays no vehicle or build interest, shift81: 26.4% vs 21.5% idle)
 
         def send(body):
             return {"ok": True, "camera": {"move": {"start_tick": 0}} if body.get("move") else {}}
         if os.path.exists(out_path):
             os.remove(out_path)
-        d = onecam.OneCam(SLOTS[:cams], send, out_path)
+        d = onecam.OneCam(SLOTS[:cams], send, out_path, **(tuning or {}))
         d.started = d.onair_since = t0
         for run in reversed(runs):  # the planets the run reached (space-memory.json): not new; nothing written back
             if os.path.isdir(run):
@@ -647,6 +750,10 @@ def main(argv=None):
                     "looks, threats) replayed at their times as segments; its quiet views where the replay is quiet too")
     ap.add_argument("--from", dest="t_from", help="HH:MM local (the first log's day)")
     ap.add_argument("--to", dest="t_to", help="HH:MM local")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="(batch257) a director setting for this replay (onecam's config), e.g. launch_gap=10")
+    ap.add_argument("--no-launches", action="store_true", help="no silos read (batch257: by default the chronicle's "
+                    "rockets on the journals' silos, as launches.SiloFeed reads them)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     out = a.out or os.path.join(tempfile.gettempdir(), f"director-replay-{os.getpid()}.jsonl")
@@ -654,12 +761,14 @@ def main(argv=None):
     t0 = clock_t(first, a.t_from) if a.t_from else None
     t1 = clock_t(first, a.t_to) if a.t_to else None
     _, js, (t0, t1) = replay(a.log, a.runs, out, a.cams, a.rules, a.chart, t0=t0, t1=t1, fights=a.fights,
-                             shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from, timed=a.timed)
+                             shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from, timed=a.timed,
+                             launches=not a.no_launches, tuning={k: json.loads(v) for k, v in (x.split("=", 1) for x in a.set)})
     rows = list(airtime.rows_of(out))
     m = airtime.measure(rows, js, t0, t1)
     m.update(log=" ".join(os.path.basename(x) for x in a.log), rules=a.rules, cams=a.cams, replay_log=out,
              fights=a.fights, shells=a.shells, vehicles=a.vehicles,
              vehicle_framing=vehicle_framing(rows, vehicle_where(js, vehicle_paths(js)), t0, t1),
+             launches=airtime.launches_on_air(rows, airtime.chronicle_rockets(chronicle_rows(a.runs))[0], t0, t1),
              on_air_min={k: round(v / 60, 1) for k, v in sorted(airtime.on_air_by(rows, t0, t1).items(), key=lambda kv: -kv[1])})
     if a.json:
         print(json.dumps(m))
@@ -667,7 +776,7 @@ def main(argv=None):
         print(f"{m['log']} replayed ({a.rules}, {a.cams} cameras): idle or walk loop on air {100 * m['idle_loop_share']:.1f}% "
               f"(idle {100 * m['idle_share']:.1f}%, loop {100 * m['loop_share']:.1f}%); fresh events {m['fresh_events']}, "
               f"median {m['fresh_delay_median_s']} s to air, {m['fresh_missed']} missed; cuts {m['cuts_per_min']}/min; "
-              f"on air (min) {m['on_air_min']}; vehicle shots {m['vehicle_framing']}")
+              f"on air (min) {m['on_air_min']}; vehicle shots {m['vehicle_framing']}; launches {m['launches']}")
     return 0
 
 

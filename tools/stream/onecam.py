@@ -130,6 +130,10 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   than the reads saw it go, along the reply's route (cp3) and inside the frame's inner box, a stop inside that box
   holds the frame; a vehicle stuck
   vehicle_stuck s (no fight, no fire) has served its dwell and counts as standing; moving on again is news.
+- Rocket launches (d26 batch257 IB, viewer Aurora site:5029/5030; ONECAM launch_*, trio_busy_lively): a story standing
+  still launch_still s with nobody else moving or with news, and a silo ordered to launch (launches.py, the silos read
+  every poll): the silo, framed and cut before lift-off, held through the flight, then the story; silos of a planet
+  launching together share the frame. A busy trio only of agents doing something; a check-in trio gives way to news.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -244,6 +248,7 @@ ONECAM = {
     "trio_gap": 480.0,      # at least this long on one camera before a trio (and after the start)
     "trio_every": 900.0,    # a check-in trio after this long without one, if two other agents are worth a tile
     "trio_ratio": 0.9,      # busy: two other agents each score at least this share of the subject on air ...
+    "trio_busy_lively": True,  # (d26 batch257) ... each moving or with news (stale_s under still_cut, newsworthy)
     "trio_apart": 40.0,     # ... and are this many tiles from it and from each other (distinct things)
     "trio_near": 20.0,      # a check-in needs its agents at least this far apart (else the tiles show one spot)
     "trio_zoom": 1.3,       # the small tiles are framed this much closer
@@ -411,6 +416,23 @@ ONECAM = {
     "arty_move": 2.5,       # (batch224) the barrage's frame moved at most this often
     "arty_zoom_min": 0.45,  # (batch224) the widest frame of a barrage's impacts
     "arty_zoom": 0.8,
+    # (d26 batch257 IB, viewer Aurora site:5029/5030: 43.3% of shift83 a standing character, 101 of its 107 idle minutes
+    # with every character still; 1261 rockets launched in it, none on air) A rocket about to lift off (launches.py: a
+    # silo ordered to launch lifts off 8-10 s later; the 3 s poll sees it 6 s ahead at least) instead of a story standing
+    # still: the story on air stale launch_still and on air launch_air, nobody else moving or with news, nothing held;
+    # framed launch_lead before lift-off at the soonest, held through the flight (rocket_flying 5.9-6.8 s on world n)
+    "launch": True,
+    "launch_still": 30.0,   # the story on air standing still (or on a loop) this long (still_cut) ...
+    "launch_air": 10.0,     # ... and on air this long
+    "launch_gap": 20.0,     # from the end of one launch shot to the start of the next
+    "launch_lead": 2.5,     # lift-off at the soonest this far ahead: the standby framed and the cut made before it
+    "launch_wait": 12.0,    # lift-off at the latest at most this far ahead (else a later poll judges it)
+    "launch_after": 6.5,    # on air this long after lift-off (the flight)
+    "launch_max": 30.0,     # a launch shot at most this long (more silos of the frame launching hold it)
+    "launch_zoom": 0.7,
+    "launch_zoom_min": 0.45,
+    "launch_up": 6.0,       # tiles the frame sits north of the silos: the rocket rises into it
+    "launch_near": 48.0,    # tiles: silos launching this close together share the shot
     # Attention (Nick, 2026-10-13 12:00: "can we give a better feel in the stream for what they are paying attention
     # to?"; module doc): the agent on air looks or works away from its character -> the spot in the inset beside it
     "attention": True,
@@ -702,6 +724,13 @@ class OneCam(Director):
         self.last_arty = -1e9
         self.arty_queue = []    # (batch224) shells landing later than arty_pre: {sh, lands, key}
         self.arty_end = -1e9    # (batch224) when the last artillery shot ends (arty_gap counts from it)
+        self.silo_read_at = None  # (batch257) the silos read last seen (snapshot silos.read_at)
+        self.silo_status = {}   # (batch257) silo key -> its status in that read
+        self.launch_due = {}    # (batch257) silo key -> a launch ordered, not yet flying: {key, surface, position, lift, to}
+        self.silo_lifted = {}   # (batch257) silo key -> the read that first saw its rocket flying
+        self.launch_end = -1e9  # (batch257) when the last launch shot ended (launch_gap counts from it)
+        self.launch_surface_t = {}  # (batch257) planet -> when a launch shot last showed it
+        self.launch_log = []    # (batch257) (t, label, keys, lead)
         self.arty_said = {}     # (batch224) a drop's reason -> when it was last logged (a barrage's drops once per 10 s)
         self.artys = []         # (t, decision, why, label)
         self.fight_cands = {}  # fight episode -> {score, t, pieces, text, taken?}: candidates for a battle
@@ -1631,6 +1660,7 @@ class OneCam(Director):
         self.basemap = snapshot.get("basemap") or self.basemap
         self.watch_clouds(snapshot, now)
         self.fight_list = list(snapshot.get("fights") or [])
+        self.watch_silos(snapshot, now)  # (batch257) launches due
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
@@ -1729,6 +1759,7 @@ class OneCam(Director):
             self.direct(by_name, scores, ranked, now)
             self.maybe_work(snapshot, by_name, scores, now, segment)
             self.maybe_attention(by_name, scores, now, segment)
+            self.maybe_launch(snapshot, by_name, scores, now, segment)  # (batch257) before a quiet view
             self.maybe_quiet(by_name, scores, now, segment)
             self.maybe_tour(scores, now, segment)
             self.maybe_map(scores, now, segment)
@@ -2782,6 +2813,159 @@ class OneCam(Director):
         shot["center"], shot["moved"] = {"x": cx, "y": cy}, now
         self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
 
+    # -- rocket launches (batch257) ----------------------------------------------------------------------------
+    def watch_silos(self, snapshot, now):
+        """(batch257) The silos' latest read (snapshot silos, launches.SiloFeed): a silo ordered to launch is due
+        (launch_due: its lift-off at the soonest and latest, wall time, narrowed by each later read); its rocket seen
+        flying is noted (silo_lifted); a silo past both is no longer due."""
+        sil = snapshot.get("silos") or {}
+        at = sil.get("read_at")
+        if not isinstance(at, (int, float)) or at == self.silo_read_at:
+            return
+        self.silo_read_at = at
+        for r in sil.get("rows") or []:
+            if not isinstance(r, dict) or not isinstance(r.get("x"), (int, float)) or not isinstance(r.get("y"), (int, float)):
+                continue
+            k = f"{r.get('surface')}@{r['x']:g},{r['y']:g}"
+            st = r.get("status")
+            self.silo_status[k] = st
+            lift = r.get("lift")
+            d = self.launch_due.get(k)
+            if isinstance(lift, (list, tuple)) and len(lift) == 2:
+                lo, hi = float(lift[0]), float(lift[1])
+                if d and max(d["lift"][0], lo) <= min(d["lift"][1], hi):
+                    lo, hi = max(d["lift"][0], lo), min(d["lift"][1], hi)
+                self.launch_due[k] = {"key": k, "surface": str(r.get("surface") or "nauvis"),
+                                      "position": {"x": float(r["x"]), "y": float(r["y"])}, "lift": (lo, hi),
+                                      "to": r.get("to") or (d or {}).get("to"), "seen": (d or {}).get("seen", at)}
+                self.silo_lifted.pop(k, None)
+            elif st == 11:
+                self.silo_lifted.setdefault(k, at)
+                self.launch_due.pop(k, None)
+            else:
+                self.launch_due.pop(k, None)
+                self.silo_lifted.pop(k, None)
+        for k in [k for k, d in self.launch_due.items() if now > d["lift"][1] + 10.0]:
+            self.launch_due.pop(k)  # (a read that never came)
+
+    def launch_quiet(self, by_name, scores, now, segment):
+        """(batch257) Why a launch may take the program now, or None: the story on air (an agent) standing still or on
+        a loop launch_still and on air launch_air, without news of its own, nobody else moving or with news, nothing
+        held or framed, no fight, launch_gap since the last launch shot (quiet_now's test, sooner)."""
+        cfg = self.cfg
+        cur = self.state.get(self.onair) or {}
+        subj = cur.get("subject")
+        if self.mode != "onecam" or self.plat_busy(now, segment) or subj not in scores or \
+                now - self.launch_end < cfg["launch_gap"] or now - self.last_program_cut < cfg["cut_spacing"] or \
+                self.fighting(subj, by_name, now) or big_plan(by_name[subj]) or \
+                any(now - self.fight_t(f) < cfg["fight_quiet"] for f in self.fight_list):
+            return None
+        stale = self.stale_s(subj, now)
+        if cur.get("vehicle"):
+            if not self.vehicle_stuck_s(subj, now):
+                return None  # its vehicle on its way: moving
+            stale = max(stale, self.vehicle_stuck_s(subj, now))
+        if stale < cfg["launch_still"] or now - self.onair_since < cfg["launch_air"] or self.newsworthy(subj, now):
+            return None  # (its own news: the story holds, as the story rules hold it)
+        for n in scores:
+            if n != subj and (self.newsworthy(n, now) or self.stale_s(n, now) < cfg["moving_s"]):
+                return None  # someone to cut to: the story rules do
+        return f"{subj} {'on a loop' if self.loop_s(subj, now) else 'still'} {int(stale)} s"
+
+    def launch_label(self, group):
+        planet = group[0]["surface"]
+        to = sorted({d["to"] for d in group if d.get("to")})
+        return f"Rocket launch · {planet[:1].upper() + planet[1:]}" + (f" · to {', '.join(to[:2])}" if to else "") + \
+            (f" · {len(group)} rockets" if len(group) > 1 else "")
+
+    def maybe_launch(self, snapshot, by_name, scores, now, segment=None):
+        """(batch257 IB) A rocket about to lift off instead of a story standing still (launch_quiet): the launch due
+        soonest enough ahead (launch_lead to launch_wait), from the planet a launch shot showed longest ago (then the one
+        with the least air in surface_window); the silos of its planet launching within the frame with it. Framed on a
+        standby north of the silos, cut before lift-off, held through the flight (launch_hold); then the story."""
+        cfg = self.cfg
+        if not cfg["launch"]:
+            return
+        cur = self.state.get(self.onair) or {}
+        shot = cur.get("launch") if now < cur.get("until", 0) else None
+        if shot:
+            self.launch_hold(cur, shot, now)
+            return
+        if self.pending and (self.state.get(self.pending["slot"]) or {}).get("launch"):
+            return  # being framed on its standby
+        if self.launch_end > now:
+            self.launch_end = now  # the shot was cut short: the gap counts from now
+        due = [d for d in self.launch_due.values() if cfg["launch_lead"] <= d["lift"][0] - now and
+               d["lift"][1] - now <= cfg["launch_wait"]]
+        if not due:
+            return
+        why = self.launch_quiet(by_name, scores, now, segment)
+        if not why:
+            return
+        share = self.surface_shares(now)
+        pick = min(due, key=lambda d: (self.launch_surface_t.get(d["surface"], -1e9), share.get(d["surface"], 0.0),
+                                       d["lift"][0], d["key"]))
+        group = sorted((d for d in self.launch_due.values() if d["surface"] == pick["surface"] and
+                        d["lift"][0] - now >= cfg["launch_lead"] - 1.0 and
+                        dist(d["position"], pick["position"]) <= cfg["launch_near"]), key=lambda d: d["key"])
+        cx = sum(d["position"]["x"] for d in group) / len(group)
+        cy = sum(d["position"]["y"] for d in group) / len(group)
+        ext = 2 * max(math.hypot(d["position"]["x"] - cx, d["position"]["y"] - cy) for d in group) + 24
+        z = round(max(cfg["launch_zoom_min"], min(cfg["launch_zoom"], self.fight_zoom(ext))), 2)
+        label = self.launch_label(group)
+        lead = pick["lift"][0] - now
+        until = min(now + cfg["launch_max"], max(d["lift"][1] for d in group) + cfg["launch_after"])
+        shot = {"keys": [d["key"] for d in group], "surface": pick["surface"], "since": now, "label": label,
+                "center": {"x": cx, "y": cy}}
+        target = {"agents": [], "subject": "@work", "position": {"x": round(cx, 1), "y": round(cy - cfg["launch_up"], 1)},
+                  "surface": pick["surface"], "zoom": z, "exact_zoom": True, "until": until, "work": label, "launch": shot}
+        self.urgent(target, f"launch: {label} ({why})", scores, now)
+        if self.pending:  # framed on a standby: the cut before lift-off
+            self.pending["ready_s"] = max(0.2, min(cfg["ready_s"], lead - 0.5))
+        self.launch_end = until
+        self.launch_surface_t[pick["surface"]] = now
+        for d in group:
+            self.launch_due.pop(d["key"], None)
+        self.launch_log.append((now, label, shot["keys"], round(lead, 1)))
+        if self.log_path:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                    "slot": "program", "reason": f"launch take: {label} ({why})",
+                                    "launch": {"keys": shot["keys"], "lead": round(lead, 1), "zoom": z,
+                                               "lift": [round(x, 1) for x in pick["lift"]]}}) + "\n")
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} launch: {label}, lift-off in "
+              f"{lead:.1f}-{pick['lift'][1] - now:.1f} s ({why})", flush=True)
+
+    def launch_hold(self, cur, shot, now):
+        """(batch257) A launch shot on air: another silo of its planet launching inside its frame holds it longer (up
+        to launch_max); once every rocket of it has lifted off, it ends launch_after after the last lift-off read; a
+        silo past its flight (the next rocket rising, the doors closing) ends it at once."""
+        cfg = self.cfg
+        hx, hy = self.frame_half(cur.get("game_zoom") or cur.get("zoom") or cfg["launch_zoom"])
+        p = cur.get("position") or {}
+        for d in list(self.launch_due.values()):
+            if d["key"] in shot["keys"] or d["surface"] != shot["surface"] or not p or \
+                    abs(d["position"]["x"] - p["x"]) > hx - 6 or not -hy + 4 <= d["position"]["y"] - p["y"] <= hy - 2:
+                continue
+            shot["keys"].append(d["key"])
+            cur["until"] = min(shot["since"] + cfg["launch_max"], max(cur["until"], d["lift"][1] + cfg["launch_after"]))
+            self.launch_due.pop(d["key"])
+        lift_at = shot.setdefault("lift_at", {})
+        for k in shot["keys"]:
+            if k in lift_at:
+                continue
+            if self.silo_lifted.get(k):
+                lift_at[k] = self.silo_lifted[k]
+            elif self.silo_status.get(k) not in (8, 14, 9, 10, 11, None) and (self.silo_read_at or 0) > shot["since"]:
+                lift_at[k] = self.silo_read_at - 3.0  # past its flight by this read (a read missed)
+        if len(lift_at) == len(shot["keys"]):
+            end = max(lift_at.values()) + cfg["launch_after"]
+            if all(self.silo_status.get(k) not in (8, 14, 9, 10, 11) for k in shot["keys"]):
+                end = min(end, now + 1.0)  # every rocket gone by the last read
+            cur["until"] = min(cur["until"], max(end, now))
+        shot["lifted"] = bool(lift_at)
+        self.launch_end = cur["until"]
+
     # -- attention ---------------------------------------------------------------------------------------------
     def attention_far(self, a, by_name, now):
         """The agent's attention point (snapshot agents[].attention, model.py) when it is fresh and somewhere the
@@ -3820,6 +4004,11 @@ class OneCam(Director):
             for n in ranked:
                 if n == subj or scores[n] < need or not apart(n, subj, d) or any(not apart(n, p, d) for p in pick):
                     continue
+                # (d26 batch257 IB) busy means doing something: in shift83 18.3 of the busy trios' 30 min had a standing
+                # character in the big tile, mostly right after "after the quiet view: X (all stale)", the tiles still too
+                if why == "busy" and cfg["trio_busy_lively"] and self.stale_s(n, now) >= cfg["still_cut"] and \
+                        not self.newsworthy(n, now):
+                    continue
                 pick.append(n)
                 if len(pick) == 2:
                     return pick, why
@@ -3884,6 +4073,14 @@ class OneCam(Director):
         if gone or now >= self.trio["until"]:
             self.leave_trio("an agent left" if gone else f"after {int(now - self.since_mode())} s", now)
             return
+        # (d26 batch257) a check-in trio gives way to an agent off it with news after quiet_min, as a quiet view does
+        # (shift81 replay 10:35: one put up 2 s after a launch shot held Opus's spidertron outing 139 s off air)
+        shown = set(self.trio["agents"]) | {cur.get("subject")}
+        news = next((n for n in scores if n not in shown and self.newsworthy(n, now)), None) \
+            if self.trio.get("why") == "check-in" and now - self.since_mode() >= self.cfg["quiet_min"] else None
+        if news:
+            self.leave_trio(f"{news} fresh: {self.fresh[news][1]}", now)
+            return
         self.keep(cur, by_name, now)
 
     def since_mode(self):
@@ -3928,9 +4125,10 @@ class OneCam(Director):
             cur["until"] = now + 1  # the fight on air is still reported: stay until it has been quiet fight_quiet
         if cur and cur.get("subject") in HOLDS and now < cur.get("until", 0):
             # (batch240 IA) a quiet view gives way to fresh news once it has been up quiet_min
-            if not (self.after_quiet and cur.get("subject") in ("@tour", "@map", "@platform") and
-                    now - self.onair_since >= self.cfg["quiet_min"] and
-                    any(self.newsworthy(n, now) for n in ranked if n not in self.still_block or now >= self.still_block[n])):
+            news = any(self.newsworthy(n, now) for n in ranked if n not in self.still_block or now >= self.still_block[n])
+            if not (news and (self.after_quiet and cur.get("subject") in ("@tour", "@map", "@platform") and
+                              now - self.onair_since >= self.cfg["quiet_min"] or
+                              (cur.get("launch") or {}).get("lifted"))):  # (batch257) a launch once its rockets are up
                 return
             cur["until"] = now
         if cur and cur.get("subject") in scores and now - cur.get("attack_t", -1e9) < self.cfg["fight_hold_max"] and \

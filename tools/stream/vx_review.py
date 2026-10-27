@@ -624,7 +624,8 @@ def review(run, logs, t_from=None, t_to=None, updates_path=None):
                       "hourly": [h.name for h in hourlies], "tour_hourly": [t.name for t in tours],
                       "journals": sorted(js)},
            "missed_action": coverage(prog, evs, t1),
-           "rockets": rocket_count(chronicle, t0, t1),
+           "rockets": dict(rocket_count(chronicle, t0, t1),  # (batch257) and the launch shot's
+                           on_air=airtime.launches_on_air(prog.rows, airtime.chronicle_rockets(chronicle)[0], t0, t1)),
            "idle_airtime": idle(prog, js, t0, t1),
            "narration": narration(caster, audio, chronicle, hourly, tour_rows, t0, t1),
            "data_clarity": clarity(run, svc_t, day, t0, t1, updates_path or (HERE.parent.parent / "site" / "content" / "operator-updates.json")),
@@ -709,8 +710,11 @@ def markdown(r):
         ins = f" ({v['inset_only']})" if v.get("inset_only") else ""
         L.append(f"| {cat} | {v['n']} | {v['at_once']} | {v['late']} | {v['missed']}{ins} | {v.get('not_shown_by_design', 0)} | {v['median_delay_s']} |")
     rk = r["rockets"]
+    la = rk.get("on_air") or {}
     L += ["", f"Rockets launched: {rk['launches']} ({', '.join(f'{k} {v}' for k, v in rk['by_surface'].items()) or 'none'}); "
-          "the director has no launch shot, so they are not counted as missed.", "",
+          + (f"launch shots {la['shots']} ({la['shot_min']} min); rockets lifting off on air {la['on_air']} of {la['rockets']}, "
+             f"{la['cut_before']} of them with the shot up before lift-off (by planet: the chronicle names no silo); "
+             if la.get("shots") else "no launch shot on air; ") + "they are not counted as missed.", "",
           "## 2. Idle airtime", "",
           f"- Standing character {ia['idle_min']} min, walk loops {ia['loop_min']} min ({round(100 * (ia['idle_loop_share'] or 0), 1)}% of {ia['minutes']} min); "
           f"by agent: {ia['idle_loop_by_agent_min']}.",

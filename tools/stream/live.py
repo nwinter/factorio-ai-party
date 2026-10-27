@@ -501,8 +501,25 @@ class LiveSource:
         except Exception as e:
             errors["chat"] = str(e)
         self.observe_board(obs, errors)
+        self.observe_silos(obs, errors)
         obs["errors"] = errors
         return obs
+
+    def observe_silos(self, obs, errors):
+        """(d26 batch257 IB) The rocket silos' states every poll (launches.SiloFeed, harness SILOS_LUA: 0.093 ms for 15
+        silos on world n): obs["silos"], the launch shot's (onecam maybe_launch); this poll's chronicle rocket rows name
+        where each launch goes."""
+        if not self.work or self.caps is None or not self.caps.get("harness"):
+            return
+        feed = self.work.silos
+        feed.note_rockets((obs.get("chronicle") or {}).get("events"))
+        try:
+            got = feed.read(self.h)
+        except Exception as e:
+            errors["silos"] = f"{type(e).__name__}: {e}"
+            return
+        if got:
+            obs["silos"] = got
 
     # ---- work away from the body ----------------------------------------------------------------------------
     def read_focus(self, errors):

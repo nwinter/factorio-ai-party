@@ -16210,6 +16210,17 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
     The run before (the same bounds, the freeze box round all changes) read 15-19 ms and 15-17 ms for the first two;
     the freeze box round the removals is what keeps the water pipe at (3.5,1.5) in the tower move's freeze list.
 
+## d26 batch257 (IB: idle air back in shift83; the launch shot)
+- Host only (tools/stream; docs/STREAM-NOTES.md "Rocket launches over standing characters"): no runtime change, agents
+  read nothing new. The stream service reads the rocket silos' states every poll (harness SILOS_LUA: 0.15 ms for 15
+  silos on world n), silos it learns from the agents' replies (runs/RUN/silos.json); while the force has a silo it does
+  not know, one 256-tile block of a planet a poll (SILO_SWEEP_LUA, 1.2-2.3 ms).
+- onecam.py: a story standing still 30 s with nobody else moving gives way to a rocket about to lift off (the silo,
+  framed before lift-off, held through the flight; launch_*); a busy trio only of agents doing something; a check-in
+  trio gives way to news.
+- vx_review.py reports the launches on air; director_replay.py rebuilds the silos read from the chronicle's rockets.
+- Test: tools/stream/test_launchcam.py.
+
 ## d26 batch249 (the batch227 review's refusals and small items: R5, R6, R9, R10, R11)
 - R5: a position named on a surface where its chunk was never charted (inspect, scan, an entity not found there) adds
   what of ours stands at that point on another planet: `chunk (-9,15) was never charted on gleba; at (-269.5,486.5)

@@ -15,6 +15,7 @@ take_attention().
 import json, os, re, time
 
 import attention
+import launches
 from waitcard import WaitFeed
 from workcard import RepeatFeed
 
@@ -281,6 +282,8 @@ class WorkFeed:
         self.vehicles = VehicleFeed()  # (batch222) each agent's vehicle by remote view: where it is (onecam)
         self.did = DidFeed()  # (batch240) each agent's latest build, paste, deconstruction or silo load (onecam)
         self.clocks = ClockFeed()  # (batch240) how long each agent's character has stood idle, by its clocks (onecam)
+        # (d26 batch257) the rocket silos the agents' replies list (launches.py: the launch shot reads their states)
+        self.silos = launches.SiloFeed(os.path.join(run_dir, "silos.json") if run_dir else None)
         self.attention = []  # every request with an attention point (attention.py) since take_attention()
         self.flare_at = 0.0  # (batch224 AY) when the latest artillery flare request was read: serve.py polls artillery_live
 
@@ -328,6 +331,7 @@ class WorkFeed:
                 self.vehicles.ingest(agent, r)  # (a restart's tail too: the director drops a stale read)
                 self.did.ingest(agent, r)  # (a restart's tail too: DID_KEEP drops old rows)
                 self.clocks.ingest(agent, r)
+                self.silos.ingest(agent, r)  # (a restart's tail too: silos stay where they are)
                 if not isinstance(r, dict):
                     continue
                 q = r.get("request") or {}

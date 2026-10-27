@@ -530,6 +530,35 @@ end
 rcon.print(helpers.table_to_json({vehicles = out}))
 """
 
+# (d26 batch257 IB, viewer Aurora site:5029/5030: 1261 rockets in shift83, none on air) The launch shot (onecam
+# maybe_launch): each known rocket silo's rocket_silo_status, found by surface and position (a silo's prototype has no
+# get-by-unit-number flag: game.get_entity_by_unit_number gives nil), -1 for one gone; and the force's silo count, which
+# tells a silo the list lacks. 0.093 ms for 15 silos on world n (d26).
+SILOS_LUA = r"""
+local out = {}
+for i, q in ipairs(SILOS) do
+  local s = game.surfaces[q[1]]
+  local e = s and s.find_entity("rocket-silo", {q[2], q[3]})
+  out[i] = e and e.rocket_silo_status or -1
+end
+rcon.print(helpers.table_to_json({tick = game.tick, n = game.forces.player.get_entity_count("rocket-silo"), s = out}))
+"""
+
+# (batch257) Our silos in one block of a planet (launches.SiloFeed sweeps blocks only while the count above says a silo
+# is not in its list), and the planets' surface names. A 256-tile block of Nauvis's core took 1.8 ms on world n (d26);
+# a whole planet is too much (Gleba 3.3 ms, Nauvis about 12 ms estimated, not run).
+SILO_SWEEP_LUA = r"""
+local out, planets = {}, {}
+for name, p in pairs(game.planets) do if p.surface then planets[#planets + 1] = p.surface.name end end
+local s = game.surfaces[ SURFACE ]
+if s then
+  for _, e in ipairs(s.find_entities_filtered{name = "rocket-silo", force = "player", area = AREA}) do
+    out[#out + 1] = {e.position.x, e.position.y}
+  end
+end
+rcon.print(helpers.table_to_json({planets = planets, silos = out}))
+"""
+
 PROBE_LUA = r"""
 local i = remote.interfaces.agent_harness
 rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~= nil, cameras = (i and i.cameras) ~= nil})
@@ -695,6 +724,23 @@ class Harness:
         r = self.lua(VEHICLES_LUA.replace("UNITS", "{" + ",".join(str(u) for u in units) + "}"))
         rows = r.get("vehicles") if isinstance(r, dict) else None
         return {row["unit"]: row for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and "unit" in row}
+
+    def silos(self, silos):
+        """(batch257) [(surface, x, y)] -> {tick, n (the force's silos), s [status per silo, -1 gone]} (SILOS_LUA)."""
+        rows = [(str(s), float(x), float(y)) for s, x, y in silos][:64]
+        lst = "{" + ",".join("{%s,%s,%s}" % (lua_string(s), repr(x), repr(y)) for s, x, y in rows) + "}"
+        r = self.lua(SILOS_LUA.replace("SILOS", lst))
+        st = r.get("s") if isinstance(r, dict) else None
+        return {"tick": r.get("tick"), "n": r.get("n"), "s": st if isinstance(st, list) else []}  # ({} for none)
+
+    def silo_sweep(self, surface, area):
+        """(batch257) Our silos in area ((x0, y0), (x1, y1)) of a surface and the planets' surfaces (SILO_SWEEP_LUA)."""
+        (x0, y0), (x1, y1) = area
+        r = self.lua(SILO_SWEEP_LUA.replace("SURFACE", lua_string(str(surface)))
+                     .replace("AREA", "{{%d,%d},{%d,%d}}" % (x0, y0, x1, y1)))
+        found = r.get("silos") if isinstance(r.get("silos"), list) else []
+        planets = r.get("planets") if isinstance(r.get("planets"), list) else []
+        return {"silos": [(float(p[0]), float(p[1])) for p in found if isinstance(p, list) and len(p) == 2], "planets": planets}
 
     def probe(self):
         return self.lua(PROBE_LUA)

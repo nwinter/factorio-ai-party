@@ -158,7 +158,8 @@ def main():
         assert ma["platform departure (routine)"]["not_shown_by_design"] == 1 and ma["platform departure (routine)"]["at_once"] == 1, ma
         assert ma["platform departure (routine)"]["missed"] == 0  # the inset counts as on air
         assert ma["platform made"]["at_once"] == 1, ma["platform made"]  # bob on air when Newship was made
-        assert r["rockets"] == {"launches": 2, "by_surface": {"nauvis": 2}}
+        rk = dict(r["rockets"])
+        assert rk.pop("on_air")["shots"] == 0 and rk == {"launches": 2, "by_surface": {"nauvis": 2}}, r["rockets"]
         ia = r["idle_airtime"]
         assert ia["idle_min"] == 5.0 and ia["idle_loop_by_agent_min"] == {"alice": 5.0}, ia
         assert ia["repeat_min"] > 0 and ia["repeats"][0].startswith("@base map 'base map' again 1x"), ia["repeats"]
