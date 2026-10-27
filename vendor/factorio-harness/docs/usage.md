@@ -16616,3 +16616,27 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,270,315 bytes on main (5c6ef5ce), 6,278,546 with this branch (limit 8,388,608).
 - Docs: agent/ref/circuits-settings.md (`assembler_batch`). Test: tests/d27_batch278.lua (fails on main: no counter, no
   conditions, no counter_from); tests d17_batch19, d20_batch53, d22_batch77 and d17_batch19_rt take the new steps.
+
+## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
+
+- Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
+  the electromagnetic plant at (-19,76) first, and the electronic-circuit machine at (33,179)) failed at its first
+  check, tick 73129657: "the electromagnetic-plant at (-19,76) is gone since the wait began". Sol's `rates` read 11 ticks
+  later showed the plant working.
+- Cause: every `produced` member kept its machines and starting counts in one table on the wait's record
+  (`record.produced_base`). Each member then called gone every machine in that table it had not counted itself, so the
+  second member called the first member's machine gone. Any `all` or `any` with two produced members on different
+  tiles failed at its first check. Two platform members shared one starting count the same way.
+- Fix (conditions.lua): a baseline for each condition, keyed by what it counts: its platform and item, or its surface,
+  tiles and `counter_from`. Members on the same tiles share one (one counter). A wait already running from before keeps
+  its one table for its first member.
+- On a private copy (2.0.77, world n's d22 save, sol's bot, remote lane): a `wait_until all` of 4 produced members (two
+  assemblers on gears, an assembler on copper cable named twice: by item and by crafts):
+  - with main's conditions.lua deployed it failed at once: "the assembling-machine-2 at (596.5,600.5) is gone since
+    the wait began";
+  - with the fix it was met after 983 ticks: "met: made 20 iron-gear-wheel (20 crafts) in 1 machine since the wait
+    began (at least 20); met: made 20 iron-gear-wheel ...; met: made 40 copper-cable (20 crafts) ...; met: made 20
+    crafts in 1 machine since the wait began (at least 10)".
+- tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
+  `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
+- Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
