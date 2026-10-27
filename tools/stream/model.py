@@ -882,6 +882,7 @@ class Model:
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
+        self.silos = None  # (d26 batch257) launches.SiloFeed's last read (live.py, every poll): the launch shot
         self.vehicles = None  # (d26 batch233 VM) the census's vehicles read {tick, rows, total, t} (live.py, every 10 s)
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
@@ -993,6 +994,8 @@ class Model:
             self.connected_players = list(obs["connected_players"])
         if isinstance(obs.get("vehicles"), dict) and isinstance(obs["vehicles"].get("rows"), list):
             self.vehicles = obs["vehicles"]
+        if isinstance(obs.get("silos"), dict):  # (d26 batch257) the rocket silos' states: the launch shot (onecam)
+            self.silos = obs["silos"]
         if isinstance(obs.get("turret_state"), dict):  # (d20 batch50 G1) each turret's readiness (turretstate.py)
             self.turret_state = obs["turret_state"]
         if obs.get("basemap"):
@@ -2947,6 +2950,7 @@ class Model:
             "space": self.space_snapshot(science, now),
             "work": self.work_snapshot(now),
             "fights": fights,
+            "silos": self.silos,  # (batch257) launches.SiloFeed's last read
             "incoming": self.incoming_snapshot(now),
             "big_enemies": self.big_snapshot(now),
             "hauling": self.hauling,

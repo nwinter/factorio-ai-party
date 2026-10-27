@@ -2236,6 +2236,53 @@ Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rul
   14:29-15:15 629 of 654 -> 640 of 654 (aired 852 of 954). The rest: starts before the first moving read, and the
   journal model's own jumps when a reply shows another path.
 
+## Rocket launches over standing characters (2026-10-26, d26 batch257 IB, viewer Aurora site:5029/5030)
+shift83 18:37-22:41: a standing character 43.3% of the program (105 of 244 min; shift82 19.3%). From the director log
+and the journals: in 101 of the 107 idle minutes every character stood (Sol's "busy" clocks were uptime measurements,
+a read) and no platform action of any agent was within 12 s (work_fresh); a platform-work shot held back by work_gap
+0.6 min, by the other work rules 4.2 min; another agent moving or fresh under still_worth or fresh_ratio 0.7 min. The
+cuts that put the standing character on air: "after the quiet view: X (all stale)" 67 min, "back to X" 23 min. 1261
+rockets launched in the shift, about 5 a minute across the planets; the director had no launch shot. Busy trios ran 30
+min, 18 of them with a standing character in the big tile, their tiles standing too.
+- A launch is seen only once ordered: the silos stand at rocket_ready until a platform's request takes their cargo.
+  Sampled on world n (22 launches, 0.5 s reads): ready -> launch_started 1.6-2.3 s -> engine_starting 5.0-5.7 ->
+  arms_retract 1.7-2.3 -> rocket_flying 5.9-6.8 (lift-off, the flight) -> the next rocket rising 9.6 -> arms 1.7 ->
+  ready. From the order to lift-off 8.3-10.3 s, so the 3 s poll sees each launch at least 6 s ahead.
+- launches.SiloFeed (work.WorkFeed's journals): the silos the agents' replies list (their surface, else the reply's
+  surface or planet), kept in runs/RUN/silos.json. live.py reads their states every poll (harness SILOS_LUA, by surface
+  and position since a silo has no get-by-unit-number: 0.15 ms for 15 silos on world n, a 60-byte reply) with the
+  force's silo count; a count over the list sweeps one 256-tile block of a planet a poll (SILO_SWEEP_LUA, 1.2 ms on
+  Gleba, a Nauvis core block's find 1.8 ms; a whole planet is too much: Gleba 3.3 ms, Nauvis about 12 ms, not run),
+  not in the first 10 min of a service, 30 min apart. Each launching silo gets its lift-off window in wall seconds at
+  the game's speed (from the reads' ticks) and the chronicle rocket row's destination. obs["silos"] -> model -> the
+  snapshot's `silos`.
+- onecam maybe_launch: the story on air (an agent) standing still launch_still (30 s) and on air launch_air (10 s),
+  without news of its own, nobody else moving or with news, nothing held or framed, no fight, launch_gap (20 s) after
+  the last launch shot: the launch due soonest enough ahead (lift-off at the soonest launch_lead 2.5 s, at the latest
+  launch_wait 12 s away), from the planet a launch shot showed longest ago, then the one with the least air. Its
+  planet's silos launching within launch_near (48 tiles) share the frame ("2 rockets"). Framed launch_up (6 tiles)
+  north of the silos at launch_zoom (0.7), cut before the soonest lift-off, held to launch_after (6.5 s) past the read
+  that saw it flying (at once when the silos are past their flight), at most launch_max (30 s); another silo launching
+  inside the frame holds it longer. Then "back to X". It gives way to fresh news once its rockets are up. Logged as
+  "launch take" rows; airtime.owner "@launch".
+- The trio: a busy trio only of agents moving or with news (trio_busy_lively); a check-in trio gives way to news of an
+  agent off it after quiet_min (8 s; a shift81 replay had one hold Opus's spidertron outing 139 s off air).
+- airtime.chronicle_rockets (the chronicle's ticks at wall time: the lowest t - tick/60 within 5 min) and
+  launches_on_air (rockets lifting off while a launch shot of their planet was on air, by planet: the chronicle names
+  no silo); vx_review's rockets line reports them. director_replay.py rebuilds the silos read from the chronicle's
+  rockets on the journals' silos (Launches; --no-launches leaves it out; --set KEY=VALUE for a director setting).
+Replays (--timed --chart --fights --vehicles live; main's rules -> these; vx_review's numbers):
+- shift83 18:37-22:41: idle 47.2% -> 34.6% (aired 43.3%); 133 launch shots (30.9 min), 202 of 1249 rockets lifting off
+  on air, 201 with the shot up before lift-off (median 6.7 s ahead); builds at once/late/missed 7/5/0 -> 8/4/0, median
+  16.5 -> 9 s; cuts 1.40 -> 2.42 a minute; repeated shots 21.3 -> 33.4 min (7.7 of them launches).
+- shift82 14:29-18:32: 40.9% -> 29.1% (aired 19.3%); 141 shots, 212 rockets on air; builds 2/1/1 -> 2/2/0.
+- shift81 10:20-14:23 (battles): 24.8% -> 20.3%; battles 4/1/0 both; vehicle outings 4/4/0 -> 5/3/0; Opus's spidertron
+  on air 1761 -> 1727 s, in frame 1720 -> 1686 s.
+- launch_gap: 40 s 37.1%, 20 s 35.5%, 10 s 33.6%, 0 s 31.4% (shift83, before the story-news and trio rules). In the
+  idle left, no launch was ordered at that moment for most of it (launches come in bursts: a gap over a minute 17
+  times in shift83, 24 min together).
+- Test: tools/stream/test_launchcam.py.
+
 ## Narration lag: announcements against later mentions (2026-10-26, d26 batch255)
 vx_review's "an event to the caster line naming it" took every caster line naming a platform against that platform's
 newest chronicle event, whatever the line was about. Shift82 so far: median 475 s, p90 1390 s. The lines that announce

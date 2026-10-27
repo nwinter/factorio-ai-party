@@ -20,7 +20,7 @@ The on-air row: the program's client (onecam.py's `cut to SLOT` rows; the first 
 latest shot (its own rows: cmd.follow, the agents its target names). A trio counts its big tile. The journals' times are
 UTC ISO (`at`), the log's epoch seconds. director_replay.py writes logs this reads the same way.
 """
-import argparse, gzip, json, os, re, statistics, sys
+import argparse, bisect, gzip, json, os, re, statistics, sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -328,6 +328,58 @@ def measure(log_rows, js, t0=None, t1=None, step=1.0):
             "fresh_delay_median_s": round(statistics.median(delays), 1) if delays else None,
             "fresh_within_60s": round(sum(1 for d in delays if d <= 60) / events, 3) if events else None,
             "cuts": n_cuts, "cuts_per_min": round(n_cuts / minutes, 2) if minutes > 0 else None}
+
+
+# ---- rocket launches (d26 batch257) -------------------------------------------------------------------------------
+LIFT_S = 9.9  # a rocket lifts off this long after its order, the chronicle's tick (launches.py: 0.6 + 2.0 + 5.6 + 1.7 s)
+LAUNCH_RE = re.compile(r"launch: Rocket launch · (\w+)")
+
+
+def chronicle_rockets(rows):
+    """([(wall time of the order, tick, surface, row)] for the chronicle's rocket rows, every event row by tick): each
+    tick at the wall time it maps to. A row's own `t` is when the service appended it, a poll or a catch-up later, so
+    the tick is set against the lowest t - tick/60 of the rows within 5 min (the game runs a little under 60 UPS)."""
+    ev = sorted((r for r in rows if r.get("type") == "event" and isinstance(r.get("tick"), (int, float)) and
+                 isinstance(r.get("t"), (int, float))), key=lambda r: r["tick"])
+    out, lo, hi = [], 0, 0
+    offs = [r["t"] - r["tick"] / 60.0 for r in ev]
+    for i, r in enumerate(ev):
+        while ev[lo]["t"] < r["t"] - 300:
+            lo += 1
+        hi = max(hi, i)
+        while hi + 1 < len(ev) and ev[hi + 1]["t"] <= r["t"] + 300:
+            hi += 1
+        if r.get("kind") == "rocket":
+            out.append((r["tick"] / 60.0 + min(offs[lo:hi + 1]), r["tick"], str(r.get("surface") or "nauvis"), r))
+    return out, ev
+
+
+def launches_on_air(log_rows, rockets, t0=None, t1=None):
+    """(batch257) {shots, shot_min, rockets, on_air, cut_before}: launch shots cut to, their minutes, the rockets that
+    lifted off in the span (order + LIFT_S), those that did while a launch shot of their planet was on air, and of them
+    the ones whose shot was on air before the lift-off. By planet, not by silo: the chronicle names no silo."""
+    log_rows = [r for r in log_rows if isinstance(r.get("t"), (int, float))]
+    if not log_rows:
+        return None
+    t0 = log_rows[0]["t"] if t0 is None else t0
+    t1 = log_rows[-1]["t"] if t1 is None else t1
+    timeline, cuts = program(log_rows)
+    cut_t = [c[0] for c in cuts]
+    shots = sum(1 for t, why in cuts if t0 <= t < t1 and why.startswith("launch:"))
+    secs = on_air_by(log_rows, t0, t1).get("@launch", 0.0)
+    n = on = before = 0
+    for wt, _, surf, _ in rockets:
+        lift = wt + LIFT_S
+        if not t0 <= lift < t1:
+            continue
+        n += 1
+        m = LAUNCH_RE.match(str((shot_at(timeline, lift) or {}).get("reason") or ""))
+        if m and m.group(1).lower() == surf.lower():
+            on += 1
+            i = bisect.bisect_right(cut_t, lift) - 1
+            if i >= 0 and cuts[i][1].startswith("launch:") and cut_t[i] <= lift - 0.5:
+                before += 1
+    return {"shots": shots, "shot_min": round(secs / 60, 1), "rockets": n, "on_air": on, "cut_before": before}
 
 
 def main(argv=None):
