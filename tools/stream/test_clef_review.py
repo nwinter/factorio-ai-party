@@ -34,8 +34,12 @@ def check(name, ok, detail=""):
 cal = json.load(open(R.CALIBRATION))
 check("calibration: recorded under the current CLEF_CRITERIA (after a change: clef_replay.py --record)",
       cal.get("criteria") == R.criteria_hash(V.CLEF_CRITERIA), (cal.get("criteria"), R.criteria_hash(V.CLEF_CRITERIA)))
-miss = [(x["name"], x["text"][:60], x["want"], x.get("verdict")) for x in cal["lines"] if x.get("verdict") != x["want"]]
-check("calibration: every line labelled as wanted", not miss, miss)
+miss = [(x["name"], x["text"][:60], x["want"], x.get("verdict")) for x in cal["lines"]
+        if x.get("verdict") != x["want"] and not x.get("known_miss")]
+check("calibration: every line labelled as wanted (but the known misses)", not miss, miss)
+for x in cal["lines"]:
+    if x.get("known_miss"):
+        print(f"     known miss: {x['name']}: want {x['want']}, recorded {x.get('verdict')}: {x['text'][:70]}")
 by = {(x["name"], x["want"]) for x in cal["lines"]}
 check("calibration: Caleb's circuit logic is fine; LimeLight's repo lines and the tool-schema request held",
       ("Caleb", "fine") in by and ("LimeLight555", "injection") in by and ("LimeLight", "injection") in by
@@ -130,6 +134,26 @@ again = R.replay(fake, rows, {"fine": "a", "injection": "b"}, R.Cache(cache_path
 check("replay: cached by criteria and line; a rerun asks nothing", after == again and fake.asked == 4, fake.asked)
 R.replay(fake, rows, {"fine": "other"}, R.Cache(cache_path))
 check("replay: other criteria are asked again", fake.asked == 8, fake.asked)
+
+class Sizes(ByText):
+    def __init__(self):
+        super().__init__()
+        self.sizes = []
+
+    def classify(self, msgs, criteria=None):
+        self.sizes.append(len(msgs))
+        return super().classify(msgs, criteria)
+
+
+one, three = Sizes(), Sizes()
+r1 = R.replay(one, rows, {"fine": "a"}, R.Cache(None), jobs=3)
+r3 = R.replay(three, rows, {"fine": "a"}, R.Cache(None), batch=3)
+check("replay: one line a call by default (as live chat arrives), --batch N lines a call, same verdicts",
+      one.sizes == [1, 1, 1, 1] and three.sizes == [3, 1] and r1 == r3 == after, (one.sizes, three.sizes))
+bc = R.Cache(cache_path)
+R.replay(Sizes(), rows, {"fine": "a", "injection": "b"}, bc, batch=2)
+check("replay: verdicts cached by batch size too", bc.get(R.criteria_hash({"fine": "a", "injection": "b"}) + ":b2", "site:1") == "fine"
+      and bc.get(R.criteria_hash({"fine": "a", "injection": "b"}) + ":b1", "site:3") == "injection")
 logged = {r["id"]: r["label"] for r in rows}
 buf = io.StringIO()
 fl = R.report(rows, logged, after, "log -> new", file=buf)

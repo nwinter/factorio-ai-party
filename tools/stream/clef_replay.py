@@ -2,24 +2,27 @@
 """Replay viewer lines through Clef with other criteria, and print where its verdict changes.
 
   python3 tools/stream/clef_replay.py [LOG ...] [--logs DIR] [--since DATE] [--until DATE] [--all | --sample N]
-                                      [--criteria FILE | --criteria rev:REV] [--before REV] [--cache FILE]
+                                      [--criteria FILE | --criteria rev:REV] [--before REV] [--batch N] [--jobs N]
+                                      [--cache FILE]
   python3 tools/stream/clef_replay.py --all --since 2026-10-11 --before main
   python3 tools/stream/clef_replay.py --record   (the calibration lines, after a change to CLEF_CRITERIA)
 
 d17 batch35 U1 (operator 15:05: Clef refused 13 viewer lines as injection since 10:51, nearly all plain game advice);
 d27 batch264 CC (Nick 06:45: calibrate the injection label against everything Clef checked).
 LOGs are viewers.py verdict logs (tools/stream/logs/viewers-*.jsonl; default every one in --logs, default
-tools/stream/logs). A line in two logs (a restart) counts once. The lines go to the real @cf/cloudflare/clef-flash, 48
-to a call, as the stream service asks: with the working tree's CLEF_CRITERIA, or --criteria (a JSON object of label to
-description, a .py file holding a CLEF_CRITERIA block such as viewers.py, or rev:REV for viewers.py at a git revision).
+tools/stream/logs). A line in two logs (a restart) counts once. The lines go to the real @cf/cloudflare/clef-flash
+with the working tree's CLEF_CRITERIA, or --criteria (a JSON object of label to description, a .py file holding a
+CLEF_CRITERIA block such as viewers.py, or rev:REV for viewers.py at a git revision). They are asked --batch lines a
+call (default 1, as live chat reaches Clef a line or a few at a time: in 37-line batches Clef held 345 of 5911 lines
+as injection, and a sample of 40 of those it held that way it called fine one at a time), --jobs calls at once.
 --all replays every line Clef checked; without it, the lines it held and the first --sample (20) it passed. Each
 verdict is compared with the label the log recorded and, with --before REV, with REV's criteria replayed now (the
-model's own drift apart from the prompt). Verdicts are cached by criteria and line in --cache (default
-tools/stream/logs/clef-replay-cache.jsonl), so a rerun or a review pays only for new lines. Clef bills input only, $0.038 per million tokens: about 570 tokens a
-line under the d27 criteria, so a replay of 6000 lines is about 13 cents.
+model's own drift apart from the prompt). Verdicts are cached by criteria, batch size and line in --cache (default
+tools/stream/logs/clef-replay-cache.jsonl), so a rerun or a review pays only for new lines. Clef bills input only,
+$0.038 per million tokens: 507 tokens a line under the d27 criteria (Clef's count), so 6000 lines cost about 12 cents.
 Prints every flip both ways (id, time, name, before, after, text) and the counts by label.
 """
-import argparse, collections, datetime, glob, hashlib, json, os, subprocess, sys, time
+import argparse, collections, concurrent.futures, datetime, glob, hashlib, json, os, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -27,7 +30,6 @@ sys.path.insert(0, HERE)
 import viewers as V  # noqa: E402
 
 LOGS = os.path.join(HERE, "logs")
-BATCH = 48
 
 
 def criteria_block(src):
@@ -128,28 +130,36 @@ class Cache:
                     f.write(json.dumps({"criteria": h, "id": k, "verdict": v}) + "\n")
 
 
-def replay(clef, rows, criteria, cache=None, tries=3, progress=None):
-    """{id: Clef's label} for rows under criteria; cached lines are not asked again; 'unknown' kept out of the cache."""
-    h = criteria_hash(criteria)
+def ask(clef, part, criteria, tries=3):
+    """One Clef call for part, retried; every line 'unknown' after the last failure."""
+    for attempt in range(tries):
+        try:
+            return clef.classify(part, criteria)
+        except Exception as e:  # a failed call is retried, then the lines count as unknown
+            if attempt == tries - 1:
+                print(f"clef: {len(part)} line(s) failed: {e}", file=sys.stderr)
+                return {r["id"]: "unknown" for r in part}
+            time.sleep(2 * (attempt + 1))
+
+
+def replay(clef, rows, criteria, cache=None, batch=1, jobs=1, progress=None):
+    """{id: Clef's label} for rows under criteria, asked `batch` lines a call (default 1: live chat reaches Clef a line
+    or a few at a time; in a 48-line batch Clef held a sample of 40 lines as injection that it called fine one at a
+    time), `jobs` calls at once. Cached by criteria and batch size; cached lines are not asked again; 'unknown' kept
+    out of the cache."""
+    h = f"{criteria_hash(criteria)}:b{batch}"
     cache = cache or Cache(None)
     out = {r["id"]: cache.get(h, r["id"]) for r in rows}
     todo = [r for r in rows if out[r["id"]] in (None, "unknown")]
-    for k in range(0, len(todo), BATCH):
-        part = todo[k:k + BATCH]
-        for attempt in range(tries):
-            try:
-                got = clef.classify(part, criteria)
-                break
-            except Exception as e:  # a failed call is retried, then the batch counts as unknown
-                if attempt == tries - 1:
-                    print(f"clef: batch {k // BATCH + 1} failed: {e}", file=sys.stderr)
-                    got = {r["id"]: "unknown" for r in part}
-                else:
-                    time.sleep(2 * (attempt + 1))
-        out.update(got)
-        cache.put(h, {m: v for m, v in got.items() if v != "unknown"})
-        if progress:
-            progress(min(k + BATCH, len(todo)), len(todo))
+    parts = [todo[k:k + batch] for k in range(0, len(todo), batch)]
+    done = 0
+    with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:
+        for got in pool.map(lambda part: ask(clef, part, criteria), parts):
+            out.update(got)
+            cache.put(h, {m: v for m, v in got.items() if v != "unknown"})
+            done += len(got)
+            if progress and (done % 240 < len(got) or done == len(todo)):
+                progress(done, len(todo))
     return out
 
 
@@ -198,7 +208,7 @@ def record(path, clef, criteria=None, cache=None):
     want: after a change to CLEF_CRITERIA, record again (--record) and read what moved."""
     data = json.load(open(path))
     criteria = criteria or dict(V.CLEF_CRITERIA)
-    got = replay(clef, data["lines"], criteria, cache)
+    got = replay(clef, data["lines"], criteria, cache, jobs=4)
     for line in data["lines"]:
         line["verdict"] = got.get(line["id"]) or "unknown"
     data["criteria"] = criteria_hash(criteria)
@@ -206,7 +216,7 @@ def record(path, clef, criteria=None, cache=None):
     with open(path, "w") as f:
         json.dump(data, f, indent=1, ensure_ascii=False)
         f.write("\n")
-    return [x for x in data["lines"] if x["verdict"] != x["want"]]
+    return [x for x in data["lines"] if x["verdict"] != x["want"]]  # known misses (known_miss) included
 
 
 def main(argv=None):
@@ -220,6 +230,8 @@ def main(argv=None):
     ap.add_argument("--criteria", help="the criteria to replay with (default: the working tree's viewers.py)")
     ap.add_argument("--before", help="also replay viewers.py at this git revision, e.g. main")
     ap.add_argument("--cache", default=os.path.join(LOGS, "clef-replay-cache.jsonl"))
+    ap.add_argument("--batch", type=int, default=1, help="lines a Clef call (default 1, as live chat arrives; at most 48)")
+    ap.add_argument("--jobs", type=int, default=6, help="Clef calls at once (default 6)")
     ap.add_argument("--record", nargs="?", const=CALIBRATION,
                     help="ask the calibration lines again under the criteria and write the verdicts (default file "
                          "tools/stream/clef_calibration.json)")
@@ -241,11 +253,12 @@ def main(argv=None):
     print(f"{len(rows)} lines; criteria {criteria_hash(new)}"
           + (f", before {a.before} {criteria_hash(criteria_at(a.before))}" if a.before else ""), file=sys.stderr)
     tick = lambda n, total: print(f"  {n}/{total}", file=sys.stderr)
-    after = replay(clef, rows, new, cache, progress=tick)
+    b, j = max(1, min(48, a.batch)), a.jobs
+    after = replay(clef, rows, new, cache, b, j, progress=tick)
     logged = {r["id"]: r["label"] for r in rows}
     report(rows, logged, after, "the log's labels -> the new criteria")
     if a.before:
-        old = replay(clef, rows, criteria_at(a.before), cache, progress=tick)
+        old = replay(clef, rows, criteria_at(a.before), cache, b, j, progress=tick)
         print()
         report(rows, old, after, f"{a.before}'s criteria replayed now -> the new criteria")
         print()

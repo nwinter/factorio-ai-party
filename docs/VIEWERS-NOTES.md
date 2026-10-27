@@ -260,8 +260,8 @@ many lines of the same kind passed as fine.
 - Token budget: each Clef question carries the criteria, and Clef takes at most 24576 input tokens a call.
   - `Clef.classify` now splits a batch into calls whose estimate fits 20000 tokens (at most 48 questions each).
   - Before, lines past the 48th of a batch were answered "unknown" and passed unchecked.
-  - Cost: 414 input tokens a question under the old criteria, about 500 under these. Asked one at a time that is
-    1.6 to 1.9 cents per 1,000 lines at $0.038 per million tokens; batches cost less.
+  - Cost: 414 input tokens a question under the old criteria, 507 under these (Clef's own count). Asked one at a
+    time that is 1.57 and 1.93 cents per 1,000 lines at $0.038 per million tokens; batches cost less.
 - `tools/stream/clef_replay.py`:
   - replays logged lines through Clef with other criteria: `--all` for every checked line, `--since`/`--until`,
     `--criteria` (a JSON object, a .py file with a CLEF_CRITERIA block, or `rev:REV`);
