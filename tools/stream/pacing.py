@@ -77,6 +77,37 @@ def requested_since(agent_dir, since):
     return False
 
 
+def requests_since(agent_dir, since):
+    """(d26 batch252 CA) The agent's requests of its own written after `since` (epoch), oldest first: [(at, action)],
+    as requested_since counts them (describe, profiles, cameras and peeks left out; the journal's last 4 MB)."""
+    path = os.path.join(agent_dir, "journal.jsonl")
+    try:
+        if os.path.getmtime(path) < since - 1:
+            return []
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            f.seek(max(0, size - TAIL_MAX))
+            lines = f.read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for raw in reversed(lines):
+        if b'"event":"request"' not in raw and b'"event": "request"' not in raw:
+            continue
+        try:
+            e = json.loads(raw)
+            at = datetime.datetime.fromisoformat(e["at"].replace("Z", "+00:00")).timestamp()
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if at <= since:
+            break
+        req = e.get("request") or {}
+        if req.get("action") in NOT_OWN or (req.get("args") or {}).get("peek") is True:
+            continue
+        out.append((at, req.get("action")))
+    return out[::-1]
+
+
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 

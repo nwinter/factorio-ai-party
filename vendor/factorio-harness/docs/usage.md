@@ -1767,7 +1767,8 @@ fh sleep 900 --until researched                       # ...or until the research
   fuel, no power, no recipe, out of ore; up to 16 per machine name and status on a surface are kept, so a count can be
   low); and what it has not answered: board requests a teammate gave it with no note or edit of its own, and tells to it
   from the last 30 minutes (not fyi, not to the whole team, not the operator's) after which it told the sender or the team
-  nothing. None: `open for you: none (no board items of yours, no alert groups or idle machines in your claims, no
+  nothing; (d26 batch252) of those tells, the ones that ask nothing are `unread notes to you asking nothing` while unread
+  and gone once read, and board items past their next check are `overdue for review` (see d26 batch252). None: `open for you: none (no board items of yours, no alert groups or idle machines in your claims, no
   unanswered requests or tells)`. `fh wait --until` ends its line with it. Nothing here scans: board, tells, the cached
   alert groups and the cached survey. The operator's `idle_report` carries the same line per agent as `open`, and the idle
   nudge (tools/idle_nudge.py) ends its text with it (`Open for you: ...`).
@@ -15374,7 +15375,7 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   from your tells and notes."
 - A minute later: a turn running or herdr reading it working is logged as resumed. A provider stop after the message
   is logged once per stop ("keeps failing"), and it tries again at most once per 20 min (RETRY_S) while the stop
-  stays. No stop and no turn after the message ends the episode (logged).
+  stays. No stop and no turn after the message ends the episode (logged). (d26 batch252 replaced this bullet: below.)
 - STOP texts (from the binaries): Codex 0.164.0 "at capacity", "rate limit", "stream error", "stream disconnected",
   "Reconnecting", "high demand", "Server overloaded", "Internal server error", "exceeded retry limit", "unexpected
   status"; Claude Code 2.1.310 "API Error" (not "API Error: Request was aborted", an interrupt), "Overloaded", "high
@@ -15390,6 +15391,53 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
 - Test: tools/test_pane_resume_stop.py (fake panes, fixed times, no game reads): Sol's screen and dialog with a
   background loop's journal, a stop that keeps failing, the cases that are not a stop, Claude, Grok and Muse stops, a
   dialog esc does not close, a dry run. It fails on main (Resumer has no idle_s and no provider-stop rule).
+
+## d26 batch252 (CA, viewer Aurora site:4965: a cover alert when an agent stays blocked; IN, viewer Aurora site:4852: idle checks tell unread notes from overdue work)
+- Sol's d25-d26 night (its Codex session logs' task_complete errors, all "Selected model is at capacity. Please try a
+  different model.", server_overloaded; the next turn's first input): 23:28:16-23:54:06 (26 min) and 00:46:17-01:02:30
+  (16 min) the operator by hand; 01:16:51-01:53:07 (36 min) only the deadline prompt; pane_resume's provider-stop rule
+  (batch220) came with shift79's start at 02:03, and resumed 02:40:50-02:51:10 and 07:08:03-07:18:28 (10 min each). In
+  shift80, 06:16, 06:19 and 06:33 ended within 2.6 min on supervise.sh's deadline prompt. Through every stop its
+  journal held a platform_defense request every 20 s (a loop running while the CLI was stopped).
+- CA, tools/pane_resume.py (run by tools/idle_nudge.py each poll):
+  - A resume is a request of its own in the journal after the message whose action the journal did not hold between
+    the stop being seen and the first message (the loop's: platform_defense for Sol). A turn shown with no such request
+    (`turn_running`), the stop shown again (`still_stopped`) or neither (`no_request`) is logged once a try.
+  - The first message goes after --idle-min (10 min) of the stop; the next 5, 10, then 20 min after the last try
+    (BACKOFF_S), never while a turn shows; 4 at most (MAX_TRIES), then `tries_spent` is logged once and nothing more is
+    typed in the episode. A dialog still up after esc: esc again 20 min later, as before.
+  - Still not resumed 20 min (ALERT_S) after the stop was first seen: one operator tell (`cover_alert`) to its cover,
+    e.g. "Operator (automatic, facts only): sol's pane has shown a provider error since 23:28 (Selected model is at
+    capacity. Please try a different model.); 2 resumes tried (23:38, 23:43); no request of its own since 23:28 (its
+    journal since holds only platform_defense requests)." Once it resumes, the cover hears it once: "... sol is back: a
+    request of its own (tells) at 23:54, after a provider error on its pane from 23:28 (26 min; 3 resumes tried)."
+  - The cover (idle_nudge `cover_for`): an active (a request of its own in 10 min, not resting) coverer of one of its
+    active claims (`board_update {id, cover: true}`: the board read's covers), else the handoff's lead (the first
+    active --lead, else the member with the latest request of its own); never the agent. None: logged, not sent.
+  - A purchase or credit screen ("Buy more credits", "Buy credits", "Add credits", "Purchase", "Add funds", "Upgrade
+    plan", "Payment method") on the pane's last 40 lines: nothing pressed or typed, logged once (`purchase_screen`),
+    for a provider stop and for a rest's end; Grok's limit dialog keeps batch213's Try Again rule.
+  - --dry-run logs the alert ("dry run: would tell astra") and sends nothing.
+- IN, the open line (open.lua; the idle report and the nudges read it). Traced: the harness had two rules for a tell
+  that needs an answer. owed.lua (every reply's `unanswered` line) owes one for a teammate's tell that is not fyi and
+  holds "?", closed by reply_to, a tell to the sender or `chat_ack`. open.lua counted every tell to you (not fyi, not to
+  the team, not the operator's; the latest per sender in 30 min) until you told the sender or the team anything, and
+  read no acknowledgement. Few tells set fyi (shift72: 2 of Luna's ~40), so "Thanks ..." and "No action needed." tells
+  read as unanswered after `chat_ack all` (Sonnet's at 23:14 d24).
+  - Now a tell asks when it holds "?" or one of: please, pls, can/could/would/will you, let me know, confirm, tell me,
+    reply, answer, need you, need your (whole words, any case; open.lua `asks`). Those stay `N requests or tells to you
+    unanswered` until you tell the sender or the team, as before; board requests as before.
+  - One that asks nothing is a note: `N unread notes to you asking nothing (...)` while it is unread (in your unread
+    tells), and nothing once a `chat_ack` or a `tells` read marks it read. The latest note and the latest ask of each
+    sender are looked at apart, so a later thank-you does not hide an earlier question.
+  - Work due: `N board items of yours overdue for review (board #1301 ...: next check at tick T, ... ago)` (board.lua
+    overdue_reviews: your active items whose newest evidence names a next check now past), the longest overdue first,
+    whatever was read.
+  - tools/idle_nudge.py: the nudge lists what is unanswered, then what is overdue, the rest, and notes last; a new note
+    is never a reason to nudge again, a board item newly overdue is ("a board item newly overdue for review"); a
+    handoff carries the unanswered and overdue items, never notes.
+- Tests: tools/test_cover_alert.py, tools/test_idle_notes.py, tests/d26_batch252.lua (each fails on main);
+  tools/test_pane_resume_stop.py follows the new rule (a resume is a journal request; the back-off and the bound).
 
 ## d25 batch214 (QZ1, Sol #2379: uptime rows in pages; QZ2, Astra #2380: limits dry_run missed)
 - QZ1. Sol's 600 s Asterion watch of 20 machines gave `machine_rows` as text above 16 (uptime.ROWS: 64 rows of 15
