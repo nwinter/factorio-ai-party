@@ -18,8 +18,8 @@
 --   its slots, said: robots bring them in any order, and a wait can stall.
 -- Something takes from the chest: an inserter (or loader) whose pickup is the chest, unless held whatever the count
 -- (its own condition, or a circuit_set before the wait, "ITEM < -2147483648", as assembler_batch holds its input), or
--- a plan step that names the chest's position (transfer, ...) between the requests and the wait. Then the items may go
--- as they arrive (sequential): said, not refused. Trash unrequested on: what is held unrequested goes; not refused.
+-- a plan step that names the chest's position (transfer, ...) between the requests and the wait, or robots from a buffer
+-- chest. Then the items may go as they arrive (sequential): said, not refused. Trash unrequested on: what is held unrequested goes; not refused.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -256,6 +256,8 @@ return function(api)
             local moving = {}
             for _, t in ipairs(st.takers) do if not t.held then moving[#moving + 1] = string.format('%s %s', t.e.name, at(t.pos)) end end
             if st.moved then moving[#moving + 1] = st.moved end
+            if try(function() return st.e.prototype.logistic_mode end) == 'buffer' then moving[#moving + 1] = 'robots (a buffer chest gives to requesters that take from buffers, and to construction)' end
+            local takes = (#moving == 1 and not moving[1]:find('^robots')) and 'takes' or 'take'
             local where = string.format('%s %s', st.e.name, at(st.e.position))
             local bar = usable and usable < size and string.format(' (its bar at %d of %d)', usable, size) or ''
             -- said once a run of waits (refused) or once for each set of requests and takers
@@ -273,12 +275,12 @@ return function(api)
               elseif whole + stay > usable then
                 lines[#lines + 1] = string.format('%s: its requests then ask %d of its %d slots%s (%s%s); %s',
                   head, whole + stay, usable, bar, table.concat(aparts, ', '), stay_text,
-                  #moving > 0 and string.format('%s take%s from it: they fit only if taken out as they arrive (sequential)', table.concat(moving, ', '), #moving == 1 and 's' or '')
+                  #moving > 0 and string.format('%s %s from it: they fit only if taken out as they arrive (sequential)', table.concat(moving, ', '), takes)
                   or st.trash and 'trash unrequested is on: what it holds unrequested goes to storage'
                   or 'robots bring them in any order, and this wait can stall once its slots are full')
               else
                 lines[#lines + 1] = string.format('%s: the requests there ask %d of its %d slots%s (%s%s)%s', head, whole + stay, usable, bar, table.concat(aparts, ', '), stay_text,
-                  #moving > 0 and string.format('; %s take%s from it', table.concat(moving, ', '), #moving == 1 and 's' or '') or '')
+                  #moving > 0 and string.format('; %s %s from it', table.concat(moving, ', '), takes) or '')
               end
             end
           end

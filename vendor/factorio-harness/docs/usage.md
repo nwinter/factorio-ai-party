@@ -16621,8 +16621,9 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     slots.
   - Something takes from the chest: an inserter or loader whose pickup is the chest, unless it is held whatever the
     count (its own logistic condition `ITEM < -2147483648`, or a `circuit_set` to that before the wait, as
-    assembler_batch holds its input), or a plan step that names the chest's position (a `transfer`, ...). Then the
-    items may go as they arrive (sequential): said, not refused. With trash unrequested on, nothing is refused.
+    assembler_batch holds its input), a plan step that names the chest's position (a `transfer`, ...), or robots from a
+    buffer chest (it gives to requesters that take from buffers, and to construction). Then the items may go as they
+    arrive (sequential): said, not refused. With trash unrequested on, nothing is refused.
   - Staging in turns is followed: requests cleared and the next set after a wait. What was waited for before stays in
     the chest unless something takes it, so it counts in the next wait's slots.
 - `assembler_batch` returns `slots {required, available}` and a plan line with the slots whether the batch fits or not

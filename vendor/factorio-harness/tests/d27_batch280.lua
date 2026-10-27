@@ -83,6 +83,11 @@ do
   plan[1]={action='circuit_set',args={position={x=-60.5,y=11.5},logistic=false}}
   lines,refused=SS.check(p,plan)
   eq(refused,nil)
+  -- a buffer chest: robots may take from it; not refused
+  ents[2]=nil; req.prototype.logistic_mode='buffer'
+  lines,refused=SS.check(p,astra)
+  eq(refused,nil); has(lines[#lines],'robots (a buffer chest gives to requesters that take from buffers, and to construction) take from it')
+  req.prototype.logistic_mode='requester'
   print('CS takers: sequential said, held ones refused: ok')
 end
 
