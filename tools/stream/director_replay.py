@@ -38,6 +38,11 @@ read once a POLL_S; a walk loop (the harness's queue) and a sleep keep no intere
 (INSTANT) is no running action; a running action lasts while the replies' clocks say the character was busy;
 work.DidFeed's builds (`did`) and work.ClockFeed's idle seconds (`idle_s`).
 (d26 batch245) An agent on a walk loop has its status read's queues.body repeating (onecam: a loop whatever its size).
+(d27 batch267) The service's work rows (Work: the journals' remote builds and platform actions, as model.py makes
+them, each with its platform's view from the log's own shots of it) for the rules to judge, and the silos (batch257):
+the log's platform work and launch shots are not replayed then (--no-work: as before). The log's own platform
+departure, edge and bow views and base map are the director's shots (own_target), which its rules may cut short; its
+cues, looks, segments and danger views stay segments; an agent's build spot (the replay's DidFeed) is not replayed.
 """
 import argparse, bisect, importlib, json, math, os, re, subprocess, sys, tempfile, time
 
@@ -249,12 +254,13 @@ CUT_RE = re.compile(r"(cut to|move) (\S+?): (.*)")
 TIMED_MAX = 180.0  # s: a timed shot replayed at most this long (the log's next cut ends it sooner)
 
 
-def timed_shots(log_rows, t0, t1, own_quiet=False):
+def timed_shots(log_rows, t0, t1, own_quiet=False, modelled=()):
     """(batch240) The log's timed shots in [t0, t1]: every program cut to a shot that neither follows an agent nor shows
     its vehicle (platform visits, work, departures and bows, the base map, tours, cues, segments, looks, threats), from
     the cut to the next one: [{t, until, label, position, surface, zoom, quiet}]. quiet: the director's own quiet view
     (a "quiet KIND: ..." row just before it). own_quiet (the replay has the run's chart: its own tours and quiet
-    views): the log's quiet views and tours are left out."""
+    views): the log's quiet views and tours are left out. modelled: label prefixes the replay makes itself (d27 batch267:
+    "launch:" with its silos, "platform work:" with its work), left out too."""
     rows = sorted((r for r in log_rows if isinstance(r.get("t"), (int, float))), key=lambda r: r["t"])
     last, quiet_t, cuts = {}, -1e9, []
     for r in rows:
@@ -271,13 +277,35 @@ def timed_shots(log_rows, t0, t1, own_quiet=False):
     for i, (t, row, label, quiet) in enumerate(cuts):
         end = cuts[i + 1][0] if i + 1 < len(cuts) else t1
         cmd, tgt = (row or {}).get("cmd") or {}, (row or {}).get("target") or {}
-        if not (t0 <= t < t1) or cmd.get("follow") or tgt.get("vehicle") or not isinstance(cmd.get("position"), dict):
-            continue
+        if not (t0 <= t < t1) or cmd.get("follow") or tgt.get("vehicle") or tgt.get("did") or \
+                not isinstance(cmd.get("position"), dict):
+            continue  # (batch267: an agent's build spot, as its vehicle, is the replay's own: work.DidFeed)
         if own_quiet and (quiet or label.startswith("tour:")):
+            continue
+        if modelled and label.startswith(tuple(modelled)):
             continue
         out.append({"t": t, "until": min(end, t + TIMED_MAX), "label": label, "position": cmd["position"],
                     "surface": cmd.get("surface") or "nauvis", "zoom": float(cmd.get("zoom") or 1.0), "quiet": quiet})
     return out
+
+
+OWN_RE = re.compile(r"(?:platform (departure|edge|bow): ([^·]+?) · |base map)")
+
+
+def own_target(sh):
+    """(d27 batch267) A timed shot that is the director's own view (a platform departure, edge or bow view, the base
+    map) as the director's target: replayed as its shot, so its rules may cut it short (a build takes a departure or
+    the map after work_build_min); None for the others (cues, looks, segments, danger: segments as before)."""
+    m = OWN_RE.match(sh["label"])
+    if not m:
+        return None
+    t = {"agents": [], "position": dict(sh["position"]), "surface": sh["surface"], "zoom": sh["zoom"], "exact_zoom": True,
+         "until": sh["until"]}
+    if m.group(1):
+        t.update(subject="@platform", platform={"name": m.group(2).strip(), "why": m.group(1), "label": sh["label"]})
+    else:
+        t.update(subject="@map", map=True)
+    return t
 
 
 def quiet_story(d, snap, now):
@@ -396,8 +424,9 @@ def loop_pos(lp, t, start):
 class World:
     """The agents' states at each second (module doc)."""
 
-    def __init__(self, js, log_rows, fights=None, shells=None, live=False, vehicle_interest=False, launches=None):
+    def __init__(self, js, log_rows, fights=None, shells=None, live=False, vehicle_interest=False, launches=None, work=None):
         import model
+        self.work_rows = work  # (batch267) the service's work rows (Work)
         self.launches, self.last_silos, self.silo_snap = launches, -1e9, None  # (batch257) the silos read, a poll
         self.vehicle_interest = vehicle_interest  # (batch232 VC2: rules that bump interest for a vehicle's new target)
         self.paths = vehicle_paths(js) if live else None  # (batch232) the live vehicle reads, modelled
@@ -552,7 +581,70 @@ class World:
         new = [dict(sh, eta_ticks=round((sh["land_t"] - t) * 60)) for at, sh in self.shells[:i] if at > t - 1.0]
         if new:
             snap["artillery"] = {"shells": new, "read_at": t, "every": 0.5}
+        if self.work_rows:
+            snap["work"] = self.work_rows.rows(t)
         return snap
+
+
+PLAT_NAME_RE = re.compile(r"platform (?:work|visit|departure|arrival)[^:]*: (?:[^·]*· working on )?([^·]+?)(?: ·|$)")
+
+
+class Work:
+    """(d27 batch267 LB) The service's work rows as model.py makes them (live.py observe_work from the journals: an
+    agent's remote build or platform action naming a platform, one item an agent and platform within 20 s unless a
+    build follows another action), each with
+    its platform's view: rebuilt from the log's own shots of that platform (work, visits, departures: their position,
+    zoom and surface), the nearest in time. A platform the log never showed has no view (the service drops those too
+    until its platform read)."""
+    DEDUP_S, KEEP_S = 20.0, 60.0
+
+    def __init__(self, js, log_rows):
+        self.views = {}
+        for sh in timed_shots(log_rows, -1e18, 1e18):
+            m = PLAT_NAME_RE.match(sh["label"])
+            if m:
+                z = max(0.3, sh["zoom"])
+                w, h = max(4.0, 60.0 / z - 10.0), max(4.0, 34.0 / z - 10.0)
+                x, y = sh["position"]["x"], sh["position"]["y"]
+                self.views.setdefault(m.group(1).strip(), []).append((sh["t"], {
+                    "surface": sh["surface"], "hub": {"x": x, "y": y},
+                    "bounds": {"left": x - w / 2, "top": y - h / 2, "right": x + w / 2, "bottom": y + h / 2}}))
+        self.items = []
+        for name, j in js.items():
+            for t, action, args, res, ok in j.requests:
+                if action not in work_here.REMOTE and action not in work_here.ON_PLATFORM:
+                    continue
+                plat, pos = work_here.target_of(args or {})
+                if not isinstance(plat, str):
+                    continue
+                verb = work_here.REMOTE.get(action) or work_here.ON_PLATFORM[action]
+                self.items.append({"agent": name, "action": action, "verb": verb, "platform": plat, "position": pos, "t": t})
+        self.items.sort(key=lambda w: w["t"])
+        kept, last = [], {}
+        for w in self.items:  # (model._ingest_work: a build after an inspection is its own item)
+            k = (w["agent"], w["platform"])
+            build = w["action"] in work_here.REMOTE
+            if w["t"] - last.get(k, (-1e9, False))[0] < self.DEDUP_S and (not build or last[k][1]):
+                continue
+            last[k] = (w["t"], build)
+            kept.append(w)
+        self.items = kept
+        self.ts = [w["t"] for w in kept]
+
+    def view(self, name, t):
+        vs = self.views.get(name)
+        if not vs:
+            return None
+        return min(vs, key=lambda v: abs(v[0] - t))[1]
+
+    def rows(self, t):
+        out = []
+        for w in self.items[bisect.bisect_left(self.ts, t - self.KEEP_S):bisect.bisect_right(self.ts, t)]:
+            v = self.view(w["platform"], w["t"])
+            if v:
+                out.append(dict(w, id=f"work-{w['agent']}-{w['t']}", view=v, surface=v["surface"], age_s=round(t - w["t"], 1),
+                                label=f"{w['agent']} {w['verb']} on {w['platform']} (from the ground)"))
+        return out
 
 
 # (d26 batch257) A launch's silo states from its order, game seconds (launches.py, world n d26): 8 launch_starting,
@@ -681,17 +773,19 @@ def clock_t(day_t, hhmm):
 
 
 def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0, t0=None, t1=None, fights=False,
-           shells=None, vehicles="journal", surface_from=None, timed=False, launches=True, tuning=None):
+           shells=None, vehicles="journal", surface_from=None, timed=False, launches=True, tuning=None, work=True):
     log_rows = log_rows_of(log_path)
     t0 = log_rows[0]["t"] if t0 is None else t0
     t1 = log_rows[-1]["t"] if t1 is None else t1
-    shots = timed_shots(log_rows, t0, t1, own_quiet=bool(chart)) if timed else []
+    shots = timed_shots(log_rows, t0, t1, own_quiet=bool(chart), modelled=(("launch:",) if launches else ()) +
+                        (("platform work:",) if work else ())) if timed else []
     js = airtime.journals(runs)
     js = {n: j for n, j in js.items() if any(t0 - 3600 <= q[0] <= t1 for q in j.requests)}
     with tempfile.TemporaryDirectory() as tmp:
         onecam = load_rules(rules, tmp)
         world = World(js, log_rows, fights_of(js) if fights else None, flare_shells(js) if shells == "flares" else None,
-                      live=vehicles == "live", vehicle_interest=True, launches=Launches(runs, js) if launches else None)  # (batch245: main has model.py's bumps since
+                      live=vehicles == "live", vehicle_interest=True, launches=Launches(runs, js) if launches else None,
+                      work=Work(js, log_rows) if work else None)  # (batch245: main has model.py's bumps since
         # batch232 and 240; "here" only gave main's replays no vehicle or build interest, shift81: 26.4% vs 21.5% idle)
 
         def send(body):
@@ -721,6 +815,10 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
                     sh, k = shots[k], k + 1
                     if sh["quiet"] and not quiet_story(d, snap, t):
                         continue  # a quiet view only where the replayed story is quiet too
+                    own = own_target(sh)
+                    if own:  # (batch267) the director's own view: its shot, under its rules
+                        d.urgent(own, sh["label"], d.scores(snap["agents"], t), t)
+                        continue
                     seg = {"id": f"timed-{k}", "label": sh["label"], "zoom": sh["zoom"], "until": sh["until"],
                            "position": sh["position"], "surface": sh["surface"], "exact_zoom": True}
                     if sh["quiet"]:
@@ -754,6 +852,8 @@ def main(argv=None):
                     help="(batch257) a director setting for this replay (onecam's config), e.g. launch_gap=10")
     ap.add_argument("--no-launches", action="store_true", help="no silos read (batch257: by default the chronicle's "
                     "rockets on the journals' silos, as launches.SiloFeed reads them)")
+    ap.add_argument("--no-work", action="store_true", help="(batch267) the log's platform work shots replayed as timed "
+                    "shots, as before; by default the journals' work rows as model.py makes them, for the rules to judge")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     out = a.out or os.path.join(tempfile.gettempdir(), f"director-replay-{os.getpid()}.jsonl")
@@ -762,7 +862,7 @@ def main(argv=None):
     t1 = clock_t(first, a.t_to) if a.t_to else None
     _, js, (t0, t1) = replay(a.log, a.runs, out, a.cams, a.rules, a.chart, t0=t0, t1=t1, fights=a.fights,
                              shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from, timed=a.timed,
-                             launches=not a.no_launches, tuning={k: json.loads(v) for k, v in (x.split("=", 1) for x in a.set)})
+                             launches=not a.no_launches, work=not a.no_work, tuning={k: json.loads(v) for k, v in (x.split("=", 1) for x in a.set)})
     rows = list(airtime.rows_of(out))
     m = airtime.measure(rows, js, t0, t1)
     m.update(log=" ".join(os.path.basename(x) for x in a.log), rules=a.rules, cams=a.cams, replay_log=out,
