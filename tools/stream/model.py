@@ -1089,11 +1089,22 @@ class Model:
         """A platform's camera view (live.py PLATFORM_LUA: surface, hub, bounds), or None before it is read."""
         return next((p.get("view") for p in self.space.get("platforms") or [] if p.get("name") == name and p.get("view")), None)
 
+    def surface_platform(self, surface):
+        """(d27 batch271 WS) The platform a request's surface names (the runtime takes a platform's name or its surface
+        as surface=), or None."""
+        if not surface:
+            return None
+        return next((p["name"] for p in self.space.get("platforms") or [] if p.get("name") and (
+            p["name"] == surface or (p.get("view") or {}).get("surface") == surface)), None)
+
     def _ingest_work(self, w, now):
-        """Work away from an agent's body (live.py observe_work) -> a labelled item the director can cut to."""
+        """Work away from an agent's body (live.py observe_work) -> a labelled item the director can cut to. A ground
+        item's surface is the request's (batch271), else the body's; a surface naming a platform is that platform."""
         if w.get("agent") not in self.agents:
             return
         ag = self.agents[w["agent"]]
+        if not w.get("platform") and self.surface_platform(w.get("surface")):
+            w = dict(w, platform=self.surface_platform(w["surface"]))
         who = ag.display_name or w["agent"]
         item = {"id": f"work-{w['agent']}-{w.get('at') or now}", "agent": w["agent"], "action": w.get("action"),
                 "t": now, "platform": w.get("platform"), "position": w.get("position"), "surface": w.get("surface")}
@@ -1108,7 +1119,11 @@ class Model:
             if not w.get("position"):
                 return
             p = w["position"]
-            item["label"] = f"{who} {w.get('verb') or 'building'} at ({round(p['x'])}, {round(p['y'])}) (from afar)"
+            if not item["surface"]:
+                return  # (batch271) where it landed is not known: no shot of it
+            # (batch271) on another planet than the body's, the label names it ("at (-90, 157) on Nauvis (from afar)")
+            on = f" on {planet_label(item['surface'])}" if item["surface"] != (ag.surface or "nauvis") else ""
+            item["label"] = f"{who} {w.get('verb') or 'building'} at ({round(p['x'])}, {round(p['y'])}){on} (from afar)"
         # (d27 batch267 LB: Sol's place_ghosts on Loom at 06:16:58 came 14 s after an inspection there and was never
         # an item) a build is its own item after an inspection, settings or requests; after a build, one item
         build = w.get("action") in WORK_BUILDS
@@ -1184,12 +1199,14 @@ class Model:
 
     def _ingest_attention(self, x, now):
         """An agent's latest request with a position, area or list (live.py, attention.py): where it is looking or
-        working now. A platform's point is on the platform's surface (when its view is known)."""
+        working now. A platform's point is on the platform's surface (when its view is known); else the request's own
+        surface (d27 batch271 WS: Astra on Aquilo placing ghosts on Nauvis), else the body's (the runtime acts there)."""
         ag = self.agents.get(x.get("agent"))
         if not ag or not x.get("kind"):
             return
+        x = dict(x, platform=x.get("platform") or self.surface_platform(x.get("surface")))
         surface = ((self.platform_view(x["platform"]) or {}).get("surface") if x.get("platform")
-                   else ag.surface or "nauvis")
+                   else x.get("surface") or ag.surface or "nauvis")
         ag.attention = {k: x.get(k) for k in ("kind", "action", "verb", "what", "position", "extent", "platform", "count")}
         ag.attention.update(t=now, surface=surface)
 
@@ -1202,9 +1219,13 @@ class Model:
         here = ag.position if not a.get("platform") and (ag.surface or "nauvis") == a.get("surface") else None
         d = math.hypot(a["position"]["x"] - here["x"], a["position"]["y"] - here["y"]) \
             if here and a.get("position") else None
-        far = (d is not None and d >= attention.FAR) or bool(a.get("platform") and ag.platform != a["platform"])
+        # (batch271) a point on another surface than the body's is far, and its text names the planet ("placing medium
+        # electric pole ghosts on Nauvis"), not a distance from the body on Aquilo
+        other = not a.get("platform") and bool(a.get("surface")) and (ag.surface or "nauvis") != a["surface"]
+        far = (d is not None and d >= attention.FAR) or bool(a.get("platform") and ag.platform != a["platform"]) or other
         landmarks = self.run.get("landmarks", []) if (a.get("surface") or "nauvis") == "nauvis" else ()
-        return dict({k: v for k, v in a.items() if k != "t"}, text=attention.text(a, here, landmarks),
+        planet = planet_label(a["surface"]) if other else None
+        return dict({k: v for k, v in a.items() if k != "t"}, text=attention.text(a, here, landmarks, planet),
                     age_s=round(now - a["t"], 1), dist=None if d is None else round(d, 1), far=far)
 
     def _fight(self, key, kind, position, now, text, agent=None, loss=False, tick=None):
