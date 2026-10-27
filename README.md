@@ -37,3 +37,6 @@ replaced with neutral labels (`claude-b`, `codex_account_b`), and addresses with
 
 MIT (see `LICENSE`). The harness in `vendor/factorio-harness/` is MIT too, copyright Carson Burke (see its own
 `LICENSE`).
+
+Factorio's icons and graphics on the site are used under Wube Software's terms for free, non-commercial use.
+Graphics copyright Wube Software. Factorio is a trademark of Wube Software; this project is not affiliated with Wube.

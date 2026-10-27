@@ -26,6 +26,7 @@ defaults:
 | site/build.py | the repo's `runs/` as `--runs-dir` | a temp runs folder |
 | site/chart_deploy.py | its wrangler deploy without `POG_WRANGLER` (batch241) | `POG_WRANGLER` or a stub runner |
 | tools/pane_resume.py `HerdrPanes` | herdr pane reads and typing | fake panes (tools/test_pane_resume.py, tools/test_pane_resume_stop.py) |
+| tools/public-push.sh | the public repo and the main checkout without `POG_PUBLIC_REMOTE` and `POG_PUBLIC_SOURCE` (batch272) | a local bare repo and a temp source |
 
 Two more changes keep a live tool from mistaking a test's process for the live run's:
 - **start-team plans:** a plan-only start-team (`POG_DRY_RUN=1` or `POG_TEST=1`) leaves `$TMPDIR/pog-start-team-plan.PID`
