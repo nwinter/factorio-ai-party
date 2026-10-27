@@ -2258,6 +2258,31 @@ card segment and the site's "Latest" listed them as the newest.
   game tick, and spotlight facts carry last_said_when.
 - Test: tools/stream/test_research_recency.py.
 
+## Builds within 30 s and no repeated platform views (2026-10-27, d27 batch267 LB, row vx-repeated-views)
+shift85 (the launch shot's first full shift): idle 22.7%, but 11 of 23 new builds late (median 19 s) and 35.4 min of
+repeated shots, "platform work: Sol · working on Loom" 25x (Sol's Loom requests: 179 inspect, 62 place_ghosts).
+- What held the late builds (aired logs, 25.9 min of wait): 8 were on platforms, news only work_fresh (12 s), in which
+  maybe_work needed the story up onair_dwell (90 s) and work_ratio, no hold or trio on air; after it, only the
+  builder's character aired them. Dwell 12.3 min (3 builds), the base map 4.8 (1), platform visits and departures 4.0
+  (2), a launch shot 1.7 (1), trios 1.8 (2), Sol's Loom work extended by his requests 0.7 (1), a segment 0.6 (1).
+- onecam: a build on a platform (BUILD_WORK: place_ghosts, paste, blueprint_place, deconstruct, cancel_deconstruction,
+  remove_ghosts) is news work_build_fresh (30 s): it takes over a story up work_build_min (8 s) without its own news,
+  whatever the scores, and a tour, the map, a platform visit, departure or edge view, a launch or an inspection
+  (yields_to_build) after work_build_min; a trio is left for it; no launch starts while one waits. A build on the ground
+  (the journal's did row) makes the same views give way, and takes a story after fresh_min whatever the scores.
+  Battles, attacks, segments, cues, looks, danger and operator holds keep the camera.
+- Repeats: a platform aired for work within work_repeat (900 s) comes back only for a build, work_build_gap (60 s) after
+  its last work shot, as a closer view of where the build landed (work_spot_zoom), held work_hold without the requests'
+  extension.
+- model.py: a build after an inspection on the same platform within 20 s is its own work item (Sol's 06:16:58
+  place_ghosts on Loom was folded into an inspection 14 s before).
+- director_replay: work rows modelled (Work) and the log's work and launch shots not replayed; the log's departures,
+  edges, bows and base map as the director's own shots (own_target).
+- Replays (main -> this, four settings each): shift85 builds 12/8-9/2-3 -> 21/2/0, repeats 29.7-33.0 -> 22.8-22.9 min,
+  idle 16.4-19.2 -> 18.3-19.1%, rockets on air 108-125 -> 122-125; shift84 builds 7/1/0 -> 8/0/0, repeats 11.2-15.9 ->
+  12.2-13.5, idle 31.4-35.1 -> 33.0-35.1; shift81 battles 4/1/0 both, vehicles 6/2/0 -> 7/1/0, spidertron 1705 -> 1815 s.
+- Test: tools/stream/test_buildcam.py.
+
 ## Rocket launches over standing characters (2026-10-26, d26 batch257 IB, viewer Aurora site:5029/5030)
 shift83 18:37-22:41: a standing character 43.3% of the program (105 of 244 min; shift82 19.3%). From the director log
 and the journals: in 101 of the 107 idle minutes every character stood (Sol's "busy" clocks were uptime measurements,

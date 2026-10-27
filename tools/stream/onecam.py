@@ -134,6 +134,11 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   still launch_still s with nobody else moving or with news, and a silo ordered to launch (launches.py, the silos read
   every poll): the silo, framed and cut before lift-off, held through the flight, then the story; silos of a planet
   launching together share the frame. A busy trio only of agents doing something; a check-in trio gives way to news.
+- Builds and repeated platform views (d27 batch267 LB, shift85: 11 of 23 builds late, Sol's Loom 25x; ONECAM
+  work_build_*, work_repeat, work_spot_zoom): a build on a platform is news work_build_fresh and takes the camera after
+  work_build_min (no dwell, no score ratio) from a story without its own news, a tour, the map, a platform view, a
+  launch or an inspection, and from a trio; no launch starts while one waits; a build on the ground makes the same
+  views give way. A platform aired for work within work_repeat comes back only for a build, closer on where it landed.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -317,6 +322,19 @@ ONECAM = {
     "work_fresh": 12.0,       # a platform action dispatched within this long is news
     "work_gap": 180.0,        # the same agent's work on the same platform is shown again after this long
     "work_ratio": 0.8,        # an agent off air: its platform action takes over if it scores this share of the one on air
+    # (d27 batch267 LB, shift85: 11 of 23 new builds late, 8 of them on platforms, which were news only work_fresh and
+    # waited out onair_dwell; Sol's Loom inspections aired 25x in repeats, 16.2 min) A build on a platform (BUILD_WORK)
+    # is news work_build_fresh: it takes over a story on air work_build_min (no dwell, no score ratio), and a quiet or
+    # timed view, a launch or another's platform inspection (yields_to_build) after work_build_min; a check-in trio is left
+    # for it, and no launch shot starts while one waits.
+    "work_build_fresh": 30.0,
+    "work_build_min": 8.0,
+    # Repeats: a platform shown for work within work_repeat comes back only for a build (not an inspection, settings or
+    # requests), at least work_build_gap after its last work shot, and then as a closer view of where the build landed
+    # (work_spot_zoom) when the work names a place.
+    "work_repeat": 900.0,
+    "work_build_gap": 60.0,
+    "work_spot_zoom": 0.9,
     # Fights (a viewer at 16:45: "dont move 'on air' away from agents under attack"): while the agent on air is
     # shooting or under attack, or the fight on air is still reported, no cut away but an urgent one; an attack shot
     # holds until its fight has been quiet fight_quiet; an agent under attack is a strong pick.
@@ -556,6 +574,8 @@ DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "tr
 BIG = {"construct": 4, "build_path": 8, "build_blueprint": 4, "blueprint": 4}  # kind -> pieces that make it big
 # (batch222) kinds whose start is news (fresh_window): visible work, not a walk, a craft or a read
 FRESH_KINDS = (VISIBLE | {"place_ghosts", "paste", "blueprint_place", "deconstruct", "launch", "load_silo", "vehicle"}) - WALK - DULL
+# (d27 batch267 LB) platform work that changes the platform (work.py REMOTE): news, as a build on the ground is
+BUILD_WORK = {"place_ghosts", "paste", "blueprint_place", "deconstruct", "cancel_deconstruction", "remove_ghosts"}
 DID_TEXT = {"place_ghosts": "ghosts placed", "paste": "a blueprint pasted", "blueprint_place": "a blueprint pasted",
             "build_blueprint": "building a blueprint", "blueprint": "building a blueprint", "build": "building",
             "place": "building", "build_path": "building a path", "construct": "building", "deconstruct":
@@ -610,7 +630,10 @@ def onair_info(snap, cams):
     name = agents[0] if len(agents) == 1 and not main.get("attack") else None
     a = next((a for a in snap.get("agents") or [] if a["name"] == name), {}) if name else {}
     plat = main.get("platform")  # {name, why (visit, departure, work, operator, follow), label, agent?}
-    doing = main.get("follow") or ("in battle" if main.get("battle") and name else "") or (f"working on {plat['name']}" if plat and name else
+    # (batch267) a platform work shot's own words ("building on Loom", "deconstructing on Loom", "working on Loom")
+    work_doing = str(plat.get("label") or "").split(" · ", 1)[-1] if plat and plat.get("why") == "work" and \
+        " · " in str(plat.get("label") or "") else None
+    doing = main.get("follow") or ("in battle" if main.get("battle") and name else "") or ((work_doing or f"working on {plat['name']}") if plat and name else
                                    main["vehicle"].split(" · ", 1)[-1] if main.get("vehicle") and name else
                                    main["did"].split(" · ", 1)[-1] if main.get("did") and name else
                                    onair_doing(snap, name) if name else "")
@@ -695,6 +718,10 @@ class OneCam(Director):
         self.departs = []         # (t, name, decision, why): each departure's decision (main, inset, none)
         self.maiden_done = set()  # maiden_flight moment ids already taken (once per platform)
         self.work_shown = {}   # (agent, platform) -> when its work went on air
+        self.plat_work_shown = {}  # (batch267) platform -> when any agent's work on it went on air
+        self.work_built = {}   # (batch267) (agent, platform) -> the time of the latest build row shown
+        self.builds_waiting = []  # (batch267) platform builds this step that are news and not on air yet
+        self.did_news = {}     # (batch267) name -> when its fresh event was a build from its journal (did)
         self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
         self.edge_legs = {}    # platform -> {leg: (origin, dest), shown}: an edge leg's dense part (maybe_edge)
         self.last_bow = None   # (QM1) when the last bow shot went on air
@@ -1184,6 +1211,7 @@ class OneCam(Director):
             seen["@did"] = d["t"]
             if now - seen.get(d["action"], -1e9) >= cfg["fresh_window"] and seen.get("@", 0) > 0:
                 why = DID_TEXT.get(d["action"], d["action"].replace("_", " "))
+                self.did_news[n] = now  # (batch267) a build: news that a quiet view, launch or inspection yields to
             seen[d["action"]] = now
         seen["@"] = seen.get("@", 0) + 1  # (the first look at an agent is no news: what it did before is unknown)
         if new_big and not why:
@@ -1227,6 +1255,25 @@ class OneCam(Director):
         age = self.fresh_age(name, now)
         return age < self.cfg["fresh_cut"] and (self.stale_s(name, now) < self.cfg["still_cut"] or
                                                 age < 2 * self.cfg["still_cut"])
+
+    def fresh_build(self, name, now):
+        """(batch267) newsworthy for a build from its journal (track_fresh's did row)."""
+        f = self.fresh.get(name)
+        return bool(f) and self.did_news.get(name) == f[0] and self.newsworthy(name, now)
+
+    def yields_to_build(self, cur, now):
+        """(batch267) The shot on air gives way to a fresh build once up work_build_min: a tour, the map, a platform
+        visit, departure or edge view, a launch, or a platform's work that is no build. A battle, an attack, a segment,
+        an agent's cue (its voiced line), an operator's or followed platform, danger and a look keep it."""
+        if not cur or now - self.onair_since < self.cfg["work_build_min"]:
+            return False
+        subj = cur.get("subject")
+        why = (cur.get("platform") or {}).get("why")
+        if subj in ("@tour", "@map") or cur.get("launch"):
+            return True
+        if subj == "@platform":
+            return why in ("visit", "departure", "edge") or (why == "work" and not cur.get("build"))
+        return False
 
     def fresh_factor(self, name, now):
         age = self.fresh_age(name, now)
@@ -1751,6 +1798,7 @@ class OneCam(Director):
             self.maybe_danger(scores, now, segment)
             self.maybe_edge(scores, now, segment)
             self.maybe_departure(scores, now, segment)
+            self.maybe_work(snapshot, by_name, scores, now, segment)  # (batch267) builds_waiting: the trio leaves for one
             self.tiles(by_name, scores, now)
         else:
             self.maybe_danger(scores, now, segment)
@@ -2851,11 +2899,12 @@ class OneCam(Director):
     def launch_quiet(self, by_name, scores, now, segment):
         """(batch257) Why a launch may take the program now, or None: the story on air (an agent) standing still or on
         a loop launch_still and on air launch_air, without news of its own, nobody else moving or with news, nothing
-        held or framed, no fight, launch_gap since the last launch shot (quiet_now's test, sooner)."""
+        held or framed, no fight, launch_gap since the last launch shot (quiet_now's test, sooner); (batch267) no platform
+        build waiting (maybe_work's builds_waiting)."""
         cfg = self.cfg
         cur = self.state.get(self.onair) or {}
         subj = cur.get("subject")
-        if self.mode != "onecam" or self.plat_busy(now, segment) or subj not in scores or \
+        if self.mode != "onecam" or self.plat_busy(now, segment) or subj not in scores or self.builds_waiting or \
                 now - self.launch_end < cfg["launch_gap"] or now - self.last_program_cut < cfg["cut_spacing"] or \
                 self.fighting(subj, by_name, now) or big_plan(by_name[subj]) or \
                 any(now - self.fight_t(f) < cfg["fight_quiet"] for f in self.fight_list):
@@ -3932,45 +3981,96 @@ class OneCam(Director):
 
     def maybe_work(self, snapshot, by_name, scores, now, segment=None):
         """An agent's platform action (snapshot work with a platform view): the platform instead of the character, if
-        the agent is on air or scores near the one on air; held while its requests keep coming."""
+        the agent is on air or scores near the one on air; held while its requests keep coming.
+        (d27 batch267 LB) A build there (BUILD_WORK) is news for work_build_fresh, not shown yet: it takes over a story
+        on air work_build_min, and a view that yields to it (yields_to_build). Repeats: a platform shown for work within
+        work_repeat comes back only for a build, work_build_gap after its last work shot, closer on where it landed."""
         cfg = self.cfg
-        fresh = {}
+        fresh, builds = {}, {}
         for w in snapshot.get("work") or []:
-            if w.get("platform") and w.get("agent") in by_name and now - w.get("t", -1e9) < cfg["work_fresh"] and \
-                    w["t"] > fresh.get(w["agent"], {}).get("t", -1e9):
+            if not (w.get("platform") and w.get("agent") in by_name):
+                continue
+            age = now - w.get("t", -1e9)
+            if w.get("action") in BUILD_WORK and age < cfg["work_build_fresh"] and \
+                    w["t"] > self.work_built.get((w["agent"], w["platform"]), -1e9) and \
+                    w["t"] > builds.get(w["agent"], {}).get("t", -1e9):
+                builds[w["agent"]] = w
+            if age < cfg["work_fresh"] and w["t"] > fresh.get(w["agent"], {}).get("t", -1e9):
                 fresh[w["agent"]] = w
-        if not fresh or len(self.slots) < 2:
+        # (only those that may go on air: their platform's view known, its last work shot work_build_gap ago, the agent
+        # not fighting; a launch waits for these)
+        self.builds_waiting = sorted((w for w in builds.values() if (w.get("view") or (self.plat_rows.get(w["platform"]) or {}).get("view"))
+                                      and now - self.plat_work_shown.get(w["platform"], -1e9) >= cfg["work_build_gap"]
+                                      and not self.fighting(w["agent"], by_name, now)), key=lambda w: -w["t"])
+        if not (fresh or builds) or len(self.slots) < 2:
             return
         cur = self.state.get(self.onair)
         cp = (cur or {}).get("platform") or {}
         if cp.get("why") == "work" and now < cur.get("until", 0):
             w = fresh.get(cp.get("agent"))
-            if w and w["platform"] == cp["name"] and now - cur.get("since", now) < cfg["work_max"]:
+            b = builds.get(cp.get("agent"))
+            if b and b["platform"] == cp["name"]:
+                cur["build"] = True  # its agent built there while on air: shown
+                self.work_built[(b["agent"], b["platform"])] = b["t"]
+            if w and w["platform"] == cp["name"] and now - cur.get("since", now) < cfg["work_max"] and not cur.get("again"):
+                # (batch267: a return to a platform aired within work_repeat keeps work_hold, not the requests' run)
                 cur["until"] = max(cur["until"], min(now + cfg["work_hold"], cur["since"] + cfg["work_max"]))
+            if not any(x["platform"] != cp["name"] for x in builds.values()) or not self.yields_to_build(cur, now):
+                return  # (batch267) another platform's build takes over an inspection once it has been up work_build_min
+        if self.mode != "onecam" or self.hold_layout or self.pending or self.trio_pending or segment or \
+                (cur and now < cur.get("hold_until", 0)):
             return
-        if self.plat_busy(now, segment) or self.mode != "onecam":
-            return
+        held = cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)
         subj = (cur or {}).get("subject")
-        for agent, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"]):
-            if now - self.work_shown.get((agent, w["platform"]), -1e9) < cfg["work_gap"]:
-                continue
+        cands = [(w, True) for w in self.builds_waiting] + [(w, False) for _, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"])]
+        for w, build in cands:
+            agent, name = w["agent"], w["platform"]
             if self.fighting(agent, by_name, now):
                 continue
-            if agent != subj:
-                if subj not in scores or now - self.onair_since < cfg["onair_dwell"] or \
-                        now - self.last_program_cut < cfg["cut_spacing"] or self.fighting(subj, by_name, now) or \
-                        big_plan(by_name[subj]) or scores.get(agent, 0) < scores[subj] * cfg["work_ratio"]:
+            if held and not (build and self.yields_to_build(cur, now)):
+                continue  # a timed view holds: only a build takes it, after work_build_min
+            last = self.plat_work_shown.get(name, -1e9)
+            if build:
+                if now - last < cfg["work_build_gap"]:
+                    continue
+            elif now - self.work_shown.get((agent, name), -1e9) < cfg["work_gap"] or now - last < cfg["work_repeat"]:
+                continue  # (batch267) the same platform's inspection again: a repeat
+            if agent != subj and not held:
+                if subj not in scores or now - self.last_program_cut < cfg["cut_spacing"] or \
+                        self.fighting(subj, by_name, now) or big_plan(by_name[subj]):
+                    continue
+                if build:  # (batch267) whatever the scores, unless the story on air has news of its own
+                    if now - self.onair_since < cfg["work_build_min"] or self.newsworthy(subj, now):
+                        continue
+                elif now - self.onair_since < cfg["onair_dwell"] or scores.get(agent, 0) < scores[subj] * cfg["work_ratio"]:
                     continue
             who = by_name[agent].get("display_name") or agent
-            name = w["platform"]
             if name not in self.plat_rows and w.get("view"):
                 self.plat_rows[name] = {"name": name, "view": w["view"]}
-            t = self.platform_target(name, "work", now + cfg["ready_s"] + cfg["work_hold"], agent=agent,
-                                     label=f"{who} · working on {name}")
+            until = now + cfg["ready_s"] + cfg["work_hold"]
+            verb = w.get("verb") or "building"
+            label = f"{who} · {verb} on {name}" if build else f"{who} · working on {name}"
+            spot = w.get("position") if build and now - last < cfg["work_repeat"] else None
+            view = (self.plat_rows.get(name) or {}).get("view") or w.get("view") or {}
+            if isinstance(spot, dict) and spot.get("x") is not None and view.get("surface"):
+                z = cfg["work_spot_zoom"]  # (batch267) a closer view of where it landed: the platform aired lately
+                t = {"agents": [agent], "subject": "@platform", "position": {"x": float(spot["x"]), "y": float(spot["y"])},
+                     "surface": view["surface"], "zoom": z, "solo_zoom": z, "exact_zoom": True, "until": until,
+                     "platform": {"name": name, "why": "work", "label": label, "agent": agent}}
+            else:
+                t = self.platform_target(name, "work", until, agent=agent, label=label)
             if not t:
                 continue
-            t["work"] = f"{who} working on {name}"
+            t["work"] = f"{who} {verb} on {name}" if build else f"{who} working on {name}"
+            if build:
+                t["build"] = True
+                self.work_built[(agent, name)] = w["t"]
+            if now - last < cfg["work_repeat"]:
+                t["again"] = True
+            if held:
+                cur["until"] = now  # (batch267) the view on air gives way
             self.work_shown[(agent, name)] = now
+            self.plat_work_shown[name] = now
             self.show_platform(t, scores, now)
             if agent != subj:
                 self.resume = {"subject": agent, "since": now}  # then the agent's own character
@@ -4081,6 +4181,13 @@ class OneCam(Director):
         if news:
             self.leave_trio(f"{news} fresh: {self.fresh[news][1]}", now)
             return
+        # (batch267 LB) a build on a platform by an agent off the big tile, once the trio has been up work_build_min:
+        # maybe_work shows it from the next step
+        b = next((w for w in self.builds_waiting if w["agent"] != cur.get("subject")), None) \
+            if now - self.since_mode() >= self.cfg["work_build_min"] else None
+        if b:
+            self.leave_trio(f"{b['agent']} building on {b['platform']}", now)
+            return
         self.keep(cur, by_name, now)
 
     def since_mode(self):
@@ -4126,9 +4233,11 @@ class OneCam(Director):
         if cur and cur.get("subject") in HOLDS and now < cur.get("until", 0):
             # (batch240 IA) a quiet view gives way to fresh news once it has been up quiet_min
             news = any(self.newsworthy(n, now) for n in ranked if n not in self.still_block or now >= self.still_block[n])
+            build = any(self.fresh_build(n, now) for n in ranked if n not in self.still_block or now >= self.still_block[n])
             if not (news and (self.after_quiet and cur.get("subject") in ("@tour", "@map", "@platform") and
                               now - self.onair_since >= self.cfg["quiet_min"] or
-                              (cur.get("launch") or {}).get("lifted"))):  # (batch257) a launch once its rockets are up
+                              (cur.get("launch") or {}).get("lifted")) or  # (batch257) a launch once its rockets are up
+                    build and self.yields_to_build(cur, now)):  # (batch267) a build: a launch, an inspection too
                 return
             cur["until"] = now
         if cur and cur.get("subject") in scores and now - cur.get("attack_t", -1e9) < self.cfg["fight_hold_max"] and \
@@ -4224,9 +4333,15 @@ class OneCam(Director):
             # (batch222) a fresh agent (fresh_cut): after onair_dwell at fresh_ratio of the story's score, after still_min
             # from a stale story whatever the scores
             fresh = [n for n in others if self.newsworthy(n, now)]
+            # (batch267) a build from an agent's journal: after fresh_min whatever the scores, unless the story on air
+            # has news of its own
+            built = [n for n in fresh if self.fresh_build(n, now)]
+            if built and not self.newsworthy(subj, now):
+                fresh = built + [n for n in fresh if n not in built]
             if not want and not holding and fresh and now - self.last_program_cut >= cfg["cut_spacing"] and \
                     (held >= cfg["onair_dwell"] and scores[fresh[0]] >= scores[subj] * cfg["fresh_ratio"] or
-                     stale and held >= cfg["fresh_min"]):  # (batch240: was still_min)
+                     stale and held >= cfg["fresh_min"] or  # (batch240: was still_min)
+                     fresh[0] in built and not self.newsworthy(subj, now) and held >= cfg["fresh_min"]):
                 want = cand = fresh[0]
                 why = f"{plan_kind(by_name[want])} ahead" if big_plan(by_name[want]) else f"fresh: {self.fresh[want][1]}"
                 reason = f"{subj} {'on a loop' if looping else 'still'} {int(still)} s; {want} {why}" if stale else \
