@@ -16557,6 +16557,27 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,258,869 bytes on main, 6,263,977 with this branch (limit 8,388,608).
 - Docs: agent/ref/building.md (`deconstruct`). Test: tests/d27_batch268.lua (fails on main: deconstruct takes only
   area).
+
+## d27 batch281 (BH: holds in the managed platform_bom request, Astra #2604)
+
+- Found: `platform_bom {request: true}` keeps a hub section `platform_bom: NAME` and rewrites it every 10 s (M.tick)
+  to what the ghosts still need; every needed item at a quality gets a slot, so a slot cleared by hand comes back with
+  the next rewrite. Resolute (Astra, request with area, import_from vulcanus, tail) needed its beacon ghosts staged
+  while beacon power waits for fusion: 24 beacons, 11.52 MW, against 4.8 MW of solar. Her way round it removed the 24
+  ghosts. `requests_check` would also have read a beacon left unasked as unrequested.
+- `hold` (with `request: true`): a list of items (every quality) or `item@quality`. While held, the section asks none
+  of them (a slot for one is cleared at the next rewrite, by hand or not); their ghosts stay. Kept through the rewrites
+  and by later request calls that do not name it; `hold: false` or `[]` clears it, and the next rewrite asks them
+  again. A call that gives `hold` with no `area` and no `import_from` keeps the request's own (and its tail and
+  min_payload, as before). Every needed item held: the section is removed and the request with its hold stays; the
+  last ghost built removes both, as before. `hold` without `request` is refused.
+- Replies: the request's lines add `beacon: held, not asked (the ghosts need 24; the hub holds 0)`, and `hold` lists
+  the hold. The read (`platform_bom {platform}`) leaves held items out of `unrequested`; `requests_check` ends with
+  `; 2 held by the platform_bom request's hold, not asked: beacon 24, beacon@rare 1`; the item's line ends `(held by
+  the platform_bom request's hold)`; `hold` lists it.
+- Cost: one table lookup an item in the 10 s rewrite and in the read; no new find.
+- Docs: agent/ref/space-age.md (`platform_bom`). Test: tests/d27_batch281.lua (fails on main: the beacon slot is
+  written again).
 ## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
 - The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
 - Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
@@ -16617,3 +16638,82 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,270,315 bytes on main (5c6ef5ce), 6,278,546 with this branch (limit 8,388,608).
 - Docs: agent/ref/circuits-settings.md (`assembler_batch`). Test: tests/d27_batch278.lua (fails on main: no counter, no
   conditions, no counter_from); tests d17_batch19, d20_batch53, d22_batch77 and d17_batch19_rt take the new steps.
+
+## d27 batch280 (CS, Astra #2600: staging that needs more slots than the chest has)
+
+- Astra's queue plan for an Aquilo railgun-turret batch (30 tungsten plate, 50 superconductor, 20 carbon fiber and 100
+  quantum processors a craft) asked a 48-slot requester for 930 tungsten plate, 1588 superconductor, 620 carbon fiber
+  and 3400 quantum processors and waited for each. The queue dry run passed; the plan stalled after 1500 quantum
+  processors. Splitting the staging across two requesters got it through.
+- Measured on a private copy (2.0.77, world n's d22 save, a rig on Nauvis with roboports and 350 logistic robots):
+  - Stack sizes: tungsten-plate 50, superconductor 200, supercapacitor 100, carbon-fiber 100, quantum-processor 100.
+    Astra's four requests need 19 + 8 + 7 + 34 = 68 slots.
+  - Each quality takes slots of its own: 50 normal and 50 rare quantum processors in a chest filled 2 slots, and 150
+    uncommon 2 more (100 and 50).
+  - Those four requests on an empty 48-slot requester (trash unrequested off), stock to spare: within 19 s it held 930
+    tungsten plate, 1400 superconductor, 621 carbon fiber and 1500 quantum processors, every slot full. Nothing more
+    came in the next 94 s; the robots went back to their roboports.
+  - Robots fill a requester only under its bar: bar 11 (10 slots), 2000 quantum processors asked, 1000 delivered.
+- The queue dry run (`queue_submit dry_run`) now returns `staging` and `staging_refused` (stageslots.lua). For each
+  `item_count` wait (`at_least`, alone or inside `all`) at one requester or buffer chest whose requests name the item,
+  it follows the chest's requests through the plan: the chest's own now, with the plan's `requests` steps before the
+  wait applied (`set`, `clear`, `clear_all`, `active`, `trash_unrequested`). A step with `section`, `add_section`,
+  `remove_section` or `group` is not followed; the chest is not checked past it, and a line says so.
+  - The waits there need their items at once while nothing takes from the chest between them: each item and quality
+    waited for (its largest `at_least`), ceil(count / stack size) slots, with what the chest holds that no request
+    names (it stays while trash unrequested is off). Over its slots under its bar: `staging_refused`, and a submit is
+    refused with the same line, before any step runs.
+  - Its requests then ask (each item's min summed over its active sections, the waited `at_least` where larger): over
+    its slots, a line says robots bring them in any order and the wait can stall. Within the slots, a line gives the
+    slots.
+  - Something takes from the chest: an inserter or loader whose pickup is the chest, unless it is held whatever the
+    count (its own logistic condition `ITEM < -2147483648`, or a `circuit_set` to that before the wait, as
+    assembler_batch holds its input), a plan step that names the chest's position (a `transfer`, ...), or robots from a
+    buffer chest (it gives to requesters that take from buffers, and to construction). Then the items may go as they
+    arrive (sequential): said, not refused. With trash unrequested on, nothing is refused.
+  - Staging in turns is followed: requests cleared and the next set after a wait. What was waited for before stays in
+    the chest unless something takes it, so it counts in the next wait's slots.
+- `assembler_batch` returns `slots {required, available}` and a plan line with the slots whether the batch fits or not
+  (batch278 refuses a batch that does not fit).
+- Run on the copy (sol's bot, a new 48-slot requester):
+  - Astra's plan as a dry run: `staging` said "its requests then ask 68 of its 48 slots" at the first wait, and
+    `staging_refused` "the waits there need 68 of its 48 slots at once" at the quantum-processor wait. The real submit
+    was refused with that line, and nothing was queued.
+  - The same plan with 1300 quantum processors (47 slots) passed the dry run ("the requests there ask 47 of its 48
+    slots"), was queued and ran: the four waits were met (930, 1590, 621 and 1302 in the chest).
+  - assembler_batch dry runs on an assembler 2 on gears: 1000 gears gave `slots {required: 20, available: 48}`; 2500
+    were refused (50 slots).
+  - Dispatch time of the dry run with Astra's four waits: 3.1-4.7 ms; the same plan without the waits: 1.9-2.2 ms
+    (Rosetta, 5 calls each, twice). It runs on queue_submit only; nothing is added to the tick.
+- Sol #2607 (an assembler_batch deadlock on an assembler 3 making rare asteroid collectors: batch278's fix covers it)
+  also found that `circuit_set {position}` did not clear the output inserter's hold (`asteroid-collector <
+  -2147483648`) and `logistic: false` did. His journal: the call had only a position. circuit_set with no setting
+  planned no step and answered as a read; its `stays_disabled` said the hold was "not set by this call".
+  - A call that sets nothing is now refused, naming each condition that holds the entity now and what clears it: "its
+    logistic condition asteroid-collector < -2147483648 (not met: it holds it off): logistic: false clears it".
+    `logistic: false` takes the logistic condition away; `remove_condition: true` the circuit condition.
+  - `clear: true` takes both away (a chest: its circuit condition), alone; `now` says "runs: no circuit or logistic
+    condition". A provider chest's `read: {contents: true}`, which sets nothing and says why, is not refused.
+  - In shift87's journals, 85 circuit_set calls by astra, grok, muse and sol: one had only a position (Sol's).
+  - On a copy (sol's bot): a powered fast inserter with that hold stayed at 60 plates moved
+    (`disabled_by_control_behavior`); `circuit_set {position}` was refused with the line above; `clear: true` set it
+    working (62 moved within a second).
+- Bundle (compacted): 6,280,624 bytes on main (954db4ca, batch278 in it), 6,296,020 with this branch (limit
+  8,388,608).
+## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
+- The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
+- Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
+  teammates' tells have stayed unread 2 minutes or more, not yet reported by a sleep, ends at once: `woke: told`,
+  `tell` "N unread tells from before this sleep began (a sleep reports each once; chat_ack marks them read): #seq
+  from, waiting ...: text; ...", `woke_by {kind tell, seq (the newest), from, unread: true}`, and `already_unread: N`
+  on the sleep's own reply. Not with `wake_on_messages: false` or a wake filter (`wake_from`, `wake_on_operator`,
+  `wake_local`). Haiku, shift86 15:24: 8 of Sol's tells unread up to 33 min, hidden by its output filters; its
+  `fh wait --until "tell|alert" --max 900` slept the 900 s ("Nothing new has come in for 15 minutes"). Shifts 80-86
+  replayed under the rule: a sleep ends at once about 5-11 times a shift for Astra, Sol and Luna, 8-10 for Sonnet and
+  Haiku, 0-2 for the others.
+- Ground rules for Claude Code workspaces too (host/rules.ts, tools/launch-agent.sh): AGENTS.md (CLAUDE.md links to
+  it) carries the team's ground rules section, kept current by fh, as for Codex. Opus and Sonnet did not compact in
+  shifts 82-86, so the post-compaction brief never gave them the rules ("rule 27" appears 0 times in their shift86
+  transcripts).
+- Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
+  its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).

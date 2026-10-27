@@ -203,7 +203,7 @@
   joined to the hub by sides, what stands on it); `end` (areas taken up and added) and `rollback` (areas to fill back and take
   up, played back: `restores`, or coordinates only). Read only; a large plan goes on across ticks (`phases_check: N`).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
-- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
+- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?, hold?}`: per item and quality
   (`solar-panel@epic`; a ghost is built only from items of its quality, so the hub's normal stock never covers a quality
   ghost, and `hub_other_quality` says what it holds at other qualities), what the ghosts still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
@@ -219,7 +219,9 @@
   `area`; `min_payload: {item: N}` (every quality) or `{"item@quality": N}`; one slot an item at a quality; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
   request less what the hub holds, a slot on the game's default, a full rocket by weight, too; each line says the
-  minimum payload the slot has). `surface: "gleba"` with no platform:
+  minimum payload the slot has; `hold: ["beacon", "item@quality"]`: those items asked none of through the rewrites,
+  their ghosts kept, until `hold: false`; alone it keeps the request's area and import_from; the read's
+  `requests_check` says them as held, not unrequested). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `./shot NAME platform=NAME [at=X,Y]`: a screenshot of a platform by remote view (its hub without `at=`). Its second

@@ -1,4 +1,4 @@
-- `circuit_set {position, platform? | surface?, enable | logistic | read | settings | signals | on | arithmetic |
+- `circuit_set {position, platform? | surface?, enable | logistic | clear | read | settings | signals | on | arithmetic |
   decider | selector | set_requests}`: sets an entity's circuit condition, read switches, settings or combinator, in
   reach or by remote view (our entities in visible chunks, all of a platform); `inspect` reads back the conditions,
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
@@ -6,7 +6,9 @@
   (without one the game ignores it, and the line says `condition ignored`). `switch_off: true` sets a condition that
   never holds (`signal-dot < -2147483648`): the entity stops while a wire connects it; `remove_condition: true` takes
   the condition away: it runs whatever its wires read; `enable: false` is refused naming both; `now` says what the
-  entity does after either. A logistic condition reads the network
+  entity does after either. `logistic: false` takes the logistic condition away. `clear: true` takes both away (a
+  chest: its circuit condition). A call with no setting (`{position}` alone) changes nothing and is refused, naming each
+  condition that holds the entity now and the argument that clears it. A logistic condition reads the network
   whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
   the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
   condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
@@ -155,7 +157,7 @@
   the output inserter (`destination`, and a chest's `room` for them); the input off again (or its own condition set
   back); the machine's and the output's own conditions set back. The products are not held in the machine: its output
   holds one stack (`output_stack`) and inserters stop feeding it at `feeds_until` held. A batch whose ingredients do not
-  fit the requester's slots at once is refused (`refused`, the slots said). The requester and both inserters are found
+  fit the requester's slots at once is refused (`refused`); `slots {required, available}` says them either way. The requester and both inserters are found
   round the machine unless given. `surplus` names what is already there over the batch's need (the machine would make
   more with it). The inserters need a logistic network for their logistic condition. A requester with trash
   unrequested on has it switched off before its requests are cleared and staged, and on again after the batch
