@@ -300,7 +300,9 @@ return function(api)
   -- received at 62193727) a pod counts at its delivery tick (r.delivered: the pad or container holds the cargo), about
   -- 80 ticks after it lands; landing: pods landed after since whose cargo is not delivered yet. A journey that landed
   -- before this runtime kept delivery ticks (delivered_since) counts at its land tick.
-  function M.landed_from(platform, since, item, quality)
+  -- (d27 batch259 PL, Astra #2484: a 700-magazine drop to the wrong planet met a wait meant for Aquilo) planet: only
+  -- pods landed there count; those landed elsewhere are summed by planet in out.elsewhere ({planet: pods})
+  function M.landed_from(platform, since, item, quality, only)
     local out = {pods=0, items=0, landing=0, complete=true}
     local key = item and (quality and quality ~= 'normal' and item .. '@' .. quality or item)
     local prefix = item and not quality and item .. '@' or nil
@@ -318,7 +320,9 @@ return function(api)
             n = 0
             for k, v in pairs(r.items or {}) do if k == key or (prefix and string.find(k, prefix, 1, true) == 1) then n = n + v end end
           end
-          if n > 0 and not got then out.landing = out.landing + 1
+          if n > 0 and only and planet ~= only then
+            if got then out.elsewhere = out.elsewhere or {}; out.elsewhere[planet] = (out.elsewhere[planet] or 0) + 1 end
+          elseif n > 0 and not got then out.landing = out.landing + 1
           elseif n > 0 then
             out.pods, out.items = out.pods + 1, out.items + (item and n or 0)
             if not out.last or got > out.last.delivered then out.last = {landed=r.landed, delivered=got, dest=r.dest, planet=planet, id=r.id} end
