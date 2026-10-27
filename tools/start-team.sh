@@ -95,7 +95,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ -n "$resume" ]; then
     echo "1. resume: tools/winps.sh tools/win/resume-save.ps1 -Name $world -From $resume -Check (refuse unless space_age=$POG_SPACE_AGE);"
     echo "   stop world $world; copy the previous run's stop save (else the newest save after its stop; with no stop record the newest save) to saves\\$run.zip; refresh the instance's harness mod;"
-    echo "   start the server on $run.zip; deploy the runtime; write runs/$run/resumed-from"
+    echo "   start the server on $run.zip; deploy the runtime; write runs/$run/resumed-from; carry $resume's target.json (tools/run_target.py) if set"
     if [ -n "$stop_utc" ]; then
       echo "   stop record $stop_dir/stopped.json: tick $stop_tick, save ${stop_save:-none (it fell back to /server-save)} at $stop_utc: resume-save gets ${stop_args[*]}"
     else
@@ -187,6 +187,9 @@ if [ -n "$resume" ]; then
   resumed_save=$(printf '%s\n' "$copied" | sed -n 's/^save=//p')
   log "world $world: $resumed_save (written $(printf '%s\n' "$copied" | sed -n 's/^save_time=//p'); $(printf '%s\n' "$copied" | sed -n 's/^why=//p')) copied to $run.zip"
   echo "$resume" > "$rundir/resumed-from"
+  # (d27 batch277 RT) the run's target (tools/run_target.py): every status reply's first line, shift after shift until
+  # the operator changes or clears it
+  log "run target: $(python3 tools/run_target.py carry "$carry_from" "$rundir" 2>&1)"
 else
   # 1. Fresh world with the current mod (stop any previous one of this name first).
   log "world $world: stopping old processes"

@@ -1383,6 +1383,10 @@ fh board events --since 40
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
+- The run's target (d27 batch277 RT, Nick): `FH_TARGET_FILE`, else `target.json` in the journal's run folder (pog's
+  runs/RUN/target.json, written by tools/run_target.py and carried to each next shift by start-team) puts one line
+  first in every `status` reply, the time left computed at each read (host/target.ts): `target: Target (Nick, soft):
+  the Shattered Planet by Fri Oct 30 23:59 PDT, 81 h 30 m from now; the run's end is not fixed.` No file, no line.
 - `say` text comes from the words after `say`, from `--text-file`, or from stdin (`fh say -`, or a pipe when no words
   are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`). Text with an apostrophe or quote: use the
   heredoc, `fh say - <<'EOF'`, the text, `EOF`. `fh call say words...` and `fh call confess words...` take the words
