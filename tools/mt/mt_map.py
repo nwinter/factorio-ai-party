@@ -5,6 +5,8 @@
   python3 tools/mt/mt_map.py create --dir DIR [--teams 4] [--distance D] [--seed S] [--docker NAME]
   python3 tools/mt/mt_map.py setup  --dir DIR --port P --password-file F            # forces, spawns, resources
   python3 tools/mt/mt_map.py assign --port P --password-file F --player NAME --team T
+  python3 tools/mt/mt_map.py join   --dir DIR --port P --password-file F [--team T]        # macOS clients
+  python3 tools/mt/mt_map.py chart-test --dir DIR --port P --password-file F [--seconds 60]
   python3 tools/mt/mt_map.py report --dir DIR --port P --password-file F [--corridor]
   python3 tools/mt/mt_map.py contacts --port P --password-file F
 
@@ -244,6 +246,89 @@ def cmd_report(a):
     print(json.dumps(out, indent=1))
 
 
+MAC_APP = "/Users/owner/code/factorio-mac-2.0.77/factorio.app/Contents/MacOS/factorio"
+
+
+def mac_client(a, name, slot):
+    """A macOS client for one join: its own write-data folder (config, mods, player-data with the name), medium sprites,
+    low video memory, no sound; connects to the copy on this Mac. Returns the Popen."""
+    d = os.path.join(a.client_dir, slot)
+    os.makedirs(os.path.join(d, "config"), exist_ok=True)
+    mods = os.path.join(d, "mods")
+    os.makedirs(mods, exist_ok=True)
+    subprocess.run(["rsync", "-a", "--delete", os.path.join(a.dir, "mods", "agent-harness_0.1.0") + "/", os.path.join(mods, "agent-harness_0.1.0") + "/"], check=True)
+    subprocess.run(["cp", os.path.join(a.dir, "mods", "mod-list.json"), mods], check=True)
+    app = os.path.dirname(os.path.dirname(a.client_app))  # .../factorio.app/Contents
+    open(os.path.join(d, "config", "config.ini"), "w").write(
+        f"[path]\nread-data={app}/data\nwrite-data={d}\n[other]\ncheck-updates=false\nshow-tips-and-tricks=false\n"
+        "[sound]\nmaster-muted=true\nmusic-volume=0\n[graphics]\nfull-screen=false\ngraphics-quality=medium\n"
+        "video-memory-usage=low\ntexture-streaming=true\n")
+    json.dump({"service-username": name}, open(os.path.join(d, "player-data.json"), "w"))
+    log = open(os.path.join(d, "client.log"), "w")
+    return subprocess.Popen([a.client_app, "--config", os.path.join(d, "config", "config.ini"), "--mp-connect", f"127.0.0.1:{a.game_port}",
+                             "--disable-audio"], stdout=log, stderr=subprocess.STDOUT)
+
+
+def cmd_join(a):
+    """Per team, one client at a time: a macOS client joins the copy as mt-TEAM, is moved into its force as a spectator
+    (mt_assign), and quits (SIGTERM to the client this started, then SIGKILL after 20 s)."""
+    lay = json.load(open(os.path.join(a.dir, "layout.json")))
+    op = op_from(a)
+    for t in lay["teams"]:
+        if a.team and t["name"] != a.team:
+            continue
+        name = "mt-" + t["name"]
+        t0 = time.time()
+        proc = mac_client(a, name, name)
+        joined = False
+        while time.time() - t0 < a.join_timeout and proc.poll() is None:
+            out = op.lua(f"/silent-command local p=game.get_player('{name}') rcon.print(p and p.connected and 'yes' or 'no')")
+            if out.strip() == "yes":
+                joined = True
+                break
+            time.sleep(3)
+        took = time.time() - t0
+        if joined:
+            res, _ = op.call("mt_assign", {"player": name, "team": t["name"]})
+            print(f"{name}: joined after {took:.0f} s;", json.dumps(res))
+        else:
+            print(f"{name}: no join within {took:.0f} s (client exit {proc.poll()}); log {os.path.join(a.client_dir, name, 'client.log')}")
+        proc.terminate()
+        try:
+            proc.wait(20)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        print(f"{name}: client {proc.pid} quit")
+        if not joined:
+            break
+
+
+def cmd_chart_test(a):
+    """Per team: a radar and an electric-energy-interface (test entities) at its spawn; after --seconds of game time,
+    the chunks the force charted round it; then both removed."""
+    lay = json.load(open(os.path.join(a.dir, "layout.json")))
+    op = op_from(a)
+    for t in lay["teams"]:
+        x, y = t["spawns"]["nauvis"]
+        op.lua(f"/silent-command local s=game.surfaces.nauvis s.create_entity{{name='radar',position={{{x + 20},{y + 20}}},force='{t['name']}'}} "
+               f"s.create_entity{{name='electric-energy-interface',position={{{x + 23},{y + 20}}},force='{t['name']}'}} "
+               f"s.create_entity{{name='medium-electric-pole',position={{{x + 21.5},{y + 22.5}}},force='{t['name']}'}}")
+    op.lua("/silent-command game.tick_paused=false")
+    t0 = time.time()
+    tick0 = int(op.lua("/silent-command rcon.print(game.tick)"))
+    while int(op.lua("/silent-command rcon.print(game.tick)")) - tick0 < a.seconds * 60:
+        time.sleep(2)
+    res, _ = op.call("mt_check", {"chunks": 5})
+    for row in res["teams"]:
+        print(f"{row['team']}: players {row['players']}, charted round spawn {row['charted_round_spawn']}")
+    print(f"({a.seconds} s of game time in {time.time() - t0:.0f} s)")
+    for t in lay["teams"]:
+        x, y = t["spawns"]["nauvis"]
+        op.lua(f"/silent-command for _,e in ipairs(game.surfaces.nauvis.find_entities_filtered{{area={{{{{x + 15},{y + 15}}},{{{x + 30},{y + 30}}}}},"
+               f"name={{'radar','electric-energy-interface','medium-electric-pole'}},force='{t['name']}'}}) do e.destroy() end")
+
+
 def cmd_contacts(a):
     res, _ = op_from(a).call("mt_contacts", {})
     print(json.dumps(res, indent=1))
@@ -252,7 +337,7 @@ def cmd_contacts(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("layout", "create", "setup", "assign", "report", "contacts"):
+    for name in ("layout", "create", "setup", "assign", "join", "chart-test", "report", "contacts"):
         p = sub.add_parser(name)
         p.add_argument("--teams", type=int, default=4)
         p.add_argument("--distance", type=float, default=DISTANCE)
@@ -270,9 +355,14 @@ def main():
         p.add_argument("--margins", type=int, nargs="*", default=[64, 96, 128])
         p.add_argument("--enemy-frequency", type=float, default=ENEMY[0])
         p.add_argument("--enemy-size", type=float, default=ENEMY[1])
+        p.add_argument("--client-app", default=MAC_APP)
+        p.add_argument("--client-dir", default="/Users/owner/code/factorio-mac-2.0.77/clients")
+        p.add_argument("--game-port", type=int, default=34274)
+        p.add_argument("--join-timeout", type=int, default=240)
+        p.add_argument("--seconds", type=int, default=60)
     a = ap.parse_args()
-    {"layout": cmd_layout, "create": cmd_create, "setup": cmd_setup, "assign": cmd_assign, "report": cmd_report,
-     "contacts": cmd_contacts}[a.cmd](a)
+    {"layout": cmd_layout, "create": cmd_create, "setup": cmd_setup, "assign": cmd_assign, "join": cmd_join,
+     "chart-test": cmd_chart_test, "report": cmd_report, "contacts": cmd_contacts}[a.cmd](a)
 
 
 if __name__ == "__main__":
