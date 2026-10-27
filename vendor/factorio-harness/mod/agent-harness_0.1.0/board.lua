@@ -2065,7 +2065,8 @@ return function(api)
     -- (a team tell: what it names the sender of)
     if M.owed and t.player then
       if not t.fyi and tostring(t.text or ''):find('?', 1, true) then
-        pcall(M.owed.add, index, {key='t' .. tostring(t.seq), seq=t.seq, tick=t.tick, from=t.from, text=t.text, tell=true})
+        -- (d27 batch273 TL) a long tell is owed by its summary line (owed.lua keeps 120 characters)
+        pcall(M.owed.add, index, {key='t' .. tostring(t.seq), seq=t.seq, tick=t.tick, from=t.from, text=t.summary or t.text, tell=true})
       end
       -- (d22 batch122 CE1) a tell with reply_to closes by seq alone (tells.lua on_reply)
       if t.team then pcall(M.owed.said, t.player, t.text, t.reply_to)
@@ -2076,7 +2077,7 @@ return function(api)
       end
     end
     -- An fyi tell (tells.lua) waits for the next reply: it wakes nobody (waits.lua) and supervisors don't count it.
-    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team, fyi=t.fyi, wake=t.wake}
+    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, summary=t.summary, how='tell', team=t.team, fyi=t.fyi, wake=t.wake}
     while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
   end
   -- The tick of the newest undelivered mention or tell (nil when none), for
@@ -2154,7 +2155,7 @@ return function(api)
   -- Unread tells (d17 batch29 C2, Sol missed a critical silo blocker for 3 minutes while sleeps and reads overlapped): a
   -- teammate's tell (not fyi) shown once stays listed in every later team block, with how long it has waited, until
   -- chat_ack or reply_to names its seq (or "all") or a tells read lists it. UNREAD_MAX kept (the oldest dropped),
-  -- UNREAD_SHOW shown, each cut to 100 characters.
+  -- UNREAD_SHOW shown, each by its summary (d27 batch273 TL: a tell over 500 bytes has one), else cut to 100 characters.
   M.UNREAD_MAX, M.UNREAD_SHOW = 8, 4
   function M.tells_read(index, seqs)
     local box = api.state().mentions and api.state().mentions[index]
@@ -2174,7 +2175,7 @@ return function(api)
     local out = {string.format('%d unread tell%s (chat_ack {seq: N} or {seq: "all"}, or a tells read, marks them read):', #wait, #wait == 1 and '' or 's')}
     for i = 1, math.min(#wait, M.UNREAD_SHOW) do
       local t = wait[i]
-      out[#out+1] = string.format('unread #%d %s, waiting %s: %s', t.seq, t.from, ago(game.tick - t.tick), clip(t.text, 100))
+      out[#out+1] = string.format('unread #%d %s, waiting %s: %s', t.seq, t.from, ago(game.tick - t.tick), t.summary or clip(t.text, 100))
     end
     if #wait > M.UNREAD_SHOW then out[#out+1] = string.format('%d more unread (fh tells)', #wait - M.UNREAD_SHOW) end
     return out
@@ -2222,7 +2223,7 @@ return function(api)
         tells[#tells+1] = string.format('%s%s%s, %s ago: %s', from(m), m.team and ' to team' or '', m.fyi and ' (fyi)' or '', ago(game.tick - m.tick), m.text)
         if type(m.tell) == 'number' and not m.fyi and m.from ~= 'operator' then
           box.unread = box.unread or {}
-          box.unread[#box.unread+1] = {seq=m.tell, tick=m.tick, from=from(m), text=m.text}
+          box.unread[#box.unread+1] = {seq=m.tell, tick=m.tick, from=from(m), text=m.text, summary=m.summary}
           while #box.unread > M.UNREAD_MAX do table.remove(box.unread, 1) end
           shown[m.tell] = true
         end
@@ -2265,7 +2266,7 @@ return function(api)
       out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list - fyi + (box and box.dropped or 0), at_mentions=direct,
         tells=tells > 0 and tells or nil, fyi=fyi > 0 and fyi or nil, unread_board=M.unread_board(a),
         unacked_tells=unacked > 0 and unacked or nil, unacked_oldest_tick=oldest,
-        oldest_tick=first and first.tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
+        oldest_tick=first and first.tick or nil, latest=last and clip(last.from .. ': ' .. (last.summary or last.text), 160) or nil,
         last_request_tick=clock and math.max(clock.call_tick, clock.seen_tick or 0) or nil}
     end
     return {agents=out, tick=game.tick}

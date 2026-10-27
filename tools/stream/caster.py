@@ -589,7 +589,9 @@ def agent_intent(s, a, fresh=600):
     old, cleaned for speech. Nick (HOSTS3 item 6): 'walking' should read 'walking to restock the silo Sol asked for'."""
     now = time.time()
     names = {a.get("name"), a.get("display_name")}
-    cands = [m for m in s.get("chat") or [] if m.get("agent") in names and m.get("text")]
+    # (d27 batch273 TL) a long tell by its summary line ("→ Astra: Aquilo launch audit: ..."), not its 2000 bytes
+    cands = [dict(m, text=f"\u2192 {m.get('to_shown') or 'team'}: {m['summary']}") if m.get("summary") else m
+             for m in s.get("chat") or [] if m.get("agent") in names and m.get("text")]
     said = a.get("last_said") or {}
     if said.get("text"):
         cands.append({"text": said["text"], "t": said.get("t")})

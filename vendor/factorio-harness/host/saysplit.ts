@@ -6,9 +6,10 @@
 
 export const SAY_BYTES = 500;
 export const SAY_PARTS = 6;
-// (d19 batch43 A1, A3) the runtime cuts these without a word past their limit (audience.lua confess, chronicle.lua) or
-// with one (tells.lua tell): a tell goes in parts like a say; a confession or a chronicle entry, rate-limited, is refused
-export const KEEP: Record<string, Record<string, number>> = {confess:{text:300}, chronicle:{text:600, title:80}};
+// (d19 batch43 A3) the runtime cuts these without a word past their limit (audience.lua confess, chronicle.lua): a
+// confession or a chronicle entry, rate-limited, is refused. (d27 batch273 TL) a tell holds 2000 bytes (one over 500
+// needs a summary, tells.lua) and goes whole: over 2000 is refused here, nothing sent
+export const KEEP: Record<string, Record<string, number>> = {confess:{text:300}, chronicle:{text:600, title:80}, tell:{text:2000}};
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 /** The bytes the runtime counts: control characters as spaces, trimmed. */

@@ -864,7 +864,8 @@
     var agentCards = agents.map(function (a) {
       var mine = chat.filter(function (c) { return c.agent === a.name; }).slice(-2);
       var act = a.activity || (a.alive === false ? 'dead' : 'idle');
-      var said = mine.map(function (c) { return '<li>' + esc(c.text) + '</li>'; }).join('');
+      // (d27 batch273 TL) a tell over 500 bytes by its summary line here; the game chat below has the whole text
+      var said = mine.map(function (c) { return '<li>' + esc(c.summary ? '→ ' + c.summary : c.text) + '</li>'; }).join('');
       return '<article class="agent-live" style="--ac:' + acColor(a.color) + '">' +
         '<header>' + avatar(a, 48) + '<div><h3>' + esc(a.display_name || a.name) + (a.camera ? ' <span class="fx-chip fx-chip--orange cam-chip">' + esc(a.camera) + '</span>' : '') + '</h3>' +
         '<p class="fx-muted small">' + esc([a.model, a.role].filter(Boolean).join(' · ')) + '</p></div>' +
@@ -945,7 +946,9 @@
       var a = byName[c.agent] || { name: c.agent || c.from };
       // a relayed viewer line says where the viewer wrote (Luna 13:54): "viewer Joonazan (YouTube)"
       var src = c.source ? ' <span class="fx-muted small">(' + esc(c.source) + ')</span>' : '';
-      return '<li>' + avatar(a, 24) + '<span><b>' + esc(a.display_name || c.from) + '</b>' + src + ' ' + esc(c.text) + '</span></li>';
+      // (d27 batch273 TL) a long tell: its summary line, then the whole text
+      var sum = c.summary ? ' <span class="tell-summary">' + esc(c.summary) + '</span><br>' : ' ';
+      return '<li>' + avatar(a, 24) + '<span><b>' + esc(a.display_name || c.from) + '</b>' + src + sum + esc(c.text) + '</span></li>';
     }).join('');
 
     cards();

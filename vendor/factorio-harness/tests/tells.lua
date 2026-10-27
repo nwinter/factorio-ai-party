@@ -195,15 +195,15 @@ eq(t[1],'#'..mine2..' assigned to you by grok: wall')
 assert(t[2]:find('new unowned request by sol: another',1,true),t[2])
 eq(#grok('status').team.board,1); eq((sol('status').team or {}).board,nil) -- not to its poster
 
--- Up to 500 characters as written; longer is cut, and the reply says so
--- (shift01: 324 characters cut to 300 with no word of it).
+-- Up to 500 characters as written. (d27 batch273 TL) Up to 2000 with a summary over 500; never cut: a longer one, or
+-- one over 500 without a summary, is refused with nothing sent (tests/d27_batch273.lua).
 local long=string.rep('steel at (88.5,-27.5) ',22) -- 484 characters
 local r1=sol('tell',{to='astra',text=long}); eq(r1.cut,nil)
 eq(astra('tells',{since=r1.seq-1}).tells[1].text,(long:gsub('%s+$','')))
-r1=sol('tell',{to='astra',text=long..long})
-eq(r1.cut.length,#((long..long):gsub('%s+$',''))); eq(r1.cut.kept,500)
-eq(#astra('tells',{since=r1.seq-1}).tells[1].text,500)
-assert(runtime.dispatch{action='describe',args={},player=1}.actions.tell.text:find('1..500',1,true))
+r1=sol('tell',{to='astra',text=long..long,summary='steel spots'})
+eq(r1.cut,nil); eq(astra('tells',{since=r1.seq-1}).tells[1].text,((long..long):gsub('%s+$','')))
+fails(function() sol('tell',{to='astra',text=long..long}) end,'needs summary')
+assert(runtime.dispatch{action='describe',args={},player=1}.actions.tell.text:find('1..2000',1,true))
 
 -- operator: a request to the operator, read by the stream service over the
 -- operator path; one a minute and 10 an hour per agent, with the wait named.
@@ -234,9 +234,9 @@ eq(op('operator_requests',{}).cursor,cursor)
 fails(function() grok('operator',{text=string.rep('é',1001)}) end,'exceeds 2000 bytes')
 r1=grok('operator',{text='whole after refusal'}); eq(r1.seq,cursor+1)
 fails(function() grok('operator',{text='too soon'}) end,'one operator request a minute')
--- Teammate tells retain their existing 500-byte limit.
-local clipped=astra('tell',{to='sol',text=string.rep('x',600)})
-eq(clipped.cut.length,600); eq(clipped.cut.kept,500)
+-- (d27 batch273 TL) A teammate tell over 500 bytes needs a summary; over 2000 is refused, as an operator request is.
+fails(function() astra('tell',{to='sol',text=string.rep('x',600)}) end,'needs summary')
+fails(function() astra('tell',{to='sol',text=string.rep('x',2001),summary='s'}) end,'the limit is 2000')
 fails(function() grok('operator',{text='  '}) end,'text is required')
 eq(#op('operator_requests',{since=before,limit=2}).requests,2)
 assert(runtime.dispatch{action='describe',args={},player=1}.actions.operator.text:find('server:',1,true))
