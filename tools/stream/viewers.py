@@ -78,8 +78,8 @@ def minutes(s):
     m = int(s // 60)
     return f"{m // 60} h {m % 60} min" if m >= 60 else f"{m} min"
 AUTHOR_TEXTS_MAX = 200 # lines remembered per author, for author deletions
-TEXT_MAX = 200         # lane cap (YouTube's own limit is 200; the site's too)
-RELAY_MAX = 300        # one in-game viewer line (audience.lua VIEWER_LEN); longer text goes in labelled parts
+TEXT_MAX = 500         # lane cap (YouTube's own limit is 200; the site's 500 since d27 batch263; the overlay's newest line shows 9 lines)
+RELAY_MAX = 560        # one in-game viewer line (audience.lua VIEWER_LEN, in bytes); longer text goes in labelled parts
 FULL_MAX = 600         # a message's whole text, as relayed (Astra 17:17: the relay cut long lines at an ellipsis)
 RESERVED = {"operator", "op", "mod", "moderator", "admin", "caster", "host", "hosts", "system", "server", "narrator",
             "announcer", "director", "harness", "board", "team", "viewer", "viewers", "agent", "agents", "nick"}
@@ -422,7 +422,9 @@ class Filter:
     injection patterns, rate limits, then the classifier (Clef or none). Relay additionally refuses orders to the
     agents and anything the configured classifier has not checked."""
 
-    def __init__(self, agent_names=(), blocklist=(), lane_gap=10, lane_per_min=4, lane_total=20):
+    # (d27 batch263 VR, Nick 06:30: few viewers, long-time and in good faith; Caleb's part 4 of 4 was dropped as "rate"
+    # 8 s after part 3) no gap per viewer, 12 lines a minute each (a message in parts passes whole), 20 a minute in all
+    def __init__(self, agent_names=(), blocklist=(), lane_gap=0, lane_per_min=12, lane_total=20):
         self.agent_names = [n.lower() for n in agent_names]
         self.blocklist = [b.casefold() for b in blocklist if b.strip()]
         self.limit = Limiter(lane_gap, lane_per_min, lane_total)
@@ -978,15 +980,16 @@ class Relay:
     ASK_WINDOW = 300.0  # a viewer's follow-up question goes to the same agent; an agent asked recently is skipped
     # A viewer's line inside their author gap waits for it, other viewers' lines going first (shift05 09:30, Nick:
     # "'Not sent: too soon' ... does that get queued? was good suggestion"); at most this many lines wait per viewer.
-    AUTHOR_QUEUE = 3
+    # (d27 batch263 VR) a message in parts: up to 8 lines wait, each 3 s after the one before
+    AUTHOR_QUEUE = 8
 
-    def __init__(self, harness, switch, fn="viewer_say", gap=20.0, author_gap=45.0, max_age=90.0, roster=()):
+    def __init__(self, harness, switch, fn="viewer_say", gap=3.0, author_gap=3.0, max_age=90.0, roster=()):
         self.h, self.switch, self.fn = harness, switch, fn
         self.gap, self.author_gap, self.max_age = gap, author_gap, max_age
         # Questions that name no agent are addressed to one (see address()); roster: [(name, display_name)] in team order
         self.roster = [(n, d) for n, d in roster]
         self.rr, self.asked, self.addressed = 0, {}, {}
-        self.q = collections.deque(maxlen=20)
+        self.q = collections.deque(maxlen=64)  # past AUTHOR_QUEUE a line is refused by offer(), never dropped here
         self.last, self.by_author, self.hold = 0.0, {}, 0.0
         self.state, self.error, self.sent, self.next_probe = "off", None, 0, 0.0
         self.muted, self.next_muted = set(), 0.0

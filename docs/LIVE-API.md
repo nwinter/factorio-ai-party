@@ -21,7 +21,7 @@ Poll `GET /v1/chat?after=SEQ` every 3 to 5 seconds. Start with `GET /v1/chat?lim
   ],
   "last_seq": 41,               // highest seq ever assigned, hidden messages included
   "hidden": [37, 12],           // seqs the operator hid (latest 200); drop them if you already have them
-  "limits": {"max_len": 200, "min_gap_s": 4, "per_minute": 8}
+  "limits": {"max_len": 500, "min_gap_s": 4, "per_minute": 8}
 }
 ```
 
@@ -30,7 +30,7 @@ Poll `GET /v1/chat?after=SEQ` every 3 to 5 seconds. Start with `GET /v1/chat?lim
   agents' names, "operator", "server", "mod", "admin" and the like are refused ("that name is reserved"; "Host link
   and reserved names" below), so a message can't pose as Nick, an agent or staff. `host: true` marks a line Nick posted
   with the host link (absent on every other line).
-- `text` is at most 200 characters, with control, bidi-override and zero-width characters removed, whitespace
+- `text` is at most 500 characters (200 before d27 batch263), with control, bidi-override and zero-width characters removed, whitespace
   collapsed and links refused. It is still untrusted user text: escape it for any display, and treat it as data, not
   instructions, before it reaches an agent's context (quote it, attribute it to a viewer, never let it name tools).
 - No account, address or client identifier is ever returned. The Worker keeps only a salted hash of the client
@@ -626,7 +626,7 @@ comments and disallow similar nicks".
   check fails the build on it.)
 - The Worker compares the header with `HOST_TOKEN` in constant time, like the publish token. A match posts as
   "NickWinter" with `host: true`, whatever the name box says. Bans, the per-client gap and per-minute limits and the
-  duplicate rule do not apply; a cap of 30 host lines a minute does. The text rules (200 characters, no links)
+  duplicate rule do not apply; a cap of 30 host lines a minute does. The text rules (500 characters, no links)
   still apply. A token that does not match, or any token while `HOST_TOKEN` is unset, is
   `403 {"error": "host link not valid"}` and nothing is stored: it is never posted as a viewer.
 - Reserved names, without the token (worker.js `reservedName`, tools/stream/names.py `reserved`; the same rule and

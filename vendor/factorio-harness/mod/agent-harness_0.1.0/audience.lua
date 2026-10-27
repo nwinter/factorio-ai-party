@@ -14,9 +14,11 @@ return function(api)
   local M = {handlers={}, operator={}}
   local MAX_LOG, MAX_LEN = 200, 300
   local CONFESS_GAP = 15 * 60
-  -- A viewer line: the viewer's 200 characters with the relay's @names in front (Astra 17:17: they were cut at 120).
-  local VIEWER_LEN, VIEWER_NAME, PART_TICKS = 300, 24, 600
-  local VIEWER_GAP, VIEWER_WINDOW, VIEWER_MAX = 20 * 60, 60 * 60, 6
+  -- A viewer line: the viewer's words with the relay's @names in front (Astra 17:17: they were cut at 120). (d27
+  -- batch263 VR, Nick 06:30: few viewers, long-time and in good faith) up to the relay's 560 characters, in bytes: 1200.
+  local VIEWER_LEN, VIEWER_NAME, PART_TICKS = 1200, 24, 600
+  -- (VR) one line per viewer every 3 s (a message in parts goes a part each 3 s), 20 a minute in all
+  local VIEWER_GAP, VIEWER_WINDOW, VIEWER_MAX = 3 * 60, 60 * 60, 20
   local function store()
     local s = api.state()
     s.audience = s.audience or {seq=0, confessions={}, last={}, viewers={recent={}, by_name={}}}
@@ -110,7 +112,8 @@ return function(api)
     local recent = {}
     for _, t in ipairs(v.recent) do if now - t < VIEWER_WINDOW then recent[#recent+1] = t end end
     v.recent = recent
-    for n, t in pairs(v.by_name) do if now - t >= VIEWER_GAP then v.by_name[n] = nil end end
+    -- (VR) a name is kept while its gap or a continuation's window lasts, whichever is longer
+    for n, t in pairs(v.by_name) do if now - t >= math.max(VIEWER_GAP, PART_TICKS) then v.by_name[n] = nil end end
     local key = name:lower()
     local muted = store().muted[key]
     if muted then return {posted=false, dropped='muted', reason=muted.reason, limit='muted by the agents\' vote for the rest of the run'} end
@@ -119,7 +122,7 @@ return function(api)
     assert(a.part == nil or (type(a.part) == 'number' and a.part >= 1 and a.part <= 9), 'part must be 1..9')
     local continuation = a.part ~= nil and a.part > 1 and v.by_name[key] ~= nil and now - v.by_name[key] <= PART_TICKS
     if not continuation then
-      if v.by_name[key] then
+      if v.by_name[key] and now - v.by_name[key] < VIEWER_GAP then
         return {posted=false, dropped='viewer_rate', retry_after_s=seconds(VIEWER_GAP - (now - v.by_name[key])),
           limit='one line per viewer every ' .. seconds(VIEWER_GAP) .. ' s'}
       end

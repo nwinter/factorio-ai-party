@@ -39,7 +39,7 @@ AUR = {"seq": 19860, "tick": 46400600, "from": "viewer Aurora", "viewer": True, 
 
 def main():
     # the relay: each part carries the line's id; an id the harness would not keep is left out
-    parts = Relay.lines({"id": "site:4175", "name": "Foobator", "text": "is the south wall closed? " * 20, "source": "site"}, "muse")
+    parts = Relay.lines({"id": "site:4175", "name": "Foobator", "text": "is the south wall closed? " * 30, "source": "site"}, "muse")  # over RELAY_MAX (560)
     check("every part its id", len(parts) > 1 and all(p["id"] == "site:4175" for p in parts), parts)
     check("an odd id left out", "id" not in Relay.line({"id": "site:<b>", "name": "x", "text": "hi"}), Relay.line({"id": "site:<b>", "name": "x", "text": "hi"}))
 

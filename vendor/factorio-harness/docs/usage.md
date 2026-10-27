@@ -1497,10 +1497,11 @@ fh chronicle "Starling fell to the rocks halfway to Vulcanus." --title "Starling
   before (`woke: mentioned`, `mention: viewer bob: ...`). Teammates' tells and mentions, the board, damage and the rest
   wake as before. Rich
   text tags are stripped from the name and bracketed in the text, newlines flattened, the name cut to 24 and the text
-  to 300 characters (a viewer's 200 with the relay's `@names` in front; Astra 17:17: the relay cut them at 120). A
+  to 1200 bytes (the relay's 560 characters with its `@names` in front; d27 batch263, 300 before; Astra 17:17: the
+  relay cut them at 120). A
   longer message comes in parts, each labelled ` (1/2)` by the relay, with `part` and `parts`: a part after the first
   within 10 s of that viewer's line is no new line for the rate limit. Rate limit (game ticks, so it does not refill while the game is paused): one line per viewer name
-  (case-blind) every 20 s and 6 lines a minute in all. Over it the reply is `posted: false, dropped:
+  (case-blind) every 3 s and 20 lines a minute in all (d27 batch263; 20 s and 6 before). Over it the reply is `posted: false, dropped:
   viewer_rate|global_rate, retry_after_s`, not an error; a viewer the agents muted gets `posted: false, dropped:
   muted, reason`. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls,
   and its stream service (`tools/stream/viewers.py`) relays moderated YouTube and site chat with it.
@@ -16429,3 +16430,10 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`launch_budget` after `silo`), the index (`launch_budget` paid for by the space-age
   label without "platforms, planets": the codex core is 21997 bytes). Test: tests/d27_batch260.lua (fails on main: no
   launchbudget.lua, and KEEP_RULE without the sections).
+## d27 batch263 (VR: faster viewer relay, Nick 06:30)
+- audience.lua `viewer_say`: one line per viewer every 3 s (20 s before), 20 a minute in all (6), text up to 1200 bytes
+  (300) for the relay's 560-character lines. A viewer's name is kept for the part window (10 s) as well as its gap, so
+  a part 2 within 10 s stays a continuation with the 3 s gap; the gap check compares with VIEWER_GAP itself.
+- The rest is the stream service (tools/stream/viewers.py: the lane 12 a minute a viewer, no gap, 20 in all; the relay
+  3 s, 3 s a viewer, 8 waiting) and the site (the Worker's 500 characters): docs/VIEWERS-NOTES.md "d27 batch263".
+- Test: tests/audience.lua (fails on main: 300 ~= 1200).
