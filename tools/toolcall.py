@@ -6,10 +6,14 @@ fh sleep within a second, the script acked it, and the model read nothing until 
 said "waking them if asleep" all the while. The harness's own sleeps and acks say nothing about the model, so the
 agent CLI's tool hooks record each call in the workspace:
 
-  start  PreToolUse: tools/permit.py (Claude Code, matcher Bash), tools/context.py hook pre-tool (Grok, Muse)
-  end    PostToolUse: tools/context.py hook post-tool (Claude Code, Grok, Muse)
+  start  PreToolUse: tools/permit.py (Claude Code, matcher Bash), tools/context.py hook pre-tool (Grok, Muse; Codex
+         with --record-only)
+  end    PostToolUse: tools/context.py hook post-tool (Claude Code, Grok, Muse; Codex with --record-only)
 
-Codex and agy run no tool hooks here, so they have no record and get no fact.
+(d26 batch250) Codex 0.164 runs them from the workspace's .codex/hooks.json once the route's config.toml trusts them
+(tools/codex_hooks.py). In code mode they fire for each shell command a cell runs (tool_name Bash, an exec-... id),
+and the end comes when the command ends, also after a yield that let the model go on: such a call is dropped when
+the model starts another more than STALE_S after it. agy runs no tool hooks here, so it has no record and gets no fact.
 DIR/.tool-call.json: {"calls": {ID: {"since": epoch s, "tool": name, "wakes": bool}}, "ended": epoch s}. A call whose
 only commands are fh sleep or fh wait (and output filters) ends when a tell wakes it, so it is kept apart (wakes).
 The broker (tools/fh_broker.py: a tell's reply) and the viewer relay (tools/stream/viewers.py: a relayed line's
