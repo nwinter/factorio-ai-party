@@ -563,6 +563,49 @@ def emptied():
     print("emptied line: ok")
 
 
+def no_ping_pong():
+    """A copied pair is equal to the nanosecond, so later passes copy nothing: both directions, clones and plain copies,
+    mtimes with nanosecond parts; a write a few milliseconds after a copy is still newer and goes across."""
+    tmp = tempfile.mkdtemp()
+    clone_file = full_tools.clone_file
+    try:
+        for how in ("clone", "copy"):
+            shared, mirror = os.path.join(tmp, how, "team-tools"), os.path.join(tmp, how, "muse", "team-tools")
+            want = mixed_tree(shared, n=60)
+            base = 1_790_000_000_123_456_789
+            for i, rel in enumerate(sorted(want)):
+                os.utime(os.path.join(shared, rel), ns=(base + i * 7, base + i * 1_000_000_007))
+            os.makedirs(mirror)
+            with open(os.path.join(mirror, "mine.md"), "wb") as f:
+                f.write(b"mine\n")
+            os.utime(os.path.join(mirror, "mine.md"), ns=(base, base + 999_999_999))
+            want["mine.md"] = b"mine\n"
+            if how == "copy":
+                def no_clone(src, dst):
+                    raise OSError(45, "no clones here")
+                full_tools.clone_file = no_clone
+            assert len(full_tools.sync_pair(shared, mirror)) == len(want)
+            for rel in want:
+                assert os.stat(os.path.join(shared, rel)).st_mtime_ns == os.stat(os.path.join(mirror, rel)).st_mtime_ns, rel
+            for _ in range(3):
+                assert full_tools.sync_pair(shared, mirror) == [], how
+            same(want, shared, how)
+            same(want, mirror, how)
+            p = os.path.join(mirror, "f000.json")   # a write 3 ms after the copy's mtime: newer, copied once
+            t = os.stat(p).st_mtime_ns + 3_000_000
+            with open(p, "wb") as f:
+                f.write(b"later")
+            os.utime(p, ns=(t, t))
+            assert full_tools.sync_pair(shared, mirror) == ["f000.json"], how
+            assert open(os.path.join(shared, "f000.json"), "rb").read() == b"later"
+            assert full_tools.sync_pair(shared, mirror) == [], how
+            full_tools.clone_file = clone_file
+    finally:
+        full_tools.clone_file = clone_file
+        shutil.rmtree(tmp)
+    print("no ping-pong: ok")
+
+
 KILLED = r"""
 import os, shutil, signal, sys
 sys.path.insert(0, sys.argv[1])
@@ -705,5 +748,6 @@ if __name__ == "__main__":
     concurrent_passes()
     lock()
     emptied()
+    no_ping_pong()
     killed_copy()
     shift_start()

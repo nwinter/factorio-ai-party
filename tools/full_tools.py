@@ -127,7 +127,7 @@ def mirror_file(src, dst, how=None):
 
 
 def sync_pair(a, b, log=None):
-    """Copy each file that is missing or older on one side from the other (by mtime); never deletes. Returns the
+    """Copy each file that is missing or older on one side from the other (by mtime, to the nanosecond); never deletes. Returns the
     copied paths, relative to the folders. A copy that replaces a non-empty file with an empty one adds a
     "team-tools-sync: EMPTIED" line to log (an agent may empty a file on purpose: logged, not blocked)."""
     copied = []
@@ -145,11 +145,13 @@ def sync_pair(a, b, log=None):
                     pass
     for rel in sorted(names):
         pa, pb = os.path.join(a, rel), os.path.join(b, rel)
-        ta = os.path.getmtime(pa) if os.path.isfile(pa) else None
-        tb = os.path.getmtime(pb) if os.path.isfile(pb) else None
-        if ta is not None and (tb is None or ta > tb + 0.5):
+        # exact: every copy keeps its source's mtime to the nanosecond (APFS), so a copied pair stays equal and any
+        # later write is newer (d27: the 0.5 s slack hid a write finishing just after a pass copied its partial state)
+        ta = os.stat(pa).st_mtime_ns if os.path.isfile(pa) else None
+        tb = os.stat(pb).st_mtime_ns if os.path.isfile(pb) else None
+        if ta is not None and (tb is None or ta > tb):
             src, dst = pa, pb
-        elif tb is not None and (ta is None or tb > ta + 0.5):
+        elif tb is not None and (ta is None or tb > ta):
             src, dst = pb, pa
         else:
             continue
