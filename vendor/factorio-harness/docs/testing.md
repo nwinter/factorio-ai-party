@@ -2,6 +2,8 @@
 
 `npm test` builds the TypeScript CLI and runs transport, protocol, bundling, and host tests. The Lua policy tests exercise bounded actions and validation against a small fake engine. Real-engine tests supplement those checks.
 
+Lua suites: tests/lua.test.ts runs every `tests/*.lua` and `mod/tests/*.lua`, sorted by path, found by pattern (d26 batch254); a new suite needs no list edit. A suite that another `tests/*.test.ts` names by its path runs there instead, once (compact.test.ts, which runs every suite against the compacted modules, does not count). Its `SKIP` map holds any file left out, each with a reason (none now).
+
 ## Real Factorio smoke test
 
 ```sh

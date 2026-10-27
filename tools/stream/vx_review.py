@@ -20,7 +20,8 @@ Five parts, each with numbers and examples with times (Pacific):
    aired again within REPEAT_S after something else);
 3. narration: the caster's cue-to-line time, the lag from a chronicle event to the line that names it, an agent's
    chat to its voiced line, the audio queue's wait to play and clips cut short or skipped, repeated lines, the hourly
-   pieces; and lines that call a platform new when the run made no such platform;
+   pieces; and lines that call a platform new when the run made no such platform; (batch255) the event-to-line lag counts
+   the lines whose own cue names the platform (an arrival, a departure, the card on screen), later mentions apart;
 4. data clarity: the site push (failures, gaps, a tick that stopped moving), the chart's surfaces without cells, the
    base-map frames, the Updates page's open rows (due for review, no owner or priority);
 5. cost: the stream service's slow game reads (its own load on the world), its errors, the caster's spend; this
@@ -386,7 +387,11 @@ def narration(caster, audio, chronicle, hourly, tours, t0, t1):
         if r.get("platform") and isinstance(r.get("t"), (int, float)):
             plat_ev.setdefault(r["platform"].lower(), []).append(r)
     made = {str(r.get("platform")).lower() for r in chronicle if r.get("kind") == "platform_created"}
-    lags, lag_ex, wrong_new = [], [], []
+    lags, lag_ex, wrong_new, mentions = [], [], [], []
+    ex_facts = {}
+    for r in lines:
+        if r.get("facts") and r.get("exchange") is not None:
+            ex_facts.setdefault(r["exchange"], r["facts"])
     for r in lines:
         if r.get("type") != "caster":
             continue
@@ -400,8 +405,16 @@ def narration(caster, audio, chronicle, hourly, tours, t0, t1):
                 if prior and (best is None or prior[-1]["t"] > best["t"]):
                     best = prior[-1]
         if best:
-            lags.append(r["t"] - best["t"])
-            if len(lag_ex) < EXAMPLES and r["t"] - best["t"] > 120:
+            # (d26 batch255) an announcement: the line's own cue is about that platform (its facts name it: an
+            # arrival, a departure, the card on screen); else a later line that mentions it (an analyst, info, board or
+            # plan cue), counted apart: shift82's "475 s median" was those (an announcement median 28 s)
+            fx = r.get("facts") or ex_facts.get(r.get("exchange")) or {}  # (an exchange's second voice logs none)
+            subject = " ".join(str(fx.get(k) or "") for k in ("arrival", "departure")).lower() + \
+                (str(fx.get("text") or "").lower() if r.get("event") in ("arrival", "departure") else "") + \
+                (str(fx.get("on_screen_now")).lower() if "depart" in str(fx.get("on_screen_now")) else "")
+            own = re.search(r"\b" + re.escape(best["platform"].lower()) + r"\b", subject)
+            (lags if own else mentions).append(r["t"] - best["t"])
+            if own and len(lag_ex) < EXAMPLES and r["t"] - best["t"] > 120:
                 lag_ex.append(f"{local(best['t'])} {best.get('line')} -> {local(r['t'])} \"{text[:90]}\"")
         cue_text = str((r.get("facts") or {}).get("text") or "")
         m = re.match(r"New space platform: (.+)", cue_text)
@@ -447,6 +460,7 @@ def narration(caster, audio, chronicle, hourly, tours, t0, t1):
     return {"lines": len(lines), "caster_lines": sum(1 for r in lines if r.get("type") == "caster"), "agent_lines": len(voiced),
             "cue_to_line_median_s": q(cue, 50), "cue_to_line_p90_s": q(cue, 90),
             "event_to_line_n": len(lags), "event_to_line_median_s": q(lags, 50), "event_to_line_p90_s": q(lags, 90), "event_to_line_examples": lag_ex,
+            "mention_n": len(mentions), "mention_median_s": q(mentions, 50),
             "chat_to_voice_median_s": q(chat_lag, 50), "chat_to_voice_p90_s": q(chat_lag, 90),
             "audio_wait_median_s": q(waits, 50), "audio_wait_p90_s": q(waits, 90),
             "audio_wait_by_channel_median_s": {k: q(v, 50) for k, v in sorted(by_ch.items())},
@@ -657,7 +671,7 @@ def findings(r):
                   "examples": n["repeated_examples"]})
     if (n["event_to_line_p90_s"] or 0) > 120:
         f.append({"area": "narration", "minutes": n["event_to_line_n"] * 0.1,
-                  "what": f"an event to the line naming it: median {n['event_to_line_median_s']} s, p90 {n['event_to_line_p90_s']} s",
+                  "what": f"an event to the line announcing it: median {n['event_to_line_median_s']} s, p90 {n['event_to_line_p90_s']} s",
                   "examples": n["event_to_line_examples"]})
     if n["clips_cut_short"]:
         f.append({"area": "narration", "minutes": n["clips_cut_short"] * 0.2, "what": f"{n['clips_cut_short']} clips cut short",
@@ -704,7 +718,7 @@ def markdown(r):
           f"- On air by whose shot (min): {dict(list(ia['on_air_min'].items())[:12])}.", "",
           "## 3. Narration", "",
           f"- {n['lines']} lines ({n['caster_lines']} caster, {n['agent_lines']} agents). Cue to line: median {n['cue_to_line_median_s']} s, p90 {n['cue_to_line_p90_s']} s.",
-          f"- An event to the caster line naming its platform ({n['event_to_line_n']} lines): median {n['event_to_line_median_s']} s, p90 {n['event_to_line_p90_s']} s.",
+          f"- An event to the caster line announcing it (its cue names the platform; {n['event_to_line_n']} lines): median {n['event_to_line_median_s']} s, p90 {n['event_to_line_p90_s']} s; later lines that mention the platform, from other cues: {n['mention_n']}, median {n['mention_median_s']} s since its last event.",
           f"- An agent's chat to its voiced line: median {n['chat_to_voice_median_s']} s, p90 {n['chat_to_voice_p90_s']} s.",
           f"- Audio queue wait to play: median {n['audio_wait_median_s']} s, p90 {n['audio_wait_p90_s']} s; by channel {n['audio_wait_by_channel_median_s']}; "
           f"{n['clips_cut_short']} cut short, {n['clips_skipped']} skipped.",
