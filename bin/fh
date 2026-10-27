@@ -19,6 +19,7 @@ if [ -n "${POG_FH_SOCKET:-}" ]; then
     node "$(dirname "$0")/../vendor/factorio-harness/dist/host/cli.js" "$@"
 fi
 world=${POG_WORLD:-live}
+host=127.0.0.1
 case $world in
   live) port=27015 ;;
   a) port=27021 ;;
@@ -26,9 +27,11 @@ case $world in
   c) port=27023 ;;
   n) port=27025 ;;
   sa) port=27030 ;;
+  imac) port=27400 host=imac.local ;;  # (d27 batch279) the private copy on the iMac, tools/imac-copy.sh: RCON over the LAN
   *) port=${POG_RCON_PORT:?set POG_RCON_PORT for world $world} ;;
 esac
+host=${POG_RCON_HOST:-$host}
 # Agent workspaces pass POG_RCON_PASSWORD_FILE (a per-run copy of this world's password, tools/new-run.sh).
-export FACTORIO_RCON_HOST=127.0.0.1 FACTORIO_RCON_PORT=$port
+export FACTORIO_RCON_HOST=$host FACTORIO_RCON_PORT=$port
 export FACTORIO_RCON_PASSWORD_FILE=${POG_RCON_PASSWORD_FILE:-$HOME/.config/pog/rcon-$world.pw}
 exec node "$(dirname "$0")/../vendor/factorio-harness/dist/host/cli.js" "$@"
