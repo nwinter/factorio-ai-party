@@ -17478,6 +17478,8 @@ M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) 
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
+-- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
+M.multiteam=require('multiteam'){state=state}
 M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
   notice=function(from,text) return M.chat.notice(from,text) end,agents=function() return M.board.agents() end,
   director=function(index) return M.is_director(index) end}
@@ -18569,7 +18571,7 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action])
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -21170,7 +21172,12 @@ function M.on_event(event)
     if M.chat then M.chat.on_console_chat(event) end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
+  elseif event.name==defines.events.on_chunk_charted then
+    -- (mt274) a team's chart showing another team's entity (multiteam.lua; nothing without teams set)
+    if state().mt then pcall(M.multiteam.on_charted,event) end
   elseif event.name==defines.events.on_entity_damaged then
+    -- (mt274) the first hit between two teams (multiteam.lua)
+    if state().mt then pcall(M.multiteam.on_damaged,event) end
     -- (AR1) an asteroid shot, or an asteroid's hit on us, on a platform an asteroid_watch watches (asteroidwatch.lua)
     if state().asteroid_watch then
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
