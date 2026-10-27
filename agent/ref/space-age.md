@@ -347,8 +347,8 @@
   into a pad there with what the pad showed after (as the drops read's pad line); with `item`, that item over
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what its requests from that planet keep, what goes
-  down there, what is left aboard). At a stop the hub keeps only what its requests from that planet ask (as
-  `requests` says). A
+  down there, what is left aboard). At a stop the hub keeps of an item what its requests from that planet
+  allow, their maxes added up (no max: all it holds; as `requests` says). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
   `shipment {platform, ready: true}`: freight readiness for the planet it stops at (else the stop it flies to): its
   gate (as `platform_gate`), the requests from there not delivered, each silo of ours there (its rocket; automatic

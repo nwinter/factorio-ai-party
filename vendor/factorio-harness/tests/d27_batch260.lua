@@ -94,4 +94,12 @@ do
   refused({surface='aquilo',network=7},'no silo of ours on aquilo in network 7')
   refused({surface='aquilo',manifest={['processing-unit']={count=5,payload=1}}},'a manifest entry is a count or {count, min_payload}')
 end
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+-- HR (Sol #2494): sends_down_rule says the maxes of every section add up and a min keeps nothing by itself (2.0.77 on a
+-- copy of world n: Limestone's two 0..60 small-lamp sections kept 100; one cleared sent 40 down to a pad asking 0)
+do
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end}
+  has(space.KEEP_RULE,'their maxes added up over every section (a request\'s min is what the hub asks rockets for and keeps nothing by itself)')
+  has(space.KEEP_RULE,'small-lamp 0..60 from nauvis in two sections, kept all 100 with the pad asking 1000; with one cleared, 40 went down to the pad asking 0')
+end
 print('d27_batch260 ok')
