@@ -786,7 +786,7 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .project-progress { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 3px; }
 
 /* the team plan (viewer Alex, 22:12): goals, one line per agent in two columns on desktop, projects with next step */
-.plan-goals { margin: 0; font-weight: 600; color: var(--fx-heading); overflow-wrap: anywhere; }
+.plan-goals { margin: 0; font-weight: 600; color: var(--heading); overflow-wrap: anywhere; border-left: 3px solid var(--accent); padding-left: 8px; }
 .plan-lines { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: 6px 14px; font-size: .9rem; }
 .plan-line { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; padding: 4px 6px;
@@ -1147,3 +1147,25 @@ body.watch.pl-tight .site-nav { flex-wrap: nowrap; overflow-x: auto; }
 .hv-title { display: block; margin-top: 4px; font-size: .9rem; line-height: 1.3; color: var(--ink); text-decoration: none; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .hv-title:hover { color: var(--accent); }
 @media (max-width: 800px) { .hv-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* batch270: the game's icons on the run's pages */
+.stat-icon .stat-value, .r-val { display: flex; align-items: center; gap: 6px; }
+.stat-value .gi, .r-val .gi { width: 1.05em; height: 1.05em; }
+.planet-ico { display: inline-flex; margin: 2px 3px 0 0; }
+.planet-ico .gi { vertical-align: middle; }
+.k-label { display: flex; align-items: center; gap: 6px; }
+.ms { display: inline-flex; align-items: center; gap: 8px; }
+.bar-label { display: inline-flex; align-items: center; gap: 6px; }
+table.long-run .moments li { list-style: none; margin-left: -1.1em; display: flex; align-items: center; gap: 5px; }
+.journey { margin: 1.2rem 0 .4rem; }
+.journey-list { list-style: none; padding: 0; margin: .4rem 0 0; display: flex; flex-wrap: wrap; gap: 6px; counter-reset: stop; }
+.journey-list li { position: relative; flex: 1 1 120px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 10px 8px; border: 1px solid var(--line); border-radius: var(--fx-r-1); background: radial-gradient(circle at 50% 38%, #2a2833 0, #121114 70%); color: #e8e6e3; min-width: 0; }
+.journey-list li .muted { color: #b9b4ab; }
+.journey-list li a { color: var(--fx-orange); }
+.journey-list li + li::before { content: ""; position: absolute; left: -7px; top: 50%; width: 8px; height: 2px; background: var(--accent); }
+.j-pic { display: grid; place-items: center; width: 88px; height: 88px; }
+.j-pic .gi { width: 88px; height: 88px; }
+.latest li { display: flex; align-items: flex-start; gap: 8px; }
+.latest li > span { display: flex; flex-direction: column; }
+@media (max-width: 600px) { .journey-list li { flex-basis: 40%; } .j-pic, .j-pic .gi { width: 64px; height: 64px; } }
+.shift-watch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: .4rem 0 .8rem; }
+ol.techs li { display: flex; align-items: center; gap: 6px; }

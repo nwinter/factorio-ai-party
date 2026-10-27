@@ -185,25 +185,7 @@ def chapter_wall(v, at):
     return None
 
 
-def first_icon(f, size=22):
-    """The game's icon for one of the run's firsts (longrun.py keys: tech:, pack:, planet:, arrive:, depart:, rockets:,
-    platform...), or ""."""
-    kind, _, name = f["key"].partition(":")
-    if kind == "tech":
-        return gameicons.tech(name, size)
-    if kind == "techs":
-        return gameicons.item("lab", size)
-    if kind == "pack":
-        return gameicons.item(name, size)
-    if kind in ("planet", "arrive", "depart"):
-        return gameicons.place(name, size)
-    if kind == "rockets":
-        return gameicons.item("rocket-part", size)
-    if kind in ("platform", "platform-lost"):
-        return gameicons.item("space-platform-hub", size)
-    if kind == "loss":
-        return gameicons.item("stone-wall", size)
-    return ""
+first_icon = gameicons.first_icon
 
 
 def watch_href(n):

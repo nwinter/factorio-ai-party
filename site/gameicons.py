@@ -68,3 +68,24 @@ def item(name, size=24, alt=""):
 
 def place(name, size=24, alt="", big=False):
     return img("place", name, size, alt, big=big)
+
+
+def first_icon(f, size=22):
+    """The game's icon for one of the run's firsts (longrun.py keys: tech:, pack:, planet:, arrive:, depart:, rockets:,
+    platform...), or ""."""
+    kind, _, name = f["key"].partition(":")
+    if kind == "tech":
+        return tech(name, size)
+    if kind == "techs":
+        return item("lab", size)
+    if kind == "pack":
+        return item(name, size)
+    if kind in ("planet", "arrive", "depart"):
+        return place(name, size)
+    if kind == "rockets":
+        return item("rocket-part", size)
+    if kind in ("platform", "platform-lost"):
+        return item("space-platform-hub", size)
+    if kind == "loss":
+        return item("stone-wall", size)
+    return ""
