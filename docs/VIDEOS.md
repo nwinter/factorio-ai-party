@@ -277,7 +277,11 @@ with a receipt is skipped; an encode with its encode.json is reused; an interrup
   recording; the rung playlist plays them back to back with a discontinuity), `captions.vtt` (on the joined video),
   `shift.json` (the index cut to the shift plus `parts`: [video s, wall t, seconds, name]; no local paths),
   `encode.json`, `receipt.json` (objects, bytes, the masters used, the duration covered, the time).
-- Watch: https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev/player/index.html?src=../RUN/full/master.m3u8&data=../RUN/full/shift.json&vtt=../RUN/full/captions.vtt
+- Watch: on the site, https://factorio.nickwinter.net/videos/shift-N/ (batch270: site/static/player.js, the same
+  lanes with the site's header, previous and next shift, captions off at first, the factory's numbers with the game's
+  icons and charts, the shift's timeline rows; `?at=EPOCH` starts at a wall time). The bucket's CORS (`r2-cors.json`)
+  lets the site's origin and 127.0.0.1:8799 (a local preview) read the files. The prototype on R2 still works:
+  https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev/player/index.html?src=../RUN/full/master.m3u8&data=../RUN/full/shift.json&vtt=../RUN/full/captions.vtt
   (the player maps the video's time to wall time through `parts`).
 
 `python3 tools/test_r2_shifts.py`: a made-up shift with two recordings, a fake runner, r2_put and HEAD (no ffmpeg,

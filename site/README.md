@@ -78,12 +78,19 @@ saves once per 10 game minutes in `runs/RUN/basemap/TICK.json` (`tools/stream/ba
 `/runs/long/timelapse.json` (about 12 KB a snapshot, loaded when the section scrolls into view), a slider with a
 mark per shift and Play. No snapshots, no section.
 
-`/videos/` (`site/videos_page.py`, batch265) lists every shift. Each row has its title, date, length, YouTube link
-(from `site/content/videos.json`, which `tools/yt_archive.py` writes) and its archive player on R2. The page starts
-with the three public videos and the run's firsts as moments to watch, each linking a minute before the moment.
-`python3 site/videos_page.py refresh` runs in `tools/site-refresh.sh` before the build. It writes
-`site/content/r2.json` with only the shifts whose R2 master playlist answers HTTP 200, and the 480x270 thumbnails in
-`site/og/thumbs/`. Both are git-ignored.
+`/videos/` (`site/videos_page.py`, batch265; redesigned in batch270) lists every shift as a card, newest day first:
+its picture with a play button and the video's length, its headline, the run's firsts in it as chips with the game's
+icons, its numbers (technologies, rockets, SPM, platforms built or lost, deaths), chapters, and Watch (this site's
+player), YouTube and the shift's page. Above them the three public videos and the run's firsts as moments to watch,
+each a minute before the moment. Every shift with a video has a player page, `/videos/shift-N/` (`static/player.js`):
+the R2 rendition with hls.js beside its lanes (on air, danger, progress, chat, voices), who is on air and speaking,
+the factory's numbers as of that second with small charts, the shift's rows of `/timeline/` (each a jump into the
+video and a link to its row) and the chat; previous and next shift and back to the list; captions off until CC (the
+hosts' lines are in the picture); a shift only on YouTube gets its embed. The homepage shows the latest four under
+the live player. Video data: `site/content/videos.json` (`tools/yt_archive.py`) and `site/content/r2.json`;
+`python3 site/videos_page.py refresh` runs in `tools/site-refresh.sh` before the build and writes `r2.json` with only
+the shifts whose R2 master playlist answers HTTP 200, and the 480x270 thumbnails in `site/og/thumbs/`. Both are
+git-ignored.
 
 ### Archive switch and run start (`site/content/site.json`)
 

@@ -789,6 +789,7 @@ UPDATES = SITE / "content" / "operator-updates.json"  # /updates/ (site/updates.
 VIDEOS = {}
 # Shifts that play on R2 (site/videos_page.py refresh writes site/content/r2.json after checking each one answers)
 R2 = {}
+VIDEO_STRIP = ""  # the homepage's way into /videos/ (site/videos_page.py home_strip)
 YT_ID = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
 
 
@@ -856,9 +857,10 @@ def video_link(n, t, lead=20):
 
 
 def r2_link(s):
-    """ · a link to the shift in the archive player on R2 (its timeline, captions and chat), or ""."""
+    """ · a link to the shift's player on this site (/videos/shift-N/: the video from R2 with its timeline, the
+    factory's numbers and the chat), or ""."""
     x = R2.get(s["id"]) if s else None
-    return (f' · <a href="{esc(x["player"])}">Archive player</a> (the shift with its timeline, captions and chat)'
+    return (f' · <a href="/videos/shift-{s["n"]}/">Watch it here</a> with its timeline, numbers and chat'
             if x else "")
 
 
@@ -1448,7 +1450,7 @@ def build_home(runs, all_worlds):
                   ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
     links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
                     for href, t, d in cards)
-    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + (run_summary(LONG) if LONG else "") + f"""
+    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1", VIDEO_STRIP) + (run_summary(LONG) if LONG else "") + f"""
 <section class="home-more" aria-labelledby="more-h">
   <h2 id="more-h">The project</h2>
   <p class="lede">AI agents playing Factorio together, by the same rules as you: no spawned items, no teleporting,
@@ -1770,7 +1772,7 @@ LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/sta
              '<script src="/static/live.js" defer></script>\n<script src="/static/polls.js" defer></script>')
 
 
-def live_app(heading, sample_href):
+def live_app(heading, sample_href, below_player=""):
     """The live show: player, chat, status strip and dashboard (static/live.js fills it from the live API). The
     homepage and /live/ both use it."""
     vid = CONFIG.get("youtube_video_id") or ""
@@ -1831,7 +1833,7 @@ def live_app(heading, sample_href):
     </div>
   </aside>
 </div>
-<section id="polls" class="polls-card fx-root fx-panel live-panel" data-mode="card" data-api="{esc(api)}" aria-label="Poll" hidden><div class="polls-list"></div></section>
+{below_player}<section id="polls" class="polls-card fx-root fx-panel live-panel" data-mode="card" data-api="{esc(api)}" aria-label="Poll" hidden><div class="polls-list"></div></section>
 <section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p>
 <p id="next-shift" class="live-next" hidden></p></section>
 <div id="offline" class="live-offline"></div>
@@ -1953,10 +1955,21 @@ def main():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
 
+    thumbs, helpers = {}, {"esc": esc, "clean": clean, "keep_line": keep_line, "pt": _pt, "hours": _hours,
+                            "shift_href": shift_href, "video_offset": video_offset, "game_time": longrun.game_time,
+                            "live_banner": live_banner}
     if LONG:
-        global VIDEOS, R2
+        global VIDEOS, R2, VIDEO_STRIP
         VIDEOS = load_videos(args.videos) if args.videos else {}
         R2 = load_r2(args.r2) if args.r2 else {}
+        for s in LONG["shifts"]:  # the shift thumbnails (site/videos_page.py refresh), for /videos/ and the homepage
+            jpg = Path(args.thumbs or "/nonexistent") / f"shift-{s['n']}.jpg"
+            if args.thumbs and not s.get("empty") and jpg.is_file():
+                (out / "static" / "thumbs").mkdir(parents=True, exist_ok=True)
+                shutil.copy(jpg, out / "static" / "thumbs" / jpg.name)
+                thumbs[s["n"]] = jpg.name
+        if VIDEOS or R2:
+            VIDEO_STRIP = videos_page.home_strip(LONG, VIDEOS, R2, thumbs, helpers)
     write("index.html", build_home(runs, all_worlds))
     if LONG:
         LONG["platform_losses"] = chron.platform_losses(LONG, args.runs_dir)  # the platform table's loss details
@@ -1976,20 +1989,6 @@ def main():
                 if card:
                     (out / "static" / "og").mkdir(parents=True, exist_ok=True)
                     shutil.copy(card, out / "static" / "og" / f"shift-{s['n']}.png")
-        if VIDEOS or R2:
-            thumbs = {}
-            for s in LONG["shifts"]:
-                jpg = Path(args.thumbs or "/nonexistent") / f"shift-{s['n']}.jpg"
-                if args.thumbs and not s.get("empty") and jpg.is_file():
-                    (out / "static" / "thumbs").mkdir(parents=True, exist_ok=True)
-                    shutil.copy(jpg, out / "static" / "thumbs" / jpg.name)
-                    thumbs[s["n"]] = jpg.name
-            helpers = {"esc": esc, "clean": clean, "keep_line": keep_line, "pt": _pt, "hours": _hours,
-                       "shift_href": shift_href, "video_offset": video_offset, "game_time": longrun.game_time,
-                       "live_banner": live_banner}
-            write("videos/index.html", page("Every shift on video", videos_page.build_page(LONG, VIDEOS, R2, thumbs, helpers),
-                                            "/videos/", "Every shift of the run on video, in order, with chapters and "
-                                            "the moments to watch.", path="/videos/"))
         team =[k for k in AGENTS if not AGENTS[k].get("earlier")]
         stats = agent_pages.collect(LONG, args.runs_dir, team, args.stats_cache, [agent(k)["name"] for k in AGENTS])
         body, head = agent_pages.build_agents(stats, agent, avatar, esc, CONFIG.get("live_api_url"))
@@ -2001,6 +2000,22 @@ def main():
         body, head = agent_pages.build_timeline(events, agent, avatar, esc, game_time)
         write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
                                           extra_head=head, path="/timeline/"))
+        if VIDEOS or R2:  # /videos/ and a player page per shift with a video (site/videos_page.py)
+            write("videos/index.html", page("Every shift on video", videos_page.build_page(LONG, VIDEOS, R2, thumbs, helpers),
+                                            "/videos/", "Every shift of the run on video, in order, with chapters and "
+                                            "the moments to watch.", path="/videos/"))
+            # the timeline's rows by shift, with their /timeline/#eN anchors, for the player's events card
+            rows = {}
+            for i, (tick, n, kind, text, who) in enumerate(events):
+                rows.setdefault(n, []).append((tick, kind, f"{agent(who)['name']} died" if who else text, i, who))
+            shelf = videos_page.Shelf(LONG, VIDEOS, R2, thumbs, helpers)
+            for n in shelf.watchable:
+                body, head = videos_page.build_watch(n, LONG, VIDEOS, R2, thumbs, helpers, rows.get(n, []), video_embed)
+                write(f"videos/shift-{n}/index.html",
+                      page(f"Shift {n} on video", body, "/videos/", f"Shift {n} of the run on video: "
+                           f"{shelf.title(n) or 'four hours of nine AI agents building one factory'}.", extra_head=head,
+                           path=f"/videos/shift-{n}/", og=(lambda c: (c, f"/static/og/shift-{n}.png") if c else None)(
+                               shift_card(shelf.by_n[n], LONG))).replace("<body>", '<body class="watch">', 1))
         # the run's chronicle: the agents' entries beside the harness's record (viewers Alex and syndesis 22:24)
         body, head = chron.build_page(chron.by_shift(LONG, args.runs_dir, clean, keep_line), agent, avatar, esc, game_time, team)
         write("chronicle/index.html", page("Chronicle", body, "/chronicle/",
