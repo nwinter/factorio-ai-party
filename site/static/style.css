@@ -1179,3 +1179,4 @@ ol.techs li { display: flex; align-items: center; gap: 6px; }
   .v-links a, .pl-meta a, .pl-pn a, .v-body h3 a, .hv-head a { min-height: 36px; display: inline-flex; align-items: center; }
   .pl-card h2 .muted { font-size: 1em; }
 }
+@media (max-width: 480px) { .stats-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
