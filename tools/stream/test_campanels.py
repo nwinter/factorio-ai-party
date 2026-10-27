@@ -57,7 +57,14 @@ def switch():
         assert cams.panel_rects(2, (2880, 1620), LAYOUT) == [RIGHT, LEFT]
     finally:
         restore(old)
-    print("1. the switch: off by default; 2 panels are cam2 and cam3 of player 1 in cam1's strips: ok")
+    root = os.path.dirname(os.path.dirname(HERE))
+    start = open(os.path.join(root, "tools", "start-team.sh")).read()
+    assert '"POG_CAM_PANELS=${POG_CAM_PANELS:-0}"' in start and \
+        '"POG_CAMS=$([ "$(python3 tools/cams.py panels)" != 0 ] && echo 1 || echo "${POG_CAMS:-3}")"' in start, \
+        "switches.env keeps the panels, and POG_CAMS=1 with them (the watchdog restarts no cam2/cam3)"
+    import shift_change
+    assert "POG_CAM_PANELS" in shift_change.KEYS and "POG_CAM_PANELS" in shift_change.ENV_FIRST
+    print("1. the switch: off by default; 2 panels are cam2 and cam3 of player 1 in cam1's strips; carried in switches.env: ok")
 
 
 SLOTS = [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 1, "panel": 1, "rect": RIGHT, "scale": 0.171},

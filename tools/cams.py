@@ -3,6 +3,7 @@
 
   python3 tools/cams.py list       # "cam1 cam2 cam3" (POG_CAMS=1: "cam1")
   python3 tools/cams.py count      # 3 (POG_CAMS=1: 1): POG_EXPECT_CAMS, the watchdog's expected client count
+  python3 tools/cams.py panels     # POG_CAM_PANELS as a count: 0 (off), 1 or 2
   python3 tools/cams.py slots      # the stream.json "cameras" list: [{"slot": "main", "player": 1}, ...]
                                    # (POG_CAM_PANELS=2: main, then cam2 and cam3 as panels of player 1)
 
@@ -92,5 +93,7 @@ if __name__ == "__main__":
         print(len(cams()))
     elif what == "slots":
         print(json.dumps(slots()))
+    elif what == "panels":
+        print(panels())
     else:
-        sys.exit("usage: tools/cams.py list|count|slots")
+        sys.exit("usage: tools/cams.py list|count|slots|panels")
