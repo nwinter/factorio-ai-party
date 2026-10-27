@@ -200,6 +200,19 @@ spider.position={x=10,y=4}; advance(61)
 assert(has((astra('status',{}).team or {}).alerts,'spidertron #7001 moves again: at (10,4) toward (90,4)'),'moves again said')
 astra('vehicle',{position={x=10,y=4},clear=true}); advance(61)
 eq(astra('status',{}).spidertrons,nil,'an empty route: no longer listed')
+-- (d26 batch247 NV1, viewer Aurora 14:13) go_to with wait: true (fh --wait sends it) is a timed action that ends
+-- arrived when its route ends at its target; a plain go_to replies at once (no until_tick, no action)
+r=astra('vehicle',{position={x=10,y=4},go_to={x=30,y=4}}); eq(r.until_tick,nil); assert(not astra('status',{}).active)
+r=astra('vehicle',{position={x=10,y=4},go_to={x=30,y=4},wait=true})
+assert(r.until_tick and r.waiting:find('until it arrives',1,true),tostring(r.waiting))
+eq(astra('status',{}).active.kind,'spider_go')
+advance(61)
+eq(astra('status',{}).active.kind,'spider_go','walking: still waiting')
+spider.position={x=29.6,y=4}; spider.autopilot_destination=nil   -- the game: there, its route done
+advance(130)
+local done=astra('status',{}).last
+eq(done.kind,'spider_go'); eq(done.outcome,'arrived'); eq(done.why,'arrived at (29.6,4) (its route ended at (30,4))'); eq(done.spidertron,'spidertron #7001')
+fails(function() astra('vehicle',{position={x=29.6,y=4},go_to={x=50,y=4},wait=true,ticks=10}) end,'ticks')
 
 -- Drive a car to a position: steer, ease off, stop; the step simulates the car.
 local function physics()
@@ -315,7 +328,7 @@ for _,td in ipairs({false,true}) do
 end
 car.prototype.tank_driving=nil
 car.position={x=127,y=20}; car.orientation=0.25; car.speed=0
--- Stuck on the way: backs up once with a fresh path, then ends blocked naming what is in front.
+-- Stuck on the way: backs up with a fresh path, (d26 batch247 NV3) twice, then ends blocked naming what is in front.
 asked={}
 r=astra('vehicle',{drive={x=140,y=20}})
 runtime.on_event{name=10,id=901,path={{position={x=100,y=20}},{position={x=140,y=20}}}}
@@ -325,11 +338,17 @@ eq(car.riding_state.acceleration,defines.riding.acceleration.reversing) -- backi
 drive_ticks(60)
 eq(#asked,2) -- a new path from where it stopped
 runtime.on_event{name=10,id=902,path={{position={x=100,y=20}},{position={x=140,y=20}}}}
+drive_ticks(95)
+eq(car.riding_state.acceleration,defines.riding.acceleration.reversing) -- stuck again: a second back-off
+eq(astra('status').active.kind,'drive','not blocked yet')
+drive_ticks(60)
+eq(#asked,3) -- another fresh path
+runtime.on_event{name=10,id=903,path={{position={x=100,y=20}},{position={x=140,y=20}}}}
 drive_ticks(100)
 last=astra('status').last
 eq(last.outcome,'blocked')
-assert(last.why:find('again after backing off once',1,true) and last.why:find('in front: nothing that collides',1,true),last.why)
-assert(last.backed_up:find('backed off and asked for a new path',1,true),last.backed_up)
+assert(last.why:find('again after backing off 2 times, from (',1,true) and last.why:find('in front: nothing that collides',1,true),last.why)
+assert(last.backed_up:find('backed off and asked for a new path; then stuck at',1,true),last.backed_up)
 -- No path for the car's turning room, nor to open ground near the target, nor for its length or width:
 -- unreachable, saying so (drivesafe: the turning room first, then near the target, then narrower).
 blocked=false; asked={}
@@ -385,16 +404,18 @@ blocked=false; area_finds={}
 drive_ticks(600)
 last=astra('status').last
 eq(last.outcome,'arrived'); eq(last.rammed,2)
--- A wall is: backed off once, then blocked.
+-- A wall is: backed off (d26 batch247 NV3: twice, each with a fresh path), then blocked.
 local wall={valid=true,name='stone-wall',type='wall',position={x=0,y=0},prototype={collision_mask={layers={player=true,object=true}}}}
 asked={}
 astra('vehicle',{drive={x=180,y=90}})
 runtime.on_event{name=10,id=901,path={{position={x=140,y=90}},{position={x=180,y=90}}}}
 blocked=true; area_finds={wall}
-drive_ticks(95)
-eq(car.riding_state.acceleration,defines.riding.acceleration.reversing)
-drive_ticks(60)
-runtime.on_event{name=10,id=902,path={{position={x=140,y=90}},{position={x=180,y=90}}}}
+for k=2,3 do
+  drive_ticks(95)
+  eq(car.riding_state.acceleration,defines.riding.acceleration.reversing)
+  drive_ticks(60)
+  runtime.on_event{name=10,id=900+k,path={{position={x=140,y=90}},{position={x=180,y=90}}}}
+end
 drive_ticks(100)
 last=astra('status').last
 eq(last.outcome,'blocked'); eq(last.rammed,nil)

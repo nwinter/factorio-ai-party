@@ -60,7 +60,7 @@ local TIMED={
   pickup={'pickup'},repair={'repair'},wait_until={'wait_until'},wait_ticks={'wait_ticks'},
   rearm={'feed','gather'},refuel={'feed','gather'},transfer={'feed','gather'},collect={'gather'},feed={'gather'},
   build={'feed'},load_silo={'feed','gather'},recover={'gather'},
-  clear_cliffs={'clear_cliffs'},use_item={'clear_cliffs'},vehicle={'drive'},
+  clear_cliffs={'clear_cliffs'},use_item={'clear_cliffs'},vehicle={'drive','spider_go'},
 }
 -- Kinds the scheduler reads apart: shoot (the combat channel) and drop (drop jobs).
 local APART={shoot=true,drop=true}

@@ -601,6 +601,8 @@ local function finish(index, outcome)
     local pb=body(M.lookup(index))
     M.spiderkite.finish(action,outcome,s.last[index],function(e,args,by) return M.spiderroute.set(e,args,by) end,pb and M.board.who(pb) or nil)
   end
+  -- (d26 batch247 NV1) a waited go_to: where it stands, its route, what it did (spiderroute.lua)
+  if action and action.kind=='spider_go' then pcall(M.spiderroute.finish,action,outcome,s.last[index]) end
   if action and action.kind=='drive' then
     local p=body(M.lookup(index))
     local last=s.last[index]
@@ -639,7 +641,12 @@ local function finish(index, outcome)
         last.stopped_short=string.format('%.1f tiles from (%g,%g): the %s\'s turning room fits no closer (our entities or obstacles around it)',
           nav.short_of,action.target.x,action.target.y,action.vehicle and action.vehicle.valid and action.vehicle.name or 'vehicle')
       end
-      if action.backed then last.backed_up=string.format('stuck at (%.1f,%.1f) (%s: %s): backed off and asked for a new path',action.backed.at.x,action.backed.at.y,action.backed.side or 'in front',action.backed.front) end
+      if action.backed then
+        -- (d26 batch247 NV3) each back-off (up to 2), where it stuck and what was there
+        local parts={}
+        for _,b in ipairs(action.backs or {action.backed}) do parts[#parts+1]=string.format('stuck at (%.1f,%.1f) (%s: %s): backed off and asked for a new path',b.at.x,b.at.y,b.side or 'in front',b.front) end
+        last.backed_up=table.concat(parts,'; then ')
+      end
       M.avoid.report(last,nav)
     end
     last.why=last.why or action.why
@@ -1379,6 +1386,7 @@ local function active(index)
     target=action.entity and action.entity.valid and {name=action.entity.name,position=action.entity.position} or nil,
     kills=action.kills,shooting=action.kind=='kite' and action.target or nil,
     spider_kite=action.kind=='spider_kite' and M.spiderkite.line(action) or nil,
+    spider_go=action.kind=='spider_go' and M.spiderroute.go_line(action) or nil,
     built=action.built,remaining=action.kind=='construct' and construction.remaining(action) or nil,
     missing=action.missing and next(action.missing) and action.missing or nil,
     awaiting_craft=action.awaiting_craft,got=action.got,
@@ -8842,7 +8850,7 @@ M.step_ranges={
   delivery_watch={{'count',1,1000000,when=function(a) return a.item~=nil end}},
   belt_route={{'avoid_enemies',0,32,whole=false}},
   where_is={{'limit',1,50}},
-  vehicle={{'ticks',1,36000,when=function(a) return a.drive~=nil end},{'avoid_enemies',0,32,whole=false,when=function(a) return a.drive~=nil end}},
+  vehicle={{'ticks',1,36000,when=function(a) return a.drive~=nil end},{'ticks',60,54000,when=function(a) return a.go_to~=nil and a.wait==true end},{'avoid_enemies',0,32,whole=false,when=function(a) return a.drive~=nil end}},
 }
 -- (QZ2) beside their own ranges: avoid_enemies as a margin in tiles (move_to, recover), refuel's from_radius
 table.insert(M.step_ranges.move_to,{'avoid_enemies',0,32,whole=false})
@@ -17238,7 +17246,7 @@ local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,
 -- The active action kind a step's handler starts, where it differs from its name (use_item: cliff explosives only;
 -- vehicle: a drive, or a drive's dry run).
 do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true,gather=true},
-  recover={gather=true},use_item={clear_cliffs=true},vehicle={drive=true},launch={wait_until=true}}
+  recover={gather=true},use_item={clear_cliffs=true},vehicle={drive=true,spider_go=true},launch={wait_until=true}}
 -- Whether a queue step of `action` waits while an active action of `kind` runs (shoot and drop are read apart: the
 -- combat channel and drop jobs).
 function M.queue_waits(action,kind)
@@ -20588,7 +20596,7 @@ function M.tick(event)
 end
 -- One running action's tick (M.tick_body).
 function M.tick_action(index,action,event)
-  local ok,p=pcall(player,index,action.kind=='drive' or action.kind=='spider_kite')
+  local ok,p=pcall(player,index,action.kind=='drive' or action.kind=='spider_kite' or action.kind=='spider_go')
   -- Read a due silo sample before testing the deadline: a part arriving on
   -- that tick can extend the idle window, but never the absolute give-up.
   local silo_ready
@@ -20620,7 +20628,7 @@ function M.tick_action(index,action,event)
   elseif event.tick>action.until_tick and action.kind=='wait_until' and action.default_timeout and M.waiteta.extend(action,action.condition,action.start_tick) then
     action.until_tick=M.waiteta.extend(action,action.condition,action.start_tick)
   elseif event.tick>action.until_tick then
-    finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='spider_kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
+    finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='spider_kite' or action.kind=='spider_go' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
   elseif action.kind=='wait_until' then
     if event.tick>=action.next_check then
       action.next_check=event.tick+FEED_CHECK
@@ -20658,7 +20666,13 @@ function M.tick_action(index,action,event)
     if outcome then finish(index,outcome) end
   elseif action.kind=='spider_kite' then
     if event.tick>=action.next_scan then
-      local outcome=M.spiderkite.tick(action,event.tick)
+      local outcome=M.timed('spiderkite.tick',M.spiderkite.tick,action,event.tick)  -- (d26 batch247) its own part in profile_ticks
+      if outcome then finish(index,outcome) end
+    end
+  elseif action.kind=='spider_go' then
+    -- (d26 batch247 NV1) a waited go_to: read after the route's samples (spiderroute.tick at tick%60==37)
+    if event.tick%60==38 then
+      local outcome=M.timed('spiderroute.watch',M.spiderroute.watch,action)
       if outcome then finish(index,outcome) end
     end
   elseif action.kind=='drive' then
@@ -21120,7 +21134,7 @@ function M.on_event(event)
   if event.name==defines.events.on_script_path_request_finished then
     -- (d24 batch191) a spidertron's path round water (spiderpath.lua): its go_to route or its spider_kite
     local okp,ours=pcall(M.timed,'spiderpath.on_path',M.spiderpath.on_path,event,function(rec,plan,spider,pts,notes)  -- (d26 batch243) its own part in profile_ticks
-      if rec.owner=='kite' then M.spiderkite.routed(state().active[rec.index],plan,spider,pts) else M.spiderroute.routed(rec,plan,spider,pts,notes) end
+      if rec.owner=='kite' then M.spiderkite.routed(state().active[rec.index],plan,spider,pts,notes) else M.spiderroute.routed(rec,plan,spider,pts,notes) end
     end)
     if okp and ours then return end
     local paths=state().paths or {}

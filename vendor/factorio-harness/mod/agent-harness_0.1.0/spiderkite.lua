@@ -10,7 +10,8 @@
 -- - units beyond the band only: it stands and waits for them; none left: back to position when given, else clear.
 -- A long leg (back to position, toward a nest) that crosses water its legs cannot gets a path round it (spiderpath.lua).
 -- A route with no progress (MOVED tiles nearer its target than it has been; a moving target: FAR tiles moved) for STALL
--- ticks is re-routed once, then sent to the shore (water ahead), then it ends stalled. Ends: low_health, low_shield,
+-- ticks with water ahead backs off along its trail and asks again for a path, up to RECOVER times (d26 batch247, as
+-- go_to's); with none ahead it is turned 60 degrees once; then it ends stalled. Ends: low_health, low_shield,
 -- out_of_ammo (rockets under ammo_below), stalled, clear, route_changed (its route set by another call or a player),
 -- out_of_coverage (by remote view: its chunk out of our force's sight), destroyed, timed_out (ticks). Off scan ticks
 -- nothing runs. Facts only.
@@ -27,10 +28,10 @@ return function(api)
       ammo_below='stop when its ammo slots hold fewer rockets (default 1)',
       retreat='optional {x,y} (or {to: {x,y}}): on low_health, low_shield or out_of_ammo its route becomes this (as go_to, its guns left on); default your standing retreat_guard\'s to; false: none',
       ticks='1..36000 (default 3600)',
-      note='its guns on auto (both targeting switches, as its GUI sets them; back as they were at the end) and its legs moved by route targets as its remote clicks them, read every 10 ticks: a unit nearer than min_distance: a route away from the group (the units within max_distance) out to the band\'s far side, off tiles its legs cannot stand on; a unit within the band: it stands; a leg back to position or toward a nest that crosses water its legs cannot (over 12 tiles of it on the straight line) goes round it by a path; a route with no progress for 2 s is re-routed once (round water, else turned 60 degrees), then sent to the shore toward its target when water is ahead (last.recovery says which), then it ends stalled; its go_to route is replaced at the start',
+      note='its guns on auto (both targeting switches, as its GUI sets them; back as they were at the end) and its legs moved by route targets as its remote clicks them, read every 10 ticks: a unit nearer than min_distance: a route away from the group (the units within max_distance) out to the band\'s far side, off tiles its legs cannot stand on; a unit within the band: it stands; a leg back to position or toward a nest that crosses water its legs cannot (over 12 tiles of it on the straight line) goes round it by a path; a route with no progress for 2 s with water ahead backs off along its trail and asks again for a path round the water (any water counting; from an islet across to land first), up to 3 times; with no water ahead it is turned 60 degrees once; then it ends stalled (last.recovery says what was tried); its go_to route is replaced at the start',
       outcomes='clear | low_health | low_shield | out_of_ammo | stalled | route_changed (another call or a player set its route) | out_of_coverage (by remote view) | destroyed | timed_out; last reports why (in words), kills, kills_by, ammo_used, ammo_left, enemies_left, turns, spidertron (where, health, shield), retreat, targeting'},
   }
-  M.SCAN, M.STALL, M.MOVED, M.FAR = 10, 120, 1, 6
+  M.SCAN, M.STALL, M.MOVED, M.FAR, M.RECOVER = 10, 120, 1, 6, 3
   local STRUCTURES = {['unit-spawner']=true, turret=true}
   local TYPES = {'unit', 'spider-unit', 'segmented-unit', 'unit-spawner', 'turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -130,9 +131,17 @@ return function(api)
     local ok, lines = pcall(P.plan, spider, {action.dest}, {owner='kite', index=action.index})
     if ok and lines then action.water = lines[1]; return lines[1] end
   end
-  function M.routed(action, plan, spider, pts)
+  function M.routed(action, plan, spider, pts, notes)
     if not (action and action.kind == 'spider_kite' and action.spider == spider and action.dest) then return end
-    if dist(plan.targets[1], action.dest) > 3 then return end
+    -- a back-off's plan was asked toward the target it backed off from (action.base): its route goes on there
+    if dist(plan.targets[1], action.dest) > 3 then
+      if not (action.base and dist(plan.targets[1], action.base) <= 3) then return end
+      action.dest = {x=action.base.x, y=action.base.y}
+    end
+    -- (d26 batch247 NV2) no path found: said with the stall (last.no_path)
+    local found = false
+    for _, seg in pairs(plan.segs or {}) do if type(seg) == 'table' then found = true end end
+    action.no_path = not found and notes and #notes > 0 and table.concat(notes, '; ') or nil
     if api.path.write(spider, pts) then return end
     action.route_pts = pts
     action.writes = action.writes + 1
@@ -286,6 +295,18 @@ return function(api)
       local new = go(spider, action, action.mode == 'backing off' and footing(spider, action, pos, goal) or goal, tick)
       if new and action.mode ~= 'backing off' then round_water(spider, action) end
     end
+    -- (d26 batch247 NV2) its trail: the last 6 spots it stood with room for a path's box (where a back-off goes)
+    do
+      local P = api.path
+      local okc, room = pcall(function() return P and P.clear and P.clear(spider.surface, pos) end)
+      local q0 = {x=math.floor(pos.x) + 0.5, y=math.floor(pos.y) + 0.5}
+      action.trail = action.trail or {}
+      local lt = action.trail[#action.trail]
+      if okc and room and not (lt and lt.x == q0.x and lt.y == q0.y) then
+        action.trail[#action.trail + 1] = q0
+        if #action.trail > 6 then table.remove(action.trail, 1) end
+      end
+    end
     -- Progress: MOVED tiles nearer its target than it has been (a turned route counts toward the target it was turned
     -- from), or, its target moved over 3 tiles (a new nearest, not a new clock), FAR tiles from where it last made
     -- progress. A body swaying on the spot never comes nearer than its nearest, so it stalls.
@@ -302,28 +323,42 @@ return function(api)
       action.best, action.since, action.check, action.from = near, tick, tick, {x=pos.x, y=pos.y}
       action.turns, action.turn_until = 0, nil
     elseif tick - action.check >= M.STALL then
-      -- (d24 batch191 addendum) no progress: re-routed once (a path round water on the line; else its route turned 60
-      -- degrees), then shore recovery (with water ahead: the tile its legs stand on nearest the target), then stalled
+      -- (d26 batch247 NV2) no progress with water ahead: as go_to's (spiderroute.lua), it backs off to the newest spot of
+      -- its trail 3 tiles or more back (else straight back from its target) and asks again for a path from there, any
+      -- water on the line counting (gap 0; island hops come with spiderpath's plan), up to RECOVER times, then stalled.
+      -- No water ahead: its route turned 60 degrees once (batch191), then stalled.
       action.turns = action.turns + 1
       local P = api.path
-      if action.turns == 1 then
-        action.base = action.dest
-        local line = action.mode ~= 'backing off' and round_water(spider, action)
-        if line then action.tried = 're-routed once (' .. line .. '; a path round it requested)'
-        else
-          go(spider, action, footing(spider, action, pos, turn(pos, action.base, 60)), tick, true)
-          action.tried = 're-routed once (its route turned 60 degrees)'
-        end
-      elseif action.turns == 2 then
-        local oks, s = pcall(function() return P and P.water_ahead(spider.surface, pos, action.base) and P.shore(spider.surface, pos, action.base) end)
-        if not oks then s = nil end
-        if s then
-          go(spider, action, s, tick, true)
-          action.tried = action.tried .. string.format('; shore recovery: to %s, the tile its legs stand on nearest %s within 24 tiles', at(s), at(action.base))
-        else action.turns = 3 end
-      end
-      if action.turns >= 3 then
-        action.why = string.format('no progress toward %s for %d s from %s; %s', at(ref), math.floor((tick - action.since) / 60), at(pos), action.tried or 'nothing tried')
+      if action.turns == 1 then action.base = action.dest end
+      local okw, wa = pcall(function() return P and P.water_ahead(spider.surface, pos, action.base) end)
+      local give_up = false
+      if okw and wa and P.back then
+        action.recs = (action.recs or 0) + 1
+        if action.recs <= M.RECOVER then
+          local back
+          for i = #(action.trail or {}), 1, -1 do
+            if dist(action.trail[i], pos) >= 3 then back = action.trail[i]; break end
+          end
+          if not back then
+            local okb, b = pcall(P.back, spider.surface, pos, action.base)
+            back = okb and b or nil
+          end
+          if back then
+            go(spider, action, back, tick, true)
+            local okp, lines = pcall(P.plan, spider, {action.base}, {owner='kite', index=action.index, from=back, gap=0})
+            local did = string.format('backed off to %s and %s (recovery %d of %d)', at(back),
+              okp and lines and 'asked again for a path round the water to ' .. at(action.base) .. ' from there' or 'went on from there', action.recs, M.RECOVER)
+            action.tried = action.tried and action.tried .. '; ' .. did or did
+          else give_up = true end
+        else give_up = true end
+      elseif not action.turned60 then
+        action.turned60 = true
+        go(spider, action, footing(spider, action, pos, turn(pos, action.base, 60)), tick, true)
+        action.tried = 're-routed once (its route turned 60 degrees)'
+      else give_up = true end
+      if give_up then
+        action.why = string.format('no progress toward %s for %d s from %s; %s%s', at(ref), math.floor((tick - action.since) / 60), at(pos), action.tried or 'nothing tried',
+          action.no_path and '; ' .. action.no_path or '')
         action.stalled_at = {x=pos.x, y=pos.y}
         halt(spider, action)
         return 'stalled'
@@ -361,7 +396,7 @@ return function(api)
     if next(action.kills_by) then last.kills_by = action.kills_by end
     last.enemies_left = action.seen
     last.turns = action.turned > 0 and action.turned or nil
-    last.recovery, last.water, last.routed = action.tried, action.water, action.routed
+    last.recovery, last.water, last.routed, last.no_path = action.tried, action.water, action.routed, action.no_path
     last.route_writes = action.writes
     local spider = action.spider
     if not (spider and spider.valid) then last.ammo_left = 0; return end

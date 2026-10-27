@@ -14504,6 +14504,35 @@ spiderroute.lua):
   collides", within 5 s); a drive's `unreachable` says what the target itself is on (a tile the vehicle cannot drive
   on, or ground it can with every way to it closed).
 
+## d26 batch247 (NV, viewer Aurora 14:13: the navigation items from batch243's review)
+
+- NV1: `vehicle {go_to, wait: true}` (`fh call vehicle --wait` with go_to sends it) runs as a timed action, kind
+  `spider_go`, read after the route's samples (every 60 ticks). It ends `arrived` (its route ended within 4 tiles of
+  its last target), `stalled` (the stall line after its recoveries), `unreachable` (stalled with no path found, or a
+  target on water with no tile its legs stand on near it), `route_changed` (another go_to or clear, or a player),
+  `retreated` (its guard), `route_emptied` (its route ended elsewhere), `destroyed` or `timed_out` (`ticks` 60..54000,
+  default 18000; the walk goes on). last: spidertron, position, target, route_line, recovery, no_path, landed, why.
+  Status `active.spider_go` says where it is. A plain go_to replies at once, as before. A queue step waits for it.
+- NV2: spider_kite's no progress (2 s) with water ahead is go_to's recovery: it backs off to the newest spot of its
+  trail 3 tiles or more back (else straight back from its target) and asks again for a path from there, any water on
+  the line counting (island hops included), up to 3 times, each in `last.recovery`; with no water ahead its route is
+  turned 60 degrees once (as before); then `stalled`. It no longer picks a shore spot.
+- NV3: a car's or tank's drive stuck on its path (neither moving nor turning for 1.5 s) backs up 1 s and asks for a
+  fresh path twice (was once), ours spared as always; the third stall is `blocked`, naming both back-offs
+  (`last.backed_up`: each, joined by "; then ").
+- NV4 (copy): what its legs step across, by raw routes (no planning) over deepwater: straight strips of 14 (3 of 3) and
+  15 (4 of 4) were crossed, 16 two times of three, 17 and 18 never; strips at 45 degrees up to 18 tiles across (25 along
+  the line) were crossed, 20 not (it slid along the edge); jagged strips (each row's edges moved up to 3 tiles) up to
+  18 tiles on the line were crossed. GAP (a straight leg's water run taken as crossable, and a hop's reach) is now 14
+  (was 12): a strip of 14 is walked straight, one of 15 gets a path round it.
+- (operator 16:44, Opus's go_to (0,850) and (400,850) on d26: mid-lake, nothing dry within 48 tiles; each walked to the
+  shore and spent 3 recoveries on "no path") a target on water is landed past 48 tiles: rings every 4 tiles to 160 (64
+  points each), then the first spot with room on the straight line back toward the spidertron; the reply's `landed`
+  says which and how far. With none, `unlanded`: no path is asked and no recovery spent; the stall line says it once.
+  Replayed on the copy: (0,850) landed at (-59.5,882.5), 68 tiles from it, arrived in 61.6 s; (400,850) landed on the
+  line at (-79.5,849.5), 480 tiles short, arrived in 26.6 s (both were unreachable after 3 recoveries before). A go_to
+  costs 6.4-10.4 ms on the copy with the far search (3.6 ms to a dry target); the far rings alone 2.5 ms.
+
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 
 At tick 59185129 delivery watch #384 (3 asteroid-collector@legendary from Kestrel IVc to Aquilo's pad) warned
