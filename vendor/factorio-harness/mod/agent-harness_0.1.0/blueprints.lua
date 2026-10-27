@@ -148,7 +148,7 @@ return function(api)
   -- on; nothing is refused for it.
   local MAX_REASON = 200
   -- (d25 batch208 QU1) list lengths a call takes, also a queue step's check (H.limits, runtime.lua step_lengths)
-  local SAVE_POSITIONS, FILTER_NAMES = 256, 32
+  local SAVE_POSITIONS, FILTER_NAMES, DECON_POSITIONS = 256, 32, 64
   local function retired_line(e)
     local r = e and e.retired
     if not r then return nil end
@@ -1092,6 +1092,52 @@ return function(api)
     end
     platform_plan(p,out,dry and would or nil)
   end
+  -- (d27 batch268 DP, Astra #2561: 620 deconstruct calls in shift86, each a 0.2-tile area round one pole) positions: the
+  -- one entity at each point, as a target names it (its centre or a tile of its footprint), through the same filters,
+  -- refusals and reply as an area; unit_number, when given, must be that entity's or nothing is done there.
+  local NOT_AT={resource=true,['item-entity']=true,['item-request-proxy']=true,['deconstructible-tile-proxy']=true,['tile-ghost']=true,character=true}
+  local function at_positions(p,a,filters)
+    local q=a.positions
+    assert(type(q)=='table' and #q>=1 and #q<=DECON_POSITIONS,'positions: 1..'..DECON_POSITIONS..' {x, y, unit_number?}')
+    local list,owner,rows,first={},{},{},{}
+    local own=api.own_platform and api.own_platform(p)
+    local function named(e) return e.unit_number and string.format('%s %d',e.name,e.unit_number) or e.name end
+    local function list_of(es) local t={} for i=1,math.min(4,#es) do t[i]=named(es[i]) end return table.concat(t,', ')..(#es>4 and ', ...' or '') end
+    for k,v in ipairs(q) do
+      local pos=api.position(v)
+      local unit=type(v)=='table' and v.unit_number or nil
+      if unit~=nil and type(unit)~='number' then error('positions['..k..'].unit_number must be a number',0) end
+      local row={x=pos.x,y=pos.y,unit_number=unit}
+      rows[k]=row
+      if not (own or p.force.is_chunk_charted(p.surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)})) then
+        row.status,row.why='refused','an uncharted chunk'
+      else
+        local here,match={},{}
+        for _,e in ipairs(p.surface.find_entities_filtered{position=pos}) do
+          local t,n=e.type,e.name
+          if not NOT_AT[t] then
+            here[#here+1]=e
+            if (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n])
+              and (unit==nil or e.unit_number==unit) then match[#match+1]=e end
+          end
+        end
+        if #match==1 then
+          local e=match[1]
+          local key=e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)
+          row.name,row.unit_number=e.name,e.unit_number
+          if first[key] then row.same_as=first[key]
+          else first[key]=k; list[#list+1]=e; owner[#list]=k end
+        elseif #match>1 then
+          row.status,row.why='refused',string.format('%d entities here the filters name (%s); unit_number picks one',#match,list_of(match))
+        else
+          row.status='missing'
+          if unit and #here>0 then row.why=string.format('unit_number %d is not here (stale)',unit) end
+          if #here>0 then row.here=list_of(here) end
+        end
+      end
+    end
+    return list,owner,rows
+  end
   local function deconstruct(p,a,cancel)
     permission(p,cancel and 'cancel_deconstruct' or 'deconstruct')
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
@@ -1112,12 +1158,15 @@ return function(api)
     for _,key in ipairs({'entity_types','entity_names'}) do
       for v in pairs(filters[key] or {}) do if v~='item-entity' and v~='item-on-ground' then others=true end end
     end
+    local at=a.positions~=nil
+    assert((a.area~=nil)~=at,'deconstruct takes area or positions (one of them)')
+    assert(not at or not (a.tiles or a.items_on_ground or ground_named),'positions take entities; tiles and items on the ground go with area')
     if ground_named and a.items_on_ground==nil and not dry then
       local b={}
       for k,v in pairs(a) do b[k]=v end
       b.items_on_ground=true; a=b
     end
-    local box=area(p,a)
+    local box=not at and area(p,a) or nil
     local out={changed=0,mode=cancel and 'cancel' or (dry and 'dry_run' or 'mark'),tiles=a.tiles~=nil and a.tiles~=false,dry_run=dry or nil}
     -- Items on the ground, as a planner marks them (robots take them to
     -- storage); other entities then only with entity filters.
@@ -1138,7 +1187,11 @@ return function(api)
       if dry then out.changed=nil end
       deconstruct_tiles(p,a,box,cancel,out,dry); return out
     end
-    local list=candidates(p,box)
+    local list,owner,rows
+    if at then list,owner,rows=at_positions(p,a,filters) else list=candidates(p,box) end
+    -- (DP) what was done to each position's entity, by its index in list: {status, why}; the first note stands
+    local st=at and {} or nil
+    local function note(i,s,why) if st and not st[i] then st[i]={s,why} end end
     -- (d17 batch35 B3, Sol: moving a melter cut a chemical plant's shared water bridge) the fluid segments marking our
     -- pipes, pipe-to-grounds, tanks and pumps here would split (fluidjoin.lua removal); a part left with machines taking
     -- the fluid and no source refuses a live call unless cut_fluid: true
@@ -1179,13 +1232,13 @@ return function(api)
     local by_support,skipped,support_marks,skipped_more={},{},{},0
     local function allowed(t,n) return (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) end
     if rr and not cancel then
-      for _,e in ipairs(list) do
+      for i,e in ipairs(list) do
         local ok,t,n,keep=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and e.force==p.force and not e.minable and e.minable_flag end)
         if ok and t and rr.SUPPORT[t] and keep and allowed(t,n) and not e.to_be_deconstructed(p.force) then
           -- (AE2) the rails held up only by it, as the game keeps them (the live reply counts what the game marks)
           local carried=rr.dependents(e,nil,true)
           if dry then
-            changed=changed+1; by[n]=(by[n] or 0)+1
+            changed=changed+1; by[n]=(by[n] or 0)+1; note(i,'would_mark',#carried..' elevated rails with it')
             for _,r in ipairs(carried) do
               if not r.to_be_deconstructed(p.force) and not by_support[r.unit_number] then by_support[r.unit_number]=true; changed=changed+1; by[r.name]=(by[r.name] or 0)+1 end
             end
@@ -1194,9 +1247,9 @@ return function(api)
             if got then
               for nm,c in pairs(got) do changed=changed+c; by[nm]=(by[nm] or 0)+c end
               for u in pairs(units) do by_support[u]=true end
-              carried={n=nrails}
+              carried={n=nrails}; note(i,'marked',nrails..' elevated rails with it')
             else
-              skipped[#skipped+1]=string.format('%s (%g,%g): %s',n,e.position.x,e.position.y,err)
+              skipped[#skipped+1]=string.format('%s (%g,%g): %s',n,e.position.x,e.position.y,err); note(i,'refused',err)
             end
           end
           by_support[e.unit_number]=true
@@ -1206,14 +1259,15 @@ return function(api)
         end
       end
     end
-    for _, e in ipairs(list) do
+    for i, e in ipairs(list) do
       -- (AE1) a cancel takes the marks off elevated rails and supports the game reads not minable too
       local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character'
         and (e.minable or (cancel and rr and (rr.RAIL[e.type] or rr.SUPPORT[e.type]) and e.minable_flag)) end)
       local unit=ok and t and e.valid and e.unit_number
       if unit and by_support[unit] then
         -- marked (or counted, in a dry run) with its rail support above
-      elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) and #skipped>=12 then
+        note(i,dry and 'would_mark' or 'marked','with the rail support holding it up')
+      elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) and #skipped>=12 and not st then
         skipped_more=skipped_more+1  -- (AE1) counted; the reason read for the 12 listed only (railrun.why reads the track round it)
       elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) then
         -- (AE1) found in the area, not marked: why
@@ -1222,40 +1276,63 @@ return function(api)
         elseif t=='character' then why='a character'
         else why=rr and rr.why(e) or 'the game reads it not minable' end
         local okp,x,y=pcall(function() return e.position.x,e.position.y end)
-        skipped[#skipped+1]=string.format('%s%s%s: %s',n,unit and (' '..unit) or '',okp and string.format(' (%g,%g)',x,y) or '',why)
+        if #skipped<12 then skipped[#skipped+1]=string.format('%s%s%s: %s',n,unit and (' '..unit) or '',okp and string.format(' (%g,%g)',x,y) or '',why)
+        else skipped_more=skipped_more+1 end
+        note(i,'refused',why)
       end
       if unit and by_support[unit] then
       elseif ok and t and FLYING[t] then
         if mine and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then flying=flying+1 end
-      elseif not (ok and t) then gone=gone+1
+        note(i,'refused','a robot in flight (the game does not mark robots in flight)')
+      elseif not (ok and t) then gone=gone+1; note(i,'missing','gone before it was reached (removed with a ghost before it)')
       -- Items on the ground go with items_on_ground only (Sol, d15: a cancel on Starling said 146 while 12 entities had
       -- been marked; the rest were most likely items on the ground the platform had marked for pickup).
       elseif mine and t~='item-entity' and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then
         if cancel then
-          if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1; by[n]=(by[n] or 0)+1
-            if rr and rr.SUPPORT[t] then support_marks[#support_marks+1]=e end end
+          if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1; by[n]=(by[n] or 0)+1; note(i,'cancelled')
+            if rr and rr.SUPPORT[t] then support_marks[#support_marks+1]=e end
+          else note(i,'not_marked') end
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
           if not e.to_be_deconstructed(p.force) then
-            changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end
+            changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end; note(i,'would_mark')
             -- (d17 batch34 B3) the robots' trips for it
             if t~='entity-ghost' and t~='tile-ghost' and api.deconstruct_job and #jobs<4096 then local j=api.deconstruct_job(e); if j then jobs[#jobs+1]=j end end
-          end
-        elseif t~='entity-ghost' and t~='tile-ghost' and (pcall(e.to_be_deconstructed,p.force)) and e.to_be_deconstructed(p.force) then already=already+1
+          else note(i,'already_marked') end
+        elseif t~='entity-ghost' and t~='tile-ghost' and (pcall(e.to_be_deconstructed,p.force)) and e.to_be_deconstructed(p.force) then already=already+1; note(i,'already_marked')
         else
           local ghost_name=(t=='entity-ghost' or t=='tile-ghost') and (select(2,pcall(function() return e.ghost_name end)) or n) or nil
           local okd,done=pcall(e.order_deconstruction,p.force,real(p))
           if okd and done then
             changed=changed+1; by[ghost_name and ('ghost of '..ghost_name) or n]=(by[ghost_name and ('ghost of '..ghost_name) or n] or 0)+1
+            note(i,'marked',ghost_name and 'a ghost: removed at once' or nil)
             if ghost_name then removed=removed+1; ghost_names[ghost_name]=(ghost_names[ghost_name] or 0)+1
             elseif HEAT_PART[t] and e.valid then heat_parts[#heat_parts+1]=e end
             -- (B3) what it frees, for the contested ghosts (one job an item is enough)
             if not ghost_name and e.valid and api.deconstruct_job and api.contested and #jobs<64 then local j=api.deconstruct_job(e); if j then jobs[#jobs+1]=j end end
-          elseif not e.valid then gone=gone+1 end
+          elseif not e.valid then gone=gone+1; note(i,'missing','gone before it was reached (removed with a ghost before it)')
+          else note(i,'refused','the game did not mark it') end
         end
       end
     end
     out.changed=changed
+    if st then
+      -- (DP) one row a position, in the order given; a position whose entity another one names has that one's status
+      local count={}
+      for i,k in ipairs(owner) do
+        local s=st[i] or {cancel and 'not_marked' or 'refused',not cancel and 'not marked' or nil}
+        rows[k].status,rows[k].why=s[1],s[2]
+      end
+      for _,r in ipairs(rows) do
+        if r.same_as then r.status=rows[r.same_as].status end
+        count[r.status]=(count[r.status] or 0)+1
+      end
+      local parts={}
+      for _,s in ipairs({'marked','would_mark','cancelled','already_marked','not_marked','missing','refused'}) do
+        if count[s] then parts[#parts+1]=count[s]..' '..s end
+      end
+      out.positions=rows; out.by_status=table.concat(parts,', ')
+    end
     if cancel and #support_marks>0 then
       -- (AE1) the game's cancel takes only what is in the area: rails a cancelled support carries may stay marked
       local left=0
@@ -1862,6 +1939,6 @@ return function(api)
   end
   -- (d25 batch208 QU1) the lengths above, for a queue step's check (runtime.lua step_lengths); not an action
   H.limits={NAME=MAX_NAME,DESCRIPTION=MAX_DESCRIPTION,STRING=MAX_STRING,REASON=MAX_REASON,NOTE=MAX_NOTE,
-    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,entry_name=entry_name,LIBRARY=MAX_LIBRARY}
+    SAVE_POSITIONS=SAVE_POSITIONS,FILTER_NAMES=FILTER_NAMES,DECON_POSITIONS=DECON_POSITIONS,entry_name=entry_name,LIBRARY=MAX_LIBRARY}
   return H
 end

@@ -128,7 +128,7 @@
   `ghosts` (the first 64: name, position, owner, placed), and `left` with why (`left_others` by agent, `left_unknown`:
   no record and no last user, `left_uncharted`, `left_over_cap`).
   Example: `./fh call remove_ghosts --args '{"surface":"vulcanus","area":[[100,20],[140,60]],"dry_run":true}'`
-- `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
+- `deconstruct {area | positions, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut
   off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at
@@ -136,7 +136,14 @@
   how many at once, from which roboports, the longest and mean trip, trips over 200 tiles, and legs passing within
   reach of a worm or spawner the map shows. `contested` (dry run and live): an item the marked entities free that more
   of our ghosts in that network want than it holds (16 or fewer), each ghost with its claim and distance.
+  `positions` (1..64 `{x, y, unit_number?}`, instead of `area`): the one entity at each point (its centre or a tile
+  of its footprint) the filters name, with the same refusals and reply; no tiles or items on the ground. `positions`
+  in the reply: one row each, in order, with `status` marked, `would_mark` (dry run), `cancelled` / `not_marked`
+  (cancel), `already_marked`, `missing` (`here`: what stands there) or `refused` (`why`). A `unit_number` that is not
+  the entity's there leaves it alone (missing, stale). Two entities the filters name at one point: refused. A point
+  whose entity an earlier one names: `same_as`. `by_status` counts them.
   Example: `./fh call deconstruct --args '{"area":{"left_top":{"x":180,"y":50},"right_bottom":{"x":200,"y":70}},"tiles":["landfill"]}'`
+  Example: `./fh call deconstruct --args '{"surface":"nauvis","positions":[{"x":58.5,"y":111.5,"unit_number":4767244}],"entity_names":["medium-electric-pole"]}'`
 - `upgrade {area | position, to, from?, quality?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
   planner; a ghost changes in place (wires and settings kept), a built one is marked for robots (their replacement
   keeps recipe, modules and circuit settings). `quality` is the target quality (unlocked ones); with it `to` may be
