@@ -321,6 +321,10 @@ def main():
                      'id="hl-q"', 'value="confession" checked', "Confessions (2)", "Spoken on stream (2)", 'href="/chat/"'):
             assert want in chat, want
         assert "SECRET" not in chat and "example.com" not in chat and "Nick asked for the wall first" in chat
+        # (batch270) the newest shift's lines open, the others folded; a search or a link to a line opens them
+        assert chat.count('<details class="hl-fold" open>') == 1
+        assert chat.count('<details class="hl-fold">') == chat.count('class="hl-shift"') - 1
+        assert "target.closest('details').open = true" in chat
         # the highlights (site/content/moments.json, the agent-minds study) above the lines
         n_moments = len(json.loads((SITE / "content" / "moments.json").read_text()))
         assert f'id="highlights"><h2>Highlights<span class="h-sub">{n_moments} moments</span>' in chat

@@ -170,7 +170,10 @@ def main():
         page = (out / "blueprints" / "index.html").read_text()
         names = re.findall(r'<li class="bp-entry" id="([^"]+)"', page)
         assert names == ["astra.tern-inner-freighter.v1", "Sol-defense-island"], names  # newest saved first; a bad name left out
-        assert "34x29 tiles" in page and "214: transport-belt x99, fast-inserter x33" not in page and "214: transport-belt x99 fast-inserter x33" in page, page
+        assert "34x29 tiles" in page and '<span class="bp-n">214</span>' in page, page
+        # the entities as the game's icons with their counts (batch270), the name on hover
+        assert '<span class="bp-ent" title="transport belt"><img class="gi" src="/static/game/item/transport-belt.webp"' in page
+        assert '<span>×99</span>' in page and '<span>×33</span>' in page
         assert "Saved on</dt><dd>platform 3" in page and "2, last 1h02m ago (by sol)" in page and "0, never placed" in page, page
         assert "Four guns &amp; four lasers &lt;central requester&gt;" in page, page
         assert '<textarea id="bp-1" readonly' in page and "0eNqVk91ugzAMhd" in page and 'data-for="bp-1"' in page, page

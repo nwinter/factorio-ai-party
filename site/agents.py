@@ -187,6 +187,11 @@ def records(data):
 
 
 STYLE = """<style>
+.by-shift > summary { cursor: pointer; list-style: none; }
+.by-shift > summary::-webkit-details-marker { display: none; }
+.by-shift > summary h3 { display: inline; }
+.by-shift > summary::after { content: " (show)"; color: var(--accent); font-size: .9rem; }
+.by-shift[open] > summary::after { content: " (hide)"; }
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 16px; }
 .agent-card { padding: 14px 16px; border-top: 4px solid var(--ac); }
 .agent-card .voice { margin: .15rem 0 0; color: var(--muted); font-size: .82rem; }
@@ -478,8 +483,9 @@ def hauling_table(data, agent, avatar, esc):
     else:
         note = f"Queue and standing order steps counted in shift{'s' if len(game) > 1 else ''} " \
                f"{', '.join(str(n) for n in game)}; other shifts count direct moves only."
-    by_shift = (f'<h3 id="hauling-shifts">Items by shift</h3><div class="table-wrap"><table class="compare hauling-shifts">'
-                f'<thead><tr>{shead}</tr></thead><tbody>{"".join(sbody)}</tbody></table></div>')
+    by_shift = (f'<details class="by-shift"><summary><h3 id="hauling-shifts">Items by shift</h3></summary>'
+                f'<div class="table-wrap"><table class="compare hauling-shifts">'
+                f'<thead><tr>{shead}</tr></thead><tbody>{"".join(sbody)}</tbody></table></div></details>')
     return f'<p class="small muted">{esc(note)}</p>{run}{by_shift}'
 
 
@@ -516,9 +522,10 @@ def machines_section(data, agent, avatar, esc):
         f'<td data-v="{m.get("machines") or 0}">{fmt(m.get("machines"))}</td>'
         f'<td data-v="{m.get("machines_working") or 0}">{fmt(m.get("machines_working"))}</td></tr>'
         for n, m in team)
-    by_shift = (f'<h3 id="machines-shifts">Team by shift</h3><div class="table-wrap"><table class="compare machines-shifts">'
+    by_shift = (f'<details class="by-shift"><summary><h3 id="machines-shifts">Team by shift ({len(team)} shifts)</h3></summary>'
+                f'<div class="table-wrap"><table class="compare machines-shifts">'
                 f'<thead><tr><th scope="col">Shift</th><th scope="col">Items made</th><th scope="col">Moved by machines</th>'
-                f'<th scope="col">Machines</th><th scope="col">Working</th></tr></thead><tbody>{trows}</tbody></table></div>'
+                f'<th scope="col">Machines</th><th scope="col">Working</th></tr></thead><tbody>{trows}</tbody></table></div></details>'
                 ) if trows else ""
     return f'<h2 id="machines">Machines built</h2>{run}{by_shift}'
 
@@ -586,16 +593,21 @@ def build_agents(data, agent, avatar, esc, api=None):
                     f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(agent(k)["name"])}</a>'
                     f'{f" <span class=r-shift>shift {n}</span>" if n else " <span class=r-shift>still alive</span>"}</li>')
     cards = "".join(card(k, data["totals"][k], data, agent, avatar, esc) for k in order)
+    machines, tokens = machines_section(data, agent, avatar, esc), tokens_section(data, agent, avatar, esc)
     body = (f'<h1>Agents</h1><p class="lede">{esc(span)} of the long run. Counted from each agent\'s game requests, '
             f'the director\'s death log and the stream\'s voice log.</p>'
+            # (batch270) the cards with the portraits first after the records; the long tables after them
+            f'<nav class="jump" aria-label="On this page"><a href="#records">Records</a><a href="#cards">The team</a>'
+            f'<a href="#compare">Comparison</a><a href="#makers">By maker</a><a href="#hauling">Hand hauling</a>'
+            f'{"<a href=#machines>Machines built</a>" if machines else ""}{"<a href=#tokens>Tokens</a>" if tokens else ""}'
+            f'<a href="#notes">Definitions</a></nav>'
             f'<h2 id="records">Records</h2><ul class="records">{"".join(recs)}</ul>'
+            # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
+            f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
             f'<h2 id="compare">Comparison</h2>{compare_table(data, agent, avatar, esc)}'
             f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
             f'<h2 id="hauling">Hand hauling</h2>{hauling_table(data, agent, avatar, esc)}'
-            f'{machines_section(data, agent, avatar, esc)}'
-            f'{tokens_section(data, agent, avatar, esc)}'
-            # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
-            f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
+            f'{machines}{tokens}'
             f'<h2 id="notes">Definitions</h2><dl class="kv defs">'
             + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in DEFS) + "</dl>" + SORT_JS)
     return body, STYLE

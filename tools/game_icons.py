@@ -8,14 +8,13 @@ DIR is a Factorio 2.0 `data` folder with base, space-age and quality (prototypes
 D:\\pog\\factorio-2.0.77-expansion\\data, copied to the Mac with scp). Writes, for what the site shows:
 - tech/NAME.webp: every technology (its 256 px picture at 64 px); a page looks up a leveled name without its level
   when the level has no prototype of its own (`low-density-structure-productivity` 10);
-- item/NAME.webp: every item and fluid the run's score logs name (produced, consumed, entities, packs), every science
-  pack, and the items and entities in ITEMS below (64 px, the icon's first mipmap);
+- item/NAME.webp: every item and fluid (a blueprint can hold any building), the entities the run's score logs name
+  and those in ITEMS below (64 px, the icon's first mipmap);
 - place/NAME.webp: the planets and space locations (64 px), and place/NAME-big.webp: a planet's starmap picture at
   160 px (listed as NAME-big);
 - index.json: {"tech": [...], "item": [...], "place": [...]}, which the build and the pages read (a name without an
   icon is shown as text).
-Only those: a name the runs do not use gets no file. Rerun after the run reaches something new; the site falls back to
-text until then. The credit is in the site footer, on /about/ and in OUT/README.md.
+Recipes, achievements, tiles and the like get no file. A name without one is shown as text. The credit is in the site footer, on /about/ and in OUT/README.md.
 """
 import argparse
 import io
@@ -138,7 +137,8 @@ def main(argv=None):
     items = {}
     for typ in ITEM_TYPES:
         items.update({n: g for n, g in protos.get(typ, {}).items() if n not in items})
-    wanted = run_names(a.runs_dir) | set(ITEMS) | {n for n in items if n.endswith("-science-pack")}
+    # every item and fluid: the blueprint library can hold any building, the live page names any item
+    wanted = run_names(a.runs_dir) | set(ITEMS) | set(items)
     written = {"tech": [], "item": [], "place": []}
     total = 0
     for kind in written:

@@ -41,6 +41,7 @@ def main():
     assert gi.key("tech", "low-density-structure-productivity-10") == "low-density-structure-productivity"
     assert gi.key("tech", "mining-productivity-12") == "mining-productivity-4"
     assert gi.key("tech", "no-such-tech") is None and gi.key("item", "") is None
+    assert gi.key("item", "straight-rail") == "rail" and gi.key("item", "turbo-transport-belt") == "turbo-transport-belt"
     assert gi.img("item", "no-such-item") == ""
     i = gi.item("iron-plate", 20)
     assert 'src="/static/game/item/iron-plate.webp"' in i and 'width="20"' in i and 'alt=""' in i

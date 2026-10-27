@@ -2138,7 +2138,11 @@ def main():
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
     how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve
-    write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
+    lost = [("/", "The live show"), ("/runs/long/", "The run so far"), ("/videos/", "Every shift on video"),
+            ("/search/", "Search"), ("/about/", "About the project")]
+    have = {h for h, _ in nav_items()} | {"/"}
+    write("404.html", page("Not found", '<h1>Not found</h1><p class="lede">That page doesn\'t exist, or it moved.</p><ul class="lost">'
+                           + "".join(f'<li><a href="{h}">{esc(t)}</a></li>' for h, t in lost if h in have) + "</ul>", None))
     for f in (SITE / "static").iterdir():
         if not f.is_file() or f.name.startswith("."):
             continue  # only the site's own files (not editor or tool folders)

@@ -42,6 +42,11 @@ does not spoil (the agricultural pack's count runs ahead of the others). Score l
 the owner's accounts or personal tools are left out (`keep_line` in `build.py`); the owner's name may appear (Nick
 d27 10:10: the site neither adds it nor strips it).
 
+The nav (batch270, `nav_html` in `build.py`): the pages people come back for, then "More" (Polls, Updates, How it was
+made, GitHub; `NAV_MORE`). On a phone a Menu button shows the whole list (with no script every link shows). While a
+poll is open, Polls gets an "open" chip and More and Menu a dot (`site.js`: `polls.js` reports it on the homepage and
+/polls/, other pages ask the live API's `/v1/polls` at most once in 10 minutes per tab).
+
 The game's icons and pictures (Nick d27 10:10: Wube allows free, non-commercial use with the credit "Graphics
 copyright Wube Software", which is in every page's footer and on /about/) are in `site/static/game/`:
 `tech/`, `item/` and `place/` WebP files at 64 px (a planet's starmap picture at 160 px as `NAME-big`) and
