@@ -283,7 +283,8 @@ many lines of the same kind passed as fine.
     - asking for a text read out word for word.
   - spam, abuse and personal are unchanged.
 - Token budget: each Clef question carries the criteria, and Clef takes at most 24576 input tokens a call.
-  - `Clef.classify` now splits a batch into calls whose estimate fits 20000 tokens (at most 48 questions each).
+  - A batch joined into one call (`per_call`, replays with `--batch`) is split into calls whose estimate fits 20000
+    tokens (at most 48 questions each).
   - Before, lines past the 48th of a batch were answered "unknown" and passed unchecked.
   - Cost: 414 input tokens a question under the old criteria, 507 under these (Clef's own count). Asked one at a
     time that is 1.57 and 1.93 cents per 1,000 lines at $0.038 per million tokens; batches cost less.
@@ -300,5 +301,13 @@ many lines of the same kind passed as fine.
   CLEF_CRITERIA (by hash) and that every line got the label wanted. Caleb's circuit logic and game requests are fine;
   the LimeLight repo lines, the tool-schema request, the C function and the server-address line are injection. After a
   change to CLEF_CRITERIA, run `clef_replay.py --record` and read what moved.
-- Replays vary. Under the old criteria, replayed now, Clef freed 66 of the 147 lines it held as injection live (212
-  lines: held, and 20 that passed). Compare a new prompt with the old one replayed now, not only with the log.
+- Clef's verdict on a line depends on the lines asked with it. 400 lines under the same criteria, asked 1, 4, 8 and 16
+  a call: 2, 12, 12 and 17 held as injection. 40 lines that a 37-line batch held were all fine asked alone.
+  - Live, a poll's lines went in one call (the whole backlog after a restart). Of 5911 lines the log has 147 held as
+    injection; main's criteria asked one line a call hold 49.
+  - `Clef.classify` now asks one line a call (`LINES_PER_CALL`), up to 6 calls at once. A line's routing question
+    goes in its call. Tokens are about the same: the state text, about 70 tokens, repeats.
+  - Replays ask one line a call by default too (`--batch`). Compare a new prompt with the old one replayed now, not
+    only with the log.
+- Totals, one line a call, 5911 lines: injection 147 in the log, 49 under main's criteria, 26 under these; spam 27,
+  18, 10; abuse 16, 11, 10; personal 2, 2, 1.

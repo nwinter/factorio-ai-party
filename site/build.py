@@ -57,6 +57,7 @@ import blueprints as bp_pages  # noqa: E402  (site/blueprints.py: /blueprints/, 
 import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, from site/content/how/)
 import updates as op_updates  # noqa: E402  (site/updates.py: /updates/, the operator's changes and their status)
 import legal  # noqa: E402  (site/legal.py: /privacy/ and /terms/, d23, for the YouTube uploader's OAuth verification)
+import videos_page  # noqa: E402  (site/videos_page.py: /videos/, every shift's video on YouTube and R2; batch265)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -525,7 +526,7 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies")] + updates_nav() + \
             [("/about/", "About")]
-    return [("/", "Live"), ("/polls/", "Polls")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
+    return [("/", "Live"), ("/polls/", "Polls")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
                               if LONG else []) + updates_nav() + [("/how/", "How it was made"), ("/about/", "About"),
                                                   (GITHUB_URL, "GitHub")]
@@ -785,6 +786,8 @@ UPDATES = SITE / "content" / "operator-updates.json"  # /updates/ (site/updates.
 # Shift videos uploaded to YouTube (tools/yt_upload.py writes site/content/videos.json): {run id: {id, shift, title,
 # description, chapters, playlist}}. A shift with a video gets an embed on /runs/long/ and its own page.
 VIDEOS = {}
+# Shifts that play on R2 (site/videos_page.py refresh writes site/content/r2.json after checking each one answers)
+R2 = {}
 YT_ID = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
 
 
@@ -794,6 +797,16 @@ def load_videos(path):
     except (OSError, ValueError):
         return {}
     return {rid: v for rid, v in raw.items() if isinstance(v, dict) and YT_ID.match(str(v.get("id", "")))}
+
+
+def load_r2(path):
+    """{run id: {shift, player, master, duration_s, checked}} for the shifts that play on R2 (only r2.dev URLs)."""
+    try:
+        raw = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    return {rid: x for rid, x in raw.items() if isinstance(x, dict)
+            and str(x.get("player", "")).startswith(videos_page.PUBLIC + "/player/")}
 
 
 def shift_video(s):
@@ -839,6 +852,13 @@ def video_link(n, t, lead=20):
         return ""
     return (f' <a class="vlink" href="https://www.youtube.com/watch?v={esc(v["id"])}&amp;t={max(0, int(off) - lead)}s" '
             f'title="Watch this moment" aria-label="Watch this moment">▶</a>')
+
+
+def r2_link(s):
+    """ · a link to the shift in the archive player on R2 (its timeline, captions and chat), or ""."""
+    x = R2.get(s["id"]) if s else None
+    return (f' · <a href="{esc(x["player"])}">Archive player</a> (the shift with its timeline, captions and chat)'
+            if x else "")
 
 
 def video_embed(v, start=0):
@@ -1072,12 +1092,14 @@ def build_shift_page(s, v, lr):
     if v:
         watch = f"https://www.youtube.com/watch?v={esc(v['id'])}"
         chapters = "".join(f'<li><a href="{watch}&amp;t={int(c["at"])}s">{esc(c["time"])}</a> {esc(clean(c["title"]))}</li>'
-                           for c in v.get("chapters") or [])
+                           for c in v.get("chapters") or [] if keep_line(c.get("title", "")))
         playlist = (f' · <a href="https://www.youtube.com/playlist?list={esc(v["playlist"])}">every shift</a>'
                     if v.get("playlist") else "")
-        video = (f'{video_embed(v)}<p class="muted small"><a href="{watch}">Watch on YouTube</a>{playlist}</p>'
+        video = (f'{video_embed(v)}<p class="muted small"><a href="{watch}">Watch on YouTube</a>{playlist}{r2_link(s)}</p>'
                  f'<div class="shift-text">{description_html(v.get("description", ""))}</div>'
                  + (f'<h2>Chapters</h2><ol class="chapters">{chapters}</ol>' if chapters else ""))
+    elif r2_link(s):
+        video = f'<p class="muted small">{r2_link(s)[3:]}</p>'
     mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
     lo, hi = s["tick0"] / 3600, s["tick1"] / 3600
     who = lambda w: agent(w.lower())["name"] if w.lower() in AGENTS else w  # noqa: E731  (the log's spelling varies)
@@ -1225,7 +1247,7 @@ def run_summary(lr):
   <div class="sum-cols">
     <div>{key_times(lr, '<h3>Key times</h3>')}</div>
     <div><h3>Latest milestones</h3><ul class="latest">{items}</ul>
-      <p><a class="fx-btn" href="/runs/long/">The whole run →</a> <a class="fx-btn ghost" href="{shift_href(last)}">Shift {last["n"]} →</a></p></div>
+      <p><a class="fx-btn" href="/runs/long/">The whole run →</a> <a class="fx-btn ghost" href="{shift_href(last)}">Shift {last["n"]} →</a>{' <a class="fx-btn ghost" href="/videos/">Every shift on video →</a>' if VIDEOS or R2 else ""}</p></div>
   </div>
 </section>"""
 
@@ -1306,10 +1328,14 @@ def build_long_run(lr):
             f'<td data-l="Milestones">{f"<ul class=moments>{ms}{more}</ul>" if ms or more else ""}</td></tr>')
     crumbs = '<p class="crumbs"><a href="/runs/">Runs</a> / The long run</p>' if archive() else ""
     vids = [(s, shift_video(s)) for s in shifts if shift_video(s)]
+    if len(vids) > 3:  # every shift's embed is too many for one page: the public ones, and /videos/ for the rest
+        pub = videos_page.public_shifts(VIDEOS)
+        vids = [(s, v) for s, v in vids if s["n"] in pub]
     videos = "".join(
         f'<article class="shift-video"><h3><a href="{shift_href(s)}">Shift {s["n"]}</a></h3>{video_embed(v)}'
         f'<p class="muted small">{esc(clean(v.get("title", "")))}</p></article>' for s, v in vids)
-    videos = f'<h2 id="videos">Shift videos</h2><div class="shift-videos">{videos}</div>' if vids else ""
+    videos = (f'<h2 id="videos">Shift videos</h2><p><a class="fx-btn" href="/videos/">Every shift on video →</a></p>'
+              f'<div class="shift-videos">{videos}</div>') if vids else ""
     body = f"""
 {crumbs}
 {live_banner()}
@@ -1875,8 +1901,13 @@ def main():
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
-    ap.add_argument("--videos", default=str(SITE / "content" / "videos.json"),
-                    help="the shifts' YouTube videos (tools/yt_upload.py writes it; missing: no videos)")
+    # (batch265) the video data only when named (tools/site-refresh.sh names site/content/videos.json, r2.json and
+    # site/og/thumbs): a test's build never picks up the files the live checkout has
+    ap.add_argument("--videos", help="the shifts' YouTube videos (site/content/videos.json: tools/yt_archive.py; "
+                    "none: no videos)")
+    ap.add_argument("--r2",
+                    help="the shifts that play on R2 (site/content/r2.json: site/videos_page.py refresh; none: none)")
+    ap.add_argument("--thumbs", help="the shifts' thumbnails, shift-N.jpg (site/og/thumbs: site/videos_page.py refresh)")
     ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
     args = ap.parse_args()
     # (d24 batch186) a test run (POG_TEST=1) builds from its own runs folder: the gate runs the tests in the live
@@ -1908,10 +1939,12 @@ def main():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
 
+    if LONG:
+        global VIDEOS, R2
+        VIDEOS = load_videos(args.videos) if args.videos else {}
+        R2 = load_r2(args.r2) if args.r2 else {}
     write("index.html", build_home(runs, all_worlds))
     if LONG:
-        global VIDEOS
-        VIDEOS = load_videos(args.videos)
         LONG["platform_losses"] = chron.platform_losses(LONG, args.runs_dir)  # the platform table's loss details
         LONG["chronicle_shifts"] = {c["n"] for c in chron.by_shift(LONG, args.runs_dir, clean, keep_line)}  # shift pages link it
         lapse = timelapse.frames(LONG, args.runs_dir, game_time)  # site/timelapse.py: the base over time
@@ -1929,6 +1962,20 @@ def main():
                 if card:
                     (out / "static" / "og").mkdir(parents=True, exist_ok=True)
                     shutil.copy(card, out / "static" / "og" / f"shift-{s['n']}.png")
+        if VIDEOS or R2:
+            thumbs = {}
+            for s in LONG["shifts"]:
+                jpg = Path(args.thumbs or "/nonexistent") / f"shift-{s['n']}.jpg"
+                if args.thumbs and not s.get("empty") and jpg.is_file():
+                    (out / "static" / "thumbs").mkdir(parents=True, exist_ok=True)
+                    shutil.copy(jpg, out / "static" / "thumbs" / jpg.name)
+                    thumbs[s["n"]] = jpg.name
+            helpers = {"esc": esc, "clean": clean, "keep_line": keep_line, "pt": _pt, "hours": _hours,
+                       "shift_href": shift_href, "video_offset": video_offset, "game_time": longrun.game_time,
+                       "live_banner": live_banner}
+            write("videos/index.html", page("Every shift on video", videos_page.build_page(LONG, VIDEOS, R2, thumbs, helpers),
+                                            "/videos/", "Every shift of the run on video, in order, with chapters and "
+                                            "the moments to watch.", path="/videos/"))
         team =[k for k in AGENTS if not AGENTS[k].get("earlier")]
         stats = agent_pages.collect(LONG, args.runs_dir, team, args.stats_cache, [agent(k)["name"] for k in AGENTS])
         body, head = agent_pages.build_agents(stats, agent, avatar, esc, CONFIG.get("live_api_url"))
