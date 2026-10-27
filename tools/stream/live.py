@@ -487,6 +487,8 @@ class LiveSource:
                 a["repeats"] = self.work.repeats.current(a["name"], now)
                 # (d26 batch222 CD) its vehicle by remote view, from its journal's vehicle replies (onecam follows it)
                 a["remote_vehicle"] = self.work.vehicles.current(a["name"], now)
+                if a.get("position"):  # (d27 batch271 WS) a fresh row naming no surface acted on the body's
+                    self.work.did.body_surface(a["name"], a.get("surface") or "nauvis", now)
                 a["did"] = self.work.did.current(a["name"], now)  # (d26 batch240) its latest build, paste, silo load ...
                 a["idle_s"] = self.work.clocks.current(a["name"], now)  # (batch240) its character idle so long, by its clocks
 
@@ -590,7 +592,9 @@ class LiveSource:
 
     def observe_work(self, agents, errors):
         """New journal requests that land away from the agent's body: on a platform (the body never is, when it
-        builds there remotely), or AWAY_TILES or more from the body on its own surface."""
+        builds there remotely), on another surface than the body's (batch271: args.surface, Astra on Aquilo building on
+        Nauvis), or AWAY_TILES or more from the body on its own surface. A row's surface is the request's, else the
+        body's (the runtime acts there)."""
         try:
             reqs = self.work.poll()
         except Exception as e:
@@ -601,13 +605,17 @@ class LiveSource:
         for r in reqs:
             body = by.get(r["agent"]) or {}
             here = body.get("position")
+            own = body.get("surface") or "nauvis"
+            named = r.get("surface")
             if r["platform"]:
                 if body.get("platform") == r["platform"]:
                     continue  # aboard that platform: its camera already shows the work
+            elif named and named not in (own, body.get("platform")):
+                pass  # another surface: the camera following the body never shows it
             elif not (r["position"] and here and math.hypot(r["position"]["x"] - here["x"],
                                                             r["position"]["y"] - here["y"]) >= AWAY_TILES):
                 continue  # near the body (or no position to tell): the camera following it shows the work
-            out.append(dict(r, surface=None if r["platform"] else (body.get("surface") or "nauvis")))
+            out.append(dict(r, surface=None if r["platform"] else (named or own)))
         return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
