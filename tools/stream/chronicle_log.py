@@ -129,6 +129,31 @@ def departures(path):
     return sorted(out, key=lambda r: r[3])
 
 
+def research_finished(path):
+    """(d27 batch258 RR, viewer Foobator: "agents think 'legendary' was just unlocked ... how long ago it was actually
+    unlocked") Each technology's newest research row along the run chain: {name: {tick, game_time, t}} (t: the wall
+    time the service wrote it). Technologies finished before the chronicle began (shift01's) are not in it."""
+    out = {}
+    for p in chain(path):
+        try:
+            f = open(p)
+        except OSError:
+            continue
+        with f:
+            for line in f:
+                if '"research"' not in line:  # the chain is 20 MB; a few hundred rows are research
+                    continue
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(ev, dict) and ev.get("type") == "event" and ev.get("kind") == "research" and \
+                        ev.get("name") and isinstance(ev.get("tick"), (int, float)) and \
+                        ev["tick"] > (out.get(ev["name"]) or {}).get("tick", -1):
+                    out[ev["name"]] = {"tick": int(ev["tick"]), "game_time": ev.get("game_time"), "t": ev.get("t")}
+    return out
+
+
 def follow_platform(history, ev):
     """One platform event into a platform_history dict; returns the platform's record before a departure was added
     (None for other events or a platform with no record): the caller tells a first departure from it."""

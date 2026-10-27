@@ -2236,6 +2236,28 @@ Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rul
   14:29-15:15 629 of 654 -> 640 of 654 (aired 852 of 954). The rest: starts before the first moving read, and the
   journal model's own jumps when a reply shows another path.
 
+## Old research is not new (2026-10-27, d27 batch258 RR, viewer Foobator 04:18)
+shift85 04:06:31 Vale: "Legendary quality is their newest research"; 04:14:40 "only just came out of the labs". It
+finished at game 150h54m (shift40's chronicle); the game was at 327h. No player agent said it (shift85 journals and
+chat). model.py seeded research["recent"] at each service start with the extras read's top_done (the costliest
+technologies done, t None), and caster.py's latest_research, the overlay's research card and facts panel, the research
+card segment and the site's "Latest" listed them as the newest.
+- research["recent"]: only technologies finished while the service runs (t, tick, game_time, ago_s, ago).
+  research["top_done"]: the most advanced done before it, with the game time each finished and how long ago, from the
+  chronicle files along the run chain (chronicle_log.research_finished, 0.22 s at start for the 85 files of shift85's
+  chain; the live chronicle's research rows add to it). No new game read.
+- Hosts: latest_research only from recent ("finished": "4 minutes of game time ago"); most_advanced_research_done with
+  finished_at_game_time and "about 177 hours of game time ago", and a note that they are not new. unused_unlocks says
+  "3 h of game time ago, before this stream" where the chronicle knows. check_line (stale_research) refuses a line
+  that calls one of the technologies done before the stream newest, latest, just researched, fresh or out of the labs.
+- Overlay card line and facts panel: "latest X (4 min ago)" only for this stream's; the research card segment's
+  "Latest" likewise, else "Done earlier" with the ages. Site: "Latest" as the overlay; "Most advanced done" with
+  "177 h ago, at 150h54m".
+- Seeded the same way (item 3): an agent's last_said on the first read after a start took the read's wall time, so a
+  line hours old was the hosts' "intent" for 10 minutes and the story memo's "Said 0 min ago"; it now keeps its time by
+  game tick, and spotlight facts carry last_said_when.
+- Test: tools/stream/test_research_recency.py.
+
 ## Rocket launches over standing characters (2026-10-26, d26 batch257 IB, viewer Aurora site:5029/5030)
 shift83 18:37-22:41: a standing character 43.3% of the program (105 of 244 min; shift82 19.3%). From the director log
 and the journals: in 101 of the 107 idle minutes every character stood (Sol's "busy" clocks were uptime measurements,

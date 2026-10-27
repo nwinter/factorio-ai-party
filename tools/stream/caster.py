@@ -552,6 +552,38 @@ def spoken_time(gt):
     return " ".join(parts)
 
 
+def ago_words(sec, game=False):
+    """'4 minutes ago', 'about 3 hours ago', 'about 177 hours of game time ago' (game: game seconds)."""
+    sec = max(0, sec)
+    of = " of game time" if game else ""
+    if sec < 60:
+        return "under a minute" + of + " ago"
+    if sec < 90 * 60:
+        n = round(sec / 60)
+        return f"{n} minute{'s' if n != 1 else ''}{of} ago"
+    return f"about {round(sec / 3600)} hours{of} ago"
+
+
+def research_facts(res):
+    """(d27 batch258 RR, viewer Foobator 04:18: the hosts called Legendary quality "their newest research" and "only just
+    came out of the labs" at game 327h; it finished at 150h54m) latest_research: technologies finished while this
+    stream runs, with how long ago; most_advanced_research_done: the most advanced ones done before it, with when they
+    finished where the chronicle knows."""
+    f = {}
+    latest = [{"tech": r["label"], "finished": ago_words(r["ago_s"], game=True) if r.get("ago_s") is not None else None}
+              for r in res.get("recent") or [] if r.get("t")][:2]
+    if latest:
+        f["latest_research"] = [{k: v for k, v in r.items() if v} for r in latest]
+    old = [{"tech": r["label"], "finished_at_game_time": spoken_time(r.get("game_time")),
+            "finished": ago_words(r["ago_s"], game=True) if r.get("ago_s") is not None else "before the run's records"}
+           for r in res.get("top_done") or []][:2]
+    if old:
+        f["most_advanced_research_done"] = [{k: v for k, v in r.items() if v} for r in old]
+        f["most_advanced_research_note"] = ("finished before this stream started, at the game time given: not new, "
+                                            "not latest; say how long ago only from 'finished'")
+    return f
+
+
 def agent_intent(s, a, fresh=600):
     """What an agent last said it would do: its latest say or tell (the ticker's "-> Sol: ..."), if under 10 minutes
     old, cleaned for speech. Nick (HOSTS3 item 6): 'walking' should read 'walking to restock the silo Sol asked for'."""
@@ -599,6 +631,9 @@ def agent_facts(s, name, said=False, motto=False):
          "where": where, "motto": (a.get("motto") or None) if motto else None, "intent": agent_intent(s, a)}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
+        t = a["last_said"].get("t")  # (d27 batch258 RR) a line from before a restart keeps its game-tick time
+        if isinstance(t, (int, float)):
+            f["last_said_when"] = ago_words(time.time() - t)
     return {k: v for k, v in f.items() if v}
 
 
@@ -961,7 +996,7 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     res = s.get("research") or {}
     if baseline and s.get("tick"):
         produced = {p["item"]: p.get("total") for p in s.get("production") or [] if p.get("total")}
-        done = [r.get("name") for r in res.get("recent") or []]
+        done = [r.get("name") for r in (res.get("recent") or []) + (res.get("top_done") or [])]
         pace = baseline.pace(s["tick"], res.get("done_count") or 0, produced, done, space_age=show_for(s) != SHOW)
         if pace:
             f["pace"] = pace
@@ -1141,8 +1176,7 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if res.get("label"):
         f["researching"] = {"tech": res["label"], "percent": int(round((res.get("progress") or 0) * 100))}
     f["technologies_done"] = res.get("done_count")
-    if res.get("recent"):
-        f["latest_research"] = [r["label"] for r in res["recent"][:2]]
+    f.update(research_facts(res))
     prod = [p for p in s.get("production") or [] if p.get("rate")]
     if prod and e["kind"] in ("lull", "research", "power", "open"):
         f["production_per_minute"] = {p["item"].replace("-", " "): round(p["rate"]) for p in prod[:4]}
@@ -1244,7 +1278,8 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
 
 BACKGROUND = ("team_size", "game_minutes", "stage", "science_packs_made", "science_per_minute", "science_per_minute_is",
               "science_packs_used_per_minute", "science_packs_made_per_minute_all_colours", "researching",
-              "technologies_done", "latest_research", "production_per_minute")
+              "technologies_done", "latest_research", "most_advanced_research_done", "most_advanced_research_note",
+              "production_per_minute")
 STORY_KINDS = ("open", "research", "research_start", "lull", "power")
 STORY_ANGLES = ("pace", "explain", "production", "research")
 
@@ -1496,7 +1531,8 @@ def check_line(line, facts, names, recent):
     if re.search(r"[Ѐ-ӿ֐-ۿ฀-๿　-鿿가-힯＀-￯]", line):
         return "not English"
     why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or \
-        wrong_deadline(low, facts) or wrong_place(low, facts) or wrong_enemy(low, facts) or style_fault(line, blob)
+        wrong_deadline(low, facts) or wrong_place(low, facts) or wrong_enemy(low, facts) or style_fault(line, blob) or \
+        stale_research(low, facts)
     if why:
         return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
@@ -1599,6 +1635,23 @@ SHIFT_ENDS_IN = re.compile(r"\b(?:ends|ending|wraps|closes|is over|handover|hand
 FUTURE = re.compile(r"\b(?:next|later|someday|one day|eventually|goal|road to|on the way|way to|until|before|"
                     r"could|will|'ll|want|wants|aim\w*|dream of|hope|plan\w*|future|far off|far away|yet|"
                     r"packing for|heading (?:to|for)|bound for|trip to|getting ready|prep\w*|discovery)\b")
+
+
+NEW_WORDS = re.compile(r"\b(?:newest|latest|brand[- ]new|newly|fresh(?:ly)?|recently|just (?:researched|unlocked|finished|"
+                       r"done|came|got|out|landed|dropped)|only just|new (?:research|tech|technology|unlock)|"
+                       r"out of the labs)\b")
+
+
+def stale_research(low, facts):
+    """(d27 batch258 RR) A technology done before this stream (most_advanced_research_done, the research card's
+    done_before_this_stream) called new: shift85's "Legendary quality is their newest research", 177 game hours on."""
+    old = [r.get("tech") for f in (facts, facts.get("background") or {}) for r in f.get("most_advanced_research_done") or []]
+    old += [re.sub(r" \(.*\)$", "", x) for x in (facts.get("on_screen_now") or {}).get("done_before_this_stream") or []]
+    new = {(r.get("tech") or "").lower() for f in (facts, facts.get("background") or {}) for r in f.get("latest_research") or []}
+    for tech in {t.lower() for t in old if t} - new:
+        if tech in low and NEW_WORDS.search(low):
+            return f"calls old research new: {tech}"
+    return None
 
 
 def wrong_place(low, facts):

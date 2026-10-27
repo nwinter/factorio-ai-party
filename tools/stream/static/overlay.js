@@ -357,7 +357,9 @@
     mqText(researchCard.tech, r.label || "No research queued");
     setText(researchCard.pct, r.progress != null ? Math.floor(r.progress * 100) + "%" : r.done_count ? r.done_count + " done" : "");
     researchCard.fill.style.width = (r.progress != null ? Math.max(0, Math.min(1, r.progress)) * 100 : 0) + "%";
-    const rec = (r.recent || []).slice(0, 3).map((x) => x.label);
+    // (d27 batch258 RR) "latest" only for technologies finished while the stream service runs (model.py recent has a t),
+    // with how long ago in game time; the most advanced ones done before it (top_done) carry no "latest"
+    const rec = (r.recent || []).filter((x) => x.t).slice(0, 3).map((x) => x.label + (x.ago ? " (" + x.ago + " ago)" : ""));
     const reps = (Array.isArray(r.repeating) ? r.repeating : []).slice(0, 4);
     const levels = reps.length ? "Levels: " + reps.map((x) => x.label + " " + x.level).join(" · ") : "";
     const rsig = [r.done_count || 0, rec, levels].join("|");
@@ -1327,7 +1329,7 @@
         i.style.width = Math.round((r.progress || 0) * 100) + "%";
         bar.append(i);
         fill.append(bar);
-        const recent = (r.recent || []).map((x) => x.label).slice(0, 3).join(", ");
+        const recent = (r.recent || []).filter((x) => x.t).map((x) => x.label + (x.ago ? " (" + x.ago + " ago)" : "")).slice(0, 3).join(", ");
         if (recent) { const row = el("div", "fline"); row.append(el("span", "k", "Latest"), el("span", "v", recent)); fill.append(row); }
       }
       if (sp && sp.summary) { const row = el("div", "fline space"); row.append(el("span", "k", "Space"), el("span", "v", sp.summary)); fill.append(row); }
@@ -1370,7 +1372,9 @@
       fill.style.width = (f.progress_pct || 0) + "%";
       bar.append(fill);
       body.append(bar, factRow("Progress", f.progress_pct != null ? f.progress_pct + "%" : null),
-        factRow("Technologies done", f.done_count), factRow("Latest", (f.recent || []).join(", ")));
+        factRow("Technologies done", f.done_count));
+      if ((f.recent || []).length) body.append(factRow("Latest", f.recent.join(", ")));
+      else if ((f.done_before_this_stream || []).length) body.append(factRow("Done earlier", f.done_before_this_stream.join(", ")));
     } else if (seg.type === "recap") {
       // only what happened (segments.py recap_news refuses an empty window)
       if ((f.research_done || []).length) body.append(factRow("Researched", f.research_done.join(", ")));
