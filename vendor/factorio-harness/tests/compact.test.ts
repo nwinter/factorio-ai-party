@@ -58,5 +58,9 @@ test('every Lua suite passes against the compacted modules, and the compacted bu
   const file = join(dir, 'bundle.lua');
   await writeFile(file, bundle);
   execFileSync(lua, ['-e', `local f=assert(io.open(${JSON.stringify(file)})); assert(load(f:read('a'),'@bundle','t'))`], {stdio: 'pipe'});
-  assert.ok(Buffer.byteLength(bundle) < Buffer.byteLength(await bundleRuntime('mod/agent-harness_0.1.0/runtime.lua', {compact: false, limit: false})));
+  // (d26 batch244) against the modules' own bytes: the uncompacted bundle was 8,382,920 of the 8,388,608-byte deployment
+  // limit on main at 16:24 and batch244 took it over, which bundleRuntime refuses; only the compacted one is deployed
+  let raw = 0;
+  for (const file of await readdir('mod/agent-harness_0.1.0')) if (file.endsWith('.lua')) raw += (await readFile(join('mod/agent-harness_0.1.0', file))).length;
+  assert.ok(Buffer.byteLength(bundle) < raw);
 });

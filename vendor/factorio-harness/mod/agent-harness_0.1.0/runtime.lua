@@ -17443,7 +17443,7 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   condition=function(p,c,record) return M.waiteta.check(p,c,record) end,validate_condition=function(c) return conditions.validate(c) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   -- chosen alert kinds (Luna, 19:50): the push alert groups of those kinds for p, and machines starving in its claims
-  alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,
+  alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,held_note=function(e) return M.supply.held_note(e) end,
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
   urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
   spider_retreat=function(p,since) return M.spiderroute and M.spiderroute.since(M.board.who(p),since) end,
@@ -17564,7 +17564,7 @@ M.reminders=require('reminders'){state=state,resolve=M.board.resolve,agents=M.bo
   gap_facts=function(name,items) local p=M.agent_player(name); return p and M.gapfacts.facts(p,items) or nil end,
   gear=function(name) local p=M.agent_player(name); return p and M.gapfacts.gear_line(p,M.grids) or 'no character' end}
 for name,handler in pairs(M.reminders.handlers) do handlers[name]=handler end
-M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
+M.factory_digest=require('factory_digest'){state=state,held_check=function(e) return M.supply.held_check(e) end,held_line=function(h,item) return M.supply.held_line(h,item) end,status_name=function(e) return entity_status_names[e.status] end,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
 -- (d20 batch70 AF1) each agent's bounded watches: uptime, turret_tally, belt_flow (measures.lua)
@@ -19014,7 +19014,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){scope_line=function(...) return M.stores.scope_line(...) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -19296,7 +19296,7 @@ M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,s
   where=function(pl) return M.freight.where(pl) end,rocket_room=function(silo,item) return space.rocket_room(silo,item) end}
 function handlers.freight_audit(p,a) return M.packaudit.read(p,a) end
 -- The factory's shortages in one read (shortages.lua; Opus 13:51).
-M.shortages=require('shortages'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,status_name=function(e) return entity_status_names[e.status] end}
+M.shortages=require('shortages'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.shortages(p,a) return M.shortages.read(p,a) end
 M.damagelog=require('damagelog'){state=state,position=position,integer=integer}
 -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua; Luna 15:21).
@@ -19628,7 +19628,7 @@ function M.belt_groups_read(f)
   M.belt_groups_kept[f.name]={tick=game.tick,list=out}
   return out
 end
-M.pushalerts=require('pushalerts'){rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
+M.pushalerts=require('pushalerts'){held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
     local leg=M.freight.leg(pl)
     if leg and leg.to==loc and leg.eta_ticks then return leg.eta_ticks/60 end
     local est=M.freight.before_departure(pl,loc)

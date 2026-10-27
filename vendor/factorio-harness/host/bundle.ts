@@ -6,9 +6,7 @@ import { compactLua } from './compact.js';
 
 /** Bundle sibling Lua modules into one atomic, save-persistent reload payload.
  * Standard require remains available for Factorio's libraries. */
-// limit: false skips the deployment limit (d26 batch249: only compact.test.ts's size comparison builds the uncompacted
-// text, which main had within 6 KB of the 8 MiB limit while the deployed, compacted bundle was 6.2 MB).
-export async function bundleRuntime(path: string, options: {compact?: boolean, limit?: boolean} = {}): Promise<string> {
+export async function bundleRuntime(path: string, options: {compact?: boolean} = {}): Promise<string> {
   // Comments and indentation are dropped (line breaks kept) unless compact is false.
   const shrink = options.compact === false ? (text: string) => text : compactLua;
   const folder = dirname(path);
@@ -37,7 +35,7 @@ end
   // it, and fh help keeps one describe per id instead of pulling 280 KB from the game on each call. On the first line,
   // so line numbers in errors stay the bundle's own.
   const source = `local BUNDLE_ID = '${bundleId(body)}'; ` + body;
-  if (options.limit !== false && Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
+  if (Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
   return source;
 }
 /** The first 16 hex digits of the bundle text's SHA-256. */

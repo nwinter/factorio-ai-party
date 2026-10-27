@@ -10,6 +10,8 @@
 # tools/stream/hourly.py; POG_HOURLY_MODEL its OpenRouter writer, default anthropic/claude-opus-5.5).
 # POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
 # POG_VIEWER_ROUTE (default 0; 1: a viewer line that names no agent goes by what it is about, tools/stream/router.py).
+# POG_CODEX_HOOKS (default 0; 1: Codex agents' tool hooks record each call for the busy notice, tools/codex_hooks.py;
+# it writes trust entries into the Codex routes' config.toml).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
 # starts on the previous run's stop save (its stopped.json, written by tools/stop-team.sh), else the newest save
 # written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
@@ -143,6 +145,7 @@ quota --save "$rundir/quota-brief.json" | while read -r line; do log "$line"; do
 { python3 tools/code_check.py || true; } | while read -r line; do log "$line"; done
 log "full tools: $([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo 'on (docs/TOOLS-NOTES.md)' || echo off)"
 log "RCON broker: $([ "${POG_BROKER:-0}" = 1 ] && echo 'on (agents get no password; docs/LAUNCH-NOTES.md)' || echo 'off (agents read runs/RUN/.keys)')"
+log "codex tool hooks: $([ "${POG_CODEX_HOOKS:-0}" = 1 ] && echo 'on (tools/codex_hooks.py; each agent gets a line below)' || echo off)"
 log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES.md; protected: ${POG_PLAYERS_PROTECT:-none})" || echo off)"
 # The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
 # docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
@@ -159,7 +162,7 @@ printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}
   "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" "POG_CASTER_LOW_MODEL=$clow" \
   "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_HOURLY=${POG_HOURLY:-0}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
   "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_VIEWER_ROUTE=${POG_VIEWER_ROUTE:-0}" "POG_TEAM_FILE=$team" "POG_CAMS=${POG_CAMS:-3}" \
-  "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" > "$rundir/switches.env"
+  "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" "POG_CODEX_HOOKS=${POG_CODEX_HOOKS:-0}" > "$rundir/switches.env"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).

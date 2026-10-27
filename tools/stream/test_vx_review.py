@@ -7,7 +7,7 @@ A run folder and a logs folder written here, every time a fixed epoch (no clock,
 - missed action: a build on air at once, a vehicle outing never on air, a loss the director skipped (missed) and one it
   took, a departure it chose not to show (by design) and one shown as an inset, a platform made;
 - idle airtime: an agent idle on air, a view shown again within REPEAT_S;
-- narration: cue to line, a chronicle event to the line naming it, a chat to its voiced line, the audio wait, a clip
+- narration: cue to line, a chronicle event to the line announcing it (batch255: its cue names it; mentions apart), a chat to its voiced line, the audio wait, a clip
   cut short and one skipped, a repeated line, a platform called new that the run did not make;
 - data clarity: a push failure, a gap, a tick that stopped moving, chart surfaces without cells, base-map frames, the
   Updates rows open and due;
@@ -79,6 +79,10 @@ def fixture(d):
     caster = [
         {"type": "caster", "event": "space", "exchange": T0 + 1000, "t": T0 + 1010, "line": "Oldship is new. A fresh platform appeared.",
          "facts": {"text": "New space platform: Oldship"}},
+        # (batch255) an arrival announced 20 s and 25 s on (its second voice logs no facts), then a later mention
+        {"type": "caster", "event": "arrival", "exchange": T0 + 1030, "t": T0 + 1040, "line": "Newship pulls in at Nauvis.",
+         "facts": {"text": "Newship arrives at Nauvis", "arrival": {"platform": "Newship", "planet": "Nauvis"}}},
+        {"type": "caster", "event": "arrival", "exchange": T0 + 1030, "t": T0 + 1045, "line": "Newship, first trip home."},
         {"type": "caster", "event": "camera", "exchange": T0 + 1090, "t": T0 + 1100, "line": "Newship is out on its first job for Bob."},
         {"type": "caster", "event": "info", "exchange": T0 + 1190, "t": T0 + 1200, "line": "Bob builds the furnace row now."},
         {"type": "caster", "event": "info", "exchange": T0 + 1480, "t": T0 + 1500, "line": "Bob builds the furnace row now!"},
@@ -108,6 +112,7 @@ def fixture(d):
     journal(run / "bob" / "journal.jsonl", [(T0 + 310, "build", {"name": "stone-furnace"}, {"built": 1})])
     jl(run / "chronicle.jsonl", [
         {"kind": "platform_created", "platform": "Newship", "by": "bob", "line": "platform Newship made at nauvis", "t": T0 + 900},
+        {"kind": "platform_arrived", "platform": "Newship", "line": "platform Newship stopped at nauvis", "t": T0 + 1020},
         {"kind": "rocket", "surface": "nauvis", "t": T0 + 950}, {"kind": "rocket", "surface": "nauvis", "t": T0 + 960},
     ])
     jl(run / "audio-played.jsonl", [
@@ -159,7 +164,8 @@ def main():
         assert ia["repeat_min"] > 0 and ia["repeats"][0].startswith("@base map 'base map' again 1x"), ia["repeats"]
         assert ia["on_air_min"]["bob"] > ia["on_air_min"]["alice"] == 5.0, ia["on_air_min"]
         n = r["narration"]
-        assert n["cue_to_line_median_s"] == 10.0 and n["event_to_line_n"] == 1 and n["event_to_line_median_s"] == 200.0, n
+        assert n["cue_to_line_median_s"] == 10.0 and n["event_to_line_n"] == 2 and n["event_to_line_median_s"] == 22.5, n
+        assert n["mention_n"] == 1 and n["mention_median_s"] == 80.0, n  # (batch255) the camera line: a mention, not the lag
         assert n["chat_to_voice_median_s"] == 6.0 and n["audio_wait_by_channel_median_s"] == {"agent": 1.0, "caster": 8.0}, n
         assert n["audio_wait_median_s"] == 4.5 and n["audio_wait_p90_s"] == 8.0, n
         assert n["clips_cut_short"] == 1 and n["clips_skipped"] == 1, n

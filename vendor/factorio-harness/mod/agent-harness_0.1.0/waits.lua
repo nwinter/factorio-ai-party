@@ -521,8 +521,14 @@ return function(api)
     -- starved: a machine in your claims lacking ingredients that did not at the start (looked at every 10 s).
     if record.starved_base and game.tick >= record.starved_next then
       record.starved_next = game.tick + STARVED_TICKS
-      for unit, line in pairs(api.starved(p)) do
-        if not record.starved_base[unit] then out.alert = line; return 'alert' end
+      local lines, ents = api.starved(p)
+      for unit, line in pairs(lines) do
+        if not record.starved_base[unit] then
+          -- (d26 batch244, Astra #2455) its feeder off by its condition while its source holds the item: said
+          local e = ents and ents[unit]
+          local note = e and api.held_note and (function() local ok, v = pcall(api.held_note, e); return ok and v or nil end)()
+          out.alert = line .. (note or ''); return 'alert'
+        end
       end
     end
     if record.met_condition then
