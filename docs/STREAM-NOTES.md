@@ -2236,6 +2236,17 @@ Replay (shift82 14:29-15:15, --timed --chart --fights --vehicles live; cp1's rul
   14:29-15:15 629 of 654 -> 640 of 654 (aired 852 of 954). The rest: starts before the first moving read, and the
   journal model's own jumps when a reply shows another path.
 
+## Narration lag: announcements against later mentions (2026-10-26, d26 batch255)
+vx_review's "an event to the caster line naming it" took every caster line naming a platform against that platform's
+newest chronicle event, whatever the line was about. Shift82 so far: median 475 s, p90 1390 s. The lines that announce
+an event (their cue is the arrival or departure) came 20-31 s after it (Petrel stopped at Nauvis 14:35:47, "Petrel's
+back at Nauvis from Vulcanus" 14:36:07); the long ones were analyst, info, board and plan cues mentioning a platform
+minutes later (14:47:31 "Petrel restarted its own carbon crusher"). The caster itself: cue to line median 10.0 s, p90
+18.9 s (model write 6.4 s, voice 1.9 s); in the Mac's load of 16:47-17:08 10.4 s and 6.7 s; the audio queue 0.7 s.
+vx_review now counts an announcement only when the line's cue names the platform (the arrival or departure facts, or a
+departure card on screen; an exchange's second voice takes the first's facts), later mentions apart (mention_n,
+mention_median_s). Shift80 23.6 s (2 lines), shift81 17.6 s (2), shift82 24.9 s (4); mentions 199, 165, 743 s.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
