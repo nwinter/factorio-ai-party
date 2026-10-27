@@ -24,7 +24,7 @@ once per --every-min minutes per agent, never in the first --grace-min minutes a
 start), and not after the run's deadline. Each nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not),
 with since_last_nudge: whether a reply delivered the last nudge's tell (its unread tells went to 0) and whether the
 agent made requests since. Delivered is not read: Sonnet writes its replies to a file and reads the last 2 lines.
-(d24 batch158, viewer Aurora 11:50 and 11:51) A tell holds 500 bytes: the nudge says how long, the unread counts and
+(d24 batch158, viewer Aurora 11:50 and 11:51) A nudge holds 500 bytes (TELL_MAX): it says how long, the unread counts and
 the queue first, then the standing orders, watches, the sleep's reason, what is open (unanswered items first), what was
 counted and what idle means, each while it fits (the first that does not is cut at a word). An agent resting
 (resting.json) gets none. One that does not answer (a nudge's tell not delivered and no request of its own in its
@@ -146,7 +146,9 @@ def working(row):
     return (row.get("queue") or {}).get("state") == "running"
 
 
-TELL_MAX = 500   # bytes in one tell (tells.lua MAX_LEN): the harness cuts a longer text at 500
+# bytes in one nudge: a tell needs no summary up to 500 (tells.lua SHORT_LEN; d27 batch273: up to 2000 with one), and
+# an operator tell rides on every reply until the agent acts (tells.lua operator_lines), so the nudge stays short
+TELL_MAX = 500
 
 
 def cut_bytes(text, room):

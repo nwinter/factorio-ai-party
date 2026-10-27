@@ -1508,10 +1508,12 @@ class Model:
             self.agents[sender].bump(2.5, now)
 
     def _ingest_tell(self, t, now):
-        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text}, what an agent sent to
-        teammates outside the game chat: the team's main channel (shake7: ~540 tells to ~100 chat lines). Lane "tell":
-        the page shows them in the chat feed as direct lines ("Sol → Astra", `to_shown` and `body`); `text` stays
-        "-> Astra: ..." for the site's live feed and the logs. Never voiced."""
+        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text, summary?}, what an agent sent
+        to teammates outside the game chat: the team's main channel (shake7: ~540 tells to ~100 chat lines). Lane
+        "tell": the page shows them in the chat feed as direct lines ("Sol → Astra", `to_shown` and `body`); `text`
+        stays "-> Astra: ..." for the site's live feed and the logs. Never voiced. (d27 batch273 TL) A tell over 500
+        bytes (up to 2000) has a summary line: `body` is the summary (the overlay and the hosts), `text` the whole tell
+        (the site, with `summary`)."""
         key = ("tell", t.get("seq"))
         if key in self.chat_seen:
             return
@@ -1523,9 +1525,12 @@ class Model:
         names = ["team"] if to == "team" else [n for n in (to or []) if isinstance(n, str)]
         shown = ", ".join("team" if n == "team" else (self.agents[m].display_name or n) if (m := self._match_sender(n))
                           else n for n in names)
+        summary = t.get("summary") if isinstance(t.get("summary"), str) and t["summary"].strip() else None
         entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
                  "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
-                 "to_shown": shown, "to": names, "body": t.get("text", "")}
+                 "to_shown": shown, "to": names, "body": summary or t.get("text", "")}
+        if summary:
+            entry["summary"] = summary
         old = self._restore(entry, t, "tells")
         self.chat.append(entry)
         if sender and not old:
