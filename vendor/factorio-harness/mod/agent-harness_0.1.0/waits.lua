@@ -410,7 +410,16 @@ return function(api)
       out.queue = q and failure(q, record.start_tick) or 'paused (see queue_status)'
       return 'queue_stalled'
     end
-    if not q.current and #q.pending == 0 and not q.loop then out.queue = 'finished'; return 'queue_done' end
+    if not q.current and #q.pending == 0 and not q.loop then
+      out.queue = 'finished'
+      -- (d27 batch261 GR) guards still armed with no step left (scope standing)
+      local ids = {}
+      for _, g in ipairs(q.guards or {}) do
+        if g.scope ~= 'plan' then ids[#ids + 1] = tostring(g.id) .. ' ' .. tostring(g.when and g.when['until']) end
+      end
+      if #ids > 0 then out.queue = string.format('finished; %d guard%s still armed (scope standing): %s', #ids, #ids == 1 and '' or 's', table.concat(ids, ', ')) end
+      return 'queue_done'
+    end
     local c = p.character
     local step = q.current
     if step and MOVING[step.action] and c and c.valid then

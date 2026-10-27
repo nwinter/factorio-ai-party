@@ -122,7 +122,8 @@ do
   eq(entry.result.matched.index,2); eq(entry.result.matched['until'],'item_count')
   has(entry.result.saw,'#2 item_count: met: promethium-asteroid-chunk 26')
   eq(st.history[2].action,'platforms')
-  eq(#s['lane_queues|Asterion'][1].guards,2,'the guards stay')
+  -- (d27 batch261 GR) the plan done: its guards (scope plan, the default) retire with it
+  eq(#s['lane_queues|Asterion'][1].guards,0,'the guards retire with the plan')
   -- none to its timeout: the step fails with what each member read
   chunks=0
   local short=probe(); short.timeout=60

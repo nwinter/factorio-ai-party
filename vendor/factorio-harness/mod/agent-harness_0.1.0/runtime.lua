@@ -17270,7 +17270,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
   -- (d22 batch112 BV1) a build's entries its running action had left (a walk for the rest, a step aside): {count, line}
   left_undone=function(index) return M.left_undone(index) end,
-  guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,
+  guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,deadline=function(c) return conditions.deadline(c) end,
   recheck_read=function(rc) return space.recheck_read(rc) end,
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
@@ -17405,14 +17405,15 @@ function M.queue_brief(q)
   local f=q.last_failure
   -- (d20 batch54 N9) each guard by id, for queue_edit guards; a guard edit's reply in full (each guard's baseline)
   local ids
-  if not q.guard_lines and q.guards and #q.guards>0 then ids={}; for _,g in ipairs(q.guards) do ids[#ids+1]=tostring(g.id)..' '..tostring(g.when and g.when['until']) end end
+  -- (d27 batch261 GR) a standing guard says so; scope plan is the default
+  if not q.guard_lines and q.guards and #q.guards>0 then ids={}; for _,g in ipairs(q.guards) do ids[#ids+1]=tostring(g.id)..' '..tostring(g.when and g.when['until'])..(g.scope=='standing' and ' (standing)' or '') end end
   return {lane=q.lane,revision=q.revision,state=q.state,staged=q.staged,line=q.guard_lines and q.line or nil,guard_lines=q.guard_lines,guard_ids=ids,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
     pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guard_lines and q.guards or q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
     waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,
-    kept_wait=q.kept_wait,cancelled_wait=q.cancelled_wait,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
+    kept_wait=q.kept_wait,cancelled_wait=q.cancelled_wait,guards_after_plan=q.guards_after_plan,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume','queue_pause'} do
   local handler=handlers[name]
@@ -17840,6 +17841,9 @@ function handlers.wait_until(p,a)
   end
   conditions.validate(a)
   local timeout=integer(a.timeout,3600,1,54000,'timeout (1..54000 ticks)')
+  -- (d27 batch261 AD) no timeout given: a tick_at_least (alone or in any) ends it by its tick, up to 54000 ticks
+  local due=a.timeout==nil and conditions.deadline(a)
+  if due and due-game.tick>timeout then timeout=math.min(54000,due-game.tick) end
   local condition={}
   for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.

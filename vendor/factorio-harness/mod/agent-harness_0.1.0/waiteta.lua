@@ -110,6 +110,7 @@ return function(api)
       elseif o.paused then unknown='platform is paused; arrival rate is unavailable'
       elseif not leg.eta_ticks or leg.eta_ticks<=0 then unknown='current platform speed is zero or unavailable'
       else seconds=leg.eta_ticks/60; basis='distance left on current connection / current speed; unchanged speed, excludes later legs' end
+    elseif c['until']=='tick_at_least' and type(c.tick)=='number' then seconds,basis=(c.tick-game.tick)/60,'the game tick it names'
     else unknown='no measured rate for this condition' end
     if type(seconds)=='number' and seconds==seconds and seconds>=0 and seconds<math.huge then
       row.eta_s=math.ceil(seconds); row.basis=basis
