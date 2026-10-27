@@ -115,7 +115,8 @@ do
   local empty={get_contents=function() return {} end,get_item_count=function() return 0 end}
   local function asm(x,y,recipe,held)
     return {valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=y},get_recipe=function() return {name=recipe} end,
-      get_inventory=function() return {get_item_count=function() return held or 0 end} end,get_output_inventory=function() return empty end,fluidbox={}}
+      get_inventory=function() return {get_item_count=function() return held or 0 end,
+        get_contents=function() return {{name=prototypes.recipe[recipe].ingredients[1].name,count=held or 0,quality='normal'}} end} end,get_output_inventory=function() return empty end,fluidbox={}}
   end
   local plates={get_contents=function() return {{name='iron-plate',count=50,quality='normal'}} end,get_item_count=function() return 50 end}
   local chest={valid=true,name='iron-chest',type='container',position={x=10.5,y=0.5},get_inventory=function() return plates end}

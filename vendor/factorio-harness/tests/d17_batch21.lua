@@ -162,10 +162,11 @@ do
   game={tick=0}
   defines={inventory={assembling_machine_input=2,furnace_source=3}}
   prototypes={recipe={['pentapod-egg']={ingredients={{type='item',name='nutrients',amount=30},{type='item',name='pentapod-egg',amount=1},{type='fluid',name='water',amount=60}}}}}
-  local input={get_item_count=function(n) return n=='nutrients' and 24 or n=='pentapod-egg' and 1 or 0 end}
+  local input={get_item_count=function(n) return n=='nutrients' and 24 or n=='pentapod-egg' and 1 or 0 end,
+    get_contents=function() return {{name='nutrients',count=24,quality='normal'},{name='pentapod-egg',count=1,quality='normal'}} end}  -- (d27 batch259 IQ: read once, by quality)
   local bio={valid=true,name='biochamber',type='assembling-machine',position={x=10.5,y=4.5},get_recipe=function() return {name='pentapod-egg'} end,
     get_inventory=function() return input end,fluidbox=setmetatable({},{__len=function() return 1 end,__index=function(_,i) return {name='water',amount=100} end})}
-  local spoil={inventory=function(_,acc) acc[1]={name='nutrients',count=24,soon=4}; return acc end}
+  local spoil={inventory=function(_,acc) acc[1]={key='nutrients',name='nutrients',count=24,soon=4}; return acc end}
   local G=dofile('mod/agent-harness_0.1.0/gap.lua'){position=function(v) return v end,entity=function() return bio end,spoil=function() return spoil end,
     seen=function() return true end,scan=function() return {places={}} end,
     where_kept=function(_,item,need) return 'enough at requester-chest (14.5,4.5) 4 tiles, 40 free over its request' end,status=function() return 'item_ingredient_shortage' end}

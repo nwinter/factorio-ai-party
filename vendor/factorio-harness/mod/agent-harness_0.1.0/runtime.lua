@@ -6038,19 +6038,21 @@ end
 -- spare some; else each logistic network on your surface holding it and where its robots would take it from.
 -- (d19 batch41 A1, Sonnet: ingredient_gap on an area failed "attempt to index local 'e'") a scan's ground stacks have no
 -- entity: they spare all they hold, under their own name; a place whose entity went invalid is passed over.
-function M.where_kept(p,item,need,scan)
+-- (d27 batch262 IQ, Astra #2536) quality: a chest's request and robots' reservations of that quality only, the
+-- networks' stock of it (nil: as before: requests and reservations of every quality, the networks' normal stock)
+function M.where_kept(p,item,need,scan,quality)
   local good,some=({}),({})
   for _,x in ipairs(scan and scan.places or {}) do
     local e=x.entity
     local free=x.count
     if e and not e.valid then free=0 end
-    local okr,r=pcall(M.supply.reserved,e,item)
+    local okr,r=pcall(M.supply.reserved,e,item,quality)
     if e and okr and r then free=free-r end
     local okm,mode=pcall(function() return e.prototype.logistic_mode end)
     local over=''
     if e and okm and (mode=='requester' or mode=='buffer') then
       local okp,pt=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
-      local min=okp and pt and M.reqchest and M.reqchest.request(pt,item) or 0
+      local min=okp and pt and M.reqchest and M.reqchest.request(pt,item,quality) or 0
       free=free-min; over=min>0 and ' over its request' or ''
     end
     if free>0 then
@@ -6062,9 +6064,9 @@ function M.where_kept(p,item,need,scan)
   if #some>0 then return 'some at '..table.concat(some,'; ') end
   local nets={}
   for _,ln in ipairs(p.force.logistic_networks[p.surface.name] or {}) do
-    local okn,n=pcall(function() return ln.get_item_count(item) end)
+    local okn,n=pcall(function() return quality and ln.get_item_count{name=item,quality=quality} or ln.get_item_count(item) end)
     if okn and n and n>0 and #nets<2 then
-      local okq,pick=pcall(function() return ln.select_pickup_point{name=item,position=p.position} end)
+      local okq,pick=pcall(function() return ln.select_pickup_point{name=quality and {name=item,quality=quality} or item,position=p.position} end)
       local o=okq and pick and pick.owner
       nets[#nets+1]=string.format('logistic network #%d holds %d%s',ln.network_id,n,o and o.valid and string.format(' (robots would take it from %s (%g,%g), %d tiles)',
         o.name,o.position.x,o.position.y,math.floor(distance(p.position,o.position)+0.5)) or '')
@@ -15038,7 +15040,7 @@ end
 -- (gap.lua; d17 batch21 B3, Luna).
 M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
   seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or (not (type(p)=='table' and rawget(p,'__remote')) and distance(p.position,pos)<=32) end,
-  scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
+  scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan,q) return M.where_kept(p,item,need,scan,q) end,
   near=function(p,box,ground) return stock.near(p,box,ground) end,ground_index=function(f,s,item) return M.ground.on_ground_index(f,s,item) end,
   status=function(e) return M.machine_status(e) end}
 function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
