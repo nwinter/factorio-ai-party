@@ -4210,6 +4210,19 @@ Some actions work at a distance, the way a player can through remote view:
   `robot_networks` and `storage_chests` (logistic networks whose construction area covers a marked stack) and
   `outside_construction_area` (stacks no roboport covers). `cancel_deconstruction {area, items_on_ground: true}`
   unmarks them.
+- `deconstruct {positions}` (1..64 `{x, y, unit_number?}`, a dry run 1..16, in place of `area`;
+  `cancel_deconstruction` and `cancel: true` too) takes the one entity at each point: its centre or a point of its
+  footprint, as a target names it (`find_entities_filtered{position}`; ore, items on the ground, item-request proxies, tile proxies and ghosts, and
+  characters are not counted). It runs the same filters, refusals (`cut_fluid`, rail supports, another force's, not
+  minable) and reply as an area. It takes no `tiles` or `items_on_ground`, and never an area round the points.
+  - `positions` in the reply: one row a point, in order, with `at` (the point as text, `(58.5,111.5)`), `entity`
+    (`medium-electric-pole 4767244`) and `status`:
+    `marked`, `would_mark` (dry run), `cancelled` or `not_marked` (cancel), `already_marked`, `missing` or `refused`.
+    `why` comes with `refused` and some `missing`, and `here` names what stands at a missing point (4 at most).
+  - A `unit_number` that is not the entity's there (stale) leaves the point alone: `missing`, `why: unit_number N is
+    not here (stale)`, and `here` the one there. Two entities the filters name at one point: `refused`, both named.
+    An uncharted chunk: `refused`. A point whose entity an earlier point names: that row's status and `same_as`.
+  - `by_status` counts the rows: `60 marked, 2 missing, 2 refused`.
 
 - Vehicles: `vehicle {position, enter: true}` gets in (the driver's seat if free, else a car's or spidertron's
   passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
@@ -16437,3 +16450,44 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - The rest is the stream service (tools/stream/viewers.py: the lane 12 a minute a viewer, no gap, 20 in all; the relay
   3 s, 3 s a viewer, 8 waiting) and the site (the Worker's 500 characters): docs/VIEWERS-NOTES.md "d27 batch263".
 - Test: tests/audience.lua (fails on main: 300 ~= 1200).
+## d27 batch268 (DP: deconstruct by exact positions, Astra #2561)
+- Astra's shift86 journal: 620 `deconstruct` calls, each `{surface: nauvis, area: 0.2 x 0.2 round one pole's centre,
+  entity_names: [one pole name]}`. They were 327 small and 292 medium electric poles and 1 solar panel, and each
+  marked 1. They came in runs of up to 162 a minute (15:48 UTC) during the power conversions.
+- `deconstruct {positions}` and `cancel_deconstruction {positions}` (blueprints.lua `at_positions`): 1..64 points
+  (H.limits.DECON_POSITIONS; a queue step's check too), a dry run 1..16 (DECON_DRY). See Rules above for the rows.
+  The points' entities go through the area's own loop, so the filters, `cut_fluid`, rail supports, `not_marked`,
+  `heat_loss`, `contested` and the dry run's `robot_dispatch` are the same.
+- Cost, on a private copy of world n's 08:04 save (Nauvis NE, 263 old poles), 10 samples each, min / median. The Mac
+  was at load 35 for the first set and 66-70 for the second.
+  - First set, with each row's x, y and unit_number as JSON numbers:
+    - 64 marks: the handler 2.4 / 2.8 ms (the 64 point finds 0.6 / 0.7 of it); the whole call through dispatch with
+      its reply 12.4 / 13.7 ms.
+    - 64 cancels: 3.6 / 4.0 ms handler; 14.2 / 14.7 ms whole.
+    - The 64-point dry run: 7.1 / 7.8 ms handler; 17.5 / 18.7 ms whole.
+    - `clock` 4.3 / 4.8 ms whole; one pole by a 0.2-tile area 5.0 / 5.3; one position 4.7 / 5.1.
+    - Of a 64-row reply, 5.6-7.8 ms was helpers.table_to_json writing its 192 numbers (about 30 us each on that copy,
+      x86 under Rosetta). The same rows without numbers took 0.1-0.2 ms.
+  - So a row is text: `at` "(x,y)" and `entity` "name unit_number", by string.format('%d') (numtext.lua's rule,
+    inline). A 64-row reply: 5,492 bytes. Second set:
+
+    | call | handler | whole call |
+    |---|---|---|
+    | `clock` | | 4.2 / 5.0 |
+    | 64 marks | 2.1 / 2.5 | 6.8 / 7.4 |
+    | 64 cancels | 3.2 / 3.4 | 7.7 / 8.4 |
+    | 32 marks | 1.2 / 1.7 | 5.7 / 6.6 |
+    | 32 cancels | 1.7 / 1.9 | 6.1 / 6.6 |
+    | dry run, 64 points | 6.7 / 7.3 | 11.3 / 12.3 |
+    | dry run, 32 | 5.3 / 5.6 | 9.6 / 10.5 |
+    | dry run, 16 | 3.2 / 3.5 | 7.5 / 8.2 |
+    | dry run, 8 | 3.0 / 3.1 | 7.6 / 8.0 |
+    | dry run, 1 | 1.7 / 1.9 | 5.9 / 6.5 |
+
+  - A dry run's extra is the existing `robot_dispatch` read: the network's 419 roboport cells and the enemy map near
+    the legs (6.5-9.0 ms of a 64-point dry run in the first set). That is engine work, not number writing. An area dry
+    run over the same block took 11.8-15.1 ms (handler). So a dry run takes 16 points.
+  - Not measured on world n.
+- Bundle (compacted): 6,258,869 bytes on main, 6,263,977 with this branch (limit 8,388,608).
+- Docs: agent/ref/building.md (`deconstruct`). Test: tests/d27_batch268.lua (fails on main: deconstruct takes only
+  area).
