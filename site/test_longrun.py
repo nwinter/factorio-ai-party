@@ -187,7 +187,8 @@ def main():
         assert "fan_1" in sp and "two turrets going up now" in sp and "owner line" in sp  # the owner's line shows (d27)
         assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
-        assert "1 built" in page and "0 lost · 1 active (Solstice)" in page and "Space platforms" in page
+        assert "platforms built</div><div class=stat-sub>0 lost · 1 active</div>" in page and "Space platforms" in page
+        assert 'class="journey"' in page and "/static/game/place/vulcanus-big.webp" in page, "the planets in order, pictured"
         assert [(t["label"], t["tick"]) for t in s3["techs"]] == [("Rocket silo", 3600 * 102)], s3["techs"]
         assert "Technologies researched (1)" in (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         # key times (game time, hours on stream, Pacific), the kind filter, the live banner (hidden until site.js)
@@ -207,11 +208,21 @@ def main():
         ch = (out / "chronicle" / "index.html").read_text()
         assert "<h1>Chronicle</h1>" in ch and 'id="shift-2"' in ch and 'id="shift-1"' not in ch, ch[:500]
         assert "The silo rises" in ch and "We poured the silo&#x27;s foundation under a red sky." in ch and "Beside: research finished: rocket-silo" in ch, ch
-        assert "codex-b said hi" not in ch and "Platform Comet built at Nauvis by luna" in ch and "Rocket launched from Nauvis to platform Comet" in ch, ch
+        assert "codex-b said hi" not in ch and "Platform Comet built at Nauvis by luna" in ch and "<b>1 rocket launched</b> from" in ch and "to Comet 1" in ch, ch
         assert ("Platform Comet lost flying nauvis-&gt;vulcanus 40%, destroyed by medium metallic asteroid; hit most by medium metallic "
                 "asteroid; cargo lost: 450 iron plate") in ch, ch
         assert ch.index("The silo rises") < ch.index("Platform Comet built") < ch.index("Platform Comet lost"), "game-time order"
         assert "The agents' entries (1)" in ch and "The harness's record (3)" in ch, ch
+        # a run of launches is one line: how many, where to, the cargo summed (batch270: 50,000 rows were one each)
+        import chronicle as chron
+        import html as _html
+        run = [{"tick": 10, "kind": "rocket", "to": "platform A", "surface": "nauvis", "cargo": "firearm-magazine*100"},
+               {"tick": 20, "kind": "rocket", "to": "platform B", "surface": "nauvis", "cargo": "firearm-magazine*50, rocket-fuel*10"},
+               {"tick": 30, "kind": "rocket", "to": "platform A", "surface": "fulgora", "cargo": "empty"}]
+        line = chron.rockets_line(run, _html.escape, lambda t: f"T{t}")
+        assert "<b>3 rockets launched</b>" in line and "to A 2, B 1" in line and "T10 to T30" in line, line
+        assert "/static/game/item/firearm-magazine.webp" in line and "150" in line and "/static/game/place/fulgora.webp" in line, line
+        assert chron.cargo_items("firearm-magazine*100, rocket-fuel*10") == [("firearm-magazine", 100), ("rocket-fuel", 10)]
         assert 'href="/chronicle/"' in page  # the long run's platform table links it (the nav does outside the archive)
         sp2c = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         assert 'href="/chronicle/#shift-2"' in sp2c and 'href="/chronicle/#shift-' not in sp, "only a shift with a chronicle links it"

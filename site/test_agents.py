@@ -365,9 +365,12 @@ def main():
         assert chat.index('id="shift-2"') < chat.index('id="shift-1"') if 'id="shift-2"' in chat else True
         assert 'href="/agents/"' in (out / "index.html").read_text() and 'href="/timeline/"' in page
         tl = (out / "timeline" / "index.html").read_text()
-        for want in ('data-kind="research"', "Logistics", "Rocket 1", "Rockets 2 to 3", "Platform Kite built",
-                     "Reached Vulcanus", 'data-kind="death"', 'value="death" checked', "Deaths (3)"):
+        # rockets: one row a shift, at its first launch, to the shift's last count (batch270)
+        for want in ('data-kind="research"', "Logistics", "Rockets 1 to 3", "Platform Kite built",
+                     "Reached Vulcanus", 'data-kind="death"', 'value="death" checked', "Deaths (3)", 'id="tl-shift"',
+                     "/static/game/item/rocket-part.webp", "/static/game/place/vulcanus.webp"):
             assert want in tl, want
+        assert "Rockets 2 to 3" not in tl and tl.count('data-kind="rocket"') == 2
         assert tl.index("Logistics") < tl.index("Reached Vulcanus") < tl.index("Rocket 4")
     print("agents: ok (stats per shift, cache, cards, records, comparison, timeline, tokens, check.py)")
 

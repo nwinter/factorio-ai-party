@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "tools" / "stream"))  # last: site modules keep their names
 import chronicle_log  # noqa: E402  (entry_key, event_key)
+import gameicons  # noqa: E402  (site/gameicons.py; Graphics copyright Wube Software)
 
 NAME = "chronicle.jsonl"
 SHOWN = ("platform_created", "platform_lost", "platform_deleted", "rocket", "death")
@@ -124,7 +125,8 @@ def by_shift(long, runs_dir, clean=lambda s: s, keep=lambda s: True):
                          "text": clean(text), "where": e.get("platform") or e.get("planet"),
                          "about": [clean(str(r.get("line"))) for r in e.get("refs") or [] if isinstance(r, dict) and r.get("line")]})
         evs = [{"tick": ev.get("tick"), "kind": ev["kind"], "text": clean(event_text(ev)), "platform": ev.get("platform"),
-                "agent": ev.get("agent")} for ev in events if ev.get("kind") in SHOWN]
+                "agent": ev.get("agent"), "surface": ev.get("surface"), "to": ev.get("to"), "cargo": ev.get("cargo")}
+               for ev in events if ev.get("kind") in SHOWN]
         if rows or evs:
             out.append({"n": s["n"], "id": s["id"], "entries": rows, "events": evs})
     return out
@@ -166,6 +168,11 @@ STYLE = """<style>
 .chron-event { display: grid; grid-template-columns: 7em 1fr; gap: 8px; font-size: .92rem; overflow-wrap: anywhere; }
 .chron-event .kind { font-weight: 600; }
 .chron-filters label { margin-right: 1em; }
+.chron-rockets > span:last-child { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.chron-rockets .gi { margin-right: 2px; }
+.chron-goods { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--ink-2); font-size: .88rem; }
+.chron-cargo { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .chron-event { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 </style>"""
 
 FILTER_JS = """<script>
@@ -180,6 +187,44 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>"""
 
 
+def cargo_items(cargo):
+    """[(item, count)] from a rocket's cargo line ("firearm-magazine*100, rocket-fuel*50")."""
+    out = []
+    for part in str(cargo or "").split(","):
+        name, _, n = part.strip().partition("*")
+        if name and name != "empty":
+            try:
+                out.append((name, int(n or 1)))
+            except ValueError:
+                pass
+    return out
+
+
+def rockets_line(run, esc, game_time):
+    """A run of rocket launches in one line (batch270: 50,000 rows, most of the page, were one launch each): how many,
+    the game times, the platforms they went to and the cargo, the most first, with the game's icons."""
+    to, frm, cargo = {}, {}, {}
+    for ev in run:
+        dest = str(ev.get("to") or "?").replace("platform ", "")
+        to[dest] = to.get(dest, 0) + 1
+        frm[str(ev.get("surface") or "?")] = frm.get(str(ev.get("surface") or "?"), 0) + 1
+        for name, n in cargo_items(ev.get("cargo")):
+            cargo[name] = cargo.get(name, 0) + n
+    top = lambda d, k: sorted(d.items(), key=lambda kv: -kv[1])[:k]  # noqa: E731
+    dests = ", ".join(f"{esc(d)} {n:,}" for d, n in top(to, 4)) + (f" and {len(to) - 4} more" if len(to) > 4 else "")
+    froms = ", ".join(f'<span class="chron-cargo">{gameicons.place(p, 18, p.capitalize()) or esc(p.capitalize()) + " "}{n:,}</span>'
+                      for p, n in top(frm, 5))
+    goods = " ".join(f'<span class="chron-cargo">{gameicons.item(c, 18, words(c))}{n:,}{"" if gameicons.key("item", c) else " " + esc(words(c))}</span>'
+                     for c, n in top(cargo, 5))
+    a, b = run[0]["tick"] or 0, run[-1]["tick"] or 0
+    when = esc(game_time(a)) + (f" to {esc(game_time(b))}" if b != a else "")
+    n = len(run)
+    return (f'<li class="chron-event chron-rockets" data-kind="events"><span class="muted small">{when} · '
+            f'<span class="kind">Rocket{"s" if n > 1 else ""}</span></span><span>{gameicons.item("rocket-part", 20)}'
+            f'<b>{n:,} rocket{"s" if n > 1 else ""} launched</b> from {froms}; to {dests}'
+            + (f'<span class="chron-goods">Cargo: {goods}</span>' if goods else "") + '</span></li>')
+
+
 def build_page(shifts, agent, avatar, esc, game_time, known=()):
     """The Chronicle page: per shift, newest shift first, its entries and events in game-time order."""
     known = set(known)
@@ -189,9 +234,17 @@ def build_page(shifts, agent, avatar, esc, game_time, known=()):
     for s in reversed(shifts):
         items = [(e["tick"] or 0, 0, e) for e in s["entries"]] + [(ev["tick"] or 0, 1, ev) for ev in s["events"]]
         items.sort(key=lambda x: (x[0], x[1]))
-        lis = []
-        for tick, is_event, x in items:
+        lis, run = [], []
+        for tick, is_event, x in items + [(None, 2, None)]:
+            if run and not (is_event == 1 and x["kind"] == "rocket"):  # a run of launches ends: one line
+                lis.append(rockets_line(run, esc, game_time))
+                run = []
+            if is_event == 2:
+                break
             when = esc(game_time(tick)) if tick else "?"
+            if is_event and x["kind"] == "rocket":
+                run.append(x)
+                continue
             if is_event:
                 lis.append(f'<li class="chron-event" data-kind="events"><span class="muted small">{when} · '
                            f'<span class="kind">{esc(LABEL.get(x["kind"], x["kind"]))}</span></span><span>{esc(x["text"])}</span></li>')

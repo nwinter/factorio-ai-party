@@ -629,9 +629,39 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 """
 
 
-def stat(label, value, sub=""):
-    return (f'<div class="stat"><div class="stat-value">{esc(str(value))}</div>'
-            f'<div class="stat-label">{esc(label)}</div>{f"<div class=stat-sub>{esc(sub)}</div>" if sub else ""}</div>')
+def stat(label, value, sub="", icon="", sub_html=""):
+    """A number tile. icon: a game icon's <img> beside the number; sub_html: markup under the label (planet icons)."""
+    sub = f"<div class=stat-sub>{esc(sub)}</div>" if sub else (f"<div class=stat-sub>{sub_html}</div>" if sub_html else "")
+    return (f'<div class="stat{" stat-icon" if icon else ""}"><div class="stat-value">{icon}{esc(str(value))}</div>'
+            f'<div class="stat-label">{esc(label)}</div>{sub}</div>')
+
+
+def planet_icons(names, size=22):
+    """Planets as the game's icons with their names for screen readers and on hover."""
+    return "".join(f'<span class="planet-ico" title="{esc(p.capitalize())}">{gameicons.place(p, size, p.capitalize()) or esc(p.capitalize())}</span>'
+                   for p in names)
+
+
+def journey(lr):
+    """The planets in the order the run reached them, with the game's pictures: Nauvis, each planet's first arrival
+    (the score log), then the edge and the Shattered Planet when a platform arrived there."""
+    stops = [("nauvis", None, None, "the start")]
+    for f in lr["firsts"]:
+        k = f["key"]
+        if k.startswith("planet:") or k in ("arrive:solar-system-edge", "arrive:shattered-planet"):
+            name = k.split(":", 1)[1]
+            stops.append((name, f["tick"], f["shift"], f["label"]))
+    if len(stops) < 2:
+        return ""
+    items = []
+    for name, tick, n, label in stops:
+        pic = gameicons.place(name, 88, "", big=True)
+        title = "Solar system edge" if name == "solar-system-edge" else name.replace("-", " ").capitalize()
+        when = (f'game time {esc(longrun.game_time(tick))} · <a href="/runs/long/shift-{n}/">shift {n}</a>'
+                if tick is not None else "the start")
+        items.append(f'<li><span class="j-pic">{pic}</span><b>{esc(title)}</b><span class="muted small">{when}</span></li>')
+    return (f'<section class="journey" aria-labelledby="journey-h"><h2 id="journey-h">The journey</h2>'
+            f'<ol class="journey-list">{"".join(items)}</ol></section>')
 
 
 # ---------------------------------------------------------------- pages
@@ -945,14 +975,14 @@ def pack_rate_series(spm_packs, lo=None, hi=None):
 
 def firsts_table(firsts, shift_links=True, filters=False):
     if not firsts:
-        return '<p class="muted">None yet.</p>'
+        return '<p class="muted">None yet.</p>' if shift_links else '<p class="muted">No first of the run in this shift.</p>'
     kinds = [k for k in KIND_LABEL if any(f["kind"] == k for f in firsts)]
     bar = ('<div class="kind-filter" role="group" aria-label="Show milestones of one kind" hidden>'
            '<button type="button" class="fx-btn small" data-kind="" aria-pressed="true">All</button>'
            + "".join(f'<button type="button" class="fx-btn small" data-kind="{k}" aria-pressed="false">{KIND_LABEL[k]}</button>'
                      for k in kinds) + '</div>') if filters and len(kinds) > 1 else ""
     rows = "".join(
-        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row">{esc(f["label"])}{video_link(f["shift"], f["t"], 20 if f["kind"] == "team" else 120)}</th>'
+        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row"><span class="ms">{gameicons.first_icon(f, 24)}<span>{esc(f["label"])}</span></span>{video_link(f["shift"], f["t"], 20 if f["kind"] == "team" else 120)}</th>'
         f'<td class="num">{esc(longrun.game_time(f["tick"]))}</td><td class="num">{esc(_pt(f["t"]))}</td>'
         + (f'<td class="num"><a href="/runs/long/shift-{f["shift"]}/">{f["shift"]}</a></td>' if shift_links else "") + "</tr>"
         for f in firsts)
@@ -996,12 +1026,17 @@ def shift_stats(s):
     return "".join([
         stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
         stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
-        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else "")),
-        stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
-        stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average"),
-        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average"),
-        stat("plates / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["plates"]), "iron, copper, steel, shift average"),
-        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["circuits"]), "green, red, blue, shift average"),
+        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else ""),
+             icon=gameicons.item("lab", 28)),
+        stat("rockets", f'{s["rockets"]:,}', f'+{s["rockets_new"]:,}', icon=gameicons.item("rocket-part", 28)),
+        stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average",
+             icon=gameicons.item("automation-science-pack", 28)),
+        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average",
+             icon=gameicons.item("space-science-pack", 28)),
+        stat("plates / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["plates"]), "iron, copper, steel, shift average",
+             icon=gameicons.item("iron-plate", 28)),
+        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["circuits"]), "green, red, blue, shift average",
+             icon=gameicons.item("electronic-circuit", 28)),
         stat("packs made", f'{s["made_total"]:,}'),
         stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}'),
         stat("viewer messages", s["viewer_lines"])])
@@ -1112,6 +1147,9 @@ def build_shift_page(s, v, lr):
     next_l = f'<a href="{shift_href(done[i + 1])}">Shift {done[i + 1]["n"]} →</a>' if i + 1 < len(done) else ""
     nav = f'<p class="shift-nav">{prev_l}<a href="/runs/long/">All shifts</a>{next_l}</p>'
     now = ""
+    watch = (f'<p class="shift-watch"><a class="fx-btn" href="/videos/shift-{s["n"]}/">▶ Watch shift {s["n"]}</a> '
+             f'<span class="muted small">{"with its timeline, the factory&#x27;s numbers and the chat beside the video" if R2.get(s["id"]) else "on this site"}</span></p>'
+             if v or R2.get(s["id"]) else "")
     video = ""
     if v:
         watch = f"https://www.youtube.com/watch?v={esc(v['id'])}"
@@ -1142,6 +1180,7 @@ def build_shift_page(s, v, lr):
 <h1>Shift {s["n"]}{now}</h1>
 <p class="meta">{esc(_when(s["started"], s["ended"]))} Pacific · game time {esc(s["game0"])} to {esc(s["game1"])}</p>
 {nav}
+{watch}
 <div class="stats">{shift_stats(s)}</div>
 {video}
 <h2>Milestones</h2>
@@ -1149,7 +1188,7 @@ def build_shift_page(s, v, lr):
 {f'<p><a href="/chronicle/#shift-{s["n"]}">This shift in the Chronicle</a>: the agents\' own account, beside the platforms built and lost.</p>' if s["n"] in lr.get("chronicle_shifts", ()) else ""}
 {f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
 {plan_html(s["plan"]) if s.get("plan") else ""}
-{f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
+{f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{gameicons.tech(t["name"], 22)}{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
 {long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
 <div class="two-col shift-cols">
 <section>{packs_bars(s["made"], "Packs made") or '<h2>Packs made</h2><p class="muted">None.</p>'}
@@ -1192,7 +1231,7 @@ def platforms_table(plats, losses=None):
         f'<tr><th scope="row">{esc(p["name"])}</th>'
         f'<td data-l="Built">{esc(_pt(p["built"]))} <span class="muted">({esc(longrun.game_time(p["built_tick"]))}, '
         f'<a href="/runs/long/shift-{p["built_shift"]}/">shift {p["built_shift"]}</a>)</span></td>'
-        f'<td data-l="Stopped at">{esc(", ".join(x.capitalize() for x in p["places"]) or "–")}</td>'
+        f'<td data-l="Stopped at">{planet_icons(p["places"], 20) or "–"}</td>'
         f'<td data-l="Lost">' + (f'{esc(_pt(p["lost"]))} <span class="muted">({esc(longrun.game_time(p["lost_tick"]))}, '
                                  f'<a href="/runs/long/shift-{p["lost_shift"]}/">shift {p["lost_shift"]}</a>)</span>'
                                  + (f'<br><span class="small">{esc(clean(losses[p["name"]]))}</span>' if losses.get(p["name"]) else "")
@@ -1232,7 +1271,7 @@ def key_times(lr, heading='<h2 id="key-times">Key times</h2>'):
         cur = next((s for s in done if s["n"] == f["shift"]), None)
         on_air = before + (_hours(cur["started"], f["t"]) if cur else 0)
         name = lab if key != "planet:" else f["label"].replace(" reached", "")
-        tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{esc(name)}</span>'
+        tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{gameicons.first_icon(f, 24)}{esc(name)}</span>'
                      f'<span class="k-val">{esc(longrun.game_time(f["tick"]))}</span>'
                      f'<span class="k-sub">game time · {on_air:.1f} h on stream · {esc(_pt(f["t"]))}</span></a>')
     return (f'{heading}<div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
@@ -1244,7 +1283,7 @@ def packs_bars(made, title="Science packs made"):
     if not have:
         return ""
     top = max(v for _, _, v in have)
-    items = "".join(f'<li><span class="bar-label">{esc(lab)}</span><span class="bar-track"><span class="bar" '
+    items = "".join(f'<li><span class="bar-label">{gameicons.item(item, 22)}{esc(lab)}</span><span class="bar-track"><span class="bar" '
                     f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
                     f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
     return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
@@ -1256,12 +1295,14 @@ def run_summary(lr):
     done = [s for s in lr["shifts"] if not s.get("empty")]
     last = done[-1]
     planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
-    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]), stat("technologies", last["research"]),
-                     stat("rockets", last["rockets"]), stat("science packs", f'{sum(lr["made"].values()):,}'),
-                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets))])
+    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]),
+                     stat("technologies", last["research"], icon=gameicons.item("lab", 28)),
+                     stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
+                     stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
+                     stat("planets reached", len(planets), sub_html=planet_icons(planets))])
     latest = list(reversed(lr["firsts"][-6:]))
-    items = "".join(f'<li><a href="/runs/long/shift-{f["shift"]}/">{esc(f["label"])}</a>'
-                    f'<span class="muted small">{esc(longrun.game_time(f["tick"]))} · {esc(_pt(f["t"]))} · shift {f["shift"]}</span></li>'
+    items = "".join(f'<li>{gameicons.first_icon(f, 28)}<span><a href="/runs/long/shift-{f["shift"]}/">{esc(f["label"])}</a>'
+                    f'<span class="muted small">{esc(longrun.game_time(f["tick"]))} · {esc(_pt(f["t"]))} · shift {f["shift"]}</span></span></li>'
                     for f in latest)
     return f"""
 <section id="run-summary" class="run-summary" aria-labelledby="sum-h">
@@ -1285,15 +1326,15 @@ def records(done):
         s = (min if low else max)(have, key=lambda x: x[key])
         return fmt(s[key]), s
     out = []
-    for lab, key, fmt, low in [("Most rockets in a shift", "rockets_new", str, False),
-                               ("Most technologies in a shift", "research_new", str, False),
-                               ("Best SPM (shift average)", "spm", fmt_num, False),
-                               ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False),
-                               ("Most viewer messages in a shift", "viewer_lines", str, False),
-                               ("Fewest deaths in a shift", "deaths", str, True)]:
+    for lab, key, fmt, low, ico in [("Most rockets in a shift", "rockets_new", lambda v: f"{v:,}", False, "rocket-part"),
+                                    ("Most technologies in a shift", "research_new", str, False, "lab"),
+                                    ("Best SPM (shift average)", "spm", fmt_num, False, "automation-science-pack"),
+                                    ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False, "space-science-pack"),
+                                    ("Most viewer messages in a shift", "viewer_lines", str, False, ""),
+                                    ("Fewest deaths in a shift", "deaths", str, True, "")]:
         b = best(key, fmt, low)
         if b and (low or b[1][key]):
-            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{esc(b[0])}</span>'
+            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{gameicons.item(ico, 24) if ico else ""}{esc(b[0])}</span>'
                        f'<span class="r-label">{esc(lab)}</span><span class="r-shift">Shift {b[1]["n"]}</span></a>')
     return f'<div class="records">{"".join(out)}</div>' if out else ""
 
@@ -1309,14 +1350,15 @@ def build_long_run(lr):
     stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
                      stat("on stream", f"{on_air:.0f} h"),
                      stat("game time", last["game1"]),
-                     stat("technologies", last["research"], f'last: {last["researching"]}' if last.get("researching") else ""),
-                     stat("rockets", last["rockets"]),
-                     stat("science packs", f'{sum(lr["made"].values()):,}'),
-                     stat("platforms", f'{len(lr["platforms"])} built', f'{len(lost_p)} lost · {len(active)} active'
-                          + (f' ({", ".join(p["name"] for p in active)})' if active else "")),
-                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets)),
+                     stat("technologies", last["research"], f'researching {last["researching"]}' if last.get("researching") else "",
+                          icon=gameicons.item("lab", 28)),
+                     stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
+                     stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
+                     stat("platforms built", len(lr["platforms"]), f'{len(lost_p)} lost · {len(active)} active',
+                          icon=gameicons.item("space-platform-hub", 28)),
+                     stat("planets reached", len(planets), sub_html=planet_icons(planets)),
                      stat("agent deaths", sum(s["deaths"] for s in done)),
-                     stat("viewer messages", sum(s["viewer_lines"] for s in done))])
+                     stat("viewer messages", f'{sum(s["viewer_lines"] for s in done):,}')])
     rows = []
     # Run ids (shakeN) name the test history; without the archive the shift number is enough.
     ids = archive()
@@ -1335,9 +1377,10 @@ def build_long_run(lr):
         firsts = by_shift.get(s["n"], [])
         notable = [f for f in firsts if f["kind"] != "research" or f["key"].startswith("tech:planet") or f["key"] in
                    ("tech:rocket-silo", "tech:space-science-pack", "tech:oil-processing")]
-        ms = "".join(f"<li>{esc(f['label'])}</li>" for f in notable[:5])
+        ms = "".join(f"<li>{gameicons.first_icon(f, 18)}{esc(f['label'])}</li>" for f in notable[:5])
         more = f'<li class="muted"><a href="{shift_href(s)}">+{len(firsts) - len(notable[:5])} more</a></li>' if len(firsts) > len(notable[:5]) else ""
-        video = ' <span class="fx-chip">video</span>' if shift_video(s) else ""
+        video = (f' <a class="fx-chip" href="/videos/shift-{s["n"]}/" title="Watch shift {s["n"]}">▶ video</a>'
+                 if shift_video(s) or R2.get(s["id"]) else "")
         now = ""
         rows.append(
             f'<tr><th scope="row"><a href="{shift_href(s)}">Shift {s["n"]}</a>{rid}{now}{video}</th>'
@@ -1367,6 +1410,7 @@ def build_long_run(lr):
 <p class="meta">One save · started {esc(_pt(first["started"]))} Pacific · game clock paused between shifts</p>
 <nav class="jump" aria-label="On this page"><a href="#key-times">Key times</a><a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a><a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
 <div class="stats stats-compact">{stats}</div>
+{journey(lr)}
 {key_times(lr)}
 <h2 id="records">Records</h2>
 {records(done)}
