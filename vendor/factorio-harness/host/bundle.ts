@@ -35,7 +35,9 @@ end
   // it, and fh help keeps one describe per id instead of pulling 280 KB from the game on each call. On the first line,
   // so line numbers in errors stay the bundle's own.
   const source = `local BUNDLE_ID = '${bundleId(body)}'; ` + body;
-  if (Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
+  // The limit is the deployed bundle's (compacted). (d26 batch247) The uncompacted one, built only to compare sizes
+  // (compact.test.ts), passed it: main's was 8,382,920 bytes, 5,688 under, so the next module added failed the test.
+  if (options.compact !== false && Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
   return source;
 }
 /** The first 16 hex digits of the bundle text's SHA-256. */
