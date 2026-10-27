@@ -5069,7 +5069,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   wait_ticks)`. Compact output shows that line shorter (host/format.ts shortClock, d17): `game 98h40m; +5m00s, idle
   5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
   they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
-  `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
+  `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}` (the body lane's), (d26 batch252
+  cp2) `lanes` [{lane: body | remote | platform:NAME, state, steps, loop, plan {id, name}, step {action, label, left_s},
+  done (steps finished ok in the window), last_done_s}] and `lanes_active` (the lanes running now), `sleeping_s`, `sleep_left_s`,
   `unread_chat` (with `unread_chat_to_you`, those naming it, and `unread_chat_kept` 200 when the count reached the
   log's oldest line), `unread_mentions` (tells included), `unread_tells` (pending delivery), `unacked_tells` and
   `unacked_oldest_s` (delivered in a team block, not acknowledged), `unread_board`, `last_request_s`, `stand_ended
@@ -15455,7 +15457,18 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   - tools/idle_nudge.py: the nudge lists what is unanswered, then what is overdue, the rest, and notes last; a new note
     is never a reason to nudge again, a board item newly overdue is ("a board item newly overdue for review"); a
     handoff carries the unanswered and overdue items, never notes.
-- Tests: tools/test_cover_alert.py, tools/test_idle_notes.py, tests/d26_batch252.lua (each fails on main);
+- cp2 (Astra 18:00: "Automatic idle report 93963 said idle 11 min / no queue while remote capture plan 391 and
+  platform:Asterion UM plan 249 had just run 600 s ... and K2 plan 79 remains active"): idle.lua read only the body lane
+  (`s.queues`) for `queue`, the steps counted and standing.
+  - `idle_report` adds `lanes` (every lane of the agent: body, remote, each platform:NAME with a queue, sorted) and
+    `lanes_active`; `counted.text` adds "(other lanes' steps done: remote 2, platform:Asterion 1)" and `counted.lane_steps`.
+    Standing stays the character's own (the body lane, its action, its sleep).
+  - The nudge: "Operator (automatic, facts only): your character idle for 11 min (no action, no body queue step). ...
+    Body queue: paused with 0 steps. Other lanes: remote empty (last plan 391 capture; 2 steps done in 10 min);
+    platform:Asterion empty (last plan 249 UM; 1 step done in 10 min); platform:K2 running (plan 79 K2 ammo; step
+    wait_ticks settle, 30 s left; repeating)." ("none running" when no other lane runs or did a step in the window; no
+    lanes part from a harness without them). The closing line reads "Idle: your character's; ...".
+- Tests: tools/test_cover_alert.py, tools/test_idle_notes.py, tools/test_idle_lanes.py, tests/d26_batch252.lua (each fails on main);
   tools/test_pane_resume_stop.py follows the new rule (a resume is a journal request; the back-off and the bound).
 
 ## d25 batch214 (QZ1, Sol #2379: uptime rows in pages; QZ2, Astra #2380: limits dry_run missed)

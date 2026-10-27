@@ -54,7 +54,9 @@ shows a provider error and no turn running for --idle-min gets one message from 
 dialog on top gets one esc first); (d26 batch252 CA) at most 4, 5, 10 and 20 min apart, resumed only on a request
 of its own in its journal, and still stopped 20 min after it was seen, a facts-only tell to its cover (an active coverer
 of one of its claims, else the handoff's lead), and one when it is back. (d26 batch252 IN) The open line's notes that
-ask nothing (open.lua) come last in the nudge and never make it repeat; a board item newly overdue for review does. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
+ask nothing (open.lua) come last in the nudge and never make it repeat; a board item newly overdue for review does.
+(d26 batch252 cp2, Astra 18:00) The nudge says "your character idle" and "Body queue", then the agent's other lanes
+(idle.lua lanes: remote, platform:NAME) running or with steps done in the window, with plan, step and steps done. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
 fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
 team (on request) and exits; --dry-run logs without sending.
 """
@@ -84,6 +86,41 @@ def queue_text(q):
     if q.get("state") == "running":
         return "running"
     return "empty" if q.get("state") == "empty" else "none"
+
+
+def lane_text(l, window):
+    """(d26 batch252 cp2) One lane of the idle report (idle.lua lanes): its state, plan, step and steps done."""
+    bits = []
+    if l.get("state") == "running":
+        plan = l.get("plan") or {}
+        if plan.get("id") is not None:
+            bits.append(f"plan {plan['id']}" + (f" {plan['name']}" if plan.get("name") else ""))
+        step = l.get("step") or {}
+        if step.get("action"):
+            bits.append(f"step {step['action']}" + (f" {step['label']}" if step.get("label") else "")
+                        + (f", {step['left_s']} s left" if step.get("left_s") is not None else ""))
+        if l.get("loop"):
+            bits.append("repeating")
+    elif l.get("state") == "paused" and l.get("steps"):
+        bits.append(f"{l['steps']} steps")
+    if l.get("state") != "running" and l.get("done") and (l.get("plan") or {}).get("id") is not None:
+        plan = l["plan"]
+        bits.append(f"last plan {plan['id']}" + (f" {plan['name']}" if plan.get("name") else ""))
+    if l.get("done"):
+        bits.append(f"{l['done']} step{'' if l['done'] == 1 else 's'} done in {window} min")
+    return f"{l.get('lane')} {l.get('state')}" + (f" ({'; '.join(bits)})" if bits else "")
+
+
+def lanes_text(row):
+    """(d26 batch252 cp2, Astra 18:00: "idle 11 min / no queue" while its remote and platform:Asterion plans had just run
+    600 s and K2 plan 79 was active) the agent's other queue lanes (remote, platform:NAME) running now or with steps done
+    in the window; '' from a harness without lanes."""
+    lanes = row.get("lanes")
+    if not isinstance(lanes, list):
+        return ""
+    window = (row.get("counted") or {}).get("minutes") or 10
+    shown = [lane_text(l, window) for l in lanes if l.get("lane") != "body" and (l.get("state") == "running" or l.get("done"))]
+    return " Other lanes: " + ("; ".join(shown) if shown else "none running") + "."
 
 
 def orders_text(o):
@@ -163,16 +200,17 @@ def nudge_text(row, standing_s=None):
                 else "")
         doing = f"in {act}{held}{sleep}"
     else:
-        doing = f"no action, no queue step{sleep}"
+        doing = f"no action, no body queue step{sleep}"
     standing = standing_s if standing_s is not None else row.get("standing_s")
     counted = (row.get("counted") or {}).get("text")
-    essential = (f"Operator (automatic, facts only): idle for {minutes(standing)} min ({doing}). "
-                 "Unread for you: " + ", ".join(unread) + f". Queue: {queue_text(row.get('queue'))}.")
-    return fit(essential, [orders_text(row.get("orders")), watches_text(row.get("measures")),
+    # (d26 batch252 cp2) the character's own idleness, apart from the agent's other lanes
+    essential = (f"Operator (automatic, facts only): your character idle for {minutes(standing)} min ({doing}). "
+                 "Unread for you: " + ", ".join(unread) + f". Body queue: {queue_text(row.get('queue'))}.")
+    return fit(essential, [lanes_text(row), orders_text(row.get("orders")), watches_text(row.get("measures")),
                            reason_text(row.get("sleep_reason")), open_text(row.get("open")),
                            f" Counted, {str(counted).rstrip('.')}." if counted else "",
-                           " Idle: a wait or sleep counts; a game action that changed something, a move to a new spot or "
-                           "20 s of work in 2 min ends it." if counted else ""])
+                           " Idle: your character's; a wait or sleep counts; a game action that changed something, a move "
+                           "to a new spot or 20 s of work in 2 min ends it." if counted else ""])
 
 
 def reason_text(reason):

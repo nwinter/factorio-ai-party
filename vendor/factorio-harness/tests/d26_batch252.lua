@@ -71,3 +71,38 @@ do
   has(O.line('sonnet',force),'3 unread notes to you asking nothing (tell from astra 30s ago: Thanks for the wall.; tell from sol 8m00s ago')
 end
 print('d26_batch252 IN open line: ok')
+
+-- cp2 (Astra 18:00: idle report 93963 said "idle 11 min / no queue" while its remote capture plan 391 and
+-- platform:Asterion UM plan 249 had just run 600 s and K2 plan 79 stayed active): the idle report counts every lane.
+do
+  game={tick=3600*600}
+  local T=game.tick
+  local s={active={},stand={[2]=T-11*3600},queues={[2]={paused=true,pending={},history={},revision=4}},
+    remote_queues={[2]={paused=false,pending={},revision=9,plan={id=391,kind='submit',name='capture',tick=T-36000,steps=3},
+      history={{action='wait_ticks',ok=true,finished_tick=T-1200,plan=391},{action='observe',ok=true,finished_tick=T-600,plan=391}}}},
+    platform_lanes={Asterion=true,K2=true,Gone=true},
+    ['lane_queues|Asterion']={[2]={paused=false,pending={},revision=3,plan={id=249,kind='submit',name='UM',tick=T-36000,steps=2},
+      history={{action='wait_until',ok=true,finished_tick=T-900,plan=249}}}},
+    ['lane_queues|K2']={[2]={paused=false,pending={{action='flight_watch'}},revision=7,plan={id=79,kind='repeat',name='K2 ammo',tick=T-72000,steps=2},
+      loop={}, current={id='job-3',action='wait_ticks',label='settle',plan=79,until_tick=T+1800,started_tick=T-600},history={}}}}
+  local I=dofile('mod/agent-harness_0.1.0/idle.lua'){state=function() return s end,
+    agents=function() return {{index=2,name='astra'}} end,mention_counts=function() return {agents={}} end,
+    unread=function() return {} end,has_body=function() return true end}
+  local row=I.operator.idle_report({}).agents[1]
+  eq(row.standing_s,660,'the character stood 11 min'); eq(row.queue.state,'paused','the body queue as before')
+  eq(#row.lanes,4,'body, remote, platform:Asterion, platform:K2 (none for Gone)')
+  eq(row.lanes[1].lane,'body'); eq(row.lanes[1].state,'paused')
+  eq(row.lanes[2].lane,'remote'); eq(row.lanes[2].state,'empty'); eq(row.lanes[2].done,2); eq(row.lanes[2].plan.id,391)
+  eq(row.lanes[3].lane,'platform:Asterion'); eq(row.lanes[3].done,1); eq(row.lanes[3].last_done_s,15)
+  local k2=row.lanes[4]
+  eq(k2.lane,'platform:K2'); eq(k2.state,'running'); eq(k2.plan.id,79); eq(k2.plan.name,'K2 ammo'); eq(k2.loop,true)
+  eq(k2.step.action,'wait_ticks'); eq(k2.step.label,'settle'); eq(k2.step.left_s,30); eq(k2.steps,2)
+  eq(#row.lanes_active,1); eq(row.lanes_active[1],'platform:K2')
+  has(row.counted.text,"(other lanes' steps done: remote 2, platform:Asterion 1)")
+  eq(row.counted.lane_steps[1],'remote 2')
+  -- an agent with only a body queue: one lane, none active
+  s.remote_queues, s.platform_lanes = {}, {}
+  row=I.operator.idle_report({}).agents[1]
+  eq(#row.lanes,1); eq(row.lanes_active,nil); lacks(row.counted.text,'other lanes')
+end
+print('d26_batch252 cp2 idle report lanes: ok')

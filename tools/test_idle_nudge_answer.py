@@ -41,9 +41,9 @@ def main():
                                 "standing 100%, on watch 100% of it (standing orders armed: fish-heal)"})
     t = N.nudge_text(muse)
     assert len(t.encode()) <= N.TELL_MAX, len(t.encode())
-    assert t.startswith("Operator (automatic, facts only): idle for 1079 min (no action, no queue step). Unread for you: "
+    assert t.startswith("Operator (automatic, facts only): your character idle for 1079 min (no action, no body queue step). Unread for you: "
                         "200 chat messages (3 naming you), 8 mentions, 110 tells, 3 tells shown, not acknowledged "
-                        "(oldest 1029 min), 6 board lines. Queue: paused with 0 steps."), t
+                        "(oldest 1029 min), 6 board lines. Body queue: paused with 0 steps."), t
     assert "Open for you: 1 request or tell to you unanswered (tell from haiku 29m14s ago" in t, t
     assert t.endswith("..."), t
     # long durations, a long sleep reason, long watch lines and names (UTF-8 too): never over 500 bytes, counts kept

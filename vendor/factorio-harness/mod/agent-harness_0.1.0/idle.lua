@@ -21,6 +21,42 @@ return function(api)
     if q.current or #q.pending > 0 or q.loop then return {state='running', steps=steps, loop=q.loop ~= nil or nil} end
     return {state='empty'}
   end
+  -- (d26 batch252 cp2, Astra 18:00: idle report 93963 said "idle for 11 min (no action, no queue step)" and "Queue: paused
+  -- with 0 steps" while its remote capture plan 391 and platform:Asterion plan 249 had just run 600 s and K2 plan 79 was
+  -- active) every queue lane of the agent, the body's (its character's) first, then remote and each platform:NAME (sorted):
+  -- {lane, state (running, paused, empty), steps (pending and current), loop, plan {id, name}, step {action, label,
+  -- left_s}, done (steps finished ok since `since`), last_done_s}. Standing stays the character's own (the body lane).
+  local function lane_row(name, q, since)
+    if not q then return nil end
+    local steps = #(q.pending or {}) + (q.current and 1 or 0)
+    local state = q.paused and 'paused' or (q.current or steps > 0 or q.loop) and 'running' or 'empty'
+    local done, last = 0, nil
+    for i = #(q.history or {}), 1, -1 do
+      local h = q.history[i]
+      last = last or h.finished_tick
+      if (h.finished_tick or 0) < since then break end
+      if h.ok then done = done + 1 end
+    end
+    local cur = q.current
+    local plan = q.plan and (not cur or not cur.plan or cur.plan == q.plan.id) and q.plan or nil
+    return {lane=name, state=state, steps=steps, loop=q.loop ~= nil or nil, plan=plan and {id=plan.id, name=plan.name} or nil,
+      step=cur and {action=cur.action, label=cur.label, left_s=cur.until_tick and math.max(0, math.floor((cur.until_tick - game.tick) / 60)) or nil} or nil,
+      done=done, last_done_s=last and math.floor((game.tick - last) / 60) or nil}
+  end
+  function M.lanes(index, since)
+    local s = api.state()
+    local out = {}
+    out[#out+1] = lane_row('body', (s.queues or {})[index], since)
+    out[#out+1] = lane_row('remote', (s.remote_queues or {})[index], since)
+    local names = {}
+    for name in pairs(s.platform_lanes or {}) do names[#names+1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      local row = lane_row('platform:' .. name, (s['lane_queues|' .. name] or {})[index], since)
+      if row then out[#out+1] = row end
+    end
+    return out
+  end
   -- Standing: nothing moves or works the character. A wait is not work
   -- (shift07: Sonnet's wait_ticks of 20000-30000 ticks back to back, 70
   -- minutes, never nudged), nor a queue held behind a direct wait (a plan
@@ -201,6 +237,12 @@ return function(api)
       if h.ok then steps = steps + 1 end
     end
     c.queue_steps = steps
+    -- (cp2) the other lanes' steps finished ok in the window
+    local other = {}
+    for _, l in ipairs(M.lanes(index, since)) do
+      if l.lane ~= 'body' and l.done > 0 then other[#other+1] = string.format('%s %d', l.lane, l.done) end
+    end
+    c.lane_steps = #other > 0 and other or nil
     local total = c.busy_s + c.measure_s + c.waiting_s + c.asleep_s + c.standing_s  -- on watch overlaps asleep, waiting and standing
     local ids = {}
     for id in pairs(measured) do ids[#ids+1] = id end
@@ -217,7 +259,8 @@ return function(api)
     table.sort(waits)
     c.text = string.format('last %d min: %d game action%s%s%s, %d read%s, %d message%s; working %d%%%s, asleep %d%%%s, waiting %d%%%s, standing %d%%',
       minutes, c.actions, c.actions == 1 and '' or 's', c.no_effect > 0 and string.format(' (and %d with no effect)', c.no_effect) or '',
-      steps > 0 and string.format(', %d queue step%s done', steps, steps == 1 and '' or 's') or '',
+      (steps > 0 and string.format(', %d queue step%s done', steps, steps == 1 and '' or 's') or '')
+        .. (#other > 0 and string.format(' (other lanes\' steps done: %s)', table.concat(other, ', ')) or ''),
       c.reads, c.reads == 1 and '' or 's', c.messages, c.messages == 1 and '' or 's',
       pct(c.busy_s), c.measure_s > 0 and string.format(', measuring %d%% (%s)', pct(c.measure_s), table.concat(ids, ', ')) or '', pct(c.asleep_s), #sleeps > 0 and ' (' .. table.concat(sleeps, ', ') .. ')' or '',
       pct(c.waiting_s), #waits > 0 and ' (' .. table.concat(waits, ', ') .. ')' or '', pct(c.standing_s))
@@ -242,12 +285,18 @@ return function(api)
       local last_end = s.stand_end and s.stand_end[ag.index]
       local ok_open, open_line = false, nil
       if api.open then ok_open, open_line = pcall(api.open, ag.index, ag.name) end
+      local window = math.min((a or {}).minutes or BUCKETS, BUCKETS)
+      local lanes = M.lanes(ag.index, (math.floor(game.tick / BUCKET) - window + 1) * BUCKET)
+      local active = {}
+      for _, l in ipairs(lanes) do if l.state == 'running' then active[#active+1] = l.lane end end
       if not ok_open then open_line = nil end
       out[#out+1] = {name=ag.name, display_name=ag.display_name,
         standing_s=since and math.floor((game.tick - since) / 60) or 0,
         alive=api.has_body(ag.index),
         action=act and act.kind or nil, action_until_s=act and act.until_tick and math.floor((act.until_tick - game.tick) / 60) or nil,
         queue=queue_of(ag.index),
+        -- (cp2) every lane, and those running now
+        lanes=lanes, lanes_active=#active > 0 and active or nil,
         sleeping_s=sleeping and math.floor((game.tick - sl.start_tick) / 60) or nil,
         sleep_left_s=sleeping and math.floor((sl.until_tick - game.tick) / 60) or nil,
         sleep_reason=sleeping and sl.reason or nil,  -- (d20 batch70 AF1) the agent's own reason to wait, as given
@@ -272,7 +321,8 @@ return function(api)
         open=open_line,
         stand_ended=last_end and {s_ago=math.floor((game.tick - last_end.tick) / 60), why=last_end.why} or nil}
     end
-    return {agents=out, tick=game.tick, idle='standing: no action and no running queue; a wait or sleep is standing; '
+    return {agents=out, tick=game.tick, idle='standing: the character\'s own (no action and no running body queue); a wait or sleep is standing; '
+      .. 'lanes: every queue lane (body, remote, platform:NAME) with its state, plan, step and steps done in the window; '
       .. 'a game action that changed something, a move to a new spot or 20 s of work in 2 minutes ends it; '
       .. 'a bounded watch running (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch) is measuring, not standing, until its end tick'}
   end
