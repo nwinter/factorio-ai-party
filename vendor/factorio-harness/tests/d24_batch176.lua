@@ -75,10 +75,10 @@ eq(r.done,true); eq(r.exact_tile,true)
 -- left lane: the items that reached the exit; all but id 3 seen on N after; id 3 gone at the end, not seen there
 eq(r.left.left,6); eq(r.left.passed_on,5); eq(r.left.not_seen_after,1); eq(r.left.taken,0); eq(r.left.rate,180)
 -- right lane: the inserter's takes from mid-lane, and its hand counts the same
-eq(r.right.taken,4); eq(r.right.passed_on,0); eq(r.right.taken_items,'explosives 4'); eq(r.right.state,'120/min'); eq(r.right.held,4)
+eq(r.right.taken,4); eq(r.right.passed_on,0); eq(r.right.taken_items,'explosives 4'); eq(r.right.state,'120 items/min'); eq(r.right.held,4)
 eq(r.picked,4); eq(r.inserters[1].picked,4); eq(r.inserters[1].rate,120); eq(r.inserters[1].items,'explosives 4')
-eq(r.lines[1],"tile (13.5,25.5) fast-transport-belt #"..T.unit_number.." facing south: left lane 180/min (explosives 6): 5 seen on fast-transport-belt (13.5,26.5) after, 0 gone from mid-lane (taken off this tile), 1 gone at the lane's end and not seen on it, 1 held; right lane 120/min (explosives 4): 0 seen on fast-transport-belt (13.5,26.5) after, 4 gone from mid-lane (taken off this tile), 0 gone at the lane's end and not seen on it, 4 held")
-eq(r.lines[2],'inserters picking from this tile (their hands read each sample): fast-inserter (12.5,25.5) #900 picked 4 (120/min: explosives 4)')
+eq(r.lines[1],"tile (13.5,25.5) fast-transport-belt #"..T.unit_number.." facing south: left lane 180 items/min (explosives 6): 5 seen on fast-transport-belt (13.5,26.5) after, 0 gone from mid-lane (taken off this tile), 1 gone at the lane's end and not seen on it, 1 held; right lane 120 items/min (explosives 4): 0 seen on fast-transport-belt (13.5,26.5) after, 4 gone from mid-lane (taken off this tile), 0 gone at the lane's end and not seen on it, 4 held")
+eq(r.lines[2],'inserters picking from this tile (their hands read each sample): fast-inserter (12.5,25.5) #900 picked 4 (120 items/min: explosives 4)')
 -- the blocked end: both lanes stopped full, nothing picks there
 inserters={}
 lanes[N][1]={{701,0,'explosives'},{702,0.25,'explosives'},{703,0.5,'explosives'},{704,0.75,'explosives'}}

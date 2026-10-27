@@ -47,9 +47,9 @@ eq(r.done,true); eq(r.samples,9)
 eq(r.points[1].left.passed,4); eq(r.points[1].left.rate,112.5); eq(r.points[1].left.items,'iron-plate 4')
 eq(r.points[1].right.state,'stopped, full (4 coal on the tile)'); eq(r.points[1].right.rate,0)
 eq(r.points[2].kind,'side'); eq(r.points[2].left.items,'copper-plate 4')
-eq(r.lines[1],'section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5/min (iron-plate 4); right lane stopped, full (4 coal on the tile)')
-eq(r.lines[2],'belt (4.5,-0.5) merging into (4.5,0.5): left lane 112.5/min (copper-plate 4); right lane empty')
-eq(r.merges[1],'merge at (4.5,0.5): line 112.5/min + belt (4.5,-0.5) 112.5/min in (225/min), 112.5/min on after it')
+eq(r.lines[1],'section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5 items/min (iron-plate 4); right lane stopped, full (4 coal on the tile)')
+eq(r.lines[2],'belt (4.5,-0.5) merging into (4.5,0.5): left lane 112.5 items/min (copper-plate 4); right lane empty')
+eq(r.merges[1],'merge at (4.5,0.5): line 112.5 items/min + belt (4.5,-0.5) 112.5 items/min in (225 items/min), 112.5 items/min on after it')
 -- (d17 batch35 B2) the side-load's side and lane, the mix after it, and the limit (the end's right lane backed up)
 eq(r.lane_mix[1],"side-load at (4.5,0.5): belt (4.5,-0.5) facing south comes in from the line's left side (the line faces east): both its lanes go onto the line's left lane; after it the left lane carries iron-plate 4, the right stopped, full (4 coal on the tile)")
 eq(r.limit,'the end is backed up on its right lane at (6.5,0.5) (4 coal)')
@@ -66,7 +66,7 @@ do
   S2.handler({index=3,force=force},{position={x=1.5,y=10.5},seconds=2})
   for t=201,340 do game.tick=t; S2.tick(t) end
   local r2=S2.handler({index=3,force=force},{})
-  eq(r2.limit,"a side-load waits at (3.5,10.5): belt (3.5,9.5) is stopped full of 4 carbon while the line after it runs at its cap (450/min a lane): the line's own items go first")
+  eq(r2.limit,"a side-load waits at (3.5,10.5): belt (3.5,9.5) is stopped full of 4 carbon while the line after it runs at its cap (450 stacks/min a lane): the line's own items go first")
 end
 -- arguments
 fails(function() S.handler(p,{position={x=2.5,y=0.5},seconds=1}) end,'seconds: 2..30')
