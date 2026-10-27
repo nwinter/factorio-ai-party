@@ -330,8 +330,7 @@ return function(api)
         local route = out.route or {}
         if #route > 0 then
           local ticks = api.integer(a.ticks, 18000, 60, 54000, 'ticks (60..54000)')
-          local unlanded
-          for _, l in ipairs(out.landed or {}) do if l:find('no tile its legs stand on', 1, true) then unlanded = l end end
+          local unlanded = out.unlanded
           local action = {kind='spider_go', spider=spider, unit=spider.unit_number, set_tick=game.tick, start_tick=game.tick,
             until_tick=game.tick + ticks, target={x=route[#route].x, y=route[#route].y}, landed=out.landed, unlanded=unlanded,
             remote=a.remote or nil}

@@ -14502,6 +14502,13 @@ spiderroute.lua):
   the line) were crossed, 20 not (it slid along the edge); jagged strips (each row's edges moved up to 3 tiles) up to
   18 tiles on the line were crossed. GAP (a straight leg's water run taken as crossable, and a hop's reach) is now 14
   (was 12): a strip of 14 is walked straight, one of 15 gets a path round it.
+- (operator 16:44, Opus's go_to (0,850) and (400,850) on d26: mid-lake, nothing dry within 48 tiles; each walked to the
+  shore and spent 3 recoveries on "no path") a target on water is landed past 48 tiles: rings every 4 tiles to 160 (64
+  points each), then the first spot with room on the straight line back toward the spidertron; the reply's `landed`
+  says which and how far. With none, `unlanded`: no path is asked and no recovery spent; the stall line says it once.
+  Replayed on the copy: (0,850) landed at (-59.5,882.5), 68 tiles from it, arrived in 61.6 s; (400,850) landed on the
+  line at (-79.5,849.5), 480 tiles short, arrived in 26.6 s (both were unreachable after 3 recoveries before). A go_to
+  costs 6.4-10.4 ms on the copy with the far search (3.6 ms to a dry target); the far rings alone 2.5 ms.
 
 ## d24 batch192 QAH1: the hub keep rule by quality (Sol #2264)
 

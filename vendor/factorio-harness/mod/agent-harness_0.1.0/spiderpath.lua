@@ -35,6 +35,10 @@ return function(api)
   -- or 18; 45-degree strips up to 18 across (25 along the line) and jagged strips up to 18 on the line all crossed
   M.GAP, M.SPACING, M.BOX, M.MAX_POINTS = 14, 12, 0.4, 120
   M.HOPS, M.HOP_MIN, M.DRY_START, M.DRY_GOAL, M.LAND, M.DRY_FAR = 4, 4, 8, 24, 20, 48
+  -- (d26 batch247, operator 16:44: Opus's go_to (0,850) and (400,850) on d26, mid-lake, nothing dry within 48 tiles)
+  -- past DRY_FAR: rings every FAR_STEP tiles to FAR_MAX, FAR_POINTS points each; then the straight line back from the
+  -- target toward the spidertron, every 2 tiles
+  M.FAR_MAX, M.FAR_STEP, M.FAR_POINTS = 160, 4, 64
   local water = {}  -- tile name -> its legs cannot stand on it (player or rail layer; prototype facts: the same on every peer)
   local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x * 10 + 0.5) / 10, math.floor(q.y * 10 + 0.5) / 10) end
@@ -251,12 +255,38 @@ return function(api)
       by=rec.by, owner=rec.owner, tick=game.tick, via=rec.from and {x=rec.from.x, y=rec.from.y} or nil}
     return lines
   end
-  -- A target on water ends at the dry spot nearest it (its legs stand nowhere on it). -> the point, and a note or nil.
-  function M.landing(surface, q)
+  -- Past DRY_FAR: the first spot with room on rings DRY_FAR + FAR_STEP .. FAR_MAX round q, else nil.
+  function M.dry_far(surface, q)
+    for r = M.DRY_FAR + M.FAR_STEP, M.FAR_MAX, M.FAR_STEP do
+      for k = 0, M.FAR_POINTS - 1 do
+        local a = 2 * math.pi * k / M.FAR_POINTS
+        local c = {x=math.floor(q.x + r * math.cos(a)) + 0.5, y=math.floor(q.y + r * math.sin(a)) + 0.5}
+        if M.clear(surface, c) then return c end
+      end
+    end
+    return nil
+  end
+  -- The first spot with room on the straight line from q back toward `from`, every 2 tiles, else nil.
+  function M.dry_line(surface, q, from)
+    local d = dist(q, from)
+    for k = 2, math.floor(d), 2 do
+      local c = {x=math.floor(q.x + (from.x - q.x) * k / d) + 0.5, y=math.floor(q.y + (from.y - q.y) * k / d) + 0.5}
+      if M.clear(surface, c) then return c end
+    end
+    return nil
+  end
+  -- A target on water ends at the dry spot nearest it (its legs stand nowhere on it): within DRY_FAR tiles, then on
+  -- rings to FAR_MAX, then along the line back toward `from` (the spidertron). -> the point, a note or nil, and true
+  -- when none was found (unlanded: no path is asked and no recovery spent on it).
+  function M.landing(surface, q, from)
     if not wet(surface, q.x, q.y) then return q, nil end
     local d = M.dry(surface, q, M.DRY_FAR)
-    if not d then return q, string.format('the target %s is on water with no tile its legs stand on within %d tiles: it walks toward it and stops at the shore', at(q), M.DRY_FAR) end
-    return d, string.format('the target %s is on water: the route ends at %s, the nearest spot its legs stand on', at(q), at(d))
+    if d then return d, string.format('the target %s is on water: the route ends at %s, the nearest spot its legs stand on', at(q), at(d)) end
+    d = M.dry_far(surface, q)
+    if d then return d, string.format('the target %s is on water: the route ends at %s, the nearest spot its legs stand on (%.0f tiles from it)', at(q), at(d), dist(q, d)) end
+    d = from and M.dry_line(surface, q, from)
+    if d then return d, string.format('the target %s is on water with no tile its legs stand on within %d tiles round it: the route ends at %s, the first spot its legs stand on along the line back toward the spidertron (%.0f tiles short of the target)', at(q), M.FAR_MAX, at(d), dist(q, d)) end
+    return q, string.format('the target %s is on water with no tile its legs stand on within %d tiles round it or on the line back toward the spidertron: it walks toward it and stops at the shore; no path is asked and no recovery spent on it', at(q), M.FAR_MAX), true
   end
   -- The route a plan gives: (its back-off spot,) each target (on water: the dry spot nearest it), with a found path's
   -- points before it.

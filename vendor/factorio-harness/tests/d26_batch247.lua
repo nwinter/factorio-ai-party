@@ -94,4 +94,42 @@ assert(last.why:find('its route ended at (9.1,0.5)',1,true),last.why)
 
 -- 6. destroyed
 sd.valid=false; eq(R.watch(a),'destroyed'); sd.valid=true
+-- 7. (operator 16:44, Opus's (0,850) and (400,850) on d26) a target mid-lake: the landing search goes past 48 tiles,
+-- on rings to 160, then along the line back toward the spidertron; with nothing dry it is said once, no path is
+-- asked and no recovery spent.
+-- a lake x -100..100, y -100..100; target (0,0): dry 101 tiles away: the rings find it
+wetset={}; water(-100,-100,100,100)
+local d,note,none=P.landing(surface,{x=0.5,y=0.5},{x=-150,y=0.5})
+assert(d and P.clear(surface,d) and note:find('the nearest spot its legs stand on (',1,true) and not none,tostring(note))
+assert(math.abs(d.x)>100 or math.abs(d.y)>100,'beyond the lake')
+-- a lake x -200..200: nothing within 160 round it; along the line back toward the spidertron at x -250: x -201
+wetset={}; water(-200,-200,200,200)
+d,note,none=P.landing(surface,{x=0.5,y=0.5},{x=-250.5,y=0.5})
+assert(d and d.x<-200 and note:find('the first spot its legs stand on along the line back toward the spidertron',1,true) and not none,tostring(note))
+-- the spidertron itself out on the water too (no dry spot on the line): unlanded
+d,note,none=P.landing(surface,{x=0.5,y=0.5},{x=-150,y=0.5})
+eq(none,true); assert(note:find('no path is asked and no recovery spent on it',1,true),note)
+-- go_to there: said in the reply, no path asked; at its stall no recovery, the stall line once; a waited go_to: unreachable
+wetset={}; water(-200,-200,200,200)
+for x=-205,-201 do for y=-3,3 do wetset[x..','..y]=nil end end   -- it stands on a dry spit at the lake's west edge
+-- from the spit: the line back reaches its own dry ground, so the route ends there (d26's case: it arrives at the
+-- shore instead of stalling there through 3 recoveries)
+route={}; sd.position={x=-203.5,y=0.5}
+local r6=R.set(spider,{go_to={x=0.5,y=0.5}},'sol')
+eq(r6.unlanded,nil); assert(r6.landed[1]:find('along the line back toward the spidertron',1,true),r6.landed[1])
+assert(route[#route].x<=-200,'the route ends at the spit: '..route[#route].x)
+-- its body out over the water (no dry spot on its line either): unlanded
+route={}; sd.position={x=-150.5,y=0.5}
+local before7=#requests
+local r7=R.set(spider,{go_to={x=0.5,y=0.5}},'sol')
+eq(#requests,before7,'no path asked'); eq(r7.water,nil)
+assert(r7.unlanded and r7.landed[1]==r7.unlanded,tostring(r7.unlanded))
+local a7={kind='spider_go',spider=spider,unit=8101,set_tick=game.tick,start_tick=game.tick,target={x=0.5,y=0.5},unlanded=r7.unlanded}
+sd.position={x=-201.2,y=0.5}                       -- at the shore, 1 tile from the water
+local seen7=storage.spiderroute.eseq
+ticks(R.STALL_WATER+120)
+local l7=R.lines({name='sol'},{spiderroute_seen=seen7})
+eq(#l7,1,'said once'); assert(l7[1]:find('no path is asked and no recovery spent on it',1,true) and not l7[1]:find('recovery 1',1,true),l7[1])
+eq(storage.spiderroute.spiders[8101].tries,nil,'no recovery spent')
+eq(R.watch(a7),'unreachable')
 print('d26_batch247: ok')

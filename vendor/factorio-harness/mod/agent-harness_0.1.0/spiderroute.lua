@@ -118,8 +118,10 @@ return function(api)
       -- (500,600) on d26 the route ended at the shore, stalled)
       if api.path and api.path.landing then
         for i, q in ipairs(list) do
-          local okl, d, note = pcall(api.path.landing, spider.surface, q)
+          local okl, d, note, none = pcall(api.path.landing, spider.surface, q, spider.position)
           if okl and note then list[i] = d; out.landed = out.landed or {}; out.landed[#out.landed + 1] = note end
+          -- (d26 batch247, operator 16:44) nothing dry found for it: no path asked, no recovery spent (said once, at its stall)
+          if okl and none then out.unlanded = note end
         end
       end
       local mode = a.mode or 'replace'
@@ -141,6 +143,7 @@ return function(api)
     if #r > 0 then
       local t = entry(spider, r, by, index)
       if own ~= nil then t.retreat = own end
+      if out.unlanded then t.unlanded = out.unlanded end
       -- (d26 batch243) its trail (spots it stood with room for a path) is the spidertron's, kept across go_to calls
       local old = st.spiders[spider.unit_number]
       if old and old.trail then t.trail = old.trail end
@@ -151,7 +154,7 @@ return function(api)
       st.spiders[spider.unit_number] = nil
     end
     -- (d24 batch191) each straight leg read for water its legs cannot cross; paths round it requested (spiderpath.lua)
-    if a.go_to ~= nil and #r > 0 and api.path then
+    if a.go_to ~= nil and #r > 0 and api.path and not out.unlanded then
       local ok, lines = pcall(api.path.plan, spider, r, {owner='route', by=by})
       if ok and lines then out.water = {crossing=lines, note='paths round the water were requested: the route becomes them when they come (often within this call), said once in team alerts (this reply or a later one)'} end
     end
@@ -186,6 +189,7 @@ return function(api)
   local function recover(e, t, r)
     local P = api.path
     if not (P and P.dry) then return nil end
+    if t.unlanded then return nil end  -- (d26 batch247) a target with nothing dry near it: no recovery spent
     t.tries = t.tries or {}
     if #t.tries >= M.RECOVER then return nil end
     local pos, q = e.position, r[1]
@@ -459,7 +463,7 @@ return function(api)
             local held = st.locks and st.locks[unit]
             event(string.format('spidertron #%d: %s%s%s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress',
               t.tries and #t.tries > 0 and string.format('; %d recover%s tried', #t.tries, #t.tries == 1 and 'y' or 'ies') or '',
-              t.no_path and '; ' .. t.no_path or '', f.route_line,
+              t.no_path and '; ' .. t.no_path or t.unlanded and '; ' .. t.unlanded or '', f.route_line,
               held and 'its retreat route; held: go_to is refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat)'
                 or 'vehicle {go_to, mode: "replace"} sets a new one, {clear: true} empties it'), t.by, unit)
             if held and held.agents[2] and held.agents[2] ~= t.by then event(st.events[#st.events].text, held.agents[2], unit) end
@@ -487,7 +491,7 @@ return function(api)
     if not t then return nil end
     if t.tick ~= action.set_tick then return 'route_changed' end
     if t.retreated then return 'retreated' end
-    if t.stalled then return (t.no_path or action.unlanded) and 'unreachable' or 'stalled' end
+    if t.stalled then return (t.no_path or t.unlanded or action.unlanded) and 'unreachable' or 'stalled' end
     return nil
   end
   -- The waited go_to's last: where it stands, its route, what it did, and why it ended.
@@ -510,7 +514,7 @@ return function(api)
       last.why = string.format('arrived at %s (its route ended at %s)', at(d.at), at(d.target or action.target))
     elseif outcome == 'stalled' or outcome == 'unreachable' then
       last.why = (f.stalled and f.stalled.line or 'no progress') .. (last.recovery and string.format('; %d recover%s tried', #last.recovery, #last.recovery == 1 and 'y' or 'ies') or '')
-        .. (last.no_path and '; ' .. last.no_path or '') .. (outcome == 'unreachable' and action.unlanded and '; ' .. action.unlanded or '')
+        .. (last.no_path and '; ' .. last.no_path or '') .. (outcome == 'unreachable' and not last.no_path and action.unlanded and '; ' .. action.unlanded or '')
     elseif outcome == 'route_changed' then
       last.why = 'its route was set again (another go_to or clear, or a player): ' .. f.route_line
     elseif outcome == 'retreated' then
