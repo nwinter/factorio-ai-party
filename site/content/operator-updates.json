@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-27 01:29",
+ "notices_checked": "2026-10-27 02:20",
  "backlog_reviewed": "2026-10-26 20:36",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
@@ -220,6 +220,7 @@
   {"t": "2026-10-26 18:47", "kind": "deploy", "text": "Harness runtime deployed (8cfeaa03).", "affected": "harness runtime"},
   {"t": "2026-10-26 20:00", "kind": "deploy", "text": "Harness runtime deployed (e1f1b528).", "affected": "harness runtime"},
   {"t": "2026-10-26 22:41", "kind": "shift", "text": "Shift 84 change began.", "affected": "stream and agents", "recovered": "2026-10-26 22:51"},
-  {"t": "2026-10-27 00:03", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-27 00:03"}
+  {"t": "2026-10-27 00:03", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-27 00:03"},
+  {"t": "2026-10-27 02:18", "kind": "outage", "text": "The host's internet connection dropped for about two minutes. The stream reconnected at 02:19:40 on the same broadcast; site updates and narration resumed at 02:20.", "affected": "stream and site", "recovered": "2026-10-27 02:20"}
  ]
 }
