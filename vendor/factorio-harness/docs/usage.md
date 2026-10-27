@@ -16584,5 +16584,6 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   provider and none in the plant. After the batch the plant had `fusion-generator < 2` back (and was off by it, with 12
   in the network), and the input inserter had `fusion-generator < 6` back. A dry run through dispatch took 5.7-12.8 ms
   there (Rosetta), including the JSON. It runs only when called; nothing is added to the tick.
+- Bundle (compacted): 6,270,315 bytes on main (5c6ef5ce), 6,278,546 with this branch (limit 8,388,608).
 - Docs: agent/ref/circuits-settings.md (`assembler_batch`). Test: tests/d27_batch278.lua (fails on main: no counter, no
   conditions, no counter_from); tests d17_batch19, d20_batch53, d22_batch77 and d17_batch19_rt take the new steps.
