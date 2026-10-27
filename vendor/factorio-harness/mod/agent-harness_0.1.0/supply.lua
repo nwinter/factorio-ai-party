@@ -1147,27 +1147,105 @@ return function(api)
       end
     end
   end
-  -- Its words, for the worst only (the condition read costs a circuit read).
-  local function held_text(h, lacks)
-    if h.src then
-      return string.format('its requester %s %s asks for %d %s, one craft takes %d; it holds %d', h.src.name, at(h.src.position), h.want, h.item, h.need,
-        try(function() return h.src.get_item_count(h.item) end) or 0)
-    end
-    local i = h.arm
-    -- (an inserter off by its condition keeps the pickup target it had; the one at its pickup position then)
-    local src = try(function() return i.pickup_target end) or try(function()
+  -- An input arm's source (an inserter off by its condition keeps the pickup target it had; the one at its pickup
+  -- position then), and how many of an item it holds (a belt: its lines).
+  local function arm_source(i)
+    return try(function() return i.pickup_target end) or try(function()
       for _, c in ipairs(i.surface.find_entities_filtered{position=i.pickup_position, limit=4}) do if c ~= i and c.type ~= 'character' then return c end end
     end)
+  end
+  local BELTS = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
+  local function source_holds(src, name)
+    if BELTS[src.type] then
+      local n = try(function()
+        local t = 0
+        for k = 1, src.get_max_transport_line_index() do t = t + src.get_transport_line(k).get_item_count(name) end
+        return t
+      end)
+      if n then return n end
+    end
+    return try(function() return src.get_item_count(name) end) or 0
+  end
+  -- An arm off by its condition, in words: the condition with the value its signal reads now, its source and what that
+  -- holds of lacks (the condition read costs a circuit read).
+  local function arm_text(i, lacks)
+    local src = arm_source(i)
     local holds = {}
     if src and src.valid then
       for _, name in ipairs(lacks) do
-        local n = try(function() return src.get_item_count(name) end) or 0
+        local n = source_holds(src, name)
         if n > 0 then holds[#holds+1] = n .. ' ' .. name end
       end
     end
     local where = src and src.valid and string.format('%s %s holds %s', src.name, at(src.position), #holds > 0 and table.concat(holds, ', ') or 'none of ' .. table.concat(lacks, ', ')) or 'no source'
     local why = api.state_text and try(api.state_text, i) or 'off by its circuit or logistic condition'
     return string.format('input %s %s %s; its source %s', i.name, at(i.position), why, where)
+  end
+  -- Its words, for the worst only.
+  local function held_text(h, lacks)
+    if h.src then
+      return string.format('its requester %s %s asks for %d %s, one craft takes %d; it holds %d', h.src.name, at(h.src.position), h.want, h.item, h.need,
+        try(function() return h.src.get_item_count(h.item) end) or 0)
+    end
+    return arm_text(h.arm, lacks)
+  end
+  -- (d26 batch244, Astra #2455: shortages said two cryogenic plants were short of ice while both their feeders were off
+  -- by the logistic condition cryogenic-science-pack < 2000, their requesters holding 101 and 103 ice) for the reads that
+  -- list short machines (shortages, game_alerts' silo_short, a wait's starved alert, the factory digest): for each item
+  -- of items that e lacks, an input inserter off by its circuit or logistic condition whose source holds it, while no
+  -- input inserter running has it at its source or in its hand: {[item] = {arm, source, count}}, or nil. arms: the
+  -- inserters dropping into e (default api.feeders_of, at most 32 found), the first HELD_ARMS read: a status, a pickup
+  -- and a count each.
+  local HELD_ARMS = 8
+  function M.held_feeders(e, items, arms)
+    arms = arms or (api.feeders_of and try(function() return api.feeders_of(e) end)) or {}
+    local off, on = {}, {}
+    local gate = (defines.entity_status or {}).disabled_by_control_behavior
+    for k, i in ipairs(arms) do
+      if k > HELD_ARMS then break end
+      if i.valid then
+        local gated = try(function() return i.status end) == gate
+        local src = arm_source(i)
+        local hand = not gated and try(function() local h = i.held_stack; return h.valid_for_read and h.name end)
+        for _, name in ipairs(items) do
+          if hand == name then on[name] = true end
+          if not on[name] and src and src.valid then
+            local n = source_holds(src, name)
+            if n > 0 then
+              if not gated then on[name] = true elseif not off[name] then off[name] = {arm=i, source=src, count=n} end
+            end
+          end
+        end
+      end
+    end
+    local out
+    for _, name in ipairs(items) do
+      if off[name] and not on[name] then out = out or {}; out[name] = off[name] end
+    end
+    return out
+  end
+  -- A held_feeders entry in words, as makers_worst says it: "input NAME (x,y) off by its circuit condition ... (SIGNAL N
+  -- on its wires); its source NAME (x,y) holds N ITEM".
+  function M.held_line(h, item) return arm_text(h.arm, {item}) end
+  -- The item ingredients e lacks for one craft now and their held_feeders (nil when none is held), for one machine a
+  -- caller already found short (a wait's starved alert, the factory digest).
+  function M.held_check(e)
+    local r = try(function() return e.get_recipe() end)
+    if not r then return nil end
+    local inv = input_of(e)
+    local items = {}
+    for _, ing in ipairs(r.ingredients or {}) do
+      if ing.type ~= 'fluid' and count(inv, ing.name) < ing.amount then items[#items+1] = ing.name end
+    end
+    return #items > 0 and M.held_feeders(e, items) or nil, items
+  end
+  -- held_check in words: "; held back by its feeder's condition (its source holds the item): ..." or nil.
+  function M.held_note(e)
+    local h, items = M.held_check(e)
+    if not h then return nil end
+    local parts = {}
+    for _, name in ipairs(items) do if h[name] then parts[#parts+1] = M.held_line(h[name], name) end end
+    return '; held back by its feeder\'s condition (its source holds the item): ' .. table.concat(parts, '; ')
   end
   -- Machines by status (missing ingredients named), recipes, and the worst
   -- with positions: no power, then missing this item, other shortages,

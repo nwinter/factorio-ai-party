@@ -30,6 +30,16 @@ def counts(by):
     return ", ".join(f"{n} {name}" for name, n in sorted(by.items(), key=lambda x: (-x[1], x[0])) if n) or "0"
 
 
+def held_text(hb, n):
+    """(d26 batch244, Astra #2455) the survey's item-short machines read again now: how many are held back by an input
+    inserter off by its condition while its source holds the item (not missing stock), and the first n in words."""
+    if not isinstance(hb, dict) or not hb.get("read"):
+        return ""
+    lines = [str(l) for l in (hb.get("lines") or [])[:n]]
+    return (f"of {hb['read']} machines short of an item read now, {hb.get('held', 0)} held back by their feeder's condition "
+            f"(its source holds the item), not missing stock" + (": " + " | ".join(lines) if lines else ""))
+
+
 def facts(report):
     rows = []
     for surface in report.get("surfaces", []):
@@ -59,6 +69,9 @@ def facts(report):
                         elif status != "working": labs[status] = labs.get(status, 0) + n
             rows.append(f"{scope}: drills reporting no resources: {'; '.join(dry) or '0'}.")
             rows.append(f"{scope}: input shortage: {counts(short)}; output full: {counts(full)}.")
+            hb = held_text(surface.get("held_back"), 2)
+            if hb:
+                rows.append(f"{name}: {hb}.")
             fuel = []
             for proto, f in sorted((surface.get("fuel") or {}).items()):
                 if f.get("type") in ("boiler", "furnace") and (f.get("empty") or f.get("low")):
@@ -169,6 +182,9 @@ def current(report, claims=(), blocked=(), requests=(), lessons=(), doing=()):
         for kind, n in short.items():
             if n:
                 out[f"short|{name}|{kind}"] = {"kind": "blocker", "value": n, "to": surface_to, "text": f"{name}: input shortage {n} {kind}"}
+        hb = surface.get("held_back")
+        if isinstance(hb, dict) and hb.get("held"):
+            out[f"held|{name}"] = {"kind": "blocker", "value": hb["held"], "to": surface_to, "text": f"{name}: {held_text(hb, 1)}"}
         for kind, n in full.items():
             if n:
                 out[f"full|{name}|{kind}"] = {"kind": "blocker", "value": n, "to": surface_to, "text": f"{name}: output full {n} {kind}"}

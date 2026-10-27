@@ -1,6 +1,10 @@
 -- shortages {surface?} (B6, Opus 13:51: one read of the factory's shortages, every hour): one pass over our crafters,
 -- labs and requester chests on a surface, as their status icons and the logistic GUI show them, in lines:
--- - machines stopped short of an ingredient, by recipe and the ingredient each lacks (its input against one craft);
+-- - machines stopped short of an ingredient, by recipe and the ingredient each lacks (its input against one craft):
+--   missing stock apart from those held back by their feeder's condition (d26 batch244, Astra #2455: two cryogenic
+--   plants short of ice beside requesters holding 101 and 103 ice, their feeders off by the logistic condition
+--   cryogenic-science-pack < 2000),
+--   with that feeder, its condition and the signal's value now, and what its source holds (supply.held_feeders);
 -- - machines with no fuel, and on low or no power, by name;
 -- - labs waiting for packs;
 -- - what requester chests still lack (asked, less held and on the way), by item, largest first.
@@ -8,10 +12,14 @@
 return function(api)
   local M = {}
   local CRAFTERS, REQUESTERS, LINES = 4096, 2048, 8
+  -- the short machines whose feeders a read checks (a find and up to 8 inserters each), and the held ones it words
+  -- (a circuit read each), at most 2 a group
+  local HELD_CHECKS, HELD_SHOWN, HELD_GROUP = 32, 6, 2
+  local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function status_name(e) return api.status_name and api.status_name(e) or nil end
   local SHORT = {item_ingredient_shortage=true, fluid_ingredient_shortage=true}
-  -- The ingredients a crafter lacks for one craft (items in its input, fluids in its boxes).
+  -- The ingredients a crafter lacks for one craft (items in its input, fluids in its boxes), and the items among them.
   local function lacks(e, r)
     local input = try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end)
       or try(function() return e.get_inventory(defines.inventory.furnace_source) end)
@@ -20,12 +28,15 @@ return function(api)
       local f = try(function() return e.fluidbox[i] end)
       if f then fluids[f.name] = (fluids[f.name] or 0) + f.amount end
     end
-    local out = {}
+    local out, items = {}, {}
     for _, ing in ipairs(try(function() return r.ingredients end) or {}) do
       local have = ing.type == 'fluid' and (fluids[ing.name] or 0) or (input and try(function() return input.get_item_count(ing.name) end) or 0)
-      if have < ing.amount then out[#out+1] = ing.name end
+      if have < ing.amount then
+        out[#out+1] = ing.name
+        if ing.type ~= 'fluid' then items[#items+1] = ing.name end
+      end
     end
-    return out
+    return out, items
   end
   local function top(map, n, fmt)
     local list = {}
@@ -43,6 +54,7 @@ return function(api)
     local short, fuel, power = {}, {}, {low=0, none=0, low_by={}, none_by={}}
     local crafters = try(function() return surface.find_entities_filtered{type={'assembling-machine', 'furnace', 'mining-drill', 'boiler', 'lab'}, force=force, limit=CRAFTERS} end) or {}
     local labs_wait, labs = 0, 0
+    local held, held_n, checked, unchecked = {}, {}, 0, 0
     for _, e in ipairs(crafters) do
       if e.valid then
         local st = status_name(e)
@@ -52,9 +64,22 @@ return function(api)
         elseif st and SHORT[st] then
           local r = try(function() return e.get_recipe() end)
           if r then
-            for _, ing in ipairs(lacks(e, r)) do
+            local miss, items = lacks(e, r)
+            local h
+            if #items > 0 and api.held_feeders then
+              if checked < HELD_CHECKS then
+                checked = checked + 1
+                h = try(function() return api.held_feeders(e, items) end)
+              else unchecked = unchecked + 1 end
+            end
+            for _, ing in ipairs(miss) do
               local k = r.name .. ' short of ' .. ing
-              short[k] = (short[k] or 0) + 1
+              if h and h[ing] then
+                held_n[k] = (held_n[k] or 0) + 1
+                local g = held[k] or {}
+                held[k] = g
+                if #g < HELD_GROUP then g[#g+1] = {e=e, h=h[ing], item=ing, recipe=r.name} end
+              else short[k] = (short[k] or 0) + 1 end
             end
           end
         elseif st == 'no_fuel' then fuel[e.name] = (fuel[e.name] or 0) + 1
@@ -63,7 +88,26 @@ return function(api)
       end
     end
     local parts, n = top(short, LINES, function(k, c) return string.format('%s (%d machine%s)', k, c, c == 1 and '' or 's') end)
-    lines[#lines+1] = n > 0 and 'stopped short of an ingredient: ' .. table.concat(parts, '; ') or 'no crafter stopped short of an ingredient'
+    lines[#lines+1] = n > 0 and 'stopped short of an ingredient, missing stock: ' .. table.concat(parts, '; ')
+      or next(held) and 'no crafter stopped short of an ingredient for missing stock' or 'no crafter stopped short of an ingredient'
+    -- Held back: each group's first machines with their feeder in words, HELD_SHOWN in all.
+    local rows, shown = {}, 0
+    parts, n = top(held_n, LINES, function(k, c)
+      local each = {}
+      for _, w in ipairs(held[k]) do
+        if shown >= HELD_SHOWN then break end
+        shown = shown + 1
+        local line = try(function() return api.held_line(w.h, w.item) end) or 'an input inserter off by its condition'
+        local arm, src = w.h.arm, w.h.source
+        rows[#rows+1] = {recipe=w.recipe, item=w.item, machine=w.e.name, position=w.e.position, inserter=arm.name, inserter_position=arm.position,
+          source=src.name, source_position=src.position, source_holds=w.h.count, line=line}
+        each[#each+1] = string.format('%s %s: %s', w.e.name, at(w.e.position), line)
+      end
+      return string.format('%s (%d machine%s)%s%s', k, c, c == 1 and '' or 's', #each > 0 and ': ' .. table.concat(each, ' | ') or '',
+        c > #each and #each > 0 and string.format(' | %d more', c - #each) or '')
+    end)
+    if n > 0 then lines[#lines+1] = 'stopped short of an ingredient, held back by its feeder\'s condition (its source holds the ingredient): ' .. table.concat(parts, '; ') end
+    if unchecked > 0 then lines[#lines+1] = string.format('feeders read for the first %d machines short of an item; %d more counted as missing stock without that read', HELD_CHECKS, unchecked) end
     parts, n = top(fuel, LINES, function(k, c) return c .. ' ' .. k end)
     if n > 0 then lines[#lines+1] = 'no fuel: ' .. table.concat(parts, ', ') end
     if power.low + power.none > 0 then
@@ -103,7 +147,7 @@ return function(api)
     lines[#lines+1] = n > 0 and string.format('requester chests lack (asked, less held and on the way): %s', table.concat(parts, ', ')) or 'requester chests lack nothing'
     if read >= REQUESTERS then lines[#lines+1] = string.format('the first %d requester chests read', REQUESTERS) end
     if #crafters >= CRAFTERS then lines[#lines+1] = string.format('the first %d machines read', CRAFTERS) end
-    return {surface=surface.name, lines=lines}
+    return {surface=surface.name, lines=lines, held_back=#rows > 0 and rows or nil}
   end
   function M.read(p, a)
     local surface = p.surface
@@ -116,6 +160,6 @@ return function(api)
     return api.reuse('shortages|' .. force.name .. '|' .. surface.name, function() return M.fresh(surface, force) end)
   end
   M.schema = {shortages = {surface='optional planet name (default yours)',
-    returns='lines: machines stopped short of an ingredient, by recipe and the ingredient each lacks for one craft; machines with no fuel; machines on low or no power, by name; labs waiting for science packs (and the research); what requester chests lack (asked, less held and on the way), by item, largest first; surface, as_of (kept 10 s). Read only'}}
+    returns='lines: machines stopped short of an ingredient, by recipe and the ingredient each lacks for one craft: missing stock, and apart those held back by their feeder\'s condition (an input inserter off by its circuit or logistic condition whose source holds the ingredient, none running with it): the inserter, its condition and the signal\'s value now, its source and what that holds (held_back [{recipe, item, machine, position, inserter, inserter_position, source, source_position, source_holds, line}]; the feeders of the first 32 such machines read); machines with no fuel; machines on low or no power, by name; labs waiting for science packs (and the research); what requester chests lack (asked, less held and on the way), by item, largest first; surface, as_of (kept 10 s). Read only'}}
   return M
 end

@@ -8,14 +8,16 @@
   tools/context.py agy-tokens DIR          context size of DIR's latest Antigravity conversation (0 if unknown)
   tools/context.py grok-tokens DIR         context size of DIR's latest Grok Build session (0 if unknown)
   tools/context.py report RUN_DIR          per-workspace compaction counts from each context.log
-  tools/context.py hook EVENT [--at N] [--mark] [--skip-late S]   hook handler; reads the hook payload on stdin
+  tools/context.py hook EVENT [--at N] [--mark] [--skip-late S] [--record-only]   hook handler; reads the hook payload
+                                           on stdin
 
 Hook events: pre-compact and post-compact log to DIR/context.log (post-compact also saves the summary to
 DIR/compactions.md; --mark leaves a marker so the next post-tool hook re-injects notes.md, for harnesses without
 a SessionStart "compact" hook). session-compact prints notes.md for a SessionStart(compact) hook. post-tool
 re-injects notes.md after a marked compaction and, with --at N (Claude), warns once per context window when the
 transcript is within reach of the compaction point so the agent updates notes.md first. post-tool and pre-tool (Grok,
-Muse; Claude Code's is tools/permit.py) record each tool call's end and start for tools/toolcall.py. pre-compact with
+Muse; Claude Code's is tools/permit.py) record each tool call's end and start for tools/toolcall.py; with
+--record-only (Codex, tools/codex_hooks.py) they do only that and print nothing. pre-compact with
 --skip-late S --at N (Claude) blocks an automatic compaction in the last S seconds before DIR/deadline.txt.
 """
 import calendar
@@ -587,6 +589,12 @@ def hook(event, args):
         payload = {}
     d = payload.get("cwd") or os.getcwd()
     if not os.path.exists(os.path.join(d, MARKER)):
+        return
+    if "--record-only" in args:   # (d26 batch250 BC) Codex: the call's start or end in .tool-call.json, nothing else
+        try:
+            (toolcall.ended if event == "post-tool" else toolcall.started)(d, payload)
+        except Exception:
+            pass
         return
     state_path = os.path.join(d, STATE)
     try:

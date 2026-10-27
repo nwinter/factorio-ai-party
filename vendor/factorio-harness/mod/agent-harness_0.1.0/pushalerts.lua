@@ -616,12 +616,17 @@ return function(api)
         local have = input and try(function() return input.get_item_count(ing.name) end) or 0
         if ing.type == 'item' and have < (ing.amount or 1) then
           local required = try(function() return e.prototype.rocket_parts_required end) or 0
-          return 'silo_short.' .. ing.name, string.format('%s %s: parts %d/%d, no new part for %d min; short of %s (%d in it); silo {position, why: true} follows it',
-            e.name, at_text(e.position), parts, required, math.floor((game.tick - m.since) / 3600), ing.name, have)
+          -- (d26 batch244, Astra #2455) its feeder off by its condition while its source holds the part: said apart
+          local h = api.held_feeders and try(function() return api.held_feeders(e, {ing.name}) end)
+          h = h and h[ing.name]
+          return 'silo_short.' .. ing.name, string.format('%s %s: parts %d/%d, no new part for %d min; short of %s (%d in it)%s; silo {position, why: true} follows it',
+            e.name, at_text(e.position), parts, required, math.floor((game.tick - m.since) / 3600), ing.name, have,
+            h and '; held back by its feeder\'s condition (its source holds it): ' .. (try(function() return api.held_line(h, ing.name) end) or 'an input inserter off by its condition') or '')
         end
       end
     end
   end
+  M.silo_state = silo_state
   -- A starving captive spawner (d17 batch18 C6, viewer Foobator; game data, space-age entities.lua): a
   -- captive-biter-spawner has 350 health; production_health_effect not_producing -1/60 a tick (1 HP a second while it
   -- makes nothing: unfed or output blocked), producing +1/60; its dying_trigger_effect creates a hostile biter-spawner in
@@ -2523,13 +2528,13 @@ return function(api)
     return out
   end
   -- Machines in p's own active board claims that lack ingredients now (assemblers and furnaces, the game's status):
-  -- {unit = line}; at most STARVED_FIND a claim.
+  -- {unit = line}, and {unit = entity}; at most STARVED_FIND a claim.
   local STARVED_FIND = 500
   local STARVED = {item_ingredient_shortage=true, fluid_ingredient_shortage=true, no_ingredients=true}
   function M.starved(p)
     local me = api.who(p)
     local board = api.state().board
-    local out = {}
+    local out, ents = {}, {}
     for _, i in pairs(board and board.items or {}) do
       local a = i.area
       if i.kind == 'claim' and ACTIVE[i.status] and i.owner == me and a then
@@ -2541,12 +2546,13 @@ return function(api)
           local status = e.valid and api.status_name and api.status_name(e)
           if status and STARVED[status] and e.unit_number then
             out[e.unit_number] = string.format('%s %s in your claim "%s" %s', e.name, string.format('(%g,%g)', e.position.x, e.position.y),
-              tostring(i.title or i.id), status:gsub('_', ' '))
+              tostring(i.title or i.id), (status:gsub('_', ' ')))
+            ents[e.unit_number] = e
           end
         end
       end
     end
-    return out
+    return out, ents
   end
   -- Groups now in p's own board claims (selfview.lua review), worst first, without hints.
   function M.claim_lines(p)
