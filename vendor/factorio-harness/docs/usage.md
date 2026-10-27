@@ -16556,6 +16556,27 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,258,869 bytes on main, 6,263,977 with this branch (limit 8,388,608).
 - Docs: agent/ref/building.md (`deconstruct`). Test: tests/d27_batch268.lua (fails on main: deconstruct takes only
   area).
+
+## d27 batch281 (BH: holds in the managed platform_bom request, Astra #2604)
+
+- Found: `platform_bom {request: true}` keeps a hub section `platform_bom: NAME` and rewrites it every 10 s (M.tick)
+  to what the ghosts still need; every needed item at a quality gets a slot, so a slot cleared by hand comes back with
+  the next rewrite. Resolute (Astra, request with area, import_from vulcanus, tail) needed its beacon ghosts staged
+  while beacon power waits for fusion: 24 beacons, 11.52 MW, against 4.8 MW of solar. Her way round it removed the 24
+  ghosts. `requests_check` would also have read a beacon left unasked as unrequested.
+- `hold` (with `request: true`): a list of items (every quality) or `item@quality`. While held, the section asks none
+  of them (a slot for one is cleared at the next rewrite, by hand or not); their ghosts stay. Kept through the rewrites
+  and by later request calls that do not name it; `hold: false` or `[]` clears it, and the next rewrite asks them
+  again. A call that gives `hold` with no `area` and no `import_from` keeps the request's own (and its tail and
+  min_payload, as before). Every needed item held: the section is removed and the request with its hold stays; the
+  last ghost built removes both, as before. `hold` without `request` is refused.
+- Replies: the request's lines add `beacon: held, not asked (the ghosts need 24; the hub holds 0)`, and `hold` lists
+  the hold. The read (`platform_bom {platform}`) leaves held items out of `unrequested`; `requests_check` ends with
+  `; 2 held by the platform_bom request's hold, not asked: beacon 24, beacon@rare 1`; the item's line ends `(held by
+  the platform_bom request's hold)`; `hold` lists it.
+- Cost: one table lookup an item in the 10 s rewrite and in the read; no new find.
+- Docs: agent/ref/space-age.md (`platform_bom`). Test: tests/d27_batch281.lua (fails on main: the beacon slot is
+  written again).
 ## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
 - The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
 - Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
