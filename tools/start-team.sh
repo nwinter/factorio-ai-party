@@ -352,6 +352,13 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_SITE_HOURLY:-1}" != 0 ]; then
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("site-hourly:$!:$rundir/site-hourly.log")
 fi
+# (d27 batch272 PG) the public repo brought up to main every hour (tools/public-push.sh: scrub, scan, fast-forward push;
+# failures are "public-push: FAILED" lines in this log). POG_PUBLIC_HOURLY=0 turns it off; off with POG_PUSH_LIVE=0.
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
+  nohup bash -c 'while sleep 3600; do tools/public-push.sh; done' >"$rundir/public-push.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("public-push:$!:$rundir/public-push.log")
+fi
 # (d26 batch241) the chart alone, within minutes: site/chart_deploy.py deploys the run's changed cells into the build
 # production has, every 5 minutes (POG_CHART_DEPLOY_EVERY seconds; shift80's site map was 25-50 min behind the
 # stream's). POG_CHART_DEPLOY=0 turns it off; off with POG_PUSH_LIVE=0.
