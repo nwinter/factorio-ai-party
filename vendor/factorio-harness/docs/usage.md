@@ -16746,5 +16746,5 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   the same 10 steps; "made 52 of 60" was met ("made 52 crafts in 1 machine since the wait began (at least 52)"), then
   "made" at 60, then the input went off; 60 accumulators were in the output chest, 49775 ticks after the submit
   (staging included; game.speed 10 on the copy).
-- Bundle (compacted): 6,296,020 bytes with batch280 (main 6ad40c6f plus eng/d20-batch280-cp1), 6,298,141 with this
-  branch (limit 8,388,608).
+- Bundle (compacted): 6,298,628 bytes on main (d8cc948e, batch280 and batch281 in it), 6,300,749 with this branch
+  (limit 8,388,608).
