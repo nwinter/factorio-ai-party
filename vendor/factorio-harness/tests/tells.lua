@@ -246,6 +246,9 @@ runtime.on_event{name=defines.events.on_console_chat,tick=tick,message='@astra l
 local m=astra('status').team.mentions
 assert(m and m[1]:find('server',1,true) and m[1]:find('longer replies',1,true),m and m[1])
 eq((grok('status').team or {}).mentions,nil)
+-- (d27 batch275 HW) grok's tells, unread for over 2 minutes, end the first sleep at once, reported once; the next sleeps
+r=grok('sleep',{seconds=60}); assert((r.already_unread or 0)>=1)
+r=grok('sleep_check',{}); eq(r.woke,'told'); eq(r.woke_by.unread,true); assert(r.tell:find('from before this sleep began',1,true),r.tell)
 grok('sleep',{seconds=60}); eq(grok('sleep_check',{peek=true}).woke,nil)
 runtime.on_event{name=defines.events.on_console_chat,tick=tick,message='@grok thanks, filed'}
 r=grok('sleep_check',{peek=true}); eq(r.woke,'mentioned'); eq(r.woke_by.kind,'mention'); eq(type(r.woke_by.seq),'number')

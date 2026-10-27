@@ -120,6 +120,8 @@ print('d22_batch122 CE1 a reply closes only what it answers: ok')
 -- "waiting (sleep)" before and the item never stalled; a quota rest read stalled; a focus on a task (no step) never
 -- flagged. Now: a sleep on no condition counts (said beside the count), a wait on something and a rest hold the count.
 prototypes=prototypes or {item={['iron-plate']={name='iron-plate',type='item',stack_size=100}},fluid={},entity={},technology={},quality={normal={name='normal'}},recipe={}}
+-- (d27 batch275 HW) astra's earlier tells, unread for over 2 minutes, would end muse's sleeps below at once: read here
+muse('chat_ack',{seq='all'})
 do
   local item=runtime.board.items()[muse('board_post',{kind='task',title='CE2: build the north wall',owner='muse'}).item.id]
   local function check() runtime.progress.check(item); return storage.agent_harness.progress.items[item.id] end

@@ -57,6 +57,13 @@ def claude(d):
     cfg["alwaysThinkingEnabled"] = True
     # Shake3: the route attached its git status and recent commits at start and after each compaction.
     cfg["includeGitInstructions"] = False
+    # (d27 batch275 HW) Claude Code's auto memory is the route's memory for the repository root: every Claude agent loaded
+    # its 10 KB index of the harness engineers' and operator's notes at the start and after each compaction (Haiku 14
+    # times in shift86), and could write there; notes.md is the agents' memory. Off, by setting and by environment.
+    cfg["autoMemoryEnabled"] = False
+    # (d27 batch275 HW) thinking is kept in the transcript as a summary (all 1,086 thinking blocks of Opus, Sonnet and
+    # Haiku in shifts 80-86 were empty), as Codex keeps its reasoning summaries, for the shift studies.
+    cfg["showThinkingSummaries"] = True
     env = cfg.setdefault("env", {})
     # Long timed actions, wait_until and fh sleep need more than the 2-minute default Bash timeout. A 900 s
     # `fh sleep` may take up to 1135 s of real time on a slow server (cli.ts: seconds x 1.25 + 10); past the timeout
@@ -65,7 +72,8 @@ def claude(d):
                 "ENABLE_CLAUDEAI_MCP_SERVERS": "false", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
                 "CLAUDE_CODE_ENABLE_CFC": "0", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
                 # "The user hasn't heard from you in a while" (shake3: Opus 36, Sonnet 29); also on the launch line.
-                "CLAUDE_CODE_SILENT_TURN_REMINDER": "0", "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS": "1"})
+                "CLAUDE_CODE_SILENT_TURN_REMINDER": "0", "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS": "1",
+                "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"})
     # dontAsk denied loops over ./fh with shell variables (shake2: Haiku lost ~17 minutes); tools/permit.py approves
     # commands made only of game programs, loops and workspace redirects.
     permit = {"type": "command", "command": "python3 " + os.path.join(ROOT, "tools", "permit.py"), "timeout": 10}

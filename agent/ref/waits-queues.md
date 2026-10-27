@@ -252,6 +252,8 @@
   your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
   `next_check` tick, oldest first.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
+  a `./fh sleep` or `./fh wait` begun while teammates' tells have stayed unread 2 minutes or more ends at once on them
+  (`woke: told`, `N unread tells from before this sleep began ...`, `woke_by` with `unread: true`), each tell once;
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
   `--wait` and `./fh wait` on an action too; on an action alone it waits as `--wait` does), a tell sent with `--wake`
   still does; `--wake-from sol,astra`

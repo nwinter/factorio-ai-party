@@ -2179,6 +2179,30 @@ return function(api)
     if #wait > M.UNREAD_SHOW then out[#out+1] = string.format('%d more unread (fh tells)', #wait - M.UNREAD_SHOW) end
     return out
   end
+  -- (d27 batch275 HW, Haiku shift86 15:24: 8 teammates' tells listed unread for up to 33 min, cut from its view by its
+  -- output filters; `fh wait --until tell` then slept its 900 s, since only tells sent after a sleep begins end it) the
+  -- unread tells no sleep has reported yet that have waited UNREAD_SLEEP_TICKS or more (a tell the last reply just
+  -- showed does not end the sleep after it: Astra began 512 of 963 sleeps in shifts 80-86 with such a tell listed),
+  -- oldest first, and one line on them; each is reported to one sleep only.
+  M.UNREAD_SLEEP_TICKS = 7200
+  function M.unread_for_sleep(index)
+    local box = api.state().mentions and api.state().mentions[index]
+    if not (box and box.unread) then return nil end
+    local new = {}
+    for _, t in ipairs(box.unread) do
+      if t.seq > (box.sleep_seq or 0) and game.tick - t.tick >= M.UNREAD_SLEEP_TICKS then new[#new+1] = t end
+    end
+    if #new == 0 then return nil end
+    box.sleep_seq = new[#new].seq
+    local parts = {}
+    for i = 1, math.min(#new, M.UNREAD_SHOW) do
+      local t = new[i]
+      parts[#parts+1] = string.format('#%d %s, waiting %s: %s', t.seq, t.from, ago(game.tick - t.tick), clip(t.text, 100))
+    end
+    local more = #new > M.UNREAD_SHOW and string.format('; %d more (fh tells)', #new - M.UNREAD_SHOW) or ''
+    return new, string.format('%d unread tell%s from before this sleep began (a sleep reports each once; chat_ack marks them read): %s%s',
+      #new, #new == 1 and '' or 's', table.concat(parts, '; '), more)
+  end
   local function mentions(p)
     local box = api.state().mentions and api.state().mentions[p.index]
     if not (box and (#box.list > 0 or box.dropped > 0 or box.unread)) then return nil end
