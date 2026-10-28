@@ -17516,3 +17516,30 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   - shipment pods_line names the span of the rows shown and their order.
   - an empty delivery_watch list says a watch counts from when it is set and where earlier pods are (the ledger).
 - Docs: agent/ref/analysis.md (rates), the rates schema text. Tests: tests/d28_batch313.lua, tests/format.test.ts.
+## d28 batch316 (SW, Sol #2703: a bounded circuit duty read without 60-tick aliasing)
+
+- Sol: Resolute's adaptive pilot runs a clock and pulses its pumps 1 or 2 ticks a period; `signal_watch` samples every
+  60 ticks, a multiple of the period, so every sample reads the same phase (on the iMac copy of world n at tick
+  77719185 the clock ran C 0..4 and both pumps on `signal-C < 1` were enabled 1 tick in 5).
+- Choice (measured on the iMac copy, 28,800 reads each): an entity's `status` 0.22 us, a held control behavior's
+  `disabled` 0.19 us, `get_signal` on a held network 0.55 us, `get_circuit_network` + `get_signal` 1.1 us. Counting
+  each entity's status every tick is the cheaper read and gives the pumps' own enabled state, so that is the new mode;
+  signals every tick are not added.
+- Change (signalwatch.lua): `signal_watch {entities, surface | platform, seconds}` with 1..8 entities and 10..60 s, a
+  duty watch: each entity's status every tick, from the start tick (read at the call) for seconds x 60 ticks, then done
+  and its entity refs let go. Per entity: ticks by status, enabled (any status but disabled_by_control_behavior) ticks
+  and share, enabled and disabled runs by length and the ticks from one enable to the next (histograms of up to 24
+  lengths, the rest as other {count, min, max}), longest runs with their start, each whole 60-tick window's least and
+  most enabled ticks with its start, transitions (count, the first and last 8 with tick and direction), the runs cut by
+  the window (open_start, open_end), gone_tick. One watch an agent as before (it replaces a signal watch). The 60-tick
+  signal watch is unchanged. Checked at submit and in dry_run (seconds 10..60 with entities, entities 1..8).
+- On Resolute's copy (60 s, 3600 ticks): each pump enabled 720 of 3600 ticks (20.0%), enabled runs 1 tick x720,
+  disabled runs 4 ticks x719, enabled again after 5 ticks x719, 12 enabled ticks in every 60-tick window; status agrees
+  with the control behavior: a pump's condition was fulfilled at C=0 and the pump working at C=1.
+- Cost (profile_ticks on the iMac copy, 60 s): part signal_watch.tick 0.029 ms a tick with 8 entities, 0.017 ms with 2
+  (about 2 us an entity plus about 10 us a tick, the profiler's wrap included: its cheapest parts read 2-3 us); the
+  harness's whole tick 2.59 ms on average then.
+- Docs: agent/ref/circuits-settings.md, the schema's `entities`, `seconds` and `returns`. Test: tests/d28_batch316.lua (a
+  10-tick clock, pumps on C < 1 and C < 2 enabled the tick after, the clock stopped 100 ticks: 9.4% and 18.9%, runs,
+  the stop as a 109-tick disabled run and a window of 0, the 60-tick watch reading C = 0 at every sample, bounds,
+  capped histograms, an entity gone).

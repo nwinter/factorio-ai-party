@@ -8948,7 +8948,8 @@ M.step_ranges={
   uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},  -- (d25 batch214 QZ1) read's page and page_size: step_checks (uptime.check_read)
   turret_tally={{'seconds',watch_range('turrettally'),when=starts('turrettally')}},
   belt_flow={{'seconds',watch_range('beltsample'),when=function(a) return a.position~=nil end}},
-  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.position~=nil or a.seconds~=nil end}},
+  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.entities==nil and (a.position~=nil or a.seconds~=nil) end},
+    {'seconds',function() return M.signalwatch.DUTY_MIN_S,M.signalwatch.DUTY_MAX_S end,when=function(a) return a.entities~=nil end}},  -- (d28 batch316 SW) a duty watch
   feed={{'count',1,1000},{'fuel_count',1,1000},{'crafts',1,1000},{'radius',1,256},{'ticks',1,36000}},
   refuel={{'count',1,1000},{'radius',1,256},{'ticks',1,36000}},
   rearm={{'count',1,1000},{'below',1,1000},{'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
@@ -9045,8 +9046,8 @@ M.step_lengths={
     {'items',1,of('uptime','ITEMS'),list=true,when=starts('uptime')}},  -- (d25 batch214 QZ2, Astra #2380: 9 items passed dry_run)
   turret_tally={{'reason',check=reason_check,when=starts('turrettally')},{'positions',1,of('turrettally','MAX'),list=true}},
   belt_flow={{'reason',check=reason_check,when=function(a) return a.position~=nil end}},
-  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil end},
-    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true}},
+  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil or a.entities~=nil end},
+    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true},{'entities',1,of('signalwatch','DUTY_MAX'),list=true}},
   scan={{'positions',1,own('POSITIONS_MAX'),list=true},{'name',0,own('NAMES_MAX'),list=true},{'type',0,own('NAMES_MAX'),list=true},
     {'fields',0,own('NAMES_MAX'),list=true}},
   nearest={{'name',1,own('NAMES_MAX'),list=true},{'type',1,own('NAMES_MAX'),list=true}},
@@ -21196,7 +21197,7 @@ function M.tick_body(event)
   if event.tick%60==17 and state().endurance_readings then pcall(M.timed,'endurance.refresh',M.endurance.tick,event.tick) end  -- (batch195) drops batch187's kept platform_endurance readings once; none are kept now
   if M.beltsample and state().belt_flow then pcall(M.timed,'beltsample.tick',M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
-  if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks
+  if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks; (batch316) a duty watch: a status per entity every tick
   -- (d24 batch144 cp2) a ghost record log from before the position index: 512 ring slots a tick until it is whole
   if state().ghost_log and not state().ghost_log.pidx_done then pcall(M.timed,'ghostlog.index',M.ghostlog.index_tick,M.ghostlog.INDEX_SLICE) end
   if state().asteroid_watch then pcall(M.timed,'asteroid_watch.tick',M.asteroidwatch.tick,event.tick) end  -- (AR1) asteroid_watch: a read every 15 ticks
