@@ -56,7 +56,10 @@ of its own in its journal, and still stopped 20 min after it was seen, a facts-o
 of one of its claims, else the handoff's lead), and one when it is back. (d26 batch252 IN) The open line's notes that
 ask nothing (open.lua) come last in the nudge and never make it repeat; a board item newly overdue for review does.
 (d26 batch252 cp2, Astra 18:00) The nudge says "your character idle" and "Body queue", then the agent's other lanes
-(idle.lua lanes: remote, platform:NAME) running or with steps done in the window, with plan, step and steps done. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
+(idle.lua lanes: remote, platform:NAME) running or with steps done in the window, with plan, step and steps done.
+(d27 batch286 IL) An agent whose other lanes have a step running now or one done in the window gets no idle nudge
+unless something asks it now (unanswered requests or tells, mentions, a watch that needs it, a board item overdue): one
+log line and nudges.jsonl row ("lanes working: platform:Resolute 14") while the same lanes work. The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
 fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
 team (on request) and exits; --dry-run logs without sending.
 """
@@ -121,6 +124,37 @@ def lanes_text(row):
     window = (row.get("counted") or {}).get("minutes") or 10
     shown = [lane_text(l, window) for l in lanes if l.get("lane") != "body" and (l.get("state") == "running" or l.get("done"))]
     return " Other lanes: " + ("; ".join(shown) if shown else "none running") + "."
+
+
+def lanes_working(row):
+    """(d27 batch286 IL, Astra shift88: nudged as idle at 15:58, 16:20 and 16:49 while platform:Resolute ran 14 steps in
+    10 min and she slept 30 s between checks) the agent's other lanes (remote, platform:NAME) with a step done in the
+    window or a step running now, as "platform:Resolute 14" or "platform:Resolute running"; [] with none."""
+    out = []
+    for l in row.get("lanes") or []:
+        if not isinstance(l, dict) or l.get("lane") == "body":
+            continue
+        if l.get("done"):
+            out.append(f"{l.get('lane')} {l['done']}")
+        elif l.get("state") == "running":
+            out.append(f"{l.get('lane')} running")
+    return out
+
+
+def actionable(row):
+    """(d27 batch286) what asks the agent now, whatever its lanes do: an unanswered request or tell to it, a mention, a
+    watch late, stalled, invalid or with its final unread, a board item overdue for review; '' when nothing."""
+    _, n, mentions = asks(row)
+    out = []
+    if n:
+        out.append(f"{n} unanswered")
+    if mentions:
+        out.append(f"{mentions} mention{'' if mentions == 1 else 's'}")
+    if flagged(row.get("measures")):
+        out.append("a watch needs it")
+    if overdue_ids(row):
+        out.append("a board item overdue for review")
+    return ", ".join(out)
 
 
 def orders_text(o):
@@ -406,6 +440,7 @@ class Nudger:
         self.base = {}  # agent -> {"asks", "n", "mentions", "flagged"} at its last nudge
         self.waits = {}  # agent -> {"kind", "start", "left", "t"}: its own sleep or wait with a known end
         self.report = None  # (d26 batch252) the last idle report (its agents: the cover rule's team)
+        self.lane_skip = {}  # (d27 batch286) agent -> the lanes its last "lanes working" skip named (logged once a stretch)
 
     def agent_dir(self, name):
         return os.path.join(self.run_dir, name) if self.run_dir else None
@@ -541,6 +576,11 @@ class Nudger:
         quiet = self.not_answering(row["name"], now)
         if quiet:
             return quiet
+        # (d27 batch286 IL) its other lanes working: no idle nudge, unless something asks it now (an actionable nudge
+        # goes as before); after the rest and "not answering" checks, so their handoffs go as before
+        lanes = lanes_working(row)
+        if lanes and not actionable(row):
+            return "lanes working: " + ", ".join(lanes)
         if self.deadline and now >= self.deadline:
             return "after the deadline"
         if now - self.last.get(row["name"], -1e18) < self.every_s:
@@ -690,6 +730,15 @@ class Nudger:
         for row in report.get("agents") or []:
             self.observe(row, now)
             why = self.due(row, now)
+            if why is None or not why.startswith("lanes working: "):
+                self.lane_skip.pop(row["name"], None)
+            elif self.lane_skip.get(row["name"]) != [x.rsplit(" ", 1)[0] for x in lanes_working(row)]:
+                # (d27 batch286) logged once while the same lanes work (their counts change every poll)
+                self.lane_skip[row["name"]] = [x.rsplit(" ", 1)[0] for x in lanes_working(row)]
+                entry = {"t": datetime.datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds"),
+                         "agent": row["name"], "skipped": True, "why": why, "standing_min": minutes(self.standing(row, now))}
+                write(entry)
+                out.append(entry)
             if why is not None:
                 if self.members and row["name"] not in self.members:
                     continue
@@ -845,6 +894,9 @@ def main():
             return
         if entry.get("handoff"):
             log(f"handoff for {entry['agent']} to {entry.get('lead')}: {'sent' if entry.get('sent') else entry.get('error')}")
+            return
+        if entry.get("skipped"):  # (d27 batch286)
+            log(f"no idle nudge for {entry['agent']} ({entry['standing_min']} min standing): {entry['why']}")
             return
         since = entry.get("since_last_nudge")
         log(f"nudge {entry['agent']}: {'sent' if entry.get('sent') else entry.get('error')} ({entry['standing_min']} min"
