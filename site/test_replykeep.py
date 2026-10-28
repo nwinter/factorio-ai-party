@@ -17,7 +17,8 @@ worker) shows it.
   minutes;
 - the worker stores each game seq once (a row sent again unchanged keeps its version), returns with the page's 60
   lines every reply to them, and the relay's read (no replies=1) none; a line the site hides since loses its words in
-  the replies to it;
+  the replies to it; more rows changed since a poll than one read returns (a copy reading 40) come over the next
+  polls, each once;
 - the page: every reply to a line it shows, once, every part, "Operator replied" on each line the Operator answered;
   the late answer arrives at the next poll (replies_after) without a reload, and a reload shows the same.
 """
@@ -146,7 +147,19 @@ const call = async (method, path, body, auth) => {
 };
 const out = { urls: [] };
 const done = () => process.stdout.write(JSON.stringify(out), () => process.exit(0));
-if (mode === 'read') {
+if (mode === 'paged') {
+  // more changed since a poll than one read returns: the first readMax, then the rest at the next polls
+  (async () => {
+    out.paged = [];
+    let rv = 0;
+    for (let i = 0; i < 4; i++) {
+      const b = (await call('GET', '/v1/chat?after=5060&channels=all&replies=1&replies_after=' + rv)).body;
+      out.paged.push(b.replies.map((r) => r.seq));
+      rv = b.replies_rv;
+    }
+    done();
+  })();
+} else if (mode === 'read') {
   call('GET', '/v1/chat?limit=60&channels=all&replies=1').then((r) => { out.read = r.body; done(); });
 } else if (mode === 'setup') {
   (async () => {
@@ -356,7 +369,7 @@ def main():
         worker = "file://" + os.path.join(SITE, "worker", "worker.js")
         live = os.path.join(SITE, "static", "live.js")
 
-        def run(mode, state_path=sp):
+        def run(mode, state_path=sp, worker=worker):
             r = subprocess.run([node, "--no-warnings", js, live, state_path, mode, worker, TOKEN, db, data],
                                capture_output=True, text=True, timeout=60)
             assert r.returncode == 0, r.stderr[-2000:]
@@ -371,6 +384,13 @@ def main():
         assert len(rd["messages"]) == 60 and len(seqs) == len(set(seqs)) == before, (len(rd["messages"]), len(seqs))
         assert "replies" not in o["relay"], sorted(o["relay"])
         assert o["since"]["replies"] == [] and o["since"]["replies_rv"] == rd["replies_rv"], o["since"]
+        # a worker reading at most 40 a time: 84 rows changed since 0 take three polls, each row once
+        small = os.path.join(work, "worker40.js")
+        src = open(os.path.join(SITE, "worker", "worker.js")).read()
+        assert "readMax: 500," in src
+        open(small, "w").write(src.replace("readMax: 500,", "readMax: 40,"))
+        pg = run("paged", worker="file://" + small)["paged"]
+        assert [len(x) for x in pg] == [40, 40, 4, 0] and len({s for x in pg for s in x}) == 84, [len(x) for x in pg]
         p = run("page")
         n = check_page(p["html"], game, PROMPTS, late_seqs, "open page")
         first = items(p["first"])

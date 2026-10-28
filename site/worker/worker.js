@@ -550,14 +550,16 @@ export class Live {
     return json(out);
   }
 
-  // (d28 batch309) GET /v1/chat?replies=1: with replies_after=RV, every reply stored or changed since (the page's polls);
-  // without, the replies to the lines returned: each one that names one of them (site:N) or came after the oldest. The
-  // newest readMax, oldest first; replies_rv: the store's version, for the next poll.
+  // (d28 batch309) GET /v1/chat?replies=1: with replies_after=RV, the replies stored or changed since (the page's polls),
+  // the first readMax of them, replies_rv the version they reach (the next poll takes the rest); without, the replies to
+  // the lines returned: each one that names one of them (site:N) or came after the oldest, the newest readMax, and
+  // replies_rv the store's version. Oldest first.
   replies(url, lines) {
     const after = parseInt(url.searchParams.get("replies_after") || "", 10);
-    let got = [];
+    let got = [], rv = this.sql.exec("SELECT COALESCE(MAX(rv), 0) AS m FROM replies").toArray()[0].m;
     if (Number.isFinite(after)) {
-      got = this.sql.exec("SELECT row FROM replies WHERE rv > ? ORDER BY rv DESC LIMIT ?", after, REPLIES.readMax).toArray();
+      got = this.sql.exec("SELECT rv, row FROM replies WHERE rv > ? ORDER BY rv LIMIT ?", after, REPLIES.readMax).toArray();
+      if (got.length === REPLIES.readMax) rv = got[got.length - 1].rv;
     } else if (lines.length) {
       const lo = lines[0].seq, hi = lines[lines.length - 1].seq;
       const t0 = Math.min(...lines.map((m) => m.t)) - REPLIES.skewS;
@@ -572,7 +574,6 @@ export class Live {
         .toArray().map((r) => r.seq));
       if (gone.size) rows = rows.map((r) => hideAnswers(r, gone));
     }
-    const rv = this.sql.exec("SELECT COALESCE(MAX(rv), 0) AS m FROM replies").toArray()[0].m;
     return { replies: rows, replies_rv: rv };
   }
 

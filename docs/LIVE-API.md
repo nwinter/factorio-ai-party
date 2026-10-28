@@ -554,7 +554,8 @@ reloads? Preserve all parts and late answers. Test a restart with over 40 replie
 - **`GET /v1/chat?...&replies=1`** adds `replies` (oldest first, at most 500) and `replies_rv` (the store's version):
   - without `replies_after`: every reply that names one of the lines returned (`answers.id` site:N) or came after the
     oldest of them (less 60 s for the clocks), so a reload's 60 lines come with their replies at any age;
-  - with `replies_after=RV`: every reply stored or changed since (the page's polls; a late answer arrives this way).
+  - with `replies_after=RV`: the replies stored or changed since (the page's polls; a late answer arrives this way),
+    the first 500 of them, `replies_rv` the version they reach (the next poll takes the rest).
   - A line the site hides is left out of the replies to it (its words in `answers`/`also`, its viewer in `to`), as
     push_live does. The relay's reads (no `replies=1`) are unchanged.
 - **The live page** asks for them on its chat reads and joins them with the state's newest 40, one row per seq (the
