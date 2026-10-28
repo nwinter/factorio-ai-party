@@ -15,8 +15,8 @@ trio. cam1 is always the slot "main" (OBS "stream cam1", the one with game audio
 POG_CAM_PANELS (d27 batch285 B, off by default): 1 or 2 camera panels, GUI camera elements in cam1's own client
 (cameras.lua), instead of the clients cam2 and cam3: the shift runs cam1 alone (a second client took 4-5.5 GB and slowed
 world n, batch285 A) and the slots cam2 (panel 1) and cam3 (panel 2) are views drawn by cam1. Each panel sits in a strip
-that OBS crops off cam1's on-air picture (the right strip, then the left), 16:9 at the strip's width, and OBS captures
-it from cam1's window into the inset. The director uses panels for insets only, never on air (onecam.py).
+that OBS crops off cam1's on-air picture (the right strip, then the left), 16:9 at the strip's width, and OBS shows
+it in the inset as a scene of cam1's one capture cropped to it (tools/obs.py panel_scene). The director uses panels for insets only, never on air (onecam.py).
 """
 import json, os, sys
 
