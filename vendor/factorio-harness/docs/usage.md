@@ -17283,3 +17283,20 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Test: tests/d28_batch304.lua (fails on main: its first call on the fake platform makes 12 finds, against 2 here: the
   one find and the belts, which both find with no background read yet).
 - Bundle (compacted): 6,353,761 bytes on main (eb7839f3), 6,358,489 with this branch (limit 8,388,608).
+
+## d28 batch308 (FT, viewer Aurora site:5343: follow-through after a job ends while its project stays open)
+
+- Found (runs/shift85-91 journals, chat, operator tells): Astra's #2516 (LDS productivity) read `doing` for 10h45m
+  across two shift changes after its step 2 was done; 13 of its 21 ten-minute checks in shift86 said `progress seen`
+  from the entities in her Aquilo freight claim #1099 (the project has no area), which also held off its stalled
+  count; no reply or line said that nothing had been written on it since the step. Luna's #2518 kept a written hold.
+- Change:
+  - board.lua: `board_update` adds `follow_through` when it marks a step done, or closes (done, dropped) an item whose
+    `parent` project stays open and not blocked: the project, progress, next step and owner, and what answers it (a
+    note with the step taken next, status blocked with what restarts it, or status done or dropped). Nothing is
+    decided; the owner writes it.
+  - progress.lua: a project is read in its own area only (a task or request with none still in its owner's claims);
+    the ten-minute line of a project not blocked whose board entry is unchanged since its last step was done
+    (`FOLLOW`, an hour or more) says so, with the same three answers.
+- Docs: agent/ref/team.md (`board_progress`, `board_update`), the schema texts. Test: tests/d28_batch308.lua (fails
+  on main: no `follow_through`).
