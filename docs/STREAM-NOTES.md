@@ -2480,3 +2480,38 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
 - caster.py's Differ skips `history` chat lines and board events outright (their old `t` already kept them out of
   its 30/60/120 s windows). The site and the overlay sort and mark them by their own time.
 - Test: tools/stream/test_backlog.py. Deploy: a stream service restart.
+
+## Build close-ups, operation stories, engineering highlights (2026-10-28, d28 batch312, viewer Aurora 10:47-10:50)
+
+- **Build shots on large ships (A).**
+  - A build on a platform that names where it lands (its place_ghosts entries, a deconstruct area or a position)
+    opens on the whole ship for 5 s on a first visit. Its caption says where the work is: "Sol placing 5 ghosts (3
+    assembling machine 2, 2 inserter) on Loom · whole ship, the work near the stern, starboard side".
+  - The camera then glides to the work, at a zoom that fits the request's box plus 10 tiles, between 0.6 and 0.9
+    (19-29 px a tile at 1080p). The caption becomes "... on Loom · near the stern, starboard side" (thirds of the
+    hull, bow north). A repeat within 15 min goes to the work at once.
+  - Before this, a first visit always framed the whole ship, and with one client (camera panels, since d28 09:13) no
+    platform build shot aired at all. Builds now air with one client; inspections still need two.
+  - onecam `maybe_work`, `work_close`, `closeup_step`; work.py `extent_of`, `what_of`; tools/stream/test_buildclose.py.
+- **Operation stories (B).**
+  - stories.py follows one agent's flight watching of one ship, across the watches it replaces at each leg. It takes
+    the question and handoff from the board: the setter's item about the ship, who asked for it, who took it.
+  - The result comes from the agent's own read of the watch (lost_count, ended_by, from its journal), else the
+    stream's loss alerts and arrivals. It reads passed, failed or still pending, with the reason. A story ends when
+    the newest watch ends otherwise, waiting up to 2 min for the agent's read.
+  - Two beats, each once: the ship on the main camera with the caption, and the agent in the inset (a camera panel
+    with one client). The result goes back to the spot last built on the ship. The hosts get a "story" beat, facts
+    only.
+  - One story per ship on air per 30 min; the others are followed quietly and only a failure airs. Kept in
+    runs/RUN/stories.json across restarts.
+  - `tools/stream/stories_replay.py runs/RUN` runs a run's journals through it. On shift92: Sol's Lark watch opened
+    08:16:08 and passed 08:20:11 on Sol's read ("arrived at nauvis, nothing lost").
+  - tools/stream/test_stories.py.
+- **Engineering highlights (C).**
+  - A build's close-up on the main camera for 6 s is saved from the OBS replay buffer (12 s from 1 s before it) and
+    kept.
+  - When a later story result on that ship passes (within 3 h), the clip airs as a replay: "Highlight: <the build>,
+    then <the result>", the banner "Replay · highlight" with minutes ago, and the hosts told the payoff.
+  - At most one highlight per 20 min, each once. The replay's urgent cut, spacing and news gates apply as for any
+    replay.
+  - replays.py `watch_highlights`; tools/stream/test_highlight.py.

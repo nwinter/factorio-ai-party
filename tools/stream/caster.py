@@ -235,6 +235,7 @@ HEADLINE_EXTRA = {
 PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "research": 7, "space": 10, "viewer": 6,
             "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
+            "story": 7,  # (d28 batch312 B) an operation story's question or result (stories.py)
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5, "chronicle": 6,
             "analyst": 5,  # (d23 batch130 CM2) an analyst point as its own beat (analyst_event)
@@ -1043,6 +1044,10 @@ def card_facts(seg):
     if seg.get("type") in CARD_CALLS:
         # not "muted" or "banner" for a replay: the first version read those production notes out on air
         f["how_to_call_it"] = CARD_CALLS[seg["type"]]
+    if seg.get("type") == "attack_replay" and (seg.get("facts") or {}).get("kind") == "highlight":
+        # (d28 batch312 C) an engineering highlight: earlier footage of a build, and the result it led to
+        f["how_to_call_it"] = ("a highlight replay: this is earlier footage of the work in `highlight`; say who did it and "
+                               "where, then the payoff, the result in `payoff`, as the facts give it. Briefly, facts only")
     return f
 
 
@@ -1109,6 +1114,15 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None, target=None):
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
+    if e["kind"] == "story":  # (d28 batch312 B) a ship trial: its question and handoff, then its result (stories.py)
+        fa = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
+        f["story"] = fa
+        f["how_to_call_it"] = (
+            "a ship trial starts: Rook says which ship and who set the watch; Vale says the question it answers and the "
+            "team's handoff, if the facts say; we will come back for the result. Briefly, facts only"
+            if fa.get("beat") == "open" else
+            "a ship trial's result: say the ship and the result as the facts give it (passed, failed or still pending) "
+            "with its reason; if it revisits a spot, say what was done there. Briefly, facts only, no verdict of your own")
     if e["kind"] == "arrival":  # a platform's later arrival: another trip done, not a headline
         f["arrival"] = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
         f["how_to_call_it"] = ("a space platform finished another trip (it has been here before): one line, where it "

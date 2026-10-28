@@ -474,6 +474,9 @@ class LiveSource:
         # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.
         if self.work:
             obs["work"] = self.observe_work(obs["agents"], errors)
+            wr = getattr(self.work, "watch_reads", None)
+            if wr:  # (d28 batch312 B) the agents' reads of their flight watches: a story's result (stories.py)
+                obs["watch_reads"] = wr.take()
             # where each agent is paying attention (attention.py): its latest request with a position, area or list
             obs["attention"] = self.work.take_attention()
             now = time.time()

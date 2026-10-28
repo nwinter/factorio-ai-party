@@ -139,6 +139,15 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   work_build_min (no dwell, no score ratio) from a story without its own news, a tour, the map, a platform view, a
   launch or an inspection, and from a trio; no launch starts while one waits; a build on the ground makes the same
   views give way. A platform aired for work within work_repeat comes back only for a build, closer on where it landed.
+- Build close-ups (d28 batch312 A, viewer Aurora 10:47; work_overview_s, work_close_*): a build that names where it
+  lands (its entries, area or position) opens on the whole ship for work_overview_s on a first visit, its caption
+  saying where the work is, then glides to the work at a zoom that fits the request's box (0.6 to 0.9); a repeat goes
+  to the work at once. The caption names what the request names and where on the ship (bow north). With one client
+  (camera panels) a build moves it there too; inspections and the like stay off with one client.
+- Operation stories (d28 batch312 B, viewer Aurora 10:48; story_*, stories.py): an agent's flight watch starting and
+  its result, each once: the ship on air story_hold with the question and the team's handoff from the board (or the
+  result: passed, failed or still pending, with its reason), the agent who set it in the inset once the ship is up; a
+  result goes back to the spot last built on. It waits for a free moment as a build does.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -335,6 +344,28 @@ ONECAM = {
     "work_repeat": 900.0,
     "work_build_gap": 60.0,
     "work_spot_zoom": 0.9,
+    # (d28 batch312 A, viewer Aurora 10:47: "Could repair/build shots on large ships use a brief overview followed by a
+    # close-up of the actual changed machines or feeders? ... a first platform visit can use the whole-ship view despite
+    # an exact work position.") A build that names where it lands: on a first visit the whole ship work_overview_s,
+    # then the camera moves to the work; a repeat goes there at once. The close-up fits the request's box (its entries
+    # or area) plus work_close_margin tiles, at a zoom from work_close_min (19 px a tile at 1080p: a one-tile inserter
+    # still readable) to work_spot_zoom (a position alone: that zoom); the caption says what it names and where on the
+    # ship (bow north): "Sol placing 5 ghosts (3 assembling machine 2, 2 inserter) on Loom · whole ship, the work near
+    # the stern, starboard side", then "... on Loom · near the stern, starboard side".
+    # (d28 batch312 B, viewer Aurora 10:48: "carry a few operation stories through to their results ... use connected
+    # main/inset views, briefly explain the question and real team handoff, then show the result as passed, failed or
+    # still pending. Revisit the same repaired spot after its watch completes.") A story beat (model.py `stories`,
+    # stories.py: a flight watch's question when it starts, its result when it ends): the ship on air story_hold s,
+    # captioned, the agent who set it in the inset story_inset_s once the ship is up; a result goes back to the spot
+    # last built on (batch312 A's close-up). Like a build, it waits for a free moment (no fight, battle, urgent shot,
+    # segment, look, danger or build on air), at most one story_gap apart.
+    "stories": True,
+    "story_hold": 20.0,
+    "story_inset_s": 14.0,
+    "story_gap": 60.0,
+    "work_overview_s": 5.0,
+    "work_close_margin": 10.0,
+    "work_close_min": 0.6,
     # Fights (a viewer at 16:45: "dont move 'on air' away from agents under attack"): while the agent on air is
     # shooting or under attack, or the fight on air is still reported, no cut away but an urgent one; an attack shot
     # holds until its fight has been quiet fight_quiet; an agent under attack is a strong pick.
@@ -721,6 +752,7 @@ class OneCam(Director):
         self.plat_work_shown = {}  # (batch267) platform -> when any agent's work on it went on air
         self.work_built = {}   # (batch267) (agent, platform) -> the time of the latest build row shown
         self.builds_waiting = []  # (batch267) platform builds this step that are news and not on air yet
+        self.stories_shown, self.story_on, self.last_story = set(), None, -1e9  # (batch312 B) maybe_story
         self.did_news = {}     # (batch267) name -> when its fresh event was a build from its journal (did)
         self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
         self.edge_legs = {}    # platform -> {leg: (origin, dest), shown}: an edge leg's dense part (maybe_edge)
@@ -1838,6 +1870,7 @@ class OneCam(Director):
             self.maybe_departure(scores, now, segment)
             self.direct(by_name, scores, ranked, now)
             self.maybe_work(snapshot, by_name, scores, now, segment)
+            self.maybe_story(snapshot, by_name, scores, now, segment)
             self.maybe_attention(by_name, scores, now, segment)
             self.maybe_launch(snapshot, by_name, scores, now, segment)  # (batch257) before a quiet view
             self.maybe_quiet(by_name, scores, now, segment)
@@ -1852,6 +1885,7 @@ class OneCam(Director):
         self.maybe_group_pip(snapshot, by_name, scores, now)
         self.release_maps(now)
         self.pan_step(now)
+        self.closeup_step(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
@@ -3663,6 +3697,60 @@ class OneCam(Director):
                 target["glide"] = round(max(0.5, abs(y - t["position"]["y"]) / ahead), 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
+    def work_close(self, w, view, who, name):
+        """(d28 batch312 A) The close-up of a build that names where it lands: {position, zoom, caption}. The box is the
+        request's (extent: its entries or area), the zoom fits it with work_close_margin at the on-air width, from
+        work_close_min to work_spot_zoom (a position alone: work_spot_zoom); the caption: who, what the request names, where on the ship (the hull's
+        thirds from its bounds, bow north: "near the bow, port side")."""
+        cfg = self.cfg
+        p = w["position"]
+        e = w.get("extent") or {}
+        lo, hi = cfg["work_close_min"], cfg["work_spot_zoom"]
+        try:
+            left, top, right, bottom = (float(e[k]) for k in ("left", "top", "right", "bottom"))
+            m = cfg["work_close_margin"]
+            fit = min(60.0 * self.onair_frac() / (right - left + m), 34.0 / (bottom - top + m))
+        except (KeyError, TypeError, ValueError):  # a position alone: work_spot_zoom there
+            left = right = float(p["x"])
+            top = bottom = float(p["y"])
+            fit = hi
+        zoom = round(max(lo, min(hi, fit)), 2)
+        cx, cy = round((left + right) / 2, 1), round((top + bottom) / 2, 1)
+        what = w.get("what") or []
+        n = sum(c for _, c in what)
+        named = ", ".join(f"{c} {k.replace('-', ' ')}" for k, c in what[:3]) + (f" and {len(what) - 3} more kinds" if len(what) > 3 else "")
+        verb = w.get("verb") or "building"
+        doing = f"placing {n} ghost{'s' if n != 1 else ''} ({named})" if w.get("action") == "place_ghosts" and n else verb
+        b = view.get("bounds") or {}
+        where = ""
+        if all(isinstance(b.get(k), (int, float)) for k in ("left", "top", "right", "bottom")) and b["right"] > b["left"] and b["bottom"] > b["top"]:
+            fy = (cy - b["top"]) / (b["bottom"] - b["top"])
+            fx = (cx - b["left"]) / (b["right"] - b["left"])
+            along = "near the bow" if fy < 1 / 3 else "near the stern" if fy > 2 / 3 else "midships"
+            side = "port side" if fx < 1 / 3 else "starboard side" if fx > 2 / 3 else "on the centre line"
+            where = f"{along}, {side}"
+        cut = " (part of it)" if fit < lo - 1e-9 else ""
+        # (the overlay drops the leading name and puts "· " before the rest, as for "Sol building on Starling")
+        head = f"{who} {doing} on {name}"
+        return {"position": {"x": cx, "y": cy}, "zoom": zoom, "caption": f"{head} · {where}{cut}" if where else head + cut,
+                "overview": f"{head} · whole ship" + (f", the work {where}" if where else "")}
+
+    def closeup_step(self, now):
+        """(d28 batch312 A) The shot on air that opened on the whole ship for a build (`closeup`): after work_overview_s on
+        air the camera glides to the work's close-up, its caption says what and where. A new shot drops it."""
+        t = self.state.get(self.onair)
+        c = (t or {}).get("closeup")
+        if not c or c.get("done") or now < self.onair_since + self.cfg["work_overview_s"] or now >= t.get("until", now + 1):
+            return
+        c["done"] = now
+        target = {k: v for k, v in t.items() if k not in ("jump", "pan")}
+        dist = math.hypot(c["position"]["x"] - t["position"]["x"], c["position"]["y"] - t["position"]["y"]) if t.get("position") else 0
+        target.update(position=dict(c["position"]), zoom=c["zoom"], solo_zoom=c["zoom"], exact_zoom=True, work=c["caption"],
+                      glide=round(max(2.0, dist / 1.5), 2))  # about 1.5 s to the work, the zoom eased in on the way
+        t.pop("pan", None)
+        t.update(position=target["position"], zoom=c["zoom"], solo_zoom=c["zoom"], work=c["caption"])
+        self.apply(self.slot(self.onair), target, f"work close-up: {c['caption']}", {}, now, quiet=True)
+
     @staticmethod
     def same_platform(a, b):
         ap, bp = (a or {}).get("platform") or {}, (b or {}).get("platform") or {}
@@ -4035,7 +4123,10 @@ class OneCam(Director):
         self.builds_waiting = sorted((w for w in builds.values() if (w.get("view") or (self.plat_rows.get(w["platform"]) or {}).get("view"))
                                       and now - self.plat_work_shown.get(w["platform"], -1e9) >= cfg["work_build_gap"]
                                       and not self.fighting(w["agent"], by_name, now)), key=lambda w: -w["t"])
-        if not (fresh or builds) or self.n_clients() < 2:
+        # (d28 batch312 A) one client (POG_CAMS=1, camera panels since d28 09:13): a build moves it to the work, as a
+        # maiden flight or a tour does; an inspection, settings or requests stay off (they came every few seconds)
+        one = self.n_clients() < 2
+        if not (fresh or builds) or (one and not self.builds_waiting):
             return
         cur = self.state.get(self.onair)
         cp = (cur or {}).get("platform") or {}
@@ -4055,7 +4146,8 @@ class OneCam(Director):
             return
         held = cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)
         subj = (cur or {}).get("subject")
-        cands = [(w, True) for w in self.builds_waiting] + [(w, False) for _, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"])]
+        cands = [(w, True) for w in self.builds_waiting] + \
+            ([] if one else [(w, False) for _, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"])])
         for w, build in cands:
             agent, name = w["agent"], w["platform"]
             if self.fighting(agent, by_name, now):
@@ -4083,18 +4175,23 @@ class OneCam(Director):
             until = now + cfg["ready_s"] + cfg["work_hold"]
             verb = w.get("verb") or "building"
             label = f"{who} · {verb} on {name}" if build else f"{who} · working on {name}"
-            spot = w.get("position") if build and now - last < cfg["work_repeat"] else None
+            spot = w.get("position") if build else None
             view = (self.plat_rows.get(name) or {}).get("view") or w.get("view") or {}
-            if isinstance(spot, dict) and spot.get("x") is not None and view.get("surface"):
-                z = cfg["work_spot_zoom"]  # (batch267) a closer view of where it landed: the platform aired lately
-                t = {"agents": [agent], "subject": "@platform", "position": {"x": float(spot["x"]), "y": float(spot["y"])},
-                     "surface": view["surface"], "zoom": z, "solo_zoom": z, "exact_zoom": True, "until": until,
-                     "platform": {"name": name, "why": "work", "label": label, "agent": agent}}
+            close = self.work_close(w, view, who, name) if isinstance(spot, dict) and spot.get("x") is not None \
+                and view.get("surface") else None
+            if close and now - last < cfg["work_repeat"]:
+                # (batch267) a closer view of where it landed: the platform aired lately
+                t = {"agents": [agent], "subject": "@platform", "position": close["position"], "surface": view["surface"],
+                     "zoom": close["zoom"], "solo_zoom": close["zoom"], "exact_zoom": True, "until": until,
+                     "platform": {"name": name, "why": "work", "label": label, "agent": agent}, "work": close["caption"]}
             else:
                 t = self.platform_target(name, "work", until, agent=agent, label=label)
+                if t and close:  # (batch312) a first visit: the whole ship work_overview_s, then the work (closeup_step)
+                    t["closeup"] = close
+                    t["work"] = close["overview"]
             if not t:
                 continue
-            t["work"] = f"{who} {verb} on {name}" if build else f"{who} working on {name}"
+            t.setdefault("work", f"{who} {verb} on {name}" if build else f"{who} working on {name}")
             if build:
                 t["build"] = True
                 self.work_built[(agent, name)] = w["t"]
@@ -4107,6 +4204,65 @@ class OneCam(Director):
             self.show_platform(t, scores, now)
             if agent != subj:
                 self.resume = {"subject": agent, "since": now}  # then the agent's own character
+            return
+
+    def maybe_story(self, snapshot, by_name, scores, now, segment=None):
+        """(d28 batch312 B) An operation story's beat (snapshot `stories`, stories.py), each once: the ship on air
+        story_hold, captioned with the question and handoff or the result; the agent who set the watch in the inset
+        once the ship is up; a result with a repaired spot goes there (work_close). It waits for a free moment as a
+        build does, and holds the camera its time; urgent shots and their resumption are as for any platform shot."""
+        cfg = self.cfg
+        cur = self.state.get(self.onair) or {}
+        cp = cur.get("platform") or {}
+        on = self.story_on
+        if on:
+            if cp.get("story") == on["key"] and now < cur.get("until", 0):
+                if not on.get("inset") and not self.inset and on["agent"] in by_name:
+                    slot = self.inset_free(self.standbys())
+                    if slot:  # the agent who set the watch, beside its ship
+                        z = self.zoom_for(by_name[on["agent"]], cfg["solo_zoom"]) or cfg["solo_zoom"]
+                        shot = self.body_shot(on["agent"], by_name, z, now)
+                        until = min(cur["until"], now + cfg["story_inset_s"])
+                        self.frame_on(slot, dict(shot, until=until), f"inset story: {on['who']}", scores, now)
+                        self.inset = {"slot": slot["slot"], "until": until, "why": "story", "agent": on["agent"]}
+                        on["inset"] = now
+                return
+            self.story_on = None  # its time is up, or an urgent shot took the camera: the beat aired
+        if not cfg["stories"] or self.mode != "onecam" or self.plat_busy(now, segment) or self.battle:
+            return
+        if cp.get("why") in ("work", "danger", "operator", "story") and now < cur.get("until", 0):
+            return  # a build, danger or an operator's ship on air holds
+        subj = cur.get("subject")
+        if (subj in by_name and self.fighting(subj, by_name, now)) or now - self.last_story < cfg["story_gap"]:
+            return
+        for b in snapshot.get("stories") or []:
+            if b.get("key") in self.stories_shown:
+                continue
+            name = b.get("platform")
+            view = (self.plat_rows.get(name) or {}).get("view") or {}
+            if not view.get("surface"):
+                continue
+            until = now + cfg["ready_s"] + cfg["story_hold"]
+            agent = b.get("agent")
+            who = (by_name.get(agent) or {}).get("display_name") or agent
+            sp = b.get("spot") if b.get("beat") == "result" else None
+            if sp and isinstance(sp.get("position"), dict):
+                spw = (by_name.get(sp.get("agent")) or {}).get("display_name") or sp.get("agent") or who
+                close = self.work_close(dict(sp), view, spw, name)
+                t = {"agents": [agent] if agent in by_name else [], "subject": "@platform", "position": close["position"],
+                     "surface": view["surface"], "zoom": close["zoom"], "solo_zoom": close["zoom"], "exact_zoom": True,
+                     "until": until, "platform": {"name": name, "why": "story", "label": b.get("caption") or name}}
+            else:
+                t = self.platform_target(name, "story", until, agent=agent if agent in by_name else None,
+                                         label=b.get("caption") or name)
+            if not t:
+                continue
+            t["platform"]["story"] = b["key"]
+            t["work"] = b.get("caption") or name
+            self.stories_shown.add(b["key"])
+            self.last_story = now
+            self.show_platform(t, scores, now)
+            self.story_on = {"key": b["key"], "agent": agent, "who": who, "until": until}
             return
 
     def release_maps(self, now):
@@ -4640,6 +4796,12 @@ class OneCam(Director):
                 row["platform"] = p
                 if t.get("work"):
                     row["work"] = t["work"]  # the page: "Astra · working on Starling"
+                cl = t.get("closeup")
+                if key == "main" and p.get("why") == "work" and t.get("build") and t.get("since") is not None and \
+                        (cl is None or cl.get("done")):
+                    # (d28 batch312 C) a build's close-up on air since then: replays.py saves it for a highlight
+                    row["work_close"] = {"platform": p["name"], "agent": p.get("agent"),
+                                         "since": round(cl["done"] if cl else t["since"], 1)}
             if t.get("attention"):  # the inset on where the agent on air is looking: "Sol · placing ghosts 40 m north"
                 row.update(work=t["work"], attention=t["attention"])
             elif t.get("subject") == "@work" and t.get("work"):  # a spoken-line cue: "Sol · at (120, -40)"
