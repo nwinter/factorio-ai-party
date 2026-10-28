@@ -102,12 +102,35 @@ return function(api)
     local drop = try(function() local t = e.drop_target; return t and t.valid ~= false and t or nil end)
     return pick, drop
   end
+  -- (d27 batch292 IP, Astra #2639: Resolute's bulk inserters at (+-6.5,320.5), disabled by S<0, read "no pickup
+  -- target" and "picks from nothing (the ground)" with a transport belt on their pickup tiles) the engine leaves a
+  -- target unset while something an inserter uses stands on the point: on 2.0.77 (iMac copy of world n, d27 18:50) a
+  -- belt or chest destroyed and built again on a disabled inserter's pickup point (circuit or logistic condition) left
+  -- pickup_target nil until it was enabled (set within 407 ticks); an enabled idle one set it within 3 s, and a drop
+  -- target came back within 3 s, disabled or not. A target set before stays while it is disabled. With a built inserter's
+  -- target unset: (text, note, entity) for what stands there (`transport-belt (-7.5,320.5) on its pickup tile`), else nil.
+  function M.unset(e, which)
+    if not (e and e.valid and e.type == 'inserter') then return nil end
+    local drop = which == 'drop'
+    local t = try(function() if drop then return e.drop_target end return e.pickup_target end)
+    if t and t.valid ~= false then return nil end
+    local pos = try(function() if drop then return e.drop_position end return e.pickup_position end)
+    local x = pos and M.standing(e.surface, pos)
+    if not x then return nil end
+    local side = drop and 'drop' or 'pickup'
+    return string.format('%s %s on its %s tile', x.name, at(x.position), side),
+      string.format('the engine\'s %s target is unset%s', side, drop and '' or ' until the inserter runs'), x
+  end
   function M.missing(e)
     if not (e and e.valid and e.type == 'inserter') then return nil end
     local pick, drop = M.read(e)
     local missing = {}
-    if not pick then missing[#missing+1] = 'no pickup target' end
-    if not drop then missing[#missing+1] = 'no drop target' end
+    for _, side in ipairs({{'pickup', pick}, {'drop', drop}}) do
+      if not side[2] then
+        local text = M.unset(e, side[1])
+        missing[#missing+1] = text and string.format('%s target unset by the engine (%s)', side[1], text) or 'no ' .. side[1] .. ' target'
+      end
+    end
     return #missing > 0 and table.concat(missing, ', ') or nil
   end
   -- name (x,y), as the lines write a target.

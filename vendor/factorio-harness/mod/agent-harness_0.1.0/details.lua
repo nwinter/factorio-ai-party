@@ -161,7 +161,13 @@ return function(api)
     local waiting = try(function() return defines.entity_status.waiting_for_source_items end)
     if e.type ~= 'inserter' or not waiting or try(function() return e.status end) ~= waiting then return nil end
     local src, dst = try(function() return e.pickup_target end), try(function() return e.drop_target end)
-    if not (src and src.valid) then return 'picks from the ground: no item lies at its pickup point' end
+    if not (src and src.valid) then
+      -- (d27 batch292 IP) something it uses on the tile, the engine's target unset (targets.lua)
+      local text, note
+      if api.unset_target then text, note = api.unset_target(e, 'pickup') end
+      if text then return string.format('%s (%s)', text, note) end
+      return 'picks from the ground: no item lies at its pickup point'
+    end
     local names, filtered = {}, false
     if try(function() return e.use_filters end) then
       for k = 1, try(function() return e.filter_slot_count end) or 0 do
@@ -561,9 +567,17 @@ return function(api)
       out.hand_wait=M.hand_wait(e)
       out.pickup_target = where(try(function() return e.pickup_target end))
       out.drop_target = where(try(function() return e.drop_target end))
+      -- (d27 batch292 IP, Astra #2639) a target the engine left unset with something it uses on the tile: what stands
+      -- there and that the engine's target is unset (targets.lua)
+      for _, side in ipairs({'pickup', 'drop'}) do
+        if not out[side .. '_target'] and api.unset_target then
+          local text, note = api.unset_target(e, side)
+          if text then out[side .. '_unset'] = text .. ' (' .. note .. ')' end
+        end
+      end
       -- Nothing to drop into: the tile its items land on (on a platform,
       -- empty space means thrown overboard).
-      if not out.drop_target then
+      if not out.drop_target and not out.drop_unset then
         out.drop_tile = try(function() local d = e.drop_position; return e.surface.get_tile(math.floor(d.x), math.floor(d.y)).name end)
         if out.drop_tile == 'empty-space' then out.drop_note = 'drops into empty space: items it moves are thrown overboard' end
       end

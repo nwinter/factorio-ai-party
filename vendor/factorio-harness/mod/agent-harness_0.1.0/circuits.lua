@@ -549,8 +549,15 @@ return function(api)
     local function at_(x) return x and x.valid and string.format('%s (%g,%g)', x.name, x.position.x, x.position.y) end
     local pick, drop = try(function() return e.pickup_target end), try(function() return e.drop_target end)
     local dp = try(function() return e.drop_position end)
-    parts[#parts+1] = string.format('picks from %s, drops %s', at_(pick) or 'nothing (the ground)',
-      at_(drop) and 'into ' .. at_(drop) or (dp and string.format('onto the ground at (%g,%g)', dp.x, dp.y) or 'nowhere'))
+    -- (d27 batch292 IP, Astra #2639) an unset engine target with something it uses on the tile says both (targets.lua)
+    local function unset(side)
+      local text, note
+      if api.unset_target then text, note = api.unset_target(e, side) end
+      return text and string.format('%s (%s)', text, note) or nil
+    end
+    parts[#parts+1] = string.format('picks from %s, drops %s', at_(pick) or unset('pickup') or 'nothing (the ground)',
+      at_(drop) and 'into ' .. at_(drop) or (not drop and unset('drop') and 'into ' .. unset('drop'))
+        or (dp and string.format('onto the ground at (%g,%g)', dp.x, dp.y) or 'nowhere'))
     return string.format('%s (%g,%g): %s', e.name, e.position.x, e.position.y, table.concat(parts, '; '))
   end
   local SEG = 400
