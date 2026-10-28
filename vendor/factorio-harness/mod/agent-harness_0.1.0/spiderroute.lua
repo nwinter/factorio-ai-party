@@ -106,6 +106,9 @@ return function(api)
   function M.set(spider, a, by, index, own)
     assert(a.mode == nil or a.mode == 'replace' or a.mode == 'append', 'mode is "replace" (the default: the route becomes these targets, as a click on the remote) or "append" (added at the end, as a shift-click)')
     assert(a.clear == nil or a.clear == true, 'clear must be true')
+    assert(a.reuse == nil or type(a.reuse) == 'boolean', 'reuse must be true or false')
+    assert(a.route == nil or (type(a.route) == 'number' and a.route >= 1 and a.route == math.floor(a.route)), 'route is a stored route\'s number (vehicle {routes: true} lists them)')
+    assert((a.reuse == nil and a.route == nil) or a.go_to ~= nil, 'reuse and route go with go_to')
     local st = store()
     local lock = st.locks and st.locks[spider.unit_number]
     local out = {}
@@ -167,13 +170,26 @@ return function(api)
     end
     -- (d24 batch191) each straight leg read for water its legs cannot cross; paths round it requested (spiderpath.lua)
     if a.go_to ~= nil and #r > 0 and api.path and not out.unlanded then
-      local ok, lines = pcall(api.path.plan, spider, r, {owner='route', by=by})
+      -- (d28 batch305 NR) a stored route serves a crossing (read again first; reuse: false asks the pathfinder)
+      local prec = {owner='route', by=by, reuse=a.reuse ~= false, route=a.route}
+      local ok, lines, shared, now = pcall(api.path.plan, spider, r, prec)
+      -- the stored routes it takes: dropped if it stalls on them (tick)
+      local t1 = st.spiders[spider.unit_number]
+      if t1 and prec.used then t1.from_store = prec.used end
       if ok and lines then out.water = {crossing=lines, note='paths round the water were requested: the route becomes them when they come (often within this call), said once in team alerts (this reply or a later one)'} end
+      if ok and shared then out.shared_route = table.concat(shared, '; ') end
+      if ok and now then
+        M.routed({owner='route', by=by}, now.plan, spider, now.route, now.notes, true)
+        local r2 = route(spider)
+        out.route, out.route_line = r2, route_line(r2)
+        out.water.note = 'its route goes round the water now, by stored routes read again in this call (no path asked)'
+      end
     end
     return out
   end
   -- (d24 batch191) the paths of a plan are in: its route goes round the water (unless it was set again since).
-  function M.routed(rec, plan, spider, pts, notes)
+  -- (d28 batch305 NR) quiet: written in the go_to's own call (stored routes, no path asked): its reply says it, no alert.
+  function M.routed(rec, plan, spider, pts, notes, quiet)
     local unit = spider.unit_number
     local r = route(spider)
     local last = plan.targets[#plan.targets]
@@ -191,6 +207,7 @@ return function(api)
     local now = route(spider)
     local t = store().spiders[unit]
     if t and #now > 0 then t.near, t.best, t.target, t.moved = dist(spider.position, now[1]), dist(spider.position, now[1]), {x=now[1].x, y=now[1].y}, game.tick end
+    if quiet then return end
     -- (d26 batch243) a back-off's plan with no path found: its route goes back there and on, said as such
     event(string.format(found and 'spidertron #%d: its route goes round the water now: %s%s%s' or 'spidertron #%d: no path round the water from its back-off spot either; its route: %s%s%s',
       unit, route_line(now), #notes > 0 and '; ' .. table.concat(notes, '; ') or '', err and '; the game refused it: ' .. err or ''), plan.by, unit)
@@ -470,17 +487,21 @@ return function(api)
           if t.stalled then event(string.format('spidertron #%d moves again: at %s toward %s', unit, at(pos), at(r[1])), t.by, unit) end
           t.pos, t.near, t.best, t.moved, t.stalled, t.target = {x=pos.x, y=pos.y}, near, near, game.tick, nil, {x=r[1].x, y=r[1].y}
         elseif quick or (not t.stalled and idle >= M.STALL) then
+          -- (d28 batch305 NR) stalled on stored routes: dropped from the store, so no one is sent along them again unasked
+          local gone = t.from_store and P and P.drop_routes and P.drop_routes(t.from_store)
+          t.from_store = nil
+          gone = gone and string.format('; stored route %s dropped (it stalled on it)', gone) or ''
           local did = recover(e, t, r)
           if did then
             local now = route(e)
             t.moved, t.best, t.near = game.tick, now[1] and dist(pos, now[1]) or near, now[1] and dist(pos, now[1]) or near
             if now[1] then t.target = {x=now[1].x, y=now[1].y} end
-            event(string.format('spidertron #%d: no progress toward %s for %s; %s', unit, at(r[1]), ago(idle), did), t.by, unit)
+            event(string.format('spidertron #%d: no progress toward %s for %s; %s%s', unit, at(r[1]), ago(idle), did, gone), t.by, unit)
           else
             t.stalled = true
             local f = M.facts(e)
             local held = st.locks and st.locks[unit]
-            event(string.format('spidertron #%d: %s%s%s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress',
+            event(string.format('spidertron #%d: %s%s%s%s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress', gone,
               t.tries and #t.tries > 0 and string.format('; %d recover%s tried', #t.tries, #t.tries == 1 and 'y' or 'ies') or '',
               t.no_path and '; ' .. t.no_path or t.unlanded and '; ' .. t.unlanded or '', f.route_line,
               held and 'its retreat route; held: go_to is refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat)'

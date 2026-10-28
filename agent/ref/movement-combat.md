@@ -236,6 +236,13 @@
   `retreated`, `route_emptied`, `destroyed` or `timed_out` (`ticks`, default 18000), with `why`. `route_changed` comes
   within a second of another call setting or clearing its route (go_to, append, clear, spider_kite; last.changed_by,
   changed_how, changed_tick), or of its route leading elsewhere with no such call (a player's remote).
+  Shared routes: a path found round water for a spidertron, or for a drive's turning room, is kept for every agent and
+  later shifts (`vehicle {"routes":true}` lists those on your surface, nearest first). A later go_to or drive from
+  within a few tiles of one end to near the other, either way, reads it again in the call (the tiles on each leg; for a
+  car or tank also what it collides with near each leg, and anything built, mined or destroyed there since) and uses
+  it at once: reply `shared_route` (a drive's `last.shared_route` too) "reused route N (checked at tick T)". Changed
+  legs are asked again and spliced in, the line saying which and why; a route asked over 2 game hours ago is asked
+  again in full. `"reuse":false` asks the pathfinder; `"route":N` takes that route only.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.
