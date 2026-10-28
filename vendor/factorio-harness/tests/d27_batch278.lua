@@ -127,7 +127,9 @@ do
   -- 70 crafts: about 1050 s, more than the made wait's 900
   req.get_inventory=nil
   r=B.run({},{position={x=42.5,y=-24.5},count=70,dry_run=true})
-  has(table.concat(r.plan,'\n'),'at its crafting speed 2 the 70 crafts take about 1050 s: the made wait times out at 900 s first')
+  -- (d27 batch284 AT) two made waits on the counter: 46 crafts fit one (690 s, with a quarter and 30 s to spare)
+  has(table.concat(r.plan,'\n'),'at its crafting speed 2 the 70 crafts take about 1050 s, more than one wait holds (900 s): the made step is 2 waits on its counter, met at 82, 106, each up to 900 s')
+  eq(r.made_waits,2); eq(r.estimate_s,1050)
   print('AB the requester\'s slots, the made wait\'s time: ok')
 end
 

@@ -156,7 +156,11 @@
   at the plan and the count that ends the batch; productivity bonus crafts count too) while the products go out through
   the output inserter (`destination`, and a chest's `room` for them); the input off again (or its own condition set
   back); the machine's and the output's own conditions set back. The products are not held in the machine: its output
-  holds one stack (`output_stack`) and inserters stop feeding it at `feeds_until` held. A batch whose ingredients do not
+  holds one stack (`output_stack`) and inserters stop feeding it at `feeds_until` held. `estimate_s`: the crafts at its crafting speed
+  (modules and beacons in it) and productivity (its own and recipe research: the counter rises speed / energy x (1 +
+  productivity) a second). A wait holds 900 s at most: a longer batch's made step is several waits on the counter
+  (`made_waits`, the plan says where each is met), each up to 900 s; past 8 the batch is refused with the count that
+  fits. A batch whose ingredients do not
   fit the requester's slots at once is refused (`refused`); `slots {required, available}` says them either way. The requester and both inserters are found
   round the machine unless given. `surplus` names what is already there over the batch's need (the machine would make
   more with it). The inserters need a logistic network for their logistic condition. A requester with trash
