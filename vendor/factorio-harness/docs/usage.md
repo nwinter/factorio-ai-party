@@ -16823,7 +16823,7 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   on this branch and 5.9-9.2 on main (5-call means, host noise). The whole Resolute row took 14-28 ms on both.
 - Docs: agent/ref/space-age.md (platforms, endurance; a topic file). Tests: tests/d27_batch294.lua (fails on main);
   tests/thrust.lua, tests/space.lua and tests/d22_batch96.lua updated.
-- Bundle (compacted): 6,314,840 bytes on main (9a4a10ca), 6,319,872 with this branch (limit 8,388,608).
+- Bundle (compacted): 6,318,675 bytes on main (712a3c64), 6,323,707 with this branch (limit 8,388,608).
 
 ## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
 - Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
