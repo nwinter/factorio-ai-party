@@ -84,6 +84,13 @@
   count held under 60 ticks can fall between samples. One watch an agent (a new one replaces it); `status {brief,
   work}` lists it.
   Example: `./fh call signal_watch --args '{"platform":"Petrel","position":[-13.5,4.5],"wire":"green","signals":"calcite","seconds":600}'`
+  `signal_watch {entities, surface | platform, seconds}` (1..8 entities, 10..60 seconds) is a duty watch instead: each
+  entity's status every tick, for a circuit pulse shorter than the 60-tick sample (a 1-tick pump pulse in a 10-tick
+  clock). Its read gives per entity: enabled ticks and share (any status but disabled_by_control_behavior; a circuit
+  condition takes effect the tick after it is met), ticks by status, enabled and disabled runs by length, the ticks from
+  one enable to the next, the least and most enabled ticks in a 60-tick window (with their ticks), transitions (count,
+  first and last 8 ticks) and the runs cut by the window. It replaces your signal watch as any new one does.
+  Example: `./fh call signal_watch --args '{"platform":"Resolute","entities":[[-14.5,160],[14.5,160]],"seconds":60}'`
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, hand_size?, wait_for_full_hand?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?, bar?}`: a machine's or building's
