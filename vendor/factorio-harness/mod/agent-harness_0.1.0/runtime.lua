@@ -14876,19 +14876,59 @@ handlers.train=M.trains.handlers.train
 M.sharedroutes=require('sharedroutes'){state=state}
 M.spiderpath=require('spiderpath'){state=state,routes=M.sharedroutes}
 -- (d24 batch189 QAE1) a spidertron's retreat: the guard read as retreat.lua reads a vehicle's; the agent riding it.
+-- The agent riding a spidertron (driver, then passenger): its player index and name.
+function M.spiderroute_rider(e)
+  for _,get in ipairs({'get_driver','get_passenger'}) do
+    local ok,c=pcall(function() return e[get]() end)
+    if ok and c and c.valid then
+      local name=c.object_name=='LuaPlayer' and c.name or M.character_owner(c)
+      if name then for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index,name end end end
+    end
+  end
+end
 M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end,path=M.spiderpath,
   reading=function(e) return M.retreat.reading(e) end,retreat_check=function(e,cfg) return M.retreat.check_entity(e,cfg) end,
   retreat_line=function(cfg) return M.retreat.line(cfg) end,
-  rider=function(e)
-    for _,get in ipairs({'get_driver','get_passenger'}) do
-      local ok,c=pcall(function() return e[get]() end)
-      if ok and c and c.valid then
-        local name=c.object_name=='LuaPlayer' and c.name or M.character_owner(c)
-        if name then for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index,name end end end
+  rider=function(e) return M.spiderroute_rider(e) end}
+-- (d28 batch310 PS) two spidertrons on one route: the follower on the lead's steps; retreats independent (spiderpair.lua)
+M.spiderpair=require('spiderpair'){state=state,path=M.spiderpath,
+  say=function(text,to,unit) return M.spiderroute.say(text,to,unit) end,route=function(e) return M.spiderroute.route(e) end,
+  seq=function(unit) return M.spiderroute.seq(unit) end,set_of=function(unit) return M.spiderroute.set_of(unit) end,
+  held=function(e) return M.spiderroute.held(e) end,hold=function(e,why) return M.spiderroute.hold(e,why) end,
+  resume=function(e) return M.spiderroute.resume(e) end,retreated=function(e) return M.spiderroute.retreated(e) end,
+  ahead=function(e,q) return q and M.spiderroute.ahead(e,q) or nil end,
+  unadopt=function(e,clear) return M.spiderroute.unadopt(e,clear) end,
+  -- the follower's guard: the standing retreat_guard of the agent it is (else the first agent of the pair)
+  adopt=function(e,pr)
+    local by=M.spiderpair.owner(e) or pr.agents[1]
+    local index
+    for _,a in ipairs(M.board.agents()) do if a.name==by then index=a.index end end
+    return M.spiderroute.adopt(e,by,index,pr.id)
+  end,
+  rider=function(e) return M.spiderroute_rider(e) end,
+  actor=function(e)
+    for i,act in pairs(state().active) do
+      if (act.kind=='spider_kite' or act.kind=='spider_go') and act.spider==e then
+        local b=M.bots.record(i)
+        local pl=not b and game.get_player(i)
+        return b and b.name or pl and pl.name or nil
+      end
+    end
+  end,
+  sender=function(unit) local s=M.spiderroute.set_of(unit) return s and s.by or nil end,
+  busy=function(e)
+    local sr=state().spiderroute
+    local lock=sr and sr.locks and sr.locks[e.unit_number]
+    if lock then return 'it is held on its retreat ('..(lock.rec.why or 'retreat')..'): retreat_guard set or cleared re-arms it' end
+    for i,act in pairs(state().active) do
+      if act.kind=='spider_kite' and act.spider==e then
+        local b=M.bots.record(i)
+        return (b and b.name or 'an agent')..' runs spider_kite with it'
       end
     end
   end}
-M.vehicles=require('vehicles'){routes=M.sharedroutes,entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
+M.spiderroute.pair=M.spiderpair
+M.vehicles=require('vehicles'){routes=M.sharedroutes,pair=M.spiderpair,entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
   spider_set=function(e,a,by,index,own) return M.spiderroute.set(e,a,by,index,own) end,spider_seq=function(unit) return M.spiderroute.seq(unit) end,spider_facts=function(e,by,index) return M.spiderroute.facts(e,by,index) end,
   spider_retreat=function(p,a)
     local cfg=M.retreat.config(p,{retreat=a.retreat},'go_to')
@@ -14934,7 +14974,8 @@ do
 end
 -- (d24 batch191 QAG1) spider_kite: kite for a spidertron you ride or send by remote view (spiderkite.lua): its guns on
 -- auto by its targeting switches, its legs moved by route targets as its remote sets them, every 10 ticks.
-M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath}
+M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath,
+  seq=function(unit) return M.spiderroute.seq(unit) end,set_of=function(unit) return M.spiderroute.set_of(unit) end}
 function handlers.spider_kite(p,a)
   local c=p.character
   assert(c and c.valid,'a living character is required')
@@ -14966,7 +15007,9 @@ function handlers.spider_kite(p,a)
   -- the fight owns its route now: a go_to's stall sampling (spiderroute.lua) ends, the route is cleared; (d28 batch300
   -- SR) a waited go_to on it ends route_changed, naming this call
   if sr then sr.spiders[spider.unit_number]=nil end
-  M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
+  -- (d28 batch310 item 5, Aurora 10:28) its claim's number: another call setting or clearing the route after it (a clear,
+  -- a same-target go_to, an append) moves it on, and the kite yields (spiderkite.lua)
+  action.set_seq=M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
   if #route>0 then spider.autopilot_destination=nil end
   local targeting=M.spiderkite.start(action)
   state().active[p.index]=action
@@ -21132,6 +21175,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%30==19 and M.spiderroute and state().spiderroute then pcall(M.timed,'spiderroute.guard_tick',M.spiderroute.guard_tick) end  -- their retreat guards (QAE1)
+  if event.tick%10==3 and M.spiderpair and state().spiderpairs then pcall(M.timed,'spiderpair.tick',M.spiderpair.tick) end  -- (d28 batch310 PS) pairs walking
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
   if state().ammo_reserve then pcall(M.timed,'ammoreserve.tick',M.ammoreserve.tick,event.tick) end  -- platform_ammo_below's readings (ammoreserve.lua): a band a step while a pass runs
   if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)
