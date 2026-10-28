@@ -22,6 +22,7 @@ import pacing
 import waitcard
 import workcard
 import viewer_replies
+import stories as stories_mod
 import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
@@ -877,6 +878,10 @@ class Model:
                 print(f"[model] {self.replies_path}: {e}", flush=True)
         return True
 
+    def set_story_store(self, path):
+        """(d28 batch312 B) runs/RUN/stories.json: the operation stories followed (stories.py), kept across a restart."""
+        self.stories = stories_mod.Stories(path)
+
     def replies_all(self):
         """(d28 batch309) every reply kept, oldest first (serve.py /replies.json, for push_live's reply store)."""
         return list(self.viewer_replies)
@@ -898,6 +903,7 @@ class Model:
         # set_inbox; read again when the file changes
         self.inbox_path, self.inbox_mtime, self.inbox_rows = None, None, []
         self.links_path, self.links_mtime, self.links = None, None, {}  # set_reply_links
+        self.stories = stories_mod.Stories()  # (d28 batch312 B) set_story_store keeps them in the run
         self.chat_seen = set()
         self.chat_read = False  # the first chat read (the backlog) is done
         # (d22 batch111 BU1) the operator-read feeds whose backlog is read (an empty read since the start): until then a
@@ -1023,6 +1029,10 @@ class Model:
         for r in obs.get("operator_requests") or []:
             self._ingest_operator_request(r, now)
         self._feeds_read(obs, ("confessions", "tells", "operator_requests"))
+        try:  # (d28 batch312 B) operation stories: the agents' flight watches carried to their results (stories.py)
+            self.stories.update(self, now)
+        except Exception as e:  # noqa: BLE001 (a story's fault never stops the service's read)
+            print(f"[model] stories: {type(e).__name__}: {e}", flush=True)
         if obs.get("research"):
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
@@ -2175,6 +2185,7 @@ class Model:
             total = int(m[1]) if m else 1
             if key not in seen or total > seen[key][0]:  # re-reported every poll: the time only moves when it grows
                 seen[key] = (total, now)
+            self.stories.on_loss(e["platform"], key, total, now)  # (batch312 B) lost during a flight watch
             for k in [k for k, v in seen.items() if now - v[1] > 600]:
                 del seen[k]
         if e["kind"] == "loss" and HUB_LOST.search(e["text"]):
@@ -2398,6 +2409,7 @@ class Model:
         # headlines: a platform's first arrival at a planet, the run's first there. Later ones (a ferry's round
         # trips) are an ordinary "arrival" below battles: a headline every trip pulled the hosts off fights.
         for name, planet, came, first, team_first in arrivals:
+            self.stories.on_arrival(name, planet_label(planet), now)  # (batch312 B) a flight watch's ship arrived
             if f"orbit:{name}:{planet}" in fired:
                 continue
             aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == name and a.alive]
@@ -3048,6 +3060,7 @@ class Model:
             "agents": agents,
             "chat": self.chat_window(),
             "viewer_replies": list(self.viewer_replies)[-REPLY_STATE:],
+            "stories": self.stories.public(now),  # (d28 batch312 B) story beats for the director (onecam.maybe_story)
             "operator_requests": list(self.operator_requests),
             # the run's chronicle, newest last: the agents' entries and the events the harness saw (the site's live page;
             # the hosts read a new entry)

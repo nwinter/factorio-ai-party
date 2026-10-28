@@ -677,6 +677,8 @@ def main():
     # (d28 batch309) the replies kept beside them, read back from this run and the runs before (a restart, a new shift)
     if inbox:
         model.set_reply_store(os.path.join(os.path.dirname(inbox), viewer_replies.ROWS_NAME))
+        # (d28 batch312 B) the operation stories followed (stories.py), kept across a restart
+        model.set_story_store(os.path.join(os.path.dirname(inbox), "stories.json"))
     if a.run and not a.mock:  # chat read again at a restart keeps its time (chat-log.py's logged_at)
         model.set_chat_log(os.path.join(os.path.dirname(os.path.abspath(a.run)), "chat.jsonl"))
     # YouTube deletions, with what they remove, beside it: the site leaves those lines out (site/moderation.py)
