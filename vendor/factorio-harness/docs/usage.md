@@ -17245,3 +17245,41 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   (an item-only watch read by id while running, after it finished, after a new watch replaced it, replaced while
   running, by the other agent; 15 rows on both pages of a 20-machine watch; a segment; a watch kept before this
   change); fails on main: `a running watch's flows by id`.
+
+## d28 batch304 (EC, Updates row endurance-cost: the plain platform_endurance under 10 ms on world n)
+
+- Found (a copy of world n's 03:58 save on OrbStack, timers per part inside the read; main's runtime): Resolute's read
+  took 15.3 ms of a 18-22 ms call, Asterion's 15.6 of 16-24. Most of it was a dozen passes over the platform's whole
+  surface, each about 0.3 ms plus 1 us an entity found (world n's finds cost the same; its Lua runs about twice as fast,
+  and it writes numbers about 10x faster than the copy):
+  - the thrusters' and tanks' fluids read six times a call (the ammunition model's fluid ingredients, the fluid rows,
+    the fuel outlook), each a find or a background-list count and every fluid box;
+  - separate finds for the turrets and machines (stock), the assembling machines (the model's makers), the solar
+    panels, the status count (1015 entities on Resolute, 674 of them inserters), the thrusters (twice: the speed's
+    geometry, the outlook's thrust), a pole for the power line;
+  - the speed read twice (the read and its fuel outlook), with its geometry's tile counts each time;
+  - every item prototype read twice a call (the ammunition list, the chunk list), each item's statistics at all 6
+    qualities, the ammunition trace's belt count by type.
+- Change (every figure the same: main's and this branch's replies compared field by field on the paused copy for 11
+  platforms, 4 flying, and with forecast: true for 4):
+  - endurance.lua: one find a call of the types the plain read looks at, sorted by type and kept by platform in storage
+    (`endurance_scan`: entities only, never what they hold); each call counts those types and checks each kept one is
+    still valid, and finds them again when the count differs or one is gone. Read once a call and shared: the fluids
+    (all of them, each asked set taken from it), the speed and its geometry, the thrusters for the outlook. The power
+    line reads the platform's own network (a pole's statistics there are the surface's; no pole found). Statistics
+    reads take the totals since the game began once a call: an item never counted reads 0 with no read, one only ever
+    counted at normal is read at normal alone. The status count walks the lists by type and reads a turret's buffer
+    only when it is on low power. The ammunition, repair pack and chunk names and the space connections are read once a
+    session.
+  - ammomodel.lua: the makers from the caller's machines, indexed by product once a call; a recipe's products read
+    once a session. freight.lua: stock_places takes the caller's turret, machine and inserter lists; geometry takes
+    the thrusters and finds each hull edge by halving its 32-column strip (16-18 tile counts, not up to 60; the same
+    widths for all 19 platforms on the copy). thrust.lua: qualities takes the thrusters. ammofeed.lua: the belt count
+    goes by belt names (the same count, 0.74 ms against 2.56 on Resolute); a background read asked for with one done
+    says the belts that read covered (its `as_of`), not a count now.
+- Cost on the copy (Mac under load, medians): the read 15.3 -> 7.7 ms (Resolute), 15.6 -> 6.7 (Asterion), 9.6 -> 5.8
+  (Kestrel II); whole calls 18-22 -> 11-12, 16-24 -> 8.6-9.4, 13-15 -> 8.8-9.8 (the copy's number writing is about
+  4.6 ms of Resolute's 121 numbers, about 0.5 on world n).
+- Test: tests/d28_batch304.lua (fails on main: its first call on the fake platform makes 12 finds, against 2 here: the
+  one find and the belts, which both find with no background read yet).
+- Bundle (compacted): 6,353,761 bytes on main (eb7839f3), 6,358,489 with this branch (limit 8,388,608).

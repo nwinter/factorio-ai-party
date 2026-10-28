@@ -19,15 +19,80 @@ return function(api)
     if m >= 60 then return string.format('%dh%02dm', math.floor(m / 60), math.floor(m % 60)) end
     return string.format('%dm%02ds', math.floor(m), math.floor((m % 1) * 60))
   end
-  -- The space connection between two locations: its length (km), or nil.
+  -- The space connection between two locations: its length (km), or nil. (d28 batch304 EC) The connections read once a
+  -- session: prototypes do not change while the game runs.
+  local CONN
   local function connection(a, b)
-    for _, c in pairs(try(function() return prototypes.space_connection end) or {}) do
-      local f, t = try(function() return c.from.name end), try(function() return c.to.name end)
-      if (f == a and t == b) or (f == b and t == a) then return try(function() return c.length end) end
+    if not CONN then
+      CONN = {}
+      for _, c in pairs(try(function() return prototypes.space_connection end) or {}) do
+        local f, t = try(function() return c.from.name end), try(function() return c.to.name end)
+        local len = try(function() return c.length end)
+        if f and t and len then CONN[f .. '>' .. t] = CONN[f .. '>' .. t] or len; CONN[t .. '>' .. f] = CONN[t .. '>' .. f] or len end
+      end
     end
+    return CONN[a .. '>' .. b]
   end
-  -- km per minute: flying now, else the last finished leg's average.
-  local function speed(pl)
+  -- (d28 batch304 EC, Updates row endurance-cost: the plain read took 13-14 ms on world n and 17-20 ms on a copy of it,
+  -- most of it a dozen finds over the platform's whole surface, about 0.3 ms a find plus 1 us an entity found, on the
+  -- copy and on world n alike) The entities the plain read looks at, sorted by type: the thrusters and tanks (fluids),
+  -- the turrets and machines (stock), the machines for the status count, the solar panels, the pumps (fuel makers).
+  -- Found once and kept by platform in storage (only the entities, never what they hold); each call counts those types
+  -- aboard and checks each kept one is still valid, and finds them again when the count differs or one is gone (one
+  -- built, removed or replaced). Resolute's 1027 on world n: found and sorted 1.9 ms; counted and checked 0.6. ctx is
+  -- the call's: {pl, by {type: list}, tanks (thrusters and storage tanks), machines (assembling machines and furnaces)};
+  -- STATUS: the types the status count reads.
+  local SCAN = {'thruster', 'storage-tank', 'pump', 'ammo-turret', 'assembling-machine', 'furnace', 'inserter', 'electric-turret',
+    'asteroid-collector', 'radar', 'roboport', 'lab', 'beacon', 'solar-panel'}
+  local STATUS = {['assembling-machine']=true, furnace=true, inserter=true, ['ammo-turret']=true, ['electric-turret']=true,
+    ['asteroid-collector']=true, radar=true, roboport=true, lab=true, beacon=true}
+  local function status_of(e) return e.status end
+  local SCAN_KEY = table.concat(SCAN, ',')   -- a record of another list of types is found again
+  local SCAN_KEEP = 10 * 3600   -- a platform not read for 10 minutes: its lists dropped
+  local function scan(ctx)
+    if ctx.by then return ctx end
+    local pl = ctx.pl
+    local s, f = pl.surface, pl.force
+    local kept = api.state and api.state()
+    if kept then kept.endurance_scan = kept.endurance_scan or {}; kept = kept.endurance_scan end
+    local rec = kept and kept[pl.index]
+    local ok = rec and rec.key == SCAN_KEY and rec.n == try(function() return s.count_entities_filtered{type=SCAN, force=f} end)
+    for _, t in ipairs(ok and SCAN or {}) do
+      for _, e in ipairs(rec.by[t]) do if not e.valid then ok = false; break end end
+      if not ok then break end
+    end
+    if not ok then
+      local by, tanks, machines, n = {}, {}, {}, 0
+      for _, t in ipairs(SCAN) do by[t] = {} end
+      for _, e in ipairs(try(function() return s.find_entities_filtered{type=SCAN, force=f} end) or {}) do
+        local t = e.type
+        local l = by[t]
+        if l then
+          n = n + 1
+          l[#l+1] = e
+          if t == 'thruster' or t == 'storage-tank' then tanks[#tanks+1] = e end
+          if t == 'assembling-machine' or t == 'furnace' then machines[#machines+1] = e end
+        end
+      end
+      rec = {key=SCAN_KEY, n=n, by=by, tanks=tanks, machines=machines}
+      if kept then
+        for k, x in pairs(kept) do if game.tick - x.tick > SCAN_KEEP then kept[k] = nil end end
+        kept[pl.index] = rec
+      end
+    end
+    rec.tick = game.tick
+    ctx.by, ctx.tanks, ctx.machines = rec.by, rec.tanks, rec.machines
+    return ctx
+  end
+  -- km per minute: flying now, else the last finished leg's average. (EC) Once a call: the read and its fuel outlook
+  -- share it (ctx).
+  local speed_of
+  local function speed(pl, ctx)
+    if not ctx then return speed_of(pl) end
+    if not ctx.speed then ctx.speed = {speed_of(pl, ctx)} end
+    return ctx.speed[1], ctx.speed[2]
+  end
+  function speed_of(pl, ctx)
     local v = try(function() return pl.speed end)
     local last, last_by
     local segs = api.segments and api.segments(pl) or {}
@@ -51,7 +116,7 @@ return function(api)
     end
     -- the ship it was measured with against the ship now: thrusters and hull width
     if from_seg and (from_seg.thrusters or from_seg.width) and api.geometry then
-      local g = try(function() return api.geometry(pl) end) or {}
+      local g = try(function() return api.geometry(pl, ctx and scan(ctx).by.thruster) end) or {}
       local diff = {}
       if from_seg.thrusters and g.thrusters and g.thrusters ~= from_seg.thrusters then diff[#diff+1] = string.format('%d thrusters then, %d now', from_seg.thrusters, g.thrusters) end
       -- (d27 batch294 TQ) the same count at another quality: quality multiplies thrust
@@ -93,23 +158,35 @@ return function(api)
     return out, 'schedule'
   end
   -- What the thrusters and storage tanks hold of each fluid in names; and of it, the storage tanks' (d20 batch60 V5).
-  local function fluid_stock(pl, names)
-    local out, tanks = {}, {}
-    -- (d22 batch96 BF1) the thrusters and tanks of the platform's background read when a count finds no other aboard
-    -- (freight.platform_lists), else found: the fuel outlook is read by the platform alerts' scans, flight watches and
-    -- this read
-    local lists = api.platform_lists and try(function() return api.platform_lists(pl) end)
-    local list = lists and lists.tanks or try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}
-    for _, e in ipairs(list) do
-      for i = 1, try(function() return #e.fluidbox end) or 0 do
-        local f = try(function() return e.fluidbox[i] end)
-        if f and names[f.name] then
-          out[f.name] = (out[f.name] or 0) + f.amount
-          if e.type == 'storage-tank' then tanks[f.name] = (tanks[f.name] or 0) + f.amount end
+  -- (EC) With the call's ctx, read once a call for every fluid (the read asked it six times: its ammunition model's
+  -- fluid ingredients, the fluid rows and the fuel outlook).
+  local function fluid_stock(pl, names, ctx)
+    local all = ctx and ctx.fluids
+    if not all then
+      -- (d22 batch96 BF1) the thrusters and tanks of the platform's background read when a count finds no other aboard
+      -- (freight.platform_lists), else found: the fuel outlook is read by the platform alerts' scans, flight watches and
+      -- this read
+      local list = ctx and scan(ctx).tanks
+      if not list then
+        local lists = api.platform_lists and try(function() return api.platform_lists(pl) end)
+        list = lists and lists.tanks or try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}
+      end
+      all = {amount={}, tanks={}, list=list}
+      for _, e in ipairs(list) do
+        local tank = e.type == 'storage-tank'
+        for i = 1, try(function() return #e.fluidbox end) or 0 do
+          local f = try(function() return e.fluidbox[i] end)
+          if f then
+            all.amount[f.name] = (all.amount[f.name] or 0) + f.amount
+            if tank then all.tanks[f.name] = (all.tanks[f.name] or 0) + f.amount end
+          end
         end
       end
+      if ctx then ctx.fluids = all end
     end
-    return out, tanks, list
+    local out, tanks = {}, {}
+    for name in pairs(names) do out[name], tanks[name] = all.amount[name], all.tanks[name] end
+    return out, tanks, all.list
   end
   -- (d27 batch298 FW, Sol #2652: Resolute's thrusters held a level 1138 fuel and 842 oxidizer while the alert said it
   -- ran out in about a minute: its one fuel maker makes 1500 a craft, so a minute's count was 13500 or 15000 against
@@ -122,10 +199,11 @@ return function(api)
     return n * (p.probability or 1)
   end
   -- The machines that can craft a recipe making either fluid (chemical plants in 2.0.77), by the recipes' categories,
-  -- and the pumps, for one find by name; nil (found by type) when the prototypes cannot say.
-  local maker_names_
+  -- and the pumps, for one find by name; nil (found by type) when the prototypes cannot say. (EC) in_scan: all of them
+  -- are assembling machines, furnaces or pumps, which the call's one find holds.
+  local maker_names_, in_scan_
   local function maker_names()
-    if maker_names_ ~= nil then return maker_names_ or nil end
+    if maker_names_ ~= nil then return maker_names_ or nil, in_scan_ end
     maker_names_ = try(function()
       local cats, names = {}, {}
       for name in pairs(FUELS) do
@@ -138,9 +216,14 @@ return function(api)
       for n in pairs(prototypes.get_entity_filtered{{filter='type', type='pump'}}) do names[#names+1] = n end
       return names
     end) or false
-    return maker_names_ or nil
+    in_scan_ = maker_names_ and true or false
+    for _, n in ipairs(maker_names_ or {}) do
+      local t = try(function() return prototypes.entity[n].type end)
+      if t ~= 'assembling-machine' and t ~= 'furnace' and t ~= 'pump' then in_scan_ = false end
+    end
+    return maker_names_ or nil, in_scan_
   end
-  local function fuel_parts(pl)
+  local function fuel_parts(pl, ctx)
     local all = api.state and api.state()
     if all then all.fuel_parts = all.fuel_parts or {}; all = all.fuel_parts end
     local rec = all and all[pl.index]
@@ -152,8 +235,16 @@ return function(api)
     if ok then return rec end
     local s, f = pl.surface, pl.force
     rec = {tick=game.tick, makers={}, pumps={}}
-    local names = maker_names()
-    local found = names and try(function() return s.find_entities_filtered{name=names, force=f} end)
+    local names, in_scan = maker_names()
+    local found
+    if ctx and in_scan then
+      -- (EC) the call's one find: its assembling machines and furnaces, then its pumps (each recipe is read below)
+      local c = scan(ctx)
+      found = {}
+      for _, e in ipairs(c.machines) do found[#found+1] = e end
+      for _, e in ipairs(c.by.pump) do found[#found+1] = e end
+    end
+    found = found or names and try(function() return s.find_entities_filtered{name=names, force=f} end)
     if not found then
       found = try(function() return s.find_entities_filtered{type='assembling-machine', force=f} end) or {}
       for _, e in ipairs(try(function() return s.find_entities_filtered{type='pump', force=f} end) or {}) do found[#found+1] = e end
@@ -253,10 +344,11 @@ return function(api)
   -- aboard lasts under LOW_MIN even so. What lasts how long is the fluid
   -- aboard: the thrusters, tanks, pipes, pumps and the makers' outputs (aboard). Made in batches: the batch, the
   -- makers, a craft's time at full speed, and the share of their full output made over the window.
-  function M.fuel_outlook(pl)
+  -- (EC) ctx: optional, platform_endurance's call (its one find, fluids and speed shared).
+  function M.fuel_outlook(pl, ctx)
     local names = FUELS
-    local stock, in_tanks, list = fluid_stock(pl, names)
-    local parts_ = try(function() return pl.surface and fuel_parts(pl) end)
+    local stock, in_tanks, list = fluid_stock(pl, names, ctx)
+    local parts_ = try(function() return pl.surface and fuel_parts(pl, ctx) end)
     local all = parts_ and fuel_aboard(list, parts_) or {}
     local stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
     local P = defines.flow_precision_index or {}
@@ -265,7 +357,7 @@ return function(api)
     end
     local leg = api.leg and try(function() return api.leg(pl) end)
     local v, v_by
-    if leg then v, v_by = speed(pl) end
+    if leg then v, v_by = speed(pl, ctx) end
     local left_min = leg and v and v > 0 and leg.left_km / v or nil
     local since = leg and M.since_departure(pl)
     local win
@@ -320,7 +412,7 @@ return function(api)
       or 'stopped' .. (try(function() return ' at ' .. pl.space_location.name end) or '') .. ': the thrusters burn only in flight'
     -- (d27 batch294 TQ, Sol #2645) apart from the use measured above: what its thrusters burn at full thrust at their
     -- own quality, the engine's figures
-    local full = api.thrusters and try(function() return api.thrusters(pl) end)
+    local full = api.thrusters and try(function() return api.thrusters(pl, ctx and scan(ctx).by.thruster) end)
     return {line=string.format('%s: %s; %s', pl.name, where, table.concat(parts, '; ')), short=#short > 0 and short or nil, rows=rows,
       full_thrust=full and full.line or nil, full_thrust_per_min=full and full.per_min or nil, window_s=window_s,
       leg_left_min=left_min and round(left_min, 1) or nil, since_departure_s=since and since.seconds, samples=since and since.samples,
@@ -361,6 +453,21 @@ return function(api)
     end
     out.line = head .. (#parts > 0 and '; samples ' .. table.concat(parts, ' | ') or '; no engine samples yet')
     return out
+  end
+  -- (EC) The ammunition and repair packs (sorted) and the asteroid chunks among the items, read once a session:
+  -- prototypes do not change while the game runs (each call read every item, 0.6-0.9 ms on a copy of world n).
+  local ITEMS
+  local function item_lists()
+    if ITEMS then return ITEMS end
+    local ammo, chunks = {}, {}
+    for name, item in pairs(prototypes.item) do
+      if item.type == 'ammo' or item.type == 'repair-tool' then ammo[#ammo+1] = name end
+      if name:find('%-asteroid%-chunk$') then chunks[#chunks+1] = name end
+    end
+    table.sort(ammo)
+    table.sort(chunks)
+    ITEMS = {ammo=ammo, chunks=chunks}
+    return ITEMS
   end
   local routeammo, ammomodel_
   local function ammomodel()
@@ -417,8 +524,9 @@ return function(api)
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
     local stops, route_by = route_of(pl, a.route)
+    local ctx = {pl=pl}
     local v, v_by
-    if not design then v, v_by = speed(pl) end
+    if not design then v, v_by = speed(pl, ctx) end
     -- Legs: from where it is (the rest of the leg it flies), then stop to stop.
     local legs, total_km = {}, 0
     local leg_now = api.leg and api.leg(pl)
@@ -502,10 +610,20 @@ return function(api)
           or string.format('last 1 min, flying %s: the window holds the stop it left too', mins(leg_min))
       end
     end
-    -- (PX1) items at every quality; fluids by name (a pair fails there)
+    -- (PX1) items at every quality; fluids by name (a pair fails there). (EC) With the statistics' totals since the game
+    -- began (input_counts, output_counts: every quality's), read once a call: an item never counted reads 0 with no read,
+    -- one only ever counted at normal is read at normal alone (qflow's all); each was read at all 6 qualities before.
+    local totals = {}
     local function flow(stats, name, cat, pi)
       if stats == fluid_stats then return stats.get_flow_count{name=name, category=cat, precision_index=pi, count=true} end
-      return qflow.flow(stats, name, cat, pi, true)
+      local t = totals[cat]
+      if t == nil then
+        t = try(function() return cat == 'input' and stats.input_counts or stats.output_counts end) or false
+        totals[cat] = t
+      end
+      local all = t and (t[name] or 0) or nil
+      if all == 0 then return 0 end
+      return qflow.flow(stats, name, cat, pi, true, all)
     end
     local function rate1(stats, name, cat) return stats and P.one_minute and (try(function() return flow(stats, name, cat, P.one_minute) end) or 0) or 0 end
     local function rate(stats, name, cat) return stats and win_p and (try(function() return flow(stats, name, cat, win_p) end) or 0) / win_min or 0 end
@@ -525,11 +643,14 @@ return function(api)
     -- ingredients were left; two levels down, fluids too; an ingredient two products draw on split between them, d20
     -- batch51 H1), what rockets bring, and what can reach no turret: the one model the departure, flight and forecast
     -- lines here and the ammo_rates of preflight and the platforms read use (ammomodel.lua).
-    local places = api.stock_places and try(function() return api.stock_places(pl, setmetatable({}, {__index=function() return true end})) end)
+    local places = api.stock_places and try(function()
+      local c = scan(ctx)
+      return api.stock_places(pl, setmetatable({}, {__index=function() return true end}), {turrets=c.by['ammo-turret'], machines=c.machines, inserters=c.by.inserter})
+    end)
     -- (d22 batch96 BF1: the trace of a platform of up to 400 belts ran in this call, 64 ms of Kestrel IVb's 201 belts on
     -- a copy of world n) the trace's background read, its age said, as the platforms read and preflight take it
     local model = ammomodel().new(pl, {background=true, places=places or false, rate=function(name, cat, fluid) return rate(fluid and fluid_stats or items_stats, name, cat) end,
-      fluid_stock=function(names) return fluid_stock(pl, names) end})
+      fluid_stock=function(names) return fluid_stock(pl, names, ctx) end, machines=scan(ctx).by['assembling-machine']})
     local held = model.held
     local rows = {}
     -- A rate measured where it is now: flying, the last 10 minutes; stopped, the last finished leg's (ammunition, from
@@ -610,9 +731,7 @@ return function(api)
         row.at_end and string.format('; at the route\'s end about %d%s', math.max(0, row.at_end), unit) or '') .. (row.binds and '; ' .. row.binds or '')
       rows[#rows+1] = row
     end
-    local ammo = {}
-    for name, item in pairs(prototypes.item) do if item.type == 'ammo' or item.type == 'repair-tool' then ammo[#ammo+1] = name end end
-    table.sort(ammo)
+    local ammo = item_lists().ammo
     -- Only what can reach a turret (d17 batch13 B1, Kestrel: 610 magazines aboard and a positive forecast while
     -- hundreds sat on a rear loop no turret's feed reached): the ammunition stranded on belts no turret's way reaches,
     -- or in a hub no inserter takes from toward a turret, is left out of the stock projected, and said.
@@ -722,7 +841,7 @@ return function(api)
       end
     end
     local fluids = {['thruster-fuel']=true, ['thruster-oxidizer']=true}
-    local fstock = fluid_stock(pl, fluids)
+    local fstock = fluid_stock(pl, fluids, ctx)
     for _, name in ipairs({'thruster-fuel', 'thruster-oxidizer'}) do
       if try(function() return prototypes.fluid[name] end) then
         local made, used = rate(fluid_stats, name, 'input'), rate(fluid_stats, name, 'output')
@@ -738,9 +857,13 @@ return function(api)
     -- Power: what the platform's network makes and draws now (a pole on it, else the surface's own network: PX1,
     -- Asterion has no pole), every quality (PX1), and the solar power at each stop.
     local power
-    local pole = try(function() return pl.surface.find_entities_filtered{type='electric-pole', force=pl.force, limit=1}[1] end)
-    local st = pole and try(function() return pole.electric_network_statistics end)
-      or try(function() return pl.surface.has_global_electric_network and pl.surface.global_electric_network_statistics end) or nil
+    -- (EC) a platform's own network first: its pole's statistics are the surface's (Resolute and Lark on a copy of world
+    -- n: the same counts), so no pole is found
+    local st = try(function() return pl.surface.has_global_electric_network and pl.surface.global_electric_network_statistics end)
+    if not st then
+      local pole = try(function() return pl.surface.find_entities_filtered{type='electric-pole', force=pl.force, limit=1}[1] end)
+      st = pole and try(function() return pole.electric_network_statistics end) or nil
+    end
     if st and P.five_seconds then
       local function sum(cat, counts)
         local n = 0
@@ -752,20 +875,33 @@ return function(api)
     -- Solar capacity here against the draw (Astra 12:20): the panels' peak at this location's solar power, and the
     -- machines on low or no power now, as their status icons show.
     local panels, peak = 0, 0
-    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='solar-panel', force=pl.force} end) or {}) do
+    local each = {}   -- (EC) a panel's peak once a call for each name and quality
+    for _, e in ipairs(scan(ctx).by['solar-panel']) do
       panels = panels + 1
-      peak = peak + ((try(function() return e.prototype.get_max_energy_production(e.quality) end) or try(function() return e.prototype.max_energy_production end) or 0) * 60 / 1000)
+      local key = e.name .. '/' .. (try(function() return e.quality.name end) or '')
+      local w = each[key]
+      if not w then
+        w = (try(function() return e.prototype.get_max_energy_production(e.quality) end) or try(function() return e.prototype.max_energy_production end) or 0) * 60 / 1000
+        each[key] = w
+      end
+      peak = peak + w
     end
     -- at a stop, the location's solar power in space (the platform surface's own property read 100 at Gleba's 200%)
     local sp = here and try(function() return prototypes.space_location[here].solar_power_in_space end)
     local low, none, tlow = 0, 0, 0
     local LOW, NONE = try(function() return defines.entity_status.low_power end), try(function() return defines.entity_status.no_power end)
-    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{force=pl.force, type={'assembling-machine', 'furnace', 'inserter', 'ammo-turret', 'electric-turret', 'asteroid-collector', 'radar', 'roboport', 'lab', 'beacon'}} end) or {}) do
-      local stt = try(function() return e.status end)
-      -- (d24 batch160 QC1) a turret firing from a buffer (laser, railgun, tesla) on low power counted apart
-      local shot = (e.type == 'ammo-turret' or e.type == 'electric-turret') and (try(function() return e.electric_buffer_size end) or 0) > 0
-      if stt and stt == LOW and shot then tlow = tlow + 1
-      elseif stt and stt == LOW then low = low + 1 elseif stt and stt == NONE then none = none + 1 end
+    -- (EC) by the call's lists of each type: the status alone, a turret's buffer only when it is on low power
+    local c = scan(ctx)
+    for t in pairs(STATUS) do
+      local turret = t == 'ammo-turret' or t == 'electric-turret'
+      for _, e in ipairs(c.by[t]) do
+        local ok, stt = pcall(status_of, e)
+        if ok and stt == LOW and stt ~= nil then
+          -- (d24 batch160 QC1) a turret firing from a buffer (laser, railgun, tesla) on low power counted apart
+          local shot = turret and (try(function() return e.electric_buffer_size end) or 0) > 0
+          if shot then tlow = tlow + 1 else low = low + 1 end
+        elseif ok and stt == NONE and stt ~= nil then none = none + 1 end
+      end
     end
     local tlow_text = tlow > 0 and string.format('; %d turret%s firing from a buffer (laser, railgun, tesla) on low power apart (refilling after shots, or short: platform_power tells which)', tlow, tlow == 1 and '' or 's') or ''
     local solar_line = (panels > 0 and string.format('%d solar panels: %d kW at full sun%s; %d machines on low power, %d on no power now', panels, math.floor(peak + 0.5),
@@ -785,11 +921,9 @@ return function(api)
     -- Asteroid chunks made on the platform, a minute over the rates' window (the production statistics: the collectors'
     -- catch and the crushers' returns together; d24 batch143 PO1: not what the collectors caught)
     local chunks = {}
-    for name in pairs(prototypes.item) do
-      if name:find('%-asteroid%-chunk$') then
-        local m = rate(items_stats, name, 'input')
-        if m > 0 then chunks[#chunks+1] = string.format('%s %g/min', name, round(m, 1)) end
-      end
+    for _, name in ipairs(item_lists().chunks) do
+      local m = rate(items_stats, name, 'input')
+      if m > 0 then chunks[#chunks+1] = string.format('%s %g/min', name, round(m, 1)) end
     end
     table.sort(chunks)
     -- forecast (E11, routeammo.lua): per leg, the asteroids its connection spawns, shots per asteroid of each ammunition
@@ -816,7 +950,7 @@ return function(api)
       forecast, forecast_damage, forecast_coverage, forecast_targets = routeammo.forecast(pl, legs, ammo, fo, model)
       -- (QZ1) what the forecast assumes, and the spawn model with the platform's own box and speed (design gives the same
       -- with another)
-      local g = api.geometry and try(function() return api.geometry(pl) end) or {}
+      local g = api.geometry and try(function() return api.geometry(pl, scan(ctx).by.thruster) end) or {}
       forecast_model = routeammo.model(pl, legs, {width=g.width, width_from='the platform\'s foundation, x extent', speed=v, speed_from=v_by, progress=progress})
       forecast_basis = routeammo.basis(fo, v_by)
     end
@@ -826,7 +960,7 @@ return function(api)
         l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)'
           or l.via_for and ' (on the way ' .. l.via_for .. (l.also and ', ' .. l.also or '') .. ')' or '')
     end
-    local fo_all = try(function() return M.fuel_outlook(pl) end)
+    local fo_all = try(function() return M.fuel_outlook(pl, ctx) end)
     local outlook = fo_all and fo_all.line
     return {platform=pl.name, route=route_by, route_note=route_note, ammo_feed=ammo_feed, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',

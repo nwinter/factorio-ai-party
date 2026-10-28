@@ -286,16 +286,18 @@ do
   local function stats(t) return {get_flow_count=function(a) local r=t[a.name]; assert(a.count and a.precision_index==2); return r and (a.category=='input' and r[1] or r[2])*10 or 0 end} end
   local hub=setmetatable({get_contents=function() return {{name='rocket',count=120},{name='firearm-magazine',count=50},{name='repair-pack',count=40},{name='iron-plate',count=9}} end,
     count_empty_stacks=function() return 12 end},{__len=function() return 50 end})
-  local turret={get_inventory=function() return {get_contents=function() return {{name='rocket',count=30}} end} end}
-  local thruster={fluidbox={{name='thruster-fuel',amount=10000},{name='thruster-oxidizer',amount=8000}}}
+  local turret={type='ammo-turret',get_inventory=function() return {get_contents=function() return {{name='rocket',count=30}} end} end}
+  local thruster={type='thruster',fluidbox={{name='thruster-fuel',amount=10000},{name='thruster-oxidizer',amount=8000}}}
   local pole={electric_network_statistics={output_counts={['solar-panel']=1},input_counts={thruster=1,['ammo-turret']=1},
     get_flow_count=function(a) return a.category=='output' and 1000 or 500 end}}
   local force={get_item_production_statistics=function() return stats(items) end,get_fluid_production_statistics=function() return stats(fluids) end}
   -- an assembler making firearm magazines from 4 iron plates a craft; the hub holds 9 plates
-  local asm={get_recipe=function() return {name='firearm-magazine',products={{name='firearm-magazine',amount=1}},ingredients={{type='item',name='iron-plate',amount=4}}} end,
+  local asm={type='assembling-machine',get_recipe=function() return {name='firearm-magazine',products={{name='firearm-magazine',amount=1}},ingredients={{type='item',name='iron-plate',amount=4}}} end,
     get_inventory=function() return {get_contents=function() return {} end} end}
   local surface={find_entities_filtered=function(f)
     if f.type=='ammo-turret' then return {turret} elseif f.type=='electric-pole' then return {pole} elseif f.type=='assembling-machine' then return {asm}
+    -- (d28 batch304) platform_endurance's one find a call, by a list of types: the fake's entities, which it sorts by type
+    elseif type(f.type)=='table' and f.type[1]=='thruster' and #f.type>2 then return {turret,asm,thruster}
     elseif type(f.type)=='table' then return {thruster} end
     return {} end}
   local pl={name='Wayfarer',surface=surface,force=force,hub={get_inventory=function() return hub end},space_location={name='nauvis'},speed=0,

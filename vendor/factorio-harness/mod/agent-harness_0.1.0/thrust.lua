@@ -326,11 +326,11 @@ return function(api)
   M.groups = groups
   -- (TQ) the platform's thrusters by quality and what they burn at full thrust, as the engine runs them: {count,
   -- groups, mult_sum (thrust in normal thrusters'), per_tick (of each fluid, all of them at 80% or more), per_s, per_min,
-  -- line}; nil with no thruster.
-  function M.qualities(pl)
+  -- line}; nil with no thruster. (d28 batch304 EC) thrusters: optional, the ones a caller found in this call.
+  function M.qualities(pl, thrusters)
     local s = try(function() return pl.surface end)
     if not s then return nil end
-    local list = found(s, pl.force)
+    local list = thrusters or found(s, pl.force)
     if #list == 0 then return nil end
     local gr, sum, text = groups(list)
     local each = {}

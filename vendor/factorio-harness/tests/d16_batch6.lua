@@ -38,7 +38,9 @@ do
   local surface={find_entities_filtered=function(f)
     if f.type=='ammo-turret' then return {turret} elseif f.type=='inserter' then return {hand} elseif f.type=='assembling-machine' then return {maker}
     elseif type(f.type)=='table' and f.type[1]=='transport-belt' then return belts
-    elseif type(f.type)=='table' and f.type[1]=='assembling-machine' then return {maker} end
+    elseif type(f.type)=='table' and f.type[1]=='assembling-machine' then return {maker}
+    -- (d28 batch304) platform_endurance's one find a call, by a list of types: the fake's entities, which it sorts by type
+    elseif type(f.type)=='table' and f.type[1]=='thruster' then return {turret,hand,maker} end
     return {} end}
   -- per minute over the window: made, used
   local items={rocket={6,10},explosives={3,0},['iron-plate']={20,0},['metallic-asteroid-chunk']={12,0}}
