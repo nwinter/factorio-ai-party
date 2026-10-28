@@ -10,6 +10,9 @@
 //                             same cid from the same client is stored once: a repeat returns the first message);
 //                             channel "viewers": on the site only, never relayed to the agents (default "game")
 //   POST /v1/mod              hide/unhide/ban/unban/open/close (Authorization: Bearer PUBLISH_TOKEN)
+//   POST /v1/announce         {text, cid?}: one chat line as "Operator" on the viewers' channel (never relayed to the game),
+//                             op: true in GET /v1/chat (Authorization: Bearer PUBLISH_TOKEN; tools/announce.py: shift changes
+//                             and planned stops while the game is down; batch293, Nick d27 19:26)
 //   POST /v1/here             {id}: an open live page, once a minute; GET /v1/state counts them as site_watching
 //   POST /v1/blueprints       a viewer shares a blueprint {name, title, string, cid?} (closed unless mod bp_open): checked to decode to a blueprint
 //                             or book, under chat's rules and limits (viewer LimeLight, d16 16:17)
@@ -105,6 +108,8 @@ export function reservedName(name) {
   for (const w of RESERVED_NEAR) if (distance(n, w) <= 2) return "near " + w;
   return null;
 }
+// The Operator's announcements (batch293): a cap against a runaway script; the same cid again is the first line.
+const ANNOUNCE = { name: "Operator", perHour: 20 };
 // The host link (Nick, 17:11): the page sends HOST_TOKEN (a Worker secret) as X-Host-Token with each chat post; a match
 // posts as the host, a wrong one is refused.
 const HOST = { name: "NickWinter", perMinute: 30 };
@@ -215,7 +220,7 @@ export default {
       micro.set(key, { at: Date.now(), body });
       return withCors(json(body, 200), req, env);
     }
-    if (req.method === "POST" && path === "/v1/chat") for (const k of micro.keys()) if (k.startsWith("/v1/chat")) micro.delete(k);
+    if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/announce")) for (const k of micro.keys()) if (k.startsWith("/v1/chat")) micro.delete(k);
     if (req.method === "POST" && path.startsWith("/v1/polls")) for (const k of micro.keys()) if (k.startsWith("/v1/polls")) micro.delete(k);
     return withCors(resp, req, env);
   },
@@ -325,6 +330,8 @@ export class Live {
       try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
       // host: a line posted with the host link (Nick, d16 17:11)
       try { this.sql.exec(`ALTER TABLE chat ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+      // op: the Operator's announcement (POST /v1/announce, batch293)
+      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN op INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
       this.hostTimes = [];
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
@@ -388,6 +395,7 @@ export class Live {
         case "POST /v1/board": return this.postBoard(req, text);
         case "GET /v1/chat": return this.getChat(url);
         case "POST /v1/chat": return await this.postChat(req, text);
+        case "POST /v1/announce": return this.announce(req, text);
         case "POST /v1/mod": return this.mod(req, text);
         case "POST /v1/here": return await this.postHere(req, text);
         case "POST /v1/blueprints": return await this.postBlueprint(req, text);
@@ -483,7 +491,7 @@ export class Live {
     const limit = Math.max(1, Math.min(CHAT.pageMax, parseInt(url.searchParams.get("limit") || "50", 10) || 50));
     const after = parseInt(url.searchParams.get("after") || "", 10);
     const all = url.searchParams.get("channels") === "all";
-    const cols = all ? "seq, t, name, text, channel, host" : "seq, t, name, text, host";
+    const cols = all ? "seq, t, name, text, channel, host, op" : "seq, t, name, text, host, op";
     const only = all ? "" : " AND channel = 'game'";
     let rows;
     if (Number.isFinite(after)) {
@@ -493,8 +501,8 @@ export class Live {
       rows = this.sql.exec(`SELECT ${cols} FROM chat WHERE hidden = 0${only} ORDER BY seq DESC LIMIT ?`, limit)
         .toArray().reverse();
     }
-    // host: true on a line posted with the host link; the field is absent on the rest
-    rows = rows.map(({ host, ...r }) => (host ? { ...r, host: true } : r));
+    // host: true on a line posted with the host link, op: true on the Operator's announcement; absent on the rest
+    rows = rows.map(({ host, op, ...r }) => ({ ...r, ...(host ? { host: true } : {}), ...(op ? { op: true } : {}) }));
     const maxRow = this.sql.exec("SELECT COALESCE(MAX(seq), 0) AS m FROM chat").toArray()[0];
     const hidden = this.sql.exec("SELECT seq FROM chat WHERE hidden = 1 ORDER BY seq DESC LIMIT 200").toArray().map((r) => r.seq);
     return json({
@@ -561,6 +569,31 @@ export class Live {
     const out = { seq: row.seq, t, name: name.name, text: msg, channel };
     if (host) out.host = true;
     return json(name.guest ? { ok: true, message: out, guest_name: name.name } : { ok: true, message: out });
+  }
+
+  // The Operator's line in the site chat (batch293): shift changes and planned stops, while the game (and so the
+  // Operator's game-chat replies) is down. The viewers' channel, so the Mac's relay never takes it into the game.
+  announce(req, text) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    if (text.length > 4096) return json({ error: "too large" }, 413);
+    const body = JSON.parse(text || "{}");
+    const cid = body.cid == null ? null : String(body.cid);
+    if (cid !== null && !/^[0-9a-f]{16,32}$/.test(cid)) return json({ error: "cid must be 16-32 hex digits" }, 400);
+    if (cid) {
+      const had = this.sql.exec("SELECT seq, t, name, text, channel FROM chat WHERE cid = ? AND op = 1", cid).toArray();
+      if (had.length) return json({ ok: true, repeat: true, message: { ...had[0], op: true } });
+    }
+    const msg = tidy(body.text);
+    if (!msg) return json({ error: "empty message" }, 400);
+    if ([...msg].length > CHAT.maxLen) return json({ error: `messages are at most ${CHAT.maxLen} characters` }, 400);
+    if (LINK.test(msg)) return json({ error: "links are not allowed" }, 400);
+    const t = Date.now() / 1000;
+    const n = this.sql.exec("SELECT COUNT(*) AS n FROM chat WHERE op = 1 AND t > ?", t - 3600).toArray()[0].n;
+    if (n >= ANNOUNCE.perHour) return json({ error: `at most ${ANNOUNCE.perHour} announcements an hour` }, 429);
+    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid, channel, host, op) VALUES (?, ?, ?, ?, ?, 'viewers', 0, 1) RETURNING seq",
+      t, ANNOUNCE.name, msg, "operator", cid).toArray()[0];
+    this.sql.exec("DELETE FROM chat WHERE seq <= ?", row.seq - CHAT.keep);
+    return json({ ok: true, message: { seq: row.seq, t, name: ANNOUNCE.name, text: msg, channel: "viewers", op: true } });
   }
 
   // The host link on a post (chat, a poll vote or idea): {host: true} for a matching X-Host-Token, {host: false} without

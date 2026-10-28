@@ -113,7 +113,11 @@
   it returns dated last-seen memory. It flags a held-item refusal. A refused argument shape names every shape it
   takes; `./fh help trace` gives a call for each mode. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
-  and the research ETA; `surface` reads that surface.
+  and the research ETA; `surface` reads that surface. `full_speed` and `lab_rates` (and `inspect`'s `research_rate` on a
+  lab): the engine's figures at full supply for the current research. Speed = researching speed at its quality × (1 +
+  modules and beacons) × (1 + the force's lab speed): the two multiply, so the entity's `speed_bonus` (their sum) is not
+  it. Each pack a minute = its amount × units a minute × drain (biolab 50%). Productivity adds progress, not pack use.
+  What the labs used is `science` (the 10-minute statistics).
 - Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
   add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the

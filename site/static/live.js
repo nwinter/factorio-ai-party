@@ -131,7 +131,8 @@
     return -1;
   }
   function joinedChat() {
-    var all = chatMsgs.map(function (m) { return { src: m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq, seq: m.seq, host: m.host === true }; })
+    // op: the Operator's announcement (POST /v1/announce, batch293: shift changes and planned stops)
+    var all = chatMsgs.map(function (m) { return { src: m.op === true ? 'op' : m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq, seq: m.seq, host: m.host === true }; })
       .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id, host: m.host === true }; }));
     all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
     all = all.slice(-150);
@@ -326,7 +327,7 @@
       if (m.src === 'agent') return replyHtml(m, t);
       var src = m.host ? 'host' : m.src;
       return '<li class="c-' + m.src + (m.host ? ' c-host' : '') + '" id="c-' + esc(m.k) + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + src + '">' +
-        (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span>' +
+        (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'op' ? 'OPERATOR' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span>' +
         deliveryHtml(m) + repliesHtml(m) + '</li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
     // the place this tab kept: once its line is in the list (the replies come with the state, after the first chat

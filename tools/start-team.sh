@@ -155,17 +155,20 @@ log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES
 cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5}
 # The director's clients (tools/cams.py): POG_CAMS a count (1-3) or names; Sunday 2026-10-18 POG_CAMS=1 (cam1 alone, Nick
 # plays on the box). POG_EXPECT_CAMS: how many the operator's watchdog expects in the game (switches.env below).
+# POG_CAM_PANELS=1 or 2 (d27 batch285): cam1 alone, its panels the insets; switches.env then says POG_CAMS=1.
 cams=$(python3 tools/cams.py list)
 export POG_EXPECT_CAMS=$(python3 tools/cams.py count)
-log "cameras: $cams ($POG_EXPECT_CAMS client$([ "$POG_EXPECT_CAMS" = 1 ] && echo ': one camera, no inset or trio' || echo s))"
+log "cameras: $cams ($POG_EXPECT_CAMS client$([ "$POG_EXPECT_CAMS" = 1 ] && echo ': one camera, no inset or trio' || echo s))$(
+  [ "$(python3 tools/cams.py panels)" != 0 ] && echo " + $(python3 tools/cams.py panels) camera panel(s) in cam1 for the insets (POG_CAM_PANELS)")"
 # POG_CASTER_LOW_MODEL: the hosts' writer while YouTube says nobody (or one long-time viewer) is watching; empty: cmodel
 clow=${POG_CASTER_LOW_MODEL-anthropic/claude-haiku-5.5}
 # The switches this run starts with, for the next shift (tools/shift-change.sh starts it with the same ones).
 printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}" "POG_SPACE_AGE=$POG_SPACE_AGE" \
   "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" "POG_CASTER_LOW_MODEL=$clow" \
   "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_HOURLY=${POG_HOURLY:-0}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
-  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_VIEWER_ROUTE=${POG_VIEWER_ROUTE:-0}" "POG_TEAM_FILE=$team" "POG_CAMS=${POG_CAMS:-3}" \
-  "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" "POG_CODEX_HOOKS=${POG_CODEX_HOOKS:-0}" > "$rundir/switches.env"
+  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_VIEWER_ROUTE=${POG_VIEWER_ROUTE:-0}" "POG_TEAM_FILE=$team" \
+  "POG_CAMS=$([ "$(python3 tools/cams.py panels)" != 0 ] && echo 1 || echo "${POG_CAMS:-3}")" \
+  "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" "POG_CODEX_HOOKS=${POG_CODEX_HOOKS:-0}" "POG_CAM_PANELS=${POG_CAM_PANELS:-0}" > "$rundir/switches.env"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).

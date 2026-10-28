@@ -574,6 +574,16 @@ limits (one bucket for both channels), `cid`, and `/v1/mod` hide, ban and clear.
 carries its `channel`. The live page asks for both, badges a viewers-only line VIEWERS, and has a "Viewers only: not
 sent to the agents" box under the message field (kept in localStorage `chatViewers`). YouTube chat is unchanged.
 
+## The Operator's announcements (batch293)
+
+`POST /v1/announce` with the publish token (`Authorization: Bearer PUBLISH_TOKEN`) and `{"text", "cid"?}` stores one
+line as "Operator" on the viewers' channel, so the relay to the game never reads it; with `channels=all` it carries
+`"op": true` and the live page badges it OPERATOR. Text rules as chat's (tidied, 500 characters, no links); the same
+`cid` again answers with the first line (`"repeat": true`); at most 20 an hour (429). A viewer still cannot post as
+Operator (a reserved name). `tools/announce.py` posts the shift changes' lines (tools/shift-change.sh) and the
+operator's planned stops (`python3 tools/announce.py stop --minutes 15 --what "a restart of the game machine"`, or
+`say "TEXT"`).
+
 ## Shared blueprints
 
 Viewer LimeLight (d16 16:17) asked for ways to share blueprints other than a public GitHub repo (site chat takes 200

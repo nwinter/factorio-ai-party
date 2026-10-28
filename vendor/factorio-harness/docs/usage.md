@@ -4419,6 +4419,7 @@ fh --bot astra call status                                                      
 - In game every bot is marked for the stream, with no per-tick cost (rendering attached to its character, redrawn on spawn, on a `profile` change and by a 5 s recheck that also covers a hot deploy): its character is tinted in its `color` (or, with none, the avatar's default colour from its name), a name tag `glyph display_name` (or the bot name) sits just over its head in that colour (very dark colours are lightened for the text), and, in a world started with the current mod (`data.lua` sprites), its pixel `avatar` floats above the tag, drawn from the same parts and palette as the overlay's `avatar.js`. Emoji glyphs show blank: the game font has no emoji, so letters read better.
 - `say` also draws the text over the speaker's character (above its name tag and avatar) in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.
 - Director cameras (operator only): `remote.call("agent_harness","camera", json)` with `{"player":1,"follow":"astra","zoom":0.8}` (zoom 0.3..4) or `{"player":1,"position":{"x":0,"y":0},"smooth":false}`; `{"player":1,"release":true}` stops following. The player becomes a spectator once (its character is removed), and its view eases toward the target every tick, jumping when the target is over 200 tiles away. `speed` (tiles per second, over 0 and at most 60) caps how fast a smooth camera moves toward its position (the stream's platform detail pans send a step a second at their pan speed, so the view glides evenly). `remote.call("agent_harness","cameras")` and the read action `cameras` list them. An attached agent cannot be made a director. A follow tracks the character's spot on the ground: flying in mech armor its position is drawn `flight_height` tiles north (about 1.1, bobbing 0.3 to 0.5 tiles every 95 ticks as it hovers), so the camera and `cameras` use y + flight_height and hold still through takeoff, landing and the bob (d20 batch65 AA6).
+- Camera panels (operator only, d27 batch285): the same call with `"panel":1` (1-4) and `"rect":[x,y,w,h]` (pixels of the director client's window, needed on the first call) puts a GUI camera element on that client's screen: one more view drawn by the same client, which itself does not move. It takes follow, position, surface (another planet or platform too), zoom (0.05..4) and speed, eased every tick as a camera is; no map and no move. `{"player":1,"panel":1,"release":true}` removes it; `cameras` lists them under `panels`.
 - Directors: players that ever were cameras, spectators, and players named `pog-cam<N>` or `pog-director` (the camera clients, even before their first camera call). They never appear in `profiles`, and `say` lines are printed only to other players (camera views show the bubbles, not the chat console). A camera's view hides the GUI (minimap, research, side menu, quickbar, shortcut bar, crafting queue, alerts, tool bar, hotkey hints) but keeps entity info; if a camera player comes back with a character (a reconnect), it is made a spectator again within a tick, and its view settings are re-applied every 5 s. Every 5 s each connected director, with a camera or not (a camera client before its first camera call, or a released one), is also made a characterless spectator with `show_on_map=false`, so no director's name or body shows in the world on stream.
 
 ## Team board, reply hints, harness requests, saved plans
@@ -16815,6 +16816,32 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
   `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
 - Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
+
+## d27 batch291 (LS, Sol #2638: each lab's speed and full-speed pack use, from the engine)
+
+- Sol rebuilt the full-speed demand of 30 labs from beacons by hand three times (173.1, 158.34, 172.15 a minute) to
+  set a freight cap, with a source proven at 172.8 a minute; the 10-minute statistics of starved labs cannot stand in.
+- Engine facts (2.0.77, the iMac copy, world n's save at tick 73616015: 30 biolabs on Nauvis researching
+  low-density-structure-productivity, units of 3600 ticks and one each of 5 packs, the force's
+  laboratory_speed_modifier 2.5):
+  - a lab's `speed_bonus` is its modules' and beacons' (`effects.speed`) plus the force's lab speed: 0.67 + 2.5 = 3.17;
+    `productivity_bonus` is its modules' plus the force's laboratory_productivity_bonus (0.4, 0.5 with 0.1 set);
+  - researching speed by quality (`get_researching_speed`): biolab 2, 2.6, 3.2, 3.8, 5; lab 1, 1.3, 1.6, 1.9, 2.5;
+    `science_pack_drain_rate_percent`: biolab 50, lab 100;
+  - measured: a biolab cut off from its inserters and filled, its packs' durability over about 11000 ticks: 5.845 of
+    each pack a minute at modules and beacons +0.67, 4.550 at +0.30. Those are 2 x (1 + 0.67) x (1 + 2.5) = 11.69 and
+    2 x 1.3 x 3.5 = 9.1 units a minute at 50%: the two bonuses multiply. The summed speed_bonus would give 4.17 and
+    3.8. Productivity (+40% on both) changed no pack use.
+- `labs` now gives `full_speed` {labs, units_per_min, progress_per_min (with productivity), packs_per_min, line} for
+  the labs read, `lab_rates` (a line a lab, the first 64) and each group's figures at the end of its line; `inspect` on a
+  lab gives `research_rate` {speed, researching_speed, modules_beacons, force_lab_speed, drain_percent, productivity,
+  unit_s, units_per_min, packs_per_min, line, note}. All are the engine's figures at full supply for the current
+  research; what was used stays in `science` (the 10-minute statistics).
+- Read on the copy: the 30 biolabs on Nauvis at full supply research 311.15 units a minute (454.7 with productivity)
+  and use 155.58 of each pack a minute. The two measured labs read 5.85 and 4.55, as measured.
+- Cost on the copy (the iMac, native): the new reads and lines for 30 labs, 0.43 ms. The whole labs read of Nauvis
+  through dispatch took 18.5 ms with them and 18.2-29.6 ms on main's runtime (the existing read: groups, feeders,
+  sources), so the added part is under 0.5 ms; the read itself was over 10 ms before this change.
 ## d27 batch284 (AT, Sol #2619: the made wait timed out before the batch's own estimate)
 
 - Sol's assembler_batch for 100 accumulators in an assembler 2 at crafting speed 1.05 said "the 100 crafts take about
@@ -16866,3 +16893,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   default)`.
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
+- Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).

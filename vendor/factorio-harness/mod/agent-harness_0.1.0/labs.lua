@@ -8,7 +8,7 @@ return function(api)
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
   M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
     position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
-    returns='research line (name, progress, eta at the working labs: every lab of ours, research_labs per surface) and per lab group of the area: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network of its requester or buffer chest (else at the lab) and what it holds of it, and the chest its robots would take it from'}}
+    returns='research line (name, progress, eta at the working labs: every lab of ours, research_labs per surface) and per lab group of the area: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network of its requester or buffer chest (else at the lab) and what it holds of it, and the chest its robots would take it from; full_speed {labs, units_per_min, progress_per_min (with productivity), packs_per_min {pack: n}, line} and lab_rates (a line a lab, the first 64; lab_rates_more): the engine\'s figures at full supply for the current research: speed = researching speed at its quality x (1 + modules and beacons) x (1 + the force\'s lab speed), a unit in research_unit_energy / 60 / speed s, each pack amount x units a minute x drain (biolab 50%); productivity adds progress, not pack use; what they used is science {pack} (the 10-minute statistics)'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
     if s >= 3600 then return string.format('%dh%02dm', math.floor(s / 3600), math.floor(s / 60) % 60) end
@@ -89,6 +89,52 @@ return function(api)
     return string.format('lab %s lacks %s: %s%s', at(lab.position), name, #feeds > 0 and 'fed by ' .. table.concat(feeds, ' | ') or 'no inserter drops into it', net)
   end
   M.lab_why = lab_why  -- (tests/d27_batch276.lua)
+  -- (d27 batch291 LS, Sol #2638: a full-speed demand of 30 labs rebuilt from beacons by hand read 173.1, 158.34, 172.15)
+  -- A lab's research rate as the engine runs it, at full supply. Measured on the iMac copy (2.0.77, world n's 30
+  -- biolabs, one lab cut off from its inserters and filled, its packs' durability over about 11000 ticks): the speed is
+  -- researching speed at its quality x (1 + its modules and beacons, effects.speed) x (1 + the force's
+  -- laboratory_speed_modifier), the two bonuses multiplied: 2 x 1.67 x 3.5 used 5.845 of each pack a minute (11.69
+  -- units, drain 50%), 2 x 1.3 x 3.5 used 4.550. The entity's speed_bonus is their sum (3.17), not what the engine
+  -- multiplies by. A unit takes research_unit_energy ticks at speed 1; each pack's use is its amount a unit times
+  -- science_pack_drain_rate_percent (biolab 50, lab 100). Productivity (productivity_bonus: modules and the force's
+  -- laboratory_productivity_bonus) adds research progress, not pack use. Researching speed by quality: biolab 2, 2.6,
+  -- 3.2, 3.8, 5; lab 1, 1.3, 1.6, 1.9, 2.5.
+  local base_speed = {}
+  function M.rate(e, force, tech)
+    local q = try(function() return e.quality.name end) or 'normal'
+    local key = e.name .. '@' .. q
+    if base_speed[key] == nil then
+      base_speed[key] = try(function() return e.prototype.get_researching_speed(q) end) or try(function() return e.prototype.researching_speed end) or 1
+    end
+    local base = base_speed[key]
+    local bonus = try(function() return e.speed_bonus end) or 0
+    local own = try(function() return e.effects and e.effects.speed end) or 0
+    local lab_mod = try(function() return force.laboratory_speed_modifier end) or 0
+    local drain = try(function() return e.prototype.science_pack_drain_rate_percent end) or 100
+    local prod = try(function() return e.productivity_bonus end) or 0
+    local speed = base * (1 + own) * (1 + lab_mod)
+    local r = {speed=speed, base=base, speed_bonus=bonus, modules_beacons=own, force_lab_speed=lab_mod, drain=drain, productivity=prod}
+    if tech and speed > 0 then
+      local unit_s = (tech.research_unit_energy or 0) / 60 / speed
+      r.unit_s = unit_s
+      r.units_per_min = unit_s > 0 and 60 / unit_s or 0
+      r.packs = {}
+      for _, ing in ipairs(tech.research_unit_ingredients or {}) do r.packs[ing.name] = (ing.amount or 1) * r.units_per_min * drain / 100 end
+    end
+    return r
+  end
+  local function g3(x) return string.format('%.3g', x) end
+  function M.rate_text(e, r)
+    local parts = {string.format('%s %s: speed %s (researching speed %g x (1 + modules and beacons %s) x (1 + the force\'s lab speed %s))',
+      e.name, at(e.position), g3(r.speed), r.base, g3(r.modules_beacons), g3(r.force_lab_speed))}
+    if r.unit_s then
+      local each
+      for _, n in pairs(r.packs) do each = each and math.max(each, n) or n end
+      parts[#parts+1] = string.format('a unit in %ss, %s units a minute; drain %d%%: %s of each pack a minute', g3(r.unit_s), g3(r.units_per_min), r.drain, g3(each or 0))
+    end
+    if r.productivity > 0 then parts[#parts+1] = string.format('productivity +%d%%', math.floor(r.productivity * 100 + 0.5)) end
+    return table.concat(parts, '; ')
+  end
   -- (d26 batch248 R1) every lab of ours, every surface, for the research line: {working, total, rows}
   local function all_labs(force)
     local out = {working=0, total=0, rows={}}
@@ -162,6 +208,16 @@ return function(api)
       end
     end
     table.sort(groups, function(x, y) return #x > #y end)
+    -- (LS) each lab's rate at full supply, the engine's figures; the aggregate below
+    local rates, total = {}, {labs=0, units=0, progress=0, packs={}}
+    for i, e in ipairs(labs) do
+      local r = try(function() return M.rate(e, force, tech) end)
+      rates[i] = r
+      if r and r.units_per_min then
+        total.labs = total.labs + 1; total.units = total.units + r.units_per_min; total.progress = total.progress + r.units_per_min * (1 + r.productivity)
+        for name, n in pairs(r.packs) do total.packs[name] = (total.packs[name] or 0) + n end
+      end
+    end
     local working, lines = 0, {}
     local why_rows = {}
     for gi, g in ipairs(groups) do
@@ -188,6 +244,13 @@ return function(api)
         local miss = {}
         for _, name in ipairs(packs) do if lacking[name] then miss[#miss+1] = short(name) .. ' (' .. lacking[name] .. ')' end end
         if #miss > 0 then parts[#parts+1] = 'lack ' .. table.concat(miss, ', ') end
+        local gu, full = 0, nil
+        for _, i in ipairs(g) do local r = rates[i]; if r and r.units_per_min then gu = gu + r.units_per_min end end
+        if gu > 0 then
+          local each = 0
+          for _, i in ipairs(g) do local r = rates[i]; local m = 0; for _, n in pairs(r and r.packs or {}) do m = math.max(m, n) end; each = each + m end
+          full = string.format('at full supply %s units a minute, %s of each pack a minute (the engine\'s figures)', g3(gu), g3(each))
+        end
         -- Feeders: inserters dropping into these labs; their sources say why.
         local feeders, idle, sources, chained = 0, {}, {}, 0
         for _, ins in pairs(surface.find_entities_filtered{area=box, type='inserter', force=force, limit=128}) do
@@ -228,7 +291,7 @@ return function(api)
         if feeders == 0 then feed[1] = 'no visible inserters feed these labs'
         elseif #absent > 0 and #sources > 0 then feed[#feed+1] = 'no ' .. table.concat(absent, ', ') .. ' on their ' .. #sources .. ' belts/chests' end
         if #carried > 0 then feed[#feed+1] = 'sources hold ' .. table.concat(carried, ', ') end
-        lines[#lines+1] = table.concat(parts, ', ') .. '; feeders: ' .. table.concat(feed, '; ')
+        lines[#lines+1] = table.concat(parts, ', ') .. '; feeders: ' .. table.concat(feed, '; ') .. (full and '; ' .. full or '')
       end
     end
     local research, research_labs
@@ -253,7 +316,23 @@ return function(api)
     end
     local why = {}
     for _, r in ipairs(why_rows) do why[#why+1] = try(function() return lab_why(r.lab, r.name, surface, force, seen) end) end
+    -- (LS) per lab (the first 64) and for all the visible labs read: the engine's figures at full supply, apart from
+    -- what they used (science: the game's 10-minute statistics)
+    local lab_rates, full_speed = {}, nil
+    for i, e in ipairs(labs) do if i <= 64 and rates[i] then lab_rates[#lab_rates+1] = M.rate_text(e, rates[i]) end end
+    if total.labs > 0 then
+      local names, packs = {}, {}
+      for name in pairs(total.packs) do names[#names+1] = name end
+      table.sort(names)
+      for _, name in ipairs(names) do packs[name] = math.floor(total.packs[name] * 100 + 0.5) / 100 end
+      local each = {}
+      for _, name in ipairs(names) do each[#each+1] = string.format('%s %s', short(name), g3(total.packs[name])) end
+      full_speed = {labs=total.labs, units_per_min=math.floor(total.units * 100 + 0.5) / 100, progress_per_min=math.floor(total.progress * 100 + 0.5) / 100, packs_per_min=packs,
+        line=string.format('the engine\'s figures at full supply: %d labs research %s units a minute (%s with productivity) of %s, using a minute %s; what they used: science {pack} (the 10-minute statistics)',
+          total.labs, g3(total.units), g3(total.progress), tech.name, table.concat(each, ', '))}
+    end
     return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,research_labs=research_labs,lacking=#why > 0 and why or nil,
+      full_speed=full_speed, lab_rates=#lab_rates > 0 and lab_rates or nil, lab_rates_more=#labs > 64 and (#labs - 64) or nil,
       labs=#labs .. ' in ' .. #groups .. ' groups' .. (centre and string.format(' within %d tiles of %s', radius, at(centre)) or '')
         .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines,
       limited=#found>=MAX_LABS and 'lab search reached 256 entities; counts cover the visible labs among those found' or nil}
