@@ -20,6 +20,7 @@ import argparse, collections, concurrent.futures, hashlib, json, os, re, sys, th
 import urllib.request
 
 import names
+import operator_inbox
 import router
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -29,6 +30,8 @@ sys.dont_write_bytecode = True
 import toolcall  # noqa: E402
 
 SITE_URL = "https://player-of-games-live.your-subdomain.workers.dev"
+# (d28 batch323 DR) a line to the operator whose inbox write failed: shown as held until a retry writes it
+INBOX_HELD = "the operator's inbox could not be written; tried again"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 LANE_MAX = 30          # messages kept in the lane (oldest first)
 SEEN_MAX = 5000        # messages remembered by id, for deletions that come later
@@ -1414,6 +1417,9 @@ class Feed:
         self.preloaded = False            # verdict logs read (preload): a backlog line with no record was never read
         self.inbox = inbox                # runs/RUN/operator-inbox.jsonl: viewer lines to the operator (to_inbox)
         self._inbox_keys = None           # inbox_keys(), read once
+        self._inbox_ids = None            # (batch323) the ids in the inbox (a retry writes a line once)
+        self.inbox_retry = collections.OrderedDict()  # (batch323) id -> (line, dropped, receipt): its write failed
+        self.inbox_failed = 0             # (batch323) failed inbox writes
         # runs/RUN/viewer-deletions.jsonl: every YouTube deletion, with the name and text(s) it removes, so the site
         # can leave those lines out (site/moderation.py); an author deletion also drops that author's later messages
         self.deletions = deletions
@@ -1483,6 +1489,7 @@ class Feed:
 
     def ingest(self, msgs, dels, now=None):
         now = now or time.time()
+        self.retry_inbox()
         passed = []
         for m in msgs:
             self.remember(m)
@@ -1644,13 +1651,12 @@ class Feed:
             # to the operator: into the operator's inbox, never to an agent unless the line addresses one too (d19
             # batch42 A3: "@operator Muse's reply was cut mid-word ..." went to Muse, and the site showed only that)
             v["operator"], v["chatter"] = True, False
-            self.to_inbox(v)
             named = self.relay.explicit(v["text"]) if self.relay else []
             if named and relay_ok and not expired:
+                self.to_inbox(v)  # (the agents' copy goes on; the inbox receipt only after a durable write)
                 self.relay.offer(v, author)
             else:
-                v["delivery"] = "operator"
-                self.deliver(v, "operator", "to the operator's inbox")
+                self.to_operator_only(v, "to the operator's inbox")
             return
         if expired:  # (AA5) waited too long for the service: shown, not posted to the game
             self.dropped["expired"] += 1
@@ -1661,9 +1667,7 @@ class Feed:
         if self.relay and relay_ok and pick.get("kind") == "operator" and self.relay.on():
             # (D4) Clef: about the harness, the stream or the site: the operator's inbox, no agent
             v["operator"] = True
-            self.to_inbox(v)
-            v["delivery"] = "operator"
-            self.deliver(v, "operator", pick.get("why"))
+            self.to_operator_only(v, pick.get("why"))
             return
         if self.relay and relay_ok and pick.get("kind") == "viewers" and self.relay.on():
             self.dropped["relay:to_viewers"] += 1
@@ -1705,6 +1709,7 @@ class Feed:
             return None
         waiting = [m.get("id") for m, _ in list(self.relay.q)] if self.relay else []
         waiting += [r[0].get("id") for r in list(self.recheck)]
+        waiting += list(self.inbox_retry)  # (batch323) lines whose inbox write failed
         seqs = [int(i[5:]) for i in waiting if isinstance(i, str) and i.startswith("site:") and i[5:].isdigit()]
         return min([after] + [n - 1 for n in seqs])
 
@@ -1721,15 +1726,15 @@ class Feed:
         except OSError as e:
             log(f"site cursor: {e}")
 
-    def to_inbox(self, v, dropped=None):
+    def to_inbox(self, v, dropped=None, receipt=None):
         """runs/RUN/operator-inbox.jsonl (operator_inbox.py; the operator's watch reads it): {t, agent: "viewer NAME",
-        text, viewer: true}, no seq (the agents' requests resume by theirs); `dropped`: kept off the stream, and why."""
+        text, viewer: true}, no seq (the agents' requests resume by theirs); `dropped`: kept off the stream, and why.
+        (d28 batch323 DR, viewer Aurora 16:19) True once the row is flushed and fsynced (operator_inbox.write_rows), or
+        is in the file already by its id; only then is the line marked as in the inbox (the site's receipt). A failed
+        write returns False: the line waits in inbox_retry, and its `receipt` ((status, why) for deliver) is given
+        when a later write by the same id succeeds; the site cursor stays before it, so a restart reads it again."""
         if not self.inbox:
-            return
-        # the site's receipt (deliver): in the inbox, also when the line was kept off the stream
-        v["inbox"] = True
-        if v.get("id") in self.deliveries:
-            self.deliveries[v["id"]]["inbox"] = True
+            return False
         row = {"t": round(v.get("t") or time.time(), 1), "agent": f"viewer {v['name']}", "text": v.get("full") or v["text"], "viewer": True,
                "source": v.get("source")}
         if v.get("id"):  # (d20 batch65 AA2) the line's id, for tools/opreply.py --to
@@ -1737,10 +1742,46 @@ class Feed:
         if dropped:
             row["dropped"] = dropped
         try:
-            with open(self.inbox, "a") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            if not (v.get("id") and v["id"] in self.inbox_ids()):
+                operator_inbox.write_rows(self.inbox, [row])
         except OSError as e:
-            log(f"operator inbox: {e}")
+            log(f"operator inbox: {e} (not delivered; tried again by its id)")
+            self.inbox_failed += 1
+            self._inbox_ids = None  # (the write may have landed in part: read the ids again before the retry)
+            if v.get("id"):
+                self.inbox_retry[v["id"]] = (v, dropped, receipt)
+            return False
+        if v.get("id"):
+            self.inbox_ids().add(v["id"])
+            self.inbox_retry.pop(v["id"], None)
+        self.inbox_keys().add((v["name"], row["t"]))
+        # the site's receipt (deliver): in the inbox, also when the line was kept off the stream
+        v["inbox"] = True
+        if v.get("id") in self.deliveries:
+            self.deliveries[v["id"]]["inbox"] = True
+        return True
+
+    def inbox_ids(self):
+        if self._inbox_ids is None:
+            self._inbox_ids = operator_inbox.values_in(self.inbox, "id") if self.inbox else set()
+        return self._inbox_ids
+
+    def retry_inbox(self):
+        """(batch323) The lines whose inbox write failed, again by their ids; each one delivered gets its receipt."""
+        for ident, (v, dropped, receipt) in list(self.inbox_retry.items()):
+            if self.to_inbox(v, dropped) and receipt:
+                v["delivery"], v["delivery_why"] = receipt
+                self.deliver(v, *receipt)
+
+    def to_operator_only(self, v, why, dropped=None):
+        """(batch323) A line whose delivery is the operator's inbox: "operator" once the write is durable; else held,
+        and "operator" when a retry writes it."""
+        if self.to_inbox(v, dropped, receipt=("operator", why)):
+            v["delivery"], v["delivery_why"] = "operator", why
+            self.deliver(v, "operator", why)
+        else:
+            v["delivery"], v["delivery_why"] = "held", INBOX_HELD
+            self.deliver(v, "held", INBOX_HELD)
 
     def only_operator(self, v):
         """A line to the operator that addresses no agent: the inbox is all of its delivery."""
@@ -1754,8 +1795,12 @@ class Feed:
         line that reached the operator's inbox and addresses no agent: delivered to the operator, the refusal as its
         reason; one that addresses an agent too stays not relayed, with the inbox receipt beside it."""
         if self.inbox and self.only_operator(v):
-            v["delivery"], v["delivery_why"] = "operator", f"kept off the stream: {dropped}"
-            self.deliver(v, "operator", v["delivery_why"])
+            if v.get("inbox"):  # (batch323) only after the durable write (to_inbox); a retry gives it when it lands
+                v["delivery"], v["delivery_why"] = "operator", f"kept off the stream: {dropped}"
+                self.deliver(v, "operator", v["delivery_why"])
+            elif v.get("id") in self.inbox_retry:
+                w, d, _ = self.inbox_retry[v["id"]]
+                self.inbox_retry[v["id"]] = (w, d, ("operator", f"kept off the stream: {dropped}"))
 
     def inbox_keys(self):
         """{(viewer name, t to 0.1 s)} of the viewer rows in the operator's inbox, this run's and the one it resumed

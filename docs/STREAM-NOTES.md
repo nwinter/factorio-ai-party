@@ -2515,3 +2515,24 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
   - At most one highlight per 20 min, each once. The replay's urgent cut, spacing and news gates apply as for any
     replay.
   - replays.py `watch_highlights`; tools/stream/test_highlight.py.
+
+## Delivery receipts after a durable write (2026-10-28, d28 batch323 DR, viewer Aurora 16:19, site:5413)
+
+- Every writer of runs/RUN/operator-inbox.jsonl appends through `operator_inbox.write_rows`: whole lines in one write,
+  then fsync; a file whose last line was cut gets its newline first. Each writer writes a row once: viewer lines by
+  their id, the polls relay's rows by `rid` (an agent's request id, or `idea:N`), agents' requests against the
+  file's tail (a retry after a write that landed and then failed).
+- Viewer routing (viewers.Feed.to_inbox): the line is marked as in the inbox, and a line to the operator alone gets
+  its "operator" receipt, only after that write. A failed write shows the line as held ("the operator's inbox could
+  not be written; tried again"); each later pass tries it again by its id and gives the receipt when it lands; the
+  site cursor stays before it, so a restart reads it again.
+- The polls relay: a request is handled, its reply written (once by rid), then the count saved, one line at a time; a
+  suggestion whose inbox write fails gets no reply and is tried next pass. Site ideas move the cursor one at a time.
+- tools/opreply.py: each reply's request id (`rid`, from its line and parts); the record (pending) is fsynced before
+  anything is sent, the Updates row (--update) is saved next, then the lines go, then
+  RUN/operator-replies-sent.jsonl gets {rid, t}. A crash or a failed send leaves it pending: the next call in that run,
+  or `--resume`, sends what the game chat (RUN/chat.jsonl after the record's `chat_seq`) does not have yet, once,
+  waiting until 20 s after the record so chat-log.py has logged anything sent before the crash; the same reply run
+  again sends nothing (`--again` sends it as a new request). site/updates.py shows a reply under its row once it is
+  marked sent (records without a rid, from before, count as sent).
+- tools/stream/test_durable_delivery.py.
