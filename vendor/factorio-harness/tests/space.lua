@@ -38,7 +38,7 @@ local silo={valid=true,type='rocket-silo',position={x=20.5,y=20.5},rocket_silo_s
 local p={index=1,force={platforms={platform},recipes={}},character={get_logistic_sections=function() return char_sections end},
   surface={planet={name='nauvis'},find_entities_filtered=function() return {silo} end}}
 local space_state={}
-local space=dofile('mod/agent-harness_0.1.0/space.lua'){
+local space=dofile('mod/agent-harness_0.1.0/space.lua'){thrust_groups=dofile('mod/agent-harness_0.1.0/thrust.lua'){}.groups,
   state=function() return space_state end,
   -- The spread lines (runtime.lua fresh_inv, tested in tests/picksource.lua): which inventory and items were asked.
   fresh_inv=function(force,inv,names)
@@ -187,7 +187,11 @@ local one=space.platforms(p,{platform='alpha'}).platforms[1]
 -- Sol, 22:52: the hub's spread on the row, so cargo is judged before departure.
 eq(one.freshness[1],'spread of all')
 eq(one.speed_kms,0.7); eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-asteroid-chunk*2 oxide-asteroid-chunk*1')
-eq(one.thrusters,'2, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
+eq(one.thrusters,'2 normal, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
+-- d27 batch294 TQ: by quality (quality multiplies a thruster's burn and thrust)
+platform.surface.find_entities_filtered=function(f) if f.type=='thruster' then return {{fluidbox=tank(800,500),quality={name='legendary',default_multiplier=2.5}},{fluidbox=tank(1000,900)}} end return {} end
+eq(space.platforms(p,{platform='alpha'}).platforms[1].thrusters,'2: 1 normal, 1 legendary x2.5, lowest tank 50%')
+platform.surface.find_entities_filtered=function(f) if f.type=='thruster' then return {{fluidbox=tank(800,500)},{fluidbox=tank(1000,900)}} end return {} end
 platform.find_asteroid_chunks_filtered=function() error('no chunks API') end
 eq(space.platforms(p,{platform='alpha'}).platforms[1].asteroid_chunks,nil,'a failing read is skipped')
 -- Where hub items go (request #4): an inserter taking from the hub with
