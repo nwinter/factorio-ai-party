@@ -120,7 +120,7 @@ return function(api)
         -- where the count sits, when the condition is false (it holds the entity off)
         local sp = c.logistic_met == false and split(net, sigid(sig))
         text = text .. string.format(' (network %s: %s %d%s%s)', tostring(try(function() return net.network_id end)), sigtext(sig), m.count,
-          api.negative_note and api.negative_note(sig.name, m.count) or '', sp and '; the count: ' .. sp.line or '')
+          api.negative_note and api.negative_note(sigtext(sig), m.count) or '', sp and '; the count: ' .. sp.line or '')
         if need then
           if need > m.most and m.all then
             flag = 'cannot be met'

@@ -332,7 +332,10 @@ apart from `held_count`; on 2.0.77 every inserter waited at a belt for a full ha
   `fluid_mix` unless `mix_fluids: true`. `robot_dispatch` (place_ghosts, paste, blueprint_place): the construction
   robots' trips to the ghosts, as the network would pick them: how many at once, from which roboports, the longest
   and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows (each with its
-  read's age and whether its chunk is in sight now); ghosts whose covering network holds none of their item, and
+  read's age and whether its chunk is in sight now); `by network N`: of the networks whose construction area covers a
+  ghost, the engine takes the first holding its item at the ghost's quality: a personal roboport (character or
+  vehicle) first, then the network whose logistic area holds the ghost, then the others as found; a covering network
+  that holds none of the items is named; ghosts no covering network holds their item for (at their quality), and
   ghosts outside every construction area with the nearest roboport and how far outside its area. `closes_in` names the entry that fills the last gap out when the plan would close you
   in where you stand; a build reply says `closed_in` after it. `build` dry runs name off-character `pockets`, their
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
