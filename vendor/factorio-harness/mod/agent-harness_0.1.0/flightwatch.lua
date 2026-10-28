@@ -57,7 +57,11 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
-  M.EVERY, M.MAX_TURRETS, M.KEEP_READ, M.WAIT, M.REFIND = 60, 128, 216000, 5184000, 3600
+  M.EVERY, M.MAX_TURRETS, M.KEEP_READ, M.WAIT, M.REFIND = 60, 1024, 216000, 5184000, 3600
+  -- (d28 batch302 FC, Astra #2656: Resolute's 129th ammo turret, a railgun, was left out by a cap of 128 that no line
+  -- said) every ammo turret aboard up to MAX_TURRETS, each found one counted (turrets_total) and any left out said;
+  -- a sample reads PAGE of them a tick, the rest on the ticks after it (each turret still read once a second)
+  M.PAGE = 256
   M.PHASE, M.KEEP_DONE = 51, 16  -- the first watch's tick of the second; done watches read kept a force
   M.SHOW = 24             -- turret rows in a read
   M.FEED_EVERY, M.FEED_SOON = 3600, 600  -- a feed trace asked once a minute a watch; 10 s after a turret begins to read empty
@@ -587,11 +591,11 @@ return function(api)
     if not f then return 'not traced' end
     return string.format('%s%s, %d can reach it%s', f.kind, f.gated and ' (every such source gated closed)' or '', f.reaches or 0, f.stop and '; ' .. f.stop or '')
   end
-  local function add_turret(w, e, tick)
-    if #w.turrets >= M.MAX_TURRETS then w.capped = true; return end
+  local function add_turret(w, e, tick, uncapped)
     local n, name = ammo_of(e)
     local t = {e=e, unit=e.unit_number, name=e.name, position={x=e.position.x, y=e.position.y}, min=n, min_tick=tick,
-      first=n, now=n, ammo=name, empty_samples=0, empty_ticks=0, runs=0, longest=0, added=tick ~= w.start and tick or nil}
+      first=n, now=n, ammo=name, empty_samples=0, empty_ticks=0, runs=0, longest=0, added=tick ~= w.start and tick or nil,
+      uncapped=uncapped or nil}
     w.turrets[#w.turrets+1] = t
     w.by_unit[e.unit_number] = #w.turrets
     -- (BH1) a turret with an electric buffer (a railgun): its energy, and what it hit
@@ -657,9 +661,16 @@ return function(api)
     return cap > 0 and n / cap or nil
   end
   local function find_turrets(w, pl, tick)
-    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
-      if e.unit_number and not w.by_unit[e.unit_number] then add_turret(w, e, tick) end
+    -- (FC) all of them counted; one an older, lower cap left out (a watch running at the deploy) is read from now on,
+    -- its baseline this find's read (said: uncapped); the turrets already read keep theirs
+    local list = try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}
+    local was, left = w.capped, 0
+    for _, e in ipairs(list) do
+      if e.unit_number and not w.by_unit[e.unit_number] then
+        if #w.turrets >= M.MAX_TURRETS then left = left + 1 else add_turret(w, e, tick, was and tick ~= w.start) end
+      end
     end
+    w.total, w.capped = #list, left > 0 or nil
     -- (PW1) the laser turrets; a watch begun before them has none (its read as it was)
     if w.lasers then
       for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='electric-turret', force=pl.force} end) or {}) do
@@ -827,9 +838,21 @@ return function(api)
       if t.longest > long then long, lt = t.longest, t end
     end
     local n = #(w.turrets or {})
-    if n == 0 then return 'no ammo turret aboard' end
-    if empty == 0 then return string.format('none of %d ammo turrets read empty', n) end
-    return string.format('%d of %d ammo turrets read empty; the longest run %gs (%d ticks), %s %s #%d from +%s', empty, n, math.floor(long / 6 + 0.5) / 10, long, lt.name, at(lt.position), lt.unit, secs(lt.long_from - w.start))
+    if n == 0 then return 'no ammo turret aboard' .. M.cap_text(w) end
+    if empty == 0 then return string.format('none of %d ammo turrets read empty', n) .. M.cap_text(w) end
+    return string.format('%d of %d ammo turrets read empty; the longest run %gs (%d ticks), %s %s #%d from +%s', empty, n, math.floor(long / 6 + 0.5) / 10, long, lt.name, at(lt.position), lt.unit, secs(lt.long_from - w.start)) .. M.cap_text(w)
+  end
+  -- (FC) the ammo turrets aboard the watch does not read (over MAX_TURRETS), said wherever its count is
+  function M.cap_text(w)
+    if not w.capped then return '' end
+    return string.format(' (%d more aboard not read: a watch reads at most %d; %d at the last find)', (w.total or 0) - #(w.turrets or {}), M.MAX_TURRETS, w.total or 0)
+  end
+  -- (FC) the turrets it reads: how many, the railguns among them, all aboard or the cap
+  function M.count_text(w)
+    local np = 0
+    for _, t in ipairs(w.turrets or {}) do if t.buffer then np = np + 1 end end
+    local all = not w.capped and w.total and w.total == #w.turrets and string.format(', all %d aboard', w.total) or ''
+    return string.format('%d ammo turrets (%d railguns%s)', #(w.turrets or {}), np, all) .. M.cap_text(w)
   end
   -- (BS1) a new watch's phase: the tick of the second fewest armed or watching watches read on, from PHASE in
   -- steps of 13 ticks
@@ -854,6 +877,7 @@ return function(api)
       if w.state ~= 'done' then
         w.phase = w.phase or pick_phase(st)
         due[w.phase] = true
+        if w.page then due[w.page.at % M.EVERY] = true end  -- (FC) a sample's next page
       end
       if w.state == 'watching' then
         for _, t in ipairs(w.turrets or {}) do if t.buffer and t.e then idx[t.unit] = true end end
@@ -964,12 +988,12 @@ return function(api)
     return #parts > 0 and '; ' .. table.concat(parts, '; ') or ''
   end
   -- One sample of a watching watch.
-  local function sample(w, pl, tick)
-    local dt = tick - w.last_sample
-    w.last_sample, w.samples = tick, w.samples + 1
-    if tick - (w.refound or 0) >= M.REFIND then find_turrets(w, pl, tick) end
+  -- (FC) turrets i0..i1 of a sample (dt: the ticks since the sample before): whether one began to read empty
+  local function read_turrets(w, i0, i1, tick, dt)
     local new_run = false
-    for _, t in ipairs(w.turrets) do
+    local list = w.turrets
+    for i = i0, i1 do
+      local t = list[i]
       if t.e and t.e.valid then
         local n, name = ammo_of(t.e, t)
         if n then
@@ -998,6 +1022,26 @@ return function(api)
           elseif t.low_from then t.low_from, t.low_run = nil, nil end
         end
       elseif t.e then t.gone, t.e = tick, nil end
+    end
+    return new_run
+  end
+  -- (FC) the next PAGE of a sample begun on an earlier tick
+  local function read_page(w, tick)
+    local pg = w.page
+    local i1 = math.min(#w.turrets, pg.i + M.PAGE - 1)
+    if read_turrets(w, pg.i, i1, tick, pg.dt) then w.want = w.want or tick end
+    if i1 >= #w.turrets then w.page = nil; M.reindex() else pg.i, pg.at = i1 + 1, tick + 1; store().due[(tick + 1) % M.EVERY] = true end
+  end
+  local function sample(w, pl, tick)
+    local dt = tick - w.last_sample
+    w.last_sample, w.samples = tick, w.samples + 1
+    if tick - (w.refound or 0) >= M.REFIND then find_turrets(w, pl, tick) end
+    w.page = nil
+    local n = #w.turrets
+    local new_run = read_turrets(w, 1, math.min(n, M.PAGE), tick, dt)
+    if n > M.PAGE then
+      w.page = {i=M.PAGE + 1, dt=dt, at=tick + 1}
+      store().due[(tick + 1) % M.EVERY] = true
     end
     -- (PW1) each laser: its energy against one shot's, and its kills and damage dealt
     for _, t in ipairs(w.lasers or {}) do
@@ -1040,6 +1084,11 @@ return function(api)
     end
     if not st.due then M.reindex() end
     local ph = tick % M.EVERY
+    -- (FC) the pages of samples begun on earlier ticks
+    for _, w in ipairs(st.list) do
+      if w.page and (w.state ~= 'watching' or not platform_of(w)) then w.page = nil
+      elseif w.page and tick >= w.page.at and w.phase ~= ph then read_page(w, tick) end
+    end
     for _, w in ipairs(st.list) do
       if w.state ~= 'done' and w.phase == ph then
         local pl = platform_of(w)
@@ -1051,7 +1100,7 @@ return function(api)
             w.ammo_stopped = ammo_read(pl)  -- (QX1) the last read stopped: a departure falls after it
           elseif w.seen_stopped then
             begin(w, pl, tick)
-            push(w, string.format('flight watch #%d on %s began: it left for %s', w.id, w.platform, w.leg))
+            push(w, string.format('flight watch #%d on %s began: it left for %s; watching %s', w.id, w.platform, w.leg, M.count_text(w)))
           end
           if w.state == 'armed' and tick - w.set > M.WAIT then finish(w, nil, tick, 'no departure within 24h') end
         else
@@ -1169,6 +1218,10 @@ return function(api)
     r.damage, r.lost, r.lost_count, r.repair_packs_used, r.hub_repair_packs = t.damage, t.lost, t.lost_n, t.repair_used, {start=t.packs_start, ['end']=t.packs_end}
     r.fuel = {start=t.fuel_start, ['end']=t.fuel_end}
     r.turrets_capped = w.capped and M.MAX_TURRETS or nil
+    -- (FC) the ammo turrets aboard at the last find, those it reads (gone ones kept), those left out
+    r.turrets_total, r.turrets_read = w.total, #(w.turrets or {})
+    r.turrets_left_out = w.capped and w.total and w.total - #(w.turrets or {}) or nil
+    r.turrets_count_line = M.count_text(w)
     -- (the read's size) the turrets that read empty, the longest run first, then the lowest on ammo: SHOW rows
     local order = {}
     for _, x in ipairs(full and w.turrets or {}) do order[#order+1] = x end
@@ -1191,13 +1244,13 @@ return function(api)
       local x = order[i]
       local row = {unit_number=x.unit, name=x.name, position=x.position, ammo=x.ammo, least=x.min, least_tick=x.min_tick, at_start=x.first, now=x.now,
         empty_samples=x.empty_samples, empty_ticks=x.empty_ticks, empty_runs=x.runs, longest_empty_ticks=x.longest,
-        longest_from_tick=x.long_from, empty_now=x.run_from and true or nil, gone_tick=x.gone, added_tick=x.added,
+        longest_from_tick=x.long_from, empty_now=x.run_from and true or nil, gone_tick=x.gone, added_tick=x.added, uncapped=x.uncapped,
         feed_start=x.feed_start, feed_empty=x.feed_empty, feed_end=x.feed_last}
       rows[#rows+1] = row
       lines[#lines+1] = string.format('%s %s #%d: least %s (at +%s), %s; %s%s; feed at the start: %s%s; latest: %s', x.name, at(x.position), x.unit,
         x.min and tostring(x.min) or '?', secs((x.min_tick or w.start) - w.start), x.min and x.min > 0 and 'never empty' or
           string.format('empty in %d sample%s (%d ticks) over %d run%s, the longest %d ticks from +%s', x.empty_samples, x.empty_samples == 1 and '' or 's', x.empty_ticks, x.runs, x.runs == 1 and '' or 's', x.longest, secs((x.long_from or w.start) - w.start)),
-        string.format('%s at the start, %s now', tostring(x.first), tostring(x.now)), x.gone and string.format('; gone at +%s', secs(x.gone - w.start)) or (x.added and string.format('; built at +%s', secs(x.added - w.start)) or ''),
+        string.format('%s at the start, %s now', tostring(x.first), tostring(x.now)), x.gone and string.format('; gone at +%s', secs(x.gone - w.start)) or (x.uncapped and x.added and string.format('; read from +%s (an earlier cap of the watch left it out until then)', secs(x.added - w.start))) or (x.added and string.format('; built at +%s', secs(x.added - w.start)) or ''),
         M.feed_text(x.feed_start), x.feed_empty and '; after it first read empty: ' .. M.feed_text(x.feed_empty) or '', M.feed_text(x.feed_last))
     end
     if full then r.turrets, r.lines = rows, lines end
@@ -1434,10 +1487,8 @@ return function(api)
     M.reindex()
     local r = M.row(w, false)
     r.replaced, r.ammunition_chain_note = replaced, chain_note
-    local np = 0
-    for _, t in ipairs(w.turrets or {}) do if t.buffer then np = np + 1 end end
     local nl = #(w.lasers or {})
-    return {watch=r, replaced_watch=replaced_row, replaced_line=replaced_line, line=from == 'now' and string.format('flight watch #%d on %s: watching %d ammo turrets (%d railguns)%s and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, #w.turrets, np,
+    return {watch=r, replaced_watch=replaced_row, replaced_line=replaced_line, line=from == 'now' and string.format('flight watch #%d on %s: watching %s%s and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, M.count_text(w),
         nl > 0 and string.format(', %d laser turrets', nl) or '', w.acc_n or 0, minutes)
       or string.format('flight watch #%d on %s: begins at its next departure%s and runs until the arrival after it or %d min', w.id, pl.name, w.seen_stopped and '' or ' (it flies now: the departure after its next stop)', minutes),
       note=M.NOTE}
@@ -1486,6 +1537,6 @@ return function(api)
       .. 'ammunition (this window: {from_tick, to_tick, ticks, total, used {item: {quality: n}}}; each mixed.parts entry has its own and repair_packs_used), ammunition_watch (from the tick it began, after a split), ammunition_chain (after replace: true, from the first replaced watch\'s start: also watches, first), '
       .. 'ammunition_boundaries [{what (departure, arrival, between, start), from_tick, to_tick, ticks, total, used, line}], '
       .. 'foundation (this window; each mixed.parts entry has its own) {destroyed, rebuilt, destroyed_between_finds, rebuilt_from_before, open, placed, placed_built, open_placed, removed, taken {quality: n}, taken_total, hub_foundation {start, end}, first_destroyed_tick, last_destroyed_tick, rows [{tick, what, count, at, from_tick}], rows_more, skipped_finds, builds_heard}, lines, line, note}. '
-      .. 'Sampled once a second, each watch on its own tick; at most 128 ammo turrets a watch (turrets built meanwhile are added within a minute); one watch that counts per platform of the force (armed, watching, or done and not read; a start at the limit is refused, naming them); kept in the save until cleared (read done ones 1 h after the read, replaced ones not read 24 h, at most 16 of those); the setter hears in team.alerts when one begins at a departure and when one ends'}}
+      .. 'Sampled once a second, each watch on its own tick; every ammo turret aboard up to 1024 a watch (turrets_total: those aboard at the last find, turrets_read, turrets_left_out and turrets_capped when over; a sample reads 256 a tick, the rest on the next ticks; turrets built meanwhile are added within a minute); one watch that counts per platform of the force (armed, watching, or done and not read; a start at the limit is refused, naming them); kept in the save until cleared (read done ones 1 h after the read, replaced ones not read 24 h, at most 16 of those); the setter hears in team.alerts when one begins at a departure and when one ends'}}
   return M
 end

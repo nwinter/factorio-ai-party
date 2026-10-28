@@ -39,7 +39,7 @@ local asteroid={valid=true,force='enemy',name='huge-metallic-asteroid'}
 local function hit(t,cause,damage) F.on_damaged({tick=t,cause=cause,entity=asteroid,final_damage_amount=damage}) end
 
 local r=F.call(p,{platform='Asterion'})
-assert(r.line:find('watching 3 ammo turrets %(2 railguns%) and 2 accumulators once a second'),r.line)
+assert(r.line:find('watching 3 ammo turrets %(2 railguns, all 3 aboard%) and 2 accumulators once a second'),r.line)
 eq(r.watch.sample_ticks,60); eq(r.watch.accumulators.count,2); eq(r.watch.accumulators.at_start,1)
 eq(st.flightwatch.powered[r1.unit_number],true,'railguns indexed for the events'); eq(st.flightwatch.powered[gun.unit_number],nil,'a gun turret is not')
 

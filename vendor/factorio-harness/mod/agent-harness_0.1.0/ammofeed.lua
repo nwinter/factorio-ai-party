@@ -11,7 +11,7 @@
 -- MAX_BELTS belts read per turret, 512 turrets.
 return function(api)
   local M = {}
-  M.MAX_BELTS, M.MAX_TURRETS, M.LOW = 4000, 512, 10
+  M.MAX_BELTS, M.MAX_TURRETS, M.LOW = 4000, 1024, 10  -- (d28 batch302 FC) turrets: as a flight watch reads, any more said
   -- (d17 batch23 A2, operator 23:47: a whole Kestrel II trace is about 25 ms, over the 20 ms a command may take on n)
   -- platforms with more than SYNC_BELTS belts are read in the background, READ_PER_TICK belts a tick, and their trace
   -- computed from those reads in one tick; a read is fresh for FRESH ticks.
@@ -383,7 +383,10 @@ return function(api)
     end
     local rows, reached_belts, reached_src, any_hub = {}, {}, {}, false
     local hub_inv = hub and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
-    local turrets = try(function() return s.find_entities_filtered{type='ammo-turret', force=f, limit=M.MAX_TURRETS} end) or {}
+    local turrets = try(function() return s.find_entities_filtered{type='ammo-turret', force=f, limit=M.MAX_TURRETS + 1} end) or {}
+    -- (d28 batch302 FC) over the cap: the first MAX_TURRETS traced, the cap said (turrets_capped) where it was silent
+    local tcapped = #turrets > M.MAX_TURRETS
+    if tcapped then turrets[#turrets] = nil end
     local pending, starts = {}, {}
     local takes_by = {}
     for _, t in ipairs(turrets) do
@@ -764,7 +767,8 @@ return function(api)
     for _, g in ipairs(gate_list) do g.seen = nil end
     return {rows=rows, reaches=reaches, stranded=stranded, stranded_groups=glines, stranded_recover=recover, stranded_more=#groups > 6 and #groups - 6 or nil,
       hub_ammo=hub_total, hub_reaches=any_hub, turret_own=turret_own, on_belts_reached=belt_reach, in_sources=src_total,
-      stranded_by=stranded_by, hub_stranded=hub_stranded, via_hub=via_hub, at_end=at_end_n, at_end_rows=end_rows, gates=gate_list}
+      stranded_by=stranded_by, hub_stranded=hub_stranded, via_hub=via_hub, at_end=at_end_n, at_end_rows=end_rows, gates=gate_list,
+      turrets_capped=tcapped and M.MAX_TURRETS or nil}
   end
   -- The read's lines: the totals, the turrets low or empty with what reaches them and what stops it, the stranded stock.
   -- The call that would recover a stranded group: a belt pickup where your character stands on that surface (aboard),
