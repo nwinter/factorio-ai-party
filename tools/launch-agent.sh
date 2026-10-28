@@ -118,8 +118,8 @@ Read AGENTS.md in this directory; it has your instructions, interface, rules, an
 EOP
   if [ -n "${POG_RESUME:-}" ]; then printf '%s\n' "$resume_sentence" >> "$prompt"; fi
 fi
-# (mt277, private) a multi-team run's team is RUN/TEAM (tools/mt/start-mt.sh): its folder runs/RUN/TEAM holds the
-# team's prompt, roster, keys or sockets and team-tools; names and labels use RUN-TEAM
+# A run in parts is RUN/PART: the part's folder runs/RUN/PART holds its prompt, roster, keys or sockets and team-tools;
+# names and labels use RUN-PART
 label=${run//\//-}
 name="pog-${POG_WS:-$world}-$label"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
@@ -147,10 +147,10 @@ claude_settings() {
   done
   # Other runs' folders (their notes, chat and logs) are denied too, so a run reads as a first attempt (task-hosts5);
   # this run and the shifts it resumes (resumed-from, followed back) stay readable.
-  # (mt277) a multi-team run: the chain is of whole runs (runs/RUN/resumed-from), and in each of them every folder but
-  # this team's (the other teams, the operator's op/) is denied
-  local top=${run%%/*} team="" t
-  [ "$top" = "$run" ] || team=${run#*/}
+  # A run in parts (RUN/PART): the chain is of whole runs (runs/RUN/resumed-from), and in each of them every folder but
+  # this part's is denied
+  local top=${run%%/*} part="" t
+  [ "$top" = "$run" ] || part=${run#*/}
   local chain=" $top " r=$top d
   while [ -f "$root/runs/$r/resumed-from" ]; do
     r=$(cat "$root/runs/$r/resumed-from")
@@ -160,15 +160,20 @@ claude_settings() {
   for d in "$root"/runs/*/; do
     d=${d%/}
     case "$chain" in *" ${d##*/} "*)
-      if [ -n "$team" ]; then
+      if [ -n "$part" ]; then
         for t in "$d"/*/; do
           t=${t%/}
-          [ -d "$t" ] && [ "${t##*/}" != "$team" ] || continue
+          [ -d "$t" ] && [ "${t##*/}" != "$part" ] || continue
           keys_read="$keys_read, \"$t\""
           keys_rules="$keys_rules, \"Read(/$t/**)\", \"Read($t/**)\""
         done
       fi
       continue ;; esac
+    keys_read="$keys_read, \"$d\""
+    keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
+  done
+  # POG_DENY_READ: more folders no agent reads (space-separated absolute paths)
+  for d in ${POG_DENY_READ:-}; do
     keys_read="$keys_read, \"$d\""
     keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
   done
@@ -206,6 +211,7 @@ case $kind in
     python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" claude "$dir"
     [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" claude "$dir"
+    [ -z "${POG_WEB_BLOCK:-}" ] || python3 "$root/tools/full_tools.py" web-block "$dir"
     # After context.py, which writes the hooks: the wait cap's SessionStart hook (tools/sleepcap/setup.py).
     python3 "$root/tools/sleepcap/setup.py" claude "$dir"
     # (d27 batch275 HW) the team's ground rules in AGENTS.md (CLAUDE.md links to it), which Claude Code loads at the start
@@ -256,6 +262,7 @@ case $kind in
   grok)
     model=${6:-grok-4.7} effort=${7:-low}
     claude_settings nosandbox
+    [ -z "${POG_WEB_BLOCK:-}" ] || python3 "$root/tools/full_tools.py" web-block "$dir"   # Grok reads the same rules
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     # Run-local GROK_HOME; the owner's login must last the run plus 15 minutes (tools/grok-home.py refreshes it).
     home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" $((minutes * 60 + 900)))
@@ -284,6 +291,7 @@ case $kind in
     model=${6:-muse-spark-1.3} effort=${7:-low}
     ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
     clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c 'hooks={}'; $muse_env: profile-flags.sh
+    [ -z "${POG_WEB_BLOCK:-}" ] || clean_args="$clean_args $(python3 "$root/tools/full_tools.py" muse-web-off)"
     pane=$(new_pane)
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" \
       "exec env $muse_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
@@ -295,6 +303,8 @@ case $kind in
 esac
 [ -n "${tab:-}" ] || tab=$(herdr pane get "$pane" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(d.get('pane',d)['tab_id'])")
 herdr pane rename "$pane" "$name" >/dev/null 2>&1 || true
+# POG_WEB_BLOCK: what this harness's web tools and shell network allow, in DIR/.web-state (the launch logs it)
+[ -z "${POG_WEB_BLOCK:-}" ] || python3 "$root/tools/full_tools.py" web-state "$dir" "$kind" >/dev/null
 
 # First-run prompts we can answer: folder trust (we created it). POG_NO_WAIT=1 skips this so a team launch can start
 # every pane first and clear all prompts in one pass (tools/start-team.sh).

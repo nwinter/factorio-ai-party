@@ -104,7 +104,8 @@ def codex(d):
              'reasoning summaries\n'
              'developer_instructions = ""\n'
              'model_reasoning_summary = "concise"\n'
-             + ('web_search = "live"\n' if full else '') +
+             # POG_WEB_BLOCK (tools/full_tools.py): Codex's search takes an allowlist only, so it is off
+             + ('web_search = "disabled"\n' if os.environ.get("POG_WEB_BLOCK") else 'web_search = "live"\n' if full else '') +
              '[features]\n'
              f'multi_agent = {"true" if sub else "false"}\n'
              'skip_host_skill_discovery = true\n'

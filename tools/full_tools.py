@@ -195,7 +195,7 @@ def chain(prev):
         if not os.path.isfile(f):
             break
         up = open(f).readline().strip()
-        d = os.path.normpath(os.path.join(os.path.dirname(out[-1]), up))   # (mt277) a team's "../PREV/TEAM"
+        d = os.path.normpath(os.path.join(os.path.dirname(out[-1]), up))   # a run in parts: "../PREV/PART"
         if not up or not os.path.isdir(d) or d in out:
             break
         out.append(d)
@@ -561,6 +561,50 @@ def grok_args(d):
     return " ".join(words) + grok_sandbox(d)
 
 
+# POG_WEB_BLOCK (space-separated hosts): hosts the agents' web tools may not reach. Per harness, what each one allows:
+# Claude Code drops WebSearch (all or nothing) and denies WebFetch and the sandbox's network those hosts (web_block);
+# Codex's web_search has only an allowlist, so it is disabled (tools/clean-profile.py); Grok's web_search excludes the
+# hosts and web_fetch stays off (tools/grok-home.py, tools/profile-flags.sh); Muse has no host list, so web_search and
+# web_fetch are off (MUSE_WEB_OFF); agy has no per-workspace switch (its deny rules live in the owner's global
+# settings), so search_web, read_url_content and browser_subagent stay on. web_state writes that in DIR/.web-state.
+MUSE_WEB_OFF = "-c 'tools.web_search.mode=\"off\"' -c 'tools.web_fetch.enabled=false'"
+
+
+def web_blocked():
+    return os.environ.get("POG_WEB_BLOCK", "").split()
+
+
+def web_block(d):
+    path = os.path.join(d, ".claude", "settings.json")
+    cfg = json.load(open(path))
+    deny = cfg.setdefault("permissions", {}).setdefault("deny", [])
+    for rule in ["WebSearch"] + [f"WebFetch(domain:{h})" for h in web_blocked()]:
+        if rule not in deny:
+            deny.append(rule)
+    if cfg.get("sandbox") is not None:
+        dd = cfg["sandbox"].setdefault("network", {}).setdefault("deniedDomains", [])
+        dd += [h for h in web_blocked() if h not in dd]
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+
+
+def web_state(d, kind):
+    full, hosts = os.environ.get("POG_FULL_TOOLS") == "1", ", ".join(web_blocked()) or "none"
+    web = {"claude": (f"WebFetch with {hosts} denied" if full else "no web tools") + ", no WebSearch",
+           "codex": "web_search disabled",
+           "grok": f"web_search excluding {hosts}, web_fetch off",
+           "muse": "web_search and web_fetch off (-c options)",
+           "agy": "search_web, read_url_content and browser_subagent on (no per-workspace switch)"}.get(kind, "?")
+    net = {"claude": "shell in the sandbox (no network but the broker socket)" if os.environ.get("POG_BROKER") == "1"
+                     else "shell in the sandbox (local network only)",
+           "codex": "shell network open (--network)", "grok": "shell network open",
+           "muse": "shell network open (--sandbox-network enabled)", "agy": "shell network open"}.get(kind, "?")
+    line = f"{kind}: {web}; {net}"
+    with open(os.path.join(d, ".web-state"), "w") as f:
+        f.write(line + "\n")
+    return line
+
+
 SANDBOX_PROFILE = "pog"
 
 
@@ -580,17 +624,18 @@ def grok_sandbox(d):
     home = os.path.expanduser("~")
     deny = [os.path.join(home, ".config", "pog"), os.path.join(home, ".ssh")]
     deny += [p for p in (os.path.realpath(os.path.join(home, ".ssh")),) if p not in deny]
-    # (mt277) a multi-team run's teams keep their keys in runs/RUN/TEAM/.keys
+    # a run in parts keeps each part's keys in runs/RUN/PART/.keys
     for k in sorted(glob.glob(os.path.join(runs, "*", ".keys")) + glob.glob(os.path.join(runs, "*", "*", ".keys"))):
         if os.environ.get("POG_BROKER") == "1" or os.path.dirname(k) != run:
             deny.append(k)
-    # (mt277, private) a multi-team run (runs/RUN/TEAM/NAME): the other teams' folders and the operator's op/
-    if os.environ.get("POG_MT_TEAM") and os.path.dirname(os.path.dirname(run)) == runs:
+    # a run in parts (runs/RUN/PART/NAME): the run's other folders
+    if os.path.dirname(os.path.dirname(run)) == runs:
         top = os.path.dirname(run)
         deny += [os.path.join(top, t) for t in sorted(os.listdir(top))
                  if os.path.isdir(os.path.join(top, t)) and os.path.join(top, t) != run]
     for o in others(d):
         deny += [os.path.join(o, s) for s in PRIVATE_FILES + PRIVATE_DIRS]
+    deny += os.environ.get("POG_DENY_READ", "").split()   # more folders no agent reads (tools/launch-agent.sh)
     rw = [os.path.join(run, "team-tools"), os.path.join(home, ".grok")]
     text = (f"# Written by tools/full_tools.py (POG_FULL_TOOLS=1) for this workspace's Grok.\n"
             f"[profiles.{SANDBOX_PROFILE}]\nextends = \"workspace\"\n"
@@ -610,6 +655,12 @@ if __name__ == "__main__":
         claude(sys.argv[2])
     elif cmd == "grok-args":
         print(grok_args(sys.argv[2]))
+    elif cmd == "web-block":
+        web_block(sys.argv[2])
+    elif cmd == "web-state":
+        print(web_state(sys.argv[2], sys.argv[3]))
+    elif cmd == "muse-web-off":
+        print(MUSE_WEB_OFF)
     elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed (stdout: >> team-tools-sync.log)
         while True:
             for line in sync(sys.argv[2]):

@@ -5,7 +5,7 @@
 #   tools/mt/imac_mt.sh stop               /quit (saves over saves/mt.zip), then the server's own PID if still up
 #   tools/mt/imac_mt.sh status
 # Then: python3 tools/mt/mt_map.py ... --host imac.local --port 27475 --password-file ~/.config/pog/rcon-imac-mt.pw
-# (mt277) world `mt` for bin/fh, tools/pog.py and the broker: ~/.config/pog/rcon-mt.pw, a link to the same password
+# (mt277) world `imac2` for bin/fh, tools/pog.py and the broker: ~/.config/pog/rcon-imac2.pw, a link to the same password
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 host=${IMAC_HOST:-imac.local}
@@ -28,7 +28,7 @@ start)
   if remote "[ -s '$dir/server.pid' ] && kill -0 \$(cat '$dir/server.pid') 2>/dev/null"; then echo "already running (pid $(remote "cat '$dir/server.pid'"))" >&2; exit 3; fi
   mkdir -p "$(dirname "$pwfile")"
   [ -s "$pwfile" ] || { python3 -c 'import secrets; print(secrets.token_hex(16))' > "$pwfile"; chmod 600 "$pwfile"; }
-  [ -e "$(dirname "$pwfile")/rcon-mt.pw" ] || ln -s "$(basename "$pwfile")" "$(dirname "$pwfile")/rcon-mt.pw"
+  [ -e "$(dirname "$pwfile")/rcon-imac2.pw" ] || ln -s "$(basename "$pwfile")" "$(dirname "$pwfile")/rcon-imac2.pw"
   remote "mkdir -p '$dir/saves' '$dir/mods' '$dir/config' '$dir/data/saves' '$dir/clients'"
   rsync -a --delete --exclude tests "$mod/" "$host:$dir/mods/agent-harness_0.1.0/"
   scp -q "$root/tools/imac-mod-list.json" "$host:$dir/mods/mod-list.json"

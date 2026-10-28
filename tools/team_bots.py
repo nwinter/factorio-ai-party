@@ -4,8 +4,8 @@
 A fresh world gets one bot_create per member. A resumed save (tools/start-team.sh, POG_RESUME) already holds bots:
 those are kept, and only members the save lacks are created (a second bot_create would fail with "already exists").
 Prints one line per member: "NAME kept (alive, at x,y)" or "NAME created ...".
-(mt277, private) FORCE: a multi-team run's team (tools/mt/start-mt.sh): each bot is created in that force
-(`bot_create NAME FORCE`, mt276 part A), and a bot row that names another force is printed as a mismatch.
+FORCE: each bot is created in that force (`bot_create NAME FORCE`), and a bot row that names another force is printed
+as a mismatch; members of other forces are not listed.
 """
 import json
 import os
@@ -55,9 +55,9 @@ def ensure(rcon, names, force=None):
         for name in names:
             got = (now.get(name) or {}).get("force")
             if got != force:
-                lines.append(f"{name} FORCE MISMATCH: wanted {force}, the bots row says {got or 'no force (bot_create NAME FORCE and the row\'s force: mt276 part A)'}")
+                lines.append(f"{name} FORCE MISMATCH: wanted {force}, the bots row says {got or 'no force'}")
     extra = sorted(set(have) - set(names))
-    if extra and not force:   # a multi-team run's other teams' bots are not this team's
+    if extra and not force:
         lines.append("not in the team (left as they are): " + ", ".join(extra))
     return lines
 

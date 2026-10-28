@@ -9,10 +9,9 @@ Agents never get this tool: it runs privileged Lua. Usage:
 """
 import argparse, json, os, socket, struct, sys
 
-PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030, "imac": 27400, "mt": 27475}
-# (d27 batch279) the private copy on the iMac (tools/imac-copy.sh); (mt277) the multi-team server there
-# (tools/mt/imac_mt.sh); others: the tunnel
-HOSTS = {"imac": "imac.local", "mt": "imac.local"}
+PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030, "imac": 27400, "imac2": 27475}
+# (d27 batch279) the private copy on the iMac (tools/imac-copy.sh), and a second server there (imac2); others: the tunnel
+HOSTS = {"imac": "imac.local", "imac2": "imac.local"}
 
 
 class Rcon:

@@ -149,6 +149,10 @@ def setup(d, ensure):
                 # POG_FULL_TOOLS=1 (tools/full_tools.py): spawn_subagent and the workflow tool stay.
                 .replace("{full}", "true" if os.environ.get("POG_FULL_TOOLS") == "1" else "false")
                 .replace("{acked}", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+        # POG_WEB_BLOCK (tools/full_tools.py): hosts Grok's web_search leaves out (web_fetch stays off: profile-flags.sh)
+        block = os.environ.get("POG_WEB_BLOCK", "").split()
+        if block:
+            f.write("\n[toolset.web_search]\nexcluded_domains = [" + ", ".join(json.dumps(h) for h in block) + "]\n")
     link = os.path.join(home, "sessions")
     if not os.path.lexists(link):
         os.symlink(os.path.join(OWNER, "sessions"), link)
