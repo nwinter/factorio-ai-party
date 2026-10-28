@@ -45,8 +45,10 @@
   (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires, circuit
   settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one end of an underground pair
   with another tier replaces its other end too when that is ours, in build reach and you hold the item for it
-  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`); else it is refused naming the other end
-  and a spot within reach of both. Rails: `{item: "rail", entity: "straight-rail"
+  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`, even with none of the item left); else it
+  is refused naming the other end and a spot within reach of both. Both ends are checked before either changes: one
+  that cannot take the new tier refuses the build with nothing changed, and a second end that fails puts the first
+  back. A build out of reach walks within reach of both ends. Rails: `{item: "rail", entity: "straight-rail"
   | "curved-rail-a" | "curved-rail-b" | "half-diagonal-rail"}`; stops, locomotives and wagons build as any entity.
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.
