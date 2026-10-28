@@ -152,6 +152,12 @@
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
   returns dated last-seen memory. `inspect {position}` with nothing there lists what stands within 3 tiles (`not_at`
   says so); with a `name` that left out what stands there, the refusal names that entity. `positions`: up to 8 entities in one call (`positions_limit` says 8; more is refused; `compact: true`: one line each). What it shows:
+  - a machine (or its ghost): `recipe` and `recipe_quality`, the quality its recipe runs at (normal too; `quality` is
+    the machine's own, and a normal machine can run a legendary recipe: it takes and makes legendary items); an idle
+    furnace `previous_recipe` and `previous_recipe_quality` (a furnace's comes from its input). Compact lines put it
+    before the recipe when not normal or when they name the machine's quality (`recipe legendary NAME`, `recipe normal
+    NAME`), the rate line opens with it when not normal, and `scan` rows add `recipe_quality` with `recipe`, `status`
+    or `output`;
   - a machine: its `rate` (crafts and output per minute, net of what goes back in), `output_fill` (and `full`) and
     `output_stop`: per product its `capacity`, `delivers_up_to` (a finished craft goes out while that much or less is
     held, else waits in the machine), `full` and `idle_full_output_from`, and `blocking`: `output` (a finished craft

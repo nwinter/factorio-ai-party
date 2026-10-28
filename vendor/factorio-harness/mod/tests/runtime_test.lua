@@ -4804,7 +4804,7 @@ end)()
   -- (d20 batch122, Astra #2087: legendary engines proved by a blueprint export) quality: area rows and compact lines
   -- when not normal, a full read always
   c.quality={name='legendary'}; a.quality={name='normal'}
-  eq(call('inspect',{position=c.position,compact=true}).lines[1],'legendary assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  eq(call('inspect',{position=c.position,compact=true}).lines[1],'legendary assembling-machine-2 (1.5,4.5): health 320/350; recipe normal electronic-circuit; in: copper-cable*8')
   r=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}})
   eq(r.entities[3].quality,'legendary'); eq(r.entities[2].quality,nil)
   eq(runtime.quality_name(c),'legendary'); eq(runtime.quality_name(a),nil); eq(runtime.quality_name({}),nil)
