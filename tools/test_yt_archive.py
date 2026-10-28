@@ -311,16 +311,29 @@ def follow_ns(d, **kw):
 
 
 def follower():
+    """The follower's cases against a stand-in checkout with no merge: the gate runs this test in the main checkout
+    while its merge is open (MERGE_HEAD there), and the real checkout's state must not decide it."""
+    real = ya.REPO
+    with tempfile.TemporaryDirectory() as d:
+        ya.REPO = Path(d) / "checkout"
+        (ya.REPO / ".git").mkdir(parents=True)
+        try:
+            _follower(real)
+        finally:
+            ya.REPO = real
+
+
+def _follower(checkout):
     """(d28 batch315) The d27 rotation was a one-shot rotate that ended with the day's quota; the follower now outlives
     errors, waits out merges, runs again on new code, writes the site's list outside any checkout, and start-team's
     --start keeps one per Mac."""
     import os
     import subprocess
     # the site's list is the follower's own file in video-work, never a checkout's (tools/site-refresh.sh names it)
-    assert ya.SITE_VIDEOS.parent == ya.WORK and ya.REPO not in ya.SITE_VIDEOS.parents, ya.SITE_VIDEOS
-    assert "videos-site.json" in (ya.REPO / "tools" / "site-refresh.sh").read_text()
-    assert "yt_archive.py follow --start" in (ya.REPO / "tools" / "start-team.sh").read_text()
-    assert "yt_archive" not in (ya.REPO / "tools" / "stop-team.sh").read_text()
+    assert ya.SITE_VIDEOS.parent == ya.WORK and checkout not in ya.SITE_VIDEOS.parents, ya.SITE_VIDEOS
+    assert "videos-site.json" in (checkout / "tools" / "site-refresh.sh").read_text()
+    assert "yt_archive.py follow --start" in (checkout / "tools" / "start-team.sh").read_text()
+    assert "yt_archive" not in (checkout / "tools" / "stop-team.sh").read_text()
 
     # one bad rotate does not end the follower: the error is logged, nothing is marked handled, the same rotate runs
     # again after --retry, then shift93 up is marked
@@ -415,9 +428,14 @@ def follower():
         execs = []
         ya.code_stamp = iter(["old"] + ["new"] * 10).__next__
         ya.os.execv = lambda exe, argv: (execs.append(argv), (_ for _ in ()).throw(Stop()))
+        naps = []
+        def nap(s):  # never a loop without end: a few polls at most
+            naps.append(s)
+            if len(naps) > 3:
+                raise Stop()
         try:
             with contextlib.redirect_stdout(io.StringIO()):
-                ya.follow(follow_ns(d, argv=["follow", "--interval", "120"]), sleep=lambda s: None)
+                ya.follow(follow_ns(d, argv=["follow", "--interval", "120"]), sleep=nap)
         except Stop:
             pass
         finally:
