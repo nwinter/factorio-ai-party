@@ -17533,7 +17533,8 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   atoms not met: 0.05-0.16 ms on a fresh map, 0.04 ms average on world n's save (iMac copy). on_event marks research,
   attacks, losses, deaths, enemy kinds, asteroids, pollution attacks and landed pods; it skips damage events once
   every fight atom is met.
-- Host: fh help TOPIC prints a disclosure workspace's open entries (ref/.units/TOPIC.json, the runtime's open set);
+- Host: fh help TOPIC prints a disclosure workspace's entries less the shut ones (ref/.units/TOPIC.json, the
+  runtime's shut ids, keyed topic#key by each entry's own lead: an entry the table does not know stays open);
   fh help ACTION names a locked action's condition; a reply with `new` makes fh write describe.json again.
 - Tests: tests/d28_batch317.lua, tests/disclosure.test.ts; pog tools/test_disclosure.py (the Lua and Python
   evaluators open the same tick-0 set).

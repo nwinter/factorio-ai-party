@@ -130,9 +130,12 @@ def tick0():
 def tick0_open():
     us = json.load(open(build.MANIFEST))["units"]
     o = build.unlocked(us, set(), build.WORLD_N)
-    return us, o, {"mode": "filter", "actions": sorted(i[7:] for i in o if i.startswith("action:")),
-                   "docs": sorted(i[4:] for i in o if i.startswith("doc:")),
-                   "brief": sorted(i[6:] for i in o if i.startswith("brief:"))}
+    out = {"mode": "filter"}
+    for key, prefix in (("actions", "action:"), ("docs", "doc:"), ("brief", "brief:")):
+        ids = [u["id"] for u in us if u["id"].startswith(prefix) and not (key == "actions" and "never" in u["condition"]["any"])]
+        out[key] = sorted(i[len(prefix):] for i in ids if i in o)
+        out[key + "_shut"] = sorted(i[len(prefix):] for i in ids if i not in o)
+    return us, o, out
 
 
 def runtime_table():
@@ -154,10 +157,12 @@ local D=dofile('mod/agent-harness_0.1.0/disclosure.lua'){state=function() return
 D.operator.disclosure_set({mode='filter',world={stream=true}})
 local r=D.read(force)
 print(table.concat(r.actions,' ')) print(table.concat(r.docs,' ')) print(table.concat(r.brief,' '))
+print(table.concat(r.actions_shut,' ')) print(table.concat(r.docs_shut,' ')) print(table.concat(r.brief_shut,' '))
 """
     out = subprocess.run(["lua", "-e", script], cwd=harness, capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr
-    acts, docs, brf = out.stdout.split("\n")[:3]
+    acts, docs, brf, acts_s, docs_s, brf_s = out.stdout.split("\n")[:6]
+    assert acts_s.split() == want["actions_shut"] and docs_s.split() == want["docs_shut"] and brf_s.split() == want["brief_shut"]
     assert acts.split() == want["actions"], set(acts.split()) ^ set(want["actions"])
     assert docs.split() == want["docs"], set(docs.split()) ^ set(want["docs"])
     assert brf.split() == want["brief"], set(brf.split()) ^ set(want["brief"])

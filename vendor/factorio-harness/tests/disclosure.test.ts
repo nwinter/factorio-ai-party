@@ -16,9 +16,10 @@ test('fh help TOPIC in a disclosure run: the open entries only, as they open', (
   writeFileSync(join(dir, '.units', 'building.json'), JSON.stringify({head:'# building (`./fh help building`)\n\nRead it when.\n\n',
     items:[{id:'building#1', text:'- `build {item}`: places.\n'}, {id:'building#2', text:'- `belt_route {from, to}`: lays a belt.\n'}]}));
   const units = topicUnits(dir, 'building')!;
-  assert.equal(openTopic(units, new Set(['building#1'])), '# building (`./fh help building`)\n\nRead it when.\n\n- `build {item}`: places.\n');
-  assert.match(openTopic(units, new Set(['building#1', 'building#2'])), /belt_route/);
-  assert.match(openTopic(units, new Set()), /Nothing in this topic is open for your team yet/);
+  assert.equal(openTopic(units, new Set(['building#2'])), '# building (`./fh help building`)\n\nRead it when.\n\n- `build {item}`: places.\n');
+  assert.match(openTopic(units, new Set()), /belt_route/, 'nothing shut: everything');
+  assert.match(openTopic(units, new Set(['building#1', 'building#2'])), /Nothing in this topic is open for your team yet/);
+  assert.match(openTopic(units, new Set(['building#9'])), /build \{item\}[\s\S]*belt_route/, 'an id the runtime shuts that is not here changes nothing');
   assert.equal(topicUnits(dir, 'analysis'), undefined, 'a plain workspace: the file as it is');
   assert.equal(topicUnits(dir, '../x'), undefined);
 });

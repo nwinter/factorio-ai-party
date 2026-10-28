@@ -41,7 +41,13 @@ The rules stay:
   - `disclosure {force?, ids?}`: per force rev, world flags, open counts, met atoms with ticks, the newest 8
     unlocks, next thresholds, and with ids the open names and ids.
 - **The host's read:** `disclosure {}`, an action marked never. It gives the caller's force's open action names,
-  shut arguments by action, open reference entry ids (topic#n) and brief item ids (file#n). fh help TOPIC uses it.
+  shut arguments by action, and the open and shut reference entry ids (topic#key) and brief item ids (file#key).
+  fh help TOPIC and the brief show everything not shut.
+- **Ids:** an entry or brief item is keyed by its own lead: `building#belt_route` for an entry that starts with
+  `belt_route`, else its first four words (`moving-items#game-rule-ghosts`).
+  - An edit elsewhere in a file keeps every other id.
+  - An action, entry or item that the runtime's table does not know yet (added by a later batch) stays open until
+    build.py is run again and rules.py gives it a condition. Readers use the shut lists.
 - **The inventory:** `python3 tools/disclosure/build.py [DESCRIBE_JSON]`.
   - It writes tools/disclosure/manifest.json and the runtime's table,
     vendor/factorio-harness/mod/agent-harness_0.1.0/disclosure_units.lua, in which each condition's with: atoms

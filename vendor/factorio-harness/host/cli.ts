@@ -2316,7 +2316,7 @@ async function main() {
       const units = topicUnits(refDir()!, positionals[1]!)!;
       const read = await execute('disclosure',{});
       const r = read.ok ? read.result : undefined;
-      process.stdout.write(r?.mode === 'filter' ? openTopic(units, new Set([...(r.docs ?? []), ...(r.brief ?? [])]))
+      process.stdout.write(r?.mode === 'filter' ? openTopic(units, new Set([...(r.docs_shut ?? []), ...(r.brief_shut ?? [])]))
         : topicText(refDir()!, positionals[1]!) ?? '');
     } else if (command === 'help') {
       const reply = await helpDescribe();

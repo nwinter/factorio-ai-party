@@ -103,7 +103,8 @@ def disclosure_open():
     d = d.get("result", d)
     if d.get("mode") != "filter":
         return None
-    return {"actions": set(d.get("actions") or []), "docs": set(d.get("docs") or []), "brief": set(d.get("brief") or [])}
+    # what is shut: an action, entry or item the runtime's table does not know yet (added since) stays open
+    return {k: set(d.get(k) or []) for k in ("actions_shut", "docs_shut", "brief_shut")}
 
 
 def _disclosure():
@@ -123,7 +124,7 @@ def shut_items(text, open_):
     """The core's text less the brief items not open for the team (PLAYBOOK.md, team.md, compact.md as the manifest
     numbers them; a filled placeholder keeps its item)."""
     for f, n, item in _disclosure().brief_items():
-        if f in ("PLAYBOOK.md", "team.md", "compact.md") and f"{f}#{n}" not in open_["brief"]:
+        if f in ("PLAYBOOK.md", "team.md", "compact.md") and f"{f}#{n}" in open_["brief_shut"]:
             text = text.replace(item, "", 1)
     return re.sub(r"\n{3,}", "\n\n", text)
 
@@ -133,7 +134,7 @@ def open_index(open_):
     idx = index_text()
     lines = []
     for topic, scope, cmds in index():
-        names = [c for c in cmds if c.replace("./", "").replace(" NAME", "").replace(" ", "_") in open_["actions"]]
+        names = [c for c in cmds if c.replace("./", "").replace(" NAME", "").replace(" ", "_") not in open_["actions_shut"]]
         if topic and names:
             lines.append(f"- `{topic}`, {scope}: " + ", ".join(f"`{c}`" for c in names) + ".")
     return idx.split("\n- ", 1)[0].rstrip("\n") + "\n\n" + "\n".join(lines) + "\n"
@@ -172,7 +173,7 @@ def topic_files(player, open_=None):
 
 def topic_units(player, open_=None):
     """{topic: (text, units)}: the topic file, and its head and items with their ids for fh help in a disclosure run
-    (ref/.units/TOPIC.json; host/reference.ts): topic#n as the manifest numbers them, spaceage.md#n for Space Age's head."""
+    (ref/.units/TOPIC.json; host/reference.ts): topic#key as the manifest names them, spaceage.md#key for Space Age's head."""
     out = {}
     when_of = whens()
     sa_on = os.environ.get("POG_SPACE_AGE") == "1"
@@ -191,9 +192,9 @@ def topic_units(player, open_=None):
             items = []
             if topic == "space-age" and sa_on:
                 items += [(f"spaceage.md#{n}", t if t.startswith("- ") else t + "\n")
-                          for f, n, t in _disclosure().brief_items() if f == "spaceage.md" and n > 1]
+                          for f, n, t in _disclosure().brief_items() if f == "spaceage.md" and not t.startswith("#")]
             items += [(f"{topic}#{n}", t) for n, t in _disclosure().topic_items(topic)]
-            body = "".join(t for i, t in items if i in open_["docs"] or i in open_["brief"]).rstrip("\n")
+            body = "".join(t for i, t in items if i not in open_["docs_shut"] and i not in open_["brief_shut"]).rstrip("\n")
         text = head + body + "\n"
 
         def done(x):

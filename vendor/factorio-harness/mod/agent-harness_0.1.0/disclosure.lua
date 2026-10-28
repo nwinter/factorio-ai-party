@@ -589,7 +589,8 @@ return function(api)
 
   -- disclosure {} (the host: fh help TOPIC, the brief): the caller's force's open set.
   M.schema.disclosure = {returns='the harness\'s own read for fh help and the brief: mode, rev, and with mode filter the '
-    .. 'open action names, argument names by action, reference entry ids (topic#n) and brief item ids (file#n)'}
+    .. 'open and the shut action names, shut argument names by action, and open and shut reference entry ids (topic#key) '
+    .. 'and brief item ids (file#key)'}
   function M.read(force)
     local mode = M.mode()
     local out = {mode=mode, refuse=root().refuse ~= false}
@@ -607,6 +608,16 @@ return function(api)
     end
     out.args_locked = out.args
     out.args = nil
+    -- what is shut (the host and the brief show everything else: an entry added since this table was built stays open)
+    out.actions_shut, out.docs_shut, out.brief_shut = {}, {}, {}
+    for name, c in pairs(U.actions) do
+      local never = false
+      for _, x in ipairs(c.a) do if x == 'never' then never = true end end
+      if not o.actions[name] and not never then out.actions_shut[#out.actions_shut+1] = name end
+    end
+    for id in pairs(U.docs) do if not o.docs[id] then out.docs_shut[#out.docs_shut+1] = id end end
+    for id in pairs(U.brief) do if not o.brief[id] then out.brief_shut[#out.brief_shut+1] = id end end
+    table.sort(out.actions_shut); table.sort(out.docs_shut); table.sort(out.brief_shut)
     out.line = M.counts_line(force)
     return out
   end

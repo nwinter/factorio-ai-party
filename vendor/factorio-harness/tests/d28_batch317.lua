@@ -145,7 +145,11 @@ local r=D.read(player)
 eq(r.mode,'filter'); assert(#r.actions>40 and #r.docs>40 and #r.brief>40)
 local docs={}
 for _,id in ipairs(r.docs) do docs[id]=true end
-assert(docs['moving-items#1'],'transfer\'s entry'); assert(r.args_locked.build,'build has shut arguments')
+assert(docs['moving-items#transfer'],'transfer\'s entry')
+local shut={}
+for _,id in ipairs(r.docs_shut) do shut[id]=true end
+assert(shut['space-age#platform_create'] and not shut['moving-items#transfer'] and not shut['building#belt_route'])
+assert(#r.actions_shut>100 and #r.brief_shut>0); assert(r.args_locked.build,'build has shut arguments')
 -- the operator's read
 local op=D.operator.disclosure({}).forces.player
 has(op.line,'player: '); assert(op.open.actions>50 and #op.met>5 and #op.newest>=1)

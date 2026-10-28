@@ -71,14 +71,27 @@ def cond(atoms):
             "any": [a for a in atoms if not a.startswith("world:")]}
 
 
+def item_key(text, seen):
+    """An item's id within its file, from its own lead so an edit elsewhere keeps it: the command it starts with
+    (belt_route), else its first four words (game-rule-ghosts); a second item of the same lead gets -2, -3, ..."""
+    flat = " ".join(text.split())
+    m = re.match(r"(?:- )?`(?:\./fh (?:call )?)?([a-z][a-z_]*)", flat)
+    base = m.group(1) if m else "-".join(re.findall(r"[a-z0-9]+", flat.lower())[:4]) or "item"
+    key, k = base, 2
+    while key in seen:
+        key, k = f"{base}-{k}", k + 1
+    seen.add(key)
+    return key
+
+
 def topic_items(topic):
-    """[(n, text)]: each top-level item of agent/ref/TOPIC.md, numbered from 1 (the ids topic#n)."""
+    """[(key, text)]: each top-level item of agent/ref/TOPIC.md (ids topic#key, item_key)."""
     text = open(os.path.join(brief.REF, topic + ".md")).read()
-    out = []
+    out, seen = [], set()
     for item in re.split(r"\n(?=- )", "\n" + text):
         item = item.strip("\n")
         if item.startswith("- "):
-            out.append((len(out) + 1, item + "\n"))
+            out.append((item_key(item, seen), item + "\n"))
     return out
 
 
@@ -152,7 +165,7 @@ def units(describe):
 
 
 def brief_items():
-    """[(file, n, text)]: each top-level bullet or paragraph of the brief's files (a heading goes with what follows)."""
+    """[(file, key, text)]: each top-level bullet, paragraph or heading of the brief's files (ids file#key, item_key)."""
     out = []
     for f in rules.BRIEF:
         path = os.path.join(brief.REF if f.startswith("ref/") else brief.AGENT, f.replace("ref/", ""))
@@ -165,7 +178,8 @@ def brief_items():
             for piece in re.split(cut, block):
                 if piece.strip():
                     parts.append(piece.rstrip("\n") + "\n")
-        out += [(f, n + 1, p) for n, p in enumerate(p for p in parts if p.strip())]
+        seen = set()
+        out += [(f, item_key(p, seen), p) for p in parts if p.strip()]
     return out
 
 
