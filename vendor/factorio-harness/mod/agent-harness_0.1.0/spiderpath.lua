@@ -304,8 +304,10 @@ return function(api)
     if #lines == 0 then st.plans[spider.unit_number] = nil; return nil, shared[1] and shared or nil end
     local copy = {}
     for i, q in ipairs(targets) do copy[i] = {x=q.x, y=q.y} end
+    -- (d28 batch310 item 5) claim: the route's claim number when asked (spiderroute.claim); a result after another call
+    -- set or cleared the route is not written
     local plan = {seq=st.seq, targets=copy, segs=segs, wait=wait, starts=starts, goals=goals, hops={}, pending=pending,
-      by=rec.by, owner=rec.owner, tick=game.tick, via=rec.from and {x=rec.from.x, y=rec.from.y} or nil}
+      by=rec.by, owner=rec.owner, tick=game.tick, via=rec.from and {x=rec.from.x, y=rec.from.y} or nil, claim=rec.claim}
     if pending == 0 and reused then
       st.plans[spider.unit_number] = nil
       local route, notes = M.assemble(plan, surface)  -- (defined below)
