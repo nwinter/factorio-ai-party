@@ -83,6 +83,8 @@ return function(api)
     st.events[#st.events+1] = {id=st.eseq, text=text, to=to, unit=unit, tick=game.tick}
     while #st.events > 64 do table.remove(st.events, 1) end
   end
+  -- (d28 batch310 PS) a line to an agent in team alerts (spiderpair.lua's)
+  M.say = event
   local function points(a)
     if type(a) == 'table' and (a.x ~= nil or a[1] ~= nil and type(a[1]) == 'number') then return {api.position(a)} end
     assert(type(a) == 'table' and #a >= 1 and #a <= M.MAX_TARGETS, 'go_to is {x,y} or a list of 1..' .. M.MAX_TARGETS .. ' of them')
@@ -101,6 +103,46 @@ return function(api)
     return st.setseq
   end
   function M.seq(unit) local s = store().sets; return s and s[unit] and s[unit].seq or nil end
+  function M.set_of(unit) local s = store().sets; return s and s[unit] or nil end
+  -- (d28 batch310 PS) a pair's lead waits for its follower: its route kept aside (cleared: it stops within 3-4 tiles) and
+  -- given back; a go_to, clear or retreat on it drops the hold. -> true when held (it has an entry: sent by go_to).
+  function M.hold(spider, why)
+    local t = store().spiders[spider.unit_number]
+    if not t then return false end
+    if not t.held then
+      t.held = {route=route(spider), why=why, tick=game.tick}
+      spider.autopilot_destination = nil
+    end
+    return true
+  end
+  function M.resume(spider)
+    local t = store().spiders[spider.unit_number]
+    if not (t and t.held) then return end
+    local r = t.held.route
+    t.held = nil
+    if api.path then api.path.write(spider, r) else for _, q in ipairs(r) do spider.add_autopilot_destination(q) end end
+    local now = route(spider)
+    t.moved, t.best = game.tick, nil
+    if now[1] then t.near, t.target = dist(spider.position, now[1]), {x=now[1].x, y=now[1].y} end
+  end
+  function M.held(spider) local t = store().spiders[spider.unit_number]; return t and t.held ~= nil or false end
+  function M.retreated(spider) local t = store().spiders[spider.unit_number]; return t and t.retreated or nil end
+  -- A pair's follower: an entry its guard reads as any spidertron's (by: the agent whose standing retreat_guard
+  -- watches it), sampled by the pair (paired) until released.
+  function M.adopt(spider, by, index, pid)
+    local st = store()
+    local old = st.spiders[spider.unit_number]
+    local h0, s0 = fractions(spider)
+    local p = {x=spider.position.x, y=spider.position.y}
+    st.spiders[spider.unit_number] = {by=by, idx=index, tick=game.tick, pos=p, near=0, moved=game.tick, target=p, h0=h0, s0=s0, paired=pid,
+      trail=old and old.trail or nil}
+  end
+  -- Released: sampled as any spidertron sent by go_to again (its route cleared first when clear).
+  function M.unadopt(spider, clear)
+    local t = store().spiders[spider.unit_number]
+    if t then t.paired = nil end
+    if clear then spider.autopilot_destination = nil end
+  end
   -- The call: go_to (with mode) or clear. -> the reply's facts. index: the sender's player index (its standing
   -- retreat_guard); own: the go_to's own retreat cfg, or false for none (retreat: false).
   function M.set(spider, a, by, index, own)
@@ -119,6 +161,12 @@ return function(api)
       local rec = lock.rec
       error(string.format('spidertron #%d is held on its retreat (%s %s ago: %s; its route became %s): go_to and clear are refused until re-armed; retreat_guard {to, health_below} again, retreat_guard {clear: true}, or a go_to with its own retreat {to, health_below} re-arms it',
         spider.unit_number, rec.guard, ago(game.tick - rec.tick), rec.why, rec.route_line), 0)
+    end
+    -- (d28 batch310 PS) a lead waiting for its follower: its route given back first (the call works on it)
+    local held = st.spiders[spider.unit_number] and st.spiders[spider.unit_number].held
+    if held then
+      st.spiders[spider.unit_number].held = nil
+      if api.path then api.path.write(spider, held.route) end
     end
     local before = route(spider)
     if a.clear then
@@ -172,6 +220,8 @@ return function(api)
     if a.go_to ~= nil and #r > 0 and api.path and not out.unlanded then
       -- (d28 batch305 NR) a stored route serves a crossing (read again first; reuse: false asks the pathfinder)
       local prec = {owner='route', by=by, reuse=a.reuse ~= false, route=a.route}
+      -- (d28 batch310 PS) a pair's lead: planned for the shorter reach of the two (nil: its own)
+      if M.pair then prec.gap = M.pair.gap(spider) end
       local ok, lines, shared, now = pcall(api.path.plan, spider, r, prec)
       -- the stored routes it takes: dropped if it stalls on them (tick)
       local t1 = st.spiders[spider.unit_number]
@@ -185,13 +235,20 @@ return function(api)
         out.water.note = 'its route goes round the water now, by stored routes read again in this call (no path asked)'
       end
     end
+    -- (d28 batch310 PS) a spidertron of a pair: the lead's go_to moves both, its clear stops both; the follower's ends it
+    if M.pair then
+      local okp, pl = pcall(M.pair.on_set, spider, a, by)
+      if okp and pl then out.pair = pl elseif not okp then out.pair = {error=tostring(pl)} end
+    end
     return out
   end
   -- (d24 batch191) the paths of a plan are in: its route goes round the water (unless it was set again since).
   -- (d28 batch305 NR) quiet: written in the go_to's own call (stored routes, no path asked): its reply says it, no alert.
   function M.routed(rec, plan, spider, pts, notes, quiet)
     local unit = spider.unit_number
-    local r = route(spider)
+    -- (d28 batch310 PS) a lead waiting for its follower: the path goes into its route kept aside
+    local held = store().spiders[unit] and store().spiders[unit].held
+    local r = held and held.route or route(spider)
     local last = plan.targets[#plan.targets]
     if #r == 0 or dist(r[#r], last) > 0.5 then return end
     local found = false
@@ -203,10 +260,17 @@ return function(api)
       return
     end
     if t0 then t0.no_path = not found and table.concat(notes, '; ') or nil end
-    local err = api.path.write(spider, pts)
-    local now = route(spider)
+    local err
+    if held then
+      held.route = {}
+      for i, q in ipairs(pts) do held.route[i] = {x=q.x, y=q.y} end
+    else
+      err = api.path.write(spider, pts)
+    end
+    local now = held and held.route or route(spider)
     local t = store().spiders[unit]
     if t and #now > 0 then t.near, t.best, t.target, t.moved = dist(spider.position, now[1]), dist(spider.position, now[1]), {x=now[1].x, y=now[1].y}, game.tick end
+    if M.pair then pcall(M.pair.routed, spider) end
     if quiet then return end
     -- (d26 batch243) a back-off's plan with no path found: its route goes back there and on, said as such
     event(string.format(found and 'spidertron #%d: its route goes round the water now: %s%s%s' or 'spidertron #%d: no path round the water from its back-off spot either; its route: %s%s%s',
@@ -282,6 +346,7 @@ return function(api)
     end
     return nil
   end
+  M.ahead = ahead
   -- The route and, when stalled, the stall: {route, route_line, stalled?}. A spidertron with a route that nothing samples
   -- yet (sent before, or by a player) is sampled from this read on, `by` told of a stall (sampling: since when).
   function M.facts(spider, by, index)
@@ -296,6 +361,10 @@ return function(api)
       out.sampling = string.format('moving or sampled under %d s: last progress %s ago', math.floor(M.STALL / 60), ago(game.tick - t.moved))
     end
     if t and t.retreated then out.retreated = t.retreated end
+    -- (d28 batch310 PS) its pair
+    local pr = M.pair and M.pair.of(spider.unit_number)
+    if pr then out.pair = M.pair.line(pr) end
+    if t and t.held then out.waiting = 'its route is kept aside while it waits ' .. t.held.why end
     -- (d26 batch243) what it did on its own, and whether a path is being asked or none was found
     if t and t.tries and #t.tries > 0 then out.recovery = t.tries end
     if api.path and api.path.pending and api.path.pending(spider.unit_number) then out.path = 'a path round the water is being asked'
@@ -360,6 +429,7 @@ return function(api)
       if okp and lines then water = lines[1] .. ': a path round the water was requested (the route becomes it when it comes)' end
     end
     t.rerouted, t.recovered, t.tries = nil, nil, nil
+    t.held = nil  -- (d28 batch310 PS) a lead waiting for its follower retreats at once; its route kept aside is dropped
     local parts = {}
     for i, d in ipairs(before) do parts[i] = at(d) end
     local rec = {spidertron=e.name, unit_number=unit, why=info.why, from=info.from, health=info.health, shield=info.shield, to=cfg.to,
@@ -441,7 +511,10 @@ return function(api)
     for unit, t in pairs(st.spiders) do
       local e = game.get_entity_by_unit_number(unit)
       local r = e and e.valid and route(e) or {}
-      if #r == 0 then
+      -- (d28 batch310 PS) a pair's follower is sampled by the pair; a lead waiting for it makes no progress by design
+      if t.paired or t.held then
+        if t.held then t.moved = game.tick end
+      elseif #r == 0 then
         st.spiders[unit] = nil
         -- (d26 batch243 review) its arrival said to the sender: a go_to replied at once and nothing said it got there
         local last = t.last_target
@@ -525,9 +598,21 @@ return function(api)
     local e = action.spider
     if not (e and e.valid) then return 'destroyed' end
     local st = store()
+    -- (d28 batch310 PS) a pair's lead: arrived once both have; its follower stalled (the pair split): stalled
+    local walking = false
+    if action.pair and M.pair then
+      local o = M.pair.watch(action)
+      if o == 'arrived' or o == 'stalled' then
+        local done = st.done and st.done[action.unit]
+        if done and done.set_tick == action.set_tick then action.done = done end
+        return o
+      end
+      walking = o == 'walking'
+    end
     local done = st.done and st.done[action.unit]
     if done and done.set_tick == action.set_tick then
       action.done = done
+      if done.arrived and walking then return nil end
       return done.arrived and 'arrived' or 'route_emptied'
     end
     local s = st.sets and st.sets[action.unit]
@@ -565,6 +650,8 @@ return function(api)
       if t.no_path then last.no_path = t.no_path end
     end
     local d = action.done
+    if action.pair and M.pair then pcall(M.pair.finish, action, last) end
+    if last.stalled_one then return end
     if outcome == 'arrived' and d then
       last.why = string.format('arrived at %s (its route ended at %s)', at(d.at), at(d.target or action.target))
     elseif outcome == 'stalled' or outcome == 'unreachable' then
@@ -629,6 +716,11 @@ return function(api)
       if e and e.valid then
         out[#out+1] = string.format('spidertron #%d at %s: %s; %s', unit, at(e.position), route_line(route(e)), retreat_text(rec))
       end
+    end
+    -- (d28 batch310 PS) its pairs and asks
+    if M.pair then
+      local okp, pl = pcall(M.pair.mine, name)
+      for _, l in ipairs(okp and pl or {}) do out[#out + 1] = l end
     end
     table.sort(out)
     return #out > 0 and out or nil
