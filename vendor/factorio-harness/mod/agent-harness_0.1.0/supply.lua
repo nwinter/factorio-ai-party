@@ -404,7 +404,8 @@ return function(api)
     local characters = {}
     for _, ag in ipairs(api.agents and try(api.agents) or {}) do
       local c = try(function() local pl = api.lookup(ag.index); return pl and pl.character end)
-      if c and c.valid and c.surface == surface then characters[#characters+1] = {name=ag.name, c=c} end
+      -- (mt276) the scanned force's characters only
+      if c and c.valid and c.surface == surface and (c.force == nil or c.force == force) then characters[#characters+1] = {name=ag.name, c=c} end
     end
     local function owner_label(e)
       if e.type == 'character' then

@@ -312,9 +312,9 @@ return function(api)
   end
   -- Losses since `since` near the points (within LOSS_NEAR tiles of an
   -- incident's box, same surface) or inside one of the areas.
-  local function losses_near(since, points, areas)
+  local function losses_near(since, points, areas, p)
     local out = {}
-    for _, i in ipairs(api.losses and api.losses() or {}) do
+    for _, i in ipairs(api.losses and api.losses(p) or {}) do
       local last = i.last or i.first or 0
       local b = i.box
       if last > since and b then
@@ -355,7 +355,7 @@ return function(api)
       lines[#lines+1] = #open == 0 and 'open alerts in your claims: none'
         or string.format('open alerts in your claims: %d: %s%s', #open, table.concat(open, '; ', 1, math.min(3, #open)), #open > 3 and '; ...' or '')
     end
-    local lost = losses_near(game.tick - r.minutes * MINUTE, r.points, areas)
+    local lost = losses_near(game.tick - r.minutes * MINUTE, r.points, areas, p)
     if #lost == 0 then lines[#lines+1] = 'losses near your work: none'
     else
       local total, shown = 0, {}
@@ -412,7 +412,7 @@ return function(api)
     lines[1] = string.format('retro: previous shift (%s of game time): research done: %s%s', ago(to - from),
       #names > 0 and table.concat(shown, ', ') or 'none', #names > #shown and string.format(' (+%d more: research_done)', #names - #shown) or '')
     local lost, total, by_name = {}, 0, {}
-    for _, i in ipairs(api.losses and api.losses() or {}) do
+    for _, i in ipairs(api.losses and api.losses(p) or {}) do
       if (i.last or i.first or 0) > from and (i.first or 0) <= to then
         lost[#lost+1] = i; total = total + i.total
         for name, n in pairs(i.names or {}) do by_name[name] = (by_name[name] or 0) + n end

@@ -74,6 +74,8 @@ return function(api)
     local r = by[pl.index]
     if not r then r = {minutes={}, workers={}, seq=0}; by[pl.index] = r end
     r.name = pl.name
+    -- (mt276) the platform's force (nil: player)
+    if r.force == nil then local okf, fn = pcall(function() return pl.force.name end); r.force = okf and fn ~= 'player' and fn or false end
     -- (d22 batch110 BT1) no closure a call: rec runs at every hit
     local ok, sn = pcall(surface_name, pl)
     r.surface = ok and sn or r.surface
@@ -629,10 +631,11 @@ return function(api)
   -- status alerts.platform_hits: per platform hit after `since` (whole
   -- minutes, at most the last 10): {platform, surface, hits, damage,
   -- entities, by, last_tick}, most recent first.
-  function M.rows(since)
+  -- (mt276) fname: that force's platforms only
+  function M.rows(since, fname)
     local out = {}
     for _, r in pairs(store().by) do
-      if r.last_hit and r.last_hit > since then
+      if r.last_hit and r.last_hit > since and (not fname or (r.force or 'player') == fname) then
         local x = {hits=0, damage=0, entities={}, by={}}
         for m, b in pairs(r.minutes) do
           if m >= math.floor(since / 3600) then

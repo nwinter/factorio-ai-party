@@ -343,9 +343,11 @@ return function(api)
     local fresh = told == nil
     told = told or {}
     local out, kept = {}, {}
+    local fname = try(function() return p.force.name end) or 'player'
     for _, c in ipairs(st.cuts) do
       local age = game.tick - c.tick
-      if told[c.id] then kept[c.id] = true
+      -- (mt276) another force's cut is not told
+      if told[c.id] or (c.force or 'player') ~= fname then kept[c.id] = true
       elseif age <= KEEP and not (fresh and age > FIRST) then
         if #out < LINES then out[#out+1] = M.line(c, p.surface and p.surface.name); kept[c.id] = true end
       else kept[c.id] = true end
@@ -395,10 +397,11 @@ return function(api)
     return out
   end
   -- status alerts: every cut after since.
-  function M.since(since, reader)
+  -- (mt276) fname: that force's cuts only
+  function M.since(since, reader, fname)
     local st = api.state().powercut
     local out = {}
-    for _, c in ipairs(st and st.cuts or {}) do if c.tick > since then out[#out+1] = M.line(c, reader) end end
+    for _, c in ipairs(st and st.cuts or {}) do if c.tick > since and (not fname or (c.force or 'player') == fname) then out[#out+1] = M.line(c, reader) end end
     return #out > 0 and out or nil
   end
 

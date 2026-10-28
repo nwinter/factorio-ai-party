@@ -61,6 +61,10 @@ return function(api)
   end
   -- One line of text, cut to `max` bytes on a UTF-8 boundary; never fails.
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (mt276) records of the reader's force only (force nil: the player force); an attack group: seen by that force
+  local function fname_of(p) local ok, n = pcall(function() return p.force.name end); return ok and n or 'player' end
+  local function ours(v, fname) return (v.force or 'player') == fname end
+  local function sees(g, fname) if g.seen then return g.seen[fname] == true end return fname == 'player' end
   -- (d19 batch41 A4) a text cut for a line ends in '...', so a reader sees it was cut.
   local function clip(text, max)
     text = tostring(text):gsub('[%c]+', ' ')
@@ -2449,13 +2453,14 @@ return function(api)
     -- told about comes again, as "continues" with its totals, only after
     -- REPEAT_ATTACK; h.attacks holds what each agent was shown (id -> tick).
     local areas, told, shown = {}, h.attacks or {}, {}
+    local fname = fname_of(p)
     for key, v in pairs(s.damage or {}) do
-      if v.id then shown[v.id] = told[v.id] end
+      if v.id and ours(v, fname) then shown[v.id] = told[v.id] end
       local new
       if v.id and told[v.id] then new = v.last > told[v.id] and game.tick - told[v.id] >= REPEAT_ATTACK
       else new = fresh(v, v.last) end
       -- An area kept from before a hot deploy has no id or point until its next hit.
-      if new and v.damage > 0 and v.id and v.at then areas[#areas+1] = {key=key, v=v} end
+      if new and v.damage > 0 and v.id and v.at and ours(v, fname) then areas[#areas+1] = {key=key, v=v} end
     end
     table.sort(areas, function(x, y) return x.v.last > y.v.last end)
     for n, area in ipairs(areas) do
@@ -2466,17 +2471,19 @@ return function(api)
     -- Only incidents still kept are remembered.
     h.attacks = next(shown) and shown or nil
     if api.news_lines then
-      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS, p.surface and p.surface.name)) do lines[#lines+1] = line end
+      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS, p.surface and p.surface.name, fname)) do lines[#lines+1] = line end
       h.news_seq = s.alert_seq or 0
     end
     local groups = 0
     for k = #(s.attack_groups or {}), 1, -1 do
       local g = s.attack_groups[k]
       if not fresh(g, g.tick) or groups >= 2 then break end
-      groups = groups + 1
-      local on = g.surface and p.surface and g.surface ~= p.surface.name and ' on ' .. g.surface or ''
-      lines[#lines+1] = string.format('enemy group of %d gathered%s at (%d,%d)%s, %s ago', g.size, on, g.position.x, g.position.y,
-        g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '', ago(game.tick - g.tick))
+      if sees(g, fname) then
+        groups = groups + 1
+        local on = g.surface and p.surface and g.surface ~= p.surface.name and ' on ' .. g.surface or ''
+        lines[#lines+1] = string.format('enemy group of %d gathered%s at (%d,%d)%s, %s ago', g.size, on, g.position.x, g.position.y,
+          g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '', ago(game.tick - g.tick))
+      end
     end
     for _, line in ipairs(losses or {}) do lines[#lines+1] = line end
     while #lines > MAX_ALERT_LINES do table.remove(lines) end

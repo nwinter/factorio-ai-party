@@ -23,7 +23,8 @@ return function(api)
     local e = event.entity
     if not (e and e.valid and e.unit_number) then return end
     local force = e.force
-    if not (force and force.name == 'player') then return end
+    -- (mt276) every team's entities, each kept with its force (a reader sees its own force's)
+    if not (force and force.name ~= 'enemy' and force.name ~= 'neutral') then return end
     local pos = e.position
     if not force.is_chunk_visible(e.surface, {x=math.floor(pos.x / 32), y=math.floor(pos.y / 32)}) then return end
     local m = store()
@@ -33,7 +34,7 @@ return function(api)
       local old = m.ring[m.next]
       if old then m.by[old] = nil end
       m.ring[m.next] = k; m.next = m.next % ENTITIES + 1
-      rec = {name=e.name, surface=e.surface.name, x=pos.x, y=pos.y, rows={}}
+      rec = {name=e.name, surface=e.surface.name, x=pos.x, y=pos.y, rows={}, force=force.name ~= 'player' and force.name or nil}
       m.by[k] = rec
     end
     local c = event.cause
@@ -88,9 +89,10 @@ return function(api)
     local centre = a.position and api.position(a.position) or p.position
     local radius = api.integer(a.radius, 8, 1, 64, 'radius')
     local surface = p.surface.name
+    local fname = try(function() return p.force.name end) or 'player'
     local list = {}
     for unit, rec in pairs(store().by) do
-      if rec.surface == surface and (rec.x - centre.x) ^ 2 + (rec.y - centre.y) ^ 2 <= radius * radius and #rec.rows > 0 then
+      if rec.surface == surface and (rec.force or 'player') == fname and (rec.x - centre.x) ^ 2 + (rec.y - centre.y) ^ 2 <= radius * radius and #rec.rows > 0 then
         list[#list+1] = {unit=unit, rec=rec, last=rec.rows[#rec.rows].last}
       end
     end

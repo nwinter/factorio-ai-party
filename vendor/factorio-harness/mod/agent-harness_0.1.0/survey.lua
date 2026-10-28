@@ -102,10 +102,17 @@ return function(api)
 
   -- Hand work log: per-minute buckets of items the character fed into
   -- entities, collected from machines, and started crafting.
-  function M.log_hand(kind,name,count)
+  -- (mt276) one ledger per force (fname; the player force's stays hand_log)
+  local function hand_log(fname)
+    local st=api.state()
+    if fname==nil or fname=='player' then st.hand_log=st.hand_log or {}; return st.hand_log end
+    st.hand_log_teams=st.hand_log_teams or {}
+    st.hand_log_teams[fname]=st.hand_log_teams[fname] or {}
+    return st.hand_log_teams[fname]
+  end
+  function M.log_hand(kind,name,count,fname)
     if count<=0 then return end
-    local log=api.state().hand_log or {}
-    api.state().hand_log=log
+    local log=hand_log(fname)
     local minute=math.floor(game.tick/MINUTE)
     local bucket=log[minute]
     if not bucket then
@@ -114,10 +121,10 @@ return function(api)
     end
     bucket[kind][name]=(bucket[kind][name] or 0)+count
   end
-  local function hand_totals()
+  local function hand_totals(fname)
     local out={fed={},collected={},crafted={}}
     local minute=math.floor(game.tick/MINUTE)
-    for m,bucket in pairs(api.state().hand_log or {}) do
+    for m,bucket in pairs(hand_log(fname)) do
       if m>minute-HAND_MINUTES then
         for kind,items in pairs(bucket) do
           for name,n in pairs(items) do out[kind][name]=(out[kind][name] or 0)+n end
@@ -132,9 +139,9 @@ return function(api)
   end
   -- Share of the last 10 minutes' factory flow that went through the hands:
   -- fed against consumed, collected and crafted against produced.
-  local function hand_line(stats)
+  local function hand_line(stats,fname)
     local ten=defines.flow_precision_index.ten_minutes
-    local totals,parts=hand_totals(),{}
+    local totals,parts=hand_totals(fname),{}
     for _,spec in ipairs{{'fed','output'},{'collected','input'},{'crafted','input'}} do
       local rows={}
       for name,n in pairs(totals[spec[1]]) do
@@ -512,7 +519,7 @@ return function(api)
     local factory={belt_ends=belt_ends,science=#science>0 and table.concat(science,', ')..' /min (1m|10m)' or nil,
       research=research_line(force,warnings,lab_count),
       plates=#plates>0 and table.concat(plates,', ')..' /min (1m|10m)' or nil,
-      hand=hand_line(stats)}
+      hand=hand_line(stats,force and force.name)}
     if end_positions and #end_positions>0 then detail.belt_ends=end_positions end
     return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings,lists=lists,list_counts=counts,
       digest={tick=game.tick,machines=machines,fuel=fuel,belts={ends=#b.ends,unpaired=#b.unpaired,misdirected=#b.stuck}}}

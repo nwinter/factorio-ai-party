@@ -21,9 +21,13 @@ return function(api)
     for i, v in ipairs(list) do if i <= (n or 4) then parts[i] = v[2] .. ' ' .. v[1] end end
     return table.concat(parts, ', ') .. (#list > (n or 4) and ', ...' or '')
   end
+  -- (mt276) records of the reader's force only (force nil: the player force); an attack group: seen by that force
+  local function fname_of(p) local ok, n = pcall(function() return p.force.name end); return ok and n or 'player' end
+  local function ours(v, fname) return (v.force or 'player') == fname end
+  local function sees(g, fname) if g.seen then return g.seen[fname] == true end return fname == 'player' end
   local function reads() local s = api.state(); s.alert_digest_read = s.alert_digest_read or {}; return s.alert_digest_read end
   -- The news after since, by surface and place: {key -> {surface, cx, cy, last, attacks, losses, groups}}.
-  local function gather(since, surface)
+  local function gather(since, surface, fname)
     local s = api.state()
     local cells = {}
     local function cell(surf, pos, tick)
@@ -36,20 +40,20 @@ return function(api)
     end
     for _, v in pairs(s.damage or {}) do
       local surf = v.surface or 'nauvis'
-      if v.id and v.at and (v.last or 0) > since and (not surface or surf == surface) then
+      if v.id and v.at and (v.last or 0) > since and (not surface or surf == surface) and ours(v, fname) then
         table.insert(cell(surf, v.at, v.last).attacks, v)
       end
     end
     for _, i in ipairs(s.losses or {}) do
       local surf = i.surface or 'nauvis'
       local last = i.last or i.first or 0
-      if i.box and not i.platform and last > since and (not surface or surf == surface) then
+      if i.box and not i.platform and last > since and (not surface or surf == surface) and ours(i, fname) then
         table.insert(cell(surf, {x=(i.box[1] + i.box[3]) / 2, y=(i.box[2] + i.box[4]) / 2}, last).losses, i)
       end
     end
     for _, g in ipairs(s.attack_groups or {}) do
       local surf = g.surface or 'nauvis'
-      if g.tick > since and (g.target or g.position) and (not surface or surf == surface) then
+      if g.tick > since and (g.target or g.position) and (not surface or surf == surface) and sees(g, fname) then
         table.insert(cell(surf, g.target or g.position, g.tick).groups, g)
       end
     end
@@ -58,7 +62,7 @@ return function(api)
   function M.count(p)
     local since = reads()[p.index] or (game.tick - FIRST)
     local n = 0
-    for _ in pairs(gather(since)) do n = n + 1 end
+    for _ in pairs(gather(since, nil, fname_of(p))) do n = n + 1 end
     return n, since
   end
   function M.read(p, a)
@@ -69,7 +73,7 @@ return function(api)
     assert(type(limit) == 'number' and limit >= 1 and limit <= 64, 'limit: 1..64 places (default 32)')
     -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as an empty one
     if a.surface ~= nil then assert(type(a.surface) == 'string' and game.get_surface(a.surface), 'no surface named ' .. tostring(a.surface)) end
-    local cells = gather(since, a.surface)
+    local cells = gather(since, a.surface, fname_of(p))
     local list = {}
     for _, c in pairs(cells) do list[#list+1] = c end
     table.sort(list, function(x, y) return x.last > y.last end)

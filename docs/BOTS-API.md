@@ -12,7 +12,8 @@ spectator "director" clients.
   (`remote.call("freeplay","get_created_items")` when that interface exists, else iron-plate 8, wood 1, pistol 1,
   firearm-magazine 10, burner-mining-drill 1, stone-furnace 1), next to the spawn point.
 - Operator-only creation (not reachable through `dispatch`, so agents cannot spawn bots):
-  `remote.call("agent_harness", "bot_create", name)` -> JSON `{ok, bot={name, unit_number, position}}`;
+  `remote.call("agent_harness", "bot_create", name)` -> JSON `{ok, bot={name, unit_number, position, force}}`;
+  `bot_create({name=NAME, force=FORCE})` makes it in that force (a player force; default player), at that force's spawn;
   `bot_remove(name)` drops it (character dies, corpse keeps items). Names: `[a-z][a-z0-9_-]{0,15}`, unique.
 - Addressing: dispatch requests gain an optional `bot` string. `{bot="astra"}` targets that bot; `player`
   keeps working for real players. A request may carry one of them, not both. CLI: `fh --bot NAME ...`

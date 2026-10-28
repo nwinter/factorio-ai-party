@@ -50,7 +50,7 @@ return function(api)
       -- (d20 batch67 AC1) a whole planet name, outside our platforms' names ("Gleba Express" names a platform)
       local cands, named, is_planet = {}, nil, {}
       for _, name in ipairs(planets) do cands[#cands+1] = {name=name, planet=true}; is_planet[name:lower()] = true end
-      local ok, pls = pcall(function() return game.forces.player.platforms end)
+      local ok, pls = pcall(function() return (api.owner_force and api.owner_force(i.owner) or game.forces.player).platforms end)
       for _, pl in pairs(ok and pls or {}) do
         if pl.valid and not is_planet[pl.name:lower()] then cands[#cands+1] = {name=pl.name} end
       end
@@ -63,10 +63,10 @@ return function(api)
       if named then i.surface = named; return named end
       local s = api.owner_surface and api.owner_surface(i.owner)
       s = type(s) == 'string' and s or 'nauvis'
-      if i.area and api.built_on and not api.built_on(s, i.area) then
+      if i.area and api.built_on and not api.built_on(s, i.area, i.owner) then
         local only
         for _, name in ipairs(planets) do
-          if name ~= s and api.built_on(name, i.area) then
+          if name ~= s and api.built_on(name, i.area, i.owner) then
             if only then only = false; break end
             only = name
           end
