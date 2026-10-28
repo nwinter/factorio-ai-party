@@ -43,12 +43,14 @@ return function(api)
     end
   end
   local function owned(i) return OWNED[i.kind] and LIVE[i.status] and i.owner and i.owner ~= 'operator' end
-  -- The areas the game is read in: the item's own, else its owner's active claims (at most 4).
+  -- The areas the game is read in: the item's own, else its owner's active claims (at most 4). (d28 batch308 FT) A
+  -- project, its own alone: Astra's #2516 (casting on Vulcanus, no area) read 14 of 20 checks in shift86 as progress
+  -- from the entities in her Aquilo freight claim #1099, which also held off its stalled count.
   local function areas(i)
     local out = {}
     if i.area then out[1] = {area=i.area, surface=i.surface or api.owner_surface(i.owner), what='its area'} end
     for _, a in ipairs(i.areas or {}) do if #out < 4 then out[#out+1] = {area=a, surface=api.owner_surface(i.owner), what='its areas'} end end
-    if #out == 0 then
+    if #out == 0 and i.kind ~= 'project' then
       for _, c in pairs(api.items()) do
         if c.kind == 'claim' and c.owner == i.owner and LIVE[c.status] and c.area and #out < 4 then
           out[#out+1] = {area=c.area, surface=api.claim_surface(c), what='claim #' .. c.id}
@@ -126,6 +128,17 @@ return function(api)
     end
     return parts, index
   end
+  -- (FT) A project not blocked whose board entry is unchanged since its last step was done, FOLLOW or more ago: that
+  -- fact, and what answers it (its owner's to write).
+  M.FOLLOW = 216000
+  local function after_step(i)
+    if i.kind ~= 'project' or i.status == 'blocked' or not i.steps then return nil end
+    local last
+    for _, st in ipairs(i.steps) do if st.done_tick and (not last or st.done_tick > last.done_tick) then last = st end end
+    if not last or (i.updated_tick or 0) > last.done_tick or game.tick - last.done_tick < M.FOLLOW then return nil end
+    return string.format('nothing written on it since step %d was done %s ago: board_update {id: %d, note} with the step taken next, status blocked with what restarts it in the note, or status done or dropped to retire it',
+      last.n or 0, ago(game.tick - last.done_tick), i.id)
+  end
   local function next_text(i)
     if i.kind == 'project' and i.steps then
       for _, st in ipairs(i.steps) do if not st.done_by then return string.format('next step %d: %s', st.n or 0, tostring(st.text)) end end
@@ -185,6 +198,7 @@ return function(api)
     local line = string.format('board #%d %s (%s): %s%s; %s', i.id, i.title, i.status, #parts > 0 and 'progress seen: ' .. table.concat(parts, '; ') or state,
       #of > 0 and '; yours since then: ' .. table.concat(of, ', ') or '',
       nt or string.format('no next action or blocker written on it (board_update {id: %d, note} writes one)', i.id))
+      .. (after_step(i) and '; ' .. after_step(i) or '')
     st.lines[i.owner] = st.lines[i.owner] or {}
     local l = st.lines[i.owner]
     l[#l+1] = line .. (r.focus_flag and '; ' .. r.focus_flag or '')
@@ -547,7 +561,7 @@ return function(api)
       step='a project step number, or text', blocker='optional text: what blocks it', verify='optional text: your next verification',
       agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress. The item marked done or dropped (or the focused step done) clears it: that board_update\'s reply has focus_cleared and ready (open unowned tasks and requests, free steps of unblocked projects open to you; those the team plan names first; at most 5), and status says no focus is set until one is; a board_update that edits or removes a step, takes a link out or edits a title marks a focus naming what it took away stale (the line and rows: stale, stale_tick) until board_focus {id} sets one; you hear it once'},
     board_progress = {owner='optional agent name: only their items (and what changed since each one\'s last check, read now)',id='optional item number: only that item, read now as with owner',
-      returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written; a check whose game read threw: check failed, with the error (rows: check_error, checked_s), checked again in 10 min. rows'},
+      returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims (a project: its own area only); the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written; a project not blocked with nothing written on it an hour after its last step was done: that, and what answers it (a note with the step taken next, status blocked with what restarts it, or status done or dropped); a check whose game read threw: check failed, with the error (rows: check_error, checked_s), checked again in 10 min. rows'},
     board_critical = {returns='blocked: each blocked item (status blocked, or an open item in its blocked_by), those the team plan names (#id) first, then by how many open items wait on it through blocked_by and parent chains, with what it waits on (status, owner, last change); agents_idle_or_waiting: agents standing a minute or more or in a wait, with what they own'},
   }
   return M

@@ -15,11 +15,14 @@
   anyone once they have been quiet; `failed` names the rest). Example:
   `./fh call board_retire --args '{"ids":[41,42],"reason":"the platform was rebuilt as Wren"}'`
 - `board_progress {owner?, id?}`: each owned open task, request and project with the game's evidence since its last
-  check (every 10 game minutes): entities built in its area or its owner's claims, the items it needs reaching the
+  check (every 10 game minutes): entities built in its area (a task's or request's with none: its owner's claims; a
+  project's own only), the items it needs reaching the
   count on its owner's planet, shipment lines of platforms its title names, its board edits; the age of its last
   change, the owner's repeated failures and no-effect actions, its next action or blocker, and its state: progress,
   waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks, with
-  the 20-minute rule). Each check also puts one line in the owner's reply.
+  the 20-minute rule). Each check also puts one line in the owner's reply; for a project not blocked with nothing
+  written on it an hour after its last step was done, the line says so and what answers it: a note with the step
+  taken next, status blocked with what restarts it, or status done or dropped.
 - `board_critical`: blocked items, those the team plan names (#id) first, then by how many open items wait on them,
   with what each waits on; and the agents standing or waiting now.
 - `board_focus {id, step, blocker?, verify?}`: your current item and step, its blocker and your next verification, in
@@ -120,7 +123,9 @@
 - Board reads and edits: `./fh board` takes `{"status":"done"}` (finished items), `{"status":"active"}` or
   `{"mine":true}`. `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's
   title and what it asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the
-  change in `history`; `board_update` also takes `supersedes` and `edit_step: {n, text}`.
+  change in `history`; `board_update` also takes `supersedes` and `edit_step: {n, text}`. An update that marks a step
+  done, or closes an item whose `parent` project stays open and not blocked, adds `follow_through`: the project, its
+  progress, next step and owner, and the same three answers (the owner's to write).
 - A `project` (`"goal"`, `"steps":["...","..."]`, `"areas"`) stays on the board across shifts. Anyone adds steps and
   marks them done (`./fh board update --args '{"id":N,"step":"...","done":[2,3]}'`); the owner writes `goal` and
   `handoff`, and anyone may once the owner has made no request for 30 minutes (and may then take it). Optional fields:
