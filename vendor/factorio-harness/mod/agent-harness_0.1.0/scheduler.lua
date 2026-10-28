@@ -974,6 +974,28 @@ return function(api)
     local q=(api.state()[QUEUES] or {})[index]
     return q and q.loop and not q.paused and (q.orders or 'triggers') or nil
   end
+  -- (d28 batch301 LS, Astra #2654: body job 37499, a load_silo of 500 magazines over one rocket's lift, appended its 5
+  -- rockets behind job 37500, which put the auto requests back before any of them launched) the step a handler runs
+  -- as, per agent, while its call runs (nil for a direct call), and the steps a running step becomes: right after it,
+  -- before the steps that follow, in order, in its plan (and its standing order's run, counted in its total); refused
+  -- as a submit refuses capacity and bytes, nothing queued. Returns the steps queued and the count still behind them.
+  local running={}
+  function M.running_step(index) return running[index] end
+  function M.insert_after_running(p,list)
+    local cur=running[p.index]
+    assert(cur,'no queue step is running')
+    local q=queue(p.index)
+    local items=steps({steps=list},p)
+    assert(#q.pending+#items<=MAX_PENDING,string.format('queue capacity exceeded: %d pending and %d more is over %d',#q.pending,#items,MAX_PENDING))
+    assert(total(q.pending)+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
+    assign(q,items)
+    for _,step in ipairs(items) do step.plan=cur.plan; step.order=cur.order end
+    for i=#items,1,-1 do table.insert(q.pending,1,items[i]) end
+    if q.plan and q.plan.id==cur.plan and q.plan.steps then q.plan.steps=q.plan.steps+#items end
+    if cur.order and q.order and q.order.name==cur.order then q.order.total=q.order.total+#items end
+    q.revision=q.revision+1
+    return items,#q.pending-#items
+  end
   function M.run_order(index,name,items,reason)
     local q=queue(index)
     local rest=M.resting(index)
@@ -1645,7 +1667,9 @@ return function(api)
                 for k,v in pairs(args) do c[k]=v end
                 c.walk=true; args=c
               end
+              running[index]=step
               local ok,result=pcall(timed,'scheduler.step '..tostring(step.action),api.handlers[step.action],p,args)
+              running[index]=nil
               if ok and api.claim then api.claim(p) end
               if api.step_done then pcall(api.step_done,index) end
               if not ok then

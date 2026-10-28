@@ -17093,3 +17093,25 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   tests/d27_batch298.lua (fails on main: Sol's flight runs out); tests/platalerts.lua (the advisory's wording);
   tests/d22_batch96.lua (its fake counts the thruster and tank finds alone).
 - Bundle (compacted): 6,334,816 bytes on main (dfdcae3b), 6,343,604 with this branch (limit 8,388,608).
+## d28 batch301 (LS, Astra #2654: a queued load_silo that split appended its rockets after the later steps)
+
+- Found (runtime.lua load_silo_run; scheduler.lua): a launch over one rocket's lift or slots, and `rockets: N`, queued
+  their rocket steps with `queue_submit` mode `append`. In a queue the scheduler takes a step off pending before it
+  calls the step's handler, so the steps that follow are already pending and the rockets went behind them all. Astra's
+  body job 37499 (500 magazines to Kestrel IVb, 5000 kg: 5 rockets of 100) returned success; job 37500 put the auto
+  requests back before any rocket launched, and the reset after it failed with the 500 still held. load_silo runs in
+  the body lane only (the remote and platform lanes refuse it at submit), so the body scheduler is the one place.
+- Change:
+  - scheduler.lua: the step a handler runs as is kept per agent while its call runs (`running_step`), and
+    `insert_after_running(p, steps)` puts steps right after it, before the steps that follow, in order. They are
+    checked as a submit checks them, in the running step's plan (its step count grows) and its standing order's run
+    (its total grows). With no room (capacity 128, the byte budget) it is refused and nothing is queued.
+  - runtime.lua: the split and `rockets: N` go through one helper. A call running as a queue step becomes its rockets
+    in place: `split` or `note` says `this step job-1 became 5 load_silo steps (job-4, ..., job-8), run right after it
+    and before the 2 steps that follow in your queue`, and the reply adds `in_place`, `steps` (their ids) and `behind`.
+    No room: the step fails with `the list is over one rocket (...) and goes as 5 rockets, which this queue step could
+    not become in place (queue capacity exceeded: 125 pending and 5 more is over 128); nothing loaded or queued: load
+    less a step, or launch_split: false for one rocket`. A direct call appends as before.
+- Docs: agent/ref/space-age.md (`load_silo`), the schema text of `rockets` and `launch_split`. Test:
+  tests/d28_batch301_rt.lua (the real runtime and scheduler against a fake engine, each rocket's load stubbed; fails
+  on main: `load, restore auto_requests, reset personal max, rocket 1 of 5, ...`).
