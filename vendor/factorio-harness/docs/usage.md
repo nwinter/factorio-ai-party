@@ -17442,6 +17442,17 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   - cost (profile_ticks): `spiderpair.tick` 0.05-0.1 ms a run every 10 ticks while a pair walks, worst second 1.15 ms
     (before the lead's route read was cut to its first point); the gates read 1.0-1.1 ms for a 321-tile route; pair
     go_to and clear calls 3.3-8.6 ms a second.
+- Item 5 (operator 10:32, viewer Aurora: the reverse takeover). spider_kite on main took an empty route as arrival and
+  wrote its route again after another caller's clear, kept control after a same-target go_to or an append, wrote its
+  late path round water over another's route, and put its switches back over what stood. Now (batch300's claim
+  number): the kite keeps its claim's number and ends `route_changed` at its next read once another call moves it on
+  ("sol set its route (clear) after this spider_kite began: it yields; ..."), before its health checks; an empty route
+  over 4 tiles short of its target ends it the same way; its late path is not written; its switches go back only when
+  they still read as it set them and no other call took over. A go_to's own plan carries the number too
+  (spiderpath.lua `plan.claim`): its path coming after another call's change is not written, said to its asker. On the
+  copy: astra's kite yielded to sol's clear, the spidertron stopped where the clear left it, the switches stayed on.
+  Test: tests/d28_batch310b.lua (fails on main: the kite still running after sol's clear).
+- Docs: agent/ref/movement-combat.md (Pairs; spider_kite yielding), the vehicle and spider_kite schema texts.
 - Test: tests/d28_batch310.lua (pairing and asks; open ground; a waited go_to; a slower follower; a stored route round
   a lake; retreats of either, kite, a go_to on the follower, a clear on the lead; a water step the follower cannot
   take; two prototypes; the follower's path to the lead's start). tests/waits.test.ts: the compact spider_go reply.
