@@ -1044,6 +1044,10 @@ def card_facts(seg):
     if seg.get("type") in CARD_CALLS:
         # not "muted" or "banner" for a replay: the first version read those production notes out on air
         f["how_to_call_it"] = CARD_CALLS[seg["type"]]
+    if seg.get("type") == "attack_replay" and (seg.get("facts") or {}).get("kind") == "highlight":
+        # (d28 batch312 C) an engineering highlight: earlier footage of a build, and the result it led to
+        f["how_to_call_it"] = ("a highlight replay: this is earlier footage of the work in `highlight`; say who did it and "
+                               "where, then the payoff, the result in `payoff`, as the facts give it. Briefly, facts only")
     return f
 
 

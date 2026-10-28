@@ -4796,6 +4796,12 @@ class OneCam(Director):
                 row["platform"] = p
                 if t.get("work"):
                     row["work"] = t["work"]  # the page: "Astra · working on Starling"
+                cl = t.get("closeup")
+                if key == "main" and p.get("why") == "work" and t.get("build") and t.get("since") is not None and \
+                        (cl is None or cl.get("done")):
+                    # (d28 batch312 C) a build's close-up on air since then: replays.py saves it for a highlight
+                    row["work_close"] = {"platform": p["name"], "agent": p.get("agent"),
+                                         "since": round(cl["done"] if cl else t["since"], 1)}
             if t.get("attention"):  # the inset on where the agent on air is looking: "Sol · placing ghosts 40 m north"
                 row.update(work=t["work"], attention=t["attention"])
             elif t.get("subject") == "@work" and t.get("work"):  # a spoken-line cue: "Sol · at (120, -40)"

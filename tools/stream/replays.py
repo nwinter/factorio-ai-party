@@ -95,6 +95,21 @@ DEFAULTS = {
     "slow_min_pieces": 5,          # ... and at least this many
     "slow_cover": 0.7,             # on-air footage of the battle must cover this share of the window
     "battle_gap": 2.5,             # seconds: footage samples further apart than this are separate runs
+    # (d28 batch312 C, viewer Aurora 10:50: "Could highlights also celebrate clever repairs, successful deliveries and
+    # funny real team exchanges? Save short clips from footage actually captured, link them to the later result, and
+    # let the hosts explain the payoff. ... clear REPLAY labels, limited repetition and urgent-event interruption.
+    # Please start with one engineering highlight using the current one-client setup.") An engineering highlight: a
+    # build's close-up on the main camera (onecam work_close, batch312 A) on air highlight_min_s is saved from the
+    # buffer (highlight_len from its start, less if the shot ended sooner) and kept; when a later story result on that
+    # ship passes (stories.py, batch312 B) within highlight_keep, it airs as a replay labelled "Highlight", with the
+    # result as its payoff for the hosts. At most one highlight per highlight_gap, each once; a replay's urgent cut,
+    # spacing and news gates as for any replay.
+    "highlight": True,
+    "highlight_min_s": 6.0,
+    "highlight_before": 1.0,
+    "highlight_len": 12.0,
+    "highlight_keep": 10800.0,
+    "highlight_gap": 1200.0,
 }
 
 
@@ -138,6 +153,10 @@ class Replays:
         self.battle = None     # the key battle being covered: {key, info, shown: [t], parts: {part: score}, ...}
         self.battle_keep = {}  # battle key -> the part to air ("start" / "end"), or "none", once it is over
         self.battle_areas = deque(maxlen=8)  # (until, position+surface, extent): losses there are the battle's
+        self.hl_on = None                    # (batch312 C) the build close-up on air: {key, platform, ..., pending}
+        self.hl_saved = deque(maxlen=4)      # saved build clips waiting for their ship's result
+        self.hl_results = set()              # story result keys looked at
+        self.hl_aired = -1e9                 # when the last highlight was queued to air
         if start:  # selftest drives work() by hand
             threading.Thread(target=self.run, daemon=True).start()
 
@@ -148,13 +167,15 @@ class Replays:
             return "OBS not connected" + (f" ({self.status['error']})" if self.status["error"] else "")
         if not self.status["buffer_active"]:
             return "OBS replay buffer not running"
-        if not self.clip or now - self.clip["show_to"] > self.max_age(self.clip):
+        if not self.clip or now - self.clip.get("queued_t", self.clip["show_to"]) > self.max_age(self.clip):
             return "no fresh clip (one is saved after a death on the main camera, a loss, or a fight a side camera showed)"
         if self.waiting(self.clip, now):
             return "the fight is still going on (a replay airs once it has been quiet 20 s)"
         return None
 
     def max_age(self, c):
+        if c.get("kind") == "highlight":
+            return 600.0  # from when its result queued it: a free moment within 10 min
         if c.get("battle"):
             return 1200.0  # saved at its start, aired after a battle that may last minutes
         return self.cfg["fight_max_age"] if c.get("fight") or c.get("position") else self.cfg["max_age"]
@@ -176,9 +197,12 @@ class Replays:
 
     def facts(self, now):
         c = self.clip
-        return {"event": c["label"], "kind": c["kind"], "agent": c.get("agent_name"),
-                "seconds": round(c["show_to"] - c["show_from"]), "ago_s": round(now - c["show_to"]),
-                "speed": c.get("speed") or 100}, c["id"]  # (the banner: "Replay · slow motion" under 100)
+        out = {"event": c["label"], "kind": c["kind"], "agent": c.get("agent_name"),
+               "seconds": round(c["show_to"] - c["show_from"]), "ago_s": round(now - c["show_to"]),
+               "speed": c.get("speed") or 100}  # (the banner: "Replay · slow motion" under 100)
+        if c.get("kind") == "highlight":  # (batch312 C) what the clip shows, and the result it led to
+            out.update(highlight=c.get("built"), payoff=c.get("payoff"), result=c.get("verdict"), platform=c.get("platform"))
+        return out, c["id"]
 
     # ---- hooks from serve.py's ticker ---------------------------------------------------------------------------
     def tick(self, snap, cams, now):
@@ -193,6 +217,61 @@ class Replays:
         self.watch_fights(snap, cams or {}, now)
         self.watch_battle(snap.get("battle"), snap, cams or {}, now)
         self.judge_losses(now)
+        if self.cfg["highlight"]:
+            self.watch_highlights(snap, cams or {}, now)
+
+    def watch_highlights(self, snap, cams, now):
+        """(d28 batch312 C) A build's close-up on air highlight_min_s: its clip is saved and kept (save: hl_saved). A
+        story result that passed on that ship later (snapshot `stories`) puts the latest such clip on air as a
+        highlight, at most once per highlight_gap; each clip and each result once."""
+        cfg = self.cfg
+        wc = ((cams or {}).get("main") or {}).get("work_close")
+        on = self.hl_on
+        if on and (not wc or (wc["platform"], wc["since"]) != on["key"]):
+            p = on.get("pending")
+            if p and now < p["show_to"]:  # the shot ended sooner: the clip ends with it
+                p["show_to"], p["save_at"] = now, now + 1.0
+            self.hl_on = on = None
+        if wc and not self.playing:
+            if on is None:
+                self.hl_on = on = {"key": (wc["platform"], wc["since"]), "platform": wc["platform"], "agent": wc.get("agent"),
+                                   "since": wc["since"], "label": ((cams.get("main") or {}).get("work") or wc["platform"])}
+            if not on.get("pending") and now - on["since"] >= cfg["highlight_min_s"]:
+                start = on["since"] - cfg["highlight_before"]
+                p = {"kind": "highlight", "label": on["label"], "agent": on["agent"], "platform": on["platform"],
+                     "show_from": start, "show_to": start + cfg["highlight_len"], "save_at": start + cfg["highlight_len"] + 1.0}
+                on["pending"] = p
+                with self.lock:  # saved when its time comes, kept (not aired) until its result
+                    if self.pending is None:
+                        self.pending = p
+                    else:
+                        self.more_pending.append(p)
+                self.log(f"[replays] highlight footage: {on['label']} (saved, kept for its ship's result)")
+        for b in snap.get("stories") or []:
+            if b.get("beat") != "result" or b.get("key") in self.hl_results:
+                continue
+            self.hl_results.add(b["key"])
+            if b.get("verdict") != "passed":
+                continue
+            ready = [c for c in self.hl_saved if c.get("platform") == b.get("platform") and c["saved_t"] <= b.get("t", now)
+                     and now - c["saved_t"] <= cfg["highlight_keep"]]
+            if not ready:
+                continue
+            if now - self.hl_aired < cfg["highlight_gap"]:
+                self.log(f"[replays] highlight not aired ({b.get('caption')}): one aired less than "
+                         f"{cfg['highlight_gap'] / 60:g} min ago")
+                continue
+            c = ready[-1]
+            self.hl_saved.remove(c)
+            clip = dict(c, built=c["label"], payoff=b.get("caption"), verdict=b.get("verdict"), queued_t=now,
+                        label=f"Highlight: {c['label']}, then {b.get('caption')}")
+            with self.lock:
+                if self.clip:
+                    self.more_clips.append(clip)
+                else:
+                    self.clip = clip
+            self.hl_aired = now
+            self.log(f"[replays] highlight queued: {clip['label']}")
 
     def shows(self, slot, cam, fight, by_name):
         """Does this camera show the fight now: its position inside the camera's frame; without a frame (older
@@ -756,6 +835,11 @@ class Replays:
                 self.status["error"] = "SaveReplayBuffer produced no new file"
                 return
             clip = dict(p, id=f"clip-{next(self.ids)}", path=path, saved_t=saved_t)
+            if clip.get("kind") == "highlight":  # (batch312 C) kept until its ship's result (watch_highlights)
+                self.hl_saved.append(clip)
+                self.status["replays"] += 1
+                self.log(f"[replays] saved {path} for {p['label']} (a highlight: waits for its result)")
+                return
             if self.clip:
                 self.more_clips.append(clip)  # plays after the one already waiting
             else:
@@ -768,7 +852,7 @@ class Replays:
         c = self.clip
         if not c or self.playing:
             return
-        if now - c["show_to"] > self.max_age(c):
+        if now - c.get("queued_t", c["show_to"]) > self.max_age(c):  # (a highlight: from its result)
             self.log(f"[replays] dropped {c['id']} (never got a free moment, or its fight never ended)")
             self.next_clip()
             return
@@ -920,7 +1004,8 @@ class Replays:
 
     def public(self):
         s = dict(self.status)
-        s.update(pending=self.pending and {k: self.pending[k] for k in ("kind", "label")},
+        s.update(highlights_saved=[c["label"] for c in self.hl_saved],
+                 pending=self.pending and {k: self.pending[k] for k in ("kind", "label")},
                  clip=self.clip and {k: self.clip[k] for k in ("id", "label", "path")}, playing=self.playing,
                  waiting=[c["label"] for c in list(self.more_pending) + list(self.more_clips)])
         return s
