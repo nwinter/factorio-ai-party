@@ -1043,6 +1043,72 @@ def firsts_table(firsts, shift_links=True, filters=False):
 
 
 RECENT_SHIFTS = 10  # (batch314 B) the charts' "recent" range: the last this many shifts
+# (batch314 C, viewer Aurora: label what SPM measures) pack use, not research progress
+SPM_DESC = ("Pack use: research units a minute, read as the packs the labs consumed (the most-used pack that does not "
+            "spoil; a 2.0 technology takes one of each of its packs a unit). It is not research progress: research "
+            "productivity makes more progress from the same packs, and the score log does not record progress.")
+
+
+def packs_flow(flow, falls=None, flow_from=None, shift_n=None):
+    """(batch314 C, viewer Aurora 11:38) each pack made beside the consumption the game records, counted over the
+    same score-row pairs (both rows carrying consumption), from the score log (scores.jsonl: produced and consumed,
+    the player force's production statistics summed over every surface); a counter's falls named (not subtracted)."""
+    made, used = flow.get("made") or {}, flow.get("used") or {}
+    have = [(item, lab) for item, lab in longrun.PACKS if made.get(item) or used.get(item)]
+    if not have:
+        return ""
+    rows = []
+    for item, lab in have:
+        m, u = made.get(item, 0), used.get(item, 0)
+        rows.append(f'<tr><th scope="row"><span class="ms">{gameicons.item(item, 22)}<span>{esc(lab)}</span></span></th>'
+                    f'<td class="num" data-l="Made">{fmt_full(m)}</td><td class="num" data-l="Consumed (recorded)">{fmt_full(u)}</td>'
+                    f'<td class="num" data-l="Made − consumed">{fmt_full(m - u)}</td>'
+                    f'<td class="num" data-l="Consumed / made">{f"{100 * u / m:.1f}%" if m else "–"}</td></tr>')
+    fell = []
+    for kind, word in (("made", "made"), ("used", "consumed")):
+        for item, f in sorted((falls or {}).get(kind, {}).items()):
+            if shift_n is None or shift_n in f["shifts"]:
+                fell.append(f'{longrun.PACK_LABEL.get(item, item)} {word}: fell {f["times"]:,} time{"s" if f["times"] != 1 else ""} by '
+                            f'{f["total"]:,} in all (shift{"s" if len(f["shifts"]) > 1 else ""} {", ".join(map(str, f["shifts"]))})'
+                            if shift_n is None else f'{longrun.PACK_LABEL.get(item, item)} {word}: fell by {f["by_shift"][shift_n]:,} in this shift')
+    since = (f' Consumption is in every score row from game time {esc(longrun.game_time(flow_from["x"] * 3600))} '
+             f'(shift {flow_from["shift"]}); packs made before that row are left out of this table only.') if flow_from and shift_n is None else ""
+    note = ("From each shift's score log (scores.jsonl): produced and consumed, the player force's production statistics "
+            "summed over every surface (planets and platforms). Both counted over the same pairs of score rows, those where "
+            "both rows carry consumption, as each counter's rises; a fall (a lost platform's statistics go with it) is not "
+            "subtracted." + since + " Consumed is what the game counts as used up: the labs' research use, and any other "
+            "use it counts. A pack made and not consumed is held, in transit, or gone some way the statistics do not count "
+            "as use.")
+    if fell:
+        note += " Falls: " + "; ".join(fell) + "."
+    return (f'<div class="table-wrap"><table class="packs-flow stack-table"><thead><tr><th scope="col">Pack</th><th scope="col">Made</th>'
+            f'<th scope="col">Consumed (recorded)</th><th scope="col">Made − consumed</th><th scope="col">Consumed / made</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div><p class="muted small">{note}</p>')
+
+
+def repeatable_table(rows, shift=None):
+    """(batch314 C) repeatable research: each infinite technology's levels completed (over the run, or in a shift),
+    from the score log's `infinite` (longrun.levels)."""
+    if not rows:
+        return ""
+    def name(n):
+        """'physical-projectile-damage-7' -> 'Physical projectile damage', 'levels 7 and up' (the infinite one starts there)"""
+        m = re.match(r"(.*?)(?:-(\d+))?$", n)
+        base = m.group(1).replace("-", " ").capitalize()
+        return esc(base) + (f' <span class="muted small">levels {int(m.group(2))} and up</span>' if m.group(2) and int(m.group(2)) > 1 else "")
+    body = "".join(
+        f'<tr><th scope="row"><span class="ms">{gameicons.tech(r["name"], 22)}<span>{name(r["name"])}</span></span></th>'
+        f'<td class="num" data-l="Levels completed">{fmt_full(r["levels"])}</td>'
+        + ("" if shift else f'<td data-l="Next level">{esc(r["under_way"] or "")}</td><td class="num" data-l="First level completed">'
+           + (f'{esc(longrun.game_time(r["first"]["tick"]))} · <a href="/runs/long/shift-{r["first"]["shift"]}/">shift {r["first"]["shift"]}</a>' if r.get("first") else "–")
+           + "</td>") + "</tr>" for r in rows)
+    head = ('<th scope="col">Technology</th><th scope="col">Levels completed</th>'
+            + ("" if shift else '<th scope="col">Next level</th><th scope="col">First level completed</th>'))
+    note = ("From each shift's score log (scores.jsonl): `infinite`, each infinite technology's levels done past its own "
+            "first level (the player force), in every row since the run began (a row with none done leaves it out). "
+            "The unique technologies count never includes them.")
+    return (f'<div class="table-wrap"><table class="repeatable stack-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+            f'<p class="muted small">{note}</p>')
 
 
 def long_charts(lr, lo=None, hi=None, x0=0):
@@ -1059,18 +1125,22 @@ def long_charts(lr, lo=None, hi=None, x0=0):
     charts = []
     tot = inside(lr["spm"])
     if tot:
-        charts.append(line_chart("Science per minute (SPM)", [{"name": "SPM", "points": tot}], "research units per minute",
-                                 desc="Research units a minute: the labs' use of packs in sets. A point per 10-game-minute window.",
-                                 smooth=True, **opts))
+        charts.append(line_chart("Science per minute (SPM): pack use", [{"name": "SPM", "points": tot}], "research units per minute",
+                                 desc=SPM_DESC + " A point per 10-game-minute window.", smooth=True, **opts))
     if ps:
-        charts.append(line_chart("Science packs used by the labs per minute, by pack", ps, "packs per minute",
-                                 desc="A point per 10-game-minute window. Click a pack to hide or show it.", **opts))
+        charts.append(line_chart("Science packs consumed per minute, by pack", ps, "packs per minute",
+                                 desc="The production statistics' consumption, every surface (the labs' use, and any other use the "
+                                      "game counts). A point per 10-game-minute window. Click a pack to hide or show it.", **opts))
     made = inside(lr.get("made_spm") or [])
     if made:
         charts.append(line_chart("Science packs made per minute, all colours", [{"name": "Packs made", "points": made}],
                                  "packs per minute", desc="A point per 10-game-minute window.", smooth=True, **opts))
-    charts.append(line_chart("Technologies researched", [{"name": "Technologies", "points": inside(lr["research"])}],
-                             "technologies", step=True, **opts))
+    charts.append(line_chart("Unique technologies researched", [{"name": "Unique technologies", "points": inside(lr["research"])}],
+                             "unique technologies", step=True,
+                             desc="Each technology once (a finite level its own); repeatable levels are counted in the next chart.", **opts))
+    if any(y for _, y in lr.get("levels") or []):
+        charts.append(line_chart("Repeatable research levels completed", [{"name": "Repeatable levels", "points": inside(lr["levels"])}],
+                                 "levels", step=True, desc="The infinite technologies' levels done, all of them together.", **opts))
     charts.append(line_chart("Rockets launched", [{"name": "Rockets", "points": inside(lr["rockets"])}], "rockets",
                              step=True, **opts))
     times = json.dumps([[x, _pt(t)] for x, t in inside(lr["clock"])]).replace("</", "<\\/")
@@ -1120,10 +1190,11 @@ def shift_stats(s):
     return "".join([
         stat("on stream", hm(_hours(s["started"], s["ended"])), _when(s["started"], s["ended"])),
         stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
-        stat("technologies", fmt_full(s["research"]), f'+{s["research_new"]:,}' + (f' · at the end: {s["researching"]}' if s.get("researching") else ""),
+        stat("unique technologies", fmt_full(s["research"]), f'+{s["research_new"]:,}' + (f' · at the end: {s["researching"]}' if s.get("researching") else ""),
              icon=gameicons.item("lab", 28)),
+        stat("repeatable levels", fmt_full(s.get("levels", 0)), f'+{s.get("levels_new", 0):,} in this shift'),
         stat("rockets", f'{s["rockets"]:,}', f'+{s["rockets_new"]:,}', icon=gameicons.item("rocket-part", 28)),
-        stat("SPM", "–" if s["spm"] is None else fmt_full(s["spm"]), "research units a minute, shift average",
+        stat("SPM", "–" if s["spm"] is None else fmt_full(s["spm"]), "pack use: research units a minute, shift average",
              icon=gameicons.item("automation-science-pack", 28)),
         stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_full(s["made_per_min"]), "all colours, shift average",
              icon=gameicons.item("space-science-pack", 28)),
@@ -1169,7 +1240,7 @@ def shift_card_facts(s, lr):
     mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
     big = [f["label"] for f in mine if f["kind"] in ("space", "science")] + [f["label"] for f in mine if f["kind"] == "research"]
     return {"n": s["n"], "when": f"{_when(s['started'], s['ended'])} Pacific",
-            "stats": [[f"+{s['research_new']}", "technologies"], [f"+{s['rockets_new']}", "rockets"],
+            "stats": [[f"+{s['research_new']}", "unique technologies"], [f"+{s['rockets_new']}", "rockets"],
                       [f"{s['made_total']:,}", "science packs"], [longrun.game_time(s["tick1"] - s["tick0"]), "game time"]],
             "firsts": big[:3]}
 
@@ -1190,7 +1261,7 @@ def shift_card(s, lr):
 
 def shift_summary(s, firsts):
     """The page's description (search and link previews): the shift's numbers and its biggest firsts."""
-    bits = [f"Shift {s['n']}: {_when(s['started'], s['ended'])} Pacific", f"+{s['research_new']} technologies",
+    bits = [f"Shift {s['n']}: {_when(s['started'], s['ended'])} Pacific", f"+{s['research_new']} unique technologies",
             f"+{s['rockets_new']} rockets", f"{s['made_total']:,} science packs"]
     big = [f["label"] for f in firsts if f["kind"] in ("space", "science")][:3]
     return " · ".join(bits) + (". " + ", ".join(big) + "." if big else ".")
@@ -1282,13 +1353,15 @@ def build_shift_page(s, v, lr):
 {f'<p><a href="/chronicle/#shift-{s["n"]}">This shift in the Chronicle</a>: the agents\' own account, beside the platforms built and lost.</p>' if s["n"] in lr.get("chronicle_shifts", ()) else ""}
 {f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
 {plan_html(s["plan"]) if s.get("plan") else ""}
-{f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{gameicons.tech(t["name"], 22)}{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
+{f'<h2>Unique technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{gameicons.tech(t["name"], 22)}{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
 {long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
 <div class="two-col shift-cols">
 <section>{packs_bars(s["made"], "Packs made") or '<h2>Packs made</h2><p class="muted">None.</p>'}
 {plat}</section>
 <section><h2>Deaths</h2>{f'<p class="muted small">{", ".join(f"{esc(k)} {n}" for k, n in sorted(by.items(), key=lambda kv: -kv[1]))}</p><ol class="deaths">{deaths}</ol>' if deaths else '<p class="muted">None.</p>'}</section>
 </div>
+{'<h2 id="packs-flow">Science packs made and consumed in this shift</h2>' + packs_flow(s["flow"], lr.get("falls"), shift_n=s["n"]) if (s.get("flow") or {}).get("made") else ""}
+{'<h2 id="repeatable">Repeatable research levels completed in this shift</h2>' + repeatable_table([{"name": k, "levels": v} for k, v in sorted(s["level_techs"].items(), key=lambda kv: (-kv[1], kv[0]))], shift=True) if s.get("level_techs") else ""}
 {f'<h2>Viewers</h2><p class="muted small">Viewer messages that reached the game, the agents\' answers that name the viewer, and the hosts\' answers. Times Pacific.</p>{qa_html(s["qa"], s["n"])}' if s["qa"] else ""}
 {nav}
 """
@@ -1390,7 +1463,7 @@ def run_summary(lr):
     last = done[-1]
     planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
     stats = "".join([stat("shifts", fmt_full(len(done))), stat("game time", last["game1"]),
-                     stat("technologies", fmt_full(last["research"]), icon=gameicons.item("lab", 28)),
+                     stat("unique technologies", fmt_full(last["research"]), icon=gameicons.item("lab", 28)),
                      stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
                      stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
                      stat("planets reached", len(planets), sub_html=planet_icons(planets))])
@@ -1421,8 +1494,9 @@ def records(done):
         return fmt(s[key]), s
     out = []
     for lab, key, fmt, low, ico in [("Most rockets in a shift", "rockets_new", lambda v: f"{v:,}", False, "rocket-part"),
-                                    ("Most technologies in a shift", "research_new", fmt_full, False, "lab"),
-                                    ("Best SPM (shift average)", "spm", fmt_full, False, "automation-science-pack"),
+                                    ("Most unique technologies in a shift", "research_new", fmt_full, False, "lab"),
+                                    ("Most repeatable levels in a shift", "levels_new", fmt_full, False, ""),
+                                    ("Best SPM, pack use (shift average)", "spm", fmt_full, False, "automation-science-pack"),
                                     ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False, "space-science-pack"),
                                     ("Most viewer messages in a shift", "viewer_lines", fmt_full, False, ""),
                                     ("Fewest deaths in a shift", "deaths", fmt_full, True, "")]:
@@ -1444,8 +1518,10 @@ def build_long_run(lr):
     stats = "".join([stat("shift" if len(done) == 1 else "shifts", fmt_full(len(done))),
                      stat("on stream", hm(on_air)),
                      stat("game time", last["game1"]),
-                     stat("technologies", fmt_full(last["research"]), f'researching {last["researching"]}' if last.get("researching") else "",
+                     stat("unique technologies", fmt_full(last["research"]), f'researching {last["researching"]}' if last.get("researching") else "",
                           icon=gameicons.item("lab", 28)),
+                     stat("repeatable levels", fmt_full(sum(r["levels"] for r in lr.get("repeatable") or [])),
+                          f'{len(lr.get("repeatable") or []):,} infinite technologies'),
                      stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
                      stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
                      stat("platforms built", fmt_full(len(lr["platforms"])), f'{len(lost_p):,} lost · {len(active):,} active',
@@ -1466,7 +1542,7 @@ def build_long_run(lr):
             if ids and s.get("resumed_as"):
                 note = note.rstrip(")") + f'; resumed as {s["resumed_as"]})'
             rows.append(f'<tr class="empty"><th scope="row">–{rid}</th>'
-                        f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td><td colspan="8" class="muted">{esc(note)}</td></tr>')
+                        f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td><td colspan="9" class="muted">{esc(note)}</td></tr>')
             continue
         firsts = by_shift.get(s["n"], [])
         notable = [f for f in firsts if f["kind"] != "research" or f["key"].startswith("tech:planet") or f["key"] in
@@ -1480,7 +1556,8 @@ def build_long_run(lr):
             f'<tr><th scope="row"><a href="{shift_href(s)}">Shift {s["n"]}</a>{rid}{now}{video}</th>'
             f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td>'
             f'<td data-l="Game time">{esc(s["game0"])} to {esc(s["game1"])}</td>'
-            f'<td data-l="Technologies" class="num">{s["research"]} <span class="muted">+{s["research_new"]}</span></td>'
+            f'<td data-l="Unique technologies" class="num">{s["research"]} <span class="muted">+{s["research_new"]}</span></td>'
+            f'<td data-l="Repeatable levels" class="num">{s.get("levels", 0):,} <span class="muted">+{s.get("levels_new", 0):,}</span></td>'
             f'<td data-l="SPM" class="num">{"–" if s["spm"] is None else fmt_num(s["spm"])}</td>'
             f'<td data-l="Packs made" class="num">{s["made_total"]:,}</td>'
             f'<td data-l="Rockets" class="num">{s["rockets"]} <span class="muted">+{s["rockets_new"]}</span></td>'
@@ -1502,7 +1579,7 @@ def build_long_run(lr):
 {live_banner()}
 <h1>The long run</h1>
 <p class="meta">One save · started {esc(_pt(first["started"]))} Pacific · game clock paused between shifts</p>
-<nav class="jump" aria-label="On this page">{'<a href="#key-times">Key times</a>' if key_times(lr) else ""}<a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a><a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
+<nav class="jump" aria-label="On this page">{'<a href="#key-times">Key times</a>' if key_times(lr) else ""}<a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a>{'<a href="#packs-flow">Made and consumed</a>' if lr.get("flow") and lr["flow"].get("made") else ""}{'<a href="#repeatable">Repeatable research</a>' if lr.get("repeatable") else ""}<a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
 <div class="stats stats-compact">{stats}</div>
 {journey(lr)}
 {key_times(lr)}
@@ -1515,12 +1592,14 @@ def build_long_run(lr):
 <p class="muted small">Game time on the x axis; the strip under it marks shift starts (S1, S2 ...). Hover or tap a chart for exact values and the Pacific time; each one has its data as a table.</p>
 {long_charts(lr)}
 {packs_bars(lr["made"])}
+{'<h2 id="packs-flow">Science packs made and consumed</h2>' + packs_flow(lr["flow"], lr.get("falls"), lr.get("flow_from")) if lr.get("flow") and lr["flow"].get("made") else ""}
+{'<h2 id="repeatable">Repeatable research</h2>' + repeatable_table(lr["repeatable"]) if lr.get("repeatable") else ""}
 <h2 id="shifts">Shifts</h2>
 <div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When (Pacific)</th>
-<th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">SPM</th><th scope="col">Packs made</th>
+<th scope="col">Game time</th><th scope="col">Unique technologies</th><th scope="col">Repeatable levels</th><th scope="col">SPM</th><th scope="col">Packs made</th>
 <th scope="col">Rockets</th><th scope="col">Deaths / losses</th><th scope="col">Viewers</th><th scope="col">Milestones</th>
 </tr></thead><tbody>{"".join(rows)}</tbody></table></div>
-<p class="muted small">SPM: research units a minute (the labs' use of packs in sets) over the shift's game time. Packs made: each counter's rises between score rows; a fall (a lost platform's counts) is not subtracted. Deaths and loss alerts: the ones the stream's director cut to.</p>
+<p class="muted small">SPM: pack use, research units a minute (the packs the labs consumed, in sets) over the shift's game time; not research progress, which research productivity raises. Unique technologies: each technology once; repeatable levels: the infinite technologies' levels done. Packs made: each counter's rises between score rows; a fall (a lost platform's counts) is not subtracted. Deaths and loss alerts: the ones the stream's director cut to.</p>
 {videos}
 """
     return page("The long run", body, "/runs/" if archive() else "/runs/long/",
@@ -1639,7 +1718,7 @@ def build_about_compact():
         done = [x for x in LONG["shifts"] if not x.get("empty")]
         last = done[-1]
         nums += [stat("shifts", fmt_full(len(done))), stat("on stream", hm(sum(_hours(x["started"], x["ended"]) for x in done))),
-                 stat("game time", last["game1"]), stat("technologies", fmt_full(last["research"])), stat("rockets", fmt_full(last["rockets"])),
+                 stat("game time", last["game1"]), stat("unique technologies", fmt_full(last["research"])), stat("rockets", fmt_full(last["rockets"])),
                  stat("viewer messages", fmt_full(sum(x["viewer_lines"] for x in done)))]
     facts = [
         ("Players", "9 models from 5 labs, each in its own coding harness (Codex, Claude Code, Grok Build, Antigravity, "
