@@ -16908,6 +16908,29 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   main, 4.6 / 5.4 branch; a compact area read of Resolute's 15 inserters 13.9 / 15.5 main, 13.9 / 15.3 branch. The
   extra find runs only for a nil target.
 - Docs: agent/ref/building.md (inserter targets). Test: tests/d27_batch292.lua (fails on main: no `unset`).
+## d27 batch295 (HS: an inserter's hand size always, Astra #2646)
+
+- Astra: Resolute's gun at (16,-52) starved twice; inspect gave no hand size with no override, and agents read hand 1
+  from held 1 where research made a fast inserter's hand 3.
+- Engine facts (2.0.77, the iMac copy of world n): hand size = 1 + the prototype's inserter_stack_size_bonus
+  (stack-inserter 4, the others 0) + the force's bulk_inserter_capacity_bonus (bulk-inserter, stack-inserter) or
+  inserter_stack_size_bonus (burner, basic, long-handed, fast). Quality changes none of it. An override above 0 caps
+  it; one above the most reads back as set and the most applies. A circuit's set stack size writes the override (1
+  with no signal, 0 when turned off). `inserter_target_pickup_count` reads the result at once.
+  - From a belt every inserter waited at the belt for a full hand (compressed turbo, sparse, moving or stopped). From
+    a chest holding 1, all but stack-inserter swung with 1.
+  - A compressed turbo belt, 60 s: basic 50, long 72, fast 144 swings a minute of 3 (their arm turns); bulk 86 of 12
+    and stack 75 of 16 stopped, 78 and 64 moving. One item every 16 ticks on one lane: a basic inserter took none.
+- inspect (built or ghost): `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max`, `capacity_bonus
+  {name, force, prototype}`, `hand_size_by_circuit`, `held_count`, `swings_per_min`, `items_per_min_most`, and
+  `hand_line`. The compact line: `hand size 3 (no override; most 3)`.
+- platform_defense feed: each turret row's `feeders` with the same fields, `feed_per_min_most`, and `uses_per_min` /
+  `uses_ammo` (ammo_use's full fire of the ammunition it holds). Each feeder in the turret's line: `fast-inserter
+  (15.5,-53.5) hand size 1 (override 1; most 3), at most 144/min`, and the line opens `holds 12 (uses 150
+  firearm-magazine/min at full fire, its feeders move at most 576/min)`.
+- Docs: agent/ref/building.md (inserter hand size). Test: tests/d27_batch295.lua (fails on main: details has no
+  `hand`).
+
 ## d27 batch287 (BT: platform_bom's tail minimum no longer sticks, Astra #2631)
 
 - Found (platbom.lua apply): an item with no min_payload of the user's took its base from the slot as it stood
