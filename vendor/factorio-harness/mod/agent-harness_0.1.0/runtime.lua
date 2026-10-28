@@ -14155,7 +14155,7 @@ M.elsewhere=require('elsewhere'){chests=function(f,s) if M.census then return M.
   crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- what no network gives (d18 batch37 B1)
 M.makersall=require('makersall'){burnt_line=function(e) return M.burnt.line(e) end,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
-M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
+M.ledger=require('ledger'){state=state,on_the_way=function(platform,item) return M.podlog.on_the_way(platform,item) end}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 -- (d24 batch179 QV1) every cargo pod's journey, up and down, per planet: shipment {ledger} pods (podlog.lua)
 M.podlog=require('podlog'){state=state}
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)

@@ -802,6 +802,24 @@ return function(api)
         out.lines = #lines > 0 and lines or {'no launch from ' .. surface .. ' and no drop to it recorded'}
         out.note = out.note .. '; lines: launches with what the platform asked (64 a surface) and the drops read\'s last 20 drops on every surface, with the pad\'s story'
       end
+      if surface and api.ledger and (up ~= false) then
+        local _, launches = api.ledger(surface)
+        -- (d28 batch320 LP, Sol #2711) the launches as rows: who ordered each, and what its platform asked then (the
+        -- platform's only with platform; the newest 16)
+        if launches and #launches > 0 then
+          local keep = {}
+          for i = #launches, 1, -1 do
+            local r = launches[i]
+            if (a.platform == nil or r.to == a.platform) and #keep < 16 then table.insert(keep, 1, r) end
+          end
+          out.launches = #keep > 0 and keep or nil
+          out.launches_are = 'rockets up from ' .. surface .. ', oldest first: ordered (harness launch by an agent, a player, '
+            .. 'or automatic: the game\'s event does not tell a script\'s launch from the silo\'s own), and per cargo item its '
+            .. 'request then: min, max, payload (custom minimum payload), holds, on_the_way (rockets sent and not landed), this '
+            .. '(this rocket\'s count). Measured rule (2.0.77): a hub lacking min - (holds + on the way) gets max(lacking, payload), '
+            .. 'cut into rockets of up to a rocket\'s lift, the last carrying the rest'
+        end
+      end
       return out
     end
     if a.ready ~= nil then
