@@ -16759,7 +16759,7 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     placement blocked by stone-wall (63.5,148.5), ...; nothing was changed"; both fast ends stayed paired;
   - Sol's whole plan (move_to, 17 entries) from the fast pairs: both pairs express and paired, the express belts and
     the bulk inserter built.
-- Bundle (compacted): 6,299,239 bytes on main (55ac8823), 6,301,563 with this branch (limit 8,388,608).
+- Bundle (compacted): 6,299,239 bytes on main (ddf11ddf, batch283 in it), 6,302,174 with this branch (limit 8,388,608).
 ## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
 
 - Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
