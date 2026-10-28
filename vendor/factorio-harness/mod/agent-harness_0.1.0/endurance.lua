@@ -99,7 +99,8 @@ return function(api)
     -- (freight.platform_lists), else found: the fuel outlook is read by the platform alerts' scans, flight watches and
     -- this read
     local lists = api.platform_lists and try(function() return api.platform_lists(pl) end)
-    for _, e in ipairs(lists and lists.tanks or try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
+    local list = lists and lists.tanks or try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}
+    for _, e in ipairs(list) do
       for i = 1, try(function() return #e.fluidbox end) or 0 do
         local f = try(function() return e.fluidbox[i] end)
         if f and names[f.name] then
@@ -108,7 +109,132 @@ return function(api)
         end
       end
     end
-    return out, tanks
+    return out, tanks, list
+  end
+  -- (d27 batch298 FW, Sol #2652: Resolute's thrusters held a level 1138 fuel and 842 oxidizer while the alert said it
+  -- ran out in about a minute: its one fuel maker makes 1500 a craft, so a minute's count was 13500 or 15000 against
+  -- 14400 used, and the 4800 and 4500 in the pipes before its pumps went uncounted) the machines aboard whose recipe
+  -- makes thruster fuel or oxidizer, and the pumps, found again every PARTS_KEEP ticks (Resolute's 147 assembling
+  -- machines: found with their recipes in 0.83 ms on the iMac copy; kept, 0.05 ms)
+  local FUELS, PARTS_KEEP, LOW_MIN = {['thruster-fuel']=true, ['thruster-oxidizer']=true}, 3600, 2
+  local function product_amount(p)
+    local n = p.amount or ((p.amount_min or 0) + (p.amount_max or 0)) / 2
+    return n * (p.probability or 1)
+  end
+  -- The machines that can craft a recipe making either fluid (chemical plants in 2.0.77), by the recipes' categories,
+  -- and the pumps, for one find by name; nil (found by type) when the prototypes cannot say.
+  local maker_names_
+  local function maker_names()
+    if maker_names_ ~= nil then return maker_names_ or nil end
+    maker_names_ = try(function()
+      local cats, names = {}, {}
+      for name in pairs(FUELS) do
+        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do cats[r.category] = true end
+      end
+      for cat in pairs(cats) do
+        for n in pairs(prototypes.get_entity_filtered{{filter='crafting-category', crafting_category=cat}}) do names[#names+1] = n end
+      end
+      if #names == 0 then return false end
+      for n in pairs(prototypes.get_entity_filtered{{filter='type', type='pump'}}) do names[#names+1] = n end
+      return names
+    end) or false
+    return maker_names_ or nil
+  end
+  local function fuel_parts(pl)
+    local all = api.state and api.state()
+    if all then all.fuel_parts = all.fuel_parts or {}; all = all.fuel_parts end
+    local rec = all and all[pl.index]
+    local ok = rec and game.tick - rec.tick < PARTS_KEEP and game.tick >= rec.tick
+    for _, m in ipairs(ok and rec.makers or {}) do
+      if not (m.entity.valid and try(function() return m.entity.get_recipe().name end) == m.recipe) then ok = false; break end
+    end
+    for _, e in ipairs(ok and rec.pumps or {}) do if not e.valid then ok = false; break end end
+    if ok then return rec end
+    local s, f = pl.surface, pl.force
+    rec = {tick=game.tick, makers={}, pumps={}}
+    local names = maker_names()
+    local found = names and try(function() return s.find_entities_filtered{name=names, force=f} end)
+    if not found then
+      found = try(function() return s.find_entities_filtered{type='assembling-machine', force=f} end) or {}
+      for _, e in ipairs(try(function() return s.find_entities_filtered{type='pump', force=f} end) or {}) do found[#found+1] = e end
+    end
+    for _, e in ipairs(found) do
+      if e.type == 'pump' then rec.pumps[#rec.pumps+1] = e end
+      local r = e.type ~= 'pump' and try(function() return e.get_recipe() end)
+      for _, p in ipairs(r and try(function() return r.products end) or {}) do
+        if p.type == 'fluid' and FUELS[p.name] then
+          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=product_amount(p), energy=r.energy}
+        end
+      end
+    end
+    if all then
+      for k, x in pairs(all) do if game.tick - x.tick > 10 * PARTS_KEEP then all[k] = nil end end
+      all[pl.index] = rec
+    end
+    return rec
+  end
+  -- Each fluid aboard: the fluid segments (pipes and storage tanks, one a run of them as the game joins them) beside
+  -- the thrusters, storage tanks, pumps and makers' outputs, and the thrusters', pumps' and makers' own boxes, which no
+  -- segment holds. On the iMac copy Resolute's sum changed by exactly made less used every tick for 18333 ticks of
+  -- flight (the fluid statistics). {name: amount}.
+  local function fuel_aboard(list, parts)
+    local out, seen = {}, {}
+    local function add(f) if f and FUELS[f.name] then out[f.name] = (out[f.name] or 0) + f.amount end end
+    local function segment(box, i)
+      local id = try(function() return box.get_fluid_segment_id(i) end)
+      if not id then return false end
+      if not seen[id] then
+        seen[id] = true
+        for name, n in pairs(try(function() return box.get_fluid_segment_contents(i) end) or {}) do
+          if FUELS[name] then out[name] = (out[name] or 0) + n end
+        end
+      end
+      return true
+    end
+    local function own_and_beside(e)
+      local fb = e.fluidbox
+      for i = 1, try(function() return #fb end) or 0 do
+        local f = try(function() return fb[i] end)
+        if f and FUELS[f.name] then
+          add(f)
+          for _, pc in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
+            if pc.target then segment(pc.target, pc.target_fluidbox_index or 1) end
+          end
+        end
+      end
+    end
+    for _, e in ipairs(list) do
+      local fb = e.valid and e.fluidbox
+      for i = 1, fb and try(function() return #fb end) or 0 do
+        local f = try(function() return fb[i] end)
+        if f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
+      end
+    end
+    for _, e in ipairs(parts.pumps) do if e.valid then own_and_beside(e) end end
+    for _, m in ipairs(parts.makers) do if m.entity.valid then own_and_beside(m.entity) end end
+    return out
+  end
+  -- A fluid's makers: {makers, batch (the largest), recipes, craft_s (the quickest at full speed), full_per_min (all of
+  -- them crafting without a pause), step (a batch a maker: what a window's count can differ from their steady output by,
+  -- each counted at the end of its craft)}.
+  local function makers_of(parts, name)
+    local out = {makers=0, batch=0, step=0, full_per_min=0, recipes={}, names={}}
+    for _, m in ipairs(parts.makers) do
+      if m.fluid == name and m.entity.valid then
+        local e = m.entity
+        local spd = try(function() return e.crafting_speed end) or 1
+        local prod = (try(function() return e.productivity_bonus end) or 0) + (try(function() return e.force.recipes[m.recipe].productivity_bonus end) or 0)
+        out.makers = out.makers + 1
+        out.batch = math.max(out.batch, m.batch)
+        out.step = out.step + m.batch
+        out.full_per_min = out.full_per_min + m.batch * (1 + prod) * 60 * spd / m.energy
+        local s = m.energy / spd
+        out.craft_s = out.craft_s and math.min(out.craft_s, s) or s
+        if not out.recipes[m.recipe] then out.recipes[m.recipe] = true; out.names[#out.names+1] = m.recipe end
+        out.kind = out.kind == nil and e.name or out.kind == e.name and e.name or 'machine'
+      end
+    end
+    return out.makers > 0 and out or nil
   end
   -- (d22 batch109 BS1) thruster fuel and oxidizer held and in tanks alone, for a flight watch's rows: {name={held, in_tanks}}
   function M.fuel_held(pl)
@@ -121,9 +247,17 @@ return function(api)
   -- used a minute now (the platform's fluid production statistics, the last minute), and, flying, whether each lasts the
   -- rest of the leg at the speed now; stopped, the thrusters burn nothing. {line, short (fluids that run out before the
   -- leg ends), rows (each with in_tanks: the storage tanks' part of held)}.
+  -- (FW) Rates over the engine's longest sample wholly in this leg (180 s, else 60 s; else the statistics' last minute,
+  -- as before): a maker counts a batch at the end of each craft, so a window's count differs from its steady output by
+  -- up to a batch a maker (step); a deficit within that, while batches land, is no deficit measured, unless what is
+  -- aboard lasts under LOW_MIN even so. What lasts how long is the fluid
+  -- aboard: the thrusters, tanks, pipes, pumps and the makers' outputs (aboard). Made in batches: the batch, the
+  -- makers, a craft's time at full speed, and the share of their full output made over the window.
   function M.fuel_outlook(pl)
-    local names = {['thruster-fuel']=true, ['thruster-oxidizer']=true}
-    local stock, in_tanks = fluid_stock(pl, names)
+    local names = FUELS
+    local stock, in_tanks, list = fluid_stock(pl, names)
+    local parts_ = try(function() return pl.surface and fuel_parts(pl) end)
+    local all = parts_ and fuel_aboard(list, parts_) or {}
     local stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
     local P = defines.flow_precision_index or {}
     local function per_min(name, cat)
@@ -133,16 +267,39 @@ return function(api)
     local v, v_by
     if leg then v, v_by = speed(pl) end
     local left_min = leg and v and v > 0 and leg.left_km / v or nil
+    local since = leg and M.since_departure(pl)
+    local win
+    for _, x in ipairs(since and since.samples or {}) do
+      if x.at_stop_s == 0 and x.seconds >= 60 and (not win or x.seconds > win.seconds) then win = x end
+    end
+    local window_s = win and win.seconds or 60
     local rows, parts, short = {}, {}, {}
     for _, name in ipairs({'thruster-fuel', 'thruster-oxidizer'}) do
-      local held, made, used = stock[name] or 0, per_min(name, 'input'), per_min(name, 'output')
-      local row = {name=name, held=math.floor(held + 0.5), in_tanks=math.floor((in_tanks[name] or 0) + 0.5), made_per_min=round(made, 0), used_per_min=round(used, 0)}
+      local wf = win and win.fluids[name]
+      local held, made, used = stock[name] or 0, wf and wf.made_per_min or per_min(name, 'input'), wf and wf.used_per_min or per_min(name, 'output')
+      local aboard = math.max(held, all[name] or 0)
+      local row = {name=name, held=math.floor(held + 0.5), in_tanks=math.floor((in_tanks[name] or 0) + 0.5), made_per_min=round(made, 0), used_per_min=round(used, 0),
+        aboard=math.floor(aboard + 0.5), window_s=window_s}
+      local mk = parts_ and makers_of(parts_, name)
+      local step = mk and mk.step * 60 / window_s
+      if mk then
+        row.batch = {size=round(mk.batch, 0), makers=mk.makers, recipes=mk.names, craft_s=round(mk.craft_s, 2), full_per_min=round(mk.full_per_min, 0),
+          share=mk.full_per_min > 0 and round(made / mk.full_per_min * 100, 0) or nil, step=round(mk.step, 0), step_per_min=round(step, 0)}
+      end
       local net = used - made
-      local text = string.format('%s %d held, made %d/min, used %d/min', name, row.held, row.made_per_min, row.used_per_min)
+      local text = string.format('%s %d held%s, made %d/min, used %d/min%s', name, row.held,
+        row.aboard > row.held and string.format(' (%d aboard with the pipes, pumps and makers\' outputs)', row.aboard) or '',
+        row.made_per_min, row.used_per_min, win and string.format(' over the last %d s', window_s) or '')
       if left_min then
+        -- within the step only while batches land in the window (or a craft at full speed is over half of it), and not
+        -- when what is aboard lasts under LOW_MIN even so (the copy: its fuel maker stopped, 1 left and 183/min used)
+        local pulsed = mk and (made > 0 or mk.craft_s * 2 > window_s)
         if net <= 0 then text = text .. ': lasts the leg'
+        elseif step and pulsed and net <= step and aboard / net >= LOW_MIN then
+          row.within_step = true
+          text = text .. string.format(': used over made by %d/min, within a batch a maker over %d s (%d/min): no deficit measured', round(net, 0), window_s, round(step, 0))
         else
-          row.lasts_min = round(held / net, 1)
+          row.lasts_min = round(aboard / net, 1)
           if row.lasts_min < left_min then
             row.short_min = round(left_min - row.lasts_min, 1)
             short[#short+1] = name
@@ -150,17 +307,22 @@ return function(api)
           else text = text .. string.format(': lasts %s, the leg %s', mins(row.lasts_min), mins(left_min)) end
         end
       end
+      if mk then
+        local b = row.batch
+        text = text .. string.format(' (made in batches of %d by %d %s%s: %s, a craft each %g s at full speed, %d/min%s)', b.size, b.makers, mk.kind,
+          b.makers == 1 and '' or 's', table.concat(b.recipes, ', '), b.craft_s, b.full_per_min,
+          b.share and string.format('; %d%% of that made over the last %d s', b.share, window_s) or '')
+      end
       rows[#rows+1] = row; parts[#parts+1] = text
     end
     local where = leg and string.format('leg %s->%s, %d km left%s', leg.from, leg.to, math.floor(leg.left_km + 0.5),
       left_min and string.format(', about %s at %d km/min (%s)', mins(left_min), math.floor(v + 0.5), v_by == 'now' and 'its speed now' or tostring(v_by)) or ', speed unknown')
       or 'stopped' .. (try(function() return ' at ' .. pl.space_location.name end) or '') .. ': the thrusters burn only in flight'
-    local since = leg and M.since_departure(pl)
     -- (d27 batch294 TQ, Sol #2645) apart from the use measured above: what its thrusters burn at full thrust at their
     -- own quality, the engine's figures
     local full = api.thrusters and try(function() return api.thrusters(pl) end)
     return {line=string.format('%s: %s; %s', pl.name, where, table.concat(parts, '; ')), short=#short > 0 and short or nil, rows=rows,
-      full_thrust=full and full.line or nil, full_thrust_per_min=full and full.per_min or nil,
+      full_thrust=full and full.line or nil, full_thrust_per_min=full and full.per_min or nil, window_s=window_s,
       leg_left_min=left_min and round(left_min, 1) or nil, since_departure_s=since and since.seconds, samples=since and since.samples,
       since_line=since and since.line}
   end
@@ -700,6 +862,6 @@ return function(api)
     progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',
     pessimistic='with forecast: {speed: 0.1..1 (a share of the speed read: slower, longer legs), dwell_s: 0..36000 (extra time at each stop at the stopped rate)}',
     platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='with forecast: basis (what the forecast assumes: legs, asteroids, use, box, speed, progress) and forecast_model (the asteroids and shots by the spawn rule with the platform\'s own width and speed, as design gives them); full_thrust (apart from the measured use: the platform\'s thrusters by quality and what they burn at full thrust, the engine\'s figures; quality multiplies a thruster\'s burn and thrust, legendary 2.5 times normal\'s 2 of each a tick); fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks, made and used a minute over the last minute, and flying whether each lasts the rest of the leg at the speed now; its owners get a team alert when one runs out before the leg ends, with how long since the platform left its stop and the engine\'s last 60 and 180 s side by side: each fluid used and made a minute, the thrusters\' tanks at start and end, and the seconds of each sample spent at the stop before it left); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (flying: this leg\'s own once its last 60 s are all in the leg and not rising (their mean), the last leg\'s while it speeds up and is under 90% of it, else its speed now, each said; stopped: the last finished leg\'s average; the fuel outlook, the legs\' minutes and the forecast use it), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min, share, shared {product: share}, other_use_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now; an ingredient two products draw on split by their make rates, other machines\' use of it taken off first), received (on rockets launched to it and not arrived, counted once), binds (which limit sets what is made over the route: the stock, the make rate or an ingredient; flight, departure, forecast and preflight\'s ammo_rates count the same way), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_made (asteroid chunks made a minute: the production statistics, the collectors\' catch and the crushers\' returns), lines; read only'}}
+    returns='with forecast: basis (what the forecast assumes: legs, asteroids, use, box, speed, progress) and forecast_model (the asteroids and shots by the spawn rule with the platform\'s own width and speed, as design gives them); full_thrust (apart from the measured use: the platform\'s thrusters by quality and what they burn at full thrust, the engine\'s figures; quality multiplies a thruster\'s burn and thrust, legendary 2.5 times normal\'s 2 of each a tick); fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks and aboard (the pipes, pumps and makers\' outputs too), made and used a minute over the engine\'s last 180 s (else 60 s) all in the leg, else the last minute, and flying whether what is aboard lasts the rest of the leg at the speed now (a deficit within a batch a maker over that time, while batches land and what is aboard lasts 2 minutes or more, is no deficit: a maker\'s batch counts when its craft ends; the makers\' batch, count, craft time and share of their full output said); its owners get a team alert when one runs out before the leg ends, with how long since the platform left its stop and the engine\'s last 60 and 180 s side by side: each fluid used and made a minute, the thrusters\' tanks at start and end, and the seconds of each sample spent at the stop before it left); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (flying: this leg\'s own once its last 60 s are all in the leg and not rising (their mean), the last leg\'s while it speeds up and is under 90% of it, else its speed now, each said; stopped: the last finished leg\'s average; the fuel outlook, the legs\' minutes and the forecast use it), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min, share, shared {product: share}, other_use_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now; an ingredient two products draw on split by their make rates, other machines\' use of it taken off first), received (on rockets launched to it and not arrived, counted once), binds (which limit sets what is made over the route: the stock, the make rate or an ingredient; flight, departure, forecast and preflight\'s ammo_rates count the same way), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_made (asteroid chunks made a minute: the production statistics, the collectors\' catch and the crushers\' returns), lines; read only'}}
   return M
 end
