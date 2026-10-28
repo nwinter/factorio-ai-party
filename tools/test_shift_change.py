@@ -9,6 +9,9 @@
 - a shift change: stop-team PREV with POG_STOP_WORLD=1, PREV's panes closed, start-team NEXT with PREV's switches,
   POG_RESUME and POG_NEXT_SHIFT; then a health line and PREV's console audit; a harness Lua error makes it exit 1.
 - start-team.sh writes switches.env with every switch shift-change reads.
+- (batch293) the site chat as "Operator" (tools/announce.py, a stub here): the change begins before stop-team, NEXT is
+  live with its agents once start-team is done; a failed start or a refused stop save says so instead; a start past
+  POG_SC_STALL_S says it is taking longer, once; one line per event; POG_ANNOUNCE=0 says nothing.
 """
 import json
 import os
@@ -45,6 +48,8 @@ for n in $STUB_NAMES; do
   fi
 done
 touch "$STUB_RUNS/$1/viewers-relay.on"
+sleep "${START_SLEEP:-0}"
+[ "${START_FAILS:-0}" = 0 ] && for n in $STUB_NAMES; do echo "$n w2:p$n claude"; done > "$STUB_RUNS/$1/panes.txt"
 exit "${START_FAILS:-0}"
 """
 QUOTA = STUB + """
@@ -74,6 +79,12 @@ if [ -n "${SITE_FAILS:-}" ]; then echo "03:00:01 site-refresh: FAILED: deploy to
 echo "03:00:01 site-refresh: done"
 """
 HERDR = STUB + "exit 0\n"
+# tools/announce.py: logs each line it would post (--log FILE first, as shift-change passes it); usual: 7 minutes
+ANNOUNCE = """#!/usr/bin/env bash
+[ "$1" = usual ] && { echo 7; exit 0; }
+[ "$1" = --log ] && shift 2
+echo "announce $*" >> "$STUB_LOG"
+"""
 # tools/obs-restart.sh: its last line says whether OBS answers again
 OBS_RESTART = STUB + """
 if [ -n "${OBS_RESTART_FAILS:-}" ]; then echo "10:59:40 obs-restart: FAILED: OBS does not answer after 90 s: ConnectionRefusedError"; exit 1; fi
@@ -92,7 +103,7 @@ def setup():
     os.makedirs(bin_)
     for name, body in (("stop-team", STUB), ("start-team", START), ("quota", QUOTA), ("ssh", SSH), ("obs", OBS),
                        ("pgrep", PGREP), ("herdr", HERDR), ("site-refresh", SITE), ("obs-restart", OBS_RESTART),
-                       ("obs-recover", OBS_RECOVER)):
+                       ("obs-recover", OBS_RECOVER), ("announce", ANNOUNCE)):
         p = os.path.join(bin_, name)
         open(p, "w").write(body)
         os.chmod(p, 0o755)
@@ -125,6 +136,7 @@ def run(tmp, runs, bin_, state, *args, **env):
              POG_SC_SITE_REFRESH=f"{bin_}/site-refresh",  # never the real one: it deploys the site
              POG_SC_OBS_RESTART=f"{bin_}/obs-restart",  # nor the real OBS restart on the box
              POG_SC_OBS_RECOVER=f"{bin_}/obs-recover",
+             POG_SC_ANNOUNCE=f"{bin_}/announce",  # never the live site's chat
              STUB_LOG=os.path.join(tmp, "calls.log"), STUB_RUNS=runs, STUB_NAMES=" ".join(NAMES))
     for k in [k for k in e if k.startswith("POG_") and not k.startswith("POG_SC_")]:
         del e[k]
@@ -308,6 +320,54 @@ def change():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def announced(tmp, want, wait=10):
+    """The stub log once it has `want` announce lines (they run in the background), as a list of them."""
+    end = time.time() + wait
+    while True:
+        got = [l for l in open(os.path.join(tmp, "calls.log")).read().splitlines() if l.startswith("announce ")]
+        if len(got) >= want or time.time() > end:
+            return got
+
+
+def announcements():
+    tmp, runs, bin_, state = setup()
+    try:
+        log = os.path.join(runs, "shake11", "start.log")   # no broker (as change(): no sockets here)
+        open(log, "w").write(open(log).read().replace("RCON broker: on", "RCON broker: off"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "site chat, as Operator: the change begins (about 7 minutes), shake12 is live, or it failed; stalled after 14 min" in r.stdout, r.stdout
+        got = announced(tmp, 2)
+        assert got == ["announce change-begin shake11 shake12", f"announce change-live shake12 --agents {len(NAMES)}"], got
+        calls = open(os.path.join(tmp, "calls.log")).read()
+        assert calls.index("announce change-begin") < calls.index("stop-team shake11"), calls
+        # a failed start: said once, never live
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", START_FAILS="1")
+        assert r.returncode == 1 and announced(tmp, 2) == ["announce change-begin shake11 shake12", "announce change-failed shake12"]
+        # a start slower than POG_SC_STALL_S: "taking longer", once, then live
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", START_SLEEP="3",
+                   POG_SC_STALL_S="1")
+        got = announced(tmp, 3)
+        assert r.returncode == 0 and got == ["announce change-begin shake11 shake12", "announce change-stalled shake12",
+                                             f"announce change-live shake12 --agents {len(NAMES)}"], got
+        # a quick start: no stall line after it (the watcher is stopped)
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_SC_STALL_S="2")
+        time.sleep(3)
+        assert announced(tmp, 3, wait=0) == ["announce change-begin shake11 shake12", f"announce change-live shake12 --agents {len(NAMES)}"]
+        # refused checks: nothing said; POG_ANNOUNCE=0: nothing said
+        r, _ = run(tmp, runs, bin_, state, "shake11", "shake13", "240", "--stream", STREAMING="True", QUOTA_WARN="1")
+        assert r.returncode == 2 and announced(tmp, 1, wait=1) == [], r.stdout
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_ANNOUNCE="0")
+        assert r.returncode == 0 and announced(tmp, 1, wait=1) == [] and "site chat" not in r.stdout, r.stdout
+        print("announcements: ok")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def unhealthy():
     tmp, runs, bin_, state = setup()
     try:
@@ -455,5 +515,6 @@ if __name__ == "__main__":
     dry_run()
     change()
     unhealthy()
+    announcements()
     start_team_writes_switches()
     start_cams()

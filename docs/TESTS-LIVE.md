@@ -26,6 +26,7 @@ defaults:
 | site/build.py | the repo's `runs/` as `--runs-dir` | a temp runs folder |
 | site/chart_deploy.py | its wrangler deploy without `POG_WRANGLER` (batch241) | `POG_WRANGLER` or a stub runner |
 | tools/pane_resume.py `HerdrPanes` | herdr pane reads and typing | fake panes (tools/test_pane_resume.py, tools/test_pane_resume_stop.py) |
+| tools/announce.py | the live site chat without `POG_ANNOUNCE_API` (batch293) | a local stub API (site/test_announce.py); tools/shift-change.sh's tests stub it with `POG_SC_ANNOUNCE` |
 | tools/public-push.sh | the public repo and the main checkout without `POG_PUBLIC_REMOTE` and `POG_PUBLIC_SOURCE` (batch272) | a local bare repo and a temp source |
 
 Two more changes keep a live tool from mistaking a test's process for the live run's:

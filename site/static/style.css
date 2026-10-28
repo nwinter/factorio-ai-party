@@ -530,6 +530,9 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat-form .vchat-viewers { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
 .vchat .c-src-viewers { background: #5b8fb9; color: #111; }
 .vchat .c-src-host { background: var(--fx-yellow, #e8c547); color: #111; }
+/* the Operator's announcement (batch293: shift changes, planned stops) */
+.vchat .c-src-op { background: var(--fx-orange, #e39827); color: #111; }
+.vchat .c-op .c-text { font-weight: 600; }
 /* the host link's line shares the replies row (the chat panel stays no taller than the player) */
 .vchat-host { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--fx-heading); white-space: nowrap; }
 .vchat-host[hidden] { display: none; }
