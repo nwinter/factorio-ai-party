@@ -50,7 +50,8 @@
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
   remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
-  machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
+  machine; `{platform, item, at_least}` on a platform; in `all` or `any` each `produced` member counts its own machines
+  from the wait's first check); `platform_built` (`platform`: no foundation
   ghost left; `entities: true` no entity ghost either; remote and platform lanes too) and `platform_ready` (`platform`:
   no ghost left, entity or tile; `entities: false` tiles only; remote and platform lanes too; with `positions`, `area`
   or `tiles`: that part's ghosts only, and the other takes the same subset; saw counts the ghosts left); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,

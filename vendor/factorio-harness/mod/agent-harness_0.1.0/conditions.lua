@@ -499,8 +499,23 @@ return function(api)
     -- record (a wait_until step or a direct wait), where the starting counts are kept.
     produced=function(p,c,estimate,record)
       assert(record,'produced counts from the start of a wait: a wait_until step or a direct wait_until (not a guard, an order\'s when or a loop condition)')
-      local base=record.produced_base or {}
-      record.produced_base=base
+      -- (d27 batch283 WP, Sol #2612: a wait_until all of 5 produced conditions failed at its first check, "the
+      -- electromagnetic-plant at (-19,76) is gone": every member kept its machines in one table, and the second member,
+      -- not counting the first one's machine, called it gone) a baseline for each condition, by what it counts: its
+      -- platform and item, or its surface, tiles and counter_from. The same tiles named twice share one. A record from
+      -- before keeps its one table for the first condition read.
+      local bases=record.produced_base or {}
+      if bases.by==nil then
+        local legacy=next(bases)~=nil and bases or nil
+        bases={by={},legacy=legacy}
+        record.produced_base=bases
+      end
+      local function base_for(ckey)
+        local b=bases.by[ckey]
+        if not b then b=bases.legacy or {}; bases.legacy=nil; bases.by[ckey]=b end
+        return b
+      end
+      local base
       -- On a platform (D4, Astra ~10 times: the produced wait found no machine counter there): the platform's own item
       -- production statistics, made since the wait began.
       if c.platform~=nil then
@@ -508,6 +523,7 @@ return function(api)
         for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
         if not pl then error('no platform of ours named '..tostring(c.platform),0) end
         if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
+        base=base_for('platform:'..c.platform..':'..tostring(c.item))
         local now=qflow.count(p.force.get_item_production_statistics(pl.surface),c.item,'input')   -- (PX1) every quality
         if base.platform==nil or not base.platform_q then base.platform,base.platform_q=now,true end   -- (PX1) a base kept before every quality was summed is taken again
         local made=now-base.platform
@@ -519,6 +535,12 @@ return function(api)
       -- changed, fails the wait with the reason (its count so far would be wrong).
       local s=surface_of(p,c)
       local there=s~=p.surface and ' on '..s.name or ''
+      do
+        local parts={tostring(s.index or s.name)}
+        for _,raw in ipairs(c.positions or {c.position}) do local pos=api.position(raw); parts[#parts+1]=pos.x..','..pos.y end
+        if c.counter_from~=nil then parts[#parts+1]='from '..tostring(c.counter_from) end
+        base=base_for(table.concat(parts,':'))
+      end
       base.machines=base.machines or {}
       local crafts,items,seen,machines=0,0,0,0
       local positions=c.positions or {c.position}
