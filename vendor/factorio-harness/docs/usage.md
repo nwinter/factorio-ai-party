@@ -17164,7 +17164,7 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     `previous_recipe_quality`; area and position rows the same. Compact lines: `recipe legendary NAME` when not normal,
     `recipe normal NAME` when the line names the machine's quality, and `last recipe ...` for an idle furnace.
   - scan: rows of crafting machines and their ghosts add `recipe_quality` when `recipe`, `status` or `output` is asked.
-  - craftrate (inspect's `rate`, platform_bom, platform_defense): `recipe_quality`; the line opens `legendary recipe
+  - craftrate (inspect's `rate`, platform_bom, uptime): `recipe_quality`; the line opens `legendary recipe
     (takes legendary ingredients, makes legendary products[ or better at its quality chance]): ...`; its io line names
     the recipe with its quality.
   - bottleneck: a recipe at another quality is its own group (`assembling-machine-2 legendary iron-gear-wheel x1`), and
