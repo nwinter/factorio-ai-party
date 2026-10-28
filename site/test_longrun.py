@@ -190,14 +190,14 @@ def main():
         assert "platforms built</span></div><div class=stat-sub>0 lost · 1 active</div>" in page and "Space platforms" in page
         assert 'class="journey"' in page and "/static/game/place/vulcanus-big.webp" in page, "the planets in order, pictured"
         assert [(t["label"], t["tick"]) for t in s3["techs"]] == [("Rocket silo", 3600 * 102)], s3["techs"]
-        assert "Technologies researched (1)" in (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        assert "Unique technologies researched (1)" in (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         # key times (game time, hours on stream, Pacific), the kind filter, the live banner (hidden until site.js)
         assert 'id="key-times"' in page and "First rocket" in page and "1h42m" in page, "first rocket at game 102 min"
         assert 'class="kind-filter"' in page and 'data-kind="space"' in page and '<tr data-kind="research">' in page
         assert 'class="live-banner"' in page and " hidden>" in page.split('class="live-banner"')[1][:200]
         assert '">on now</span>' not in page  # no "on now" chip from the build: a built page goes stale
         sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
-        assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 technologies · +2 rockets' in sp2
+        assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 unique technologies · +2 rockets' in sp2
         assert "The team plan at the end of the shift" in sp2 and "Rocket silo, then Vulcanus" in sp2 and "set at 1h10m" in sp2
         assert "rocket silo at (40,-30)" in sp2 and "fuel for the Solstice run" in sp2 and "set at 1h50m by astra" in sp2
         assert "Load the rocket" in sp2 and "3 open requests nobody was on · 2 in progress" in sp2 and "quota" not in sp2
