@@ -217,6 +217,16 @@ table.long-run tr.empty td, table.long-run tr.empty th { opacity: .7; }
 table.long-run .moments { margin: 0; padding-left: 1.1em; min-width: 16em; font-size: .9rem; }
 table.long-run th[scope=row] .fx-chip { margin-left: 4px; }
 td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* (batch314 C) the made/consumed and repeatable tables: on a phone each row is a card of label / value lines, a value
+   that does not fit beside its label going under it */
+@media (max-width: 720px) {
+  table.stack-table, table.stack-table tbody, table.stack-table tr, table.stack-table td, table.stack-table th { display: block; }
+  table.stack-table thead { display: none; }
+  table.stack-table tr { border: 1px solid var(--line); border-radius: var(--fx-r-1); padding: 8px 10px; margin-bottom: 10px; }
+  table.stack-table th[scope=row] { padding: 0 0 4px; border: 0; }
+  table.stack-table td { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; padding: 2px 0; border: 0; white-space: normal; }
+  table.stack-table td::before { content: attr(data-l); color: var(--muted); font-size: .85rem; }
+}
 /* phones: each shift is a card of label / value lines */
 @media (max-width: 720px) {
   table.long-run, table.long-run tbody, table.long-run tr, table.long-run td, table.long-run th { display: block; }

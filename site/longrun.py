@@ -331,7 +331,8 @@ def rebase(r, origin):
                 research=len(r["done"] - origin["done"]), rockets=max(0, r["rockets"] - origin["rockets"]),
                 platforms=[p for p in r["platforms"] if p not in origin["platforms"]],
                 at={k: v for k, v in r.get("at", {}).items() if k not in origin["platforms"]},
-                planets=[p for p in r["planets"] if p == "nauvis" or p not in origin["planets"]])
+                planets=[p for p in r["planets"] if p == "nauvis" or p not in origin["planets"]],
+                infinite={k: v - origin["infinite"].get(k, 0) for k, v in r["infinite"].items() if v > origin["infinite"].get(k, 0)})
 
 
 def jumped(a, b):
@@ -341,6 +342,14 @@ def jumped(a, b):
     if not (ta and tb):
         return False
     return (b["raw"] - a["raw"]) / 3600 > (tb - ta).total_seconds() / 60 + 10
+
+
+def levels(r):
+    """(batch314 C) repeatable research levels completed as of a score row: the score's `infinite` counts, for each
+    infinite technology, the levels done past its prototype's own (tools/pog.py SCORE_LUA: t.level - prototype.level;
+    a row with none done leaves the field out). research_done never holds them (an infinite technology is never
+    "researched"), so they are counted apart from the unique technologies."""
+    return sum(v for v in r["infinite"].values() if isinstance(v, int) and v > 0)
 
 
 def interp(xs, ys, x):
@@ -462,7 +471,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         p = parents(runs_dir).get(start)
         before = scores(runs_dir / p / "scores.jsonl") if p and (runs_dir / p).is_dir() else []
         origin = before[-1] if before else None
-    shifts, research, spm, rockets_s, clock, bounds, made_spm = [], [], [], [], [], [], []
+    shifts, research, spm, rockets_s, clock, bounds, made_spm, level_s = [], [], [], [], [], [], [], []
     spm_packs, made, firsts, seen_first = {}, {}, [], set()
     prev = rebase(origin, origin) if origin else None
     last_row = origin  # for the made-pack deltas across shift changes
@@ -487,6 +496,18 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
     max_raw = origin["raw"] if origin else None
     last_kept = origin
     gaps, replays, rollbacks = [], [], []
+    # (batch314 C) packs made and consumed over matched row pairs, each counter's falls, where consumption begins, and
+    # each repeatable technology's first completed level
+    flow, falls, flow_from, level_first = {"made": {}, "used": {}}, {"made": {}, "used": {}}, None, {}
+
+    def fall(kind, k, d, shift_n):
+        f = falls[kind].setdefault(k, {"times": 0, "total": 0, "shifts": [], "by_shift": {}})
+        f["times"] += 1
+        f["total"] += -d
+        f["by_shift"][shift_n] = f["by_shift"].get(shift_n, 0) - d
+        if shift_n not in f["shifts"]:
+            f["shifts"].append(shift_n)
+
     for i, name in enumerate(names):
         d = runs_dir / name
         sc, replay, replay_from, held, held_from = [], [], None, [], None
@@ -554,17 +575,40 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         ta = parse_t(replay[0]["t"] if replay and replay[0]["t"] < a["t"] else a["t"])
         deaths, losses, died, first_loss = stream_events(d / "stream-service.log", ta, detail=True)
         # packs made: the rise of every counter between consecutive rows, a fall counted as 0
-        made0 = dict(made)
+        made0, flow0 = dict(made), {k: dict(v) for k, v in flow.items()}
         for r in sc:
             if last_row is not None and r["raw"] >= last_row["raw"]:
                 for k, v in r["packs"].items():
-                    made[k] = made.get(k, 0) + max(0, v - last_row["packs"].get(k, 0))
+                    dv = v - last_row["packs"].get(k, 0)
+                    made[k] = made.get(k, 0) + max(0, dv)
+                    if dv < 0:
+                        fall("made", k, dv, n)
+                # (batch314 C) made and consumed over the same row pairs: those where both rows carry consumption
+                if r["used"] is not None and last_row.get("used") is not None:
+                    for k in set(r["packs"]) | set(r["used"]):
+                        dm = r["packs"].get(k, 0) - last_row["packs"].get(k, 0)
+                        du = r["used"].get(k, 0) - last_row["used"].get(k, 0)
+                        flow["made"][k] = flow["made"].get(k, 0) + max(0, dm)
+                        flow["used"][k] = flow["used"].get(k, 0) + max(0, du)
+                        if du < 0:
+                            fall("used", k, du, n)
             elif last_row is None:
                 for k, v in r["packs"].items():
                     made[k] = made.get(k, 0) + max(0, v)
+                if r["used"] is not None:  # the chain's first row: everything counted so far, as made is
+                    for k in set(r["packs"]) | set(r["used"]):
+                        flow["made"][k] = flow["made"].get(k, 0) + max(0, r["packs"].get(k, 0))
+                        flow["used"][k] = flow["used"].get(k, 0) + max(0, r["used"].get(k, 0))
+            if r["used"] is not None and flow_from is None:
+                flow_from = {"x": round(r["tick"] / 3600, 1), "t": r["t"], "shift": n}
             r["made"] = dict(made)
+            r["levels"] = levels(r)
+            for k, v in r["infinite"].items():
+                if k not in level_first and isinstance(v, int) and v > 0:
+                    level_first[k] = {"tick": r["tick"], "t": r["t"], "shift": n}
             last_row = r
         shift_made = {k: made.get(k, 0) - made0.get(k, 0) for k in made}
+        shift_flow = {kind: {k: flow[kind].get(k, 0) - flow0[kind].get(k, 0) for k in flow[kind]} for kind in flow}
         # the shift's own made total runs from its first row (what came before it belongs to the change-over)
         own = {k: b["made"].get(k, 0) - a["made"].get(k, 0) for k in b["made"]}
         try:  # the last score is under 10 minutes old: the shift is still on (the score loop writes every 2 minutes)
@@ -615,6 +659,10 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                    output_per_min={g: round(max(0, b["key"].get(g, 0) - a["key"].get(g, 0)) / mins, 1) for g in KEY_PRODUCTS}
                    if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
+                   # (batch314 C) repeatable research levels: at the end, done in the shift, and by technology
+                   levels=levels(b), levels_new=levels(b) - levels(base),
+                   level_techs={k: v - base["infinite"].get(k, 0) for k, v in b["infinite"].items() if v > base["infinite"].get(k, 0)},
+                   flow=shift_flow,
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,
                    made=shift_made, made_total=sum(shift_made.values()), platforms_built=built, platforms_lost=lost,
                    calls=[{"t": w.isoformat(timespec="seconds"), "who": h, "text": clean(x)}
@@ -647,7 +695,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                     first(f"tech:{tech}", lab, "research", g, r["t"], n)
             for c in TECH_COUNTS:
                 if r["research"] >= c:
-                    first(f"techs:{c}", f"{c} technologies", "research", g, r["t"], n)
+                    first(f"techs:{c}", f"{c} unique technologies", "research", g, r["t"], n)
             for c in ROCKET_COUNTS:
                 if r["rockets"] >= c:
                     first(f"rockets:{c}", "First rocket launched" if c == 1 else f"{c} rockets launched", "space", g, r["t"], n)
@@ -744,6 +792,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             m = r["tick"] / 3600
             if last_m is None or m - last_m >= 5 or r is b:
                 research.append((round(m, 1), r["research"]))
+                level_s.append((round(m, 1), r["levels"]))
                 rockets_s.append((round(m, 1), r["rockets"]))
                 clock.append((round(m, 1), r["t"]))
                 last_m = m
@@ -785,4 +834,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             "made": made, "firsts": firsts, "bounds": bounds, "clock": clock, "platforms": plats,
             # (batch314) holes in the record, game time replayed from an earlier save, and the last score row read
             "gaps": gaps, "replays": replays, "rollbacks": rollbacks,
+            # (batch314 C) repeatable levels over time and by technology; packs made and consumed over matched row
+            # pairs (flow), each counter's falls (not subtracted) and the first row with consumption (flow_from)
+            "levels": level_s, "flow": flow, "falls": falls, "flow_from": flow_from,
+            "repeatable": sorted(({"name": k, "levels": v, "under_way": in_progress(k, {k: v}), "first": level_first.get(k)}
+                                  for k, v in (last_row["infinite"].items() if last and last_row else ()) if v > 0), key=lambda x: (-x["levels"], x["name"])),
             "cutoff": {"x": round(last["tick1"] / 3600, 1), "game": last["game1"], "t": last["ended"], "shift": last["n"]} if last else None}
