@@ -1149,6 +1149,9 @@ class Model:
         who = ag.display_name or w["agent"]
         item = {"id": f"work-{w['agent']}-{w.get('at') or now}", "agent": w["agent"], "action": w.get("action"),
                 "t": now, "platform": w.get("platform"), "position": w.get("position"), "surface": w.get("surface")}
+        for k in ("extent", "what", "verb"):  # (d28 batch312) the box it covers and what it names: the build shot's close-up
+            if w.get(k):
+                item[k] = w[k]
         if w.get("platform"):
             view = self.platform_view(w["platform"])
             if not view:

@@ -139,6 +139,10 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   work_build_min (no dwell, no score ratio) from a story without its own news, a tour, the map, a platform view, a
   launch or an inspection, and from a trio; no launch starts while one waits; a build on the ground makes the same
   views give way. A platform aired for work within work_repeat comes back only for a build, closer on where it landed.
+- Build close-ups (d28 batch312 A, viewer Aurora 10:47; work_overview_s, work_close_*): a build that names where it
+  lands (its entries, area or position) opens on the whole ship for work_overview_s on a first visit, its caption
+  saying where the work is, then glides to the work at a zoom that fits the request's box (0.6 to 0.9); a repeat goes
+  to the work at once. The caption names what the request names and where on the ship (bow north).
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -335,6 +339,17 @@ ONECAM = {
     "work_repeat": 900.0,
     "work_build_gap": 60.0,
     "work_spot_zoom": 0.9,
+    # (d28 batch312 A, viewer Aurora 10:47: "Could repair/build shots on large ships use a brief overview followed by a
+    # close-up of the actual changed machines or feeders? ... a first platform visit can use the whole-ship view despite
+    # an exact work position.") A build that names where it lands: on a first visit the whole ship work_overview_s,
+    # then the camera moves to the work; a repeat goes there at once. The close-up fits the request's box (its entries
+    # or area) plus work_close_margin tiles, at a zoom from work_close_min (19 px a tile at 1080p: a one-tile inserter
+    # still readable) to work_spot_zoom (a position alone: that zoom); the caption says what it names and where on the
+    # ship (bow north): "Sol placing 5 ghosts (3 assembling machine 2, 2 inserter) on Loom · whole ship, the work near
+    # the stern, starboard side", then "... on Loom · near the stern, starboard side".
+    "work_overview_s": 5.0,
+    "work_close_margin": 10.0,
+    "work_close_min": 0.6,
     # Fights (a viewer at 16:45: "dont move 'on air' away from agents under attack"): while the agent on air is
     # shooting or under attack, or the fight on air is still reported, no cut away but an urgent one; an attack shot
     # holds until its fight has been quiet fight_quiet; an agent under attack is a strong pick.
@@ -1852,6 +1867,7 @@ class OneCam(Director):
         self.maybe_group_pip(snapshot, by_name, scores, now)
         self.release_maps(now)
         self.pan_step(now)
+        self.closeup_step(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
@@ -3663,6 +3679,60 @@ class OneCam(Director):
                 target["glide"] = round(max(0.5, abs(y - t["position"]["y"]) / ahead), 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
+    def work_close(self, w, view, who, name):
+        """(d28 batch312 A) The close-up of a build that names where it lands: {position, zoom, caption}. The box is the
+        request's (extent: its entries or area), the zoom fits it with work_close_margin at the on-air width, from
+        work_close_min to work_spot_zoom (a position alone: work_spot_zoom); the caption: who, what the request names, where on the ship (the hull's
+        thirds from its bounds, bow north: "near the bow, port side")."""
+        cfg = self.cfg
+        p = w["position"]
+        e = w.get("extent") or {}
+        lo, hi = cfg["work_close_min"], cfg["work_spot_zoom"]
+        try:
+            left, top, right, bottom = (float(e[k]) for k in ("left", "top", "right", "bottom"))
+            m = cfg["work_close_margin"]
+            fit = min(60.0 * self.onair_frac() / (right - left + m), 34.0 / (bottom - top + m))
+        except (KeyError, TypeError, ValueError):  # a position alone: work_spot_zoom there
+            left = right = float(p["x"])
+            top = bottom = float(p["y"])
+            fit = hi
+        zoom = round(max(lo, min(hi, fit)), 2)
+        cx, cy = round((left + right) / 2, 1), round((top + bottom) / 2, 1)
+        what = w.get("what") or []
+        n = sum(c for _, c in what)
+        named = ", ".join(f"{c} {k.replace('-', ' ')}" for k, c in what[:3]) + (f" and {len(what) - 3} more kinds" if len(what) > 3 else "")
+        verb = w.get("verb") or "building"
+        doing = f"placing {n} ghost{'s' if n != 1 else ''} ({named})" if w.get("action") == "place_ghosts" and n else verb
+        b = view.get("bounds") or {}
+        where = ""
+        if all(isinstance(b.get(k), (int, float)) for k in ("left", "top", "right", "bottom")) and b["right"] > b["left"] and b["bottom"] > b["top"]:
+            fy = (cy - b["top"]) / (b["bottom"] - b["top"])
+            fx = (cx - b["left"]) / (b["right"] - b["left"])
+            along = "near the bow" if fy < 1 / 3 else "near the stern" if fy > 2 / 3 else "midships"
+            side = "port side" if fx < 1 / 3 else "starboard side" if fx > 2 / 3 else "on the centre line"
+            where = f"{along}, {side}"
+        cut = " (part of it)" if fit < lo - 1e-9 else ""
+        # (the overlay drops the leading name and puts "· " before the rest, as for "Sol building on Starling")
+        head = f"{who} {doing} on {name}"
+        return {"position": {"x": cx, "y": cy}, "zoom": zoom, "caption": f"{head} · {where}{cut}" if where else head + cut,
+                "overview": f"{head} · whole ship" + (f", the work {where}" if where else "")}
+
+    def closeup_step(self, now):
+        """(d28 batch312 A) The shot on air that opened on the whole ship for a build (`closeup`): after work_overview_s on
+        air the camera glides to the work's close-up, its caption says what and where. A new shot drops it."""
+        t = self.state.get(self.onair)
+        c = (t or {}).get("closeup")
+        if not c or c.get("done") or now < self.onair_since + self.cfg["work_overview_s"] or now >= t.get("until", now + 1):
+            return
+        c["done"] = now
+        target = {k: v for k, v in t.items() if k not in ("jump", "pan")}
+        dist = math.hypot(c["position"]["x"] - t["position"]["x"], c["position"]["y"] - t["position"]["y"]) if t.get("position") else 0
+        target.update(position=dict(c["position"]), zoom=c["zoom"], solo_zoom=c["zoom"], exact_zoom=True, work=c["caption"],
+                      glide=round(max(2.0, dist / 1.5), 2))  # about 1.5 s to the work, the zoom eased in on the way
+        t.pop("pan", None)
+        t.update(position=target["position"], zoom=c["zoom"], solo_zoom=c["zoom"], work=c["caption"])
+        self.apply(self.slot(self.onair), target, f"work close-up: {c['caption']}", {}, now, quiet=True)
+
     @staticmethod
     def same_platform(a, b):
         ap, bp = (a or {}).get("platform") or {}, (b or {}).get("platform") or {}
@@ -4083,18 +4153,23 @@ class OneCam(Director):
             until = now + cfg["ready_s"] + cfg["work_hold"]
             verb = w.get("verb") or "building"
             label = f"{who} · {verb} on {name}" if build else f"{who} · working on {name}"
-            spot = w.get("position") if build and now - last < cfg["work_repeat"] else None
+            spot = w.get("position") if build else None
             view = (self.plat_rows.get(name) or {}).get("view") or w.get("view") or {}
-            if isinstance(spot, dict) and spot.get("x") is not None and view.get("surface"):
-                z = cfg["work_spot_zoom"]  # (batch267) a closer view of where it landed: the platform aired lately
-                t = {"agents": [agent], "subject": "@platform", "position": {"x": float(spot["x"]), "y": float(spot["y"])},
-                     "surface": view["surface"], "zoom": z, "solo_zoom": z, "exact_zoom": True, "until": until,
-                     "platform": {"name": name, "why": "work", "label": label, "agent": agent}}
+            close = self.work_close(w, view, who, name) if isinstance(spot, dict) and spot.get("x") is not None \
+                and view.get("surface") else None
+            if close and now - last < cfg["work_repeat"]:
+                # (batch267) a closer view of where it landed: the platform aired lately
+                t = {"agents": [agent], "subject": "@platform", "position": close["position"], "surface": view["surface"],
+                     "zoom": close["zoom"], "solo_zoom": close["zoom"], "exact_zoom": True, "until": until,
+                     "platform": {"name": name, "why": "work", "label": label, "agent": agent}, "work": close["caption"]}
             else:
                 t = self.platform_target(name, "work", until, agent=agent, label=label)
+                if t and close:  # (batch312) a first visit: the whole ship work_overview_s, then the work (closeup_step)
+                    t["closeup"] = close
+                    t["work"] = close["overview"]
             if not t:
                 continue
-            t["work"] = f"{who} {verb} on {name}" if build else f"{who} working on {name}"
+            t.setdefault("work", f"{who} {verb} on {name}" if build else f"{who} working on {name}")
             if build:
                 t["build"] = True
                 self.work_built[(agent, name)] = w["t"]

@@ -289,6 +289,36 @@ def target_of(args):
     return plat, None
 
 
+def extent_of(args):
+    """(d28 batch312) The box a request's work covers, {left, top, right, bottom} in tiles, or None: its area, or its
+    entries' positions (each a tile wide), or its position (one tile)."""
+    area = args.get("area")
+    if isinstance(area, dict):
+        lt, rb = area.get("left_top") or {}, area.get("right_bottom") or {}
+        try:
+            return {"left": float(lt["x"]), "top": float(lt["y"]), "right": float(rb["x"]), "bottom": float(rb["y"])}
+        except (KeyError, TypeError, ValueError):
+            pass
+    pts = [e.get("position") for e in args.get("entities") or [] if isinstance(e, dict)]
+    pts = [p for p in pts if isinstance(p, dict) and isinstance(p.get("x"), (int, float)) and isinstance(p.get("y"), (int, float))]
+    pos = args.get("position")
+    if not pts and isinstance(pos, dict) and isinstance(pos.get("x"), (int, float)) and isinstance(pos.get("y"), (int, float)):
+        pts = [pos]
+    if not pts:
+        return None
+    return {"left": min(p["x"] for p in pts) - 0.5, "top": min(p["y"] for p in pts) - 0.5,
+            "right": max(p["x"] for p in pts) + 0.5, "bottom": max(p["y"] for p in pts) + 0.5}
+
+
+def what_of(args):
+    """(d28 batch312) The entities a request names, most first: [[name, count]] (place_ghosts' entries), or None."""
+    n = {}
+    for e in args.get("entities") or []:
+        if isinstance(e, dict) and isinstance(e.get("name"), str) and e["name"]:
+            n[e["name"]] = n.get(e["name"], 0) + 1
+    return [[k, c] for k, c in sorted(n.items(), key=lambda kv: -kv[1])] or None
+
+
 class WorkFeed:
     def __init__(self, run_dir, agents):
         self.run_dir = run_dir
@@ -368,5 +398,5 @@ class WorkFeed:
                     continue  # inspect, configure, launch ... on the body's own surface: its camera shows them
                 out.append({"agent": agent, "action": q["action"], "verb": REMOTE.get(q["action"]) or
                             ON_PLATFORM[q["action"]], "platform": plat, "position": pos, "at": r.get("at"),
-                            "surface": surface_named(args)})
+                            "surface": surface_named(args), "extent": extent_of(args), "what": what_of(args)})
         return out
