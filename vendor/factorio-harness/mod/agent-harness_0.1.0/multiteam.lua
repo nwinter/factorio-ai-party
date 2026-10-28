@@ -394,7 +394,10 @@ return function(api)
     log('mt contact: ' .. helpers.table_to_json(rec))
     pcall(helpers.write_file, 'pog/mt-contacts.jsonl', helpers.table_to_json(rec) .. '\n', true, 0)
   end
-  function M.on_charted(event)
+  -- (mt275) the chart hook's cost: mt_cost {reset?} writes the events counted and their total time to the server log
+  -- (a LuaProfiler prints only there or by rcon.print), then starts again with reset
+  local cost = {n=0, searched=0}
+  local function charted(event)
     local s = st()
     local teams = s.teams
     if not teams then return end
@@ -408,6 +411,7 @@ return function(api)
     if #others == 0 then return end
     local surface = game.get_surface(event.surface_index)
     if not surface then return end
+    cost.searched = cost.searched + 1
     for _, e in ipairs(surface.find_entities_filtered{area=event.area, force=others, limit=16}) do
       local o = e.force.name
       local key = 'chart ' .. f.name .. '>' .. o
@@ -416,6 +420,20 @@ return function(api)
         record({kind='chart', team=f.name, other=o, surface=surface.name, x=e.position.x, y=e.position.y, entity=e.name})
       end
     end
+  end
+  function M.on_charted(event)
+    if not cost.acc then return charted(event) end
+    local p = helpers.create_profiler()
+    charted(event)
+    p.stop()
+    cost.acc.add(p)
+    cost.n = cost.n + 1
+  end
+  function M.operator.mt_cost(a)
+    local n, searched = cost.n, cost.searched
+    if cost.acc then log({'', 'mt chart cost: ', n, ' events, ', searched, ' searched, total ', cost.acc}) end
+    if a.reset ~= false then cost = {n=0, searched=0, acc=helpers.create_profiler(true)} end
+    return {events=n, searched=searched, logged=n > 0, timing=cost.acc ~= nil}
   end
   function M.on_damaged(event)
     local s = st()
