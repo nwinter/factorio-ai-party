@@ -136,8 +136,11 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
     bg = scene_input(c, scene, "stream background", "color_source_v3", {"color": 0xFF181210, "width": 1920, "height": 1080})
     place(c, scene, bg, 0, 0, 1920, 1080)
     order.append(bg)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import cams as cams_mod
+    panels = cams_mod.panel_sources()  # (d27 batch285 B) POG_CAM_PANELS: cam2/cam3 capture cam1's window, cropped
     for i, slot in enumerate(("main", "cam2", "cam3"), 1):
-        exe = f"factorio-cam{i}.exe"
+        exe = "factorio-cam1.exe" if f"stream cam{i}" in panels else f"factorio-cam{i}.exe"
         item = scene_input(c, scene, f"stream cam{i}", "game_capture", {
             "capture_mode": "window", "window": f"Factorio 2.0.77:Factorio:{exe}", "priority": 2,
             "capture_cursor": False, "allow_transparency": False})
@@ -147,10 +150,10 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
         # (d24 batch136 PH2) a capture not hooked yet reads 0 x 0: its crop is left as it is (crop_for gave none and the
         # main hole showed it letterboxed); rehook-cams crops it once its client has joined
         sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-        from cuts import crop_for
+        from cuts import crop_of
         src = c.get_scene_item_transform(scene, item).scene_item_transform
         if src.get("sourceWidth") and src.get("sourceHeight"):
-            c.set_scene_item_transform(scene, item, crop_for(src["sourceWidth"], src["sourceHeight"], w, h))
+            c.set_scene_item_transform(scene, item, crop_of(f"stream cam{i}", src["sourceWidth"], src["sourceHeight"], w, h, panels))
         order.append(item)
     order.append(host_capture(c, scene, lay))  # Nick's own client, off until host view (above the cameras)
     ov = scene_input(c, scene, "stream overlay", "browser_source", {
@@ -203,7 +206,10 @@ def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
         out.append(f"{name}: re-enabled")
         todo.append((len(out) - 1, name, item, True))
     sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-    from cuts import crop_for
+    from cuts import crop_of
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import cams as cams_mod
+    panels = cams_mod.panel_sources()
     left = wait_s
     for k, name, item, on in todo:
         while True:
@@ -218,7 +224,7 @@ def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
             out[k] += (f"; no source size after {wait_s:g} s" if on else "; no source size") + \
                 f", crop not set (left {t.get('cropLeft', 0)}/{t.get('cropRight', 0)} {t.get('cropTop', 0)}/{t.get('cropBottom', 0)})"
             continue
-        crop = crop_for(sw, sh, bw, bh)
+        crop = crop_of(name, sw, sh, bw, bh, panels)
         was_crop = tuple(t.get(f"crop{side}", 0) for side in ("Left", "Right", "Top", "Bottom"))
         now = tuple(crop[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
         c.set_scene_item_transform(scene, item, crop)
@@ -230,9 +236,13 @@ def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
 def cams_check(c, scene="stream", n=3, layout=LAYOUT):
     """Read only (d24 batch136 PH2: cam3 read crop 0 at about 21:07 while it was the inset, which is uncropped by
     design): each "stream camN" with its hole (by its bounds: layout.json's main or inset, layout-3cam.json's trio
-    tiles), source size, crop, and the crop crop_for gives that size in that hole: ok, CROP OFF, or no source size."""
+    tiles), source size, crop, and the crop crop_of gives that size in that hole (a camera panel: its rect in cam1's
+    window): ok, CROP OFF, or no source size."""
     sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-    from cuts import crop_for, TRIO
+    from cuts import crop_of, TRIO
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import cams as cams_mod
+    panels = cams_mod.panel_sources()
     holes = {}
     for path, prefix in ((layout, ""), (TRIO, "trio ")):
         lay = json.load(open(path)) if isinstance(path, str) else path
@@ -255,7 +265,7 @@ def cams_check(c, scene="stream", n=3, layout=LAYOUT):
         if not (sw and sh):
             out.append(text + ", no source size (not hooked)")
             continue
-        want = crop_for(sw, sh, bw, bh)
+        want = crop_of(name, sw, sh, bw, bh, panels)
         want = tuple(want[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
         out.append(text + f", source {sw:g}x{sh:g}: " + ("ok" if want == crop else f"CROP OFF (that hole takes {want[0]}/{want[1]} {want[2]}/{want[3]})"))
     return " | ".join(out)
