@@ -40,7 +40,9 @@ no handoff during it, its time is not standing, and it counts as a sign of life,
 handoff is a cover request sent once per episode: an episode begins when the agent rests (a quota rest, or a pace rest
 over 30 min) or does not answer, and ends when it makes a request of its own; a new episode's handoff waits every_min
 doubled for each handoff already sent for it (at most every 4 h). It names the owner, the items and what waits on it,
-and the board_update cover call for its claims. An idle nudge after the first of an idle stretch goes on an actionable
+and the board_update cover call for its claims. (d28 batch299 CV, viewer Aurora site 00:46) A handoff that does not go
+(no active lead, or the tell refused) keeps its episode pending: each poll tries again, the log has one line for each kind
+of failure in the episode, and the handoff is delivered once, when a lead is active and the tell goes. An idle nudge after the first of an idle stretch goes on an actionable
 change (a new request or tell to it in the harness's unanswered items, a new mention, a watch newly late, stalled,
 invalid or with its final unread) at most every every_min, else as a fallback at every_min doubled for each nudge of
 the stretch (at most every 4 h). A sleep or wait the agent set itself with a known end (sleep_left_s, action_until_s)
@@ -708,17 +710,28 @@ class Nudger:
                  "handoff": True, "why": why, "lead": lead, "handoff_n": h + 1,
                  "episode_since": datetime.datetime.fromtimestamp(ep["since"]).astimezone().isoformat(timespec="seconds")}
         if not lead:
-            entry.update(sent=False, error="no active lead (--lead, or a team member with a request of its own in 10 min)")
+            kind, error = "no lead", "no active lead (--lead, or a team member with a request of its own in 10 min)"
         else:
             text = cover_text(name, why, items)
             entry["text"] = text
             try:
                 res = send(lead, text)
                 entry.update(sent=True, tell_seq=(res or {}).get("seq"))
+                if ep.get("failed"):
+                    entry["after_failed"] = ep["failed"]
                 self.handoffs[name], self.last_handoff[name] = h + 1, now
+                ep["sent"] = True
+                write(entry)
+                return entry
             except Exception as e:
-                entry.update(sent=False, error=f"{type(e).__name__}: {e}"[:200])
-        ep["sent"] = True
+                kind, error = "send", f"{type(e).__name__}: {e}"[:200]
+        # (d28 batch299 CV) not sent: the episode stays pending and the next poll tries again; one log line for each kind
+        # of failure in the episode (no lead, the tell refused)
+        ep["failed"] = ep.get("failed", 0) + 1
+        if kind in ep.setdefault("logged", []):
+            return None
+        ep["logged"].append(kind)
+        entry.update(sent=False, error=error, pending=True)
         write(entry)
         return entry
 
@@ -893,7 +906,9 @@ def main():
             log(entry["line"] + (" (dry run)" if a.dry_run else ""))
             return
         if entry.get("handoff"):
-            log(f"handoff for {entry['agent']} to {entry.get('lead')}: {'sent' if entry.get('sent') else entry.get('error')}")
+            log(f"handoff for {entry['agent']} to {entry.get('lead')}: "
+                + (("sent" + (f" (after {entry['after_failed']} failed tries)" if entry.get("after_failed") else ""))
+                   if entry.get("sent") else f"{entry.get('error')}; kept pending, tried again each poll"))
             return
         if entry.get("skipped"):  # (d27 batch286)
             log(f"no idle nudge for {entry['agent']} ({entry['standing_min']} min standing): {entry['why']}")

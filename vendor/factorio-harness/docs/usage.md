@@ -16996,6 +16996,29 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
 - Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
+## d28 batch299 (IC: the operator inbox read pages oldest first; CV: a failed cover handoff stays pending; viewer Aurora)
+
+- IC (Aurora site 00:47): `operator_requests` (tells.lua, an operator read) returned the newest `limit` (30) after
+  `since`, and live.py moved its cursor to the newest row it got. With more than 30 waiting (the stream service down
+  or restarting while agents file), the older ones never reached runs/RUN/operator-inbox.jsonl. It happened once in
+  the logs: shift13 at 16:55:36 (d14) read 188-217 after 172, and 173-187 are missing from shift13's inbox (shift12's
+  file had them).
+  - The read now returns the oldest `limit` after `since`, oldest first, with `more` (how many after them still to
+    read), `cursor` (the newest seq filed, as before) and `trimmed` (how many after `since` left the kept log of 200
+    before the read; absent when none).
+  - live.py writes each page and moves its cursor to the last row written. It reads again in the same poll while
+    `more` is above 0 (at most 8 pages a poll; the rest next poll). A `trimmed` count goes to the poll's errors as
+    `operator_requests_trimmed`. An older runtime (no `more`) gets one read a poll, as before.
+  - Test: tools/stream/test_operator_inbox_paging.py runs tells.lua in `lua`, with storage kept across reads and
+    service restarts, files through the `operator` handler and polls through live.py into the inbox file (45 while
+    down, 31 more across a restart, the kept log trimmed, a fresh world). On the iMac copy, the branch runtime with 36
+    requests waiting gave 2 reads in one poll (30, then 6), all 36 written in order once, in 21 ms.
+- CV (Aurora site 00:46): tools/idle_nudge.py marked a handoff's episode sent even when it did not go (no active lead,
+  or the tell refused), so it was never tried again in that episode. Now the episode stays pending: each poll tries
+  again, the log (nudges.jsonl and the log line) has one row for each kind of failure in the episode (`pending: true`),
+  and the handoff is delivered once, when a lead is active and the tell goes (`after_failed`: the failed tries).
+  The back-off counts delivered handoffs only, as before. Test: tools/test_idle_nudge_pending.py.
+
 ## d27 batch297 (DR: place_ghosts' dry run and the real call refuse the same entry configure, Astra #2649)
 
 - Astra (tick 74609990): a place_ghosts dry run read ok for a stack-inserter with configure {filters
