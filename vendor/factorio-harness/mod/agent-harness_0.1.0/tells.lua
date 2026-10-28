@@ -281,20 +281,26 @@ return function(api)
     while #r.log > OP_LOG do table.remove(r.log, 1) end
     return {seq=r.seq, note='filed for the operator; an answer comes in the game chat as server:'}
   end
-  -- Operator read: {seq, tick, from, text} after `since`, oldest first, and cursor.
+  -- Operator read: the oldest `limit` {seq, tick, from, text} after `since`, oldest first; more = how many after
+  -- them are still to read (read again since the last seq returned); cursor = the newest seq filed; trimmed = how
+  -- many after `since` left the kept log (OP_LOG) before this read. (d28 batch299 IC, viewer Aurora: the newest
+  -- `limit` with the reader's cursor moved past them skipped the older ones whenever more than `limit` waited:
+  -- shift13 16:55:36 read 188-217 after 172, and 173-187 never reached its inbox.)
   function M.operator.operator_requests(a)
     assert(a.since == nil or type(a.since) == 'number', 'since must be a number')
     local limit = a.limit or 30
     assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
     local r = requests()
-    local picked = {}
-    for _, t in ipairs(r.log) do if t.seq > (a.since or 0) then picked[#picked+1] = t end end
-    local out = {}
-    for i = math.max(1, #picked - limit + 1), #picked do
-      local t = picked[i]
-      out[#out+1] = {seq=t.seq, tick=t.tick, from=t.from, text=t.text}
+    local since = a.since or 0
+    local out, more = {}, 0
+    for _, t in ipairs(r.log) do
+      if t.seq > since then
+        if #out < limit then out[#out+1] = {seq=t.seq, tick=t.tick, from=t.from, text=t.text} else more = more + 1 end
+      end
     end
-    return {requests=out, cursor=r.seq, tick=game.tick}
+    local first = r.log[1] and r.log[1].seq or r.seq + 1
+    local trimmed = math.max(0, math.min(first, r.seq + 1) - since - 1)
+    return {requests=out, more=more, cursor=r.seq, trimmed=trimmed > 0 and trimmed or nil, tick=game.tick}
   end
   return M
 end
