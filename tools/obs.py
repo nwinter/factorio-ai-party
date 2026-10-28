@@ -15,6 +15,9 @@
   tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
   tools/.venv/bin/python tools/obs.py audio-test --url URL [--game-url URL]        # scratch scene, same mix
   tools/.venv/bin/python tools/obs.py meter --seconds 20 [--inputs a,b]           # peak dBFS per input per second
+  tools/.venv/bin/python tools/obs.py stats --seconds 60 [--world n] [--out-file F.jsonl]  # read only: each second OBS's
+      frames (rendered, render and output skips, frame time) and with --world the game's ticks that second (one tiny
+      RCON read a second: game.tick); --out-file appends the rows as JSON lines (d28 batch318: a camera's surface switch)
 """
 import argparse, base64, json, os, sys
 
@@ -456,12 +459,51 @@ def meter(c, seconds, names):
     return levels
 
 
+def stats(c, seconds, world=None, out=None, sleep=None):
+    """(d28 batch318 OC) Each second: OBS's GetStats (active fps, rendered frames, render and output frames skipped,
+    average frame render time) as deltas, and with `world` the game's ticks that second (game.tick through tools/pog.py's
+    RCON, a read of under a millisecond in the game); printed, and appended to `out` as JSON lines. Read only."""
+    import time
+    sleep = sleep or time.sleep
+    rc = None
+    if world:
+        import pog
+        pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
+        rc = pog.Rcon(pog.HOSTS.get(world, "127.0.0.1"), pog.PORTS[world], pw, timeout=10)
+    prev, rows = None, []
+    end = time.time() + seconds
+    while time.time() < end:
+        t0 = time.time()
+        s = c.get_stats()
+        row = {"t": round(t0, 3), "fps": round(s.active_fps, 2), "rendered": s.render_total_frames,
+               "render_skipped": s.render_skipped_frames, "out_skipped": s.output_skipped_frames,
+               "frame_ms": round(s.average_frame_render_time, 2)}
+        if rc:
+            row["tick"] = int(rc.command("/silent-command rcon.print(game.tick)").strip())
+        if prev:
+            dt = row["t"] - prev["t"]
+            row.update(d_rendered=row["rendered"] - prev["rendered"], d_render_skipped=row["render_skipped"] - prev["render_skipped"],
+                       d_out_skipped=row["out_skipped"] - prev["out_skipped"])
+            if rc:
+                row["ticks_s"] = round((row["tick"] - prev["tick"]) / dt, 1) if dt > 0 else None
+            print(f"{time.strftime('%H:%M:%S', time.localtime(row['t']))} frames {row['d_rendered']} skipped "
+                  f"{row['d_render_skipped']}/{row['d_out_skipped']} frame {row['frame_ms']} ms"
+                  + (f" ticks/s {row['ticks_s']}" if rc else ""), flush=True)
+        if out:
+            with open(out, "a") as f:
+                f.write(json.dumps(row) + "\n")
+        rows.append(row)
+        prev = row
+        sleep(max(0.0, 1.0 - (time.time() - t0)))
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
                                     "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams", "cams",
-                                    "host-view-source"])
+                                    "host-view-source", "stats"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
@@ -472,6 +514,8 @@ def main():
     ap.add_argument("--scene", help="shot: screenshot this scene instead of the program scene")
     ap.add_argument("--layout", default=LAYOUT, help="stream-scene: camera holes (layout-3cam.json: the old three)")
     ap.add_argument("--title", default="Astra + Opus 5.5 play Factorio together (real time)")
+    ap.add_argument("--world", help="stats: also the game's ticks each second on this world (tools/pog.py)")
+    ap.add_argument("--out-file", dest="out_file", help="stats: append the rows here as JSON lines")
     a = ap.parse_args()
     c = client()
     if a.cmd == "coop-scene":
@@ -492,6 +536,8 @@ def main():
         names = [n for n in a.inputs.split(",") if n]
         for sec, row in sorted(meter(c, a.seconds, names).items()):
             print(sec % 1000, "  ".join(f"{k}={v:6.1f}" for k, v in sorted(row.items())))
+    elif a.cmd == "stats":
+        stats(c, a.seconds, a.world, a.out_file)
     elif a.cmd == "scene":
         c.set_current_program_scene(a.out); print("program scene", a.out)
     elif a.cmd == "reload-overlay":
