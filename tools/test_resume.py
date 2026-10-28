@@ -125,11 +125,16 @@ def dry_run():
         assert "no ai-usage profile" in out and "(route claude-b)" in out, out
         assert "code ok: " in out or "WARNING code: " in out, out
         assert "agy memory guard" not in out, out  # no agy agent in the team (tools/test_agy_memguard.py)
+        # (batch290) the public push loop: one per Mac; a test run's check refuses the live paths (tools/test_public_push.py)
+        assert "4e. public repo push loop (one per Mac, across shifts): POG_TEST=1: no public push without" in out, out
         assert "5. agents launch; 6." in out, out   # POG_FULL_TOOLS unset
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_FULL_TOOLS="1"), capture_output=True, text=True, cwd=ROOT)
         assert "5. agents launch with full tools" in r.stdout, r.stdout
         assert "4b. RCON broker" not in r.stdout, r.stdout
+        r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
+                           env=dict(env, POG_PUBLIC_HOURLY="0"), capture_output=True, text=True, cwd=ROOT)
+        assert r.returncode == 0 and "4e. public repo push" not in r.stdout, r.stdout
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_BROKER="1"), capture_output=True, text=True, cwd=ROOT)
         assert "4b. RCON broker (POG_BROKER=1): sockets runs/resume-dry-test/.sock/NAME.sock for haiku luna" in r.stdout, r.stdout
