@@ -186,6 +186,8 @@ def brief_filtered():
             assert "`belt_route`" in full and "`belt_route`" not in small and "`transfer`" in small
             assert "## Compact instructions" in small and "{{" not in small and len(small) < len(full)
             assert "Your team's tools grow with it" in small and "Your team's tools grow" not in full
+            assert "is refused, naming what opens it" not in small, "refuse=false (the default): no refusal sentence"
+            assert "is refused, naming what opens it" in brief.core("astra", "TIME", "", open_=dict(open_, refuse=True))
             ws = os.path.join(d, "ws")
             os.makedirs(ws)
             brief.write(ws, "astra", "TIME", "", "", "", "")

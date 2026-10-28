@@ -104,7 +104,9 @@ def disclosure_open():
     if d.get("mode") != "filter":
         return None
     # what is shut: an action, entry or item the runtime's table does not know yet (added since) stays open
-    return {k: set(d.get(k) or []) for k in ("actions_shut", "docs_shut", "brief_shut")}
+    out = {k: set(d.get(k) or []) for k in ("actions_shut", "docs_shut", "brief_shut")}
+    out["refuse"] = d.get("refuse") is True
+    return out
 
 
 def _disclosure():
@@ -116,8 +118,8 @@ def _disclosure():
 # The core's one line about it in a disclosure run (facts: what happens, not what to do).
 DISCLOSURE_LINE = ("- Your team's tools grow with it: an action, argument or reference entry opens when the team has researched, "
                    "built, met or done what it needs, the same for every team. A reply's `new:` line names what opened; "
-                   "describe.json, `./fh help` and `./fh help TOPIC` show what is open now; a call to one not open yet "
-                   "says what opens it.\n")
+                   "describe.json, `./fh help` and `./fh help TOPIC` show what is open now.\n")
+REFUSE_LINE = " A call to one not open yet is refused, naming what opens it."
 
 
 def shut_items(text, open_):
@@ -148,7 +150,8 @@ def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None):
     text = text.rstrip("\n") + "\n\n" + (open_index(open_) if open_ else index_text()).rstrip("\n")
     text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
     if open_:
-        text = shut_items(text, open_).replace("\n## Pace\n", "\n" + DISCLOSURE_LINE + "\n## Pace\n", 1)
+        line = DISCLOSURE_LINE.rstrip("\n") + (REFUSE_LINE if open_.get("refuse") else "") + "\n"
+        text = shut_items(text, open_).replace("\n## Pace\n", "\n" + line + "\n## Pace\n", 1)
     text = text.replace("{{TIME}}", time_text)
     if os.environ.get("POG_SPACE_AGE") == "1":
         text = text.replace("base game, default map", "Space Age (with Quality and Elevated Rails), default map")

@@ -5,8 +5,9 @@
 -- Modes (storage, set by the operator call disclosure_set; tools/start-team.sh from POG_DISCLOSURE):
 --   off      (default) everything open, no state kept: world n as before;
 --   observe  the atoms are met and the unlocks logged as in a disclosure run, nothing filtered or said to agents;
---   filter   describe, fh help and the brief show the force's open set; a call to a unit not yet open is refused naming
---            its condition (refuse=false: allowed but undocumented); each unlock reaches the force's agents once as a
+--   filter   describe, fh help and the brief show the force's open set; a call to a unit not yet open runs, undocumented
+--            (refuse=true: refused naming its condition; Nick d28 15:47: "probably ok to run"); each unlock reaches the
+--            force's agents once as a
 --            `new:` line on their next reply.
 -- Per force: the player force in main (force_of, forces in runtime.lua), a team's force with several teams.
 -- Costs (iMac copy, world n's save of d28 13:20): the sweep of one force 0.10-0.14 ms every 600 ticks, reading only
@@ -21,7 +22,7 @@ return function(api)
 
   local function root()
     local s = api.state()
-    s.disclosure = s.disclosure or {mode='off', refuse=true, forces={}}
+    s.disclosure = s.disclosure or {mode='off', refuse=false, forces={}}
     return s.disclosure
   end
   function M.mode()
@@ -477,7 +478,7 @@ return function(api)
     if type(action) ~= 'string' or HOST[action] or not U.actions[action] then return nil end
     local c = U.actions[action]
     for _, a in ipairs(c.a) do if a == 'never' then return nil end end
-    if root().refuse == false then return nil end
+    if root().refuse ~= true then return nil end
     local o = M.open_set(force)
     if not o.actions[action] then
       return action .. ' is not available yet: ' .. M.why(c, o.world) .. ' (the same rule for every team; ./fh help lists what is open)'
@@ -493,7 +494,8 @@ return function(api)
     return nil
   end
   function M.arg_hidden(force, action, arg)
-    return M.mode() == 'filter' and root().refuse ~= false and not M.arg_open(force, action, arg)
+    -- (the valid list of an unknown-argument refusal: documentation, so shut arguments stay out of it in both settings)
+    return M.mode() == 'filter' and not M.arg_open(force, action, arg)
   end
 
   -- describe for an agent (runtime M.dispatch): only the open actions and arguments, the locked ones by name with
@@ -507,7 +509,7 @@ return function(api)
     local out = {}
     for k, v in pairs(result) do out[k] = v end
     out.actions, out.locked = {}, {}
-    local refuse = root().refuse ~= false
+    local refuse = root().refuse == true
     for name, schema in pairs(result.actions) do
       local c = U.actions[name]
       local never = false
@@ -593,7 +595,7 @@ return function(api)
     .. 'and brief item ids (file#key)'}
   function M.read(force)
     local mode = M.mode()
-    local out = {mode=mode, refuse=root().refuse ~= false}
+    local out = {mode=mode, refuse=root().refuse == true}
     if mode == 'off' then return out end
     local o = M.open_set(force)
     out.rev = fstate(force).rev
@@ -640,11 +642,13 @@ return function(api)
     if d.mode ~= 'off' then
       for _, force in ipairs(api.forces()) do M.sweep_force(force) end
     end
-    return {mode=d.mode, refuse=d.refuse, world=d.world}
+    return {mode=d.mode, refuse=d.refuse == true, world=d.world}
   end
   function M.operator.disclosure(a)
     local d = root()
-    local out = {mode=d.mode, refuse=d.refuse ~= false, forces={}}
+    local out = {mode=d.mode, refuse=d.refuse == true, forces={}}
+    -- off: nothing kept, so nothing to read (and no per-force table made by reading)
+    if d.mode == 'off' then return out end
     for _, force in ipairs(api.forces()) do
       if a.force == nil or a.force == force.name then
         local f = fstate(force)

@@ -63,8 +63,8 @@ The rules stay:
   - an index that lists open commands only;
   - one added line: "Your team's tools grow with it: an action, argument or reference entry opens when the team has
     researched, built, met or done what it needs, the same for every team. A reply's `new:` line names what opened;
-    describe.json, `./fh help` and `./fh help TOPIC` show what is open now; a call to one not open yet says what
-    opens it."
+    describe.json, `./fh help` and `./fh help TOPIC` show what is open now." With refuse=true it adds: "A call to one
+    not open yet is refused, naming what opens it."
 - **ref/TOPIC.md:** the entries open at launch. `./fh help TOPIC` reads ref/.units/TOPIC.json and the runtime's open
   set, so an entry shows up the moment it opens.
 - **describe.json and `./fh help ACTION`:**
@@ -73,11 +73,13 @@ The rules stay:
   - `./fh help belt_route` says `belt_route is not available yet: it opens when your team has placed 10 belts with
     build, or when your team has 40 belts`;
   - fh writes describe.json again after a reply that carried a `new:` line.
-- **A call to a shut action:** refused with the same text and "(the same rule for every team; ./fh help lists what
-  is open)". A shut argument: `feed's argument quality is not available yet: it opens when your team has researched
-  quality-module`.
-  - The unknown-argument refusal's valid list leaves shut arguments out.
-  - With `refuse=false` (`set.py --allow`), shut calls run and stay undocumented (open choice 1).
+- **A call to a shut action or argument:** it runs, undocumented: the default since Nick's answer of d28 15:47
+  ("probably ok to run").
+  - With `refuse=true` (`set.py --refuse`), it is refused with the same text plus "(the same rule for every team;
+    ./fh help lists what is open)". A shut argument then gets: `feed's argument quality is not available yet: it
+    opens when your team has researched quality-module`.
+  - Either way, the unknown-argument refusal's valid list leaves shut arguments out.
+  - The `locked` list in describe, and fh help ACTION's condition, appear only with refuse=true.
   - Operator calls, reader calls, the host's own calls (describe, disclosure, sleep_check, lookahead, bridge_status)
     and actions marked never are not gated.
 - **An unlock:** each agent of the force sees one `new` field on its next reply, newest first, then whatever opened
@@ -257,8 +259,9 @@ Settled by the operator d28 14:28:
 - 4: research counts at finish;
 - 7: team and stream tools are open at tick 0 in team and streamed runs.
 
-Still with Nick:
-1. **A call to a unit not yet open:** refuse it naming the condition (the default; `refuse=true`), or allow it
-   undocumented (`set.py --allow`).
-5. **Docs granularity:** a reference entry opens whole with its action. The transfer entry is 6.6 KB at tick 0.
-6. **The core's own text:** 16.8 KB at tick 0, because PLAYBOOK.md and team.md are tick-0 prose.
+Nick, d28 15:47:
+1. **A call to a unit not yet open:** "probably ok to run". The default is refuse=false: the call runs,
+   undocumented. `set.py --refuse` keeps the other setting (cp3).
+5. **Large reference entries split into simple and advanced parts:** yes (cp4).
+6. **PLAYBOOK.md and team.md rewritten into a small core plus topic entries:** yes (cp4).
+Facts-only rules are unchanged for the rewritten text.

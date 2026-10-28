@@ -1,8 +1,8 @@
 -- Run from repository root: lua tests/d28_batch317.lua
 -- (d28 batch317 PD, Nick: the kit grows with each team) progressive disclosure (disclosure.lua, docs/DISCLOSURE.md):
 -- off by default (everything open, nothing kept); in filter mode a fresh force sees the small tick-0 set, each trigger
--- kind opens its units once per force, a call to a unit not open yet is refused naming its condition (refuse=false:
--- allowed, undocumented), describe shows the open set, and each unlock reaches an agent once as a `new:` line; observe
+-- kind opens its units once per force, a call to a unit not open yet runs undocumented by default (Nick d28 15:47; refuse=true:
+-- refused naming its condition), describe shows the open set, and each unlock reaches an agent once as a `new:` line; observe
 -- mode keeps the state and filters nothing. On main: no disclosure.lua.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '..x) end
@@ -36,12 +36,20 @@ eq(D.action_open(player,'belt_route'),true)
 D.count({action='craft',args={recipe='iron-gear-wheel',count=50}},true,{},player)
 eq(storage.agent_harness.disclosure,nil,'off keeps no state')
 eq(D.read(player).mode,'off')
+eq(D.operator.disclosure({}).forces.player,nil,'off: the operator read makes no state')
+eq(storage.agent_harness.disclosure.forces.player,nil)
 local desc={bundle='B1',actions={walk={position='x'},belt_route={from='a'},train={},build={item='i',rail_layer='q',dry_run='d'},
   attach={}}}
 eq(D.filter_describe(desc,player,'B1'),desc,'off: describe as it was')
 
 -- filter, world n's flags (Space Age, Quality, enemies, a team) plus a stream
 D.operator.disclosure_set({mode='filter',world={stream=true}})
+eq(D.operator.disclosure_set({}).refuse,false,'the default: a shut call runs')
+eq(D.gate({action='belt_route',args={}},player),nil,'runs, undocumented')
+eq(D.filter_describe(desc,player,'B1').locked,nil,'no locked list')
+assert(not D.filter_describe(desc,player,'B1').actions.belt_route,'and not in describe')
+eq(D.arg_hidden(player,'feed','quality'),true,'a shut argument stays out of the valid list either way')
+D.operator.disclosure_set({refuse=true})
 local o=D.open_set(player)
 for _,a in ipairs({'walk','move_to','mine','craft','build','transfer','inspect','observe','research','say','tell','board_post',
   'profile','shoot','sleep','status'}) do assert(o.actions[a],a..' is open at tick 0') end

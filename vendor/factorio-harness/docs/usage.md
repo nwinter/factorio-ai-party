@@ -17524,9 +17524,10 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   filtered or said), filter.
 - Operator: `disclosure_set {mode, refuse?, world?, reset?}`, `disclosure {force?, ids?}`. Agents' host read:
   `disclosure {}` (marked never: not listed, not gated).
-- Filter mode: M.dispatch refuses a call to a shut action or argument naming its condition (`refuse=false`: runs,
-  undocumented), counts each agent call for the habits, and filters describe (open actions and arguments, `locked`
-  with conditions, bundle id `BUNDLE@dREV`); the unknown-argument list leaves shut arguments out; each agent's reply
+- Filter mode: a call to a shut action or argument runs, undocumented (the default, Nick d28 15:47; with
+  `refuse=true` M.dispatch refuses it naming its condition); M.dispatch counts each agent call for the habits, and
+  filters describe (open actions and arguments, `locked`
+  with conditions when refuse=true, bundle id `BUNDLE@dREV`); the unknown-argument list leaves shut arguments out; each agent's reply
   carries `new` once per unlock. Operator, reader and host calls (describe, disclosure, sleep_check, lookahead,
   bridge_status) and actions marked never are not gated.
 - The sweep (tick % 600 == 41) reads one of four parts per run (research, buildings, scale, places and events), only

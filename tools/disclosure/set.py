@@ -37,7 +37,7 @@ def main(argv=None):
     ap.add_argument("--humans", action="store_true", help="human players may join")
     ap.add_argument("--team", action="store_true", help="more than one agent plays in the team (else: its bots counted)")
     ap.add_argument("--refuse", action="store_true", help="a call to a unit not open is refused naming its condition")
-    ap.add_argument("--allow", action="store_true", help="a call to a unit not open runs, undocumented")
+    ap.add_argument("--allow", action="store_true", help="a call to a unit not open runs, undocumented (the default)")
     ap.add_argument("--reset", action="store_true", help="forget every force's met atoms and counts")
     ap.add_argument("--open", help="save the player force's open set here")
     ap.add_argument("--read", action="store_true")
