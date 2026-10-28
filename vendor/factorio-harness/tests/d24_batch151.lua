@@ -52,7 +52,7 @@ assert(not oread.line:find('laser'),oread.line)
 -- A new watch: the lasers apart, the tesla left out (ammo category tesla), the railgun as before.
 game.tick=10000
 local r=F.call(p,{platform='Asterion',replace=true})
-assert(r.line:find('watching 1 ammo turrets %(1 railguns%), 2 laser turrets and 0 accumulators once a second'),r.line)
+assert(r.line:find('watching 1 ammo turrets %(1 railguns, all 1 aboard%), 2 laser turrets and 0 accumulators once a second'),r.line)
 -- fights: l1 fires and reads 256.6 kJ at two samples in a row (and once more later), l2 never below a shot
 local ph
 for _,w in ipairs(st.flightwatch.list) do if w.id==r.watch.id then ph=w.phase end end

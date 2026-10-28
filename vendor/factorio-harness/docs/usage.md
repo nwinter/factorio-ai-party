@@ -11199,7 +11199,7 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   - Armed from "departure": it begins on the first sample that reads the platform flying after one that read it
     stopped. It ends at the first sample stopped at a location after it flew, or at `minutes`, or with the platform
     gone. Armed 24 h with no departure, it ends unbegun.
-  - Once a second (tick % 60 == 51), each ammo turret aboard (found at the start and again each minute: up to 128):
+  - Once a second (tick % 60 == 51), each ammo turret aboard (found at the start and again each minute: up to 128; from d28 batch302 up to 1024, said):
     the item count in its ammo slots. Kept: least and its tick, at the start, now, empty_samples, empty_ticks (each
     empty sample counts the ticks since the sample before), empty_runs, longest_empty_ticks and longest_from_tick,
     gone_tick, added_tick.
@@ -17144,6 +17144,37 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     unchanged.
 - Docs: agent/ref/movement-combat.md, the vehicle action's wait text. Test: tests/d28_batch300.lua (fails on main: the
   wait still running a second after sol's clear).
+## d28 batch302 (FC: the flight watch read at most 128 ammo turrets and said nothing, Astra #2656)
+
+- Found (flightwatch.lua add_turret): `M.MAX_TURRETS = 128`. Over it a turret was not added and `w.capped` was set,
+  which only the full read's `turrets_capped` showed; no line said it, and which turrets were left out followed the
+  find's order. Resolute (129 ammo turrets, 32 railguns) lost its railgun at (18.5,380.5) from watch 1520.
+- The same kind of limit elsewhere: platform_rearm without positions topped up the first 256 found and said nothing;
+  the ammunition trace (ammofeed.lua, the watch's feed lines) traced 512 and said nothing; asteroid_watch
+  (`platform_defense {asteroids: true}`) watches 400 turrets of every kind and said only how many it watched. The
+  ammo_below guards (conditions.lua) read up to 1024 and refuse an area over that, so they cover the 129th
+  (tests/d28_batch302.lua). platform_defense's own count and platform_endurance have no limit.
+- Fix:
+  - flight_watch reads every ammo turret aboard up to 1024. Each find (at the start and every minute) counts them:
+    `turrets_total`, `turrets_read`, and past the cap `turrets_left_out` and `turrets_capped`; `turrets_count_line`
+    and the start line, the begin alert, the end alert and the read's line say "N ammo turrets (R railguns, all N
+    aboard)" or "(K more aboard not read: a watch reads at most 1024; T at the last find)".
+  - A sample reads 256 a tick (`M.PAGE`); the rest on the ticks after (each turret still once a second, its empty
+    ticks counted from its own reads).
+  - A watch running at the deploy: its 128 keep their baselines and samples; the ones the old cap left out are added
+    at its next find (within a minute), each from that read, marked `uncapped` with "read from +Ns (an earlier cap of
+    the watch left it out until then)".
+  - platform_rearm without positions takes every ammo turret aboard up to 1024 and refuses more (name positions).
+    The ammunition trace traces 1024 and says `turrets_capped` past that. asteroid_watch's start says its turrets
+    `turrets_total` and `turrets_capped` past its 400.
+- Measured on the iMac copy (world n's shift90 save, branch runtime, profile_ticks 30 s each, Resolute flying or
+  stopped with a watch running): 129 turrets, one call a second, 0.74 ms average (worst second 2.35 ms with the
+  minute's find); 300 turrets (171 gun turrets added on the copy), two calls a second (256 + 44), 0.62 ms average a
+  call, 1.3 ms a second; 1100 turrets (1024 read), four calls a second, 1.04 ms average a call, 4.3 ms a second,
+  worst second 10.1 ms over its 4 calls in a garbage-collection second. On the same copy, Resolute's watch #1522
+  (begun under the old runtime, 128 read) added the railgun at (18.5,380.5) at its first find after the deploy.
+- Docs: agent/ref/space-age.md (flight_watch, platform_rearm). Test: tests/d28_batch302.lua (fails on main: 128 of 129
+  read); tests/d21_batch72.lua, d22_batch98.lua and d24_batch151.lua's start lines updated ("all N aboard").
 ## d28 batch301 (LS, Astra #2654: a queued load_silo that split appended its rockets after the later steps)
 
 - Found (runtime.lua load_silo_run; scheduler.lua): a launch over one rocket's lift or slots, and `rockets: N`, queued

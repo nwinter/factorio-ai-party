@@ -335,7 +335,7 @@
   entrance), the inserters picking on the 64 tiles back; flagged: a stopped lane none takes from, or one whose front
   item none takes (lane choice, filter). Default the items for thruster fuel, oxidizer and ammunition; `all`: every item.
 - `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
-  aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
+  aboard, up to 1024; more is refused, naming positions) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
   body. Rows: `held`, `on_the_way`, `requested`; `hub` (what the hub holds of each item asked), `refills` (requests and
   rounds asked on this platform since). An `item` a named turret does not take is refused with each kind and the
@@ -425,7 +425,9 @@
   setter hears in team.alerts when it begins at a departure and when it ends; the end line starts with the damage
   taken and the losses over the whole watch (the same as `{id}`'s `damage` and `lost_count`, a pause and a coast
   included), and its railgun part (`their fire: N hits`) is what the railguns hit, never damage taken. A turret empty under a second between
-  two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
+  two samples can be missed. Every ammo turret aboard is read, up to 1024 a watch: `turrets_total` (aboard at its last
+  find, every minute), `turrets_read`, and `turrets_left_out` and `turrets_capped` past that, said in its lines too.
+  The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
   Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
   `now`) and each railgun (`railguns`): energy least, at the start and now; samples, runs and the longest run below a
   shot's energy (its full 10 MJ buffer; refilled at 10 MW, 60 ticks from empty); `hits`, `shots_hit` (ticks it hit
