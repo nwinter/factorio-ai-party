@@ -16739,3 +16739,23 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
   `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
 - Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
+
+## d27 batch287 (BT: platform_bom's tail minimum no longer sticks, Astra #2631)
+
+- Found (platbom.lua apply): an item with no min_payload of the user's took its base from the slot as it stood
+  (`mp = w.mp`). After a tail rewrite that is the keeper's own tail, so the next rewrite started from the tail. When
+  new ghosts raised what was still to come above it, the tail stayed the minimum. Resolute: turbo belt 6 with 753
+  asked, so rockets went with 6, 8 and 8 belts, not 50; bulk 22, SM 336 and pipe 16 the same. The adoption check
+  (batch21 A2) did not misfire: the slot matched what the keeper wrote. The fallback read the tail back as a ceiling.
+- Fix: the keeper keeps each item's ceiling (`ceiling`: the minimum payload before the tail) apart from what it writes.
+  The ceiling is the user's min_payload (the request's map, or one adopted from the slot), else a value found on a
+  slot the keeper had not written yet, else none (the game's default, a full rocket).
+  - A slot still at the keeper's own last write starts from its ceiling. The tail lowers that to what is still to
+    come, and the next rewrite starts from the ceiling again.
+  - A record kept from before this fix (no ceiling) that tails starts from the user's min_payload or a full rocket.
+    One that does not tail keeps the slot's value as before.
+  - Holds (batch281) are unchanged.
+- Lines: unchanged. A slot back at a full rocket says `minimum payload: a full rocket, 50 by weight (the game's
+  default)`.
+- Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
+  asked).

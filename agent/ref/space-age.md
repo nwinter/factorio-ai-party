@@ -218,7 +218,8 @@
   removes it; `import_from`,
   `area`; `min_payload: {item: N}` (every quality) or `{"item@quality": N}`; one slot an item at a quality; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
-  request less what the hub holds, a slot on the game's default, a full rocket by weight, too; each line says the
+  request less what the hub holds, a slot on the game's default, a full rocket by weight, too; each rewrite starts
+  from your min_payload, else a full rocket, so more ghosts raise a tailed minimum again; each line says the
   minimum payload the slot has; `hold: ["beacon", "item@quality"]`: those items asked none of through the rewrites,
   their ghosts kept, until `hold: false`; alone it keeps the request's area and import_from; the read's
   `requests_check` says them as held, not unrequested). `surface: "gleba"` with no platform:
