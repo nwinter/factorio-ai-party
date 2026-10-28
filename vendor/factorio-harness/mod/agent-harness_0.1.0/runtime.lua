@@ -3395,8 +3395,10 @@ local scan_fields={
     -- A drill only drops (onto the ground when nothing is there).
     if e.type=='mining-drill' then return '-> '..at(e.drop_position) end
     -- An inserter: a side with no target says so (the engine's pickup and drop targets).
+    -- (d27 batch292 IP) a side whose engine target is unset with something it uses standing there says so (targets.lua)
     local ok,pick,drop=pcall(function() return e.pickup_target,e.drop_target end)
-    return at(e.pickup_position)..((ok and not pick) and ' (no pickup target)' or '')..' -> '..at(e.drop_position)..((ok and not drop) and ' (no drop target)' or '')
+    local function none(side) return M.targets.unset(e,side) and ' (engine '..side..' target unset)' or ' (no '..side..' target)' end
+    return at(e.pickup_position)..((ok and not pick) and none('pickup') or '')..' -> '..at(e.drop_position)..((ok and not drop) and none('drop') or '')
   end,
   -- Fluidboxes with contents and where each pipe connection leads.
   fluids=function(e) return pipes.fluids(e) end,
@@ -7956,8 +7958,16 @@ do
       if e.type=='inserter' then
         local okp,pp=pcall(function() return e.pickup_position end)
         local okq,dp=pcall(function() return e.drop_position end)
-        if okp and pp then r.pickup=string.format('(%g,%g)',math.floor(pp.x*10+0.5)/10,math.floor(pp.y*10+0.5)/10) end
-        if okq and dp then r.drop=string.format('(%g,%g)',math.floor(dp.x*10+0.5)/10,math.floor(dp.y*10+0.5)/10) end
+        -- (d27 batch292 IP, Astra #2639) each point's entity: the engine's target, else what stands there (its target
+        -- unset), else nothing there
+        local function point(side)
+          local okt,t=pcall(function() if side=='drop' then return e.drop_target end return e.pickup_target end)
+          if okt and t and t.valid then return ' '..t.name end
+          local _,_,x=M.targets.unset(e,side)
+          return x and ' '..x.name..' (engine target unset)' or ' (nothing there)'
+        end
+        if okp and pp then r.pickup=string.format('(%g,%g)',math.floor(pp.x*10+0.5)/10,math.floor(pp.y*10+0.5)/10)..point('pickup') end
+        if okq and dp then r.drop=string.format('(%g,%g)',math.floor(dp.x*10+0.5)/10,math.floor(dp.y*10+0.5)/10)..point('drop') end
       end
     end
     -- A ghost: what it is and which way it faces (d17 batch13 C1, Opus: a belt ghost read as entity-ghost alone).
@@ -14647,7 +14657,7 @@ function handlers.preflight(p,a)
   return out
 end
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
-M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position,
+M.circuits=require('circuits'){unset_target=function(e,side) return M.targets.unset(e,side) end,entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position,
   configure_filters=function(e,a) return M.configure_filters(e,a) end}
 handlers.circuit_set=M.circuits.handlers.circuit_set
 -- circuit_gate: two or more tests on one entity, the game's way (a decider combinator); d17 batch20 C1, Grok.
@@ -15061,7 +15071,7 @@ M.gates=require('gates'){position=position,integer=integer,circuit_read=function
   end}
 function handlers.gates(p,a) return M.gates.read(p,a) end
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
-M.details=require('details'){}
+M.details=require('details'){unset_target=function(e,side) return M.targets.unset(e,side) end}
 M.robotread=require('robotread'){}
 M.groundstack=require('groundstack')
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
@@ -15115,7 +15125,7 @@ function M.farm_flow(p,surface,item)
   return ok and math.floor(n+0.5) or nil
 end
 -- Nest pollution from threat.lua's memory (one reading at the cloud's edge flickers), shared with status.
-M.defense=require('defense'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
+M.defense=require('defense'){unset_target=function(e,side) return M.targets.unset(e,side) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
   nest_read=function(p,limit) return threat.nest_read(p,limit) end}
 handlers.defense=M.defense.handlers.defense
 handlers.flamers=M.defense.handlers.flamers
@@ -17618,7 +17628,7 @@ M.loadout=require('loadout'){agents=function() return M.board.agents() end,
 M.research_use=require('research_use'){loadout=function(force) return M.loadout.usage(force) end,
   buildings=function(force) return M.census.buildings(force) end}
 -- Hand hauling per agent, for the stream and the site (hauling.lua; viewer Joonazan, 05:00).
-M.hauling=require('hauling'){state=state,
+M.hauling=require('hauling'){unset_target=function(e,side) return M.targets.unset(e,side) end,state=state,
   name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,
   put=function(who,pos,surface,stacks,entity_name) if M.artycam then M.artycam.put(who,pos,surface,stacks,entity_name) end end,
   active=function(index) return state().active and state().active[index] end,
@@ -17732,7 +17742,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
-M.platalerts=require('platalerts'){state=state,leg=function(pl) return M.freight.leg(pl) end,inventory_rounds=M.vehicles.inventory_rounds,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+M.platalerts=require('platalerts'){unset_target=function(e,side) return M.targets.unset(e,side) end,state=state,leg=function(pl) return M.freight.leg(pl) end,inventory_rounds=M.vehicles.inventory_rounds,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end,pump_states=function(pl) return M.thrust.pump_states(pl) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
@@ -19303,13 +19313,13 @@ M.chain=require('chain'){gate_line=function(e) local r=M.gates.row(e); return r 
 -- Opus, d15 06:20 and 07:50).
 M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}
 -- (d20 batch63) a machine's feeding inserters as their GUIs show them (feeders.lua): fuel_budget's reactors, bottleneck
-M.feeders=require('feeders'){condition_parts=function(e) return M.circuits.condition_parts(e,M.circuits.read(e)) end,trace=function(e) return M.circuits.trace_from(e) end,
+M.feeders=require('feeders'){unset_target=function(e,side) return M.targets.unset(e,side) end,condition_parts=function(e) return M.circuits.condition_parts(e,M.circuits.read(e)) end,trace=function(e) return M.circuits.trace_from(e) end,
   hand_wait=function(e) return M.details.hand_wait(e) end}
 M.fuelreactor=require('fuelreactor'){status_name=function(e) return M.machine_status(e) end,feeders=M.feeders}
 M.fuelbudget=require('fuelbudget'){spoilflow=M.spoilflow,reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
   belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
-M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
@@ -19836,7 +19846,7 @@ function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 -- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
 M.collectreach=require('collectreach'){state=state}
-M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
+M.platsupply=require('platsupply'){unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   collectreach=M.collectreach,reason=function(v) return M.measures.reason(v) end,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
 -- The fuel feedstock trace (fuelstock.lua; d17 batch31 B5, Sol).

@@ -337,7 +337,8 @@ return function(api)
           return n
         end) or 0) or 0
         local text = string.format('%s %s from %s', i.name, at(i.position), src and src.valid and (src.name .. ' ' .. at(src.position) ..
-          string.format(belt and ' carrying %d of its ammo' or ' holding %d of its ammo', held)) or 'nothing (no pickup target)')
+          string.format(belt and ' carrying %d of its ammo' or ' holding %d of its ammo', held))
+          or (api.unset_target and api.unset_target(i, 'pickup') and api.unset_target(i, 'pickup') .. ' (engine pickup target unset)') or 'nothing (no pickup target)')
         if src and src.valid then
           local sp = src.position
           local others = {}

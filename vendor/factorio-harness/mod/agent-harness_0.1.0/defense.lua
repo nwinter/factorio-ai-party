@@ -512,7 +512,7 @@ return function(api)
       local ok,to,from=pcall(function() return ins.drop_target,ins.pickup_target end)
       if ok and to and to.valid and to.unit_number then
         by[to.unit_number]=by[to.unit_number] or {}
-        table.insert(by[to.unit_number],ins.name..' '..at(ins.position)..(from and from.valid and (' from '..from.name..' '..at(from.position)) or ' from the ground'))
+        table.insert(by[to.unit_number],ins.name..' '..at(ins.position)..(from and from.valid and (' from '..from.name..' '..at(from.position)) or (api.unset_target and api.unset_target(ins,'pickup') and ' from '..api.unset_target(ins,'pickup')..' (engine pickup target unset)') or ' from the ground'))
       end
     end
     return by,b
