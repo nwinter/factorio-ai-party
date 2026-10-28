@@ -20,9 +20,14 @@
 #    refresh's outcome (waited for up to POG_SC_SITE_WAIT seconds, default 300, then left running). With --stream, a
 #    health line saying "OBS NOT streaming" runs tools/obs-recover.sh once (log runs/NEXT/obs-recover.log) and the
 #    health line again (POG_OBS_RECOVER=0 skips it).
+# (d27 batch293, Nick 19:26) The viewers hear it in the site chat, one line per event as "Operator", without the game
+# (tools/announce.py; log runs/PREV/announce.log): as the change begins ("Shift N is over; shift N+1 starts in about M
+# minutes", M the usual change time from the runs), when NEXT is up ("Shift N+1 is live: K agents playing"), when
+# PREV's stop save refuses or NEXT's start fails, and when NEXT is not up after twice the usual time (POG_SC_STALL_S
+# overrides). Never blocks or fails the change; POG_ANNOUNCE=0 skips it.
 # --dry-run: the checks, the switches and the plan (with start-team's own dry run); stops and starts nothing.
 # Stubs for tests: POG_SC_STOP_TEAM, POG_SC_START_TEAM, POG_SC_QUOTA, POG_SC_SSH, POG_SC_OBS, POG_SC_HERDR,
-# POG_SC_PGREP, POG_SC_SITE_REFRESH, POG_SC_OBS_RESTART, POG_SC_OBS_RECOVER (commands, split on spaces), POG_SC_RUNS
+# POG_SC_PGREP, POG_SC_SITE_REFRESH, POG_SC_OBS_RESTART, POG_SC_OBS_RECOVER, POG_SC_ANNOUNCE (commands, split on spaces), POG_SC_RUNS
 # (where runs live), POG_SC_STATE_URL.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -53,6 +58,7 @@ read -ra pgrep_cmd <<<"${POG_SC_PGREP:-pgrep}"
 read -ra site_refresh <<<"${POG_SC_SITE_REFRESH:-tools/site-refresh.sh}"
 read -ra obs_restart <<<"${POG_SC_OBS_RESTART:-tools/obs-restart.sh}"
 read -ra obs_recover <<<"${POG_SC_OBS_RECOVER:-tools/obs-recover.sh}"
+read -ra announce_cmd <<<"${POG_SC_ANNOUNCE:-python3 tools/announce.py}"
 py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
 read -ra obs <<<"${POG_SC_OBS:-$py tools/obs.py}"
 runs=${POG_SC_RUNS:-}
@@ -131,6 +137,11 @@ echo "      ${start_team[*]} $next $minutes${stream:+ $stream} with the switches
 echo "      then a health line after ${POG_SC_HEALTH_WAIT:-180} s and $prev's console audit"
 [ -n "$stream" ] && [ "${POG_OBS_RECOVER:-1}" != 0 ] && \
   echo "      if it says OBS NOT streaming: ${obs_recover[*]} once, then the health line again"
+if [ "${POG_ANNOUNCE:-1}" != 0 ]; then
+  usual=$("${announce_cmd[@]}" usual 2>/dev/null | tail -1); [[ $usual =~ ^[0-9]+$ ]] || usual=8
+  stall_s=${POG_SC_STALL_S:-$((usual * 2 * 60))}
+  echo "      site chat, as Operator: the change begins (about $usual minutes), $next is live, or it failed; stalled after $((stall_s / 60)) min"
+fi
 if [ ${#refused[@]} -gt 0 ]; then
   printf 'refused: %s\n' "${refused[@]}" >&2
   exit 2
@@ -143,11 +154,27 @@ if [ $dry = 1 ]; then
 fi
 
 # 2. Stop PREV, close its panes, start NEXT.
+# The site chat: one line per event, in the background (a slow API never holds up the change); the stall line only if
+# neither live nor failed was said by then (the marker).
+said=$prev_dir/.announce-done
+rm -f "$said"
+announce() {
+  [ "${POG_ANNOUNCE:-1}" != 0 ] || return 0
+  "${announce_cmd[@]}" --log "$prev_dir/announce.log" "$@" >/dev/null 2>&1 </dev/null &
+}
+announce_end() { touch "$said"; announce "$@"; }
+announce change-begin "$prev" "$next"
+if [ "${POG_ANNOUNCE:-1}" != 0 ]; then
+  ( sleep "$stall_s"; [ -e "$said" ] || "${announce_cmd[@]}" --log "$prev_dir/announce.log" change-stalled "$next" ) </dev/null >/dev/null 2>&1 &
+  stall_pid=$!
+  disown "$stall_pid" 2>/dev/null   # no job notice when it is stopped
+fi
 echo "stopping $prev"
 POG_STOP_WORLD=1 "${stop_team[@]}" "$prev"; rc=$?
 # (d24 batch175 QR2) exit 3: no save went through (tools/stop_save.py --failed); the world is left running and no next
 # shift starts on an older save. Run the shift change again once the world saves.
 if [ $rc = 3 ]; then
+  announce_end change-failed "$next"
   echo "refused: $prev's stop save failed (stop-team exit 3; $prev_dir/stopped.json: via failed); the world is left running, paused; $prev's agent panes left open; $next not started. Save the world (python3 tools/pog.py --world n save) and run the shift change again." >&2
   exit 2
 fi
@@ -197,9 +224,14 @@ site_result() {  # the site refresh's outcome, waiting up to POG_SC_SITE_WAIT se
 }
 if ! env ${sw[@]+"${sw[@]}"} ${obs_restarted[@]+"${obs_restarted[@]}"} POG_RESUME="$prev" POG_NEXT_SHIFT="$next_shift" "${start_team[@]}" "$next" "$minutes" ${stream:+"$stream"}; then
   echo "start-team $next FAILED; see $next_dir/start.log" >&2
+  announce_end change-failed "$next"
   site_result
   exit 1
 fi
+
+agents=$(grep -c . "$next_dir/panes.txt" 2>/dev/null || true)
+announce_end change-live "$next" --agents "${agents:-0}"
+[ -n "${stall_pid:-}" ] && kill "$stall_pid" 2>/dev/null
 
 # 3. Health and the console audit.
 sleep "${POG_SC_HEALTH_WAIT:-180}"
