@@ -57,11 +57,25 @@ def commands():
     return out
 
 
+# (mt277, private) a multi-team run's team (POG_MT_TEAM, tools/mt/start-mt.sh): the roster file is that team's
+# members only, and the team section says what is true of the team without a word about the world's other players
+# (multiteam-design.md: teams start believing their teammates are the only players)
+MT_SHARE = ("{{TEAM_SIZE}} AI agents share this world as one team", "You play in a team of {{TEAM_SIZE}} AI agents")
+
+
+def mt_team():
+    return os.environ.get("POG_MT_TEAM", "")
+
+
 def team_text(team_file, me, model):
     """The team section: agent/team.md with the roster from TEAM_FILE ("name|model" per line)."""
     rows = [l.strip().split("|", 1) for l in open(team_file) if l.strip()]
     roster = "\n".join(f"- `{n}`: {m}" for n, m in rows if n != me)
-    return (open(os.path.join(AGENT, "team.md")).read().replace("{{TEAM_SIZE}}", str(len(rows)))
+    text = open(os.path.join(AGENT, "team.md")).read()
+    if mt_team():
+        assert MT_SHARE[0] in text, "agent/team.md: the team sentence changed (tools/brief.py MT_SHARE)"
+        text = text.replace(*MT_SHARE)
+    return (text.replace("{{TEAM_SIZE}}", str(len(rows)))
             .replace("{{ROSTER}}", roster).replace("{{MODEL}}", model))
 
 
@@ -90,7 +104,11 @@ def values(player, mate="", mate_notes="", role=""):
     sa = os.environ.get("POG_SPACE_AGE") == "1"
     return {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "ROLE": role,
             "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010"),
-            "GOAL": "reaching the Shattered Planet, past the solar system's edge" if sa else "a rocket launch"}
+            "GOAL": (MT_GOAL if mt_team() else "reaching the Shattered Planet, past the solar system's edge") if sa else "a rocket launch"}
+
+
+MT_GOAL = "a space platform of the team's reaching the solar system's edge, as soon as you can"
+MT_MAP = ("default map\nsettings", "map settings\nmade for this run")
 
 
 def core(player, time_text, coop, mate="", mate_notes="", role=""):
@@ -99,6 +117,9 @@ def core(player, time_text, coop, mate="", mate_notes="", role=""):
     text = open(os.path.join(AGENT, "PLAYBOOK.md")).read().replace("{{TIME}}", time_text) + coop
     if os.environ.get("POG_SPACE_AGE") == "1":
         text = text.replace("base game, default map", "Space Age (with Quality and Elevated Rails), default map")
+    if mt_team():   # (mt277) its starts, resources and nests were placed by the setup (tools/mt/mt_map.py)
+        assert MT_MAP[0] in text, "agent/PLAYBOOK.md: the map line changed (tools/brief.py MT_MAP)"
+        text = text.replace(*MT_MAP)
     text = text.rstrip("\n") + "\n\n" + index_text().rstrip("\n")
     text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
     return fill(text, values(player, mate, mate_notes, role))
@@ -131,8 +152,15 @@ def topic_files(player):
     return out
 
 
+USAGE = "../../../vendor/factorio-harness/docs/usage.md"   # PLAYBOOK's path from runs/RUN/NAME
+
+
 def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
-    open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role))
+    text = core(player, time_text, coop, mate, mate_notes, role)
+    # (mt277) a multi-team run's workspaces sit one folder deeper (runs/RUN/TEAM/NAME)
+    if os.path.abspath(d).startswith(os.path.join(ROOT, "runs") + os.sep):
+        text = text.replace(USAGE, os.path.relpath(os.path.join(ROOT, "vendor", "factorio-harness", "docs", "usage.md"), os.path.abspath(d)))
+    open(os.path.join(d, "AGENTS.md"), "w").write(text)
     ref = os.path.join(d, "ref")
     os.makedirs(ref, exist_ok=True)
     for topic, text in topic_files(player).items():

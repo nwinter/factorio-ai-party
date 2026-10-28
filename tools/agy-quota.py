@@ -129,7 +129,7 @@ def send_operator(world, req):
         level += 1
     cmd = ('/silent-command rcon.print(remote.call("agent_harness","dispatch",[' + "=" * level + "[" + body + "]"
            + "=" * level + "]))")
-    reply = json.loads(pog.Rcon("127.0.0.1", pog.PORTS[world], pw, timeout=5).command(cmd) or "{}")
+    reply = json.loads(pog.Rcon(pog.HOSTS.get(world, "127.0.0.1"), pog.PORTS[world], pw, timeout=5).command(cmd) or "{}")
     if not reply.get("ok"):
         raise RuntimeError(str(reply.get("error") or reply)[:200])
     return reply.get("result")

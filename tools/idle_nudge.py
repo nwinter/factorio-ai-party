@@ -820,7 +820,7 @@ class Harness:
 
     def __init__(self, world, port=None):
         import pog
-        self.pog = pog
+        self.pog, self.world = pog, world
         self.port = port or pog.PORTS.get(world) or int(os.environ["POG_RCON_PORT"])
         self.pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
         self.rcon = None
@@ -833,7 +833,7 @@ class Harness:
         for attempt in (0, 1):
             try:
                 if self.rcon is None:
-                    self.rcon = self.pog.Rcon("127.0.0.1", self.port, self.pw, timeout=10)
+                    self.rcon = self.pog.Rcon(getattr(self.pog, "HOSTS", {}).get(self.world, "127.0.0.1"), self.port, self.pw, timeout=10)
                 reply = json.loads(self.rcon.command(cmd) or "{}")
                 break
             except (OSError, ConnectionError):

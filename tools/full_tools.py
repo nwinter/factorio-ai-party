@@ -195,7 +195,7 @@ def chain(prev):
         if not os.path.isfile(f):
             break
         up = open(f).readline().strip()
-        d = os.path.join(os.path.dirname(out[-1]), up)
+        d = os.path.normpath(os.path.join(os.path.dirname(out[-1]), up))   # (mt277) a team's "../PREV/TEAM"
         if not up or not os.path.isdir(d) or d in out:
             break
         out.append(d)
@@ -576,13 +576,19 @@ def grok_sandbox(d):
     if os.environ.get("POG_GROK_SANDBOX", "1") == "0":
         return ""
     run = os.path.dirname(os.path.abspath(d))
-    root = os.path.dirname(os.path.dirname(run))
+    runs = os.path.join(ROOT, "runs")
     home = os.path.expanduser("~")
     deny = [os.path.join(home, ".config", "pog"), os.path.join(home, ".ssh")]
     deny += [p for p in (os.path.realpath(os.path.join(home, ".ssh")),) if p not in deny]
-    for k in sorted(glob.glob(os.path.join(root, "runs", "*", ".keys"))):
+    # (mt277) a multi-team run's teams keep their keys in runs/RUN/TEAM/.keys
+    for k in sorted(glob.glob(os.path.join(runs, "*", ".keys")) + glob.glob(os.path.join(runs, "*", "*", ".keys"))):
         if os.environ.get("POG_BROKER") == "1" or os.path.dirname(k) != run:
             deny.append(k)
+    # (mt277, private) a multi-team run (runs/RUN/TEAM/NAME): the other teams' folders and the operator's op/
+    if os.environ.get("POG_MT_TEAM") and os.path.dirname(os.path.dirname(run)) == runs:
+        top = os.path.dirname(run)
+        deny += [os.path.join(top, t) for t in sorted(os.listdir(top))
+                 if os.path.isdir(os.path.join(top, t)) and os.path.join(top, t) != run]
     for o in others(d):
         deny += [os.path.join(o, s) for s in PRIVATE_FILES + PRIVATE_DIRS]
     rw = [os.path.join(run, "team-tools"), os.path.join(home, ".grok")]

@@ -37,6 +37,7 @@ start)
     "require_user_verification": False, "max_players": 0, "allow_commands": "admins-only", "autosave_interval": 0, "autosave_slots": 1,
     "auto_pause": False, "only_admins_can_pause_the_game": True, "autosave_only_on_server": True}))' | remote "cat > '$dir/server-settings.json'"
   case $save in
+    imac:$dir/saves/mt.zip) ;;   # (mt277) the server's own save as its last /quit left it (tools/mt/start-mt.sh, POG_RESUME)
     imac:*) remote "cp '${save#imac:}' '$dir/saves/mt.zip'" ;;   # a save already on the iMac (mt_map.py seed-search)
     *) scp -q "$save" "$host:$dir/saves/mt.zip" ;;
   esac

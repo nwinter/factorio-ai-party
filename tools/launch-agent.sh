@@ -118,7 +118,10 @@ Read AGENTS.md in this directory; it has your instructions, interface, rules, an
 EOP
   if [ -n "${POG_RESUME:-}" ]; then printf '%s\n' "$resume_sentence" >> "$prompt"; fi
 fi
-name="pog-${POG_WS:-$world}-$run"
+# (mt277, private) a multi-team run's team is RUN/TEAM (tools/mt/start-mt.sh): its folder runs/RUN/TEAM holds the
+# team's prompt, roster, keys or sockets and team-tools; names and labels use RUN-TEAM
+label=${run//\//-}
+name="pog-${POG_WS:-$world}-$label"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
               "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)", "Bash(rg:*)", "Bash(sort:*)"'
@@ -136,7 +139,7 @@ claude_settings() {
   # Earlier runs' key copies (runs/*/.keys) hold the same world passwords: denied, apart from this run's own while
   # fh reads it (no broker). Rules in both forms: Claude Code reads "//" as absolute, Grok Build "/".
   local keys_read="" keys_rules="" k
-  for k in "$root"/runs/*/.keys; do
+  for k in "$root"/runs/*/.keys "$root"/runs/*/*/.keys; do
     [ -d "$k" ] || continue
     [ "${POG_BROKER:-0}" != 1 ] && [ "$k" = "$root/runs/$run/.keys" ] && continue
     keys_read="$keys_read, \"$k\""
@@ -144,7 +147,11 @@ claude_settings() {
   done
   # Other runs' folders (their notes, chat and logs) are denied too, so a run reads as a first attempt (task-hosts5);
   # this run and the shifts it resumes (resumed-from, followed back) stay readable.
-  local chain=" $run " r=$run d
+  # (mt277) a multi-team run: the chain is of whole runs (runs/RUN/resumed-from), and in each of them every folder but
+  # this team's (the other teams, the operator's op/) is denied
+  local top=${run%%/*} team="" t
+  [ "$top" = "$run" ] || team=${run#*/}
+  local chain=" $top " r=$top d
   while [ -f "$root/runs/$r/resumed-from" ]; do
     r=$(cat "$root/runs/$r/resumed-from")
     case "$chain" in *" $r "*) break ;; esac
@@ -152,7 +159,16 @@ claude_settings() {
   done
   for d in "$root"/runs/*/; do
     d=${d%/}
-    case "$chain" in *" ${d##*/} "*) continue ;; esac
+    case "$chain" in *" ${d##*/} "*)
+      if [ -n "$team" ]; then
+        for t in "$d"/*/; do
+          t=${t%/}
+          [ -d "$t" ] && [ "${t##*/}" != "$team" ] || continue
+          keys_read="$keys_read, \"$t\""
+          keys_rules="$keys_rules, \"Read(/$t/**)\", \"Read($t/**)\""
+        done
+      fi
+      continue ;; esac
     keys_read="$keys_read, \"$d\""
     keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
   done
@@ -178,7 +194,7 @@ new_pane() {
     anchor=$(herdr pane list --workspace "${POG_TAB%%:*}" | python3 -c "import json,sys; t=sys.argv[1]; print([p['pane_id'] for p in json.load(sys.stdin)['result']['panes'] if p['tab_id']==t][-1])" "$POG_TAB")
     herdr pane split "$anchor" --direction right --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['pane']['pane_id'])"
   else
-    herdr tab create --workspace "${HERDR_WORKSPACE_ID:?run inside Herdr}" --label "$run" --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['root_pane']['pane_id'])"
+    herdr tab create --workspace "${HERDR_WORKSPACE_ID:?run inside Herdr}" --label "$label" --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['root_pane']['pane_id'])"
   fi
 }
 
@@ -234,7 +250,7 @@ case $kind in
       herdr tab close "$tab" >/dev/null 2>&1 || true
       tab=$POG_TAB
     else
-      herdr tab rename "$tab" "$run" >/dev/null 2>&1 || true
+      herdr tab rename "$tab" "$label" >/dev/null 2>&1 || true
     fi
     ;;
   grok)
