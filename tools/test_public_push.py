@@ -21,7 +21,7 @@ public remote: python3 tools/test_public_push.py
 - under POG_TEST=1 (tools/testsafe.py) without POG_PUBLIC_REMOTE, POG_PUBLIC_SOURCE, POG_PUBLIC_WORKTREE and
   POG_PUBLIC_DIR: refused, nothing made.
 """
-import json, os, subprocess, sys, tempfile, time
+import json, os, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -99,8 +99,10 @@ def main():
         r, synced = run()
         assert r.returncode == 0 and not synced and "up to date: main " + c2[:8] in r.stdout, r.stdout
 
+        shutil.rmtree(wt)   # a clean copy deleted by hand (still registered): made again in its place
         c3 = commit(src, "c")
         r, synced = run()
+        assert "made the clean copy of main" in r.stdout and git(wt, "rev-parse", "HEAD") == c3, r.stdout
         assert r.returncode == 0 and synced and f"pushed {c2[:8]}..{c3[:8]} (1 commits)" in r.stdout, r.stdout
         assert git(remote, "rev-parse", "main") == c3
 

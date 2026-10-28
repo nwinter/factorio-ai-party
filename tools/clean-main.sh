@@ -14,8 +14,8 @@ err() { echo "clean-main: $*" >&2; exit 1; }
 head=$(git -C "$src" rev-parse -q --verify refs/heads/main) || err "no main in $src"
 common=$(git -C "$src" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || err "$src is not a git checkout"
 if [ ! -e "$wt" ]; then
-  git -C "$src" worktree prune 2>/dev/null
-  out=$(git -C "$src" worktree add -q --detach "$wt" "$head" 2>&1) || err "git worktree add $wt: $(echo "$out" | tail -1)"
+  # -f: a copy whose folder was deleted is still registered; add it again there (no prune: other worktrees' records stay)
+  out=$(git -C "$src" worktree add -q -f --detach "$wt" "$head" 2>&1) || err "git worktree add $wt: $(echo "$out" | tail -1)"
 else
   top=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null || true)
   if [ -z "$top" ] || [ "$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$common" ] ||

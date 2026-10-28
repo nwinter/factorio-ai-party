@@ -57,13 +57,14 @@ fi
 # 15:19 build). The refresh runs the clean copy of main's own site-refresh.sh (tools/clean-main.sh: a detached worktree,
 # POG_SITE_WORKTREE, default worktrees/pog-site-refresh) under this lock, with what the build reads and writes outside
 # git linked to this checkout's: runs/, site/live/status.json (changed here by status_update.py), site/content/r2.json,
-# site/og/shifts/, site/og/thumbs/ and site/.wrangler/; the build goes to this checkout's site/dist as before.
+# site/og/shifts/, site/og/thumbs/, site/.wrangler/ and .wrangler/ (wrangler's state); the build goes to this checkout's
+# site/dist as before.
 # POG_SITE_CLEAN=0 builds in place (a test run without POG_SITE_WORKTREE always does).
 if [ -z "${POG_SITE_INNER:-}" ] && [ "${POG_SITE_CLEAN:-1}" != 0 ] &&
    { [ "${POG_TEST:-0}" != 1 ] || [ -n "${POG_SITE_WORKTREE:-}" ]; }; then
   wt=${POG_SITE_WORKTREE:-$HOME/code/personal/player-of-games/worktrees/pog-site-refresh}
   at=$(tools/clean-main.sh "${POG_SITE_SOURCE:-$root}" "$wt" runs/ site/live/status.json site/content/r2.json \
-       site/og/shifts/ site/og/thumbs/ site/.wrangler/ 2>&1) || fail "the clean copy of main: $(echo "$at" | tail -1)"
+       site/og/shifts/ site/og/thumbs/ site/.wrangler/ .wrangler/ 2>&1) || fail "the clean copy of main: $(echo "$at" | tail -1)"
   step "from the clean copy of main ${at:0:8} ($wt)"
   POG_SITE_INNER=1 POG_SITE_OUT=$out POG_SITE_RUNS=$runs bash "$wt/tools/site-refresh.sh" ${args[@]+"${args[@]}"}
   exit $?
