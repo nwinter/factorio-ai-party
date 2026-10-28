@@ -327,6 +327,6 @@ do
     guards={{when={['until']='tick_at_least',tick=game.tick+60}}}})
   eq(r.dry_run,true)
   fails(function() h.queue_submit(sol,{lane='remote',steps={{action='wait_until',args={['until']='crafting_done'}}}}) end,
-    'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, tick_at_least,')
+    'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least,')
 end
 print('d27_batch261 AD remote lanes take tick_at_least: ok')
