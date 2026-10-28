@@ -194,14 +194,15 @@ return function(api)
     local p = game.get_player(a.player)
     assert(p, 'no player ' .. tostring(a.player) .. ' (a client joins once with that name)')
     local was = p.force.name
-    p.force = a.team
     local spectator = false
+    -- the spectator switch first: on the iMac test (mt275) a connected player's force set before it read player after
     if p.connected then
       local c = p.character
       p.set_controller{type=defines.controllers.spectator}
       if c and c.valid then c.destroy() end
       spectator = true
     end
+    p.force = a.team
     s.players = s.players or {}
     s.players[p.name] = a.team
     return {player=p.name, force=p.force.name, was=was, connected=p.connected, spectator=spectator}

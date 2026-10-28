@@ -246,60 +246,90 @@ def cmd_report(a):
     print(json.dumps(out, indent=1))
 
 
-MAC_APP = "/Users/owner/code/factorio-mac-2.0.77/factorio.app/Contents/MacOS/factorio"
+MAC_APP = "/Users/owner/code/factorio-mac-2.0.77/factorio.app"
+MT_DIR = "/Users/owner/pog-mt"  # the iMac server's folder (tools/mt/imac_mt.sh)
 
 
-def mac_client(a, name, slot):
-    """A macOS client for one join: its own write-data folder (config, mods, player-data with the name), medium sprites,
-    low video memory, no sound; connects to the copy on this Mac. Returns the Popen."""
-    d = os.path.join(a.client_dir, slot)
-    os.makedirs(os.path.join(d, "config"), exist_ok=True)
-    mods = os.path.join(d, "mods")
-    os.makedirs(mods, exist_ok=True)
-    subprocess.run(["rsync", "-a", "--delete", os.path.join(a.dir, "mods", "agent-harness_0.1.0") + "/", os.path.join(mods, "agent-harness_0.1.0") + "/"], check=True)
-    subprocess.run(["cp", os.path.join(a.dir, "mods", "mod-list.json"), mods], check=True)
-    app = os.path.dirname(os.path.dirname(a.client_app))  # .../factorio.app/Contents
-    open(os.path.join(d, "config", "config.ini"), "w").write(
-        f"[path]\nread-data={app}/data\nwrite-data={d}\n[other]\ncheck-updates=false\nshow-tips-and-tricks=false\n"
-        "[sound]\nmaster-muted=true\nmusic-volume=0\n[graphics]\nfull-screen=false\ngraphics-quality=medium\n"
-        "video-memory-usage=low\ntexture-streaming=true\n")
-    json.dump({"service-username": name}, open(os.path.join(d, "player-data.json"), "w"))
-    log = open(os.path.join(d, "client.log"), "w")
-    return subprocess.Popen([a.client_app, "--config", os.path.join(d, "config", "config.ini"), "--mp-connect", f"127.0.0.1:{a.game_port}",
-                             "--disable-audio"], stdout=log, stderr=subprocess.STDOUT)
+def ssh(host, cmd, check=True):
+    r = subprocess.run(["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, cmd], capture_output=True, text=True)
+    if check and r.returncode != 0:
+        raise SystemExit(f"ssh {host}: {cmd[:120]}: {r.stderr.strip()[:400]}")
+    return r.stdout
+
+
+def client_usage(host, pid):
+    """RSS (MB) and CPU % of the client process, and the GPU's VRAM in use (MB, the AMD driver's PerformanceStatistics inUseVidMemoryBytes)."""
+    ps = ssh(host, f"ps -o rss=,%cpu= -p {pid}", check=False).split()
+    vram = ssh(host, "ioreg -r -d 1 -w 0 -c IOAccelerator | grep -o '\"inUseVidMemoryBytes\"=[0-9]*' | head -1", check=False)
+    v = int(vram.split("=")[1]) // 2**20 if "=" in vram else None
+    return {"rss_mb": int(ps[0]) // 1024 if ps else None, "cpu_pct": float(ps[1]) if len(ps) > 1 else None, "vram_used_mb": v}
+
+
+def start_client(a, name):
+    """One join's client on the iMac: its own write-data folder (config, the server's mods, player-data with the name),
+    medium sprites, low video memory, no audio, connecting to the mt server there; started in the GUI session with
+    `open -n -a` (ssh alone gets no window). Returns its PID, found by its own config path (pgrep -lf, then read)."""
+    d = f"{a.mt_dir}/clients/{name}"
+    cfg = (f"[path]\nread-data=__PATH__system-read-data__\nwrite-data={d}\n[other]\ncheck-updates=false\n"
+           "show-tips-and-tricks=false\n[sound]\nmaster-muted=true\nmusic-volume=0\n[graphics]\nfull-screen=false\n"
+           "graphics-quality=medium\nvideo-memory-usage=low\ntexture-streaming=true\n")
+    ssh(a.client_host, f"mkdir -p '{d}/config' && rm -rf '{d}/mods' && cp -R '{a.mt_dir}/mods' '{d}/mods' && "
+                       f"printf '{cfg}' > '{d}/config/config.ini' && printf '{{\"service-username\": \"{name}\"}}' > '{d}/player-data.json'")
+    ssh(a.client_host, f"open -n -a '{a.client_app}' --args --config '{d}/config/config.ini' --mp-connect 127.0.0.1:{a.game_port} --disable-audio")
+    for _ in range(20):
+        rows = ssh(a.client_host, f"pgrep -lf '{d}/config/config.ini'", check=False).strip().splitlines()
+        rows = [r for r in rows if "factorio" in r and f"{d}/config/config.ini" in r]
+        if rows:
+            return int(rows[0].split()[0])
+        time.sleep(1)
+    raise SystemExit(f"{name}: no client process found")
+
+
+def stop_client(a, pid):
+    """The client this started, by its PID: SIGTERM, then SIGKILL after 20 s."""
+    ssh(a.client_host, f"kill {pid}", check=False)
+    for _ in range(20):
+        if ssh(a.client_host, f"kill -0 {pid} 2>/dev/null && echo up", check=False).strip() != "up":
+            return
+        time.sleep(1)
+    ssh(a.client_host, f"kill -9 {pid}", check=False)
 
 
 def cmd_join(a):
-    """Per team, one client at a time: a macOS client joins the copy as mt-TEAM, is moved into its force as a spectator
-    (mt_assign), and quits (SIGTERM to the client this started, then SIGKILL after 20 s)."""
+    """Per team, one client at a time: a client on the iMac joins the mt server as mt-TEAM, is moved into its force as
+    a spectator (mt_assign), and quits. Prints the time to join and the client's RSS, CPU and the GPU's VRAM in use."""
     lay = json.load(open(os.path.join(a.dir, "layout.json")))
     op = op_from(a)
+    base = client_usage(a.client_host, 1)
+    print("before: VRAM in use", base["vram_used_mb"], "MB")
     for t in lay["teams"]:
         if a.team and t["name"] != a.team:
             continue
         name = "mt-" + t["name"]
         t0 = time.time()
-        proc = mac_client(a, name, name)
-        joined = False
-        while time.time() - t0 < a.join_timeout and proc.poll() is None:
+        pid = start_client(a, name)
+        joined, peak = False, None
+        while time.time() - t0 < a.join_timeout:
             out = op.lua(f"/silent-command local p=game.get_player('{name}') rcon.print(p and p.connected and 'yes' or 'no')")
+            u = client_usage(a.client_host, pid)
+            if u["rss_mb"] and (not peak or u["rss_mb"] > peak["rss_mb"]):
+                peak = u
             if out.strip() == "yes":
                 joined = True
                 break
-            time.sleep(3)
+            if u["rss_mb"] is None:
+                break
+            time.sleep(2)
         took = time.time() - t0
         if joined:
             res, _ = op.call("mt_assign", {"player": name, "team": t["name"]})
-            print(f"{name}: joined after {took:.0f} s;", json.dumps(res))
+            now = client_usage(a.client_host, pid)
+            print(f"{name}: joined after {took:.0f} s (pid {pid}); peak {json.dumps(peak)}; at join {json.dumps(now)};", json.dumps(res))
         else:
-            print(f"{name}: no join within {took:.0f} s (client exit {proc.poll()}); log {os.path.join(a.client_dir, name, 'client.log')}")
-        proc.terminate()
-        try:
-            proc.wait(20)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        print(f"{name}: client {proc.pid} quit")
+            print(f"{name}: no join within {took:.0f} s (pid {pid}); see {a.mt_dir}/clients/{name}/factorio-current.log")
+        if not a.keep:
+            stop_client(a, pid)
+            print(f"{name}: client {pid} stopped")
         if not joined:
             break
 
@@ -356,8 +386,10 @@ def main():
         p.add_argument("--enemy-frequency", type=float, default=ENEMY[0])
         p.add_argument("--enemy-size", type=float, default=ENEMY[1])
         p.add_argument("--client-app", default=MAC_APP)
-        p.add_argument("--client-dir", default="/Users/owner/code/factorio-mac-2.0.77/clients")
-        p.add_argument("--game-port", type=int, default=34274)
+        p.add_argument("--client-host", default="imac.local")
+        p.add_argument("--mt-dir", default=MT_DIR)
+        p.add_argument("--keep", action="store_true", help="join: leave the client running")
+        p.add_argument("--game-port", type=int, default=34475)
         p.add_argument("--join-timeout", type=int, default=240)
         p.add_argument("--seconds", type=int, default=60)
     a = ap.parse_args()
