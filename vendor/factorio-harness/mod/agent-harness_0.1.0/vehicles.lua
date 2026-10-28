@@ -18,7 +18,7 @@ return function(api)
       pathfind='with drive: default true; false steers straight at the target',
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
       avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
-      wait='with go_to: true runs it as a timed action (fh --wait waits for it): last.outcome arrived, stalled (the stall line with its recoveries), unreachable (no path found or a target on water with no tile its legs stand on near it), route_changed, retreated, route_emptied, destroyed or timed_out; last has position, route_line, recovery, no_path, why. fh call vehicle --wait with go_to sends it',
+      wait='with go_to: true runs it as a timed action (fh --wait waits for it): last.outcome arrived, stalled (the stall line with its recoveries), unreachable (no path found or a target on water with no tile its legs stand on near it), route_changed (within a second of a go_to, append, clear or spider_kite on it by another call: last.changed_by, changed_how, changed_tick; or its route leading elsewhere with no call), retreated, route_emptied, destroyed or timed_out; last has position, route_line, recovery, no_path, why. fh call vehicle --wait with go_to sends it',
       go_to='{x,y}, or a list of 1..16: a spidertron walks there by itself (the one at position in sight, the one you are in, or with remote: true the one vehicle names, by remote view in a chunk our force sees). mode "replace" (the default, as a click on its remote): the route becomes these targets; "append" (as a shift-click): they go at the end. Returns route (the targets queued, in order), route_line, replaced (the targets it had); a target its legs cannot reach (deep water, cliffs on the straight line) keeps it standing with the target kept: a stall (spiderroute.lua) is said in your next reply once 10 s pass with no progress, and in status spidertrons',
       mode='with go_to: "replace" (default) or "append". (d22 batch101 BK1) go_to appended before: replace is the default as a click on the remote replaces the route; a call to a spidertron with no route left does the same either way',
       clear='true: empty the spidertron\'s route (it stops where it is); with go_to the route becomes go_to',
@@ -333,7 +333,7 @@ return function(api)
           local unlanded = out.unlanded
           local action = {kind='spider_go', spider=spider, unit=spider.unit_number, set_tick=game.tick, start_tick=game.tick,
             until_tick=game.tick + ticks, target={x=route[#route].x, y=route[#route].y}, landed=out.landed, unlanded=unlanded,
-            remote=a.remote or nil}
+            remote=a.remote or nil, set_seq=api.spider_seq and api.spider_seq(spider.unit_number) or nil}
           api.start(p, action)
           out.until_tick = action.until_tick
           out.waiting = 'until it arrives, stalls (after its recoveries), is unreachable, its route is set again, it retreats or ' .. math.floor(ticks / 60) .. ' s pass'

@@ -14822,7 +14822,7 @@ M.spiderroute=require('spiderroute'){state=state,position=position,who=function(
     end
   end}
 M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
-  spider_set=function(e,a,by,index,own) return M.spiderroute.set(e,a,by,index,own) end,spider_facts=function(e,by,index) return M.spiderroute.facts(e,by,index) end,
+  spider_set=function(e,a,by,index,own) return M.spiderroute.set(e,a,by,index,own) end,spider_seq=function(unit) return M.spiderroute.seq(unit) end,spider_facts=function(e,by,index) return M.spiderroute.facts(e,by,index) end,
   spider_retreat=function(p,a)
     local cfg=M.retreat.config(p,{retreat=a.retreat},'go_to')
     if cfg and M.retreat.check_goal then M.retreat.check_goal(p,cfg.to) end
@@ -14896,8 +14896,10 @@ function handlers.spider_kite(p,a)
   local g=(state().retreat_guards or {})[p.index]
   local action=M.spiderkite.plan(p,a,spider,how,g and g.to and g or nil)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  -- the fight owns its route now: a go_to's stall sampling (spiderroute.lua) ends, the route is cleared
+  -- the fight owns its route now: a go_to's stall sampling (spiderroute.lua) ends, the route is cleared; (d28 batch300
+  -- SR) a waited go_to on it ends route_changed, naming this call
   if sr then sr.spiders[spider.unit_number]=nil end
+  M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
   if #route>0 then spider.autopilot_destination=nil end
   local targeting=M.spiderkite.start(action)
   state().active[p.index]=action
