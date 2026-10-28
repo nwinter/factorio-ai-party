@@ -4,7 +4,9 @@ return function(api)
   local base=api.scheduler
   local remote_api={}
   for k,v in pairs(api.base) do remote_api[k]=v end
-  local WAITS={platform_arrived=true,platform_left=true,researched=true,platform_built=true,tick_at_least=true}
+  -- (d27 batch289, Astra #2634: platform_ready with platform and area was refused in lane platform:Resolute while a
+  -- direct wait_until took it) platform_ready as platform_built: both name their platform
+  local WAITS={platform_arrived=true,platform_left=true,researched=true,platform_built=true,platform_ready=true,tick_at_least=true}
   -- place_ghosts and deconstruct on a platform (Astra, d15 06:23: ship conversions held the body queue): marks and
   -- ghosts the hub's robots build, no body needed; platform_built waits for the foundation.
   local PLATFORM_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,flush=true,place_ghosts=true,deconstruct=true,platform_rearm=true}
@@ -39,7 +41,7 @@ return function(api)
           or ((c['until']=='rocket_ready' or c['until']=='rocket_parts' or SURFACE_WAITS[c['until']]) and type(c.surface)=='string' and c.surface~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, tick_at_least, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).

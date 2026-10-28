@@ -16779,6 +16779,19 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   - Sol's whole plan (move_to, 17 entries) from the fast pairs: both pairs express and paired, the express belts and
     the bulk inserter built.
 - Bundle (compacted): 6,299,239 bytes on main (ddf11ddf, batch283 in it), 6,302,174 with this branch (limit 8,388,608).
+## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
+- Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
+  `platform_built` and not `platform_ready`, while a direct wait_until took both. `agent/ref/waits-queues.md` gave both
+  in one sentence with the lanes.
+- `wait_until {until: "platform_ready", platform, positions?, area?, tiles?}` now runs in the remote and platform lanes
+  as a direct wait does, with the same arguments; the lane's refusal message names it.
+- `platform_ready` on the whole platform (no positions, area or tiles) counts entity ghosts too (`entities: false`: the
+  tile ghosts only); it counted the tile ghosts alone before, as `platform_built` does. With a subset both count that
+  part's entity and tile ghosts. saw: `platform NAME: N tile ghosts left, M entity ghosts`, or `platform NAME, the part
+  asked: M entity ghosts, N tile ghosts left`.
+- No other condition the waits reference gives for the lanes is refused there (tools/test_lane_waits.py reads both).
+- Tests: tests/d27_batch289.lua (the check on the whole platform and a part; queued in lane platform:Resolute and the
+  remote lane, not met then met; it fails on main's queue_lanes.lua); tools/test_lane_waits.py.
 ## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
 
 - Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
@@ -16802,6 +16815,32 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
   `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
 - Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
+
+## d27 batch291 (LS, Sol #2638: each lab's speed and full-speed pack use, from the engine)
+
+- Sol rebuilt the full-speed demand of 30 labs from beacons by hand three times (173.1, 158.34, 172.15 a minute) to
+  set a freight cap, with a source proven at 172.8 a minute; the 10-minute statistics of starved labs cannot stand in.
+- Engine facts (2.0.77, the iMac copy, world n's save at tick 73616015: 30 biolabs on Nauvis researching
+  low-density-structure-productivity, units of 3600 ticks and one each of 5 packs, the force's
+  laboratory_speed_modifier 2.5):
+  - a lab's `speed_bonus` is its modules' and beacons' (`effects.speed`) plus the force's lab speed: 0.67 + 2.5 = 3.17;
+    `productivity_bonus` is its modules' plus the force's laboratory_productivity_bonus (0.4, 0.5 with 0.1 set);
+  - researching speed by quality (`get_researching_speed`): biolab 2, 2.6, 3.2, 3.8, 5; lab 1, 1.3, 1.6, 1.9, 2.5;
+    `science_pack_drain_rate_percent`: biolab 50, lab 100;
+  - measured: a biolab cut off from its inserters and filled, its packs' durability over about 11000 ticks: 5.845 of
+    each pack a minute at modules and beacons +0.67, 4.550 at +0.30. Those are 2 x (1 + 0.67) x (1 + 2.5) = 11.69 and
+    2 x 1.3 x 3.5 = 9.1 units a minute at 50%: the two bonuses multiply. The summed speed_bonus would give 4.17 and
+    3.8. Productivity (+40% on both) changed no pack use.
+- `labs` now gives `full_speed` {labs, units_per_min, progress_per_min (with productivity), packs_per_min, line} for
+  the labs read, `lab_rates` (a line a lab, the first 64) and each group's figures at the end of its line; `inspect` on a
+  lab gives `research_rate` {speed, researching_speed, modules_beacons, force_lab_speed, drain_percent, productivity,
+  unit_s, units_per_min, packs_per_min, line, note}. All are the engine's figures at full supply for the current
+  research; what was used stays in `science` (the 10-minute statistics).
+- Read on the copy: the 30 biolabs on Nauvis at full supply research 311.15 units a minute (454.7 with productivity)
+  and use 155.58 of each pack a minute. The two measured labs read 5.85 and 4.55, as measured.
+- Cost on the copy (the iMac, native): the new reads and lines for 30 labs, 0.43 ms. The whole labs read of Nauvis
+  through dispatch took 18.5 ms with them and 18.2-29.6 ms on main's runtime (the existing read: groups, feeders,
+  sources), so the added part is under 0.5 ms; the read itself was over 10 ms before this change.
 ## d27 batch284 (AT, Sol #2619: the made wait timed out before the batch's own estimate)
 
 - Sol's assembler_batch for 100 accumulators in an assembler 2 at crafting speed 1.05 said "the 100 crafts take about
@@ -16887,3 +16926,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   default)`.
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
+- Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
