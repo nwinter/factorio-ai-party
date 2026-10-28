@@ -17,6 +17,23 @@ export function topicNames(dir: string): string[] {
 }
 
 /** ref/NAME.md, or undefined when NAME is no topic (an action's name, say). */
+// (d28 batch317) A disclosure run (pog tools/brief.py with POG_DISCLOSURE): ref/.units/TOPIC.json holds the topic's head and
+// its items, each with its id (topic#n, as tools/disclosure/manifest.json numbers them, or spaceage.md#n for the Space Age
+// head). fh help TOPIC prints the head and the items open for the reader's force (the runtime's disclosure read), so an
+// entry shows up the moment it opens mid-shift.
+export type TopicUnits = {head: string, items: {id: string, text: string}[]};
+export function topicUnits(dir: string, name: string): TopicUnits | undefined {
+  if (!/^[a-z][a-z-]*$/.test(name)) return undefined;
+  try {
+    const u = JSON.parse(readFileSync(join(dir, '.units', `${name}.json`), 'utf8'));
+    return u && typeof u.head === 'string' && Array.isArray(u.items) ? u : undefined;
+  } catch { return undefined; }
+}
+export function openTopic(units: TopicUnits, open: Set<string>): string {
+  const items = units.items.filter(i => open.has(i.id)).map(i => i.text.replace(/\n*$/, '\n'));
+  return units.head + (items.length ? items.join('') : 'Nothing in this topic is open for your team yet.\n');
+}
+
 export function topicText(dir: string, name: string): string | undefined {
   if (!/^[a-z][a-z-]*$/.test(name)) return undefined;
   try { return readFileSync(join(dir, `${name}.md`), 'utf8'); } catch { return undefined; }

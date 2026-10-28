@@ -14,7 +14,7 @@ import { renderMap } from './view.js';
 import { parseLook } from './look.js';
 import { splitSay, overLimit, SAY_BYTES, SAY_PARTS } from './saysplit.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync, renameSync } from 'node:fs';
-import { formatCompact, finalLine, actionHelp, paginate, walkLine } from './format.js';
+import { formatCompact, finalLine, actionHelp, paginate, walkLine, describeLines } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { targetLine } from './target.js';
 import { lookaheadDue } from './lookahead.js';
@@ -24,7 +24,7 @@ import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
 import { BrokerTransport } from './broker.js';
-import { refDir, topicText, topicsLine, commandTopics, addReference } from './reference.js';
+import { refDir, topicText, topicsLine, commandTopics, addReference, topicUnits, openTopic } from './reference.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const modPath = resolve(root, 'mod/agent-harness_0.1.0');
@@ -410,6 +410,8 @@ function withDeadline(value: unknown): unknown {
   return {...value as Reply, result:{...result, clock:`${result.clock}; ${deadlineText(deadline)}`}};
 }
 let streaming = false;
+// (d28 batch317) a reply said what opened for the team (`new:`): describe.json is written again before fh exits
+let disclosureNew = false;
 // Operator tells (agent-minds study, fix 1: of 15 shift07 nudges 5 never reached the model, its replies sent to a
 // file, /dev/null, `tail -c` or a wrapper keeping three keywords). Any reply may carry result.operator until the
 // agent's next game action or message; in compact output each is printed on stderr as soon as a reply carries it and
@@ -697,6 +699,7 @@ function withoutRepeats(value: unknown): unknown {
   return out.reply;
 }
 function output(value: unknown) {
+  if (value && typeof value === 'object' && typeof (value as any).result?.new === 'string') disclosureNew = true;
   value = withPace(withDeadline(withCliNote(value)));
   if (outputFormat === 'compact') {
     const shown = withoutOperator(withoutRepeats(value));
@@ -843,7 +846,7 @@ async function main() {
       try { appendFileSync(values.journal, JSON.stringify({at:new Date().toISOString(), event:'help', [text ? 'topic' : 'action']:positionals[1]})+'\n'); }
       catch { /* the journal is best effort here */ }
     }
-    if (text !== undefined) { process.stdout.write(text); return; }
+    if (text !== undefined && !(dir && topicUnits(dir, positionals[1]!))) { process.stdout.write(text); return; }
   }
   // fh more: the next page of the last long reply (no game call).
   if (command === 'more') {
@@ -2308,12 +2311,20 @@ async function main() {
       output({ok:ready,result:{bridge:bridge.result,player:player?.result?.player},
         ...(ready ? {} : {error:bridge.error ?? player?.error ?? {code:'player_not_ready',message:bridge.result?.in_game ? 'The player has no character (dead, spectating, or in a cutscene)' : 'The client is not in a multiplayer game'}})});
       if (!ready) process.exitCode=1;
+    } else if (command === 'help' && refDir() && topicUnits(refDir()!, positionals[1] ?? '')) {
+      // (d28 batch317) a disclosure run's topic: the head and the entries open for your team now
+      const units = topicUnits(refDir()!, positionals[1]!)!;
+      const read = await execute('disclosure',{});
+      const r = read.ok ? read.result : undefined;
+      process.stdout.write(r?.mode === 'filter' ? openTopic(units, new Set([...(r.docs ?? []), ...(r.brief ?? [])]))
+        : topicText(refDir()!, positionals[1]!) ?? '');
     } else if (command === 'help') {
       const reply = await helpDescribe();
       if (!reply.ok) { output(reply); process.exitCode=1; }
       else {
         const dir = refDir(), topic = dir ? commandTopics(dir).get(positionals[1] ?? '') : undefined;
-        process.stdout.write(actionHelp(reply.result, positionals[1] ?? '') + (topic && topic !== 'core' ? `documented in: ./fh help ${topic}\n` : ''));
+        const locked = typeof reply.result?.locked?.[positionals[1] ?? ''] === 'string';
+        process.stdout.write(actionHelp(reply.result, positionals[1] ?? '') + (topic && topic !== 'core' && !locked ? `documented in: ./fh help ${topic}\n` : ''));
       }
     } else if (command === 'doctor') {
       const runtime = await execute('describe',{});
@@ -2364,6 +2375,16 @@ async function main() {
       setExit(reply);
     }
   } finally {
+    // (d28 batch317) the team's kit grew: the workspace's describe.json shows it (one action per line, as at launch)
+    if (disclosureNew && values.journal) {
+      const path = join(dirname(resolve(values.journal)), 'describe.json');
+      try {
+        if (existsSync(path)) {
+          const d = await helpDescribe();
+          if (d.ok && d.result?.actions) { writeFileSync(path + '.tmp', describeLines(d.result)); renameSync(path + '.tmp', path); }
+        }
+      } catch (error) { process.stderr.write(`describe.json: ${String(error)}\n`); }
+    }
     client.close();
     process.removeListener('SIGINT',stop); process.removeListener('SIGTERM',stop);
   }

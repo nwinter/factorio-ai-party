@@ -19,6 +19,7 @@ import rules  # noqa: E402
 import brief  # noqa: E402
 
 MANIFEST = os.path.join(HERE, "manifest.json")
+LUA = os.path.join(ROOT, "vendor", "factorio-harness", "mod", "agent-harness_0.1.0", "disclosure_units.lua")
 ALERTS = os.path.join(HERE, "alerts.json")
 
 # Worlds and milestones the summary sizes the kit at. world n's settings: every world flag but humans.
@@ -36,22 +37,22 @@ MILESTONES = [
         "built:roboport", "research:logistic-system", "research:circuit-network", "research:railway",
         "built:locomotive|straight-rail", "research:gun-turret", "built:gun-turret|laser-turret|flamethrower-turret",
         "scale:turrets:4", "scale:machines:20", "scale:machines:40", "scale:belts:100", "scale:inserters:10",
-        "scale:inserters:20", "event:attacked", "event:loss", "event:starved", "event:low_power", "event:died",
+        "scale:inserters:20", "event:attacked", "event:loss", "event:low_power", "event:died",
         "event:spitters", "habit:walked:2000", "habit:sleeps:40", "habit:repeat_calls:10", "habit:board_items:20",
-        "scale:game_hours:2", "scale:game_hours:4", "scale:shifts:2", "research:logistics-2", "research:modules",
+        "scale:game_hours:2", "scale:game_hours:4", "research:logistics-2", "research:modules",
         "research:automobilism", "built:car|tank|spidertron|locomotive", "research:modular-armor",
         "research:heavy-armor", "research:military-2", "built:boiler", "built:pipe-to-ground", "research:flamethrower",
         "research:personal-roboport-equipment"}),
     ("rocket and first platform", {
         "research:rocket-silo", "built:rocket-silo", "research:space-platform", "built:space-platform-hub",
-        "event:second_surface", "event:freight", "event:asteroids", "event:hub_full", "research:cliff-explosives",
+        "event:second_surface", "event:freight", "event:asteroids", "research:cliff-explosives",
         "research:artillery", "research:nuclear-power", "research:elevated-rail", "research:quality-module",
         "research:spidertron"}),
     ("every planet", {
         "arrived:vulcanus", "arrived:fulgora", "arrived:gleba", "arrived:aquilo", "event:demolishers",
         "event:pentapods", "event:spoiled", "research:agriculture", "research:captive-biter-spawner",
         "research:heating-tower", "scale:platforms:2", "event:resource_depleted", "event:worms",
-        "event:pollution_attack", "habit:lookups:1"}),
+        "event:pollution_attack"}),
 ]
 
 
@@ -70,19 +71,24 @@ def cond(atoms):
             "any": [a for a in atoms if not a.startswith("world:")]}
 
 
+def topic_items(topic):
+    """[(n, text)]: each top-level item of agent/ref/TOPIC.md, numbered from 1 (the ids topic#n)."""
+    text = open(os.path.join(brief.REF, topic + ".md")).read()
+    out = []
+    for item in re.split(r"\n(?=- )", "\n" + text):
+        item = item.strip("\n")
+        if item.startswith("- "):
+            out.append((len(out) + 1, item + "\n"))
+    return out
+
+
 def ref_entries():
     """[(topic, n, lead, names, bytes)]: each top-level item of agent/ref/TOPIC.md."""
     actions = set(rules.ACTIONS)
     out = []
     for topic in brief.topics():
-        text = open(os.path.join(brief.REF, topic + ".md")).read()
-        items = re.split(r"\n(?=- )", "\n" + text)
-        n = 0
-        for item in items:
-            item = item.strip("\n")
-            if not item.startswith("- "):
-                continue
-            n += 1
+        for n, item in topic_items(topic):
+            item = item.rstrip("\n")
             first = " ".join(item.split("\n", 2)[:2])
             lead = first.split(": ", 1)[0] if ": " in first else first[:80]
             names = []
@@ -163,46 +169,137 @@ def brief_items():
     return out
 
 
-def atoms_ok(atoms, have, world):
-    return any(a == "start" or a in have for a in atoms)
+def expand(us):
+    """{id: (gate, atoms)}: each unit's condition with its with: atoms replaced by what they refer to (the runtime's
+    table, disclosure_units.lua, holds these; an argument also needs its action, checked apart)."""
+    by = {u["id"]: u for u in us}
+    docs_of = {}
+    for u in us:
+        if u["kind"] == "doc":
+            docs_of.setdefault(u["topic"], []).append(u["id"])
+    memo = {}
+
+    def ref_ids(a):
+        ref = a[5:]
+        if ref.startswith("topic:"):
+            return docs_of.get(ref[6:], [])
+        return [ref if ":" in ref else f"action:{ref}"]
+
+    def go(uid, depth=0):
+        if uid in memo:
+            return memo[uid]
+        c = by[uid]["condition"]
+        gate, atoms = set(c["world"]), []
+        refs = [a for a in c["any"] if a.startswith("with:")]
+        own = [a for a in c["any"] if not a.startswith("with:")]
+        atoms += own
+        gates = []
+        for a in refs:
+            for rid in ref_ids(a):
+                if rid in by and depth < 8:
+                    g, at = go(rid, depth + 1)
+                    gates.append(g)
+                    atoms += at if at else ["start"]
+        if gates and not own:
+            gate |= set.intersection(*gates)
+        out = (gate, list(dict.fromkeys(atoms)))
+        memo[uid] = out
+        return out
+    return {u["id"]: go(u["id"]) for u in us}
+
+
+def met(atom, have):
+    if atom == "start" or atom in have:
+        return True
+    if atom.startswith(("habit:", "scale:")):
+        k, _, n = atom.rpartition(":")
+        return any(h.rpartition(":")[0] == k and h.rpartition(":")[2].isdigit() and int(h.rpartition(":")[2]) >= int(n)
+                   for h in have)
+    return False
 
 
 def unlocked(us, have, world):
-    """The ids open with these atoms met in this world (with: resolved to a fixed point; an argument needs its action,
-    a topic's index line any of its entries)."""
-    by = {u["id"]: u for u in us}
+    """The ids open with these atoms met in this world (the runtime's rule: world gate, then any atom; never stays
+    shut; an argument needs its action)."""
+    ex = expand(us)
     open_ = set()
-    for _ in range(6):
-        before = len(open_)
-        for u in us:
-            c = u["condition"]
-            if u["id"] in open_ or not set(c["world"]) <= world or "never" in c["any"]:
+    for u in us:
+        gate, atoms = ex[u["id"]]
+        if not gate <= world or "never" in atoms:
+            continue
+        if atoms and not any(met(a, have) for a in atoms):
+            continue
+        open_.add(u["id"])
+    return {i for i in open_ if not (by_kind(i) == "arg" and "action:" + i[4:].split(".", 1)[0] not in open_)}
+
+
+def by_kind(uid):
+    return uid.split(":", 1)[0]
+
+
+def what_of():
+    """{action: what it does}: the first clause of the topic entry that starts with the action (for the unlock line)."""
+    out = {}
+    for topic in brief.topics():
+        text = open(os.path.join(brief.REF, topic + ".md")).read()
+        for item in re.split(r"\n(?=- )", "\n" + text):
+            flat = " ".join(item.split())
+            m = re.match(r"- `(?:\./fh (?:call )?)?([a-z_]+)[^`]*`(?: \([^)]*\))?(?: and `[^`]*`)?: (.+)", flat)
+            if not m or m.group(1) in out:
                 continue
-            ok = not c["any"]
-            for a in c["any"]:
-                if a == "start" or a in have or (a == "self" and "self" in have):
-                    ok = True
-                elif a.startswith("habit:") or a.startswith("scale:"):
-                    # a met threshold also meets any lower one of the same kind
-                    k, _, n = a.rpartition(":")
-                    ok = any(h.rpartition(":")[0] == k and int(h.rpartition(":")[2]) >= int(n) for h in have
-                             if h.count(":") == 2 and h.rpartition(":")[2].isdigit())
-                elif a.startswith("with:topic:"):
-                    t = a[11:]
-                    ok = any(i.startswith(f"doc:{t}#") for i in open_)
-                elif a.startswith("with:"):
-                    ref = a[5:]
-                    ref = ref if ":" in ref else f"action:{ref}"
-                    ok = ref in open_
-                if ok:
-                    break
-            if ok and u["kind"] == "argument" and f"action:{u['action']}" not in open_:
-                ok = False
-            if ok:
-                open_.add(u["id"])
-        if len(open_) == before:
-            break
-    return open_
+            clause = re.split(r"(?<=[a-z0-9)`])\. |; | \(", m.group(2), maxsplit=1)[0].rstrip(".:")
+            if len(clause) > 150:
+                clause = clause[:150].rsplit(" ", 1)[0]
+            if "`" in clause and clause.count("`") % 2:
+                clause = clause.rsplit("`", 1)[0].rstrip(" ,(")
+            if clause.startswith("`") or len(clause) < 12:
+                continue
+            out[m.group(1)] = clause
+    return out
+
+
+def lua_str(v):
+    return '"' + v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ") + '"'
+
+
+def lua_cond(gate, atoms):
+    g = "{" + ",".join(lua_str(x) for x in sorted(gate)) + "}"
+    a = "{" + ",".join(lua_str(x) for x in atoms) + "}"
+    return f"g={g},a={a}"
+
+
+def lua(us):
+    """disclosure_units.lua: the runtime's table of conditions (expanded), with each action's topic and what it does."""
+    ex = expand(us)
+    topic_of = brief.commands()
+    what = what_of()
+    lines = ["-- Generated by tools/disclosure/build.py from tools/disclosure/rules.py (d28 batch317): do not edit.",
+             "-- Each unit: g, the world flags it needs (all); a, the atoms that open it (any; none: open with its gate).",
+             "return {", " actions={"]
+    for u in us:
+        if u["kind"] == "action":
+            n = u["id"][7:]
+            extra = (f",t={lua_str(topic_of[n])}" if topic_of.get(n, "core") != "core" else "") + \
+                    (f",w={lua_str(what[n])}" if n in what else "")
+            lines.append(f"  [{lua_str(n)}]={{{lua_cond(*ex[u['id']])}{extra}}},")
+    lines.append(" },")
+    lines.append(" args={")
+    by_action = {}
+    for u in us:
+        if u["kind"] == "argument" and u["advanced"]:
+            by_action.setdefault(u["action"], []).append(u)
+    for a in sorted(by_action):
+        inner = ",".join(f"[{lua_str(u['id'].split('.', 1)[1])}]={{{lua_cond(*ex[u['id']])}}}" for u in by_action[a])
+        lines.append(f"  [{lua_str(a)}]={{{inner}}},")
+    lines.append(" },")
+    for kind, key in (("doc", "docs"), ("brief", "brief")):
+        lines.append(f" {key}={{")
+        for u in us:
+            if u["kind"] == kind:
+                lines.append(f"  [{lua_str(u['id'].split(':', 1)[1])}]={{{lua_cond(*ex[u['id']])}}},")
+        lines.append(" },")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
 
 
 def core_bytes(open_, us):
@@ -283,10 +380,11 @@ def main(argv):
     text = head + ',\n "units": [\n' + ",\n".join(json.dumps(u, separators=(",", ":")) for u in us) + "\n ]\n}\n"
     if check:
         old = json.load(open(MANIFEST)) if os.path.exists(MANIFEST) else {}
-        same = old.get("units") == json.loads(text)["units"]
+        same = old.get("units") == json.loads(text)["units"] and os.path.exists(LUA) and open(LUA).read() == lua(us)
         print("manifest current" if same else "manifest differs from the rules: run tools/disclosure/build.py")
         return 0 if same else 1
     open(MANIFEST, "w").write(text)
+    open(LUA, "w").write(lua(us))
     summary(us, describe)
     return 0
 

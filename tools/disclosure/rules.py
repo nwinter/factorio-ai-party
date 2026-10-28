@@ -47,26 +47,23 @@ EVENTS = {
     "asteroids": "the force's platform hit by an asteroid (platform hits, status alerts)",
     "spoiled": "an item of the force spoiled the first time (spoilage made, item production statistics)",
     "low_power": "an electric network of the force on low or no power the first time (powercut.lua)",
-    "starved": "a machine of the force stopped for an ingredient for 5 minutes",
     "second_surface": "the force has a platform, or a character on a second planet",
-    "hub_full": "a platform hub of the force full",
     "freight": "the force's first cargo pod landed on a surface from a platform",
 }
 
 # Each habit: counted where the harness already handles the call (no tick cost), per force, bounded.
 HABITS = {
-    "hand_crafts": "hand crafts of one item (craft calls' counts summed per item)",
-    "hand_belts": "belts placed one call at a time by hand (build with one belt entry)",
-    "hand_poles": "electric poles placed by hand",
-    "hand_feeds": "feed or transfer calls into machines of one kind",
-    "chest_moves": "transfer calls between the same two containers",
-    "walked": "tiles walked by the force's agents within one game hour",
+    "hand_crafts": "hand crafts of one recipe (craft calls' counts summed per recipe)",
+    "hand_belts": "belts placed by build calls (each belt entry counted)",
+    "hand_poles": "electric poles placed by build calls (each pole entry counted)",
+    "hand_feeds": "feed calls, and transfer calls that put items into a machine",
+    "chest_moves": "transfer calls at the same container (by its position)",
+    "walked": "tiles walked by walk and move_to calls (straight line from where the character stood to the goal, summed)",
     "refused": "refusals of the unit's own action (any reason): its dry_run, skip_failed and the like",
     "refused_builds": "build, place_ghosts or mine calls refused for the spot (blocked, out of reach, wrong tile)",
-    "repeat_calls": "calls of one action with the same argument shape within 10 game minutes",
-    "sleeps": "sleep or wait calls",
-    "board_items": "board items posted by the force",
-    "lookups": "help or describe lookups that found no topic",
+    "repeat_calls": "calls of one action with the same argument names, each within 10 game minutes of the one before",
+    "sleeps": "sleep, wait_ticks and wait_until calls",
+    "board_items": "board_post calls",
 }
 
 SCALES = {
@@ -76,9 +73,7 @@ SCALES = {
     "belts": "transport belts of every tier",
     "inserters": "inserters of every kind",
     "turrets": "turrets of every kind",
-    "agents_on_surface": "agents of the force on one surface",
-    "game_hours": "game hours since the force's first agent spawned",
-    "shifts": "shifts the force has played (the run's shift counter)",
+    "game_hours": "game hours played (game.tick)",
 }
 
 T0 = ["start"]
@@ -119,13 +114,13 @@ ACTIONS = {
     "board": TEAM, "board_plan": TEAM, "board_post": TEAM, "board_update": TEAM,
     # early tips: a tool that makes a repeated hand job cheaper
     "drill_sites": ["scale:drills:3", "habit:refused_builds:2"],
-    "belt_route": ["habit:hand_belts:20", "scale:belts:40"],
-    "pole_route": ["habit:hand_poles:8"],
+    "belt_route": ["habit:hand_belts:10", "scale:belts:40"],
+    "pole_route": ["habit:hand_poles:4"],
     "pipe_route": ["research:oil-processing", "built:pipe-to-ground"],
-    "build_path": ["habit:walked:2000", "habit:hand_belts:20"],
+    "build_path": ["habit:walked:2000", "habit:hand_belts:10"],
     "placements": ["habit:refused_builds:3", "scale:machines:10"],
     "conflicts": ["habit:refused_builds:3"],
-    "deliver": ["habit:chest_moves:5"],
+    "deliver": ROBOTS,
     "fuel_budget": ["habit:hand_feeds:20", "scale:machines:10"],
     "repair": ["event:attacked", "event:loss"],
     "wait_until": ["habit:sleeps:20", "scale:game_hours:1"],
@@ -141,15 +136,15 @@ ACTIONS = {
     # factory reads: grow with the factory
     "labs": ["built:lab"], "science": ["built:lab"],
     "power": ["built:steam-engine|solar-panel", "event:low_power"],
-    "rates": ["scale:machines:10"], "supply": ["scale:machines:10", "event:starved"],
-    "bottleneck": ["scale:machines:20", "event:starved"], "trace": ["scale:machines:20", "event:starved"],
-    "shortages": ["scale:machines:20", "event:starved"], "ingredient_gap": ["event:starved", "scale:machines:20"],
+    "rates": ["scale:machines:10"], "supply": ["scale:machines:10"],
+    "bottleneck": ["scale:machines:20"], "trace": ["scale:machines:20"],
+    "shortages": ["scale:machines:20"], "ingredient_gap": ["scale:machines:20"],
     "dependency": ["scale:machines:20"], "stock": ["scale:machines:10", "habit:chest_moves:5"],
     "where_is": ["scale:machines:20"], "uptime": BIG_BASE, "ports": ["scale:inserters:20"],
     "belt_flow": ["scale:belts:100"], "belt_gaps": ["scale:belts:100"], "belt_upgrade": ["research:logistics-2"],
     "pipe_gaps": OIL, "flush": OIL, "heat_budget": ["research:nuclear-power", "research:heating-tower", "arrived:aquilo"],
     "game_alerts": ["scale:machines:20", "event:attacked"], "alerts_digest": ["scale:machines:40", "event:attacked"],
-    "assembler_batch": ["scale:machines:10"], "configure": T0,
+    "assembler_batch": ["scale:machines:10", "habit:hand_crafts:50"], "configure": T0,
     # robots and logistics
     "networks": ROBOTS, "construction_robots": ROBOTS, "logistics_audit": ROBOTS, "reservations": ROBOTS,
     "robot_losses": ROBOTS, "requester_rate": LOGISTIC, "requests": LOGISTIC + ["research:space-platform"],
@@ -181,9 +176,9 @@ ACTIONS = {
     "board_events": ["habit:board_items:20"], "board_review": ["habit:board_items:20"],
     "board_retire": ["habit:board_items:20"], "board_progress": ["habit:board_items:20"],
     "board_critical": ["habit:board_items:20"], "board_focus": ["habit:board_items:20"],
-    "checks": ["scale:game_hours:2"], "lessons": ["scale:shifts:2", "event:died", "event:loss"],
+    "checks": ["scale:game_hours:2"], "lessons": ["scale:game_hours:4", "event:died", "event:loss"],
     "lesson_add": ["with:lessons"], "lesson_edit": ["with:lessons"], "lesson_verify": ["with:lessons"],
-    "lesson_review": ["with:lessons"], "ground_rules": ["scale:shifts:2"], "ground_rule_add": ["with:ground_rules"],
+    "lesson_review": ["with:lessons"], "ground_rules": ["scale:game_hours:4"], "ground_rule_add": ["with:ground_rules"],
     "ground_rule_edit": ["with:ground_rules"], "ground_rule_retire": ["with:ground_rules"],
     "review": ["scale:game_hours:2"], "lookahead": ["scale:game_hours:2"], "boilers": ["built:boiler"],
     "mention_counts": TEAM,
@@ -204,7 +199,7 @@ ACTIONS = {
     "demolishers": ["arrived:vulcanus", "event:demolishers"],
     "agriculture": GLEBA, "eggs": ["arrived:gleba", "research:captive-biter-spawner", "event:pentapods"],
     # not agent-facing
-    "attach": NEVER, "detach": NEVER, "advance": NEVER, "cameras": NEVER, "screenshot": NEVER, "dry_run": ["habit:refused:1"],
+    "attach": NEVER, "detach": NEVER, "disclosure": NEVER, "advance": NEVER, "cameras": NEVER, "screenshot": NEVER, "dry_run": ["habit:refused:1"],
 }
 SCALES["platforms"] = "space platforms the force has"
 
@@ -307,10 +302,10 @@ DOCS = [
     (r"^- Logistics$", LOGISTIC),
     (r"^- Quality$", QUALITY),
     (r"^- Enemies", ["world:enemies"]),
-    (r"`progress", ["scale:shifts:2"]),
+    (r"`progress", ["scale:game_hours:4"]),
     (r"What the production statistics count", ["scale:machines:10"]),
-    (r"research_use", ["scale:shifts:2"]),
-    (r"factory digest", ["scale:shifts:2"]),
+    (r"research_use", ["scale:game_hours:4"]),
+    (r"factory digest", ["scale:game_hours:4"]),
     (r"seed loop|keeps a seed going|^- Gleba|^- Spoilage", GLEBA),
     (r"Frozen entities|heating tower", ["arrived:aquilo", "research:heating-tower"]),
     (r"belt carrying items destroyed|line cut|`line_cut`", ["event:attacked", "event:loss"]),

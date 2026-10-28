@@ -93,14 +93,64 @@ def values(player, mate="", mate_notes="", role=""):
             "GOAL": "reaching the Shattered Planet, past the solar system's edge" if sa else "a rocket launch"}
 
 
-def core(player, time_text, coop, mate="", mate_notes="", role=""):
+def disclosure_open():
+    """(d28 batch317) A disclosure run's open set (docs/DISCLOSURE.md): POG_DISCLOSURE_OPEN names the team's open set as
+    tools/disclosure/set.py saved it (the runtime's disclosure read); None when unset or not filtering: everything."""
+    path = os.environ.get("POG_DISCLOSURE_OPEN")
+    if not path or not os.path.exists(path):
+        return None
+    d = json.load(open(path))
+    d = d.get("result", d)
+    if d.get("mode") != "filter":
+        return None
+    return {"actions": set(d.get("actions") or []), "docs": set(d.get("docs") or []), "brief": set(d.get("brief") or [])}
+
+
+def _disclosure():
+    sys.path.insert(0, os.path.join(ROOT, "tools", "disclosure"))
+    import build as disclosure_build
+    return disclosure_build
+
+
+# The core's one line about it in a disclosure run (facts: what happens, not what to do).
+DISCLOSURE_LINE = ("- Your team's tools grow with it: an action, argument or reference entry opens when the team has researched, "
+                   "built, met or done what it needs, the same for every team. A reply's `new:` line names what opened; "
+                   "describe.json, `./fh help` and `./fh help TOPIC` show what is open now; a call to one not open yet "
+                   "says what opens it.\n")
+
+
+def shut_items(text, open_):
+    """The core's text less the brief items not open for the team (PLAYBOOK.md, team.md, compact.md as the manifest
+    numbers them; a filled placeholder keeps its item)."""
+    for f, n, item in _disclosure().brief_items():
+        if f in ("PLAYBOOK.md", "team.md", "compact.md") and f"{f}#{n}" not in open_["brief"]:
+            text = text.replace(item, "", 1)
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
+def open_index(open_):
+    """agent/ref/index.md with each topic's commands cut to the open actions (a topic with none left out)."""
+    idx = index_text()
+    lines = []
+    for topic, scope, cmds in index():
+        names = [c for c in cmds if c.replace("./", "").replace(" NAME", "").replace(" ", "_") in open_["actions"]]
+        if topic and names:
+            lines.append(f"- `{topic}`, {scope}: " + ", ".join(f"`{c}`" for c in names) + ".")
+    return idx.split("\n- ", 1)[0].rstrip("\n") + "\n\n" + "\n".join(lines) + "\n"
+
+
+def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None):
     """AGENTS.md as tools/new-run.sh writes it: it ends with the compaction instructions (Claude Code reads a "Compact
-    instructions" section, and every harness's summarizer sees the instructions file)."""
-    text = open(os.path.join(AGENT, "PLAYBOOK.md")).read().replace("{{TIME}}", time_text) + coop
+    instructions" section, and every harness's summarizer sees the instructions file). open_ (disclosure_open()): only
+    the brief items and index commands open for the team."""
+    text = open(os.path.join(AGENT, "PLAYBOOK.md")).read() + coop
+    text = text.rstrip("\n") + "\n\n" + (open_index(open_) if open_ else index_text()).rstrip("\n")
+    text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
+    if open_:
+        text = shut_items(text, open_).replace("\n## Pace\n", "\n" + DISCLOSURE_LINE + "\n## Pace\n", 1)
+    text = text.replace("{{TIME}}", time_text)
     if os.environ.get("POG_SPACE_AGE") == "1":
         text = text.replace("base game, default map", "Space Age (with Quality and Elevated Rails), default map")
-    text = text.rstrip("\n") + "\n\n" + index_text().rstrip("\n")
-    text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
     return fill(text, values(player, mate, mate_notes, role))
 
 
@@ -114,29 +164,55 @@ def whens():
     return out
 
 
-def topic_files(player):
-    """{topic: text} for ref/: each topic's file with a heading, when to read it (agent/ref/topics.tsv), and its facts."""
+def topic_files(player, open_=None):
+    """{topic: text} for ref/: each topic's file with a heading, when to read it (agent/ref/topics.tsv), and its facts.
+    open_ (disclosure_open()): only the entries open for the team."""
+    return {t: text for t, (text, _) in topic_units(player, open_).items()}
+
+
+def topic_units(player, open_=None):
+    """{topic: (text, units)}: the topic file, and its head and items with their ids for fh help in a disclosure run
+    (ref/.units/TOPIC.json; host/reference.ts): topic#n as the manifest numbers them, spaceage.md#n for Space Age's head."""
     out = {}
     when_of = whens()
+    sa_on = os.environ.get("POG_SPACE_AGE") == "1"
     for topic, _, _ in index():
         if not topic:
             continue
         when = when_of[topic]
-        body = open(os.path.join(REF, topic + ".md")).read().rstrip("\n")
-        if topic == "space-age" and os.environ.get("POG_SPACE_AGE") == "1":
-            sa = open(os.path.join(AGENT, "spaceage.md")).read().strip().split("\n", 1)[1].strip()
-            body = sa + "\n\n" + body
-        text = f"# {topic} (`./fh help {topic}`)\n\nRead it {when}.\n\n{body}\n"
-        out[topic] = fill(text.replace("{{VOICES}}", voices() if "{{VOICES}}" in text else ""), values(player))
+        head = f"# {topic} (`./fh help {topic}`)\n\nRead it {when}.\n\n"
+        if open_ is None:
+            body = open(os.path.join(REF, topic + ".md")).read().rstrip("\n")
+            if topic == "space-age" and sa_on:
+                sa = open(os.path.join(AGENT, "spaceage.md")).read().strip().split("\n", 1)[1].strip()
+                body = sa + "\n\n" + body
+            items = None
+        else:
+            items = []
+            if topic == "space-age" and sa_on:
+                items += [(f"spaceage.md#{n}", t if t.startswith("- ") else t + "\n")
+                          for f, n, t in _disclosure().brief_items() if f == "spaceage.md" and n > 1]
+            items += [(f"{topic}#{n}", t) for n, t in _disclosure().topic_items(topic)]
+            body = "".join(t for i, t in items if i in open_["docs"] or i in open_["brief"]).rstrip("\n")
+        text = head + body + "\n"
+
+        def done(x):
+            return fill(x.replace("{{VOICES}}", voices() if "{{VOICES}}" in x else ""), values(player))
+        units = None if items is None else {"head": done(head), "items": [{"id": i, "text": done(t)} for i, t in items]}
+        out[topic] = (done(text), units)
     return out
 
 
 def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
-    open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role))
+    open_ = disclosure_open()
+    open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role, open_))
     ref = os.path.join(d, "ref")
     os.makedirs(ref, exist_ok=True)
-    for topic, text in topic_files(player).items():
+    for topic, (text, units) in topic_units(player, open_).items():
         open(os.path.join(ref, topic + ".md"), "w").write(text)
+        if units is not None:
+            os.makedirs(os.path.join(ref, ".units"), exist_ok=True)
+            json.dump(units, open(os.path.join(ref, ".units", topic + ".json"), "w"))
     with open(os.path.join(ref, "commands.tsv"), "w") as f:
         for name, topic in sorted(commands().items()):
             f.write(f"{name}\t{topic}\n")

@@ -1,9 +1,13 @@
-# Progressive disclosure: the kit grows with each team (design, d28 batch317 cp1)
+# Progressive disclosure: the kit grows with each team (d28 batch317)
 
-Status: design and inventory only. Nothing in the harness, the brief or `./fh` behaves differently yet. The build
-(cp2 onward) waits for the operator's and Nick's review of the open choices at the end.
+Status:
+- cp1 (design and inventory) was reviewed by the operator d28 14:28.
+- cp2 builds it: per-force state, triggers, open-set read, filtered help and describe, the unlock line, the operator
+  read, and observe mode. It is off by default: world n is unchanged unless a run sets it.
+- Waiting for Nick (choices 5 and 6 below): splitting reference entries, rewriting PLAYBOOK.md and team.md. Alerts
+  still fire as before. Their `self` conditions are inventoried, but nothing gates them yet (see "Not built yet").
 
-## What agents get today, and the goal
+## What agents get without it, and the goal
 
 Every agent gets the whole kit from tick 0, wherever its team stands:
 - 235 actions and 1652 arguments in describe.json (535 KB);
@@ -11,41 +15,73 @@ Every agent gets the whole kit from tick 0, wherever its team stands:
 - a 20.9 KB core (AGENTS.md) whose index lists every command;
 - 238 kinds of alert, wake, reply line and nudge.
 
-The brief only knows whether the world runs Space Age.
-
-The goal (Nick, d28) is a small kit at tick 0 for the simple early game. Tools, arguments and docs then unlock per
-team (force) as its research, buildings, encounters and habits call for them, the way Factorio's tips appear.
+The goal (Nick, d28) is a small kit at tick 0 for the simple early game. Tools, arguments and docs then open per team
+(force) as its research, buildings, encounters and habits call for them, the way Factorio's tips appear.
 
 The rules stay:
-- **Facts only:** an unlock says what became available and what it does, never what to build.
+- **Facts only:** an unlock says what opened and what it does, never what to build.
 - **Survival-fair:** the same conditions for every team.
-- **Per force:** one team's unlocks never reach another.
-- **world n keeps its whole kit:** the mechanism is off unless a run turns it on (see "World n").
+- **Per force:** one team's unlocks never reach another. In main the key is the player force; with several teams it
+  is the agent's own force.
+- **world n keeps its whole kit:** the mode is off unless set.
 
-## The inventory
+## Using it
 
-`python3 tools/disclosure/build.py [DESCRIBE_JSON]` writes `tools/disclosure/manifest.json` and prints the summary. It
-reads `tools/disclosure/rules.py` (the conditions), describe.json, agent/ref/*.md, the brief's files and
-`tools/disclosure/alerts.json` (the alert kinds, each with its source line). `python3 tools/test_disclosure.py` checks
-the rules and the manifest.
+- **A run:** `POG_DISCLOSURE=1 tools/start-team.sh ...` sets the world's mode to filter after the runtime is deployed
+  (tools/disclosure/set.py). It then saves the player force's open set to runs/RUN/disclosure-open.json and exports
+  POG_DISCLOSURE_OPEN, so tools/brief.py writes each workspace from it.
+  - `POG_DISCLOSURE=observe` keeps the state without filtering, and 0 turns it off.
+  - Unset leaves the world's mode as its save has it.
+  - The mode lives in the save and carries across shifts.
+- **By hand:** `python3 tools/disclosure/set.py --world W --mode filter|observe|off [--team] [--stream] [--humans]
+  [--refuse|--allow] [--reset] [--open FILE]`. `--read` gives each force's line, its newest unlocks with tick and
+  cause, and the next thresholds with the counts so far.
+- **Operator calls:**
+  - `disclosure_set {mode, refuse?, world?, reset?}`;
+  - `disclosure {force?, ids?}`: per force rev, world flags, open counts, met atoms with ticks, the newest 8
+    unlocks, next thresholds, and with ids the open names and ids.
+- **The host's read:** `disclosure {}`, an action marked never. It gives the caller's force's open action names,
+  shut arguments by action, open reference entry ids (topic#n) and brief item ids (file#n). fh help TOPIC uses it.
+- **The inventory:** `python3 tools/disclosure/build.py [DESCRIBE_JSON]`.
+  - It writes tools/disclosure/manifest.json and the runtime's table,
+    vendor/factorio-harness/mod/agent-harness_0.1.0/disclosure_units.lua, in which each condition's with: atoms
+    are expanded.
+  - It prints the sizes.
+  - `--check` says whether both are current.
+- **Threshold replay:** `python3 tools/disclosure/replay.py RUNS SHIFT...` replays journals through the habit counters.
 
-| Unit kind | Count | What one unit is |
-|---|---|---|
-| action | 235 | an action of describe.json |
-| argument | 1652 | one argument of one action; 421 marked advanced (a condition of their own) |
-| doc | 262 | one top-level entry of a topic file (agent/ref/TOPIC.md) |
-| index | 9 | a topic's line in the core's index (open when any of its entries is) |
-| brief | 127 | a bullet or paragraph of PLAYBOOK.md, team.md, coop.md, compact.md, full-tools.md, harness-KIND.md, spaceage.md, ref/index.md |
-| alert | 238 | an alert, wake reason, reply line, refusal hint or nudge kind |
+## What an agent sees in filter mode
 
-How each kind gets its condition:
-- An action's condition is in `rules.ACTIONS`.
-- An argument's comes from `rules.ARGS_OF[action]`, else from `rules.ARGS` by name (quality, surface, platform,
-  avoid_enemies, the spoilage arguments, dry_run, the circuit and logistic arguments...). Otherwise it comes with its
-  action. An argument is never open before its action.
-- A doc entry follows `rules.DOCS` by its lead text, else the actions it names, else its topic.
-- A brief item takes its file's default, then `rules.BRIEF_ITEMS` by its text.
-- An alert follows `rules.ALERTS` by id, else `self`, gated by its game feature (`rules.ALERT_GATES`).
+- **The core:**
+  - only open items of PLAYBOOK.md, team.md and compact.md;
+  - an index that lists open commands only;
+  - one added line: "Your team's tools grow with it: an action, argument or reference entry opens when the team has
+    researched, built, met or done what it needs, the same for every team. A reply's `new:` line names what opened;
+    describe.json, `./fh help` and `./fh help TOPIC` show what is open now; a call to one not open yet says what
+    opens it."
+- **ref/TOPIC.md:** the entries open at launch. `./fh help TOPIC` reads ref/.units/TOPIC.json and the runtime's open
+  set, so an entry shows up the moment it opens.
+- **describe.json and `./fh help ACTION`:**
+  - they show open actions and open arguments only;
+  - `locked` names each shut action with its condition;
+  - `./fh help belt_route` says `belt_route is not available yet: it opens when your team has placed 10 belts with
+    build, or when your team has 40 belts`;
+  - fh writes describe.json again after a reply that carried a `new:` line.
+- **A call to a shut action:** refused with the same text and "(the same rule for every team; ./fh help lists what
+  is open)". A shut argument: `feed's argument quality is not available yet: it opens when your team has researched
+  quality-module`.
+  - The unknown-argument refusal's valid list leaves shut arguments out.
+  - With `refuse=false` (`set.py --allow`), shut calls run and stay undocumented (open choice 1).
+  - Operator calls, reader calls, the host's own calls (describe, disclosure, sleep_check, lookahead, bridge_status)
+    and actions marked never are not gated.
+- **An unlock:** each agent of the force sees one `new` field on its next reply, newest first, then whatever opened
+  with it.
+  - The first four actions carry what they do: the first clause of their reference entry.
+  - It also counts the newly opened arguments and entries, and names the topics.
+  - An agent's first reply only sets its cursor.
+  - On the copy, after a biter's first attack: `new: "danger (a destination before a trip), alerts_digest (enemy and
+    structure alerts in one read: ...), damage_log (what hit our entities there), game_alerts (...), kite, repair,
+    retreat_guard, use_item; 44 arguments of open actions (./fh help ACTION) and 10 reference entries; docs: ..."`.
 
 ## The vocabulary of conditions
 
@@ -53,168 +89,170 @@ A condition is a list of atoms:
 - Its world atoms are a gate, and all must hold.
 - Then any one of its other atoms opens the unit.
 - A unit with world atoms only is in or out from tick 0.
+- An argument also needs its action.
 
-| Atom | Meaning | Why it is in the vocabulary | Detection and cost |
-|---|---|---|---|
-| `start` | in the kit at tick 0 | the early game: walk, mine, craft, place, look, research, talk | none |
-| `world:FLAG` | space_age, quality, enemies, team (more than one agent in the force), stream, humans | fixed for the run: a peaceful solo world never needs `tell`, `shoot` or the stream tools | read once at launch |
-| `research:TECH` | the force researched TECH | the game's own gate: a tool for trains is no use before rails exist | `on_research_finished` (forwarded today); at load, `force.technologies` (32 reads 0.03-0.04 ms) |
-| `built:ENTITY` | the force has one of these entities | first car, first train, first roboport, first lab, first platform hub | `force.get_entity_count`: 40 names 0.017-0.029 ms |
-| `arrived:PLANET` | a character or platform of the force at the planet | planet tools (demolishers, agriculture, heating) | platforms' `space_location` and characters' surfaces: 0.013-0.025 ms for 22 platforms |
-| `event:KIND` | first seen by the force (17 kinds: enemy seen, spitters, worms, attacked, loss, pollution attack, died, demolishers, pentapods, asteroids, spoiled, low power, starved, second surface, hub full, freight, resource depleted) | Factorio's tips: shown when the situation first arises | where the harness already records it per force (threat.lua, losses, powercut, platform hits, pushalerts' out_of_ore); spoilage from item statistics (every surface 0.032-0.044 ms) |
-| `habit:KIND:N` | the force's agents did KIND N times (11 kinds: hand crafts of one item, hand belts, hand poles, hand feeds, chest moves, tiles walked, refusals of an action, refused placements, repeated calls, sleeps, board items) | a tool that makes a repeated hand job cheaper: 20 belts placed by hand open `belt_route` | counted in the dispatch the harness already runs for the call: 28 ns an increment; no tick cost |
-| `scale:KIND:N` | the force's size or age reached N (machines, labs, drills, belts, inserters, turrets, platforms, agents on a surface, game hours, shifts) | reads that pay off only past a size: `bottleneck` and `trace` at 20 machines | the same slow sweep as `built:` |
-| `with:UNIT` | opens with another unit | queue_status with queue_submit; a doc entry with its actions | resolved when the set is built, never stored |
-| `self` | an alert's own trigger | the first exhausted patch brings the exhausted-patch alert, with its unlock line | the alert's own code |
-| `never` | not agent-facing | attach, detach, advance, cameras, screenshot; the PLAYBOOK pointer to docs/usage.md; world n's own paragraph | none |
+| Atom | Meaning | Detection (cp2) |
+|---|---|---|
+| `start` | in the kit at tick 0 | none |
+| `world:FLAG` | space_age and quality (active mods), enemies (Nauvis not peaceful), team (bots in the force, or `--team`), stream, humans (set by set.py) | read when the open set is built |
+| `research:TECH` | the force researched TECH | `on_research_finished` (already forwarded); the sweep reads the technologies too |
+| `built:ENTITY` | the force has one of these entities | sweep: `force.get_entity_count` |
+| `arrived:PLANET` | a platform of the force at the planet, or a character there | sweep: platforms' `space_location`, characters' surfaces |
+| `event:KIND` | first seen by the force (15 kinds) | see below |
+| `habit:KIND:N` | the force's agents' calls (11 kinds) | counted in M.dispatch after each agent call: no tick cost |
+| `scale:KIND:N` | machines, labs, drills, belts, inserters, turrets, platforms, game hours | sweep: entity counts, platforms, game.tick |
+| `with:UNIT` | opens with another unit | expanded into the runtime's table by build.py |
+| `self` | an alert's own trigger | not gated yet |
+| `never` | not agent-facing | never gated, never listed |
 
-The thresholds (20 belts, 10 machines, ...) are first values. "Open choices" says how to calibrate them.
+Events:
+- **From `on_entity_damaged` and `on_entity_died`** (forwarded already; skipped once all fight atoms are met):
+  - enemy_seen, spitters (spitters or medium-or-larger biters), worms, demolishers and pentapods, by the attacker's
+    name;
+  - attacked: the enemy force hits one of ours;
+  - loss: the enemy force destroys a building of ours;
+  - died: a character of ours dies;
+  - asteroids: anything hits a platform entity of ours.
+- **From the sweep:**
+  - enemy_seen: an enemy entity within 64 tiles of one of our characters;
+  - spoiled: spoilage made on any surface;
+  - second_surface: a platform, or a character off Nauvis;
+  - resource_depleted and low_power: pushalerts' out_of_ore, low_power and no_power groups.
+- **From events:** pollution_attack (`on_unit_group_finished_gathering`) and freight (a cargo pod of ours finished
+  descending).
+
+Habits, as counted:
+- **hand_crafts:** craft calls' counts per recipe.
+- **hand_belts and hand_poles:** each belt or pole entry of a build call.
+- **hand_feeds:** feed and refuel calls.
+- **chest_moves:** transfer calls at one container position.
+- **walked:** walk and move_to calls, the straight line from where the character stood.
+- **refused:** refusals of the action itself; the unit is that action's dry_run and the like.
+- **refused_builds:** refused build, place_ghosts and mine calls.
+- **repeat_calls:** calls of one acting action with the same argument names, each within 10 game minutes of the one
+  before.
+- **sleeps:** sleep, wait_ticks and wait_until calls.
+- **board_items:** board_post calls.
+
+The gate's own refusals are not counted.
+
+State: `storage.agent_harness.disclosure = {mode, refuse, world, forces={[name]={met, counts, keys, rev, log, told}}}`.
+- Keyed habits keep at most 64 keys a kind.
+- The log keeps the last 64 unlocks.
+- The open set is cached per force and revision outside storage, and rebuilt after a load.
+- A revision grows only when a new atom is met, or when a counter crosses a threshold some unit names.
 
 Conditions per unit kind (atoms counted; a unit may have several):
 
 | | start | world | research | built | arrived | event | habit | scale | with | self | never |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| actions (235) | 39 | 17 | 101 | 60 | 4 | 34 | 23 | 34 | 33 | | 5 |
+| actions (235) | 39 | 17 | 103 | 61 | 4 | 29 | 23 | 34 | 33 | | 5 |
 | arguments (1652) | 16 | 13 | 143 | 45 | 18 | 220 | 76 | 5 | 1235 | | 1 |
 | doc entries (262) | 5 | 13 | 73 | 60 | 9 | 4 | 2 | 8 | 178 | | |
 | brief items (127) | 73 | 46 | 18 | 17 | | 5 | | | 4 | | 2 |
 | alerts (238) | 57 | 114 | 1 | 1 | | | | | 31 | 143 | |
 
-## The tick-0 set
+## Thresholds (choice 2): the replay of world n's first shifts
 
-In world n's settings (Space Age, Quality, enemies on, a team, streamed), 54 actions are open at tick 0:
+`replay.py runs shift01 shift02 shift03` covers 188,717 calls by nine agents. It shows when each habit threshold would
+have been met, counted from the team's first call:
 
-- look: observe, status, clock, inspect, scan, nearest, map, ores, inventory, recipes, craftable, technologies,
-  research_options, describe;
-- move, mine, craft, place: walk, move_to, mine, craft, cancel_craft, build, rotate, pickup, collect, transfer, feed,
-  refuel, deconstruct, nearest_water, configure;
-- research and pace: research, research_next, sleep, wait_ticks, stop;
-- talk: say, chat, chat_ack, operator, harness_request, and with world:team tell, tells, board, board_plan,
-  board_post, board_update, mention_counts;
-- shoot (world:enemies);
-- the stream's profile, profiles, confess, confessions, chronicle, vote, votes (world:stream).
+| Habit threshold | Met after |
+|---|---|
+| repeat_calls 5 and 10, refused_builds 2 and 3 | 1 min |
+| chest_moves 5 | 4 min |
+| sleeps 20 | 5 min |
+| board_items 20, hand_feeds 10 | 6 min |
+| sleeps 40, hand_feeds 20 | 8 min |
+| hand_poles 4 (first value 8: 16 min) | 13 min |
+| hand_belts 10 (first value 20, one or two entries a call: 95 min) | 30 min |
 
-A peaceful solo base-game world opens 39 at tick 0. The first tips open from habits and size:
-- 3 drills or 2 refused placements: drill_sites;
-- 20 belts placed by hand or 40 belts: belt_route;
-- 8 poles by hand: pole_route;
-- 5 moves between the same chests: deliver and stock;
-- 20 sleeps: wait_until;
-- 5 repeated calls or a game hour: the queue.
+The team's own first calls in those shifts:
+- pole_route at 8 minutes (8 calls before 13 minutes would have been refused);
+- build_path at 8 minutes (6 refused before 30 minutes);
+- belt_route at 17 minutes.
+
+The replay's finding:
+- Nine agents meet the per-force habit thresholds within minutes, so the queue, wait_until and the board tools open
+  almost at once for a big team.
+- The belt and pole thresholds were lowered (belts 10 counting every entry, poles 4) so they open close to when the
+  team wanted them.
+- Research, buildings and events are not in the journals. Those shifts started from a world with most research done.
 
 ## Sizes
 
 Each row adds that milestone's conditions to the one before. The core is today's assembled core for a Claude agent
-less the closed brief items, with the index cut to open commands. Today's core is 20,931 bytes.
+less the closed brief items, with the index cut to open commands. Today's core is 20,931 bytes. The disclosure line
+adds about 330 bytes.
 
 | Milestone | Actions | Arguments | describe.json bytes | Doc entries | Doc bytes | Core bytes |
 |---|---|---|---|---|---|---|
 | tick 0 | 54 | 350 | 95,643 | 56 | 67,917 | 16,768 |
-| first hour: power, labs, a few drills and belts | 83 | 596 | 165,868 | 89 | 119,748 | 18,619 |
+| first hour: power, labs, a few drills and belts | 82 | 591 | 165,545 | 88 | 119,326 | 18,608 |
 | mid game: oil, robots, circuits, trains, defense | 188 | 1236 | 281,368 | 181 | 191,682 | 19,978 |
 | rocket and first platform | 224 | 1613 | 370,389 | 249 | 320,505 | 20,520 |
 | every planet | 228 | 1637 | 374,776 | 260 | 326,323 | 20,567 |
 | all (agent-facing) | 230 | 1652 | 375,908 | 262 | 327,590 | 20,931 |
 
-- The large saving at tick 0 is in describe.json (25% of the arguments' text at tick 0) and the reference (21%).
-- The core shrinks 20% at tick 0. Most of it is the PLAYBOOK's and team.md's tick-0 text: how fh, pace, memory,
-  stopping and the board work. Making it smaller needs those items rewritten, not only filtered (open choice 6).
+## Costs (measured on the iMac copy)
 
-## Mechanism (cp2 onward)
+- The sweep runs at tick % 600 == 41. Each run reads one of four parts in turn: research, buildings, scale counts, then
+  places and events. It reads only atoms not met yet.
+  - On a fresh Space Age map with two bots: 0.05-0.16 ms a sweep (all four parts in one sweep: 0.28-0.39 ms).
+  - On world n's save (78.04 M ticks, 22 platforms, 27 surfaces) in observe mode: 0.18 ms over five sweeps in 50 s,
+    against an average tick of 2.8 ms.
+- The pieces:
+  - 30 technology reads: 0.04 ms;
+  - 35 entity counts: 0.09 ms;
+  - a counter increment: 28 ns;
+  - an open-set lookup: 86 ns per 1000.
+- On world n's save, observe opens 203 of 230 actions at its first sweeps (rev 54). The rest wait on habits.
 
-**State**:
-- `storage.disclosure[force_name]` keeps:
-  - `met`: the met atoms, at most a few hundred strings, each with its tick;
-  - `counts`: the habit and scale counters, one per kind and item, capped at the kind's highest threshold, at most
-    64 keys a kind;
-  - `rev`: a revision that grows with each new atom.
-- The open set is computed from `met` and the manifest's conditions. That happens when a reader asks (brief, help,
-  describe, an unlock line), never per tick.
-- The manifest goes into the runtime as a compact table built from manifest.json: unit id, kind, world gate, atoms.
-  That is about 2,500 rows, held once (not per force).
-- It is saved with the game and carried across shifts.
-- On a world that loads with the mechanism newly on, `met` starts from what the force already has: its researched
-  technologies, entity counts and surfaces. A team resumed mid-run therefore starts with what its state calls for.
+## Demo: a fresh Space Age map on the iMac copy, two bots (astra, sol), filter mode
 
-**Triggers** (no per-tick scan; costs measured on the iMac copy with world n's save of d28 13:20, 22 platforms,
-27 surfaces):
-- Research: `on_research_finished` adds `research:TECH` for the event's force.
-- The slow sweep, one force a step, every 600 ticks per force, reads only atoms not yet met:
-  - `get_entity_count` for the built and scale names (40 names: 0.017-0.029 ms);
-  - platforms' locations and characters' surfaces (0.013-0.025 ms);
-  - spoilage in the item statistics (0.032-0.044 ms).
+Astra's workspace was briefed from the tick-0 set:
+- describe.json had 60 actions: 54 open plus 6 marked never;
+- the building topic held build, deconstruct and nearest_water.
 
-  A full sweep of one force is 0.10-0.14 ms on the iMac. world n's Lua runs about 2.5x slower, so under 0.4 ms
-  there, and it shrinks as atoms are met.
-- Events: at the places the harness already records them per force, each adds its atom once:
-  - threat.lua's attacked areas, nest news and attack groups;
-  - loss incidents, power cuts and platform hits;
-  - pushalerts' out_of_ore.
+| Step | What the team did (the operator's RCON for the world's side) | Open actions | Opened, in the force's log |
+|---|---|---|---|
+| start | | 54 | |
+| | building by hand on the uncharted map: three refused placements, then `builds` refused by the gate | 58 | build's dry_run arguments (refused), drill_sites (2 refused placements), conflicts, grid, placements (3) |
+| | a powered radar placed | 59 | sight (built:radar) |
+| | 20 one-second sleeps | 61 | sleep_check, wait_until |
+| | a lab and 12 assemblers placed | 68 | labs, science (built:lab); assembler_batch, fuel_budget, rates, stock, supply (scale:machines:10) |
+| | railway and construction-robotics researched | 104 | rail_route, train, train_stop; the ghost, blueprint, order and robot tools (33) |
+| | a small biter at the lab | 112 | alerts_digest, damage_log, game_alerts, kite, repair, retreat_guard, use_item (attacked); danger (enemy_seen) |
 
-  `on_resource_depleted` is not needed: pushalerts already finds exhausted patches. A new forwarded event would be a
-  control.lua change, which a hot reload does not carry.
-- Habits: dispatch_request counts after the handler returns: the action, its refusal, the item for hand crafts, the
-  container pair for transfers. One increment costs 28 ns.
-- The per-call check: is the action open, and are its arguments? One table lookup each, 86 ns per 1,000 lookups.
+What astra saw at each step:
+- Each step's next reply carried its `new` line.
+- `./fh help building` grew to 21 entries.
+- describe.json was rewritten with 118 actions.
+- `platform_create` was refused naming space-platform.
 
-**How an unlock reaches the team**:
-- **Shift start:** tools/brief.py builds the core, ref/ and describe.json from the force's open set. It reads that
-  set with an operator read `disclosure {force}`. The core's index lists only open commands; ref/ holds only open
-  entries.
-- **`./fh help`, `./fh help ACTION` and describe:**
-  - they show the open set: describe takes the reader's force, and its cache key becomes bundle plus `rev`;
-  - describe.json in the workspace is rewritten when `rev` grows, as it is after a harness update now.
-- **Mid-shift:**
-  - an unlock reaches each agent of that force once, in the next reply's team block:
-    `new: belt_route: lays a belt from one point to another in one call; docs: ./fh help building`;
-  - the text is the unit's index scope or the first sentence of its doc entry, so it says what the tool does;
-  - several unlocks at once share one line with the names;
-  - an alert that opens by `self` carries the same line the first time it fires.
-- **A call to a unit that is not open yet:** see open choice 1. The proposal is to refuse it with a facts-only line
-  naming the condition. For an action: `belt_route is not available yet: it opens when your team has placed 20 belts
-  by hand or has 40 belts`. For an argument, the valid list names the open arguments, and the refused one gets the
-  same kind of line.
-- **The operator's view:** `disclosure {force}` gives the open count per kind, the newest unlocks with their ticks,
-  and the next thresholds. The stream can show "kit: 83 of 230 tools" per team.
+A fresh headless copy cannot chart without a joined client, so builds on it are refused as out of sight. The demo used
+calls that need no sight.
 
-**World n**:
-- The mechanism is off unless the run sets it (`POG_DISCLOSURE=1` at launch, stored in the save's settings). Off
-  means everything is open, as today, and no state is kept.
-- Not every unlock is already met on world n (habits, for one), so "on but all met" would not be the same as today.
-- Proposed for cp2: an observe mode on world n that computes `met` but filters nothing. It shows when each unit would
-  have opened in a real run.
+## Not built yet
 
-## Leaks and edges
+- **Alerts by `self`:** the 238 kinds have conditions (alerts.json, manifest). The runtime still sends every alert
+  as before. Gating them at their 30-odd sources, with a first-firing unlock line, is a later step.
+- **Choices 5 and 6:** splitting reference entries, and rewriting PLAYBOOK.md and team.md, wait for Nick.
+- **Per force:** main keys on the player force. mt276 A's `M.agent_force` and `M.team_forces` replace the `forces`
+  and `is_team` helpers in runtime.lua's wiring when it lands.
+- **Workspaces:** the repo two levels up is still readable. The PLAYBOOK pointer to docs/usage.md is marked never, so
+  filter mode drops it from the core.
 
-Agents can reach the whole kit outside the mechanism:
-- the PLAYBOOK's pointer to docs/usage.md (marked `never`);
-- the public repository and this repo's docs folder, two levels up from a workspace;
-- teammates' notes.md;
-- `gamedata/`, which is game data and stays open.
+## Open choices
 
-A disclosure run would drop the usage.md pointer and keep workspaces from reading the repo, as the rules already ask
-("never modify the harness"; reading is not forbidden today). Lessons and ground rules are written by agents. Their
-tools open at the second shift or after a loss or death, but what agents write in them is theirs.
+Settled by the operator d28 14:28:
+- 2: thresholds start at these first values, replayed against early journals;
+- 3: habits are counted per force;
+- 4: research counts at finish;
+- 7: team and stream tools are open at tick 0 in team and streamed runs.
 
-## Open choices for Nick
-
-1. **A call to a unit not yet open:**
-   - (a) Refuse it, naming its condition. This is the proposal: the same for every team, and no silent difference
-     between an agent that guessed a name and one that did not. A condition is a fact; it can point a team at a
-     technology, which is information the game's tech tree gives anyway.
-   - (b) Allow it, undocumented. Then guessed names (from earlier shifts, notes or the web) get the full kit unevenly.
-2. **Thresholds:** the habit and scale numbers are first values. cp2 can replay world n's early-shift journals through
-   the vocabulary and show when each unit would have opened, then set the numbers against that.
-3. **Habits per force or per agent:**
-   - per force (proposed): one agent's 20 hand belts open belt_route for the team. That is survival-fair, since the
-     whole team gets a tool any member's work called for;
-   - per agent: the kit would differ inside a team.
-4. **Research at finish (proposed) or at start:** opening a tool at finish keeps the tool and the game's ability
-   together.
-5. **Docs granularity:** a doc entry opens whole with its action. The transfer entry is 6.6 KB at tick 0, with its
-   advanced arguments described in it. Splitting entries into simple and advanced sentences would make the tick-0
-   reference smaller (68 KB now), at the cost of restructuring the topic files.
-6. **The core's own text:** 16.8 KB stays at tick 0 because PLAYBOOK.md and team.md are tick-0 prose. Rewriting them
-   into a smaller core plus topic entries is a separate change.
-7. **Stream and team tools at tick 0 in streamed and team runs** (proposed: yes, they are about talking, not the
-   game).
+Still with Nick:
+1. **A call to a unit not yet open:** refuse it naming the condition (the default; `refuse=true`), or allow it
+   undocumented (`set.py --allow`).
+5. **Docs granularity:** a reference entry opens whole with its action. The transfer entry is 6.6 KB at tick 0.
+6. **The core's own text:** 16.8 KB at tick 0, because PLAYBOOK.md and team.md are tick-0 prose.

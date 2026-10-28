@@ -9,8 +9,12 @@
 3. The manifest (tools/disclosure/manifest.json): unique ids, known atoms, every action of its describe in it.
 4. The tick-0 set in world n's settings: walking, mining, crafting, building and looking are in; nothing that needs
    research, a building or an event is; the core then is smaller than today's.
+5. The runtime's table (disclosure_units.lua) is what the manifest makes, and the runtime's evaluator (disclosure.lua,
+   run by lua) opens the same tick-0 actions as build.py's.
+6. The brief of a disclosure run (POG_DISCLOSURE_OPEN): the core without the shut items and index commands, topic files
+   with the open entries only, and each topic's items with their ids for fh help (ref/.units/TOPIC.json).
 """
-import glob, json, os, re, sys
+import glob, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "disclosure"))
@@ -123,9 +127,83 @@ def tick0():
     print(f"tick 0: ok, {len(acts)} actions, core {core} of today's {full} bytes")
 
 
+def tick0_open():
+    us = json.load(open(build.MANIFEST))["units"]
+    o = build.unlocked(us, set(), build.WORLD_N)
+    return us, o, {"mode": "filter", "actions": sorted(i[7:] for i in o if i.startswith("action:")),
+                   "docs": sorted(i[4:] for i in o if i.startswith("doc:")),
+                   "brief": sorted(i[6:] for i in o if i.startswith("brief:"))}
+
+
+def runtime_table():
+    us, _, want = tick0_open()
+    assert open(build.LUA).read() == build.lua(us), "disclosure_units.lua is not what the manifest makes: run build.py"
+    if not shutil.which("lua"):
+        print("runtime table: ok (lua not found: the evaluators not compared)")
+        return
+    harness = os.path.join(build.ROOT, "vendor", "factorio-harness")
+    script = """
+defines={events={}} prototypes={entity={}} script={active_mods={['space-age']='x',quality='x'}}
+local nauvis={peaceful_mode=false,no_enemies_mode=false}
+local force={name='player',valid=true,platforms={},technologies={},get_entity_count=function() return 0 end}
+game={tick=0,forces={player=force},surfaces={},get_surface=function() return nauvis end}
+storage={h={}}
+local D=dofile('mod/agent-harness_0.1.0/disclosure.lua'){state=function() return storage.h end,
+  units=dofile('mod/agent-harness_0.1.0/disclosure_units.lua'),forces=function() return {force} end,
+  is_team=function() return true end,team_size=function() return 2 end,characters=function() return {} end}
+D.operator.disclosure_set({mode='filter',world={stream=true}})
+local r=D.read(force)
+print(table.concat(r.actions,' ')) print(table.concat(r.docs,' ')) print(table.concat(r.brief,' '))
+"""
+    out = subprocess.run(["lua", "-e", script], cwd=harness, capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    acts, docs, brf = out.stdout.split("\n")[:3]
+    assert acts.split() == want["actions"], set(acts.split()) ^ set(want["actions"])
+    assert docs.split() == want["docs"], set(docs.split()) ^ set(want["docs"])
+    assert brf.split() == want["brief"], set(brf.split()) ^ set(want["brief"])
+    print(f"runtime table: ok, the Lua evaluator opens the same {len(want['actions'])} actions at tick 0")
+
+
+def brief_filtered():
+    sys.path.insert(0, os.path.join(build.ROOT, "tools"))
+    import brief
+    _, _, want = tick0_open()
+    old = {k: os.environ.get(k) for k in ("POG_DISCLOSURE_OPEN", "POG_SPACE_AGE")}
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "open.json")
+        json.dump(want, open(path, "w"))
+        os.environ["POG_DISCLOSURE_OPEN"], os.environ["POG_SPACE_AGE"] = path, "1"
+        try:
+            full = brief.core("astra", "TIME", "")
+            open_ = brief.disclosure_open()
+            small = brief.core("astra", "TIME", "", open_=open_)
+            assert "- Plans: `./fh queue submit" in full and "- Plans: `./fh queue submit" not in small
+            assert "`belt_route`" in full and "`belt_route`" not in small and "`transfer`" in small
+            assert "## Compact instructions" in small and "{{" not in small and len(small) < len(full)
+            assert "Your team's tools grow with it" in small and "Your team's tools grow" not in full
+            ws = os.path.join(d, "ws")
+            os.makedirs(ws)
+            brief.write(ws, "astra", "TIME", "", "", "", "")
+            building = open(os.path.join(ws, "ref", "building.md")).read()
+            assert "`build {" in building and "`belt_route {" not in building, building[:300]
+            units = json.load(open(os.path.join(ws, "ref", ".units", "building.json")))
+            ids = {i["id"]: i["text"] for i in units["items"]}
+            assert any(t.startswith("- `belt_route") for t in ids.values()) and units["head"].startswith("# building")
+            sa = json.load(open(os.path.join(ws, "ref", ".units", "space-age.json")))
+            assert any(i["id"].startswith("spaceage.md#") for i in sa["items"])
+            os.environ.pop("POG_DISCLOSURE_OPEN")
+            assert brief.disclosure_open() is None and brief.core("astra", "TIME", "") == full
+        finally:
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    print(f"brief: ok, core {len(small)} of {len(full)} bytes at tick 0")
+
+
 if __name__ == "__main__":
     vocabulary()
     coverage()
     manifest()
     tick0()
+    runtime_table()
+    brief_filtered()
     print("all passed")
