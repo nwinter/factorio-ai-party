@@ -495,9 +495,15 @@ return function(api)
     if n ~= #out.turrets + #out.tanks then return nil end
     return out
   end
-  function M.stock_places(pl, want)
+  -- (d28 batch304 EC) lists: optional {turrets, machines (assembling machines and furnaces), inserters} a caller found
+  -- in this call (platform_endurance's one find a call), in place of finding them again here
+  function M.stock_places(pl, want, lists)
     want = want or want_default()
     local s, f = pl.surface, pl.force
+    lists = lists or {}
+    local function found(key, filter)
+      return lists[key] or try(function() return s.find_entities_filtered(filter) end) or {}
+    end
     local out = {hub={}, turrets={}, belts={}, hands={}, machines={}, belt_entities=0}
     local function put(place, name, n)
       if want[name] and n and n > 0 then out[place][name] = (out[place][name] or 0) + n end
@@ -524,10 +530,10 @@ return function(api)
       if rec.done then out.as_of, out.from_belt_read, out.belt_entities = rec.done.tick, true, rec.done.belt_entities
       else out.as_of, out.from_census, out.belt_entities = idx.as_of, true, nil end
       out.capped = rec.done and rec.done.capped or nil
-      for _, e in ipairs(try(function() return s.find_entities_filtered{type='ammo-turret', force=f} end) or {}) do
+      for _, e in ipairs(found('turrets', {type='ammo-turret', force=f})) do
         contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end))
       end
-      for _, e in ipairs(try(function() return s.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=f} end) or {}) do
+      for _, e in ipairs(found('machines', {type={'assembling-machine', 'furnace'}, force=f})) do
         contents('machines', try(function() return e.get_output_inventory() end))
       end
       out.total = {}
@@ -536,7 +542,7 @@ return function(api)
       end
       return out
     end
-    for _, e in ipairs(try(function() return s.find_entities_filtered{type='ammo-turret', force=f} end) or {}) do
+    for _, e in ipairs(found('turrets', {type='ammo-turret', force=f})) do
       contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end))
     end
     local list = try(function() return s.find_entities_filtered{type=BELTS, force=f, limit=M.MAX_BELTS + 1} end) or {}
@@ -554,11 +560,11 @@ return function(api)
         end
       end
     end
-    for _, e in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=f} end) or {}) do
+    for _, e in ipairs(found('inserters', {type='inserter', force=f})) do
       local h = try(function() return e.held_stack end)
       if h and try(function() return h.valid_for_read end) then put('hands', h.name, h.count) end
     end
-    for _, e in ipairs(try(function() return s.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=f} end) or {}) do
+    for _, e in ipairs(found('machines', {type={'assembling-machine', 'furnace'}, force=f})) do
       contents('machines', try(function() return e.get_output_inventory() end))
     end
     out.total = {}
@@ -1205,11 +1211,12 @@ return function(api)
   -- (d22 batch96 BF1) the hull's width from counts of foundation in columns of -128..127, 32 columns at a time and then
   -- one at a time from each side: every foundation tile read was 14.6 ms of Asterion's platform_endurance on a copy of
   -- world n (18 platforms: 107 ms read, 11.7 counted, the same widths)
-  function M.geometry(pl)
+  -- (d28 batch304 EC) thrusters: optional, the thrusters a caller found in this call
+  function M.geometry(pl, thrusters)
     local s = try(function() return pl.surface end)
     -- (d27 batch294 TQ) and their thrust in normal thrusters': quality multiplies a thruster's thrust and burn by the
     -- quality's default_multiplier (legendary 2.5)
-    local list = s and try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end)
+    local list = thrusters or s and try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end)
     local out = {thrusters=list and #list or nil}
     if list then
       local sum = 0
@@ -1219,13 +1226,22 @@ return function(api)
     local function has(x0, x1)
       return (try(function() return s.count_tiles_filtered{name='space-platform-foundation', area={{x0, -128}, {x1, 128}}, limit=1} end) or 0) > 0
     end
+    -- (d28 batch304 EC) the first and last column of a strip with foundation by halving it: 5 counts, not up to 32
+    local function first(a, b)   -- the lowest column in a..b-1 with foundation; a..b has some
+      while b - a > 1 do local m = math.floor((a + b) / 2); if has(a, m) then b = m else a = m end end
+      return a
+    end
+    local function last(a, b)   -- the highest column in a..b-1 with foundation; a..b has some
+      while b - a > 1 do local m = math.floor((a + b) / 2); if has(m, b) then a = m else b = m end end
+      return a
+    end
     local lo, hi
     if s then
       for x = -128, 96, 32 do
-        if has(x, x + 32) then for c = x, x + 31 do if has(c, c + 1) then lo = c; break end end; break end
+        if has(x, x + 32) then lo = first(x, x + 32); break end
       end
       for x = 96, -128, -32 do
-        if lo and has(x, x + 32) then for c = x + 31, x, -1 do if has(c, c + 1) then hi = c; break end end; break end
+        if lo and has(x, x + 32) then hi = last(x, x + 32); break end
       end
     end
     if lo and hi then out.width = hi - lo + 1 end
