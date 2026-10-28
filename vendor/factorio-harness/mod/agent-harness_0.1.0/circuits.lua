@@ -426,6 +426,13 @@ return function(api)
   -- while the inserter at (30.5,-48.5), inside roboport (44,-24)'s area, read
   -- network 8). With its count of the condition's item; with none, the nearest
   -- roboport's logistic area.
+  -- An item signal as a logistic network count takes it, {name, quality} (normal named too); a logistic condition
+  -- reads its signal's quality.
+  function M.item_id(s)
+    local q = s.quality
+    if type(q) ~= 'string' then q = q and try(function() return q.name end) end
+    return {name=s.name, quality=q or 'normal'}
+  end
   -- A logistic network's count under 0 (d17 batch21 A4, Grok: "bioflux >= 0" held both Gleba makers off at -2): what
   -- the game's count is, and the way to compare what a chest holds instead.
   function M.negative_note(item, n)
@@ -440,9 +447,10 @@ return function(api)
     if net then
       local text = 'network ' .. tostring(try(function() return net.network_id end) or '?') .. ' (its logistic area holds the centre)'
       if type(first) == 'table' and first.name and (first.type == nil or first.type == 'item') then
-        local n = try(function() return net.get_item_count({name=first.name, quality=first.quality or 'normal'}) end)
+        local n = try(function() return net.get_item_count(M.item_id(first)) end)
         if type(n) == 'number' then
-          text = text .. string.format(': %s %d', first.name, n) .. M.negative_note(first.name, n)
+          local label = signal_text(first)
+          text = text .. string.format(': %s %d', label, n) .. M.negative_note(label, n)
         end
       end
       return text
@@ -499,12 +507,14 @@ return function(api)
       -- (d17 batch20 B1, Luna) the item's count in the logistic network there, as the condition reads it
       local cond = cb and try(function() return cb.logistic_condition end)
       local sig = cond and cond.first_signal
-      local held
+      -- (d28 batch306 QL, Sol #2672: "iron-plate@legendary < 400" explained with the normal count) at its quality
+      local held, label
       if type(sig) == 'table' and sig.name and (sig.type == nil or sig.type == 'item') then
         local net = try(function() return e.surface.find_logistic_network_by_position(e.position, e.force) end)
-        held = net and try(function() return net.get_item_count(sig.name) end)
+        held = net and try(function() return net.get_item_count(M.item_id(sig)) end)
+        label = signal_text(sig)
       end
-      parts[#parts+1] = string.format('logistic condition %s%s: %s now', c.logistic, held and (held >= 0 and string.format(' (network holds %s %d)', sig.name, held) or M.negative_note(sig.name, held)) or '',
+      parts[#parts+1] = string.format('logistic condition %s%s: %s now', c.logistic, held and (held >= 0 and string.format(' (network holds %s %d)', label, held) or M.negative_note(label, held)) or '',
         c.logistic_met == true and 'true' or c.logistic_met == false and 'false' or 'unknown')
     end
     local st = try(function() return e.status end)

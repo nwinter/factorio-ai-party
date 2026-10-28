@@ -944,7 +944,7 @@ return function(api)
           -- (d26 batch249 R10) what it holds of the quality asked
           local q=type(w.quality)=='string' and w.quality or 'normal'
           local held=try(function() return where.get_item_count(q=='normal' and name or {name=name,quality=q}) end) or 0
-          if min>held then jobs[#jobs+1]={kind='deliver',pos=where.position,item=name,count=min-held} end
+          if min>held then jobs[#jobs+1]={kind='deliver',pos=where.position,item=name,quality=q,count=min-held} end
         end
       end
       local okd,lines=pcall(api.dispatch,where and where.surface or p.surface,p.force,jobs)

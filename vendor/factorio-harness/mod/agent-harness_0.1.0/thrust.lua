@@ -97,7 +97,11 @@ return function(api)
           local net = try(function() return e.get_circuit_network(w) end)
           if net then wired = true; n = n + (first and try(function() return net.get_signal(first) end) or 0) end
         end
-        conds[#conds+1] = 'circuit condition ' .. c.enable .. (wired and first and string.format(' (%s %d on its wires)', first.name, n) or wired and '' or ' (no wire)')
+        -- (d28 batch306 QL) the signal with its quality, as the condition reads it
+        local q = first and first.quality
+        if type(q) ~= 'string' then q = q and try(function() return q.name end) end
+        local label = first and (q and q ~= 'normal' and first.name .. '@' .. q or first.name)
+        conds[#conds+1] = 'circuit condition ' .. c.enable .. (wired and first and string.format(' (%s %d on its wires)', label, n) or wired and '' or ' (no wire)')
       end
       if type(c.logistic) == 'string' then conds[#conds+1] = 'logistic condition ' .. c.logistic .. (c.logistic_reads and ' (' .. c.logistic_reads .. ')' or '') end
       return 'off by its ' .. (#conds > 0 and table.concat(conds, ' and ') or 'circuit or logistic condition')
