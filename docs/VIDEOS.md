@@ -87,12 +87,26 @@ becomes public and the previous latest goes back to unlisted.
   YouTube's state first: playlists.list, videos.list per 50 ids, playlistItems.list; 1 unit a call).
 - `apply`: the changes in order: the playlist, the public ones, the demotions, the rest unlisted, and playlist inserts at their place in shift order. Each change is written to
   `video-work/yt-archive-state.json` as it succeeds, so a rerun continues. At the end it writes
-  `site/content/videos.json` (git-ignored) with the videos YouTube shows.
+  `video-work/videos-site.json` with the videos YouTube shows (batch315: outside any checkout; before that
+  `site/content/videos.json` of the checkout it ran from, which the site's clean copy of main never had).
 - `rotate`: uploads the finished shifts with no video, the newest first, then the backlog oldest first. Each goes
   through `archive_upload.py --privacy private`, then `apply`. The backlog keeps 200 units for each shift end left
   today, and a shift is skipped when its copy and join would leave the SSD under 35 GB free.
 - `follow`: runs `rotate` after each new `shiftN up` line in the autopilot's log, and once at the start of each
   Pacific day for the backlog's next share.
+- The follower (d28 batch315). The d27 rotation was a one-shot `rotate` (pid 85368, from pog-d20-b207). It ended at
+  11:35 when the day's quota was spent, as rotate does, and the follower meant to follow it was never started, so
+  shifts 86-93 waited. Now:
+  - `tools/start-team.sh` runs `follow --start` at every shift start. It starts a follower when
+    `video-work/yt-follow.pid` names no live one (a reboot, a kill) and leaves a running one alone.
+    `tools/stop-team.sh` never stops it: an upload can take an hour. `follow --check` and `follow --stop` by hand;
+    its log is `video-work/yt-follow.log`. POG_YT_FOLLOW=0 (or POG_PUSH_LIVE=0) starts none.
+  - It runs the main checkout's tools with its state in video-work. It starts no rotate and no upload while that
+    checkout has MERGE_HEAD (the gate's merge and tests), waiting up to `--merge-wait` (30 min) and then trying
+    again at the next poll. It writes nothing into the checkout.
+  - A rotate that fails (an exception, a stopped upload, an HTTP error) goes to the log and is tried again after
+    `--retry` (30 min); the follower goes on.
+  - When `yt_archive.py` or `yt_upload.py` changes on disk (a merged fix) it runs itself again, same pid.
 - `quota`: today's ledger, `video-work/yt-quota.json`, per Pacific day (the quota resets at midnight Pacific).
 
 Units: videos.update, playlistItems.insert, playlists.insert and thumbnails.set cost 50; a list call costs 1. An
@@ -181,7 +195,8 @@ The task note's figure of 1,600 units per upload is out of date. The current API
 
 ## Site
 
-`site/build.py --videos site/content/videos.json` (the default) reads the uploaded shifts. Each one with a valid
+`site/build.py --videos FILE` reads the uploaded shifts. `tools/site-refresh.sh` names the follower's
+`video-work/videos-site.json` (POG_SITE_YT_VIDEOS overrides), else `site/content/videos.json`. Each one with a valid
 video id gets three things:
 - a link from its row on /runs/long/
 - an embed under "Shift videos" (youtube-nocookie, lazy-loaded)
