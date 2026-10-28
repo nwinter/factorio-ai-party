@@ -71,6 +71,8 @@ return function(api)
     local by_pickup = {}
     for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=force} end) or {}) do
       local src = try(function() return i.pickup_target end)
+      -- (d27 batch292 IP) the engine's pickup target unset with something it uses on the tile: that entity
+      if not (src and src.valid) and api.unset_target then src = select(3, api.unset_target(i, 'pickup')) end
       if src and src.valid then
         local k = src.unit_number or src
         by_pickup[k] = by_pickup[k] or {}

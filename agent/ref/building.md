@@ -16,7 +16,9 @@
   before acting (need, held, missing, queued, hand_craftable; its dry run too). An inserter build says what its sides
   touch: `pickup` and `drop` (`requester-chest (44.5,190.5)`, `none: the ground at (42.5,190.5)`), with `inserter`
   (its direction in words) and `io_warning`; build replies and `inspect` flag a built inserter with no pickup or drop
-  target. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
+  target. A belt or chest built again on a disabled inserter's pickup tile leaves the engine's pickup target unset
+  until the inserter runs (2.0.77); replies then name both (`pickup target unset by the engine (transport-belt
+  (-7.5,320.5) on its pickup tile)`), and `the ground` only when nothing stands there. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
   chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles). Entry settings (a
   single `build`, `builds` entries, `place_ghosts` entries): `configure`, `requests`, `circuit` (the arguments of
   `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side, to_side}]`. A hand
