@@ -83,7 +83,7 @@ assert(w.railgun_lines[2]:find('never below a shot\'s energy in a sample'),w.rai
 assert(w.line:find('one every 60 ticks'),w.line)
 assert(w.line:find('accumulators %(2%): least 50%% at %+'),w.line)
 assert(w.line:find('2 powered turrets %(railguns%): 1 read below a shot\'s energy %(its full buffer%) in some sample, the longest run 2s %(120 ticks%), railgun%-turret %(%-20,%-40%)'),w.line)
-assert(w.line:find('4 hits %(2 shots that hit%), 7500 damage, 1 kills'),w.line)
+assert(w.line:find('their fire: 4 hits %(2 shots that hit%), 7500 damage dealt, 1 kills'),w.line)
 assert(w.note:find('no energy_per_shot'),w.note)
 
 -- the end: the setter's alert carries the power phrase, and the event index empties

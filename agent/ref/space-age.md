@@ -414,7 +414,9 @@
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
   names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
   step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The
-  setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
+  setter hears in team.alerts when it begins at a departure and when it ends; the end line starts with the damage
+  taken and the losses over the whole watch (the same as `{id}`'s `damage` and `lost_count`, a pause and a coast
+  included), and its railgun part (`their fire: N hits`) is what the railguns hit, never damage taken. A turret empty under a second between
   two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
   Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
   `now`) and each railgun (`railguns`): energy least, at the start and now; samples, runs and the longest run below a
