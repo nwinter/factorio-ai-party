@@ -225,16 +225,52 @@ return function(api)
     local st = api.state().spiderpaths
     return st and st.plans[unit] ~= nil or false
   end
+  -- A stored route's points as a segment's path from start (sharedroutes.lua): its first point left out when the
+  -- spidertron starts on it.
+  local function seg_of(R, kept, reversed, start)
+    local out = {}
+    for _, q in ipairs(R.points(kept, reversed)) do
+      if #out > 0 or dist(q, start) > 0.5 then out[#out + 1] = q end
+    end
+    return out
+  end
+  -- (d28 batch305 NR) a blocked segment from a stored route (sharedroutes.lua), read again first: -> {pts} (every leg
+  -- unchanged: the segment's path now), {span, from, to} (its stale legs and those between them to ask again as one
+  -- stretch), or {} (none, or asked over MAX_AGE ago, or the lines from start or to goal cross water: the pathfinder as
+  -- before); with .line for the reply when a route was found or named.
+  function M.from_store(surface, start, goal, rec)
+    local R = api.routes
+    local kept, rev = R.find('spider', surface, start, goal, {id=rec.route})
+    if not kept then return {line=rec.route and string.format('route %d not used: %s; a path was asked', rec.route, rev) or nil} end
+    local res = R.check(kept, surface)
+    local line = R.line(kept, res, rev)
+    if res.old then return {line=line} end
+    local pts = R.points(kept, rev)
+    local b = M.segment(surface, start, pts[1]) or M.segment(surface, pts[#pts], goal)
+    if b then return {line=string.format('route %d not used: the line from here to its start or from its end to the target crosses water (%s); a path was asked', kept.id, b.line)} end
+    if res.n == 0 then
+      R.used(kept)
+      return {pts=seg_of(R, kept, rev, start), line=line, id=kept.id}
+    end
+    local P, Q = kept.pts[res.first], kept.pts[res.last + 1]
+    return {id=kept.id, span={id=kept.id, i0=res.first, i1=res.last, rev=rev, respliced=kept.respliced}, from=M.dry(surface, P, M.DRY_START) or P,
+      to=M.dry(surface, Q, M.DRY_GOAL) or Q, line=line}
+  end
   -- Each segment from the spidertron (or rec.from) through targets; the blocked ones' paths requested, from and to
-  -- spots with room for the box (dry). rec: {owner, unit, by, index, from?, gap?} (owner 'route': plan's own route write
-  -- when every path is in; 'kite': spiderkite.lua's; gap 0 after a stall at the water: any water on the line blocks it,
-  -- its legs having failed to cross). -> lines (nil: none blocked), and the plan stored for the results.
+  -- spots with room for the box (dry). rec: {owner, unit, by, index, from?, gap?, reuse?, route?} (owner 'route': plan's
+  -- own route write when every path is in; 'kite': spiderkite.lua's; gap 0 after a stall at the water: any water on the
+  -- line blocks it, its legs having failed to cross; (d28 batch305 NR) reuse: a stored route serves a blocked segment,
+  -- read again first, and route names the one; never with gap 0, where its legs failed to cross). -> lines (nil: none
+  -- blocked), the reply's lines on stored routes (or nil), and, when every blocked segment came from the store with no
+  -- path asked, {plan, route, notes} to write now (else the plan is stored for the results).
   function M.plan(spider, targets, rec)
     local st = store()
     local surface = spider.surface
     local lines, segs, wait, starts, goals = {}, {}, {}, {}, {}
     local from = rec.from or spider.position
     local pending = 0
+    local R = rec.reuse and rec.gap ~= 0 and api.routes
+    local shared, reused = {}, false
     st.seq = st.seq + 1
     for i, q in ipairs(targets) do
       local b = M.segment(surface, from, q, rec.gap)
@@ -243,17 +279,40 @@ return function(api)
         -- (d26 batch243) a start or goal whose box touches water gets no path: the nearest spot with room for it
         starts[i] = M.dry(surface, from, M.DRY_START) or from
         goals[i] = M.dry(surface, q, M.DRY_GOAL) or q
-        local ok = pcall(M.request, surface, spider.force, starts[i], goals[i], {owner=rec.owner, unit=spider.unit_number, seq=st.seq, seg=i, index=rec.index})
-        if ok then pending = pending + 1; segs[i] = 'pending'; wait[i] = 1 else segs[i] = false end
+        local got = {}
+        if R then
+          local okr, g = pcall(M.from_store, surface, starts[i], goals[i], rec)
+          got = okr and g or {line='the stored routes could not be read: ' .. tostring(g)}
+          if got.line then shared[#shared + 1] = got.line end
+        end
+        if got.id then rec.used = rec.used or {}; rec.used[#rec.used + 1] = got.id end
+        if got.pts then
+          segs[i] = got.pts; reused = true
+        elseif got.span then
+          local ok = pcall(M.request, surface, spider.force, got.from, got.to, {owner=rec.owner, unit=spider.unit_number, seq=st.seq, seg=i, index=rec.index, span=got.span})
+          if ok then pending = pending + 1; segs[i] = 'pending'; wait[i] = 1 else segs[i] = false end
+        else
+          local ok = pcall(M.request, surface, spider.force, starts[i], goals[i], {owner=rec.owner, unit=spider.unit_number, seq=st.seq, seg=i, index=rec.index})
+          if ok then pending = pending + 1; segs[i] = 'pending'; wait[i] = 1 else segs[i] = false end
+        end
       end
       from = q
     end
-    if #lines == 0 then st.plans[spider.unit_number] = nil; return nil end
+    if rec.route and R and #shared == 0 then
+      shared[1] = string.format('route %d not used: no leg of this go_to crosses water its legs cannot step across', rec.route)
+    end
+    if #lines == 0 then st.plans[spider.unit_number] = nil; return nil, shared[1] and shared or nil end
     local copy = {}
     for i, q in ipairs(targets) do copy[i] = {x=q.x, y=q.y} end
-    st.plans[spider.unit_number] = {seq=st.seq, targets=copy, segs=segs, wait=wait, starts=starts, goals=goals, hops={}, pending=pending,
+    local plan = {seq=st.seq, targets=copy, segs=segs, wait=wait, starts=starts, goals=goals, hops={}, pending=pending,
       by=rec.by, owner=rec.owner, tick=game.tick, via=rec.from and {x=rec.from.x, y=rec.from.y} or nil}
-    return lines
+    if pending == 0 and reused then
+      st.plans[spider.unit_number] = nil
+      local route, notes = M.assemble(plan, surface)  -- (defined below)
+      return lines, shared, {plan=plan, route=route, notes=notes}
+    end
+    st.plans[spider.unit_number] = plan
+    return lines, shared[1] and shared or nil
   end
   -- Past DRY_FAR: the first spot with room on rings DRY_FAR + FAR_STEP .. FAR_MAX round q, else nil.
   function M.dry_far(surface, q)
@@ -310,6 +369,7 @@ return function(api)
         out[#out + 1] = final
       end
     end
+    for _, t in ipairs(plan.after or {}) do notes[#notes + 1] = t end
     return out, notes
   end
   M.assemble = assemble
@@ -330,7 +390,34 @@ return function(api)
     plan.wait = plan.wait or {}
     plan.wait[i] = (plan.wait[i] or 1) - 1
     plan.pending = plan.pending - 1
-    if type(plan.segs[i]) ~= 'table' then
+    if rec.span then
+      -- (d28 batch305 NR) a stored route's stale stretch: its path spliced in (the route updated for the next use),
+      -- else the whole segment asked as before (with island escape)
+      local span, R = rec.span, api.routes
+      local kept = R and R.get(span.id)
+      local pts = event.path and kept and kept.respliced == span.respliced and M.thin(spider.surface, event.path)
+      local why = not event.path and 'no path came for legs %d-%d' or string.format('it changed or was dropped meanwhile (legs %%d-%%d)')
+      plan.after = plan.after or {}
+      local done
+      if pts then
+        local list = {kept.pts[span.i0]}
+        for _, w in ipairs(pts) do list[#list + 1] = w end
+        local Q = kept.pts[span.i1 + 1]
+        if dist(list[#list], Q) > 0.5 then list[#list + 1] = Q end
+        local oks, got = pcall(R.splice, kept, spider.surface, span.i0, span.i1, list)
+        if oks and got then
+          R.used(got)
+          plan.segs[i] = seg_of(R, got, span.rev, plan.starts[i])
+          plan.after[#plan.after + 1] = string.format('route %d: the path for legs %d-%d came and was spliced in (the route now has %d legs)', got.id, span.i0, span.i1, #got.legs)
+          done = true
+        end
+      end
+      if not done then
+        plan.after[#plan.after + 1] = string.format('route %d: ', span.id) .. string.format(why, span.i0, span.i1) .. '; the whole way was asked again'
+        local ok = pcall(M.request, spider.surface, spider.force, plan.starts[i], plan.goals[i], {owner=rec.owner, unit=rec.unit, seq=rec.seq, seg=i, index=rec.index})
+        if ok then plan.wait[i] = plan.wait[i] + 1; plan.pending = plan.pending + 1 elseif plan.wait[i] <= 0 then plan.segs[i] = false end
+      end
+    elseif type(plan.segs[i]) ~= 'table' then
       local pts = event.path and M.thin(spider.surface, event.path)
       if pts then
         if rec.hop then
@@ -372,6 +459,15 @@ return function(api)
     local route, notes = assemble(plan, spider.surface)
     done(rec, plan, spider, route, notes)
     return true
+  end
+  -- (d28 batch305 NR) stored routes a spidertron stalled on: dropped from the store. -> "route 3, 7" or nil.
+  function M.drop_routes(ids)
+    if not api.routes then return nil end
+    local parts = {}
+    for _, id in ipairs(ids) do
+      if api.routes.get(id) then pcall(api.routes.drop, id); parts[#parts + 1] = tostring(id) end
+    end
+    return #parts > 0 and table.concat(parts, ', ') or nil
   end
   -- The route written as the remote's clicks: emptied, then each point. -> the error text, or nil.
   function M.write(spider, route)

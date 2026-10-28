@@ -637,6 +637,8 @@ local function finish(index, outcome)
       last.path_length=nav.path_length
       -- Which box the path was planned for, and a stop short of a target with no turning room around it (drivesafe).
       last.plan=nav.plan
+      -- (d28 batch305 NR) a stored route reused, or why its legs were asked again (sharedroutes.lua)
+      last.shared_route=nav.shared
       if nav.short_of and nav.finish then
         last.stopped_short=string.format('%.1f tiles from (%g,%g): the %s\'s turning room fits no closer (our entities or obstacles around it)',
           nav.short_of,action.target.x,action.target.y,action.vehicle and action.vehicle.valid and action.vehicle.name or 'vehicle')

@@ -28,7 +28,10 @@ return function(api)
       vehicle='with remote: the car or tank (drive), or the spidertron (go_to, the targeting switches), by unit_number or {x,y} (any tile of it)',
       combat='with drive, seated as the gunner: true or a radius 1..36: the guns fire at the nearest enemy in range for the whole drive, as shoot auto does, and stop with it; last.shots (rounds fired), last.ammo_used, last.kills and kills_by_name (refused with remote)',
       retreat='with drive: optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): when the vehicle\'s health or its grid\'s shield falls under it during the drive, the drive ends retreated and the vehicle is driven back to `to` at once (guns on when seated); false: not even the standing retreat_guard. With go_to the same for the spidertron while it has a route (else the standing retreat_guard of its sender, else of the agent riding it), read every 30 ticks: under it and lower than when sent, its route is replaced by one to `to` (as a click on its remote), then held: go_to and clear on it refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat); a sleep wakes and a direct wait ends (spidertron_retreated); the reply\'s retreat says what watches it; team.spidertron_retreated {why, from, health, shield, to, replaced, route_line, guard} in your next reply, and status spidertrons',
-      ticks='with drive (1..36000, default 3600), or with go_to and wait (60..54000, default 18000)', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
+      ticks='with drive (1..36000, default 3600), or with go_to and wait (60..54000, default 18000)',
+      reuse='with drive or go_to: default true: a path found before by any agent (a stored route from near here to near the target, either way) is read again in the call (its tiles; a car\'s or tank\'s also what it collides with near each leg) and used, its changed legs asked again; the reply\'s shared_route (a drive: last.shared_route) says "reused route N (checked at tick T)" or why legs were asked again; false asks the pathfinder',
+      route='with drive or go_to: a stored route\'s number: that one only (read again first), else the pathfinder, saying why',
+      routes='true: the stored routes on your surface, nearest first (with position: nearest to it): number, kind, ends, length, who asked for it and when, uses', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
   local TYPES = {}
   for t in pairs(SEATED) do TYPES[#TYPES+1] = t end
@@ -239,6 +242,13 @@ return function(api)
     -- error(..., 0), not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
     local function refuse(ok, text) if not ok then error(text, 0) end end
     refuse(a.remote == nil or type(a.remote) == 'boolean', 'remote must be true or false')
+    -- (d28 batch305 NR) the stored routes on this surface, nearest first (sharedroutes.lua)
+    if a.routes ~= nil then
+      refuse(a.routes == true, 'routes must be true')
+      for _, k in ipairs({'drive', 'go_to', 'clear', 'enter', 'exit', 'vehicle', 'remote'}) do refuse(a[k] == nil, 'routes goes alone, or with position (nearest to it first)') end
+      refuse(api.routes ~= nil, 'no route store in this runtime')
+      return api.routes.list(c.surface, a.position and api.position(a.position) or c.position)
+    end
     local switches = a.auto_target_without_gunner ~= nil or a.auto_target_with_gunner ~= nil
     for _, k in ipairs({'auto_target_without_gunner', 'auto_target_with_gunner'}) do refuse(a[k] == nil or type(a[k]) == 'boolean', k .. ' must be true or false') end
     -- (BK1) remote: true with vehicle alone: a spidertron's route and stall, by remote view (another vehicle: refused)
@@ -357,6 +367,9 @@ return function(api)
       assert(a.pathfind == nil or type(a.pathfind) == 'boolean', 'pathfind must be true or false')
       assert(a.reverse == nil or type(a.reverse) == 'boolean', 'reverse must be true or false')
       refuse(a.dry_run == nil or type(a.dry_run) == 'boolean', 'dry_run must be true or false')
+      refuse(a.reuse == nil or type(a.reuse) == 'boolean', 'reuse must be true or false')
+      refuse(a.route == nil or (type(a.route) == 'number' and a.route >= 1 and a.route == math.floor(a.route)), 'route is a stored route\'s number (vehicle {routes: true} lists them)')
+      refuse((a.reuse == nil and a.route == nil) or a.pathfind ~= false, 'reuse and route go with the path (not pathfind: false)')
       local dry = a.dry_run == true
       local mode = api.avoid_mode(a.avoid_enemies)
       -- combat (Astra, operator 08:34: shoot runs at most 600 ticks while a drive runs a minute or more): the guns on
@@ -393,11 +406,13 @@ return function(api)
         out.combat = {gun=cout.gun, gun_slot=cout.gun_slot, radius=caction.radius, equipped=cout.equipped}
       end
       if a.pathfind ~= false then
-        local nav = {position=target, tolerance=3, vehicle=true, vehicle_entity=v}
+        -- (d28 batch305 NR) reuse: false asks the pathfinder; route: that stored route only
+        local nav = {position=target, tolerance=3, vehicle=true, vehicle_entity=v, reuse=a.reuse, route_id=a.route}
         action.nav = nav
         local foes = api.avoid_start(a.remote and M.at_vehicle(p, v) or p, nav, mode)
         out.avoid_enemies = foes and api.avoid_describe(foes.mode) or nil
         M.request(p, nav)
+        out.shared_route = nav.shared
       end
       return out
     end
@@ -419,6 +434,7 @@ return function(api)
         e and ' (' .. e.name .. ' stands there)' or '', pos.x, pos.y,
         c.vehicle and ' (you are in ' .. c.vehicle.name .. ' now: vehicle {exit: true} gets out first)' or ''), 0)
     end
+    refuse(a.reuse == nil and a.route == nil, 'reuse and route go with drive or go_to')
     for _, k in ipairs({'dry_run', 'pathfind', 'reverse', 'avoid_enemies', 'combat', 'retreat', 'ticks'}) do
       if a[k] ~= nil then error(k .. ' goes with drive: {x,y}; with no enter, exit, drive or go_to nothing is done', 0) end
     end
@@ -483,6 +499,14 @@ return function(api)
     local plans = M.plans(v)
     local plan = plans[math.min(#plans, (nav.path_level or 0) + 1)]
     local h = plan.h
+    -- (d28 batch305 NR) the first ask of a drive: a stored route for its turning room (sharedroutes.lua), read again
+    -- first; once a drive (a back-off asks the pathfinder)
+    if (nav.path_level or 0) == 0 and not nav.reuse_tried and nav.reuse ~= false and api.routes then
+      nav.reuse_tried = true
+      local ok, done = pcall(M.reuse, p, nav, v, plan)
+      if ok and done then return end
+      if not ok then nav.shared = 'the stored routes could not be read: ' .. tostring(done) end
+    end
     -- A box that collides where the vehicle stands gets no path at all (2.0.77: a tank parked 1.7 tiles from our
     -- pipe-to-ground); the plan starts at the nearest spot within 5 tiles where it fits, the vehicle driving there first.
     nav.lead = M.free_start(v, h, nav.position)
@@ -491,6 +515,57 @@ return function(api)
       pathfind_flags={prefer_straight_paths=true, no_break=false, cache=false}}
     api.paths()[nav.path_id] = p.index
     nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.asked_tick = game.tick
+  end
+  -- (d28 batch305 NR) a stored route for this vehicle's turning room from within REUSE_NEAR tiles of it to within its
+  -- tolerance of the target (either way), read again (sharedroutes.lua check): every leg unchanged, its path now;
+  -- stale legs, those and the legs between asked again as one stretch (on_path splices it in); none, or asked over
+  -- MAX_AGE ago, or something it collides with between it and the route's start: false (the pathfinder as before).
+  -- nav.shared: the reply's line.
+  M.REUSE_NEAR = 6
+  local function pos_path(v, pts)
+    local path = {{position={x=v.position.x, y=v.position.y}}}
+    for _, q in ipairs(pts) do
+      local last = path[#path].position
+      if math.abs(q.x - last.x) > 0.05 or math.abs(q.y - last.y) > 0.05 then path[#path + 1] = {position={x=q.x, y=q.y}} end
+    end
+    return path
+  end
+  function M.reuse(p, nav, v, plan)
+    local R = api.routes
+    local layers = M.layers(v)
+    local rec, rev = R.find('drive', v.surface, v.position, nav.position, {h=plan.h, sig=table.concat(layers, ','), near=M.REUSE_NEAR,
+      near_end=nav.tolerance or 3, id=nav.route_id})
+    if not rec then
+      if nav.route_id then nav.shared = string.format('route %d not used: %s; a path was asked', nav.route_id, rev) end
+      return false
+    end
+    local res = R.check(rec, v.surface)
+    nav.shared = R.line(rec, res, rev)
+    if res.old then return false end
+    local pts = R.points(rec, rev)
+    if api.distance(v.position, pts[1]) > 0.5 then
+      local n, nt = R.corridor(v.surface, v.position, pts[1], plan.h, layers)
+      if n > 0 or nt > 0 then
+        nav.shared = string.format('route %d not used: between the %s and its start %s, %d entities and %d tiles it collides with; a path was asked',
+          rec.id, v.name, R.at and R.at(pts[1]) or string.format('(%g,%g)', pts[1].x, pts[1].y), n, nt)
+        return false
+      end
+    end
+    nav.from_store = rec.id
+    if res.n == 0 then
+      R.used(rec)
+      nav.path_level = 0
+      M.use(p, nav, pos_path(v, pts))
+      return true
+    end
+    local P, Q = rec.pts[res.first], rec.pts[res.last + 1]
+    nav.span = {id=rec.id, i0=res.first, i1=res.last, rev=rev, respliced=rec.respliced}
+    local h = plan.h
+    nav.path_id = v.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=P, goal=Q, force=p.force,
+      radius=1, entity_to_ignore=v, can_open_gates=false, pathfind_flags={prefer_straight_paths=true, no_break=false, cache=false}}
+    api.paths()[nav.path_id] = p.index
+    nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.asked_tick = game.tick
+    return true
   end
   -- Geometry: distances from a point or a segment to a box (l, t, r, b).
   local function pt_box(px, py, l, t, r, b)
@@ -713,6 +788,30 @@ return function(api)
   function M.on_path(p, action, event)
     local nav = action.nav
     if not nav or event.id ~= nav.path_id then return end
+    -- (d28 batch305 NR) a stored route's stale stretch: spliced in and the whole route used; else asked in full
+    if nav.span then
+      local span, R = nav.span, api.routes
+      nav.span = nil
+      local rec = R and R.get(span.id)
+      local v = nav.vehicle_entity or (p.character and p.character.vehicle)
+      local why = not event.path and 'no path came for legs %d-%d' or string.format('route %d changed or was dropped meanwhile', span.id) .. ' (legs %d-%d)'
+      if event.path and rec and rec.respliced == span.respliced and v and v.valid then
+        local list = {rec.pts[span.i0]}
+        for _, w in ipairs(event.path) do list[#list + 1] = w.position end
+        local Q = rec.pts[span.i1 + 1]
+        if api.distance(list[#list], Q) > 0.05 then list[#list + 1] = Q end
+        local oks, got = pcall(R.splice, rec, v.surface, span.i0, span.i1, list)
+        if oks and got then
+          R.used(got)
+          nav.shared = (nav.shared or '') .. string.format('; the path for legs %d-%d came and was spliced in (the route now has %d legs)', span.i0, span.i1, #got.legs)
+          nav.path_level = 0
+          return M.use(p, nav, pos_path(v, R.points(got, span.rev)))
+        end
+      end
+      nav.shared = (nav.shared or '') .. '; ' .. string.format(why, span.i0, span.i1) .. ': the whole way was asked again'
+      nav.from_store = nil
+      return M.request(p, nav)
+    end
     if event.path then return M.use(p, nav, event.path) end
     if event.try_again_later then nav.path_state = 'busy'; return end
     return M.next_plan(p, nav)
@@ -1127,6 +1226,12 @@ return function(api)
     if action.still < 90 then return nil end
     action.still = 0
     local side = back and 'behind' or 'in front'
+    -- (d28 batch305 NR) stuck on a stored route: dropped from the store, so no one is sent along it again unasked
+    if nav and nav.from_store and api.routes then
+      pcall(api.routes.drop, nav.from_store)
+      nav.shared = (nav.shared or '') .. string.format('; stuck at (%.1f,%.1f) on it: route %d dropped from the store', v.position.x, v.position.y, nav.from_store)
+      nav.from_store = nil
+    end
     action.backs = action.backs or {}
     if #action.backs < M.BACKOFFS then
       local b = {at={x=v.position.x, y=v.position.y}, front=M.in_front(v, v.surface, back), side=side}
