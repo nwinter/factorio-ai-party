@@ -187,7 +187,7 @@ def main():
         assert "fan_1" in sp and "two turrets going up now" in sp and "owner line" in sp  # the owner's line shows (d27)
         assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
-        assert "platforms built</div><div class=stat-sub>0 lost · 1 active</div>" in page and "Space platforms" in page
+        assert "platforms built</span></div><div class=stat-sub>0 lost · 1 active</div>" in page and "Space platforms" in page
         assert 'class="journey"' in page and "/static/game/place/vulcanus-big.webp" in page, "the planets in order, pictured"
         assert [(t["label"], t["tick"]) for t in s3["techs"]] == [("Rocket silo", 3600 * 102)], s3["techs"]
         assert "Technologies researched (1)" in (out / "runs" / "long" / "shift-2" / "index.html").read_text()

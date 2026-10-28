@@ -359,6 +359,25 @@ def nice_ticks(vmax, n=5):
     return ticks
 
 
+def fmt_full(v):
+    """A count or rate in full, grouped (batch314 A, viewer Aurora: no 9.43M or 12k on a card): 9,430,112; 163.5."""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return f"{v:,}"
+
+
+def breakable(text):
+    """Escaped text a value tile may wrap: a break point after each group comma (1,234,<wbr>567) and after the hours of
+    a duration (358h<wbr>07m), so a value never needs clipping however wide it grows."""
+    return re.sub(r"(\d)h(\d)", r"\1h<wbr>\2", esc(str(text)).replace(",", ",<wbr>"))
+
+
+def hm(hours):
+    """Hours as a duration in full: 369.2 -> '369h12m' (1,234h05m past a thousand), as game time reads."""
+    m = int(round(hours * 60))
+    return f"{m // 60:,}h{m % 60:02d}m"
+
+
 def fmt_num(v):
     if v >= 10000:
         return f"{v/1000:.0f}k"
@@ -630,10 +649,11 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 
 
 def stat(label, value, sub="", icon="", sub_html=""):
-    """A number tile. icon: a game icon's <img> beside the number; sub_html: markup under the label (planet icons)."""
+    """A number tile. icon: a game icon's <img>, beside the label (batch314 A: apart from the number, which takes the
+    tile's whole width and wraps at its group commas: breakable); sub_html: markup under the label (planet icons)."""
     sub = f"<div class=stat-sub>{esc(sub)}</div>" if sub else (f"<div class=stat-sub>{sub_html}</div>" if sub_html else "")
-    return (f'<div class="stat{" stat-icon" if icon else ""}"><div class="stat-value">{icon}{esc(str(value))}</div>'
-            f'<div class="stat-label">{esc(label)}</div>{sub}</div>')
+    return (f'<div class="stat{" stat-icon" if icon else ""}"><div class="stat-value">{breakable(value)}</div>'
+            f'<div class="stat-label">{icon}<span>{esc(label)}</span></div>{sub}</div>')
 
 
 def planet_icons(names, size=22):
@@ -1024,22 +1044,22 @@ def long_charts(lr, lo=None, hi=None, x0=0):
 
 def shift_stats(s):
     return "".join([
-        stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
+        stat("on stream", hm(_hours(s["started"], s["ended"])), _when(s["started"], s["ended"])),
         stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
-        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else ""),
+        stat("technologies", fmt_full(s["research"]), f'+{s["research_new"]:,}' + (f' · at the end: {s["researching"]}' if s.get("researching") else ""),
              icon=gameicons.item("lab", 28)),
         stat("rockets", f'{s["rockets"]:,}', f'+{s["rockets_new"]:,}', icon=gameicons.item("rocket-part", 28)),
-        stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average",
+        stat("SPM", "–" if s["spm"] is None else fmt_full(s["spm"]), "research units a minute, shift average",
              icon=gameicons.item("automation-science-pack", 28)),
-        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average",
+        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_full(s["made_per_min"]), "all colours, shift average",
              icon=gameicons.item("space-science-pack", 28)),
-        stat("plates / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["plates"]), "iron, copper, steel, shift average",
+        stat("plates / min", "–" if not s.get("output_per_min") else fmt_full(s["output_per_min"]["plates"]), "iron, copper, steel, shift average",
              icon=gameicons.item("iron-plate", 28)),
-        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["circuits"]), "green, red, blue, shift average",
+        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_full(s["output_per_min"]["circuits"]), "green, red, blue, shift average",
              icon=gameicons.item("electronic-circuit", 28)),
         stat("packs made", f'{s["made_total"]:,}'),
-        stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}'),
-        stat("viewer messages", s["viewer_lines"])])
+        stat("deaths / loss alerts", f'{s["deaths"]:,} / {s["losses"]:,}'),
+        stat("viewer messages", fmt_full(s["viewer_lines"]))])
 
 
 def qa_html(qa, n=None):
@@ -1272,8 +1292,8 @@ def key_times(lr, heading='<h2 id="key-times">Key times</h2>'):
         on_air = before + (_hours(cur["started"], f["t"]) if cur else 0)
         name = lab if key != "planet:" else f["label"].replace(" reached", "")
         tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{gameicons.first_icon(f, 24)}{esc(name)}</span>'
-                     f'<span class="k-val">{esc(longrun.game_time(f["tick"]))}</span>'
-                     f'<span class="k-sub">game time · {on_air:.1f} h on stream · {esc(_pt(f["t"]))}</span></a>')
+                     f'<span class="k-val">{breakable(longrun.game_time(f["tick"]))}</span>'
+                     f'<span class="k-sub">game time · {hm(on_air)} on stream · {esc(_pt(f["t"]))}</span></a>')
     return (f'{heading}<div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
 
 
@@ -1285,7 +1305,7 @@ def packs_bars(made, title="Science packs made"):
     top = max(v for _, _, v in have)
     items = "".join(f'<li><span class="bar-label">{gameicons.item(item, 22)}{esc(lab)}</span><span class="bar-track"><span class="bar" '
                     f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
-                    f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
+                    f'<span class="bar-val">{breakable(fmt_full(v))}</span></li>' for item, lab, v in have)
     return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
 
 
@@ -1295,8 +1315,8 @@ def run_summary(lr):
     done = [s for s in lr["shifts"] if not s.get("empty")]
     last = done[-1]
     planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
-    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]),
-                     stat("technologies", last["research"], icon=gameicons.item("lab", 28)),
+    stats = "".join([stat("shifts", fmt_full(len(done))), stat("game time", last["game1"]),
+                     stat("technologies", fmt_full(last["research"]), icon=gameicons.item("lab", 28)),
                      stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
                      stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
                      stat("planets reached", len(planets), sub_html=planet_icons(planets))])
@@ -1327,15 +1347,15 @@ def records(done):
         return fmt(s[key]), s
     out = []
     for lab, key, fmt, low, ico in [("Most rockets in a shift", "rockets_new", lambda v: f"{v:,}", False, "rocket-part"),
-                                    ("Most technologies in a shift", "research_new", str, False, "lab"),
-                                    ("Best SPM (shift average)", "spm", fmt_num, False, "automation-science-pack"),
+                                    ("Most technologies in a shift", "research_new", fmt_full, False, "lab"),
+                                    ("Best SPM (shift average)", "spm", fmt_full, False, "automation-science-pack"),
                                     ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False, "space-science-pack"),
-                                    ("Most viewer messages in a shift", "viewer_lines", str, False, ""),
-                                    ("Fewest deaths in a shift", "deaths", str, True, "")]:
+                                    ("Most viewer messages in a shift", "viewer_lines", fmt_full, False, ""),
+                                    ("Fewest deaths in a shift", "deaths", fmt_full, True, "")]:
         b = best(key, fmt, low)
         if b and (low or b[1][key]):
-            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{gameicons.item(ico, 24) if ico else ""}{esc(b[0])}</span>'
-                       f'<span class="r-label">{esc(lab)}</span><span class="r-shift">Shift {b[1]["n"]}</span></a>')
+            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{breakable(b[0])}</span>'
+                       f'<span class="r-label">{gameicons.item(ico, 24) if ico else ""}<span>{esc(lab)}</span></span><span class="r-shift">Shift {b[1]["n"]}</span></a>')
     return f'<div class="records">{"".join(out)}</div>' if out else ""
 
 
@@ -1347,17 +1367,17 @@ def build_long_run(lr):
     active = [p for p in lr["platforms"] if not p["lost"]]
     lost_p = [p for p in lr["platforms"] if p["lost"]]
     on_air = sum(_hours(s["started"], s["ended"]) for s in done)
-    stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
-                     stat("on stream", f"{on_air:.0f} h"),
+    stats = "".join([stat("shift" if len(done) == 1 else "shifts", fmt_full(len(done))),
+                     stat("on stream", hm(on_air)),
                      stat("game time", last["game1"]),
-                     stat("technologies", last["research"], f'researching {last["researching"]}' if last.get("researching") else "",
+                     stat("technologies", fmt_full(last["research"]), f'researching {last["researching"]}' if last.get("researching") else "",
                           icon=gameicons.item("lab", 28)),
                      stat("rockets", f'{last["rockets"]:,}', icon=gameicons.item("rocket-part", 28)),
                      stat("science packs", f'{sum(lr["made"].values()):,}', icon=gameicons.item("automation-science-pack", 28)),
-                     stat("platforms built", len(lr["platforms"]), f'{len(lost_p)} lost · {len(active)} active',
+                     stat("platforms built", fmt_full(len(lr["platforms"])), f'{len(lost_p):,} lost · {len(active):,} active',
                           icon=gameicons.item("space-platform-hub", 28)),
                      stat("planets reached", len(planets), sub_html=planet_icons(planets)),
-                     stat("agent deaths", sum(s["deaths"] for s in done)),
+                     stat("agent deaths", fmt_full(sum(s["deaths"] for s in done))),
                      stat("viewer messages", f'{sum(s["viewer_lines"] for s in done):,}')])
     rows = []
     # Run ids (shakeN) name the test history; without the archive the shift number is enough.

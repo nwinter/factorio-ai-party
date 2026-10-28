@@ -23,7 +23,7 @@ The page: totals, records (the best shift for each), a milestones table (first o
 that matter, rocket counts, the first platform, platform departures and arrivals, planets reached, the first death,
 the first building lost, the first viewer line in the game), charts on the save's game clock with shift starts
 marked and the Pacific time in the hover (SPM, the labs' use of each pack, packs made in all, technologies, rockets), and the
-shift table. Every shift has a page, `/runs/long/shift-N/`: its numbers, milestones, charts, packs made, moments,
+shift table. Value tiles (totals, records, key times; `stat`, `breakable` in `build.py`; batch314 A) show every count and duration in full and grouped (no 12k or 9.43M; hours and minutes, not a rounded hour), each tile as wide as its value and the rows wrapping to fewer columns as values grow; a value wider than the row wraps at its group commas, never clipped (`site/test_bigcounts.py` builds a run that reaches trillions). Every shift has a page, `/runs/long/shift-N/`: its numbers, milestones, charts, packs made, moments,
 deaths, its video and chapters when `videos.json` has one, and the viewer Q&A from `chat.jsonl` (viewer lines that
 reached the game, the agents' answers that name the viewer) and `caster.log` (the hosts' `viewer_reply` lines).
 

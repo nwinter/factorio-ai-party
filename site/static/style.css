@@ -156,11 +156,17 @@ a.fx-btn { text-decoration: none; }
 .hero h1 { max-width: 18em; }
 
 /* stats */
-.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin: 1rem 0; }
+/* (batch314 A, viewer Aurora) value tiles (stats, records, key times) size to their number: a tile is as wide as its
+   value (never under the minimum, never over the row), a row takes as many as fit and they grow to fill it, so a larger
+   count makes fewer columns; a value wider than the whole row wraps at its group commas (build.py breakable), never
+   clipped. The label and sub lines do not widen a tile (width 0, min-width 100%): they wrap within it. */
+.stats, .records, .keytimes { display: flex; flex-wrap: wrap; gap: 10px; margin: 1rem 0; }
+.stat, .record, .keytime { flex: 1 1 auto; min-width: min(100%, 9rem); box-sizing: border-box; }
 .stat { padding: 10px 14px; }
 .stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.2; color: var(--heading); font-variant-numeric: tabular-nums; }
 .stat-label { color: var(--ink-2); font-size: .88rem; }
 .stat-sub { color: var(--muted); font-size: .8rem; }
+.stat-label, .stat-sub, .r-label, .r-shift, .k-label, .k-sub { width: 0; min-width: 100%; overflow-wrap: break-word; }
 .hero-stats { margin-top: 2rem; }
 h3.who { margin-bottom: .2rem; }
 
@@ -223,11 +229,11 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   table.long-run .moments { min-width: 0; }
 }
 .meta { color: var(--muted); margin: -.2rem 0 1rem; }
-.stats-compact { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.stats-compact { gap: 8px; }
 .stats-compact .stat { padding: 8px 12px; }
 .stats-compact .stat-value { font-size: 1.35rem; }
 /* records: the best shift for each, linked */
-.records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.records { gap: 8px; margin: .6rem 0 1rem; }
 .record { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
 .record:hover { background: var(--hl); }
 .r-val { font-size: 1.35rem; font-weight: 700; color: var(--heading); font-variant-numeric: tabular-nums; }
@@ -235,7 +241,7 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r-shift { color: var(--muted); font-size: .8rem; }
 /* the run page's jump links, key times, live banner */
 .jump { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 .6rem; font-size: .92rem; }
-.keytimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.keytimes { gap: 8px; margin: .6rem 0 1rem; }
 @media (max-width: 600px) { .r-val, .k-val { font-size: 1.2rem; } }
 .keytime { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
 .keytime:hover { background: var(--hl); }
@@ -386,10 +392,14 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 /* bar list */
 .bars { margin: 1rem 0; padding: 14px; max-width: 640px; }
 .bars ul { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: 6px; }
-.bars li { display: grid; grid-template-columns: 7.5em 1fr 2.5em; gap: 10px; align-items: center; font-size: .9rem; }
+/* (batch314 A) a bar row: label, track, value; the value takes the width it needs (packs made run to billions), and
+   when the row is too narrow (a phone, enlarged text) it wraps under the track, right-aligned */
+.bars li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: .9rem; }
+.bars li > .bar-label { flex: 0 0 7.5em; min-width: 0; overflow-wrap: anywhere; }
+.bars li > .bar-track { flex: 1 1 6rem; }
+.bars li > .bar-val { flex: 0 0 auto; margin-left: auto; min-width: 2.5em; }
 .bar-track { height: 12px; background: var(--well); box-shadow: var(--well-shadow); border-radius: var(--fx-r-1); padding: 2px; }
 .bar { display: block; height: 100%; background: var(--s1); border-radius: 1px; min-width: 2px; }
-.packs-bars li { grid-template-columns: 7.5em 1fr 4.5em; }
 .packs-bars .bar-val { text-align: right; font-variant-numeric: tabular-nums; }
 .bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 
@@ -1153,8 +1163,9 @@ body.watch.pl-tight .site-nav { flex-wrap: nowrap; overflow-x: auto; }
 .hv-title:hover { color: var(--accent); }
 @media (max-width: 800px) { .hv-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* batch270: the game's icons on the run's pages */
-.stat-icon .stat-value, .r-val { display: flex; align-items: center; gap: 6px; }
-.stat-value .gi, .r-val .gi { width: 1.05em; height: 1.05em; }
+/* (batch314 A) the icon beside the label, apart from the number */
+.stat-icon .stat-label, .r-label { display: flex; align-items: center; gap: 6px; }
+.stat-label .gi, .r-label .gi { width: 1.4em; height: 1.4em; flex: none; }
 .planet-ico { display: inline-flex; margin: 2px 3px 0 0; }
 .planet-ico .gi { vertical-align: middle; }
 .k-label { display: flex; align-items: center; gap: 6px; }
@@ -1183,4 +1194,4 @@ ol.techs li { display: flex; align-items: center; gap: 6px; }
   .v-links a, .pl-meta a, .pl-pn a, .v-body h3 a, .hv-head a { min-height: 36px; display: inline-flex; align-items: center; }
   .pl-card h2 .muted { font-size: 1em; }
 }
-@media (max-width: 480px) { .stats-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .stat, .record, .keytime { min-width: min(100%, 7.5rem); } }

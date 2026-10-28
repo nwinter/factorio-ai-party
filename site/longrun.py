@@ -102,8 +102,9 @@ HOST_REPLY = re.compile(r"^(\d\d:\d\d:\d\d) \[(\w+)\] \(viewer_reply, [^)]*\) (.
 
 
 def game_time(tick):
+    """'358h07m'; past a thousand hours grouped, '1,234h05m' (batch314 A: full grouped values)."""
     m = int(tick // 3600)
-    return f"{m // 60}h{m % 60:02d}m"
+    return f"{m // 60:,}h{m % 60:02d}m"
 
 
 def parents(runs_dir):
