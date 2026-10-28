@@ -25,10 +25,14 @@ SITE = Path(__file__).resolve().parent
 REPO = SITE.parent
 # The art kit lives with the stream overlay; the site copies it so there is one source for both.
 ART = REPO / "tools" / "stream" / "static"
-# The test runs left the repo before the public run (tools/public-start.sh moved them to ~/code/pog-archive/runs-DATE).
-# The archive pages read them there: POG_SITE_ARCHIVE, else the newest runs-* folder under ~/code/pog-archive.
+# The test runs left the repo before the public run (tools/public-start.sh moved them to a pog-archive/runs-DATE).
+# The archive pages read them there: POG_SITE_ARCHIVE, else the newest runs-* folder under the grouped
+# ~/code/personal/player-of-games/artifacts/pog-archive (d28 directory grouping), else under ~/code/pog-archive (where
+# it was before; both are read during the move).
+_ARCHIVE_PARENTS = (Path.home() / "code" / "personal" / "player-of-games" / "artifacts" / "pog-archive",
+                    Path.home() / "code" / "pog-archive")
 _ARCHIVES = ([Path(os.environ["POG_SITE_ARCHIVE"])] if os.environ.get("POG_SITE_ARCHIVE")
-             else sorted((Path.home() / "code" / "pog-archive").glob("runs-*"), reverse=True))
+             else [d for parent in _ARCHIVE_PARENTS for d in sorted(parent.glob("runs-*"), reverse=True)])
 
 
 def run_dir(run):
