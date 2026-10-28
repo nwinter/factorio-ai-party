@@ -465,8 +465,9 @@ if [ -n "$resume" ]; then
 fi
 
 # POG_FULL_TOOLS=1: Muse's team-tools is a folder of its own, mirrored with the shared one (tools/full_tools.py).
+# >>: Muse's launch appends its pass and any EMPTIED line to the same log.
 if [ "${POG_FULL_TOOLS:-0}" = 1 ]; then
-  nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
+  nohup python3 tools/full_tools.py sync "$rundir" 5 >>"$rundir/team-tools-sync.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
 fi
 

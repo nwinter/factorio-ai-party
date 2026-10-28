@@ -200,6 +200,13 @@ return function(api)
     -- A slot's minimum payload changed since the keeper last wrote it (d17 batch21 A2, Astra: crusher 10 -> 9 by
     -- min_payload, put back every 10 s) was changed by requests or min_payload: the keeper adopts it.
     rec.written = rec.written or {}
+    -- (d27 batch287 BT, Astra #2631: Resolute's turbo belt slot kept a tail of 6 after new ghosts asked 753, and rockets
+    -- went with 6 and 8 belts, not 50; bulk 22, SM 336 and pipe 16 the same) the ceiling, the minimum payload before the
+    -- tail lowers it (a user's min_payload, one found on a slot the keeper had not written, else none: a full rocket),
+    -- kept apart from what the keeper writes: a slot still at the keeper's own last write takes its ceiling, never the
+    -- tail written there. A record from before it (no ceiling kept) that tails: a full rocket.
+    local before = rec.ceiling == nil
+    rec.ceiling = rec.ceiling or {}
     local inv0 = rec.tail and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     for i, it in ipairs(items) do
       local w = was[it.item]
@@ -211,8 +218,13 @@ return function(api)
       end
       local mp = rec.min_payload and rec.min_payload[it.item]
       if mp == nil and rec.min_payload then mp = rec.min_payload[it.name] end
-      if mp == nil and w then mp = w.mp end
+      if mp == nil and w then
+        if rec.written[it.item] == nil then mp = w.mp
+        elseif not before then mp = rec.ceiling[it.item] or nil
+        elseif not rec.tail then mp = w.mp end
+      end
       if mp == false or mp == 0 then mp = nil end
+      rec.ceiling[it.item] = mp or false
       -- tail (d17 batch21 A2): the payload no more than what is still to come (the request less what the hub holds),
       -- so the last few do not wait for a full batch
       -- (d17 batch33 A3, Sol: Wayfarer's arithmetic combinator asked 2 against the default, a full rocket of 50, and
@@ -370,7 +382,8 @@ return function(api)
     local tail = a.tail
     if tail == nil and old then tail = old.tail end
     local rec = {group=group, import_from=from, areas=areas, force=p.force.name, by=api.who and api.who(p) or nil, tick=game.tick, min_payload=mpmap, tail=tail or nil,
-      written=old and old.written or nil, adopted=not a.min_payload and old and old.adopted or nil, spent=old and old.spent or nil, hold=hold}
+      written=old and old.written or nil, adopted=not a.min_payload and old and old.adopted or nil, spent=old and old.spent or nil, hold=hold,
+      ceiling=old and old.ceiling or {}}
     recs[pl.index] = rec
     local lines, gone = apply(pl, rec, ghost_need(pl, p.force, areas))
     if gone then recs[pl.index] = nil end
@@ -638,7 +651,7 @@ return function(api)
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, quality, asks, holds (at that quality), short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
-    tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; a slot with no custom minimum payload (the game\'s default, a full rocket by weight) is lowered the same way; kept until false. Each line says the minimum payload the slot has now',
+    tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; a slot with no custom minimum payload (the game\'s default, a full rocket by weight) is lowered the same way; kept until false. The tail never becomes the minimum: each rewrite starts again from your min_payload (or one set on the slot before the section kept it), else a full rocket, so more ghosts raise it again. Each line says the minimum payload the slot has now',
     min_payload='with request: {item: N} (every quality of it) or {"item@quality": N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too',
     hold='with request: a list of items (every quality) or item@quality the section asks none of while held: kept through the rewrites until hold: false or [] (not given: kept as it is); their ghosts stay; given with no area and no import_from, the request keeps its own. The read says them apart in requests_check (held, not asked), not as unrequested, and both give hold', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',

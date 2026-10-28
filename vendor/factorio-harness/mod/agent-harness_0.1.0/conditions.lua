@@ -499,8 +499,23 @@ return function(api)
     -- record (a wait_until step or a direct wait), where the starting counts are kept.
     produced=function(p,c,estimate,record)
       assert(record,'produced counts from the start of a wait: a wait_until step or a direct wait_until (not a guard, an order\'s when or a loop condition)')
-      local base=record.produced_base or {}
-      record.produced_base=base
+      -- (d27 batch283 WP, Sol #2612: a wait_until all of 5 produced conditions failed at its first check, "the
+      -- electromagnetic-plant at (-19,76) is gone": every member kept its machines in one table, and the second member,
+      -- not counting the first one's machine, called it gone) a baseline for each condition, by what it counts: its
+      -- platform and item, or its surface, tiles and counter_from. The same tiles named twice share one. A record from
+      -- before keeps its one table for the first condition read.
+      local bases=record.produced_base or {}
+      if bases.by==nil then
+        local legacy=next(bases)~=nil and bases or nil
+        bases={by={},legacy=legacy}
+        record.produced_base=bases
+      end
+      local function base_for(ckey)
+        local b=bases.by[ckey]
+        if not b then b=bases.legacy or {}; bases.legacy=nil; bases.by[ckey]=b end
+        return b
+      end
+      local base
       -- On a platform (D4, Astra ~10 times: the produced wait found no machine counter there): the platform's own item
       -- production statistics, made since the wait began.
       if c.platform~=nil then
@@ -508,6 +523,7 @@ return function(api)
         for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
         if not pl then error('no platform of ours named '..tostring(c.platform),0) end
         if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
+        base=base_for('platform:'..c.platform..':'..tostring(c.item))
         local now=qflow.count(p.force.get_item_production_statistics(pl.surface),c.item,'input')   -- (PX1) every quality
         if base.platform==nil or not base.platform_q then base.platform,base.platform_q=now,true end   -- (PX1) a base kept before every quality was summed is taken again
         local made=now-base.platform
@@ -519,6 +535,12 @@ return function(api)
       -- changed, fails the wait with the reason (its count so far would be wrong).
       local s=surface_of(p,c)
       local there=s~=p.surface and ' on '..s.name or ''
+      do
+        local parts={tostring(s.index or s.name)}
+        for _,raw in ipairs(c.positions or {c.position}) do local pos=api.position(raw); parts[#parts+1]=pos.x..','..pos.y end
+        if c.counter_from~=nil then parts[#parts+1]='from '..tostring(c.counter_from) end
+        base=base_for(table.concat(parts,':'))
+      end
       base.machines=base.machines or {}
       local crafts,items,seen,machines=0,0,0,0
       local positions=c.positions or {c.position}
@@ -816,7 +838,8 @@ return function(api)
         stored/1e6,cap/1e6,math.floor(f*100),math.floor(c.fraction*100+0.5))
     end,
     -- A platform's foundation built (Astra, d15 06:23: ship conversions ran in the body queue with an outside tile
-    -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either.
+    -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either. platform_ready
+    -- (the same check): entity ghosts too unless entities=false.
     platform_built=function(p,c)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
@@ -836,7 +859,10 @@ return function(api)
         return ents==0 and tiles==0,string.format('platform %s, the part asked: %d entity ghost%s, %d tile ghost%s left',c.platform,ents,ents==1 and '' or 's',tiles,tiles==1 and '' or 's')
       end
       local tiles=surface.count_entities_filtered{type='tile-ghost',force=p.force}
-      local ents=c.entities and surface.count_entities_filtered{type='entity-ghost',force=p.force} or nil
+      -- (d27 batch289, Astra #2634) platform_ready on the whole platform counts its entity ghosts too (entities=false:
+      -- the foundation only, as platform_built); platform_built only with entities=true
+      local want=c.entities or (c['until']=='platform_ready' and c.entities~=false)
+      local ents=want and surface.count_entities_filtered{type='entity-ghost',force=p.force} or nil
       local met=tiles==0 and (ents==nil or ents==0)
       return met,string.format('platform %s: %d tile ghost%s left%s',c.platform,tiles,tiles==1 and '' or 's',
         ents and string.format(', %d entity ghost%s',ents,ents==1 and '' or 's') or '')

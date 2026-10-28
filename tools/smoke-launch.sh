@@ -78,7 +78,7 @@ fi
 
 sync_pid=""
 if [ "${POG_FULL_TOOLS:-}" = 1 ]; then   # Muse's own team-tools folder, mirrored with the shared one
-  nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
+  nohup python3 tools/full_tools.py sync "$rundir" 5 >>"$rundir/team-tools-sync.log" 2>&1 &
   sync_pid=$!
 fi
 

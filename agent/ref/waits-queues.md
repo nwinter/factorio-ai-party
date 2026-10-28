@@ -50,9 +50,11 @@
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
   remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
-  machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
-  ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
-  `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
+  machine; `{platform, item, at_least}` on a platform; in `all` or `any` each `produced` member counts its own machines
+  from the wait's first check); `platform_built` (`platform`: no foundation
+  ghost left; `entities: true` no entity ghost either; remote and platform lanes too) and `platform_ready` (`platform`:
+  no ghost left, entity or tile; `entities: false` tiles only; remote and platform lanes too; with `positions`, `area`
+  or `tiles`: that part's ghosts only, and the other takes the same subset; saw counts the ghosts left); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
   `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires; a hub with no wire reads every signal as 0, as the game's own circuit conditions do, so `below` is met and a guard `at_least` over 0 is refused there), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
@@ -298,7 +300,9 @@
   tick and the read that gives its result. `stop` ends none of them.
 - The clock line counts a wait or sleep as idle: `game 98h40m; +5m00s, idle 5m00s (100%, 4m30s in wait_ticks)`, and so
   do your stream card and the operator's idle nudge. The idle nudge's tell waits for the end of a sleep or wait with
-  an end that began within 10 min of your last work. With a standing order on (not paused, none running) it is still
+  an end that began within 10 min of your last work. A remote or platform lane with a step running, or one done in
+  the last 10 min, holds it, except while something asks you (an unanswered request or tell, a mention, a watch that
+  needs you, a board item overdue for review). With a standing order on (not paused, none running) it is still
   idle, and the clock and sleep lines add `on watch: NAMES` (the orders that act when a trigger holds). Queues,
   standing orders and `queue_repeat` keep your character working through a sleep.
 - A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their

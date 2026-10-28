@@ -6756,7 +6756,16 @@ local function build_direct(p,stack,pos,direction,quality,kind,place,rail_layer)
     if e and stack.is_item_with_entity_data then pcall(M.grids.from_item,stack,e) end
   else
     local args={name=proto.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual,rail_layer=rail_layer}
-    if not surface.can_place_entity(args) then error(placement_error(p,proto,pos,direction,true),0) end
+    -- (d27 batch288 UG, Sol #2632: express over a fast pair's output end read "placement blocked by
+    -- fast-underground-belt") can_place_entity takes no underground type and checks an input: an output end facing
+    -- south has an input's shape facing north (2.0.77 on a copy: over a fast output facing south, express facing south
+    -- false, facing north true), so an output is checked facing the other way; create_entity takes type and direction
+    if proto.type=='underground-belt' then
+      kind=kind or underground_type(surface,proto,pos,direction)
+      args.direction=M.underground_check_direction(kind,direction)
+    end
+    if not surface.can_place_entity(args) then error(placement_error(p,proto,pos,args.direction,true),0) end
+    args.direction=direction
     -- The manual check allows a fast-replace, which create_entity without
     -- fast_replace does not do: both machines stayed on the tiles (shake5:
     -- assembling-machine-2 over -1, the old one kept running; request #68).
@@ -6851,6 +6860,21 @@ function M.build_far(p,b,a)
     if direction then pos=M.placewhy.ramp_position(pos,direction) end
   end
   local reach=p.build_distance or 10
+  -- (d27 batch288 UG, Sol #2632: the walk stood within reach of the first end, the other 11.1 tiles off) an underground
+  -- that replaces one end of a pair of another tier: a spot within build reach of both ends, round their middle
+  if place and place.type=='underground-belt' then
+    local okp,o,other=pcall(M.underground_pair_ends,p.surface,p.force,place,pos)
+    if okp and o and (distance(p.position,pos)>reach or distance(p.position,other.position)>reach) then
+      local mid={x=(pos.x+other.position.x)/2,y=(pos.y+other.position.y)/2}
+      local r=reach-distance(mid,pos)-0.25
+      if r>=0.5 then
+        local f=M.autowalk.point_far(p,mid,reach,string.format('%s (%g,%g) and its pair end %s (%g,%g) are replaced together: one is out of build reach (%.1f and %.1f tiles from you, build reach %g)',
+          o.name,o.position.x,o.position.y,other.name,other.position.x,other.position.y,distance(p.position,pos),distance(p.position,other.position),reach))
+        f.walk_reach=r
+        return f
+      end
+    end
+  end
   if distance(p.position,pos)<=reach then return nil end
   -- (out of sight: the sight refusal, with the nearest radar coverage when the chunk is dark)
   local seen,why=pcall(assert_visible,p,pos,'position')
@@ -6959,17 +6983,38 @@ end
 -- Fast-replacing one end of an underground pair with another tier (d17 batch20 A3, Opus: the pair broke, the belt
 -- stopped with no word): the other end goes too, as a player's fast-replace does, when it is ours, in build reach and
 -- you hold the item for it; else the build is refused naming it. nil when no pair is in question.
-function M.underground_pair(p,place,pos,item,quality)
+-- (d27 batch288 UG) the direction can_place_entity checks an underground end of kind at: an output facing d has the
+-- shape of an input facing the other way
+function M.underground_check_direction(kind,direction)
+  if kind=='output' and type(direction)=='number' then return (direction+8)%16 end
+  return direction
+end
+-- The underground of another tier at pos and its other end, when it is one end of a pair of ours: o, other, or nil.
+function M.underground_pair_ends(surface,force,place,pos)
   local o
-  for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.1,type='underground-belt',force=p.force}) do
+  for _,e in pairs(surface.find_entities_filtered{position=pos,radius=0.1,type='underground-belt',force=force}) do
     if e.valid and e.name~=place.name and e.prototype.fast_replaceable_group==place.fast_replaceable_group then o=e end
   end
   if not o then return nil end
   local ok,other=pcall(function() return o.neighbours end)
-  if not (ok and other and other.valid and other.force==p.force) or other.name==place.name then return nil end
+  if not (ok and other and other.valid and other.force==force) or other.name==place.name then return nil end
+  return o,other
+end
+function M.underground_pair(p,place,pos,item,quality)
+  local o,other=M.underground_pair_ends(p.surface,p.force,place,pos)
+  if not o then return nil end
   local held=p.get_main_inventory().get_item_count{name=item,quality=quality}
   local d=distance(p.position,other.position)
-  if d<=p.build_distance and held>=2 then return {position=other.position,direction=other.direction,kind=other.belt_to_ground_type,name=other.name} end
+  if d<=p.build_distance and held>=2 then
+    -- (UG) the other end checked before either end changes: refused with nothing changed when it cannot be placed
+    local kind=other.belt_to_ground_type
+    local args={name=place.name,position=other.position,direction=M.underground_check_direction(kind,other.direction),force=p.force,build_check_type=defines.build_check_type.manual}
+    if not p.surface.can_place_entity(args) then
+      error(string.format('%s (%g,%g) is one end of a pair with %s (%g,%g); the other end cannot take %s: %s; nothing was changed',
+        o.name,o.position.x,o.position.y,other.name,other.position.x,other.position.y,place.name,placement_error(p,place,other.position,args.direction,true)),0)
+    end
+    return {position=other.position,direction=other.direction,kind=kind,name=other.name,first={name=o.name,direction=o.direction,kind=o.belt_to_ground_type}}
+  end
   local mid={x=math.floor((pos.x+other.position.x)/2)+0.5,y=math.floor((pos.y+other.position.y)/2)+0.5}
   error(string.format('%s (%g,%g) is one end of a pair with %s (%g,%g): a %s does not pair with a %s, so replacing one end alone breaks the belt; %s; build replaces both ends from within %g tiles of both, e.g. from (%g,%g)',
     o.name,o.position.x,o.position.y,other.name,other.position.x,other.position.y,place.name,other.name,
@@ -6990,6 +7035,11 @@ local function build_one(p,a)
     -- What the item places already stands there (A2, Muse 21:20: a retry after a step-aside build that had placed it)
     local place=prototypes and prototypes.item and prototypes.item[a.item] and prototypes.item[a.item].place_result
     local there=place and p.surface.find_entities_filtered{position=pos,radius=0.5,name=place.name,force=p.force,limit=1}[1]
+    -- (d27 batch288 UG) the other end of a pair an entry before replaced, this tick: done, though its item went there
+    local done=state().pair_done
+    if there and done and done.tick==game.tick and there.unit_number and done[there.unit_number] then
+      return {consumed=0,entity=built_summary(there),already=string.format('%s (%g,%g) was replaced with its pair by an entry before',there.name,there.position.x,there.position.y)},{}
+    end
     if there then
       error(string.format('item is not in main inventory: %s already stands at (%g,%g)%s',there.name,there.position.x,there.position.y,
         there.last_user and there.last_user==p and ', placed by you' or ''),0)
@@ -7094,8 +7144,18 @@ local function build_one(p,a)
         replaced.pair=string.format('its other end %s (%g,%g) replaced too: %s',pair.name,pair.position.x,pair.position.y,built_summary(e2).belt or e2.name)
         replaced.pair_contents=replaced2 and replaced2.contents or nil
       else
+        -- (UG) the first end put back as it was, so the pair is replaced together or not at all
+        local why=ok2 and 'placement failed' or reason(e2)
+        local back=pair.first and prototypes.entity[pair.first.name]
+        local bitem=back and back.items_to_place_this and back.items_to_place_this[1]
+        local bstack=bitem and p.get_main_inventory().find_item_stack{name=type(bitem)=='table' and bitem.name or bitem,quality=a.quality or 'normal'}
+        local okb=bstack and pcall(build_direct,p,bstack,pos,pair.first.direction,a.quality or 'normal',pair.first.kind,back)
+        if okb then
+          error(string.format('%s (%g,%g) and %s (%g,%g) are a pair: the other end could not take a %s (%s), so the first was put back; nothing was changed',
+            pair.first.name,pos.x,pos.y,pair.name,pair.position.x,pair.position.y,place.name,why),0)
+        end
         replaced=replaced or {}
-        replaced.pair=string.format('its other end %s (%g,%g) was not replaced: %s; the pair is broken until it is',pair.name,pair.position.x,pair.position.y,ok2 and 'placement failed' or reason(e2))
+        replaced.pair=string.format('its other end %s (%g,%g) was not replaced: %s; the pair is broken until it is (putting the first end back failed too)',pair.name,pair.position.x,pair.position.y,why)
       end
     end
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
@@ -7299,7 +7359,7 @@ function handlers.build(p,a)
     -- Out of build reach (autowalk.lua; Sol, shift12: 10.2 to 15.3 tiles off, a guessed standing spot each time): within
     -- 32 tiles the character walks into build reach first, then builds.
     local far=M.build_far(p,a,a)
-    if far and M.autowalk.wanted('build',a,{far}) then return M.autowalk.approach(p,'build',a,{point=far.point},M.autowalk.line({far},1,far)) end
+    if far and M.autowalk.wanted('build',a,{far}) then return M.autowalk.approach(p,'build',a,{point=far.point,reach=far.walk_reach},M.autowalk.line({far},1,far)) end
     local r,ents=build_one(p,a)
     if not r.aside then
       M.entryset.built(p,a,1,settings)
@@ -7359,7 +7419,8 @@ function handlers.build(p,a)
       end
       local r,ents=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size,
         entity=b.entity or a.entity,stepped=a.stepped and i==1,recipe=recipe})
-      assert(r.aside or r.consumed>0,'nothing was placed')
+      -- (d27 batch288 UG) an underground end an entry before replaced with its pair: done (already says so)
+      assert(r.aside or r.consumed>0 or r.already,'nothing was placed')
       return r,ents
     end)
     for _,e in ipairs(ok and ents or {}) do built[#built+1]=e end
@@ -7395,7 +7456,7 @@ function handlers.build(p,a)
         -- The rest is made where the walk ends, this entry first (autowalk.lua).
         rest.walked_entry=1
         local n,total=i+(a.index_before or 0),#a.builds+(a.index_before or 0)
-        out=M.autowalk.approach(p,'build',a,{point=result.walk.point},string.format('entry %d of %d: %s',n,total,M.autowalk.line({result.walk},1,result.walk)),rest)
+        out=M.autowalk.approach(p,'build',a,{point=result.walk.point,reach=result.walk.walk_reach},string.format('entry %d of %d: %s',n,total,M.autowalk.line({result.walk},1,result.walk)),rest)
       else out=step_aside(result.aside,rest) end
       -- stepping aside: built_so_far (the entries before it), not built (A2)
       if out.stepping_aside then out.built_so_far=#placed else out.built=#placed end
