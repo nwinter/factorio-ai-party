@@ -32,14 +32,16 @@ local stats={get_flow_count=function(a) local r=per[a.name]; return r and (a.cat
 local main={['firearm-magazine']=1400,rocket=200,['iron-plate']=400,explosives=100}
 local hubinv=setmetatable({get_contents=function() return inv(main).get_contents() end,count_empty_stacks=function() return 10 end},{__len=function() return 60 end})
 local hub={valid=true,get_inventory=function(id) assert(id==1); return hubinv end}
-local turret={name='gun-turret',get_inventory=function() return inv({['firearm-magazine']=61}) end}
-local function asm(recipe) return {get_recipe=function() return recipe end,get_inventory=function() return inv({}) end,get_output_inventory=function() return inv({}) end,fluidbox={}} end
+local turret={name='gun-turret',type='ammo-turret',get_inventory=function() return inv({['firearm-magazine']=61}) end}
+local function asm(recipe) return {type='assembling-machine',get_recipe=function() return recipe end,get_inventory=function() return inv({}) end,get_output_inventory=function() return inv({}) end,fluidbox={}} end
 local mags=asm({products={{name='firearm-magazine',amount=1}},ingredients={{type='item',name='iron-plate',amount=4}}})
 local rockets=asm({products={{name='rocket',amount=1}},ingredients={{type='item',name='explosives',amount=1},{type='item',name='iron-plate',amount=2}}})
 local surf={name='platform-12',find_entities_filtered=function(f)
   if f.type=='ammo-turret' then return {turret} end
   if f.type=='assembling-machine' then return {mags,rockets} end
   if type(f.type)=='table' and f.type[1]=='assembling-machine' then return {mags,rockets} end
+  -- (d28 batch304) platform_endurance's one find a call, by a list of types: the fake's entities, which it sorts by type
+  if type(f.type)=='table' and f.type[1]=='thruster' then return {turret,mags,rockets} end
   return {} end}
 local force={get_item_production_statistics=function() return stats end,get_fluid_production_statistics=function() return {get_flow_count=function() return 0 end} end,
   get_ammo_damage_modifier=function() return 0 end,get_turret_attack_modifier=function() return 0 end}

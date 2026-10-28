@@ -364,12 +364,15 @@ do
   local function stats(kind) return {get_flow_count=function(a) local t=a.precision_index==1 and per.one or per.ten; local r=t[a.name]; local m=a.precision_index==1 and 1 or 10
     return r and (a.category=='input' and r[1] or r[2])*m or 0 end} end
   local hub=setmetatable({get_contents=function() return {{name='rocket',count=100},{name='explosives',count=10},{name='coal',count=20}} end,count_empty_stacks=function() return 5 end},{__len=function() return 10 end})
-  local tank={fluidbox={{name='sulfuric-acid',amount=50},{name='thruster-fuel',amount=6000}}}
-  local function asm(recipe,fluid) return {get_recipe=function() return recipe end,get_inventory=function() return {get_contents=function() return {} end} end,fluidbox=fluid or {}} end
+  local tank={type='thruster',fluidbox={{name='sulfuric-acid',amount=50},{name='thruster-fuel',amount=6000}}}
+  local function asm(recipe,fluid) return {type='assembling-machine',get_recipe=function() return recipe end,get_inventory=function() return {get_contents=function() return {} end} end,fluidbox=fluid or {}} end
   local A=asm({products={{name='rocket',amount=1}},ingredients={{type='item',name='explosives',amount=1}}})
   local B=asm({products={{name='explosives',amount=1}},ingredients={{type='item',name='coal',amount=2},{type='fluid',name='sulfuric-acid',amount=10}}},{{name='sulfuric-acid',amount=30}})
   local surface={find_entities_filtered=function(f)
-    if f.type=='assembling-machine' then return {A,B} elseif type(f.type)=='table' then return {tank} end
+    if f.type=='assembling-machine' then return {A,B}
+    -- (d28 batch304) platform_endurance's one find a call, by a list of types: the fake's entities, which it sorts by type
+    elseif type(f.type)=='table' and f.type[1]=='thruster' and #f.type>2 then return {A,B,tank}
+    elseif type(f.type)=='table' then return {tank} end
     return {} end}
   local force={get_item_production_statistics=function() return stats() end,get_fluid_production_statistics=function() return stats() end}
   local pl={name='Swift',surface=surface,force=force,hub={get_inventory=function() return hub end},speed=25/60,space_connection={},

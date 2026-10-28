@@ -921,7 +921,18 @@ return function(api)
     for i, b in ipairs(job.all) do if b.valid then all[#all+1] = b; keys[#keys+1] = job.all_keys[i] end end
     job.all, job.all_keys = all, keys
     local ok, tr = pcall(M.trace, pl, job)
-    J.done[index] = {tick=game.tick, started=job.started, tr=ok and tr or nil, error=not ok and tostring(tr) or nil}
+    J.done[index] = {tick=game.tick, started=job.started, tr=ok and tr or nil, error=not ok and tostring(tr) or nil, belts=#all}
+  end
+  -- (d28 batch304 EC) the belt names of BELTS' types, read once a session: a count by name is the same count, cheaper
+  -- (Resolute's 4187 belts on a copy of world n: 0.74 ms against 2.56 by type; Asterion's 7322: 0.44 against 0.67)
+  local BELT_NAMES
+  local function belt_names()
+    if not BELT_NAMES then
+      BELT_NAMES = {}
+      for n in pairs(try(function() return prototypes.get_entity_filtered{{filter='type', type=BELTS}} end) or {}) do BELT_NAMES[#BELT_NAMES+1] = n end
+      table.sort(BELT_NAMES)
+    end
+    return BELT_NAMES
   end
   -- The trace for a reader: read at once for a platform of up to SYNC_BELTS belts; else the last background read (said
   -- with its age; a new one begins when it is older than max_age, default FRESH), or nil and why while the first runs.
@@ -929,7 +940,16 @@ return function(api)
   -- 6 turrets at once, 33 ms on the private copy).
   function M.get(pl, max_age, background)
     local J = jobs()
-    local n = J and (try(function() return pl.surface.count_entities_filtered{type=BELTS, force=pl.force} end) or 0) or 0
+    -- (EC) the background read asked for and one done: the belts it read (its as_of says them), not counted again
+    local done = J and J.done[pl.index]
+    local n = background and done and done.tr and done.belts
+    if not n then
+      local names = J and belt_names()
+      n = J and (try(function()
+        if #names > 0 then return pl.surface.count_entities_filtered{name=names, force=pl.force} end
+        return pl.surface.count_entities_filtered{type=BELTS, force=pl.force}
+      end) or 0) or 0
+    end
     if not J or n <= M.SYNC_BELTS and not background then
       local tr = M.trace(pl)
       tr.read_tick, tr.read_started, tr.belts = game.tick, game.tick, n
