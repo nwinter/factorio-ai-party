@@ -142,7 +142,8 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 - Build close-ups (d28 batch312 A, viewer Aurora 10:47; work_overview_s, work_close_*): a build that names where it
   lands (its entries, area or position) opens on the whole ship for work_overview_s on a first visit, its caption
   saying where the work is, then glides to the work at a zoom that fits the request's box (0.6 to 0.9); a repeat goes
-  to the work at once. The caption names what the request names and where on the ship (bow north).
+  to the work at once. The caption names what the request names and where on the ship (bow north). With one client
+  (camera panels) a build moves it there too; inspections and the like stay off with one client.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -4105,7 +4106,10 @@ class OneCam(Director):
         self.builds_waiting = sorted((w for w in builds.values() if (w.get("view") or (self.plat_rows.get(w["platform"]) or {}).get("view"))
                                       and now - self.plat_work_shown.get(w["platform"], -1e9) >= cfg["work_build_gap"]
                                       and not self.fighting(w["agent"], by_name, now)), key=lambda w: -w["t"])
-        if not (fresh or builds) or self.n_clients() < 2:
+        # (d28 batch312 A) one client (POG_CAMS=1, camera panels since d28 09:13): a build moves it to the work, as a
+        # maiden flight or a tour does; an inspection, settings or requests stay off (they came every few seconds)
+        one = self.n_clients() < 2
+        if not (fresh or builds) or (one and not self.builds_waiting):
             return
         cur = self.state.get(self.onair)
         cp = (cur or {}).get("platform") or {}
@@ -4125,7 +4129,8 @@ class OneCam(Director):
             return
         held = cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)
         subj = (cur or {}).get("subject")
-        cands = [(w, True) for w in self.builds_waiting] + [(w, False) for _, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"])]
+        cands = [(w, True) for w in self.builds_waiting] + \
+            ([] if one else [(w, False) for _, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"])])
         for w, build in cands:
             agent, name = w["agent"], w["platform"]
             if self.fighting(agent, by_name, now):

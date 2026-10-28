@@ -12,7 +12,9 @@ ship however exactly the work named its place.
 2. A first visit: the whole ship, its caption saying where the work is, then after work_overview_s on air the camera glides to the
    work (its centre and zoom sent), the caption naming it; the shot's time is unchanged.
 3. A shot replaced within work_overview_s gets no close-up; a repeat goes to the close-up at once.
-4. work.py: a request's box and what it names (place_ghosts entries, a deconstruct area, a position); model.py's work
+4. One client with camera panels (the live setup since d28 09:13): a build airs (on main it never did: platform work
+   needed two clients); an inspection still does not.
+5. work.py: a request's box and what it names (place_ghosts entries, a deconstruct area, a position); model.py's work
    item carries them.
 """
 import json, os, sys, tempfile
@@ -124,6 +126,38 @@ def replaced_and_repeat():
     print("3. a shot replaced in its overview: no close-up; a repeat: the close-up at once: ok")
 
 
+def one_client():
+    """The live setup since d28 09:13: one client, two camera panels (tools/cams.py): a build airs, an inspection does not."""
+    from onecam import OneCam
+    slots = [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 1, "panel": 1, "rect": [0, 0, 10, 10], "scale": 0.2},
+             {"slot": "cam3", "player": 1, "panel": 2, "rect": [0, 0, 10, 10], "scale": 0.2}]
+    sent = []
+    d = OneCam(slots, lambda body: sent.append(body) or {"ok": True}, None, trio=False, map_every=0, platform_every=0)
+    d.started = 0
+    assert d.n_clients() == 1
+    a = [agent("astra", 0, 0, 5), agent("sol", 300, 0, 1)]
+    for k in range(0, 22):
+        d.step(snap(a, [plat(view=BIG)]), T + k)
+    insp = item("sol", T + 22, "inspect", view=BIG)
+    for k in range(22, 60):
+        d.step(snap(a, [plat(view=BIG)], work=[insp]), T + k)
+    assert not d.platforms, d.platforms  # (as before: one client, no inspection shots)
+    w = build("sol", T + 60)
+    rows = []
+    for k in range(60, 100):
+        d.step(snap(a, [plat(view=BIG)], work=[w]), T + k)
+        r = main_row(d, T + k)
+        if (r.get("platform") or {}).get("why") == "work":
+            rows.append((k, r.get("work"), r.get("zoom")))
+    assert rows and rows[0][1].endswith("whole ship, the work near the stern, starboard side"), rows[:1]
+    close = [r for r in rows if r[1].endswith("· near the stern, starboard side")]
+    assert close and close[0][0] - rows[0][0] in (5, 6) and close[0][2] == d.cfg["work_spot_zoom"], rows[:8]
+    on = [c for c in d.cuts if c[2].startswith("platform work")]
+    assert on and all(b.get("player") == 1 for b in sent), on
+    print(f"4. one client with camera panels (the live setup): a build moves it to the ship, then to the work; an "
+          f"inspection does not: ok")
+
+
 def rows():
     assert W.extent_of({"entities": GHOSTS}) == {"left": 20.0, "top": 70.0, "right": 29.0, "bottom": 74.0}
     assert W.what_of({"entities": GHOSTS}) == [["assembling-machine-2", 3], ["inserter", 2]]
@@ -149,12 +183,13 @@ def rows():
         m._ingest_work(dict(got[0], agent="sol"), T)
         it = m.work[-1]
         assert it["extent"] == got[0]["extent"] and it["what"] == got[0]["what"] and it["verb"] == "building", it
-    print("4. work rows: the request's box (entries, area, position) and what it names, through to the service's item: ok")
+    print("5. work rows: the request's box (entries, area, position) and what it names, through to the service's item: ok")
 
 
 if __name__ == "__main__":
     close()
     first_visit()
     replaced_and_repeat()
+    one_client()
     rows()
     print("buildclose: ok")
