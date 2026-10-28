@@ -2516,3 +2516,41 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
   - At most one highlight per 20 min, each once. The replay's urgent cut, spacing and news gates apply as for any
     replay.
   - replays.py `watch_highlights`; tools/stream/test_highlight.py.
+
+## One client's timed shots (2026-10-28, d28 batch318 OC, viewer Aurora 15:02, site:5398-5400)
+
+- **What stopped.** The base map, a cloud, a platform in danger, an edge leg's dense asteroids, departures other than
+  a maiden flight and platform visits were each guarded by `n_clients() < 2` (before batch285: `len(self.slots) < 2`).
+  They were written for three clients: a standby framed the shot off air and the program cut to it. The stream has
+  run one client since d27 10:21 (POG_CAMS=1; camera panels since d28 09:13), so none of them aired from then on.
+  Director logs, per hour: three clients d27 00:03-10:21 had map 7.6, visits 7.2, departures 4.0 (and 5.2 in the
+  inset), edge 0.6, danger 0.1; one client d27 10:21-d28 09:13 (22.5 h) had departures 0.09 (two maiden flights)
+  and none of the others; with panels d28 09:13-15:13 none at all. The chronicle had 64-73 departures an hour then.
+- **One-client paths** (`one_client_shots`, on): each of these moves the one client there and back, as it cut with
+  three (`urgent` -> `retarget`, the story resumed after).
+  - The story's agent waits in a free camera panel meanwhile (`away_inset`, inset why "away"; ends when the story is
+    back on air). Without panels (POG_CAMS=1 alone) there is no inset.
+  - Map, cloud and visits wait while the story on air has readable action: a fight, a big action, or its news
+    (`story_action`). Danger and edge are urgent as with three clients.
+  - Departures: news on air `depart_hold`; routine ones on air at most once per 20 min, else in a free panel
+    (`routine_inset`), else not shown, as with three.
+  - Repeats with one client (`one_repeat`, 1 h): a ship's departure within an hour of its last departure or edge shot
+    is routine; its edge entry is not shown (logged). Resolute flew Aquilo to the edge and back about every 20 min on
+    d28.
+  - The base map decays with one client: `map_every` after the last map, doubled for each map in a row that showed
+    the same base map rows, at most `map_decay_max` (1 h); a quiet view's map too.
+  - Visits with one client: at most one per `platform_every`, quiet ones included. The whole ship
+    `visit_overview_s` (7 s; a long ship's pan), then its bow defense in flight (QM1's bow read on a long leg, else its
+    foremost turrets within 12 tiles of the first and the space they reach ahead) and its machinery while machines
+    work (the most working assemblers and furnaces in one frame at zoom 0.7), 7 s each, gliding, in turn from visit to
+    visit; a framing with nothing changing is left out, so a docked ship with nothing working is on air 7 s.
+    Captions (test_oneclient.py's ship): "Starling · bow defense: 2 turrets ahead", "Starling · machinery: 4 working
+    here, 4 of 5 on the ship".
+  - The platforms read (harness.py PLATFORM_LUA) gives each ship's `machines` ({x, y, w}, at most 120): +1.3 ms on
+    the iMac copy of world n (the whole read 32.3-33.0 ms before, 33.7-34.4 after, 22 platforms, 506 machines, 44
+    working; it runs every 15 s).
+  - Three clients: unchanged. `one_client_shots=false`: as before.
+- **Replay** (director_replay.py `--panels`, `--platforms STATE.json`, `--stories`, `--hours`; shot counts by kind):
+  see the batch318 report for d28's numbers.
+- **obs.py stats** `--seconds N --world n`: OBS's frames and skips and the game's ticks, each second (read only).
+- tools/stream/test_oneclient.py; tools/test_obs_stats.py.
