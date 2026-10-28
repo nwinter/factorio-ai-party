@@ -1030,6 +1030,8 @@ class Model:
             self._ingest_operator_request(r, now)
         self._feeds_read(obs, ("confessions", "tells", "operator_requests"))
         try:  # (d28 batch312 B) operation stories: the agents' flight watches carried to their results (stories.py)
+            for r in obs.get("watch_reads") or []:
+                self.stories.on_read(r, now)
             self.stories.update(self, now)
         except Exception as e:  # noqa: BLE001 (a story's fault never stops the service's read)
             print(f"[model] stories: {type(e).__name__}: {e}", flush=True)

@@ -4,9 +4,11 @@
 1. stories.py on model.py: an agent's flight watch armed on Resolute opens a story: the question (the board item whose
    title names the ship), the handoff (asked by Sol, taken by Astra), one "story" alert and one open beat; a watch
    running long before the service saw it is followed but not opened on air.
-2. The result when the watch ends: passed (arrived, nothing lost during the watch), failed (lost during it), pending
-   (ended, no arrival, not read); the item marked done passes it; the spot last built on is revisited; a restart (a
-   new model on the same runs/RUN/stories.json) carries a story to its result; each beat once.
+2. One story across the legs' replaced watches and a restart (a new model on the same runs/RUN/stories.json); the
+   result waits for the agent's read: passed (ended at an arrival, nothing lost), failed (lost during it: the read's
+   count, else the loss alerts), pending (time limit, no read); the item marked done passes it; the spot last built on
+   is revisited; the platform's next story within REPEAT_S is quiet and only a failure airs; each beat once.
+   2b. work.WatchReads: the agents' reads from their journals, not a restart's tail.
 3. caster.py: a story beat's facts and how to call it, facts only.
 4. onecam.py maybe_story: the ship on air with the question as its caption, the agent who set the watch in the inset
    once the ship is up (a camera panel with one client), a result at the repaired spot at the build close-up's zoom;
@@ -81,45 +83,61 @@ def opened():
 def results():
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "stories.json")
-        # passed: the build before it is the spot; it ran, arrived, nothing lost
+        # passed: the build before it is the spot; legs replaced on the way; ended at an arrival, nothing lost
+        build = {"agent": "sol", "action": "place_ghosts", "verb": "building", "t": T - 600, "platform": "Resolute",
+                 "position": {"x": 20.0, "y": 70.0}, "extent": {"left": 15, "top": 68, "right": 25, "bottom": 72},
+                 "what": [["repair-pack", 1]]}
         m = model(path)
-        m.work.append({"agent": "sol", "action": "place_ghosts", "verb": "building", "t": T - 600, "platform": "Resolute",
-                       "position": {"x": 20.0, "y": 70.0}, "extent": {"left": 15, "top": 68, "right": 25, "bottom": 72},
-                       "what": [["repair-pack", 1]]})
+        m.work.append(dict(build))
         feed(m, T, [watch("armed")])
         feed(m, T + 5, [watch("running")])
+        # the next leg: #1584 replaced by #1585 (Astra's every 5-13 min): the same story, no new beat
+        feed(m, T + 300, [watch("done", line="flight watch #1584 on Resolute: ended (replaced by #1585), its result not read yet"),
+                          watch("running", wid=1585)])
         # a restart mid-flight: a new model on the same store carries it
         m = model(path)
-        m.work.extend([{"agent": "sol", "action": "place_ghosts", "verb": "building", "t": T - 600, "platform": "Resolute",
-                        "position": {"x": 20.0, "y": 70.0}, "extent": {"left": 15, "top": 68, "right": 25, "bottom": 72}}])
-        feed(m, T + 60, [watch("running")])
-        assert not alerts(m), "no open beat again after the restart"
-        m.stories.on_arrival("Resolute", "Aquilo", T + 900)
-        feed(m, T + 905, [watch("done", line="flight watch #1584 on Resolute: ended (arrived), its result not read yet")])
+        m.work.append(dict(build))
+        feed(m, T + 360, [watch("running", wid=1585)])
+        assert len(alerts(m)) == 0 and len(m.stories.stories) == 1, m.stories.stories
+        feed(m, T + 905, [watch("done", wid=1585, line="flight watch #1585 on Resolute: ended (arrived at aquilo), its result not read yet")])
+        assert not alerts(m, "result"), "waits for the agent's read"
+        m.stories.on_read({"agent": "astra", "id": "flight#1585", "platform": "Resolute", "ended_by": "arrived at aquilo",
+                           "lost_count": 0, "line": "flight watch #1585 on Resolute ..."}, T + 920)
+        feed(m, T + 921, [watch("done", wid=1585, line="flight watch #1585 on Resolute: ended (arrived at aquilo), its result not read yet")])
         r = alerts(m, "result")
-        assert len(r) == 1 and r[0]["facts"]["result"] == "passed" and r[0]["facts"]["arrived_at"] == "Aquilo", r
-        assert r[0]["text"].startswith("Resolute flight watch · Passed: arrived at Aquilo with nothing lost during the watch"), r[0]["text"]
-        assert r[0]["facts"]["revisits"] == "the spot where Sol last built on it" and r[0]["facts"]["ended"] == "arrived", r[0]["facts"]
-        b = [x for x in m.snapshot(T + 906)["stories"] if x["beat"] == "result"]
+        assert len(r) == 1 and r[0]["facts"]["result"] == "passed", r
+        assert r[0]["text"].startswith("Resolute flight watch · Passed: arrived at aquilo, nothing lost during the watch (Astra's read of the watch)"), r[0]["text"]
+        assert r[0]["facts"]["revisits"] == "the spot where Sol last built on it" and r[0]["facts"]["ended"] == "arrived at aquilo", r[0]["facts"]
+        b = [x for x in m.snapshot(T + 922)["stories"] if x["beat"] == "result"]
         assert b and b[0]["spot"]["position"] == {"x": 20.0, "y": 70.0} and b[0]["verdict"] == "passed", b
-        feed(m, T + 910, [watch("done")])
-        feed(m, T + 920, [])
+        feed(m, T + 930, [])
         assert len(alerts(m, "result")) == 1, "one result"
-        kept = json.load(open(path))["stories"]
-        assert kept[0]["state"] == "closed" and kept[0]["verdict"] == "passed", kept
-    # failed: lost during the watch (the loss alerts on that platform)
+        kept = json.load(open(path))
+        assert kept["stories"][0]["state"] == "closed" and kept["stories"][0]["watches"] == ["flight#1584", "flight#1585"], kept
+        # the next story on Resolute within REPEAT_S: followed quietly; a pass stays off air, a failure airs
+        feed(m, T + 1000, [watch("running", wid=1586)])
+        assert not alerts(m, "open") and m.stories.open_for("astra", "Resolute")["quiet"]  # (the first open beat: before the restart)
+        m.stories.on_read({"agent": "astra", "id": "flight#1586", "platform": "Resolute", "ended_by": "arrived at nauvis", "lost_count": 2}, T + 1100)
+        feed(m, T + 1101, [watch("done", wid=1586, line="flight watch #1586 on Resolute: ended (arrived at nauvis), its result not read yet")])
+        r = alerts(m, "result")
+        assert len(r) == 2 and r[1]["facts"]["result"] == "failed" and "2 lost during the watch (Astra's read of the watch)" in r[1]["text"], r
+    # failed from the stream's own loss alerts (no read: READ_WAIT runs out)
     m = model()
     feed(m, T, [watch("running", wid=7)])
     m._ingest_event({"kind": "loss", "text": "2 lost: gun-turret x2", "platform": "Resolute", "key": "loss:r1"}, T + 30)
     m._ingest_event({"kind": "loss", "text": "3 lost: gun-turret x3", "platform": "Resolute", "key": "loss:r1"}, T + 40)
     m._ingest_event({"kind": "loss", "text": "1 lost: wall", "platform": "Other", "key": "loss:o"}, T + 40)
-    feed(m, T + 100, [watch("done", wid=7, line="flight watch #7 on Resolute: ended (arrived), its result not read yet")])
+    done7 = watch("done", wid=7, line="flight watch #7 on Resolute: ended (arrived at aquilo), its result not read yet")
+    feed(m, T + 100, [done7])
+    feed(m, T + 100 + 120, [done7])
     r = alerts(m, "result")[0]
     assert r["facts"]["result"] == "failed" and r["facts"]["lost_during_watch"] == 3 and "Failed: 3 lost during the watch" in r["text"], r
-    # pending: ended by its time limit, no arrival
+    # pending: ended by its time limit, no arrival, no read
     m = model()
     feed(m, T, [watch("running", wid=8)])
-    feed(m, T + 100, [watch("done", wid=8, line="flight watch #8 on Resolute: ended (time limit), its result not read yet")])
+    done8 = watch("done", wid=8, line="flight watch #8 on Resolute: ended (time limit), its result not read yet")
+    feed(m, T + 100, [done8])
+    feed(m, T + 230, [done8])
     r = alerts(m, "result")[0]
     assert r["facts"]["result"] == "pending" and "Still pending: the watch ended (time limit), no arrival seen" in r["text"], r
     # the team marks the item done: passed whatever else
@@ -128,14 +146,36 @@ def results():
     m.board["items"][2601]["status"] = "done"
     feed(m, T + 100, [])
     r = alerts(m, "result")[0]
-    assert r["facts"]["result"] == "passed" and "#2601 marked done" in r["text"] and r["facts"]["ended"].startswith("left the agent's card"), r
+    assert r["facts"]["result"] == "passed" and "#2601 marked done" in r["text"] and r["facts"]["ended"] == "it left the agent's card", r
     # armed and dropped before its flight: no result
     m = model()
     feed(m, T, [watch("armed", wid=10)])
     feed(m, T + 50, [])
     assert not alerts(m, "result"), alerts(m)
-    print("2. results: passed (arrived, nothing lost), failed (3 lost during it), pending (time limit), the item done; "
-          "the repaired spot; a restart carries it; each beat once: ok")
+    print("2. results: one story across replaced legs and a restart, passed on the agent's read (arrived, 0 lost) at the "
+          "repaired spot; a quiet repeat airs only its failure; failed (3 lost, the loss alerts), pending (time limit), "
+          "the item done; each beat once: ok")
+
+
+def reads():
+    import work as W
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "astra"))
+        j = os.path.join(d, "astra", "journal.jsonl")
+        open(j, "w").write(json.dumps({"event": "request", "request": {"id": 1, "action": "flight_watch", "args": {"id": 1}}}) + "\n")
+        feed_ = W.WorkFeed(d, ["astra"])
+        feed_.poll()
+        assert feed_.watch_reads.take() == [], "a restart's tail: no old reads"
+        with open(j, "a") as f:
+            f.write(json.dumps({"event": "request", "request": {"id": 7, "action": "flight_watch", "args": {"platform": "Resolute", "read": True}}}) + "\n")
+            f.write(json.dumps({"event": "response", "response": {"id": 7, "ok": True, "result": {"watch": {
+                "line": "flight watch #1583 on Resolute, solar-system-edge->aquilo: watched for 11m10s, ended: arrived at aquilo",
+                "ended_by": "arrived at aquilo", "lost_count": 0}}}}) + "\n")
+        feed_.poll()
+        got = feed_.watch_reads.take()
+        assert got == [{"agent": "astra", "id": "flight#1583", "platform": "Resolute", "ended_by": "arrived at aquilo", "lost_count": 0,
+                        "line": "flight watch #1583 on Resolute, solar-system-edge->aquilo: watched for 11m10s, ended: arrived at aquilo"}], got
+    print("2b. the agents' reads of their flight watches from their journals (work.WatchReads), not a restart's tail: ok")
 
 
 def hosts():
@@ -206,6 +246,7 @@ def director():
 if __name__ == "__main__":
     opened()
     results()
+    reads()
     hosts()
     director()
     print("stories: ok")
