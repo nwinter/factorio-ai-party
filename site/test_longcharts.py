@@ -33,8 +33,10 @@ def row(t, minute, red, used, research=("automation",), rockets=0):
 
 def make(root):
     """30 shifts of 240 game minutes, a row every 2 (red packs made: 10 a minute; the labs use 6 a minute). Shift 5 has
-    no rows for its game minutes 1000-1060. Shift 9 begins 30 minutes behind where shift 8 ended (its counters back
-    with it), reads 20 minutes, then jumps to where shift 8 ended and goes on."""
+    no rows for its game minutes 1000-1060. Shift 9 begins an hour behind where shift 8 ended (its counters back with
+    it), reads 20 minutes, then jumps 40 game minutes in 2 real ones to where shift 8 ended and goes on (a later save
+    back: its first rows reread time already counted). Shift 15 begins 20 minutes behind and plays on from there (a
+    rollback: those rows are the timeline)."""
     import datetime
     t0 = datetime.datetime(2026, 10, 1, 0, 0)
     minute, name_prev = 0, None
@@ -45,8 +47,11 @@ def make(root):
         if name_prev:
             (d / "resumed-from").write_text(name_prev + "\n")
         lines, start = [], minute
+        if k == 15:
+            for m in range(start - 20, start, 2):
+                lines.append(row((t0 + datetime.timedelta(minutes=len(lines) * 2 + k * 300)).isoformat(), m, 10 * m, 6 * m))
         if k == 9:
-            for m in range(start - 30, start - 10, 2):
+            for m in range(start - 60, start - 40, 2):
                 lines.append(row((t0 + datetime.timedelta(minutes=len(lines) * 2 + k * 300)).isoformat(), m, 10 * m, 6 * m))
         for m in range(start, start + 240 + 1, 2):
             if k == 5 and 1000 < m < 1060:
@@ -68,8 +73,10 @@ def main():
         end = make(root)
         lr = longrun.load(root, start="lr01")
         check("gaps", [(g["x0"], g["x1"], g["shift"]) for g in lr["gaps"]] == [(1000.0, 1060.0, 5)], lr["gaps"])
-        check("replays", [(r["shift"], r["rows"], r["game0"], r["behind"]) for r in lr["replays"]] == [(9, 10, "31h30m", "0h30m")], lr["replays"])
-        check("made once", sum(lr["made"].values()) == 10 * end, (sum(lr["made"].values()), 10 * end))
+        check("replays", [(r["shift"], r["rows"], r["game0"], r["behind"]) for r in lr["replays"]] == [(9, 10, "31h00m", "1h00m")], lr["replays"])
+        check("rollback kept", [(r["shift"], r["game"], r["back"]) for r in lr["rollbacks"]] == [(15, "55h40m", "0h20m")], lr["rollbacks"])
+        # packs made once along the timeline; the rollback's 20 minutes were played twice and count twice (200)
+        check("made once", sum(lr["made"].values()) == 10 * end + 200, (sum(lr["made"].values()), 10 * end))
         check("cutoff", lr["cutoff"]["x"] == end and lr["cutoff"]["shift"] == 30, lr["cutoff"])
         # no window spans the hole: none ends inside it, the first after it ends 10+ minutes after it
         xs = [x for x, _ in lr["spm"]]
@@ -95,8 +102,9 @@ def main():
         notes = re.search(r'<ul class="chart-notes[^>]*>(.*?)</ul>', page, re.S).group(1)
         check("cutoff note", f"Data to game time {longrun.game_time(end * MIN)}: the last score row read" in notes and "shift 30" in notes, notes)
         check("hole note", "No score rows from game time 16h40m to 17h40m" in notes and "shift 5): shaded, the lines broken there" in notes, notes)
-        check("replay note", "Shift 9 read game time 31h30m to 31h48m again (10 score rows" in notes
-              and "the game time went back 0h30m" in notes and "no game time counts twice" in notes, notes)
+        check("rollback note", "Shift 15's score log went back 0h20m of game time" in notes and "play went on from there" in notes and "packs are counted again from there" in notes, notes)
+        check("replay note", "Shift 9 read game time 31h00m to 31h18m again (10 score rows" in notes
+              and "the game time went back 1h00m" in notes and "no game time counts twice" in notes, notes)
         check("samples apart from the average", "The 1-game-hour average, when shown, is a separate line" in notes, notes)
         figs = re.findall(r'<figure class="chart" id="c\d+">.*?</figure>', page, re.S)
         check("five charts", len(figs) == 5, len(figs))
@@ -114,11 +122,11 @@ def main():
         check("labels under the axis", 'S2</text>' in spm and 'S30</text>' in spm and 'S3</text>' not in spm)
         check("hole shaded", '<rect class="gap"' in spm and "No score rows 16h40m to 17h40m" in spm)
         path = re.search(r'<path class="line"[^>]* d="([^"]+)"', spm).group(1)
-        check("line broken at the hole", path.count("M") == 2, path.count("M"))
+        check("line broken at the hole and the rollback", path.count("M") == 3, path.count("M"))
         rows = re.findall(r"<tr><td>[^<]+</td><td>([^<]*)</td></tr>", figs[4])
         check("table exact", rows and all(re.fullmatch(r"[\d,]+(\.\d+)?", v) for v in rows if v), rows[:5])
         shift9 = (out / "runs" / "long" / "shift-9" / "index.html").read_text()
-        check("shift page replay note", "The score log read game time 31h30m to 31h48m again in this shift (10 rows" in shift9)
+        check("shift page replay note", "The score log read game time 31h00m to 31h18m again in this shift (10 rows" in shift9)
 
         if shutil.which("node"):
             js = Path(d) / "t.js"

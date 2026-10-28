@@ -335,6 +335,15 @@ def rebase(r, origin):
                 infinite={k: v - origin["infinite"].get(k, 0) for k, v in r["infinite"].items() if v > origin["infinite"].get(k, 0)})
 
 
+def jumped(a, b):
+    """(batch314) game time from row a to row b ran more than 10 minutes ahead of the real time between them: a later
+    save came back, not play (rows come every 2 real minutes, about as much game time)."""
+    ta, tb = parse_t(a.get("t")), parse_t(b.get("t"))
+    if not (ta and tb):
+        return False
+    return (b["raw"] - a["raw"]) / 3600 > (tb - ta).total_seconds() / 60 + 10
+
+
 def levels(r):
     """(batch314 C) repeatable research levels completed as of a score row: the score's `infinite` counts, for each
     infinite technology, the levels done past its prototype's own (tools/pog.py SCORE_LUA: t.level - prototype.level;
@@ -479,13 +488,14 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         seen_first.add(key)
         firsts.append({"key": key, "label": label_, "kind": kind, "tick": tick, "t": t, "shift": shift_n})
 
-    # (batch314) game time counted once: a row behind the furthest game time already read (a shift that began on an
-    # earlier save: shift 13 read 3h17m back, then its later save was restored) replays time already counted, so it is
-    # left out of the totals, firsts and charts and named (replays); holes over GAP_MIN game minutes are listed (gaps)
+    # (batch314) game time counted once: rows behind the furthest game time already read are held; when the log then
+    # jumps on past it (jumped: a later save came back, as in shift 13, 3h17m back for 27 rows) they reread time already
+    # counted and are left out of the totals, firsts and charts and named (replays); when play goes on from the earlier
+    # game time they are the timeline and stay, named (rollbacks); holes over GAP_MIN game minutes are listed (gaps)
     base_raw = origin["raw"] if origin else 0
     max_raw = origin["raw"] if origin else None
     last_kept = origin
-    gaps, replays = [], []
+    gaps, replays, rollbacks = [], [], []
     # (batch314 C) packs made and consumed over matched row pairs, each counter's falls, where consumption begins, and
     # each repeatable technology's first completed level
     flow, falls, flow_from, level_first = {"made": {}, "used": {}}, {"made": {}, "used": {}}, None, {}
@@ -500,18 +510,40 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
 
     for i, name in enumerate(names):
         d = runs_dir / name
-        sc, replay, replay_from = [], [], None
-        for r in (rebase(r, origin) for r in scores(d / "scores.jsonl")):
-            if max_raw is not None and r["raw"] < max_raw:
-                if not replay:
-                    replay_from = max_raw
-                replay.append(r)
-                continue
+        sc, replay, replay_from, held, held_from = [], [], None, [], None
+
+        def add(r):
+            nonlocal max_raw, last_kept
             if last_kept is not None and (r["raw"] - last_kept["raw"]) / 3600 > GAP_MIN:
                 gaps.append({"x0": round((last_kept["raw"] - base_raw) / 3600, 1), "x1": round(r["tick"] / 3600, 1),
                              "t0": last_kept["t"], "t1": r["t"], "shift": n + 1})
             max_raw, last_kept = r["raw"], r
             sc.append(r)
+
+        def settle(restored):
+            """Rows held behind the furthest game time: reread (the later game time came back: left out) or the
+            timeline (play went on from the earlier game time, which is what was lost after it: kept, named)."""
+            nonlocal replay_from
+            if restored:
+                replay.extend(held)
+                replay_from = replay_from or held_from
+            else:
+                rollbacks.append({"shift": n + 1, "game": game_time(held[0]["tick"]), "back": game_time(held_from - held[0]["raw"]), "t": held[0]["t"]})
+                for h in held:
+                    add(h)
+
+        for r in (rebase(r, origin) for r in scores(d / "scores.jsonl")):
+            if max_raw is not None and r["raw"] < max_raw:
+                if not held:
+                    held_from = max_raw
+                held.append(r)
+                continue
+            if held:
+                settle(jumped(held[-1], r))
+                held = []
+            add(r)
+        if held:
+            settle(False)
         start_log = log_times(d / "start.log")
         n += 1 if sc or replay else 0  # only shifts that played are numbered
         row = {"id": name, "n": n if sc or replay else None, "moments": []}
@@ -767,7 +799,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         w0, before_w = a, a
         for r in sc[1:]:
             # (batch314) no window spans a hole in the record: one starts again after it
-            hole = (r["tick"] - before_w["tick"]) / 3600 > GAP_MIN
+            hole = (r["tick"] - before_w["tick"]) / 3600 > GAP_MIN or r["tick"] < before_w["tick"]  # or game time went back
             before_w = r
             if hole:
                 w0 = r
@@ -801,7 +833,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
     return {"shifts": shifts, "research": research, "spm": spm, "spm_packs": spm_packs, "made_spm": made_spm, "rockets": rockets_s,
             "made": made, "firsts": firsts, "bounds": bounds, "clock": clock, "platforms": plats,
             # (batch314) holes in the record, game time replayed from an earlier save, and the last score row read
-            "gaps": gaps, "replays": replays,
+            "gaps": gaps, "replays": replays, "rollbacks": rollbacks,
             # (batch314 C) repeatable levels over time and by technology; packs made and consumed over matched row
             # pairs (flow), each counter's falls (not subtracted) and the first row with consumption (flow_from)
             "levels": level_s, "flow": flow, "falls": falls, "flow_from": flow_from,
