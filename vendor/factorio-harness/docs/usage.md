@@ -17314,7 +17314,7 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 ## d28 batch308 (FT, viewer Aurora site:5343: follow-through after a job ends while its project stays open)
 
 - Found (runs/shift85-91 journals, chat, operator tells): Astra's #2516 (LDS productivity) read `doing` for 10h45m
-  across two shift changes after its step 2 was done; 13 of its 21 ten-minute checks in shift86 said `progress seen`
+  across two shift changes after its step 2 was done; 14 of its 20 ten-minute lines in shift86 said `progress seen`
   from the entities in her Aquilo freight claim #1099 (the project has no area), which also held off its stalled
   count; no reply or line said that nothing had been written on it since the step. Luna's #2518 kept a written hold.
 - Change:
@@ -17327,3 +17327,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     (`FOLLOW`, an hour or more) says so, with the same three answers.
 - Docs: agent/ref/team.md (`board_progress`, `board_update`), the schema texts. Test: tests/d28_batch308.lua (fails
   on main: no `follow_through`).
+- Bundle (compacted): 6,362,465 bytes on main (b59129f9), 6,364,920 with this branch (limit 8,388,608).

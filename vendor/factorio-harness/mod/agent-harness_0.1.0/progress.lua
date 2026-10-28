@@ -44,7 +44,7 @@ return function(api)
   end
   local function owned(i) return OWNED[i.kind] and LIVE[i.status] and i.owner and i.owner ~= 'operator' end
   -- The areas the game is read in: the item's own, else its owner's active claims (at most 4). (d28 batch308 FT) A
-  -- project, its own alone: Astra's #2516 (casting on Vulcanus, no area) read 13 of 21 checks in shift86 as progress
+  -- project, its own alone: Astra's #2516 (casting on Vulcanus, no area) read 14 of 20 checks in shift86 as progress
   -- from the entities in her Aquilo freight claim #1099, which also held off its stalled count.
   local function areas(i)
     local out = {}
