@@ -17392,3 +17392,35 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/team.md (`board_progress`, `board_update`), the schema texts. Test: tests/d28_batch308.lua (fails
   on main: no `follow_through`).
 - Bundle (compacted): 6,362,465 bytes on main (b59129f9), 6,364,920 with this branch (limit 8,388,608).
+## d28 batch311 (GA, viewer Aurora: an any guard lost its deadline when a sibling member errored)
+
+- Real. conditions.lua `any` (and `all`) called each member bare: a member that threw (ammo_below with positions on a
+  removed turret: `no ammo turret of ours at (3.5,-10.5) on Asterion`) threw the whole condition, whatever another
+  member read, and the members after it were not read that check. scheduler.lua `check_guards` read a guard under
+  pcall and dropped the error with no word; after a deadline tick it recomputed `guard_due` from deadlines still
+  ahead, so a paused remote or platform lane (checked only at `guard_due`) lost its only wake. On main
+  (tests/d28_batch311.lua's cases, the turret removed before the cutoff): the guard any {ammo_below turret,
+  tick_at_least cutoff} never fired in 5100 ticks past the cutoff, on the remote and a platform lane, both member
+  orders, running and paused (0 cleanups, `guard_due` nil, the guard still armed); with the turret kept every case fired
+  at the cutoff. An any {ammo_below removed turret, platform_left} never fired at the departure in either order. A
+  queued wait_until any {that turret, the cutoff} failed at its first check, pausing the plan.
+- Change:
+  - conditions.lua: `all` and `any` read each member under pcall, every member at every check (baselines such as
+    platform_left's first stop are read whatever another member does). `any`: a member that holds meets it; a member
+    that could not be read is named in saw (`#1 ammo_below: could not be read: ...`) and in `record.member_errors`;
+    with none holding and one erroring it raises `none yet, and a member could not be read: ...` naming every member.
+    `all` raises the first member error, as before, once every member is read. waiteta adds `member_errors` to a
+    wait's reply.
+  - scheduler.lua: a guard whose read fails stays armed and is read again at each check; the first failure of a run
+    of them adds a `guard_error` history row and a team block line (later ones only count, the text the latest); a
+    read that works again marks `cleared_tick`, and a later failure is said again. queue_status guards give
+    `read_error` {error, first_tick, last_tick, checks, cleared_tick}. The wake: a passed deadline whose guard is
+    still armed is read again `CHECK_TICKS` (10) on, so a paused lane keeps it. A wait_until step whose deadline is
+    ahead keeps waiting when its read fails (one `wait_error` row and line), and its deadline ends it.
+  - Each guard fires once (the guard is removed as it fires, as before); the test checks its cleanup runs once.
+- Sleep is not affected: waits.lua reads each member of a sleep's any under its own pcall.
+- Docs: agent/ref/waits-queues.md (any, guards), the guards usage text. Test: tests/d28_batch311.lua (the real
+  conditions.lua, scheduler.lua and queue_lanes.lua): the deadline guard on the remote and a platform lane, both member
+  orders, running and paused, fired at the cutoff with its cleanup once; a paused lane whose guard read failed at the
+  deadline fires 10 ticks after the read works again; the departure member keeps its baseline, both orders; a
+  wait_until any met at the cutoff and an all that still fails. Each of its four parts fails on main.
