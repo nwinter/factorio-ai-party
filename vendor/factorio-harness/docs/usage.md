@@ -11214,7 +11214,7 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   - Kept in storage until cleared. A done watch read once is dropped an hour after that read. At most 8 a force; a
     new one drops the oldest read one, else is refused. A second watch on the same platform, while the first runs or
     is unread, needs `replace: true`. The setter hears in team.alerts when one begins at a departure and when one
-    ends (with the turrets in one phrase). A read gives up to 24 turret rows: those that read empty, the longest run
+    ends (with the turrets in one phrase; from d27 batch296 the damage taken and the losses first). A read gives up to 24 turret rows: those that read empty, the longest run
     first, then the lowest on ammo; `turrets_more` and `turrets_more_line` count the rest.
   - The `platform` read's defense row gives `sampled_tick`, the tick its turrets were counted (the reply's: it is not
     cached).
@@ -16973,3 +16973,19 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
 - Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
+## d27 batch296 (FA: a flight watch's end alert said the railguns' fire, not the damage taken, Astra #2647)
+
+- Found (flightwatch.lua finish): the end alert in team.alerts was the turrets' phrase (`M.worst`), the power phrase
+  (`M.power_text`) and the ammunition used. It never had the damage taken. The power phrase's railgun part
+  `0 hits (0 shots that hit), 0 damage, 0 kills` is the railguns' own fire (on_entity_damaged with a railgun as the
+  cause). Resolute's watch #1469 (gleba->aquilo, guard 32's pause at tick 74365680, then a coast to Aquilo) took one
+  2317.4 hit from a medium oxide asteroid while its railguns hit nothing, so the alert read "0 hits, 0 damage" and
+  `flight_watch {id: 1469}` read 1 hit, 2317.4. The damage itself was never lost: there is one source (platalerts'
+  running totals, the change from the watch's start), with no reset at a pause and no window starting at the coast.
+  The read at tick 74366418, during the pause, already had the hit.
+- Fix: the end alert starts with the damage taken and the losses: `damage taken 2317.4 in 1 hit (railgun-turret
+  2317.4); 0 lost`. It is the same phrase `flight_watch {id}`'s line has, built by one function from `totals()` of the
+  values the watch kept at its end, which `{id}` reads once done. The railgun part now reads `their fire: N hits (N
+  shots that hit), N damage dealt, N kills`, in the alert and the line.
+- Docs: agent/ref/space-age.md (flight_watch). Test: tests/d27_batch296.lua (fails on main: no damage taken in the
+  alert); tests/d22_batch98.lua's railgun phrase updated.
