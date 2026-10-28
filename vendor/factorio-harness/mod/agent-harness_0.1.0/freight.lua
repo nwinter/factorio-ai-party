@@ -1043,7 +1043,7 @@ return function(api)
       seg.km0 = w.leg.flown and w.leg.length and w.leg.flown * w.leg.length or nil
       seg.km1 = seg.km0
       local g = M.geometry(pl)
-      seg.thrusters, seg.width = g.thrusters, g.width
+      seg.thrusters, seg.thrust, seg.width = g.thrusters, g.thrust, g.width
     end
     rec.segs[#rec.segs+1] = seg
     while #rec.segs > M.KEEP do table.remove(rec.segs, 1) end
@@ -1207,7 +1207,15 @@ return function(api)
   -- world n (18 platforms: 107 ms read, 11.7 counted, the same widths)
   function M.geometry(pl)
     local s = try(function() return pl.surface end)
-    local out = {thrusters=s and try(function() return s.count_entities_filtered{type='thruster', force=pl.force} end) or nil}
+    -- (d27 batch294 TQ) and their thrust in normal thrusters': quality multiplies a thruster's thrust and burn by the
+    -- quality's default_multiplier (legendary 2.5)
+    local list = s and try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end)
+    local out = {thrusters=list and #list or nil}
+    if list then
+      local sum = 0
+      for _, t in ipairs(list) do sum = sum + (try(function() return t.quality.default_multiplier end) or 1) end
+      out.thrust = math.floor(sum * 100 + 0.5) / 100
+    end
     local function has(x0, x1)
       return (try(function() return s.count_tiles_filtered{name='space-platform-foundation', area={{x0, -128}, {x1, 128}}, limit=1} end) or 0) > 0
     end

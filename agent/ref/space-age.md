@@ -6,7 +6,10 @@
   known, at arrival, as `science` and `preflight` count them. `inspect` of a hub shows the same speed and ETA fields.
   With `platform`: one platform with its full hub inventory, `thrust_inputs` (a line per thruster input under half
   full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
-  naming them), `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
+  naming them), `after_pumps` and `thruster_burn` (what the thrusters burn at full thrust and how long the fluid behind
+  the pumps lasts, at each thruster's own quality: quality multiplies burn and thrust, a legendary thruster 5 of each
+  fluid a tick against a normal one's 2; `platform_endurance` gives it as `full_thrust`, apart from the measured use),
+  `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
   and 3000 tile ghosts and says `at least` and how many were counted past that). With no platform named the read is
   compact: a line a platform, blockers only when new to you; `compact: false` gives every platform's full row, 2
   a page (`page`; the reply's `next` names the next), `request_edits: true` each hub section's last edit. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
@@ -122,7 +125,7 @@
   comes off first (`other_use_per_min`). Ammunition on rockets on their way up counts once (`received`). Rows, `flight`,
   `departure`, `forecast` and `ammo_rates` (preflight, platforms) use this one count and say which limit binds
   (`no machine aboard makes it now` when the rate was measured before its makers went). Speed: the last leg's distance
-  flown over its time, flagged when the thrusters or hull width differ now. The forecast counts each asteroid's
+  flown over its time, flagged when the thrusters (count or quality) or hull width differ now. The forecast counts each asteroid's
   fragments (huge into 3 big, big into 3 medium, medium into 3 small) and says `uncalibrated` for kinds the legs flown
   met none of; rockets' damage is their projectile's:
   `binds: the stock (none made aboard)`, `the make rate`, or `the ingredients: iron-plate (...)`. Rows add
@@ -414,7 +417,9 @@
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
   names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
   step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The
-  setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
+  setter hears in team.alerts when it begins at a departure and when it ends; the end line starts with the damage
+  taken and the losses over the whole watch (the same as `{id}`'s `damage` and `lost_count`, a pause and a coast
+  included), and its railgun part (`their fire: N hits`) is what the railguns hit, never damage taken. A turret empty under a second between
   two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
   Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
   `now`) and each railgun (`railguns`): energy least, at the start and now; samples, runs and the longest run below a

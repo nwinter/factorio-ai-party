@@ -74,11 +74,13 @@ eq(T.lowest_text(r),'thruster-fuel 30%, thruster-oxidizer 90%')
 local b=T.burn(1000); eq(b.full_s,1.7); eq(b.to_10_s,20.1); eq(b.equiv_s,10.3); eq(b.empty_s,36.7)
 b=T.burn(100); eq(b.to_10_s,0); eq(b.empty_s,16.7)
 local ap=T.after_pumps(pl)
-eq(ap.lines[1],'thruster-fuel: if its pumps stop, 1 thruster holds 300 and the pipes and tanks between them and the pumps 0 (300 a thruster): '..
-  'about 3 s of full thrust, 11.4 s until 10%, then 0.1 a tick until empty at 28.1 s; pump (-3,9.5): off by its circuit condition signal-B = 1 (signal-B 9 on its wires)')
-eq(ap.lines[2],'thruster-oxidizer: if its pumps stop, 1 thruster holds 900 and the pipes and tanks between them and the pumps 0 (900 a thruster): '..
-  'about 9.5 s of full thrust, 19.2 s until 10%, then 0.1 a tick until empty at 35.9 s; no pump between them and the rest of the line')
-assert(ap.rule:find('2 fuel and 2 oxidizer a tick while its tanks are 80% full or more',1,true))
+eq(ap.lines[1],'thruster-fuel: if its pumps stop, 1 thruster (normal) holds 300 and the pipes and tanks between them and the pumps 0 (300 a thruster): '..
+  'at full thrust 2 a tick: about 3 s of full thrust, 11.4 s until 10%, then 0.1 a tick until empty at 28.1 s; pump (-3,9.5): off by its circuit condition signal-B = 1 (signal-B 9 on its wires)')
+eq(ap.lines[2],'thruster-oxidizer: if its pumps stop, 1 thruster (normal) holds 900 and the pipes and tanks between them and the pumps 0 (900 a thruster): '..
+  'at full thrust 2 a tick: about 9.5 s of full thrust, 19.2 s until 10%, then 0.1 a tick until empty at 35.9 s; no pump between them and the rest of the line')
+eq(ap.lines[3],'both fluids burn alike at the rate the emptier tank sets: the thrust lasts as thruster-fuel does (about 3 s of full thrust, 11.4 s until 10%)')
+assert(ap.rule:find('1 thruster, normal: at full thrust (the emptier tank 80% full or more) it burns 2 fuel and 2 oxidizer a tick (120 a second, 7200 a minute of each), thrust 1 times one normal thruster\'s (the engine\'s figures for its quality, not measured use); a thruster burns',1,true))
+assert(ap.rule:find('a normal thruster 2 of each a tick while that tank is 80% full or more',1,true))
 -- d20 batch60 V5: the pumps toward the thrusters by state, for the fuel advisory.
 local ps=T.pump_states(pl)
 eq(ps['thruster-fuel'].line,'0 of 1 working; 1 off by its circuit condition signal-B = 1 (signal-B 9 on its wires)')

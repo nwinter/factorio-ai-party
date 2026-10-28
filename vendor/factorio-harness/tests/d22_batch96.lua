@@ -429,7 +429,7 @@ do
   for x=-7,12 do cols[x]=true end
   cols[3]=nil  -- a gap inside does not matter
   local counts=0
-  local s={count_entities_filtered=function(f) eq(f.type,'thruster'); return 6 end,
+  local s={find_entities_filtered=function(f) eq(f.type,'thruster'); return {{},{},{},{},{},{}} end,
     find_tiles_filtered=function() error('no tile read') end,
     count_tiles_filtered=function(f)
       counts=counts+1

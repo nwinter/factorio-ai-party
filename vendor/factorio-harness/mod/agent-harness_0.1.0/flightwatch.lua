@@ -24,7 +24,8 @@
 -- getter by quality; on a copy of world n a rare laser on Asterion fired from 801 kJ to 256.6 kJ in one tick and
 -- recharged 255.6 kJ a tick (800 kJ a shot, its quality's faster recharge).
 -- Kept in storage (a save keeps it) until cleared; a result read is kept KEEP_READ ticks after its first read. The
--- setter hears in team.alerts when a watch begins after a departure and when it ends.
+-- setter hears in team.alerts when a watch begins after a departure and when it ends (d27 batch296: the end line first
+-- says the damage taken and the losses, as flight_watch's line does).
 -- (d22 batch109 BS1, Sol #1952: 8 a force kept Cinder's watch out while 18 platforms flew) a force may hold one watch
 -- that counts per platform it has: armed, watching, or done with its result not read yet. A done one read no longer
 -- counts (kept KEEP_READ, at most KEEP_DONE a force). Each watch reads on its own tick of the second (its phase).
@@ -783,6 +784,13 @@ return function(api)
     return {damage=dmg, lost=lost, lost_n=n or 0, repair_used=w.repair0 and w.repair_q and r1 and r1 - w.repair0 or nil, packs_start=w.packs0, packs_end=p1,
       fuel_start=w.fuel0, fuel_end=f1, h1=h1, r1=r1, a1=a1}
   end
+  -- (d27 batch296 FA) the damage taken and the losses in one phrase, from totals(): the end alert and flight_watch's
+  -- line both say it (Astra #2647: the end alert had only the railguns' own "0 hits, 0 damage", read as none taken)
+  local function damage_text(t)
+    local d = t.damage
+    return string.format('damage taken %g in %d hit%s%s; %d lost', d.damage, d.hits, d.hits == 1 and '' or 's',
+      #d.entities > 0 and ' (' .. table.concat(d.entities, ', ') .. ')' or '', t.lost_n)
+  end
   local function finish(w, pl, tick, why)
     if pl then
       take_feed(w, pl, tick, false)
@@ -806,7 +814,9 @@ return function(api)
     w.accs, w.pl = nil, nil
     M.reindex()
     if not w.start then push(w, string.format('flight watch #%d on %s ended before it began (%s)', w.id, w.platform, why)); return end
-    push(w, string.format('flight watch #%d on %s ended (%s) after %s: %s%s%s; flight_watch {id: %d} reads it', w.id, w.platform, why, secs(tick - w.start), M.worst(w), M.power_text(w),
+    -- (FA) the whole watch's damage as flight_watch reads it once done: totals() of the end values kept above
+    push(w, string.format('flight watch #%d on %s ended (%s) after %s: %s; %s%s%s; flight_watch {id: %d} reads it', w.id, w.platform, why, secs(tick - w.start),
+      damage_text(totals(w, nil, tick)), M.worst(w), M.power_text(w),
       w.ammo0 and '; ammunition used ' .. M.use_text(ammo_use(w.ammo0, w.ammo1)) or '', w.id))
   end
   -- The turrets in one phrase: how many read empty, the longest run.
@@ -932,7 +942,7 @@ return function(api)
       end
     end
     if n > 0 then
-      parts[#parts+1] = string.format('%d powered turrets (railguns): %s; %d hits (%d shots that hit), %g damage, %d kills', n,
+      parts[#parts+1] = string.format('%d powered turrets (railguns): %s; their fire: %d hits (%d shots that hit), %g damage dealt, %d kills', n,
         low == 0 and 'none read below a shot\'s energy (its full buffer)' or string.format('%d read below a shot\'s energy (its full buffer) in some sample, the longest run %gs (%d ticks), %s %s #%d from +%s',
           low, math.floor(long / 6 + 0.5) / 10, long, lt.name, at(lt.position), lt.unit, secs(lt.low_long_from - w.start)),
         hits, shots, math.floor(dmg + 0.5), kills)
@@ -1244,10 +1254,10 @@ return function(api)
       end
       if #ls > 0 then r.lasers, r.laser_lines, r.lasers_more, r.lasers_capped = lrow, llines, #ls > M.SHOW_POWERED and #ls - M.SHOW_POWERED or nil, w.lasers_capped and M.MAX_LASERS or nil end
     end
-    r.line = string.format('flight watch #%d on %s, %s: %s for %s (%d samples, one every %d ticks)%s; %s%s; damage taken %g in %d hit%s%s; %d lost; repair packs used %s (hub %s -> %s); %s',
+    r.line = string.format('flight watch #%d on %s, %s: %s for %s (%d samples, one every %d ticks)%s; %s%s; %s; repair packs used %s (hub %s -> %s); %s',
       w.id, w.platform, w.leg or '?', w.state == 'done' and 'watched' or 'watching', secs(now - w.start), w.samples or 0, M.EVERY,
       w.state == 'done' and ', ended: ' .. tostring(w.why) or string.format(', until its arrival or %s more', secs(w.until_tick - now)), M.worst(w), M.power_text(w),
-      t.damage.damage, t.damage.hits, t.damage.hits == 1 and '' or 's', #t.damage.entities > 0 and ' (' .. table.concat(t.damage.entities, ', ') .. ')' or '', t.lost_n,
+      damage_text(t),
       t.repair_used and tostring(t.repair_used) or '?', tostring(t.packs_start), tostring(t.packs_end), fuel_text(t.fuel_start, t.fuel_end))
       .. ammo_fields(w, r, t.a1) .. floor_fields(w, r, pl)
     -- (d23 batch123 CF2) an edit aboard while it watched: the part before it, kept apart (mixed.lua)

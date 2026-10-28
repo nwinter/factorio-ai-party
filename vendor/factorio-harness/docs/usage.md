@@ -2907,16 +2907,24 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   The thrusters and pumps are found again every minute. `after_pumps` (thrust.lua; Grok, shift17 20:40: an oxidizer
   pump cut at V < 15 and the leg peaked at 51 km/s): per thruster fluid, what stays with the thrusters when their pumps
   stop (their own tanks, and the pipes and tanks between them and the pumps; the walk stops at a pump) and how long
-  that burns: `thruster-oxidizer: if its pumps stop, 2 thrusters hold 2000 and the pipes and tanks between them and
-  the pumps 160 (1080 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.1 a tick until empty at
-  37.4 s; pump (3.5,7): off by its circuit condition ...`. `thruster_burn`, the game's rule as measured on 2.0.77 (the
-  thruster prototype's min_performance and max_performance): a thruster burns 2 fuel and 2 oxidizer a tick while its
-  tanks (1000 each) are 80% full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; its thrust falls
-  with it to about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply: 1.7 s at full
-  thrust, 20.1 s until 10%, about 10.3 s of full thrust in all. With no thrust (or a tenth of it) a platform slows,
-  then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s
-  in 6 s on one full tank with no supply; how far a platform's speed goes on what is left depends on its weight,
-  width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
+  that burns at the thrusters' own quality (d27 batch294): `thruster-oxidizer: if its pumps stop, 2 thrusters (normal)
+  hold 2000 and the pipes and tanks between them and the pumps 160 (1080 a thruster): at full thrust 4 a tick in all
+  (2 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.2 a tick in all until empty at 37.4 s; pump
+  (3.5,7): off by its circuit condition ...`. Mixed qualities are counted as one pool the pipes keep level, at their
+  mean multiplier, and said so. With both fluids a last line names the one that sets the thrust (both burn at the rate
+  the emptier tank sets). `thruster_burn`: the platform's thrusters by quality and what they burn at full thrust (`4
+  thrusters, legendary x2.5: at full thrust (the emptier tank 80% full or more) they burn 20 fuel and 20 oxidizer a
+  tick in all (1200 a second, 72000 a minute of each; 5 a tick a thruster), thrust 10 times one normal thruster's (the engine's figures
+  for their quality, not measured use)`), then the game's rule as measured on 2.0.77 (the thruster prototype's
+  min_performance and max_performance, and the quality's default_multiplier): a thruster burns fuel and oxidizer alike,
+  at the rate the emptier of its two tanks (1000 each) sets; a normal thruster 2 of each a tick while that tank is 80%
+  full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; quality multiplies the burn and the thrust
+  alike (uncommon 1.3, rare 1.6, epic 1.9, legendary 2.5), at the same 80% and 10%; its thrust falls with the burn to
+  about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply a normal thruster gives
+  1.7 s at full thrust, 20.1 s until 10%, about 10.3 s of full thrust in all (a legendary one 0.7 s, 8 s, 4.1 s). With
+  no thrust (or a tenth of it) a platform slows, then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test
+  platform with 1 normal thruster went from 0 to 86 km/s in 6 s on one full tank with no supply; how far a platform's
+  speed goes on what is left depends on its weight, width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
   the first spoils in 1m10s (95% spoiled); all within 5 min`), and in flight `; arrival at nauvis in 3m30s: 200 spoil
   before it, 595 arrive, the next spoils 2m05s after arrival`.
 - `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
@@ -11206,7 +11214,7 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   - Kept in storage until cleared. A done watch read once is dropped an hour after that read. At most 8 a force; a
     new one drops the oldest read one, else is refused. A second watch on the same platform, while the first runs or
     is unread, needs `replace: true`. The setter hears in team.alerts when one begins at a departure and when one
-    ends (with the turrets in one phrase). A read gives up to 24 turret rows: those that read empty, the longest run
+    ends (with the turrets in one phrase; from d27 batch296 the damage taken and the losses first). A read gives up to 24 turret rows: those that read empty, the longest run
     first, then the lowest on ammo; `turrets_more` and `turrets_more_line` count the rest.
   - The `platform` read's defense row gives `sampled_tick`, the tick its turrets were counted (the reply's: it is not
     cached).
@@ -16780,6 +16788,43 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   - Sol's whole plan (move_to, 17 entries) from the fast pairs: both pairs express and paired, the express belts and
     the bulk inserter built.
 - Bundle (compacted): 6,299,239 bytes on main (ddf11ddf, batch283 in it), 6,302,174 with this branch (limit 8,388,608).
+## d27 batch294 (TQ, Sol #2645: thruster quality in the burn and endurance text)
+
+- Sol: Resolute's 4 legendary thrusters used 47937 fuel in 41 s (about 70152 a minute) against the 28800 a minute
+  the rule gave (4 x 120 a second); `thruster_burn` said 2 fuel a tick, and `after_pumps` said the 12500 behind the
+  pumps would last 28 s at full thrust, at the normal burn. That fed a preflight capacity mistake.
+- Engine facts (2.0.77, the iMac copy, world n's _autosave5, Resolute in flight, pumps switched off by script):
+  - the thruster prototype gives min_performance {fluid_volume 0.1, fluid_usage 0.1, effectivity 1} and
+    max_performance {0.8, 2, 0.51}, and no quality reader; the tanks hold 1000 at every quality;
+  - the game's fluid statistics: 5 fuel and 5 oxidizer a tick per legendary thruster while the emptier tank was 80%
+    full or more, linearly less below, 0.25 a tick under 10%: 2.5 times normal's 2 and 0.1, at the same 80% and 10%;
+  - normal, normal, legendary and rare thrusters together burned 12.2 a tick of each (2 + 2 + 5 + 3.2);
+  - the rate follows the emptier of a thruster's two tanks: with the oxidizer 75 below the fuel, both fluids burned at
+    the oxidizer's rate;
+  - thrust, at speed 1.5 with full tanks: the speed gained a tick, less the drag measured with the thrusters off
+    (0.000671), was 1.300, 1.600, 1.900 and 2.500 times normal's (0.001409) for uncommon to legendary, and the mixed set
+    gave 6.1 / 4 of it. Quality's `default_multiplier` (1, 1.3, 1.6, 1.9, 2.5) scales burn and thrust alike, so thrust
+    per unit of fuel does not change.
+- Changes:
+  - `platforms` with `platform`: `after_pumps` burns at the thrusters' own quality and says which (`4 thrusters
+    (legendary x2.5) hold ... at full thrust 20 a tick in all (5 a thruster)`). Mixed qualities count as one pool at
+    their mean multiplier, said so. A last line names the fluid that sets the thrust.
+  - `thruster_burn` begins with the platform's thrusters by quality and their burn at full thrust (a tick, a second, a
+    minute), labelled the engine's figures, not measured use. The rule after it gives the normal burn as normal and the
+    quality multipliers, and its full-tank times for normal and legendary.
+  - The platforms row's `thrusters` gives the count by quality (`4 legendary x2.5, lowest tank 89%`).
+  - `platform_endurance`: `full_thrust` (that line) beside `fuel_outlook`, whose made and used stay the measured
+    statistics. The speed's ship check names a change of quality (`thrusters worth 4 normal ones then, 10 now (their
+    quality)`): legs record their thrust in normal thrusters' from now on.
+- Read on the copy: Resolute's `thruster_burn` gives 20 fuel and 20 oxidizer a tick in all, 72000 a minute of each.
+  For Sol's 12500 (3125 a thruster), the normal rule's 28 s of full thrust is 11.2 s at legendary.
+- Cost on the copy (the iMac): the quality reads and line for 4 thrusters take 0.012 ms. The geometry's thruster find
+  takes 0.30 ms, against 0.23 for main's count. The `platforms` read of Resolute's thrust fields took 6.5-11.5 ms a call
+  on this branch and 5.9-9.2 on main (5-call means, host noise). The whole Resolute row took 14-28 ms on both.
+- Docs: agent/ref/space-age.md (platforms, endurance; a topic file). Tests: tests/d27_batch294.lua (fails on main);
+  tests/thrust.lua, tests/space.lua and tests/d22_batch96.lua updated.
+- Bundle (compacted): 6,318,675 bytes on main (712a3c64), 6,323,707 with this branch (limit 8,388,608).
+
 ## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
 - Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
   `platform_built` and not `platform_ready`, while a direct wait_until took both. `agent/ref/waits-queues.md` gave both
@@ -16951,3 +16996,19 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
 - Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
+## d27 batch296 (FA: a flight watch's end alert said the railguns' fire, not the damage taken, Astra #2647)
+
+- Found (flightwatch.lua finish): the end alert in team.alerts was the turrets' phrase (`M.worst`), the power phrase
+  (`M.power_text`) and the ammunition used. It never had the damage taken. The power phrase's railgun part
+  `0 hits (0 shots that hit), 0 damage, 0 kills` is the railguns' own fire (on_entity_damaged with a railgun as the
+  cause). Resolute's watch #1469 (gleba->aquilo, guard 32's pause at tick 74365680, then a coast to Aquilo) took one
+  2317.4 hit from a medium oxide asteroid while its railguns hit nothing, so the alert read "0 hits, 0 damage" and
+  `flight_watch {id: 1469}` read 1 hit, 2317.4. The damage itself was never lost: there is one source (platalerts'
+  running totals, the change from the watch's start), with no reset at a pause and no window starting at the coast.
+  The read at tick 74366418, during the pause, already had the hit.
+- Fix: the end alert starts with the damage taken and the losses: `damage taken 2317.4 in 1 hit (railgun-turret
+  2317.4); 0 lost`. It is the same phrase `flight_watch {id}`'s line has, built by one function from `totals()` of the
+  values the watch kept at its end, which `{id}` reads once done. The railgun part now reads `their fire: N hits (N
+  shots that hit), N damage dealt, N kills`, in the alert and the line.
+- Docs: agent/ref/space-age.md (flight_watch). Test: tests/d27_batch296.lua (fails on main: no damage taken in the
+  alert); tests/d22_batch98.lua's railgun phrase updated.
