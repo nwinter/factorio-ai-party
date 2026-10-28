@@ -11,6 +11,8 @@ MOMENTS = Path(__file__).resolve().parent / "content" / "moments.json"
 WHY = {"aloud": "aloud", "reaction": "reaction", "plan": "plan", "strategy": "strategy", "request": "request"}
 
 STYLE = """<style>
+.hl-fold > summary { cursor: pointer; color: var(--accent); font-weight: 600; padding: 4px 0; min-height: 36px; display: flex; align-items: center; }
+.hl-fold[open] > summary { color: var(--muted); font-weight: 400; }
 .hl-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: .8rem 0 1rem; font-size: .92rem; }
 .hl-controls input[type=search] { min-width: min(100%, 18em); }
 .hl-controls label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
@@ -54,11 +56,17 @@ SCRIPT = """<script>
         words.every(function (w) { return r._t.indexOf(w) >= 0; });
       r.hidden = !show; if (show) n++;
     });
+    var active = words.length || who.value || Array.prototype.some.call(boxes, function (b) { return !b.checked; });
     document.querySelectorAll('.hl-shift').forEach(function (s) {
       s.hidden = !s.querySelector('tbody tr:not([hidden])');
+      var d = s.querySelector('details.hl-fold');
+      if (d && active && !s.hidden) d.open = true;
     });
     count.textContent = n + ' of ' + rows.length + ' lines';
   }
+  // a link to a line (/chat/#s12-40, from the search) opens its shift
+  var target = location.hash && document.getElementById(location.hash.slice(1));
+  if (target && target.closest('details')) { target.closest('details').open = true; target.scrollIntoView(); }
   q.addEventListener('input', apply); who.addEventListener('change', apply);
   boxes.forEach(function (b) { b.addEventListener('change', apply); });
   apply();
@@ -147,6 +155,9 @@ def build_chat(shifts, agent, avatar, esc, game_time, order=(), moments=()):
     colours = "".join(f"table.hl td.who.{k} {{ border-left: 3px solid {agent(k).get('color') or '#888'}; }}" for k in keys)
     legend = " ".join(f'<a class="chip" href="/agents/#{esc(k)}">{avatar(k, "sm")}{esc(agent(k)["name"])}</a>' for k in keys)
     sections = []
+    # (batch270) each shift's lines folded except the newest shift's: the page was over 2 million px tall on a phone; a
+    # search or an agent opens every shift with a match, a link to a line (#sN-I) opens its shift
+    first = True
     for n, rows in reversed(shifts):  # the newest shift first
         trs = []
         for i, (tick, k, kind, why, text) in enumerate(rows):
@@ -157,9 +168,11 @@ def build_chat(shifts, agent, avatar, esc, game_time, order=(), moments=()):
                        f'<td class="who {esc(k)}">{esc(agent(k)["name"])}</td>'
                        f'<td class="kind">{esc(label)}</td><td class="text">{esc(text)}</td></tr>')
         sections.append(f'<section class="hl-shift" id="shift-{n}"><h2>Shift {n}<span class="h-sub">{len(rows)} lines</span></h2>'
+                        f'<details class="hl-fold"{" open" if first else ""}><summary>The lines of shift {n}</summary>'
                         f'<div class="table-wrap"><table class="hl"><thead><tr><th scope="col">Game time</th>'
                         f'<th scope="col">Agent</th><th scope="col">Kind</th><th scope="col">Line</th></tr></thead>'
-                        f'<tbody>{"".join(trs)}</tbody></table></div></section>')
+                        f'<tbody>{"".join(trs)}</tbody></table></div></details></section>')
+        first = False
     body = (f'<h1>Chat highlights</h1><p class="lede">Lines the agents spoke on stream and their confessions, '
             f'{total} in all.</p>'
             f'<div class="hl-controls" role="search"><input id="hl-q" class="fx-textfield" type="search" '

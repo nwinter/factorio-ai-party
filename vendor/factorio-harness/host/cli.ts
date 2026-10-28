@@ -16,6 +16,7 @@ import { splitSay, overLimit, SAY_BYTES, SAY_PARTS } from './saysplit.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync, renameSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate, walkLine } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
+import { targetLine } from './target.js';
 import { lookaheadDue } from './lookahead.js';
 import { pollNews } from './polls.js';
 import { trimRepeats, type ShownState } from './repeats.js';
@@ -83,6 +84,8 @@ const help = `fh — Factorio agent CLI
   fh chronicle "text" [--title T]           An entry in the run's chronicle in your own words (the pog site, by shift); input as for say
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
+                                            up to 2000 bytes; over 500 needs --summary "one line, at most 120 characters"
+                                            (the stream shows it; recipients and the site get the whole text)
                                             --fyi: no answer needed; it waits for their next reply and wakes nobody
                                             --wake: also ends their wait that ignores messages or takes tells only from others, every time
   fh tells [--since SEQ] [--limit N]        The last 30 tells you received (time, sender, fyi), shown before or not;
@@ -586,6 +589,14 @@ export function keepDescribe(path: string | undefined, describe: unknown) {
 }
 let lookaheadName = '';
 // The site's polls (polls.ts): a new open poll's line in the team block, once.
+// (d27 batch277 RT) the run's target (pog's runs/RUN/target.json, host/target.ts): its line on every status reply
+let targetFile: string | undefined;
+function addTarget(reply: Reply, action: string) {
+  if (!targetFile || action !== 'status' || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
+  let line: string | undefined;
+  try { line = targetLine(readFileSync(targetFile, 'utf8')); } catch { return; }  // no target set: no line
+  if (line) reply.result = {target:line, ...reply.result};  // first: a long status pages its tail to ./fh more
+}
 let pollsFile: string | undefined, pollsSeenFile: string | undefined;
 function addPoll(reply: Reply, action: string, args: Record<string, unknown>) {
   if (!pollsFile || !pollsSeenFile || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
@@ -734,7 +745,7 @@ const FLAGS_ALL = ['format','help','journal','bot','deadline-file','operator-rep
 const FLAGS_GAME = ['player','host','port','timeout','session','bridge-socket','socket','id'];
 const FLAGS_WAIT = ['wait','no-wait','wait-timeout','wait-through-tells','wake-on-tells','wake-from','wake-local','no-operator-wake','wake-on-viewers','no-urgent','urgent-radius','wake-near','wake-on-orders','no-board-wake'];
 const FLAGS_CALL = [...FLAGS_GAME, ...FLAGS_WAIT, 'args', 'args-file', 'since', 'limit', 'peek'];
-const MESSAGE_FLAGS = ['text-file','aloud','look','fyi','wake','title'];
+const MESSAGE_FLAGS = ['text-file','aloud','look','fyi','wake','title','summary'];
 // (d22 batch90 AZ3: fh call help, more and wait sent as actions in s55-57) fh call help|more|wait runs that subcommand.
 const CALL_SUBCOMMANDS = ['help', 'more', 'wait'];
 function commandFlags(positionals: string[]): {label: string, own: string[], flags: Set<string>} {
@@ -772,7 +783,7 @@ function commandFlags(positionals: string[]): {label: string, own: string[], fla
 const FLAG_HOMES: Record<string, string> = {
   file:'fh queue submit|repeat|edit, fh plan save, fh blueprint import, fh run, fh deploy', out:'fh view, fh blueprint export, fh call blueprint_export',
   until:'fh sleep, fh wait', then:'fh sleep, fh wait', max:'fh wait', 'require-met':'fh sleep, fh wait', 'text-file':'fh say, confess, tell, operator, chronicle',
-  aloud:'fh say', look:'fh say', fyi:'fh tell', wake:'fh tell', title:'fh chronicle', mods:'fh install, fh connect',
+  aloud:'fh say', look:'fh say', fyi:'fh tell', wake:'fh tell', summary:'fh tell', title:'fh chronicle', mods:'fh install, fh connect',
 };
 function flagRefusal(flag: string, positionals: string[], known: boolean): string {
   const {label, own, flags} = commandFlags(positionals);
@@ -792,7 +803,7 @@ const CLI_OPTIONS = {
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'}, wake:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'}, then:{type:'string'},
-    max:{type:'string'}, title:{type:'string'},
+    max:{type:'string'}, title:{type:'string'}, summary:{type:'string'},
 } as const;
 // The arguments, with a flag the command does not read refused before anything is sent.
 function parseCli() {
@@ -1011,6 +1022,10 @@ async function main() {
       if (command !== 'chronicle') throw new Error('--title applies to chronicle');
       args.title = values.title;
     }
+    if (values.summary !== undefined) {
+      if (command !== 'tell') throw new Error('--summary applies to tell');
+      args.summary = values.summary;
+    }
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);
     command = 'call';
@@ -1180,6 +1195,7 @@ async function main() {
   // pog's RUN/polls.json: the workspace is the journal's folder, the run its parent
   pollsFile = process.env.FH_POLLS_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'polls.json') : undefined);
   pollsSeenFile = process.env.FH_POLLS_SEEN || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-polls-seen.json') : undefined);
+  targetFile = process.env.FH_TARGET_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'target.json') : undefined);
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); noteRules(reply); notePace(reply); return reply; }};
@@ -1951,23 +1967,21 @@ async function main() {
     if (sample && !status.result?.active && !status.result?.combat) return sampleTimedOut(sample, status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
     return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
-  // The parts of one long say or tell in order; reply_to and look go with the first, aloud with each. A tell's parts
-  // before the last go fyi (they wake nobody) and the last as asked, so a recipient woken by it finds every part in its
-  // team block, in order (d19 batch43 A1). A part that fails stops the rest, and the reply says which were sent.
-  async function sendParts(action: 'say'|'tell', parts: string[], args: Record<string,unknown>): Promise<Reply> {
+  // The parts of one long say in order; reply_to and look go with the first, aloud with each. A part that fails stops
+  // the rest, and the reply says which were posted. (A tell went in parts too until d27 batch273: it holds 2000 bytes.)
+  async function sendParts(action: 'say', parts: string[], args: Record<string,unknown>): Promise<Reply> {
     const posted: {seq: unknown, bytes: number}[] = [];
     for (const [i, text] of parts.entries()) {
       const partArgs: Record<string,unknown> = {...args, text};
       if (i > 0) { delete partArgs.reply_to; delete partArgs.look; }
-      if (action === 'tell' && i < parts.length - 1) { partArgs.fyi = true; delete partArgs.wake; }
       const reply = await execute(action, partArgs);
       if (!reply.ok) {
-        if (reply.error) reply.error = {...reply.error, message:`part ${i + 1} of ${parts.length}: ${reply.error.message ?? ''} (parts ${action === 'say' ? 'posted' : 'sent'}: ${posted.length})`};
+        if (reply.error) reply.error = {...reply.error, message:`part ${i + 1} of ${parts.length}: ${reply.error.message ?? ''} (parts posted: ${posted.length})`};
         return reply;
       }
       posted.push({seq:reply.result?.seq, bytes:Buffer.byteLength(text,'utf8')});
       if (i === parts.length - 1) return {...reply, result:{...reply.result, seq:reply.result?.seq, parts:posted,
-        split:`${action === 'say' ? 'posted' : 'sent'} in ${parts.length} parts at sentence ends, each within ${SAY_BYTES} bytes`}};
+        split:`posted in ${parts.length} parts at sentence ends, each within ${SAY_BYTES} bytes`}};
     }
     throw new Error(`${action} has no text`);
   }
@@ -1976,12 +1990,12 @@ async function main() {
     // (d26 batch247 NV1) vehicle go_to --wait: the runtime runs it as a timed action (wait: true) that ends arrived,
     // stalled or unreachable; a plain go_to replies at once
     if (wait && action === 'vehicle' && args.go_to !== undefined && args.wait === undefined && !bridged) args = {...args, wait:true};
-    // (d19 batch42 A1, batch43 A1) a say or tell over 500 bytes goes as numbered parts cut at sentence ends
-    // (host/saysplit.ts); a confession or chronicle entry over its limit is refused (batch43 A3: the runtime cut them
-    // without a word)
-    if ((action === 'say' || action === 'tell') && typeof args.text === 'string') {
+    // (d19 batch42 A1) a say over 500 bytes goes as numbered parts cut at sentence ends (host/saysplit.ts); a
+    // confession, chronicle entry or tell over its limit is refused (batch43 A3: the runtime cut them without a word).
+    // (d27 batch273 TL) a tell holds 2000 bytes, one over 500 with a summary (tells.lua): no parts
+    if (action === 'say' && typeof args.text === 'string') {
       const parts = splitSay(args.text);
-      if (parts.length > SAY_PARTS) throw new Error(`${action} text is ${Buffer.byteLength(args.text,'utf8')} bytes: fh ${action === 'say' ? 'posts' : 'sends'} up to ${SAY_PARTS} parts of ${SAY_BYTES} bytes, and this needs ${parts.length}; nothing was sent`);
+      if (parts.length > SAY_PARTS) throw new Error(`say text is ${Buffer.byteLength(args.text,'utf8')} bytes: fh posts up to ${SAY_PARTS} parts of ${SAY_BYTES} bytes, and this needs ${parts.length}; nothing was sent`);
       if (parts.length > 1) return sendParts(action, parts, args);
     }
     const over = overLimit(action, args);
@@ -2313,6 +2327,7 @@ async function main() {
       if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
       else await addLookahead(reply, action, args);
       addPoll(reply, action, args);
+      addTarget(reply, action);
       // (d20 batch59 U2) a library entry's string goes to blueprints/NAME.txt in the workspace unless --out names a file.
       const exportTo = values.out ?? (typeof args.name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/.test(args.name) ? join('blueprints', `${args.name}.txt`) : undefined);
       if (reply.ok && action === 'blueprint_export' && !args.layout && exportTo && typeof reply.result?.blueprint === 'string') {

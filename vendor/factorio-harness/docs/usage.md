@@ -1383,6 +1383,10 @@ fh board events --since 40
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
+- The run's target (d27 batch277 RT, Nick): `FH_TARGET_FILE`, else `target.json` in the journal's run folder (pog's
+  runs/RUN/target.json, written by tools/run_target.py and carried to each next shift by start-team) puts one line
+  first in every `status` reply, the time left computed at each read (host/target.ts): `target: Target (Nick, soft):
+  the Shattered Planet by Fri Oct 30 23:59 PDT, 81 h 30 m from now; the run's end is not fixed.` No file, no line.
 - `say` text comes from the words after `say`, from `--text-file`, or from stdin (`fh say -`, or a pipe when no words
   are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`). Text with an apostrophe or quote: use the
   heredoc, `fh say - <<'EOF'`, the text, `EOF`. `fh call say words...` and `fh call confess words...` take the words
@@ -1390,8 +1394,8 @@ fh board events --since 40
 - A `say` over 500 bytes (the runtime keeps 500 of a line) goes as numbered parts, each within 500 bytes, cut at
   sentence ends (a sentence longer than a part at word ends) and repeating the line's leading `@names`:
   `@Foobator (1/2) ...`, `@Foobator (2/2) ...` (d19 batch42 A1, host/saysplit.ts; viewer Aurora: a reply cut mid-word at
-  500). `reply_to` and `look` go with the first part, `--aloud` with each; `fh tell` splits the same way (d19 batch43
-  A1). `fh confess` over 300 bytes and `fh chronicle` over 600 (its `--title` over 80) are refused before anything is
+  500). `reply_to` and `look` go with the first part, `--aloud` with each. (`fh tell` split the same way from d19 batch43
+  A1 until d27 batch273: a tell now goes whole, up to 2000 bytes; below.) `fh confess` over 300 bytes and `fh chronicle` over 600 (its `--title` over 80) are refused before anything is
   sent, with the size and the limit (the runtime cut them without a word); the reply is the last part's, with `parts`
   (seq and bytes of each) and `split`. Over 6 parts is refused before anything is posted. The site keeps the parts in
   one viewer thread (tools/stream/viewer_replies.py).
@@ -1743,6 +1747,9 @@ fh sleep 900 --until researched                       # ...or until the research
   iron-gear-wheel (37 crafts) in 2 machines since the wait began (at least 50)`. A queue `wait_until` step or a direct
   wait only (the counts start with the wait; a guard, an order's `when` or a loop `condition` refuses). Word form:
   `fh sleep 600 --until "produced iron-gear-wheel>=50 at 10.5,20.5 13.5,20.5"` (`produced>=N at X,Y`: crafts).
+  (d27 batch278) `counter_from: N` with one machine (`position`): count from that products-finished count instead of
+  the count at the wait's first check (assembler_batch passes the count it read when it planned, so crafts finished
+  before the wait began count too).
 - `wait_until {until: "rocket_parts", at_least: N, position}` (Sonnet, shift14 22:50) is met when the rocket being built
   at that silo has at least N parts; a built rocket (rising into place or ready) has all of them, and while one
   launches the count is the next one's. `saw`: `rocket parts 35/50 (at least 40); rocket-silo (65.5,14.5):
@@ -4979,10 +4986,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Each agent's first reply carrying a `team` block has, once, the reminder `stream: viewers hear your say --aloud lines
   and confessions, spoken in your voice, and like hearing from you every few minutes; other chat and tells show on the
   stream only as text, which viewers read on screen, so write them as plain sentences with spaces between words`.
-- `tell {to, text}` sends one line (1..500 bytes; `fh tell` sends a longer one as numbered parts cut at sentence ends,
-  as for say: the parts before the last go fyi and the last as asked, so a teammate woken by it finds them all in its
-  `team.tells`, in order; d19 batch43 A1, viewer Aurora: Luna's tell to Astra cut at 500 and resent; in a queue step
-  or plan a longer one is cut to 500 and the reply carries `cut {length, kept}`) to teammates outside the game chat: `to` is a name or display
+- `tell {to, text, summary?}` sends one line (1..2000 bytes, never cut: over 2000 is refused with nothing sent; d27
+  batch273 TL, Nick and all nine agents: Sol's Aquilo launch audit went in parts at the old 500, Codex agents squeezed
+  spaces out to fit). A text over 500 bytes needs `summary` (`fh tell --summary`): one line (control characters read as
+  spaces), at most 120 characters; without it, or with a longer one, the tell is refused and nothing is sent; a shorter
+  tell may carry one. The stream's overlay and hosts show the summary of a long tell; recipients (`team.tells`, the
+  wake's `tell`, a `tells` read) and the site get the whole text. An operator tell follows the same rule. The tell goes
+  to teammates outside the game chat: `to` is a name or display
   name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
@@ -5002,7 +5012,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   and is left out; batch250: Codex too, each shell command, from the workspace's `.codex/hooks.json` that
   tools/codex_hooks.py writes and trusts at launch when start-team runs with `POG_CODEX_HOOKS=1`; agy records none). `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
-  default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
+  default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text,summary?}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
   (Muse, shift10: two tells shown once and missed were lost). With `since`: the ones you sent or received after that
   seq, each with `to` (`since: 0` lists them all). `cursor` is the newest seq. The team block still shows each tell
@@ -5955,10 +5965,18 @@ fh watch    # deploy on every change
   group in a chunk no one sees now is not read.
 - The `labs` read adds `lacking`, one row a lab lacking a pack the research needs (up to 8; Luna 03:20: 4 of 43 labs
   had no military science while 8,754 packs sat in storage): `lab (27.5,44.5) lacks military-science-pack: fed by
-  long-handed-inserter (30.5,44.5) from lab (32.5,44.5) holding 0; no logistic network there`. A requester source says
-  what it asks of the pack (`asking 0` / `no request for it`); with a logistic network there, what it holds and the
-  chest its robots would take the pack from (the network's own pickup point). On the copy of world n, 13-24 ms in the
-  container for Nauvis's 43 labs (about 3-5 ms on n).
+  long-handed-inserter (30.5,44.5) from lab (32.5,44.5) holding 0; no logistic network covers the lab`. A requester
+  source says what it asks of the pack (`asking 0` / `no request for it`). The network is the feeding requester's (or
+  buffer's) own, as `inspect` reads it (`requester-chest (91.5,113.5)'s logistic network #243 holds 110299`, or `...
+  is in no logistic network`), else the network at the lab (`the lab's logistic network #N`); with one, what it holds
+  and the chest its robots would take the pack from (the network's own pickup point). (d27 batch276 LN, Astra #2579:
+  it looked the network up at the lab's centre, 29.7 tiles from a roboport, outside its logistic range, and said "no
+  logistic network there" of a requester in network #243.) On the copy of world n, 13-24 ms in the container for
+  Nauvis's 43 labs (about 3-5 ms on n); d27 with 30 labs, 22-43 ms a call through dispatch, 6-12 ms within 12 tiles.
+- 2.0.77 (a copy of world n, d27 batch276): `find_logistic_network_by_position` covers a roboport's logistic range
+  only (none 29.7 tiles from a roboport whose construction range is 55); `find_logistic_networks_by_construction_area`
+  finds the networks whose construction robots reach a spot. The dry run's cliffs line (`no construction robots reach
+  it here`) and a turret ghost's default ammo (`network_holds`) use the construction area.
 - `status` (brief and full) adds `logistics_here` (Haiku): `logistic network #96 where you stand: 834 logistic robots
   (710 idle), 11 construction robots (11 idle), 15 roboports; 5 personal requests unfilled (long-handed-inserter,
   ...)`, or `no logistic network where you stand (x,y)`. `requests` gives each unfilled request's reason.
@@ -16450,6 +16468,53 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - The rest is the stream service (tools/stream/viewers.py: the lane 12 a minute a viewer, no gap, 20 in all; the relay
   3 s, 3 s a viewer, 8 waiting) and the site (the Worker's 500 characters): docs/VIEWERS-NOTES.md "d27 batch263".
 - Test: tests/audience.lua (fails on main: 300 ~= 1200).
+## d27 batch269 (BS, Sol #2570: belt_flow counted stacks where it should count items)
+- Sol (shift86, Vulcanus): 4 big mining drills (1267 tungsten ore a minute) feed a fast belt; `belt_flow` read the line
+  after the merge at 634/min and the plain tile (-62.5,384.5) at 632/min (316 a lane), and an exact_tile read at the
+  provider tile (-44.5,209.5) gave through 1108/min (passed_on in stacks + picked in items).
+- Read on a copy of world n's 08:54 save (2.0.77), the force's `belt_stack_size_bonus` 1:
+  - a lane entry of `get_detailed_contents()` is a stack: one `unique_id`, `stack.count` items; `#line` counts entries,
+    `get_contents()` and `get_item_count()` count items (a tile with 4 entries of 2: 4, 8, 8);
+  - a big mining drill (prototype `drops_full_belt_stacks` true) puts stacks of 1 + the bonus on a plain belt: bonus 0
+    one item, 1 stacks of 2, 3 stacks of 4; an electric mining drill (false) one item at bonus 1 and 3;
+  - a stack inserter puts stacks of 2 on a belt at bonus 1; inserter, fast and bulk inserters one item;
+  - inserters take items: a yellow or fast inserter (hand 3) takes 3 from stacks of 2, and the stack it took part of
+    stays on the lane with its `unique_id` and a lower count (2 -> 1 on the pickup tile);
+  - the stack-inserter research gives +1; transport-belt-capacity-1 and -2 +1 each (not researched in world n);
+  - a lane tile holds 4 entries whatever their count (4 stacks of 4 at bonus 3).
+- belt_flow (beltsample.lua) counts items everywhere it counted entries: a lane's `left`/`passed` and `rate`,
+  `entered`, `held` and `held_max`, `on_tile`, `passed_on` (the items of each stack seen on what the tile feeds), the
+  exact tile's `taken` and `not_seen_after`, the merges' totals, and measures.lua's watch line ("N items passed").
+  Part of a stack taken off the tile (its count fell, the id stayed) counts as left, and on an exact tile as taken.
+- Added: per lane `stacks_rate` and `stacks` (stacks that left), `stack_max` (the largest stack seen, when over 1),
+  `held_stacks`; the state says `N items/min`, with `(S stacks/min, up to K a stack)` where stacks were seen; a
+  section's `lane_cap {stacks, items}`; the reply's `stacking {belt_stack_size, largest, lanes, line}` (the line is in
+  `lines` when stacks were seen). Every rate text says items/min.
+- Kept in stacks: `full` (4 stacks on the tile) and a lane's cap (speed x 4 x 3600 stacks a minute; the limit's at-cap
+  test compares stacks a minute).
+- A sample running when this deploys keeps its records: an entry with no count is one item.
+- Also: a finished exact_tile sample read "invalid: it reads nothing" in the watch lines (Sol's sleep line, shift86:
+  "belt_flow@71874912/sol ... invalid: it reads nothing; 451 samples"): measures.lua found no points in its result.
+  It is one unit now, gone when its tile was removed or out of sight at every sample.
+- On the copy, branch deployed (bot sol):
+  - line read from (-62.5,384.5), 30 s: 952 + 316 items/min into the merge, 1268 items/min after it (634 stacks/min);
+    the force's production statistics: 12,672 tungsten ore in 10 minutes from those 4 drills (1267 a minute);
+  - exact_tile (-62.5,384.5): 636 + 632 = 1268 items/min, all passed on;
+  - exact_tile (-44.5,209.5): through 1276 items/min (162 seen next + 476 picked by the bulk inserter in 30 s).
+- Cost (profile_ticks {seconds: 30} on the copy while a 30 s sample ran; part beltsample.tick, ms a tick; under
+  Rosetta a run varies by about 0.01 ms):
+  - main: line read (3 points) 0.033, 0.025, 0.028; exact_tile at the provider 0.026, 0.037;
+  - this branch, final: line read 0.035, exact_tile 0.027; earlier builds 0.042, 0.028, 0.035, 0.034 (line) and
+    0.031, 0.033, 0.034 (exact). The final build keeps main's sets (id -> name) with a count table beside them that
+    holds only counts other than 1, and reads an id's name once (an item keeps its name); the count is read each sample
+    (an inserter can take part of a stack).
+- The copy (pog-b269-headless) is stopped.
+- Bundle (compacted): 6,263,977 bytes on main (929570d2), 6,268,874 with this branch (limit 8,388,608).
+- Not changed: trace {throughput: true} (beltrate.lua) gives a lane's capacity as 4 items a tile at its speed and the
+  drills' supply in items; a lane of stacks of 2 carries twice that capacity. trace's lane_full counts entries against
+  4 a tile, which is right in stacks.
+- Docs: agent/ref/analysis.md (belt_flow); the schema's returns. Test: tests/d27_batch269.lua (fails on main: no
+  stacks); tests/beltsample.lua, d24_batch176.lua and d25_batch210.lua say items/min.
 ## d27 batch268 (DP: deconstruct by exact positions, Astra #2561)
 - Astra's shift86 journal: 620 `deconstruct` calls, each `{surface: nauvis, area: 0.2 x 0.2 round one pole's centre,
   entity_names: [one pole name]}`. They were 327 small and 292 medium electric poles and 1 solar panel, and each
@@ -16491,3 +16556,257 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,258,869 bytes on main, 6,263,977 with this branch (limit 8,388,608).
 - Docs: agent/ref/building.md (`deconstruct`). Test: tests/d27_batch268.lua (fails on main: deconstruct takes only
   area).
+
+## d27 batch281 (BH: holds in the managed platform_bom request, Astra #2604)
+
+- Found: `platform_bom {request: true}` keeps a hub section `platform_bom: NAME` and rewrites it every 10 s (M.tick)
+  to what the ghosts still need; every needed item at a quality gets a slot, so a slot cleared by hand comes back with
+  the next rewrite. Resolute (Astra, request with area, import_from vulcanus, tail) needed its beacon ghosts staged
+  while beacon power waits for fusion: 24 beacons, 11.52 MW, against 4.8 MW of solar. Her way round it removed the 24
+  ghosts. `requests_check` would also have read a beacon left unasked as unrequested.
+- `hold` (with `request: true`): a list of items (every quality) or `item@quality`. While held, the section asks none
+  of them (a slot for one is cleared at the next rewrite, by hand or not); their ghosts stay. Kept through the rewrites
+  and by later request calls that do not name it; `hold: false` or `[]` clears it, and the next rewrite asks them
+  again. A call that gives `hold` with no `area` and no `import_from` keeps the request's own (and its tail and
+  min_payload, as before). Every needed item held: the section is removed and the request with its hold stays; the
+  last ghost built removes both, as before. `hold` without `request` is refused.
+- Replies: the request's lines add `beacon: held, not asked (the ghosts need 24; the hub holds 0)`, and `hold` lists
+  the hold. The read (`platform_bom {platform}`) leaves held items out of `unrequested`; `requests_check` ends with
+  `; 2 held by the platform_bom request's hold, not asked: beacon 24, beacon@rare 1`; the item's line ends `(held by
+  the platform_bom request's hold)`; `hold` lists it.
+- Cost: one table lookup an item in the 10 s rewrite and in the read; no new find.
+- Docs: agent/ref/space-age.md (`platform_bom`). Test: tests/d27_batch281.lua (fails on main: the beacon slot is
+  written again).
+## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
+- The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
+- Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
+  teammates' tells have stayed unread 2 minutes or more, not yet reported by a sleep, ends at once: `woke: told`,
+  `tell` "N unread tells from before this sleep began (a sleep reports each once; chat_ack marks them read): #seq
+  from, waiting ...: text; ...", `woke_by {kind tell, seq (the newest), from, unread: true}`, and `already_unread: N`
+  on the sleep's own reply. Not with `wake_on_messages: false` or a wake filter (`wake_from`, `wake_on_operator`,
+  `wake_local`). Haiku, shift86 15:24: 8 of Sol's tells unread up to 33 min, hidden by its output filters; its
+  `fh wait --until "tell|alert" --max 900` slept the 900 s ("Nothing new has come in for 15 minutes"). Shifts 80-86
+  replayed under the rule: a sleep ends at once about 5-11 times a shift for Astra, Sol and Luna, 8-10 for Sonnet and
+  Haiku, 0-2 for the others.
+- Ground rules for Claude Code workspaces too (host/rules.ts, tools/launch-agent.sh): AGENTS.md (CLAUDE.md links to
+  it) carries the team's ground rules section, kept current by fh, as for Codex. Opus and Sonnet did not compact in
+  shifts 82-86, so the post-compaction brief never gave them the rules ("rule 27" appears 0 times in their shift86
+  transcripts).
+- Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
+  its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
+
+## d27 batch278 (AB, Astra #2589: assembler_batch waited for more than the machine can hold)
+
+- Astra's dry run on Aquilo, for 10 fusion-generator in the cryogenic plant at (42.5,-24.5), held the output inserter
+  and waited for 10 in the machine. Read on world n (d27 12:10, two reads under 1 ms each): the plant (crafting speed 2)
+  has fusion-generator stack 5, an empty output, 201 tungsten plate, 201 superconductor and 100 quantum processors
+  inside, and products_finished 36. It was off by its own logistic condition `fusion-generator < 2`
+  (`disabled_by_control_behavior`). Its input inserter had its own logistic condition `fusion-generator < 6`. The
+  output inserter put into a passive provider chest with room for 233.
+- Measured on a private copy (2.0.77; a fresh map's script surface with pressure 300, infinity chests, no output
+  inserter):
+  - The output held: a cryogenic plant on fusion-generator (stack 5) stopped at 4. Its bulk inserter stopped feeding at
+    2 held (`waiting_for_space_in_destination`). An assembler 2 on gears (stack 100) stopped at 6; its inserter stopped
+    at 3. The machines crafted what was already inside. So a wait for 10 in the plant never ends.
+  - products_finished counts crafts. An assembler 2 on copper cable given 20 plates: 20 (40 cables). An
+    electromagnetic plant (+50% productivity) given 20 plates: 30 (60 cables), the bonus crafts included.
+  - A machine's own logistic condition holds it off with no logistic network round it: `gear < -2147483648` read
+    `disabled_by_control_behavior`. Its input inserter put 8 plates in, then stopped. An unwired circuit enable
+    condition (the same never-true condition) is ignored: the machine kept working.
+- `assembler_batch` now:
+  - reads the machine's products-finished counter when it plans. Its `made` step is `wait_until produced {position,
+    counter_from, at_least: crafts}`, so the batch is the crafts on the counter, wherever the products go. The output
+    inserter is not held.
+  - switches the machine's own conditions off for the batch (`circuit_set logistic: false`, and `remove_condition` for
+    a wired circuit condition) and sets them back after. The output inserter's own conditions are handled the same way.
+    The input inserter's own conditions come back after the batch in place of `input off`; without any, the input
+    stays held as before. A condition with no signal cannot be set by circuit_set: it stays off, and the plan says so.
+  - says in the plan and the reply: `counter {now, done_at}`, `output_stack`, `feeds_until` (outputstop's idle-full
+    rule), `destination` and a chest's `room` (and a line when the room is less than the count), and
+    `machine_condition`, `output_condition`, `input_condition`. A line also says when the crafts at the machine's speed
+    take longer than the `made` wait's 900 s.
+  - refuses a batch whose ingredients do not fit the requester's slots at once (under its bar, with what else it
+    holds): `refused` names the slots. A dry run says it and returns no steps; a real call fails.
+- `wait_until produced` takes `counter_from` (one machine, a whole number).
+- Run on a copy of world n's d22 save (2.0.77, a rig like Astra's on Nauvis with its pressure set to 300 there, sol's
+  bot): dry run, then `count: 10`. The 12 steps met in order. The staged waits saw 1000, 1000 and 500 in the requester;
+  `made` saw "made 10 crafts in 1 machine since the wait began (at least 10)". 10 fusion generators were in the passive
+  provider and none in the plant. After the batch the plant had `fusion-generator < 2` back (and was off by it, with 12
+  in the network), and the input inserter had `fusion-generator < 6` back. A dry run through dispatch took 5.7-12.8 ms
+  there (Rosetta), including the JSON. It runs only when called; nothing is added to the tick.
+- Bundle (compacted): 6,270,315 bytes on main (5c6ef5ce), 6,278,546 with this branch (limit 8,388,608).
+- Docs: agent/ref/circuits-settings.md (`assembler_batch`). Test: tests/d27_batch278.lua (fails on main: no counter, no
+  conditions, no counter_from); tests d17_batch19, d20_batch53, d22_batch77 and d17_batch19_rt take the new steps.
+
+## d27 batch280 (CS, Astra #2600: staging that needs more slots than the chest has)
+
+- Astra's queue plan for an Aquilo railgun-turret batch (30 tungsten plate, 50 superconductor, 20 carbon fiber and 100
+  quantum processors a craft) asked a 48-slot requester for 930 tungsten plate, 1588 superconductor, 620 carbon fiber
+  and 3400 quantum processors and waited for each. The queue dry run passed; the plan stalled after 1500 quantum
+  processors. Splitting the staging across two requesters got it through.
+- Measured on a private copy (2.0.77, world n's d22 save, a rig on Nauvis with roboports and 350 logistic robots):
+  - Stack sizes: tungsten-plate 50, superconductor 200, supercapacitor 100, carbon-fiber 100, quantum-processor 100.
+    Astra's four requests need 19 + 8 + 7 + 34 = 68 slots.
+  - Each quality takes slots of its own: 50 normal and 50 rare quantum processors in a chest filled 2 slots, and 150
+    uncommon 2 more (100 and 50).
+  - Those four requests on an empty 48-slot requester (trash unrequested off), stock to spare: within 19 s it held 930
+    tungsten plate, 1400 superconductor, 621 carbon fiber and 1500 quantum processors, every slot full. Nothing more
+    came in the next 94 s; the robots went back to their roboports.
+  - Robots fill a requester only under its bar: bar 11 (10 slots), 2000 quantum processors asked, 1000 delivered.
+- The queue dry run (`queue_submit dry_run`) now returns `staging` and `staging_refused` (stageslots.lua). For each
+  `item_count` wait (`at_least`, alone or inside `all`) at one requester or buffer chest whose requests name the item,
+  it follows the chest's requests through the plan: the chest's own now, with the plan's `requests` steps before the
+  wait applied (`set`, `clear`, `clear_all`, `active`, `trash_unrequested`). A step with `section`, `add_section`,
+  `remove_section` or `group` is not followed; the chest is not checked past it, and a line says so.
+  - The waits there need their items at once while nothing takes from the chest between them: each item and quality
+    waited for (its largest `at_least`), ceil(count / stack size) slots, with what the chest holds that no request
+    names (it stays while trash unrequested is off). Over its slots under its bar: `staging_refused`, and a submit is
+    refused with the same line, before any step runs.
+  - Its requests then ask (each item's min summed over its active sections, the waited `at_least` where larger): over
+    its slots, a line says robots bring them in any order and the wait can stall. Within the slots, a line gives the
+    slots.
+  - Something takes from the chest: an inserter or loader whose pickup is the chest, unless it is held whatever the
+    count (its own logistic condition `ITEM < -2147483648`, or a `circuit_set` to that before the wait, as
+    assembler_batch holds its input), a plan step that names the chest's position (a `transfer`, ...), or robots from a
+    buffer chest (it gives to requesters that take from buffers, and to construction). Then the items may go as they
+    arrive (sequential): said, not refused. With trash unrequested on, nothing is refused.
+  - Staging in turns is followed: requests cleared and the next set after a wait. What was waited for before stays in
+    the chest unless something takes it, so it counts in the next wait's slots.
+- `assembler_batch` returns `slots {required, available}` and a plan line with the slots whether the batch fits or not
+  (batch278 refuses a batch that does not fit).
+- Run on the copy (sol's bot, a new 48-slot requester):
+  - Astra's plan as a dry run: `staging` said "its requests then ask 68 of its 48 slots" at the first wait, and
+    `staging_refused` "the waits there need 68 of its 48 slots at once" at the quantum-processor wait. The real submit
+    was refused with that line, and nothing was queued.
+  - The same plan with 1300 quantum processors (47 slots) passed the dry run ("the requests there ask 47 of its 48
+    slots"), was queued and ran: the four waits were met (930, 1590, 621 and 1302 in the chest).
+  - assembler_batch dry runs on an assembler 2 on gears: 1000 gears gave `slots {required: 20, available: 48}`; 2500
+    were refused (50 slots).
+  - Dispatch time of the dry run with Astra's four waits: 3.1-4.7 ms; the same plan without the waits: 1.9-2.2 ms
+    (Rosetta, 5 calls each, twice). It runs on queue_submit only; nothing is added to the tick.
+- Sol #2607 (an assembler_batch deadlock on an assembler 3 making rare asteroid collectors: batch278's fix covers it)
+  also found that `circuit_set {position}` did not clear the output inserter's hold (`asteroid-collector <
+  -2147483648`) and `logistic: false` did. His journal: the call had only a position. circuit_set with no setting
+  planned no step and answered as a read; its `stays_disabled` said the hold was "not set by this call".
+  - A call that sets nothing is now refused, naming each condition that holds the entity now and what clears it: "its
+    logistic condition asteroid-collector < -2147483648 (not met: it holds it off): logistic: false clears it".
+    `logistic: false` takes the logistic condition away; `remove_condition: true` the circuit condition.
+  - `clear: true` takes both away (a chest: its circuit condition), alone; `now` says "runs: no circuit or logistic
+    condition". A provider chest's `read: {contents: true}`, which sets nothing and says why, is not refused.
+  - In shift87's journals, 85 circuit_set calls by astra, grok, muse and sol: one had only a position (Sol's).
+  - On a copy (sol's bot): a powered fast inserter with that hold stayed at 60 plates moved
+    (`disabled_by_control_behavior`); `circuit_set {position}` was refused with the line above; `clear: true` set it
+    working (62 moved within a second).
+- Bundle (compacted): 6,280,624 bytes on main (954db4ca, batch278 in it), 6,296,020 with this branch (limit
+  8,388,608).
+## d27 batch275 (HW: how the agents choose their next work, and the Claude Code agents' settings)
+- The analysis is in the operator's report (report-d20-batch275.md). The harness parts:
+- Sleeps and unread tells (waits.lua, board.lua `unread_for_sleep`): a `sleep` (`./fh sleep`, `./fh wait`) begun while
+  teammates' tells have stayed unread 2 minutes or more, not yet reported by a sleep, ends at once: `woke: told`,
+  `tell` "N unread tells from before this sleep began (a sleep reports each once; chat_ack marks them read): #seq
+  from, waiting ...: text; ...", `woke_by {kind tell, seq (the newest), from, unread: true}`, and `already_unread: N`
+  on the sleep's own reply. Not with `wake_on_messages: false` or a wake filter (`wake_from`, `wake_on_operator`,
+  `wake_local`). Haiku, shift86 15:24: 8 of Sol's tells unread up to 33 min, hidden by its output filters; its
+  `fh wait --until "tell|alert" --max 900` slept the 900 s ("Nothing new has come in for 15 minutes"). Shifts 80-86
+  replayed under the rule: a sleep ends at once about 5-11 times a shift for Astra, Sol and Luna, 8-10 for Sonnet and
+  Haiku, 0-2 for the others.
+- Ground rules for Claude Code workspaces too (host/rules.ts, tools/launch-agent.sh): AGENTS.md (CLAUDE.md links to
+  it) carries the team's ground rules section, kept current by fh, as for Codex. Opus and Sonnet did not compact in
+  shifts 82-86, so the post-compaction brief never gave them the rules ("rule 27" appears 0 times in their shift86
+  transcripts).
+- Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
+  its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
+
+## d27 batch286 (IL: no idle nudge while the agent's other lanes work)
+
+- Found (runs/shift88 nudges.jsonl): Astra was nudged "your character idle" at 15:58, 16:20 and 16:49 while
+  platform:Resolute ran (a wait_until step running; 14 steps done in the 10 min of the last two) and she slept 30 s
+  between checks (asleep 95-97%). She answered two with operator requests (16:21, 16:50). batch252 cp2 had kept
+  standing as the character's own and listed the lanes in the nudge.
+- tools/idle_nudge.py (host, read at shift start): `due()` returns `lanes working: platform:Resolute 14` (or
+  `... running`) for an agent whose other lanes (idle_report `lanes`: remote, platform:NAME) have a step done in the
+  window or a step running now, unless something asks it now: unanswered requests or tells (open.lua), unread mentions
+  apart from tells, a watch late, stalled, invalid or with its final unread, a board item overdue for review. Those
+  nudge as before, with the lanes named. The check comes after the rest and "not answering" checks, so their handoffs
+  and back-off are as before.
+- idle-nudge.log and nudges.jsonl get one line (`no idle nudge for astra (11 min standing): lanes working:
+  platform:Resolute 14`; a row with `skipped: true`) when it begins and when the set of working lanes changes.
+- Shifts 86-88 replayed from the nudges' own texts (the lanes part, the open part): 5 of 72 nudges sent would not
+  have gone, all Astra's (shift86 07:38 platform:Asterion; shift87 13:50 remote, 14:56 platform:Resolute; shift88
+  15:58, 16:49 platform:Resolute). Her 16:20 nudge still goes: a tell from Haiku was unanswered then.
+- Docs: agent/ref/waits-queues.md (the idle nudge line). Test: tools/test_idle_lanes.py (fails on main at Astra's
+  16:49 row).
+## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
+
+- Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
+  the electromagnetic plant at (-19,76) first, and the electronic-circuit machine at (33,179)) failed at its first
+  check, tick 73129657: "the electromagnetic-plant at (-19,76) is gone since the wait began". Sol's `rates` read 11 ticks
+  later showed the plant working.
+- Cause: every `produced` member kept its machines and starting counts in one table on the wait's record
+  (`record.produced_base`). Each member then called gone every machine in that table it had not counted itself, so the
+  second member called the first member's machine gone. Any `all` or `any` with two produced members on different
+  tiles failed at its first check. Two platform members shared one starting count the same way.
+- Fix (conditions.lua): a baseline for each condition, keyed by what it counts: its platform and item, or its surface,
+  tiles and `counter_from`. Members on the same tiles share one (one counter). A wait already running from before keeps
+  its one table for its first member.
+- On a private copy (2.0.77, world n's d22 save, sol's bot, remote lane): a `wait_until all` of 4 produced members (two
+  assemblers on gears, an assembler on copper cable named twice: by item and by crafts):
+  - with main's conditions.lua deployed it failed at once: "the assembling-machine-2 at (596.5,600.5) is gone since
+    the wait began";
+  - with the fix it was met after 983 ticks: "met: made 20 iron-gear-wheel (20 crafts) in 1 machine since the wait
+    began (at least 20); met: made 20 iron-gear-wheel ...; met: made 40 copper-cable (20 crafts) ...; met: made 20
+    crafts in 1 machine since the wait began (at least 10)".
+- tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
+  `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
+- Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
+## d27 batch284 (AT, Sol #2619: the made wait timed out before the batch's own estimate)
+
+- Sol's assembler_batch for 100 accumulators in an assembler 2 at crafting speed 1.05 said "the 100 crafts take about
+  952 s: the made wait times out at 900 s first". The live plan's made wait timed out with the counter at 6 + 100 not
+  reached; Sol recovered by hand. A wait_until's timeout is 54000 ticks (900 s) at most, so no timeout on one wait could
+  cover it.
+- Measured on a private copy (2.0.77), the products-finished counter over about 1850 ticks against speed / energy x
+  (1 + productivity) x time:
+  - assembler 2 on gears: 46 (46.3); with two speed module 3: crafting_speed 1.5, 92 (92.7); beside a beacon with two
+    speed module 3: crafting_speed 1.875, 116 (115.8); with two productivity module 3: crafting_speed 0.525,
+    productivity_bonus 0.2, 38 (38.9);
+  - electromagnetic plant on copper cable: productivity_bonus 0.5, 186 (185.3); with the force's copper-cable recipe
+    productivity_bonus set to 0.3 the entity still read 0.5, and the counter rose 218 (217.8 at 1 + 0.5 + 0.3).
+  So crafting_speed includes modules and beacons, the entity's productivity_bonus its modules and its own base, and
+  recipe research adds on top.
+- assembler_batch now:
+  - estimates the crafts as crafts x energy / (crafting_speed x (1 + productivity)), productivity the entity's plus
+    the recipe's (`m.force.recipes[name].productivity_bonus`), at most the recipe's `maximum_productivity`;
+    `estimate_s` and `productivity` in the reply;
+  - holds in one made wait the crafts whose estimate, with a quarter and 30 s to spare, fits its 54000 ticks; a longer
+    batch's made step is several produced waits on the same counter (`counter_from` the count read at the plan), met
+    at those marks in turn, each with its own 54000-tick timeout (`made_waits`, labels "made N of M" then "made");
+  - refuses a batch past 8 made waits, naming the count that fits ("Refused: count 584 or less").
+  The dry run returns the steps a live call queues.
+- On the copy (sol's bot): an assembler 2 on accumulators (speed 0.75, 13.3 s a craft), count 60: the dry run said
+  about 800 s, 2 made waits met at 52 and 60. The live call queued
+  the same 10 steps; "made 52 of 60" was met ("made 52 crafts in 1 machine since the wait began (at least 52)"), then
+  "made" at 60, then the input went off; 60 accumulators were in the output chest, 49775 ticks after the submit
+  (staging included; game.speed 10 on the copy).
+- Bundle (compacted): 6,298,628 bytes on main (d8cc948e, batch280 and batch281 in it), 6,300,749 with this branch
+  (limit 8,388,608).
+
+## d27 batch287 (BT: platform_bom's tail minimum no longer sticks, Astra #2631)
+
+- Found (platbom.lua apply): an item with no min_payload of the user's took its base from the slot as it stood
+  (`mp = w.mp`). After a tail rewrite that is the keeper's own tail, so the next rewrite started from the tail. When
+  new ghosts raised what was still to come above it, the tail stayed the minimum. Resolute: turbo belt 6 with 753
+  asked, so rockets went with 6, 8 and 8 belts, not 50; bulk 22, SM 336 and pipe 16 the same. The adoption check
+  (batch21 A2) did not misfire: the slot matched what the keeper wrote. The fallback read the tail back as a ceiling.
+- Fix: the keeper keeps each item's ceiling (`ceiling`: the minimum payload before the tail) apart from what it writes.
+  The ceiling is the user's min_payload (the request's map, or one adopted from the slot), else a value found on a
+  slot the keeper had not written yet, else none (the game's default, a full rocket).
+  - A slot still at the keeper's own last write starts from its ceiling. The tail lowers that to what is still to
+    come, and the next rewrite starts from the ceiling again.
+  - A record kept from before this fix (no ceiling) that tails starts from the user's min_payload or a full rocket.
+    One that does not tail keeps the slot's value as before.
+  - Holds (batch281) are unchanged.
+- Lines: unchanged. A slot back at a full rocket says `minimum payload: a full rocket, 50 by weight (the game's
+  default)`.
+- Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
+  asked).

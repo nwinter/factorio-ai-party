@@ -50,7 +50,8 @@
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
   remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
-  machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
+  machine; `{platform, item, at_least}` on a platform; in `all` or `any` each `produced` member counts its own machines
+  from the wait's first check); `platform_built` (`platform`: no foundation
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
@@ -146,6 +147,15 @@
   `world_checks` reads each `platform_schedule` step as the call reads it now (`refused if it ran now:` the call's own
   refusal, e.g. new waits holding now without `go: true`; `when it runs:` what a refusal then turns on) and the first 4
   `requests` steps on a platform as their dry run (`waits_unmet`, `sends_down`), with the steps before each not applied.
+  `staging`: each `item_count` wait at one requester or buffer chest whose requests name the item, with the chest's
+  requests then (its own now, the plan's `requests` steps before it applied): the slots its waits need at once and its
+  requests ask, against its slots under its bar. Each item and quality takes ceil(count / stack size) slots of its own;
+  what it holds that no request names stays while trash unrequested is off. Robots fill all its requests at once, in
+  any order, and stop once every slot is full. `staging_refused`: waits that need more slots at once than the chest has
+  while nothing takes from it between them (no inserter takes from it, or each is held with `ITEM < -2147483648`, and
+  no step names it; a buffer chest gives to robots, so it is never refused); a submit is refused the same. With an
+  inserter taking from it, the items may go as they arrive: said, not refused. Stage in turns (clear the requests, set
+  the next after a wait) or use another chest.
   `lane: "remote"`: the remote lane (`./fh help space-age`; its `configure`, `circuit_set`, `circuit`, `wire`,
   `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do; `flight_watch` too); `lane: "platform:NAME"`: a remote lane of its own for that
   platform (the same steps; a `flight_watch` start without `platform` or `id` watches that platform, and `{read: true}` reads its latest watch), apart from the remote lane and the other platforms' lanes; each queue call takes the same
@@ -252,6 +262,8 @@
   your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
   `next_check` tick, oldest first.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
+  a `./fh sleep` or `./fh wait` begun while teammates' tells have stayed unread 2 minutes or more ends at once on them
+  (`woke: told`, `N unread tells from before this sleep began ...`, `woke_by` with `unread: true`), each tell once;
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
   `--wait` and `./fh wait` on an action too; on an action alone it waits as `--wait` does), a tell sent with `--wake`
   still does; `--wake-from sol,astra`
@@ -287,7 +299,9 @@
   tick and the read that gives its result. `stop` ends none of them.
 - The clock line counts a wait or sleep as idle: `game 98h40m; +5m00s, idle 5m00s (100%, 4m30s in wait_ticks)`, and so
   do your stream card and the operator's idle nudge. The idle nudge's tell waits for the end of a sleep or wait with
-  an end that began within 10 min of your last work. With a standing order on (not paused, none running) it is still
+  an end that began within 10 min of your last work. A remote or platform lane with a step running, or one done in
+  the last 10 min, holds it, except while something asks you (an unanswered request or tell, a mention, a watch that
+  needs you, a board item overdue for review). With a standing order on (not paused, none running) it is still
   idle, and the clock and sleep lines add `on watch: NAMES` (the orders that act when a trigger holds). Queues,
   standing orders and `queue_repeat` keep your character working through a sleep.
 - A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their

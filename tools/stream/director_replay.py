@@ -521,8 +521,10 @@ class World:
                     self.clocks.note(name, rt, self.work.seconds(c.group(1)), self.work.seconds(c.group(2)))
                 if ok and self.work.did_kind(action, args, res):  # (batch240) what live.py's DidFeed reads
                     plat, where = self.work.target_of(args)
+                    # (d27 batch271 WS) on the request's surface, else the body's (live.py's DidFeed and body_surface)
+                    surf = self.work.surface_named(args) or self.surf[name].at(rt) or "nauvis"
                     self.did[name] = {"action": action, "t": rt, "position": where,
-                                      "platform": plat if isinstance(plat, str) else None}
+                                      "platform": plat if isinstance(plat, str) else None, "surface": surf}
                 if ok and action in BODY and action not in INSTANT:
                     self.active[name], self.act_until[name] = action, rt + ACT_S
                 elif ok and action == "sleep":

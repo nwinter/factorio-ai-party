@@ -62,7 +62,8 @@ def did_feed():
     for r in rows("d3", T0 + 1, "load_silo", {"platform": "Loom", "position": {"x": 1, "y": 2}}, {"loaded": 1}, ok=False):
         feed.ingest("sol", r)
     d = feed.current("astra", T0 + 5)
-    assert d == {"action": "place_ghosts", "t": T0, "position": {"x": 93.5, "y": 113.5}, "platform": None}, d
+    assert d == {"action": "place_ghosts", "t": T0, "position": {"x": 93.5, "y": 113.5}, "platform": None,
+                 "surface": None}, d  # (batch271: no surface named; live.py gives the body's)
     assert feed.current("sol", T0 + 5) is None, "a refused request is no build"
     for r in rows("d4", T0 + 2, "deconstruct", {"platform": "Loom", "area": {"left_top": {"x": -4, "y": 4},
                                                                              "right_bottom": {"x": -3, "y": 6}}}, {"changed": 2}):

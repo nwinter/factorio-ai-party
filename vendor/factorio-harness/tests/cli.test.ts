@@ -426,24 +426,27 @@ test('a say over 500 bytes posts numbered parts cut at sentence ends (d19 batch4
   assert.deepEqual(seen.map(r=>[r.args.text.slice(0,16),r.args.aloud,r.args.reply_to]),[['@Foobator (1/2) ',true,7],['@Foobator (2/2) ',true,undefined]]);
   assert(seen.every(r=>Buffer.byteLength(r.args.text)<=500 && r.args.text.endsWith('chest.')));
 });
-test('a tell over 500 bytes goes in numbered parts, all but the last fyi, so a woken teammate has them all (d19 batch43 A1)',async()=>{
+test('a tell goes whole up to 2000 bytes with --summary, over 2000 refused (d27 batch273 TL; parts until then)',async()=>{
   const seen:any[]=[];
   const sentence='Water route is live now and the chamber is full, so the egg line can run without hand feeding. ';
   const text=sentence.repeat(8).trim();
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:40+seen.length,to:['astra']}};},async port=>{
-    const {stdout}=await cli(port,['tell','astra',text,'--wake','--bot','luna']);
+    const {stdout}=await cli(port,['tell','astra',text,'--summary','egg line runs without hand feeding','--wake','--bot','luna']);
     const reply=JSON.parse(stdout);
-    assert.equal(reply.ok,true); assert.deepEqual(reply.result.parts.map((p:any)=>p.seq),[41,42]);
-    assert.match(reply.result.split,/sent in 2 parts at sentence ends/);
+    assert.equal(reply.ok,true); assert.equal(reply.result.seq,41); assert.equal(reply.result.parts,undefined);
+    const over=await compact(port,['tell','astra','x'.repeat(2001),'--summary','s','--bot','luna']);
+    assert.equal(over.code,1); assert.match(over.stdout,/tell text is 2001 bytes; the limit is 2000: shorten it; nothing was sent/);
+    const where=await compact(port,['say','hi','--summary','s','--bot','luna']);
+    assert.equal(where.code,1); assert.match(where.stdout,/--summary applies to tell/);
     // a confession or chronicle entry over its limit: refused, nothing sent (the runtime cut them without a word)
     const conf=await compact(port,['confess','x'.repeat(301),'--bot','luna']);
     assert.equal(conf.code,1); assert.match(conf.stdout,/confess text is 301 bytes; the limit is 300: shorten it; nothing was sent/);
     const chron=await compact(port,['chronicle','Short entry.','--title','t'.repeat(81),'--bot','luna']);
     assert.equal(chron.code,1); assert.match(chron.stdout,/chronicle title is 81 bytes; the limit is 80/);
   });
-  assert.equal(seen.length,2);
-  assert.deepEqual(seen.map(r=>[r.action,r.args.to,r.args.text.slice(0,6),r.args.fyi,r.args.wake]),[['tell','astra','(1/2) ',true,undefined],['tell','astra','(2/2) ',undefined,true]]);
-  assert(seen.every(r=>Buffer.byteLength(r.args.text)<=500 && r.args.text.endsWith('feeding.')));
+  assert.equal(seen.length,1);
+  assert.deepEqual(seen.map(r=>[r.action,r.args.to,r.args.text,r.args.summary,r.args.fyi,r.args.wake]),
+    [['tell','astra',text,'egg line runs without hand feeding',undefined,true]]);
 });
 test('confess takes text like say and maps to the confess action',async()=>{
   const seen:any[]=[];

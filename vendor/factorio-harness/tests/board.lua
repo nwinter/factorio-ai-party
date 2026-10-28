@@ -736,6 +736,8 @@ eq(row.fyi,1); eq(row.tells,nil); eq(row.unread_mentions,0); eq(row.oldest_tick,
 local hs=sol('status',{helper=true})
 assert(not (hs.team and hs.team.tells),'not shown to a helper'); eq(hs.team.held_for_main,'1 tell or mention wait for your main session (shown to it, not to a helper)')
 assert(has(sol('status').team.tells,'grok (fyi), 0s ago: belts done'))
+-- (d27 batch275 HW) the earlier tells, unread for over 2 minutes, would end this sleep at once: read here
+sol('chat_ack',{seq='all'})
 sol('sleep',{seconds=30})
 grok('tell',{to='sol',text='routine: belts still fine',fyi=true})
 advance(5)

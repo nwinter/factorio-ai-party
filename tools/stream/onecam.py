@@ -1407,22 +1407,37 @@ class OneCam(Director):
 
     def did_row(self, a, now):
         """(batch240) The agent's latest build, paste, deconstruction or silo load (work.DidFeed) while did_hold old,
-        on its own surface; None for one on a platform (maybe_work shows those)."""
+        on a planet; None for one on a platform (maybe_work shows those; batch271: surface= may name the platform)."""
         d = a.get("did") if a and isinstance(a.get("did"), dict) else None
         if not d or d.get("platform") or not isinstance(d.get("t"), (int, float)) or now - d["t"] > self.cfg["did_hold"]:
             return None
+        if d.get("surface") and any(d["surface"] in (n, (p.get("view") or {}).get("surface")) for n, p in self.plat_rows.items()):
+            return None
         return d
 
+    @staticmethod
+    def did_surface(a, d):
+        """(d27 batch271 WS) The surface a build landed on: the request's (work.DidFeed; the body's when it named none
+        and live.py read the body then), None when not known. A row from before batch271 has no surface key: the body's."""
+        return d.get("surface") if "surface" in d else surface_of(a)
+
     def did_spot(self, a, now):
-        """(batch240) Where that request landed when it is away from the character (vehicle_near or more): {x, y,
-        surface, label}, else None (Astra's ghosts of shift81 went 176-214 tiles from where she stood)."""
+        """(batch240) Where that request landed when it is away from the character (vehicle_near or more, or on another
+        surface than the body's): {x, y, surface, label}, else None (Astra's ghosts of shift81 went 176-214 tiles from
+        where she stood). (d27 batch271 WS) The spot is on the request's surface: Astra on Aquilo marked poles on Nauvis
+        and the camera showed Aquilo's ice at those coordinates. A surface not known: no spot."""
         d = self.did_row(a, now)
         p = d.get("position") if d else None
-        if not isinstance(p, dict) or not a.get("position") or dist(p, a["position"]) < self.cfg["vehicle_near"]:
+        s = self.did_surface(a, d) if d else None
+        if not isinstance(p, dict) or not s or not a.get("position"):
+            return None
+        if s == surface_of(a) and dist(p, a["position"]) < self.cfg["vehicle_near"]:
             return None
         who = a.get("display_name") or a["name"]
-        return {"x": float(p["x"]), "y": float(p["y"]), "surface": surface_of(a),
-                "label": f"{who} · {DID_TEXT.get(d['action'], d['action'].replace('_', ' '))}"}
+        from model import planet_label
+        on = f" on {planet_label(s)}" if s != surface_of(a) else ""  # "Astra · marked for deconstruction on Nauvis"
+        return {"x": float(p["x"]), "y": float(p["y"]), "surface": s,
+                "label": f"{who} · {DID_TEXT.get(d['action'], d['action'].replace('_', ' '))}{on}"}
 
     def body_shot(self, name, by_name, zoom, now, fit=None):
         """The shot of an agent: its character followed, or (batch222) its vehicle by remote view, or (batch240) where
@@ -4485,7 +4500,7 @@ class OneCam(Director):
         flip = now - self.vehicle_swapped.get(subj, -1e9) < self.cfg["vehicle_flip"]
         if cur.get("did"):
             p = cur.get("position") or {}
-            same = spot and p and dist(spot, p) < self.cfg["reframe_tiles"]
+            same = spot and p and spot["surface"] == cur.get("surface") and dist(spot, p) < self.cfg["reframe_tiles"]
             if same or flip or self.mode == "trio":
                 return True
             if spot:

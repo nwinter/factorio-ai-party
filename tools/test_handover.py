@@ -237,7 +237,57 @@ def carry_keep():
         shutil.rmtree(d)
 
 
+def batch275():
+    """(d27 batch275 HW) acks and reads the runtime counts as such are no world actions (Opus's carry-over said 15435,
+    15429 of them chat_ack; Muse's 58 were ghosts and alerts_digest); the longest stretch with no world action; a ## Now
+    section with the same text at the end of 2 or more shifts in a row; no negative queue count."""
+    d = tempfile.mkdtemp()
+    try:
+        t0 = time.time() - 20000
+        path = os.path.join(d, "journal.jsonl")
+        journal(path, t0, [
+            (0, "status", {}, True, {}),
+            (60, "chat_ack", {"seq": "all"}, True, {}),
+            (120, "lookahead", {}, True, {}),
+            (180, "ghosts", {}, True, {}),
+            (240, "alerts_digest", {}, True, {}),
+            (300, "reminder_ack", {"id": 3}, True, {}),
+            (360, "build", {"name": "inserter"}, True, {"built": 1}),
+            (7560, "deconstruct", {}, True, {"marked": 4}),
+            (7600, "queue_status", {}, True, {"pending": [{"id": "job-90"}]}),
+            (7700, "queue_status", {}, True, {"pending": [{"id": "job-20"}]}),
+            (16000, "chat_ack", {"seq": "all"}, True, {}),
+        ])
+        st = handover.journal_stats(path)
+        assert st["actions"] == 2 and st["reads"] == 6 and st["talk"] == 3, st
+        lines = handover.measured_lines(st)
+        assert "- longest stretch with no world action: 141 min" in " ".join(lines), lines
+        assert any(l.startswith("- longest stretch with no world action: 141 min (") and l.endswith(" UTC, to your last request)") for l in lines), lines
+        assert not any("queue got through" in l for l in lines), lines
+        # ## Now unchanged across shifts: said from the second shift on, with the run it began
+        prev, mid, new = (os.path.join(d, x) for x in ("s1", "s2", "s3"))
+        for x in (prev, mid, new):
+            os.makedirs(x)
+        open(os.path.join(prev, "notes.md"), "w").write("# Notes\n\n## Now\nshift 80: paper design for Loom.\n")
+        handover.carry(os.path.join(prev, "notes.md"), path, os.path.join(mid, "notes.md"), "shift80", "sonnet")
+        assert "## Now section" not in open(os.path.join(mid, "notes.md")).read()
+        open(os.path.join(mid, "notes.md"), "w").write("# Notes\n\n## Now\nshift 80:  paper design\nfor Loom.\n")
+        handover.carry(os.path.join(mid, "notes.md"), path, os.path.join(new, "notes.md"), "shift81", "sonnet")
+        out = open(os.path.join(new, "notes.md")).read()
+        assert "- your notes' ## Now section had the same text at the end of the last 2 shifts (shift80 to shift81)" in out, out
+        open(os.path.join(new, "notes.md"), "w").write("# Notes\n\n## Now\nbuilding the copper cell.\n")
+        last = os.path.join(d, "s4")
+        os.makedirs(last)
+        handover.carry(os.path.join(new, "notes.md"), path, os.path.join(last, "notes.md"), "shift82", "sonnet")
+        assert "## Now section" not in open(os.path.join(last, "notes.md")).read()
+        assert json.load(open(os.path.join(last, handover.NOW_FILE)))["since"] == "shift82"
+        print("batch275: ok")
+    finally:
+        shutil.rmtree(d)
+
+
 if __name__ == "__main__":
+    batch275()
     stats()
     carry()
     brief()

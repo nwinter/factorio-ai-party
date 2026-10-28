@@ -90,7 +90,7 @@ def human(name):
 
 
 def point(action, args):
-    """One request -> {kind, action, verb, what, position, extent, platform} or None (no position, not an attention
+    """One request -> {kind, action, verb, what, position, extent, platform, surface?} or None (no position, not an attention
     action)."""
     if action not in ACTIONS or not isinstance(args, dict):
         return None
@@ -118,6 +118,8 @@ def point(action, args):
             what = human(names.pop())
     out = {"kind": kind, "action": action, "verb": verb, "what": what, "position": pos, "extent": extent,
            "platform": plat}
+    if isinstance(args.get("surface"), str) and args["surface"]:
+        out["surface"] = args["surface"]  # (d27 batch271 WS) the request's surface: model.py frames that, not the body's
     if count:
         out["count"] = count  # how many ghosts one place_ghosts lays (the camera label: "placing 12 ghosts")
     return out
@@ -132,18 +134,21 @@ def bearing(frm, to):
     return COMPASS[int((ang + 22.5) // 45) % 8]
 
 
-def place(att, body, landmarks=()):
+def place(att, body, landmarks=(), planet=None):
     """Where the attention is, for a label: "on Sunward", "at the smelter row" (a run landmark), "40 m north" (from the
-    character), "nearby", or "at (120, -40)"."""
+    character), "nearby", or "at (120, -40)". planet (batch271): the point is on that planet, not the body's ("on
+    Nauvis", "at the smelter row on Nauvis")."""
     if att.get("platform"):
         prep = {"launch": "to", "drop": "from"}.get(att.get("action"), "on")
         return f"{prep} {att['platform']}"
     p = att.get("position")
     if not p:
-        return ""
+        return f"on {planet}" if planet else ""
     for lm in landmarks or ():
         if math.hypot(p["x"] - lm["x"], p["y"] - lm["y"]) <= lm.get("r", 30):
-            return f"at {lm['name']}"
+            return f"at {lm['name']}" + (f" on {planet}" if planet else "")
+    if planet:
+        return f"on {planet}"
     if body and body.get("x") is not None:
         d = math.hypot(p["x"] - body["x"], p["y"] - body["y"])
         if d < FAR:
@@ -160,7 +165,8 @@ def head(att):
     return f"{att['verb']} {att['what']}".strip() if att.get("what") else att["verb"]
 
 
-def text(att, body=None, landmarks=()):
-    """"placing ghosts 40 m north", "taking iron plate at the smelter row", "configuring on Sunward"."""
-    where_ = place(att, body, landmarks)
+def text(att, body=None, landmarks=(), planet=None):
+    """"placing ghosts 40 m north", "taking iron plate at the smelter row", "configuring on Sunward", "placing ghosts on
+    Nauvis" (planet: another planet than the body's)."""
+    where_ = place(att, body, landmarks, planet)
     return f"{head(att)} {where_}".strip()

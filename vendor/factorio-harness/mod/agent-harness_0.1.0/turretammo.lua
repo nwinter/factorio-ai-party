@@ -51,7 +51,7 @@ return function(api)
       slots=math.max(1, try(function() return proto.get_inventory_size(inv) end) or 1)}
   end
 
-  -- The ammo for a turret that takes t at pos: {name, count, network_holds (nil: no logistic network covers pos)}, or
+  -- The ammo for a turret that takes t at pos: {name, count, network_holds (nil: no logistic network or construction area covers pos)}, or
   -- nil for what == false. what: nil (the default), an item name, or {name?, count?}; a name the turret does not
   -- take gives the default. held: the ammo a turret that died held.
   function M.choose(t, surface, force, pos, what, held)
@@ -62,7 +62,10 @@ return function(api)
     for _, n in ipairs(t.items) do fits[n] = true end
     if not fits[name] then name = nil end
     if not name and fits[held] then name = held end
+    -- (d27 batch276 LN) construction robots bring a turret ghost's ammo: the logistic network there, else one whose
+    -- construction area covers it (find_logistic_network_by_position covers the logistic area only)
     local network = try(function() return surface.find_logistic_network_by_position(pos, force) end)
+      or (try(function() return surface.find_logistic_networks_by_construction_area(pos, force) end) or {})[1]
     local function holds(n) return network and (try(function() return network.get_item_count(n) end) or 0) or nil end
     if not name then
       local most = 0

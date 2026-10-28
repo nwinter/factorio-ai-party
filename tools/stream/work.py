@@ -36,6 +36,7 @@ ON_PLATFORM = {"inspect": "inspecting", "configure": "configuring", "launch": "l
 DID = {"build", "place", "place_ghosts", "paste", "blueprint_place", "build_blueprint", "blueprint", "construct",
        "build_path", "deconstruct", "load_silo", "launch", "mine"}
 DID_KEEP = 120.0  # seconds an agent's latest such request stands (onecam fresh_cut)
+DID_SURFACE_S = 30.0  # (batch271) seconds a row without a surface may take the body's (it acted where the body was)
 MAX_READ = 1 << 20  # per file per poll: a burst of observe replies cannot stall the tick
 VEHICLE_KEEP = 600.0  # seconds a remote vehicle's last read is kept (the director judges staleness itself)
 POS_RE = re.compile(r"\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)")
@@ -162,7 +163,8 @@ def did_kind(action, args, res):
 
 class DidFeed:
     """(d26 batch240 IA) Each agent's latest request that changed the map (did_kind), from its journal: {action, t (the
-    request's epoch), position, platform}. In shift80 6 of 18 new builds aired at once, and the director's log names a
+    request's epoch), position, platform, surface (batch271: the request's surface, None when it names none; live.py
+    then gives the body's while the row is fresh)}. In shift80 6 of 18 new builds aired at once, and the director's log names a
     build as fresh once in four logs."""
 
     def __init__(self):
@@ -189,7 +191,15 @@ class DidFeed:
         _, action, args, t = req
         if did_kind(action, args, resp.get("result")):
             plat, pos = target_of(args)
-            self.rows[agent] = {"action": action, "t": t, "position": pos, "platform": plat if isinstance(plat, str) else None}
+            self.rows[agent] = {"action": action, "t": t, "position": pos, "platform": plat if isinstance(plat, str) else None,
+                                "surface": surface_named(args)}
+
+    def body_surface(self, agent, surface, now):
+        """(batch271) A row that names no surface acted on the body's: the body's surface read now, while the row is
+        under DID_SURFACE_S old (a restart's tail of older rows stays unknown: no spot shot for those)."""
+        row = self.rows.get(agent)
+        if row and not row.get("surface") and surface and now - row["t"] <= DID_SURFACE_S:
+            row["surface"] = surface
 
     def current(self, agent, now):
         row = self.rows.get(agent)
@@ -249,6 +259,14 @@ def _epoch(at):
         return datetime.fromisoformat(str(at).replace("Z", "+00:00")).timestamp()
     except (ValueError, TypeError):
         return None
+
+
+def surface_named(args):
+    """(d27 batch271 WS) The surface a request names (args.surface: a planet, a platform's surface or its name), or None:
+    the runtime then acts on the body's surface. Astra on Aquilo deconstructed and placed ghosts on Nauvis with
+    surface="nauvis" (shift86 09:55), and the cameras framed Aquilo's ice at those coordinates."""
+    s = args.get("surface") if isinstance(args, dict) else None
+    return s if isinstance(s, str) and s else None
 
 
 def target_of(args):
@@ -342,12 +360,13 @@ class WorkFeed:
                     self.flare_at = time.time()
                 att = attention.point(q.get("action"), args)
                 if att:
-                    self.attention.append(dict(att, agent=agent, at=r.get("at")))
+                    self.attention.append(dict(att, agent=agent, at=r.get("at")))  # (its surface: attention.point)
                 if q.get("action") not in REMOTE and q.get("action") not in ON_PLATFORM:
                     continue
                 plat, pos = target_of(args)
                 if q["action"] not in REMOTE and not isinstance(plat, str):
                     continue  # inspect, configure, launch ... on the body's own surface: its camera shows them
                 out.append({"agent": agent, "action": q["action"], "verb": REMOTE.get(q["action"]) or
-                            ON_PLATFORM[q["action"]], "platform": plat, "position": pos, "at": r.get("at")})
+                            ON_PLATFORM[q["action"]], "platform": plat, "position": pos, "at": r.get("at"),
+                            "surface": surface_named(args)})
         return out

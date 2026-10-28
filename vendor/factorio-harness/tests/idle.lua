@@ -307,6 +307,8 @@ do
   local ai=runtime.bots.index_of('astra')
   pcall(astra,'stop'); astra('status'); advance(60*30)
   assert(report('astra').standing_s>=29)
+  -- (d27 batch275 HW) earlier tells to astra, unread for over 2 minutes, would end the sleep below at once: read here
+  astra('chat_ack',{seq='all'})
   local function turret(k) return {valid=true,type='ammo-turret',name='gun-turret',kills=k,damage_dealt=k*10} end
   local t1,t2=turret(3),turret(5)
   S.turret_tally=S.turret_tally or {}

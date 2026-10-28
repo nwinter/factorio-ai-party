@@ -261,11 +261,15 @@
   where the map is charted, a point out of sight now is not sampled, said per point as `out_of_sight`): the belt line through position (64 tiles back and on, undergrounds
   followed), cut into sections at each merge (a side-load, a splitter), sampled for `seconds` (2..30, default 10) by
   item at each section's last tile and each belt merging in: per lane items a minute that left the tile, by name, and
-  `stopped` (`full` with 4 or more on the tile) for a lane whose items did not move; `merges` gives the line before
+  `stopped` (`full` with 4 stacks on the tile) for a lane whose items did not move. Every count is items: a stack on
+  the belt counts its items (`stacks_rate`: stacks a minute; `stack_max`: the largest stack seen). `stacking`: the belt
+  stack size (1 + the force's belt stack bonus; the stack-inserter research gives +1): a stack inserter or a big mining
+  drill puts stacks of that size on a belt, other inserters and drills one item. A section's `lane_cap`: a lane moves
+  speed x 4 x 3600 stacks a minute (`stacks`), `items` at the belt stack size; `merges` gives the line before
   each merge and each belt merging in against the line after it; `lane_mix`: each side-load, from which side of the
   line and onto which lane (both its lanes go onto that one), or a splitter or end-on join lane to lane, with what
   each lane carries after it; `limit`: a side-load stopped full while the line after it runs at its cap (the line's
-  own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap. Where inserters pick
+  own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap (in stacks). Where inserters pick
   from a sampled tile the point adds `inserters` (each one's `picked`, counted from its hand each sample), `picked`,
   `passed_on` (seen next on what the tile feeds) and `lanes_rate`, and its `rate` is passed_on + picked: an inserter can
   take an item in the tick it comes onto the tile, and no sample sees it on the lane. `note` names what each count can
@@ -274,7 +278,8 @@
   `belt_flow {position}` replaces it); `./fh wait` waits for it when nothing else runs. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
   With `exact_tile: true` it samples the belt at position only, no line walked (a splitter: the half position is in, its
   input lanes). Per lane: `left` (items seen on the lane, then gone; `rate` a minute), `passed_on` (seen next on what the
-  tile feeds), `taken` (gone from mid-lane: taken off this tile), `not_seen_after` (gone at the lane's end and not seen
+  tile feeds), `taken` (gone from mid-lane: taken off this tile; an inserter can take part of a stack, which stays on
+  the lane with fewer items), `not_seen_after` (gone at the lane's end and not seen
   on what it feeds: taken there or here before a sample saw it), `entered`, `held`, `state`. `inserters`: each inserter
   picking from the tile, with `picked` counted from its hand, items it takes in the tick they arrive included;
   `through` (`through_rate`): passed_on + picked where inserters pick from the tile, else left. `tile`

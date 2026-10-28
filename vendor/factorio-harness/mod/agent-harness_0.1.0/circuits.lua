@@ -72,6 +72,7 @@ return function(api)
       enable='"ice < 300" or {signal, comparator, value|signal2}; on a logistic chest: its circuit condition (circuit_condition_enabled, circuit_condition: the GUI\'s Enable/disable). false is refused (two things): switch_off or remove_condition',
       switch_off='true: a circuit condition that never holds (signal-dot < -2147483648): the entity stops while a red or green wire connects it (the game counts a circuit condition only then); the reply\'s now says what it does',
       remove_condition='true: no circuit condition (the GUI\'s Enable/disable off): the entity runs whatever its wires read; the reply\'s now says what it does',
+      clear='true: every condition that can hold it off switched off, as remove_condition: true with logistic: false (a chest: its circuit condition); alone, not with enable, switch_off, remove_condition or logistic. A call that sets nothing is refused, naming each condition that holds the entity now and what clears it',
       set_requests='requester or buffer chest: true sets its requests from the wires (circuit_exclusive_mode_of_operation set_requests); false: none. Chests in 2.0.77: read: {contents: true} is send_contents on a requester or buffer; provider and storage chests send their contents whenever wired, with no switch; no chest has a logistic network condition. A roboport: read: {logistic_network_contents: true} is read_items_mode logistics (missing_requests: true the missing requests)',
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
@@ -1280,6 +1281,22 @@ return function(api)
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
     local chest_notes
+    -- (d27 batch280 CS, Sol #2607: circuit_set {position} left an inserter's logistic hold; logistic: false cleared it)
+    -- clear: true switches off every condition that can hold the entity off: its circuit condition (remove_condition)
+    -- and its logistic condition (logistic: false); a chest's circuit condition.
+    if a.clear ~= nil then
+      if a.clear ~= true then error('clear must be true', 0) end
+      for _, k in ipairs({'enable', 'switch_off', 'remove_condition', 'logistic'}) do
+        if a[k] ~= nil then error('clear switches off its circuit and logistic conditions: ' .. k .. ' goes in a call of its own', 0) end
+      end
+      local chest = kind == 'logistic_container'
+      if not (props.on_off or chest) then error(string.format('clear: %s has no enable or logistic condition (its circuit settings: %s)', e.name, settings_list(kind, props)), 0) end
+      local b = {}
+      for k, v in pairs(a) do b[k] = v end
+      b.clear = nil; b.remove_condition = true
+      if not chest then b.logistic = false end
+      a = b
+    end
     a, chest_notes = chest_words(e, kind, a)
     -- A ghost by what it builds (its own name is entity-ghost): it takes the same settings (Astra 12:20).
     local ghost = e.type == 'entity-ghost'
@@ -1418,6 +1435,9 @@ return function(api)
     local steps, out, chest_notes
     qforce = e.force
     steps, out, chest_notes, a = plan_set(e, cb, a, by)
+    -- (d27 batch280 CS, Sol #2607) a call that sets nothing changes nothing: refused, naming what clears each condition
+    -- that holds it now (inspect reads an entity's circuit)
+    if #steps == 0 and not (chest_notes and #chest_notes > 0) then error(M.nothing_set(e, cb), 0) end
     local done = {}
     for _, s in ipairs(steps) do
       local ok, err = pcall(s.fn)
@@ -1442,12 +1462,29 @@ return function(api)
     end
     return out
   end
+  -- circuit_set with no setting: what holds the entity now and the argument that clears each.
+  function M.nothing_set(e, cb)
+    local c = (cb and try(function() return M.read(e, cb) end)) or {}
+    local parts = {}
+    if c.logistic then
+      parts[#parts+1] = string.format('its logistic condition %s%s: logistic: false clears it', c.logistic,
+        c.logistic_met == false and ' (not met: it holds it off)' or c.logistic_met and ' (met)' or '')
+    end
+    if c.enable then
+      parts[#parts+1] = string.format('its circuit condition %s%s: remove_condition: true clears it', c.enable,
+        c.enable_ignored and ' (no red or green wire: ignored)' or c.enable_met == false and ' (not met: it holds it off)' or c.enable_met and ' (met)' or '')
+    end
+    if #parts == 0 then parts[1] = 'no circuit or logistic condition' end
+    return string.format('circuit_set with no setting changes nothing (inspect reads an entity\'s circuit). %s (%g,%g) now: %s%s',
+      e.name, e.position.x, e.position.y, table.concat(parts, '; '), #parts > 1 and '; clear: true clears both' or '')
+  end
   -- What the entity does now after switch_off or remove_condition (A1): plainly.
   function M.now_text(out, a)
     if not (a.switch_off or a.remove_condition) then return nil end
     local c = out.circuit or {}
     local soon = out.ghost and 'once built: ' or ''
     local logi = c.logistic and c.logistic_met == false and ('; its logistic condition ' .. c.logistic .. ' holds it off') or ''
+    if a.remove_condition and a.logistic == false then return soon .. 'runs: no circuit or logistic condition' end
     if a.remove_condition then return soon .. 'runs: no circuit condition' .. logi end
     if c.enable_ignored then
       return soon .. 'runs: no red or green wire connects it, so the game ignores the condition; it stops once a red or green wire connects it'

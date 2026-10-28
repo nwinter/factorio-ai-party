@@ -17,7 +17,7 @@ import re
 import uuid
 
 PREFIX = "Factory digest (cached): "
-LIMIT = 480  # below tell's 500-byte Lua limit, including the prefix
+LIMIT = 480  # below 500 bytes with the prefix: a tell up to 500 needs no summary (tells.lua SHORT_LEN, d27 batch273)
 INPUT = {"item_ingredient_shortage", "fluid_ingredient_shortage", "no_input_fluid", "low_input_fluid", "no_ingredients"}
 DRY = {"no_minable_resources", "no_resources"}
 

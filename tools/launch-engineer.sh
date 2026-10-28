@@ -5,7 +5,9 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 name=$1 branch=$2 route=$3 effort=$4 brief=$5 minutes=$6 web=${7:-}
-wt="/Users/owner/code/pog-$name"
+worktrees_root="${POG_WORKTREES_ROOT:-/Users/owner/code/personal/player-of-games/worktrees}"
+mkdir -p "$worktrees_root"
+wt="$worktrees_root/pog-$name"
 if [ ! -d "$wt" ]; then
   git -C "$root" worktree add -q -b "$branch" "$wt" main
   (cd "$wt/vendor/factorio-harness" && npm ci --silent >/dev/null 2>&1 && npm run build --silent >/dev/null 2>&1) || true

@@ -12,6 +12,47 @@
     });
   }
 
+  // the nav (batch270): the Menu button on a phone shows the whole list, with More's links in it; More closes on a
+  // click outside it or Escape
+  var hdr = document.querySelector('.site-header'), tog = document.querySelector('.nav-toggle'), more = document.querySelector('.nav-more');
+  if (tog && hdr) {
+    tog.addEventListener('click', function () {
+      var open = hdr.classList.toggle('nav-open');
+      tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (more) more.open = open;
+    });
+  }
+  if (more) {
+    document.addEventListener('click', function (e) {
+      if (more.open && !more.contains(e.target) && !(hdr && hdr.classList.contains('nav-open'))) more.open = false;
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') more.open = false; });
+  }
+  // A poll open: "open" beside Polls and a dot on More and Menu. The homepage's and /polls/'s poll script reports it
+  // (PogNav.polls); other pages ask the live API's /v1/polls at most once in 10 minutes per tab.
+  function polls(open) {
+    if (!open) return;
+    document.querySelectorAll('.nav-dot').forEach(function (d) { d.hidden = false; });
+    document.querySelectorAll('.site-nav a[href="/polls/"]').forEach(function (a) {
+      if (!a.querySelector('.nav-chip')) a.insertAdjacentHTML('beforeend', '<span class="nav-chip">open</span>');
+      a.setAttribute('title', open === 1 ? 'A poll is open: vote' : open + ' polls are open: vote');
+    });
+  }
+  window.PogNav = { polls: polls };
+  var api = hdr && (hdr.dataset.api || '').replace(/\/$/, '');
+  if (api && !document.getElementById('polls')) {
+    var cached = null;
+    try { cached = JSON.parse(sessionStorage.getItem('pollsOpen') || 'null'); } catch (e) { /* no storage */ }
+    if (cached && Date.now() - cached.at < 600000) polls(cached.open);
+    else if (window.fetch) {
+      fetch(api + '/v1/polls').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        var n = d && d.open ? d.open.length : 0;
+        try { sessionStorage.setItem('pollsOpen', JSON.stringify({ at: Date.now(), open: n })); } catch (e) { /* no storage */ }
+        polls(n);
+      }).catch(function () { /* no API: no dot */ });
+    }
+  }
+
   function fmtMin(m) {
     var s = Math.round(m * 60), h = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
     return h ? h + 'h' + String(mm).padStart(2, '0') + 'm' : mm + 'm' + String(ss).padStart(2, '0') + 's';

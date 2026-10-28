@@ -16,6 +16,8 @@ import json
 import re
 from pathlib import Path
 
+import gameicons  # site/gameicons.py: the game's icons (Graphics copyright Wube Software)
+
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}")
 
 # (d24 batch145 PQ1, viewer Foobator: "a search function and maybe categories ... some kind of mark for
@@ -50,6 +52,21 @@ SORTS = (("newest", "Newest saved"), ("used", "Most used"), ("name", "Name"))
 def entity_names(e):
     """The entity names in an entry's counts ("stone-wall*52 gun-turret*4"; a short form ends "+3 more")."""
     return [part.rsplit("*", 1)[0] for part in str(e.get("counts") or "").split() if "*" in part]
+
+
+def entity_chips(counts, esc):
+    """An entry's counts ("stone-wall*52 gun-turret*4 +3 more") as the game's icons with their counts (batch270; the
+    name on hover and for screen readers), the name as text where the game has no icon."""
+    out = []
+    for part in str(counts).split():
+        name, star, n = part.rpartition("*")
+        if not star:
+            out.append(f'<span class="bp-ent bp-more">{esc(part)}</span>')
+            continue
+        words = name.replace("-", " ")
+        ico = gameicons.item(name, 24, words)
+        out.append(f'<span class="bp-ent" title="{esc(words)}">{ico or esc(words)}<span>×{esc(n)}</span></span>')
+    return f'<span class="bp-ents">{"".join(out)}</span>'
 
 
 def place_of(e):
@@ -97,6 +114,9 @@ def latest(long, runs_dir):
 
 
 STYLE = """<style>
+.bp-ents { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 2px; }
+.bp-ent { display: inline-flex; align-items: center; gap: 2px; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.bp-n { font-weight: 700; }
 .bp-list{list-style:none;padding:0;display:grid;gap:1rem}
 .bp-entry{border:1px solid var(--fx-border,#444);border-left:4px solid var(--fx-agent,#888);padding:.75rem 1rem;border-radius:4px}
 .bp-entry h2{font-size:1.1rem;margin:0 0 .25rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
@@ -281,7 +301,7 @@ def build_page(lib, agent, avatar, esc, game_time, known=(), api=""):
             rows.append(("Footprint", esc(f'{e["footprint"]} tiles')))
         counts = e.get("counts")
         if counts:
-            rows.append(("Entities", esc(f'{e.get("entities") or "?"}: ' + str(counts).replace("*", " x"))))
+            rows.append(("Entities", f'<span class="bp-n">{esc(str(e.get("entities") or "?"))}</span>{entity_chips(counts, esc)}'))
         elif e.get("entities") is not None:
             rows.append(("Entities", esc(str(e["entities"]))))
         if e.get("tiles"):

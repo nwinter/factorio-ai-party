@@ -9,7 +9,8 @@ Agents never get this tool: it runs privileged Lua. Usage:
 """
 import argparse, json, os, socket, struct, sys
 
-PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030}
+PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030, "imac": 27400}
+HOSTS = {"imac": "imac.local"}  # (d27 batch279) the private copy on the iMac (tools/imac-copy.sh); others: the tunnel
 
 
 class Rcon:
@@ -175,7 +176,7 @@ def main():
     a = ap.parse_args()
     port = a.port or PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])
     pw = open(os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
-    r = Rcon("127.0.0.1", port, pw)
+    r = Rcon(os.environ.get("POG_RCON_HOST") or HOSTS.get(a.world, "127.0.0.1"), port, pw)
     if a.cmd == "rcon":
         out = r.command(a.arg)
     elif a.cmd == "pause":

@@ -2341,6 +2341,26 @@ vx_review now counts an announcement only when the line's cue names the platform
 departure card on screen; an exchange's second voice takes the first's facts), later mentions apart (mention_n,
 mention_median_s). Shift80 23.6 s (2 lines), shift81 17.6 s (2), shift82 24.9 s (4); mentions 199, 165, 743 s.
 
+## Build, work and attention shots on the request's surface (2026-10-27, d27 batch271 WS)
+Shift86 09:56 and 10:03: Astra's character stood on Aquilo while she marked poles on Nauvis for deconstruction and
+placed pole ghosts there by remote (`surface="nauvis"` in the request). The build spot ("build: Astra · marked for
+deconstruction") and the attention inset ("Astra placing medium electric pole ghosts 165 m west") framed those
+coordinates on Aquilo: empty ice. In 09:50-10:10, 13 of 17 build and attention shots were on the body's planet, not
+the request's (Astra 12, Sol on Vulcanus inspecting Nauvis 1). Viewer Aurora had reported it (site:2922).
+- work.py: `surface_named(args)`. DidFeed rows, WorkFeed rows and attention points (attention.point) keep the
+  request's `surface`. A row that names none acted on the body's surface: live.py gives it the body's while the row is
+  under DID_SURFACE_S (30 s) old; a restart's tail of older rows stays unknown.
+- onecam `did_spot`: on the request's surface, also when its coordinates are near the body's on another planet, labelled
+  "Astra · marked for deconstruction on Nauvis". A surface not known: no spot. A surface naming a platform (its name or
+  its surface) is no ground build.
+- model.py: the attention point and a ground work item take the request's surface (a platform's name there is that
+  platform). On another planet than the body's, the point is far and reads "placing ... ghosts on Nauvis"; the inset
+  frames Nauvis there. The work item's label names the planet. live.py `observe_work` counts work on another surface
+  as away, whatever its coordinates.
+- director_replay: the replay's build rows take the request's surface. The 09:50-10:10 replay: the same program under
+  both rules (idle 26.8%, 2.92 cuts/min), Astra's 4 build shots on Aquilo under main's rules and on Nauvis under these.
+- Test: tools/stream/test_surfacecam.py. Deploy: a stream service restart.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

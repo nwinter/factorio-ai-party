@@ -6,7 +6,11 @@ import { join } from 'node:path';
 // rules the last reply carried. Nothing changes elsewhere, or without the section.
 export function rulesSection(dir: string, lines: string[]) {
   try {
-    if (!readFileSync(join(dir, '.context-hooks'), 'utf8').startsWith('codex')) return;
+    // (d27 batch275 HW) Claude Code too: it loads CLAUDE.md (a link to AGENTS.md) at the start and after each
+    // compaction, as Codex does AGENTS.md; before this only Codex workspaces carried the section (shift86: "rule 27"
+    // appears 0 times in Opus's and Sonnet's transcripts)
+    const kind = readFileSync(join(dir, '.context-hooks'), 'utf8').split(/\s/)[0];
+    if (kind !== 'codex' && kind !== 'claude') return;
     const path = join(dir, 'AGENTS.md'), text = readFileSync(path, 'utf8');
     const start = '<!-- ground-rules -->', end = '<!-- /ground-rules -->';
     const i = text.indexOf(start), j = text.indexOf(end);

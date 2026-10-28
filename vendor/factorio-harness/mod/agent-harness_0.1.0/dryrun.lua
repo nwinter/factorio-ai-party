@@ -2368,12 +2368,20 @@ return function(api)
         out.cliffs_under = list
         -- No construction robot reaches them (Sol 15:41: a nutrient belt over cliffs on Gleba with no robots there):
         -- the cliffs to clear by hand with clear_cliffs, which throws the explosives as a player does.
-        local robots, at = 0, {}
+        -- (d27 batch276 LN) the networks whose construction area covers each cliff: find_logistic_network_by_position
+        -- covers the logistic area only (2.0.77: none 29.7 tiles from a roboport, inside its construction range), and
+        -- each network counts once
+        local robots, at, counted = 0, {}, {}
         for _, c in pairs(cliffs) do
           if c.e.valid then
             if #at < 8 then at[#at+1] = {x=c.e.position.x, y=c.e.position.y} end
-            local net = try(function() return s.find_logistic_network_by_position(c.e.position, p.force) end)
-            robots = robots + (net and try(function() return net.available_construction_robots end) or 0)
+            for _, net in pairs(try(function() return s.find_logistic_networks_by_construction_area(c.e.position, p.force) end) or {}) do
+              local id = try(function() return net.network_id end)
+              if id and not counted[id] then
+                counted[id] = true
+                robots = robots + (try(function() return net.available_construction_robots end) or 0)
+              end
+            end
           end
         end
         local own = try(function() return p.character and p.character.logistic_network end)

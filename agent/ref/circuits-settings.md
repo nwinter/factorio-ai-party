@@ -1,4 +1,4 @@
-- `circuit_set {position, platform? | surface?, enable | logistic | read | settings | signals | on | arithmetic |
+- `circuit_set {position, platform? | surface?, enable | logistic | clear | read | settings | signals | on | arithmetic |
   decider | selector | set_requests}`: sets an entity's circuit condition, read switches, settings or combinator, in
   reach or by remote view (our entities in visible chunks, all of a platform); `inspect` reads back the conditions,
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
@@ -6,7 +6,9 @@
   (without one the game ignores it, and the line says `condition ignored`). `switch_off: true` sets a condition that
   never holds (`signal-dot < -2147483648`): the entity stops while a wire connects it; `remove_condition: true` takes
   the condition away: it runs whatever its wires read; `enable: false` is refused naming both; `now` says what the
-  entity does after either. A logistic condition reads the network
+  entity does after either. `logistic: false` takes the logistic condition away. `clear: true` takes both away (a
+  chest: its circuit condition). A call with no setting (`{position}` alone) changes nothing and is refused, naming each
+  condition that holds the entity now and the argument that clears it. A logistic condition reads the network
   whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
   the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
   condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
@@ -146,17 +148,26 @@
     trash slots. A silo's ghost takes both too (a place_ghosts entry's `configure` among them), and the silo built from it keeps them.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
 - `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
-  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < -2147483648`, false at any count) and the
-  input inserter held; the requester feeding it cleared, then asked for exactly what the batch still needs of each
-  ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
-  input on; waits for the products in the machine; the input off again; the output released. The requester and both
-  inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
-  (the machine would make more with it). The inserters need a logistic network for their logistic condition. A
-  requester with trash unrequested on has it switched off before its requests are cleared and staged, and on again
-  after the output is released (`trash_unrequested` in the reply; a plan stopped between leaves it off). The recipe's
-  quality (`quality`) goes on every item ingredient's request and wait and on the product wait (fluids have none); a
-  machine whose modules give quality has its product wait count every quality. `other_quality`: what the requester
-  holds of an ingredient at another quality (the machine does not take it).
+  queue plan, each step a call whose reply says what it did: the machine's own conditions (its logistic condition, and
+  its circuit condition when a wire is on it) and the output inserter's switched off; the input inserter held (logistic
+  `INGREDIENT < -2147483648`, false at any count); the requester feeding it cleared, then asked for exactly what the
+  batch still needs of each ingredient (crafts x amount less what the machine and the requester hold now); waits for it;
+  requests cleared; the input on; waits for the crafts on the machine's products-finished counter (`counter`: its count
+  at the plan and the count that ends the batch; productivity bonus crafts count too) while the products go out through
+  the output inserter (`destination`, and a chest's `room` for them); the input off again (or its own condition set
+  back); the machine's and the output's own conditions set back. The products are not held in the machine: its output
+  holds one stack (`output_stack`) and inserters stop feeding it at `feeds_until` held. `estimate_s`: the crafts at its crafting speed
+  (modules and beacons in it) and productivity (its own and recipe research: the counter rises speed / energy x (1 +
+  productivity) a second). A wait holds 900 s at most: a longer batch's made step is several waits on the counter
+  (`made_waits`, the plan says where each is met), each up to 900 s; past 8 the batch is refused with the count that
+  fits. A batch whose ingredients do not
+  fit the requester's slots at once is refused (`refused`); `slots {required, available}` says them either way. The requester and both inserters are found
+  round the machine unless given. `surplus` names what is already there over the batch's need (the machine would make
+  more with it). The inserters need a logistic network for their logistic condition. A requester with trash
+  unrequested on has it switched off before its requests are cleared and staged, and on again after the batch
+  (`trash_unrequested` in the reply; a plan stopped between leaves it off). The recipe's quality (`quality`) goes on
+  every item ingredient's request and wait (fluids have none). `other_quality`: what the requester holds of an
+  ingredient at another quality (the machine does not take it).
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, clear_all?, section?, active?, add_section?, remove_section?, group?,
   trash_unrequested?, construction_requests?, keep?, dry_run?, force?, surface?}` or `{groups: true}`: a

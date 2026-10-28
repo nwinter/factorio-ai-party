@@ -101,8 +101,16 @@ return function(api)
       for _, pt in ipairs(job.points) do
         n = n + 1
         if pt.gone or (pt.unseen or 0) >= (job.samples or 0) and (job.samples or 0) > 0 then gone = gone + 1 end
-        for k = 1, 2 do for _ in pairs(pt.left and pt.left[k] or {}) do passed = passed + 1 end end
+        -- (d27 batch269 BS) items: a stack left counts its items (beltsample.lua left_n; none: one)
+        for k = 1, 2 do
+          local counts = pt.left_n and pt.left_n[k] or {}
+          for id in pairs(pt.left and pt.left[k] or {}) do passed = passed + (counts[id] or 1) end
+        end
       end
+    elseif job.result and job.result.exact_tile then
+      -- (d27 batch269 BS, Sol's sleep line: a finished exact_tile sample read "invalid: it reads nothing; 451 samples")
+      -- its one tile, gone when removed or out of sight at every sample
+      n, gone = 1, job.all_gone and 1 or 0
     elseif job.result then
       for _, row in ipairs(job.result.points or {}) do
         n = n + 1

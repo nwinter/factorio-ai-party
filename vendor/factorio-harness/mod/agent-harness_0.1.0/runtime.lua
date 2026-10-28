@@ -17283,7 +17283,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   takes=function(action,key) return M.takes(action,key) end,
-  simulate=function(p,items) return M.rocketload.simulate(p,items) end,world_checks=function(p,items) return space.world_checks(p,items) end,
+  simulate=function(p,items) return M.rocketload.simulate(p,items) end,world_checks=function(p,items) return space.world_checks(p,items) end,staging=function(p,items) return M.stageslots.check(p,items) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
     if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
@@ -17448,7 +17448,7 @@ function M.platform_recent(name)
   parts[#parts+1]=r and string.format('its latest launch up: #%d from %s %ds ago (%s)',r.id,surf,math.floor((game.tick-r.tick)/60),r.cargo) or 'no launch to it recorded since the harness was deployed'
   return table.concat(parts,'; ')
 end
-M.waits=require('waits'){state=state,measure=function(index) return M.measure_row(index) end,reason=function(v) return M.measures.reason(v) end,watch_flags=function(index) return M.measures.flags(index) end,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+M.waits=require('waits'){state=state,measure=function(index) return M.measure_row(index) end,reason=function(v) return M.measures.reason(v) end,watch_flags=function(index) return M.measures.flags(index) end,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,unread_for_sleep=function(i) return M.board.unread_for_sleep(i) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
@@ -19068,6 +19068,8 @@ function M.personal_unfilled_lines(p)
   return out
 end
 M.reqchest=require('reqchest'){}
+-- What a queue plan's item_count waits need of a requester at once, against its slots (stageslots.lua; d27 batch280 CS).
+M.stageslots=require('stageslots'){}
 -- A logistic network's reservations, read only (reservations.lua; Luna 06:20).
 M.reservations=require('reservations'){state=state}
 function handlers.reservations(p,a) return M.timed('reservations.read',M.reservations.read,p,a) end  -- (d25 batch217) a part of its own in profile_ticks
