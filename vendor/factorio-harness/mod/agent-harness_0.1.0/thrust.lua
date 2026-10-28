@@ -261,11 +261,18 @@ return function(api)
   -- fluid a tick; between 80% and 10%, linearly less (0.1 a tick at 10%); below 10%, 0.1 a tick until empty. Its thrust
   -- is the use times the effectivity (0.51 at 80%, 1 at 10%), so it falls to about a tenth. From amount a (per tank):
   -- {full_s (at 80% or more), to_10_s (until 10%), equiv_s (seconds of full thrust in all, to 10%), empty_s}.
+  -- (d27 batch294 TQ, Sol #2645: Resolute's 4 legendary thrusters burned 70152 fuel a minute against the 28800 the
+  -- normal rule gave) quality multiplies the burn at both ends and the thrust alike by the quality's default_multiplier
+  -- (1.3, 1.6, 1.9, 2.5), the 80% and 10% points stay, and the rate follows the emptier of a thruster's two tanks.
+  -- Measured on the iMac copy: 5 of each a tick per legendary thruster at full, 0.25 at the floor; 2+2+5+3.2 = 12.2 a
+  -- tick for normal, normal, legendary, rare; the speed gained a tick less the drag 1.3, 1.6, 1.9 and 2.5 times
+  -- normal's. mult (default 1) is that multiplier.
   M.TANK = 1000
-  function M.burn(a, volume)
+  function M.burn(a, volume, mult)
     volume = volume or M.TANK
+    mult = mult or 1
     local hi, lo = 0.8 * volume, 0.1 * volume
-    local umax, umin = 2, 0.1
+    local umax, umin = 2 * mult, 0.1 * mult
     local slope = (umax - umin) / (hi - lo)
     local ticks_full, ticks_mid, thrust = 0, 0, 0
     local x = a
@@ -283,11 +290,60 @@ return function(api)
     local function s(ticks) return math.floor(ticks / 6 + 0.5) / 10 end
     return {full_s=s(ticks_full), to_10_s=s(ticks_full + ticks_mid), equiv_s=s(thrust / (umax * 0.51)), empty_s=s(ticks_full + ticks_mid + ticks_low)}
   end
-  M.RULE = 'a thruster burns 2 fuel and 2 oxidizer a tick while its tanks are 80% full or more, linearly less down to '
-    .. '0.1 a tick at 10%, and 0.1 a tick below; its thrust falls with it to about a tenth (use x effectivity 0.51 at 80%, '
-    .. '1 at 10%). From full tanks with no supply: 1.7 s at full thrust, 20.1 s until 10%, about 10.3 s of full thrust in '
-    .. 'all. With no thrust (or a tenth of it) a platform slows, then drifts backward at up to 10 km/s. Measured on 2.0.77: '
-    .. 'a 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s in 6 s on one full tank with no supply'
+  M.RULE = 'a thruster burns fuel and oxidizer alike, at a rate the emptier of its two tanks (1000 each) sets: a normal '
+    .. 'thruster 2 of each a tick while that tank is 80% full or more, linearly less down to 0.1 a tick at 10%, and 0.1 a '
+    .. 'tick below; quality multiplies the burn and the thrust alike (uncommon 1.3, rare 1.6, epic 1.9, legendary 2.5: a '
+    .. 'legendary thruster burns 5 of each a tick at full thrust and 0.25 at the floor), at the same 80% and 10%; its '
+    .. 'thrust falls with the burn to about a tenth (use x effectivity 0.51 at 80%, 1 at 10%). From full tanks with no '
+    .. 'supply a normal thruster gives 1.7 s at full thrust, 20.1 s until 10%, about 10.3 s of full thrust in all (a '
+    .. 'legendary one 0.7 s, 8 s, 4.1 s). With no thrust (or a tenth of it) a platform slows, then drifts backward at up '
+    .. 'to 10 km/s. Measured on 2.0.77: a 170 t, 21-tile-wide test platform with 1 normal thruster went from 0 to 86 '
+    .. 'km/s in 6 s on one full tank with no supply; on a copy of Resolute, 4 legendary thrusters burned 5 of each a '
+    .. 'tick at full and gave 2.5 times the thrust 4 normal ones gave at the same speed'
+  -- A thruster's quality: its name and the multiplier the game applies to its burn and thrust.
+  local function qual(t)
+    local q = try(function() return t.quality end)
+    local name = q and try(function() return q.name end) or 'normal'
+    local m = q and (try(function() return q.default_multiplier end) or try(function() return 1 + 0.3 * q.level end)) or 1
+    return name, m
+  end
+  M.quality = qual
+  local function g(x) return string.format('%g', math.floor(x * 100 + 0.5) / 100) end
+  -- Thrusters by quality, lowest multiplier first: {{quality, count, mult}}, their multipliers summed, and the text
+  -- "2 normal, 1 rare x1.6" (one quality: "legendary x2.5").
+  local function groups(list)
+    local by, out, sum = {}, {}, 0
+    for _, t in ipairs(list) do
+      local name, m = qual(t)
+      if not by[name] then by[name] = {quality=name, count=0, mult=m}; out[#out+1] = by[name] end
+      by[name].count = by[name].count + 1; sum = sum + m
+    end
+    table.sort(out, function(a, b) if a.mult ~= b.mult then return a.mult < b.mult end return a.quality < b.quality end)
+    local parts = {}
+    for i, x in ipairs(out) do parts[i] = (#out > 1 and x.count .. ' ' or '') .. x.quality .. (x.mult ~= 1 and ' x' .. g(x.mult) or '') end
+    return out, sum, table.concat(parts, ', ')
+  end
+  M.groups = groups
+  -- (TQ) the platform's thrusters by quality and what they burn at full thrust, as the engine runs them: {count,
+  -- groups, mult_sum (thrust in normal thrusters'), per_tick (of each fluid, all of them at 80% or more), per_s, per_min,
+  -- line}; nil with no thruster.
+  function M.qualities(pl)
+    local s = try(function() return pl.surface end)
+    if not s then return nil end
+    local list = found(s, pl.force)
+    if #list == 0 then return nil end
+    local gr, sum, text = groups(list)
+    local each = {}
+    for i, x in ipairs(gr) do each[i] = g(2 * x.mult) .. (#gr > 1 and ' ' .. x.quality or '') end
+    local out = {count=#list, groups=gr, mult_sum=sum, per_tick=2 * sum, per_s=120 * sum, per_min=7200 * sum}
+    local one = #list == 1
+    out.line = string.format('%d thruster%s, %s: at full thrust (the emptier tank 80%% full or more) %s %s fuel and %s '
+      .. 'oxidizer a tick%s (%s a second, %s a minute of each%s), thrust %s times one normal thruster\'s (the engine\'s figures for '
+      .. '%s quality, not measured use)', #list, one and '' or 's', text, one and 'it burns' or 'they burn', g(2 * sum),
+      g(2 * sum), one and '' or ' in all', g(120 * sum), g(7200 * sum), one and '' or '; ' .. table.concat(each, ', ') .. ' a tick a thruster',
+      g(sum), one and 'its' or 'their')
+    return out
+  end
   -- What stays with the thrusters when their pumps stop: per fluid, the thrusters' own tanks and the pipes and tanks
   -- between them and the pumps that push toward them (the walk stops at a pump), and how long that burns.
   local function walk(pl)
@@ -299,8 +355,8 @@ return function(api)
     for _, t in ipairs(thrusters) do
       for _, tk in ipairs(tanks(t)) do
         local b = by[tk.fluid]
-        if not b then b = {fluid=tk.fluid, thrusters=0, own=0, between=0, seen={}, pumps={}, pump_seen={}}; by[tk.fluid] = b; order[#order+1] = b end
-        b.thrusters = b.thrusters + 1; b.own = b.own + tk.amount
+        if not b then b = {fluid=tk.fluid, thrusters=0, own=0, between=0, seen={}, pumps={}, pump_seen={}, list={}}; by[tk.fluid] = b; order[#order+1] = b end
+        b.thrusters = b.thrusters + 1; b.own = b.own + tk.amount; b.list[#b.list+1] = t
         local queue, head = {{box=t.fluidbox, i=tk.index}}, 1
         while head <= #queue and head <= MAX_BOXES do
           local cur = queue[head]; head = head + 1
@@ -326,18 +382,32 @@ return function(api)
   function M.after_pumps(pl)
     local order = walk(pl)
     if not order then return nil end
-    local lines = {}
+    local lines, low = {}, nil
     for _, b in ipairs(order) do
       local each = (b.own + b.between) / b.thrusters
-      local r = M.burn(each)
+      local gr, sum, text = groups(b.list)
+      -- (TQ) at the thrusters' own quality: one pool kept level by the pipes burns at their mean multiplier
+      local r = M.burn(each, nil, sum / b.thrusters)
+      local rates = {}
+      for i, x in ipairs(gr) do rates[i] = g(2 * x.mult) .. (#gr > 1 and ' ' .. x.quality or '') end
       local pumps = {}
       for i = 1, math.min(2, #b.pumps) do pumps[i] = 'pump ' .. at(b.pumps[i]) .. ': ' .. state_text(b.pumps[i]) end
-      lines[#lines+1] = string.format('%s: if its pumps stop, %d thruster%s %d and the pipes and tanks between them and the pumps %d (%d a thruster): '
-        .. 'about %g s of full thrust, %g s until 10%%, then 0.1 a tick until empty at %g s%s', b.fluid, b.thrusters, b.thrusters == 1 and ' holds' or 's hold',
-        math.floor(b.own + 0.5), math.floor(b.between + 0.5), math.floor(each + 0.5), r.equiv_s, r.to_10_s, r.empty_s,
+      lines[#lines+1] = string.format('%s: if its pumps stop, %d thruster%s (%s) %s %d and the pipes and tanks between them and the pumps %d (%d a thruster): '
+        .. 'at full thrust %s a tick%s: about %g s of full thrust, %g s until 10%%, then %s a tick%s until empty at %g s%s%s',
+        b.fluid, b.thrusters, b.thrusters == 1 and '' or 's', text, b.thrusters == 1 and 'holds' or 'hold',
+        math.floor(b.own + 0.5), math.floor(b.between + 0.5), math.floor(each + 0.5), g(2 * sum),
+        b.thrusters > 1 and ' in all (' .. table.concat(rates, ', ') .. ' a thruster)' or '',
+        r.equiv_s, r.to_10_s, g(0.1 * sum), b.thrusters > 1 and ' in all' or '', r.empty_s,
+        #gr > 1 and string.format(' (mixed qualities: one pool kept level by the pipes, at their mean x%s)', g(sum / b.thrusters)) or '',
         #pumps > 0 and '; ' .. table.concat(pumps, '; ') or '; no pump between them and the rest of the line')
+      if not low or r.equiv_s < low.r.equiv_s then low = {b=b, r=r} end
     end
-    return {lines=lines, rule=M.RULE}
+    if #order > 1 and low then
+      lines[#lines+1] = string.format('both fluids burn alike at the rate the emptier tank sets: the thrust lasts as %s does (about %g s of full thrust, %g s until 10%%)',
+        low.b.fluid, low.r.equiv_s, low.r.to_10_s)
+    end
+    local q = M.qualities(pl)
+    return {lines=lines, rule=(q and q.line .. '; ' or '') .. M.RULE, thrusters=q}
   end
   -- (d20 batch60 V5, Astra #1594: Kestrel II's pumps feed the thrusters only under 40 km/s) the pumps pushing toward
   -- the thrusters, per fluid, as their GUIs show them: {fluid: {pumps, working, line}}; line groups them by state

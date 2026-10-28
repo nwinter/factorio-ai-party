@@ -2907,16 +2907,24 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   The thrusters and pumps are found again every minute. `after_pumps` (thrust.lua; Grok, shift17 20:40: an oxidizer
   pump cut at V < 15 and the leg peaked at 51 km/s): per thruster fluid, what stays with the thrusters when their pumps
   stop (their own tanks, and the pipes and tanks between them and the pumps; the walk stops at a pump) and how long
-  that burns: `thruster-oxidizer: if its pumps stop, 2 thrusters hold 2000 and the pipes and tanks between them and
-  the pumps 160 (1080 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.1 a tick until empty at
-  37.4 s; pump (3.5,7): off by its circuit condition ...`. `thruster_burn`, the game's rule as measured on 2.0.77 (the
-  thruster prototype's min_performance and max_performance): a thruster burns 2 fuel and 2 oxidizer a tick while its
-  tanks (1000 each) are 80% full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; its thrust falls
-  with it to about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply: 1.7 s at full
-  thrust, 20.1 s until 10%, about 10.3 s of full thrust in all. With no thrust (or a tenth of it) a platform slows,
-  then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s
-  in 6 s on one full tank with no supply; how far a platform's speed goes on what is left depends on its weight,
-  width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
+  that burns at the thrusters' own quality (d27 batch294): `thruster-oxidizer: if its pumps stop, 2 thrusters (normal)
+  hold 2000 and the pipes and tanks between them and the pumps 160 (1080 a thruster): at full thrust 4 a tick in all
+  (2 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.2 a tick in all until empty at 37.4 s; pump
+  (3.5,7): off by its circuit condition ...`. Mixed qualities are counted as one pool the pipes keep level, at their
+  mean multiplier, and said so. With both fluids a last line names the one that sets the thrust (both burn at the rate
+  the emptier tank sets). `thruster_burn`: the platform's thrusters by quality and what they burn at full thrust (`4
+  thrusters, legendary x2.5: at full thrust (the emptier tank 80% full or more) they burn 20 fuel and 20 oxidizer a
+  tick in all (1200 a second, 72000 a minute of each; 5 a tick a thruster), thrust 10 times one normal thruster's (the engine's figures
+  for their quality, not measured use)`), then the game's rule as measured on 2.0.77 (the thruster prototype's
+  min_performance and max_performance, and the quality's default_multiplier): a thruster burns fuel and oxidizer alike,
+  at the rate the emptier of its two tanks (1000 each) sets; a normal thruster 2 of each a tick while that tank is 80%
+  full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; quality multiplies the burn and the thrust
+  alike (uncommon 1.3, rare 1.6, epic 1.9, legendary 2.5), at the same 80% and 10%; its thrust falls with the burn to
+  about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply a normal thruster gives
+  1.7 s at full thrust, 20.1 s until 10%, about 10.3 s of full thrust in all (a legendary one 0.7 s, 8 s, 4.1 s). With
+  no thrust (or a tenth of it) a platform slows, then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test
+  platform with 1 normal thruster went from 0 to 86 km/s in 6 s on one full tank with no supply; how far a platform's
+  speed goes on what is left depends on its weight, width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
   the first spoils in 1m10s (95% spoiled); all within 5 min`), and in flight `; arrival at nauvis in 3m30s: 200 spoil
   before it, 595 arrive, the next spoils 2m05s after arrival`.
 - `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
