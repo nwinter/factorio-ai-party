@@ -13,7 +13,12 @@ python3 tools/test_yt_archive.py
   backlog's days under the uploads bucket and under 1,600 units an upload;
 - apply against a stand-in client: the status sent keeps the video's other status fields, a playlist insert waits for
   its video to be unlisted, the state is written after each change (a rerun does nothing), a quotaExceeded reply
-  stops it and marks the day, and site/content/videos.json gets only the videos YouTube shows.
+  stops it and marks the day, and the site's list gets only the videos YouTube shows;
+- (d28 batch315) the follower: a rotate that raises (an error, a stopped upload) is logged and tried again after
+  --retry, and the follower goes on; no rotate or upload while the checkout has MERGE_HEAD (Busy past --merge-wait);
+  new code on disk runs again with the same arguments; the site's list lives in video-work (site-refresh.sh names it);
+  follow --start keeps one per Mac in its own session, --check/--stop, a second follower refuses; start-team starts
+  it, stop-team leaves it; a test run never touches the live one.
 """
 import argparse
 import contextlib
@@ -21,6 +26,7 @@ import io
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -285,7 +291,182 @@ def main():
     # ---- follow: the autopilot's "shiftN up" lines
     assert ya.UP_LINE.match("10-27 07:09:26 shift86 up ()").group(2) == "86"
     assert not ya.UP_LINE.match("10-27 07:09:26 watchdog shift86 pid 1")
+    follower()
     print("test_yt_archive: ok")
+
+
+class Stop(Exception):
+    pass
+
+
+def follow_ns(d, **kw):
+    log = Path(d) / "autopilot.log"
+    if not log.exists():
+        log.write_text("")
+    base = dict(log=str(log), state=str(Path(d) / "state.json"), pid_file=str(Path(d) / "yt-follow.pid"),
+                follow_log=str(Path(d) / "yt-follow.log"), interval=120, retry=1800, once=False, argv=["follow"],
+                merge_wait=0, dry_run=False)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def follower():
+    """(d28 batch315) The d27 rotation was a one-shot rotate that ended with the day's quota; the follower now outlives
+    errors, waits out merges, runs again on new code, writes the site's list outside any checkout, and start-team's
+    --start keeps one per Mac."""
+    import os
+    import subprocess
+    # the site's list is the follower's own file in video-work, never a checkout's (tools/site-refresh.sh names it)
+    assert ya.SITE_VIDEOS.parent == ya.WORK and ya.REPO not in ya.SITE_VIDEOS.parents, ya.SITE_VIDEOS
+    assert "videos-site.json" in (ya.REPO / "tools" / "site-refresh.sh").read_text()
+    assert "yt_archive.py follow --start" in (ya.REPO / "tools" / "start-team.sh").read_text()
+    assert "yt_archive" not in (ya.REPO / "tools" / "stop-team.sh").read_text()
+
+    # one bad rotate does not end the follower: the error is logged, nothing is marked handled, the same rotate runs
+    # again after --retry, then shift93 up is marked
+    real_rotate, real_stamp, real_exec = ya.rotate, ya.code_stamp, ya.os.execv
+    with tempfile.TemporaryDirectory() as d:
+        a = follow_ns(d)
+        Path(a.log).write_text("10-28 12:06:00 shift93 up ()\n")
+        ya.save(a.state, {"videos": {}, "follow": {"up": 92, "day": ya.pacific_day()}})
+        calls, t, sleeps = [], [1000.0], []
+        def rot(_a):
+            calls.append(t[0])
+            if len(calls) == 1:
+                raise KeyError("items")
+            if len(calls) == 2:
+                raise SystemExit("POST /videos: HTTP 500")
+        def sleep(s):
+            sleeps.append(s)
+            t[0] += s
+            if len(sleeps) >= 40:
+                raise Stop()
+        ya.rotate = rot
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                ya.follow(a, sleep=sleep, clock=lambda: t[0])
+        except Stop:
+            pass
+        finally:
+            ya.rotate = real_rotate
+        text = out.getvalue()
+        assert calls == [1000.0, 1000.0 + 1800, 1000.0 + 3600], calls
+        assert "KeyError: 'items'" in text and "rotate stopped: 'items'; tried again in 1800 s" in text, text
+        assert "rotate stopped: POST /videos: HTTP 500; tried again in 1800 s" in text, text
+        assert ya.load(a.state)["follow"]["up"] == 93 and Path(a.pid_file).read_text() == str(os.getpid())
+
+        # a merge in the checkout: no rotate while MERGE_HEAD is there; Busy inside rotate marks nothing either
+        repo = Path(d) / "repo"
+        (repo / ".git").mkdir(parents=True)
+        assert not ya.merging(repo)
+        (repo / ".git" / "MERGE_HEAD").write_text("x")
+        assert ya.merging(repo)
+        wt = Path(d) / "wt"
+        (repo / ".git" / "worktrees" / "wt").mkdir(parents=True)
+        wt.mkdir()
+        (wt / ".git").write_text(f"gitdir: {repo / '.git' / 'worktrees' / 'wt'}\n")
+        assert not ya.merging(wt)
+        (repo / ".git" / "worktrees" / "wt" / "MERGE_HEAD").write_text("x")
+        assert ya.merging(wt)
+        naps = []
+        def nap(s):
+            naps.append(s)
+            if len(naps) == 3:
+                (repo / ".git" / "MERGE_HEAD").unlink()
+        with contextlib.redirect_stdout(io.StringIO()):
+            ya.merge_wait(repo, wait=600, step=15, sleep=nap)
+        assert naps == [15, 15, 15], naps
+        (repo / ".git" / "MERGE_HEAD").write_text("x")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                ya.merge_wait(repo, wait=30, step=15, sleep=lambda s: None)
+            raise AssertionError("no Busy")
+        except ya.Busy as e:
+            assert "for 30 s" in str(e), e
+        # rotate under a merge: Busy before any archive_upload.py runs
+        real_repo, real_fin, real_run = ya.REPO, ya.finished_shifts, ya.subprocess.run
+        ya.REPO, ya.finished_shifts = repo, (lambda runs_dir: [92])
+        ya.subprocess.run = lambda *x, **k: (_ for _ in ()).throw(AssertionError("a subprocess ran during a merge"))
+        ra = argparse.Namespace(**dict(vars(follow_ns(d)), manifest=str(Path(d) / "m.json"), extra=str(Path(d) / "x.json"),
+                                       ledger=str(Path(d) / "q.json"), from_shift=70, upload_units=0, daily=10000,
+                                       margin=200, runs_dir=d, keep_free_gb=35.0, site_videos=str(Path(d) / "s.json")))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                ya.rotate(ra)
+            raise AssertionError("no Busy")
+        except ya.Busy:
+            pass
+        finally:
+            ya.REPO, ya.finished_shifts, ya.subprocess.run = real_repo, real_fin, real_run
+        assert not (Path(d) / "yt-rotate.lock").exists(), "the lock went with the stopped rotate"
+        # follow under a merge: polls, rotates nothing, marks nothing
+        ya.save(a.state, {"videos": {}, "follow": {"up": 92, "day": ya.pacific_day()}})
+        ya.REPO, ya.rotate = repo, (lambda _a: (_ for _ in ()).throw(AssertionError("rotated during a merge")))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                ya.follow(follow_ns(d, once=True))
+        finally:
+            ya.REPO, ya.rotate = real_repo, real_rotate
+        assert ya.load(a.state)["follow"]["up"] == 92
+
+        # new code on disk (a merged fix): it runs itself again with its own arguments, not during a merge
+        Path(a.log).write_text("")
+        execs = []
+        ya.code_stamp = iter(["old"] + ["new"] * 10).__next__
+        ya.os.execv = lambda exe, argv: (execs.append(argv), (_ for _ in ()).throw(Stop()))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                ya.follow(follow_ns(d, argv=["follow", "--interval", "120"]), sleep=lambda s: None)
+        except Stop:
+            pass
+        finally:
+            ya.code_stamp, ya.os.execv = real_stamp, real_exec
+        assert execs and execs[0][-3:] == ["follow", "--interval", "120"] and execs[0][2].endswith("tools/yt_archive.py"), execs
+
+    # follow --start: one per Mac (its pid file); --check and --stop; a second follower started by hand refuses
+    with tempfile.TemporaryDirectory() as d:
+        a = follow_ns(d)
+        ya.save(a.state, {"videos": {}, "follow": {"up": 0, "day": ya.pacific_day()}})  # nothing to rotate
+        argv = ["follow", "--log", a.log, "--state", a.state, "--pid-file", a.pid_file, "--follow-log", a.follow_log,
+                "--manifest", str(Path(d) / "m.json"), "--extra", str(Path(d) / "x.json"), "--ledger", str(Path(d) / "q.json"),
+                "--site-videos", str(Path(d) / "s.json"), "--runs-dir", d]
+        env = dict(os.environ, POG_TEST="1")
+        def cli(*extra):
+            return subprocess.run([sys.executable, str(HERE / "yt_archive.py"), *argv, *extra], capture_output=True,
+                                  text=True, env=env, timeout=60)
+        assert cli("--check").returncode == 1
+        r = cli("--start")
+        assert r.returncode == 0 and "youtube follower started: pid" in r.stdout, r.stdout + r.stderr
+        pid = int(Path(a.pid_file).read_text())
+        try:
+            for _ in range(50):
+                if "following" in Path(a.follow_log).read_text():
+                    break
+                time.sleep(0.1)
+            assert f"pid {pid}" in Path(a.follow_log).read_text(), Path(a.follow_log).read_text()
+            assert os.getpgid(pid) != os.getpgid(0), "its own session: a shift's stop or a closed terminal leaves it"
+            r = cli("--start")
+            assert "youtube follower running (pid %d): kept" % pid in r.stdout, r.stdout
+            assert cli("--check").returncode == 0
+            r = cli("--once")
+            assert f"another follower runs (pid {pid}): not started" in r.stdout, r.stdout
+            assert int(Path(a.pid_file).read_text()) == pid
+        finally:
+            r = cli("--stop")
+        assert f"stopped the youtube follower (pid {pid})" in r.stdout, r.stdout
+        for _ in range(50):
+            if cli("--check").returncode == 1:
+                break
+            time.sleep(0.1)
+        assert cli("--check").returncode == 1
+        # a pid file naming another command (a pid reused) is not a follower
+        Path(a.pid_file).write_text(str(os.getpid()))
+        assert ya.follower_pid(a.pid_file) is None
+        # a test run never touches the live video-work's follower
+        r = subprocess.run([sys.executable, str(HERE / "yt_archive.py"), "follow", "--start"], capture_output=True,
+                           text=True, env=env, timeout=60)
+        assert "POG_TEST=1: no YouTube follower" in r.stdout, r.stdout
 
 
 if __name__ == "__main__":

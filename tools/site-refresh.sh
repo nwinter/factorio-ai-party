@@ -82,11 +82,19 @@ if [ "${POG_SITE_CARDS:-1}" != 0 ]; then
 fi
 # (batch265) /videos/: which shifts play on R2 now (each master playlist must answer 200) and the thumbnails; a failure
 # keeps the last r2.json (POG_SITE_VIDEOS=0 skips it and builds without video data: tests)
+# (d28 batch315) the YouTube list comes from tools/yt_archive.py's follower, which writes it in the operator's video-work
+# folder and never into a checkout (POG_SITE_YT_VIDEOS overrides; without that file, this checkout's
+# site/content/videos.json as before). POG_SITE_R2_REFRESH=0 builds with the last r2.json (tests: no requests).
 videos=()
 if [ "${POG_SITE_VIDEOS:-1}" != 0 ]; then
-  python3 site/videos_page.py refresh --runs-dir "$runs" || step "videos refresh failed (the last r2.json stays)"
+  if [ "${POG_SITE_R2_REFRESH:-1}" != 0 ]; then
+    python3 site/videos_page.py refresh --runs-dir "$runs" || step "videos refresh failed (the last r2.json stays)"
+  fi
+  ytv=${POG_SITE_YT_VIDEOS:-$HOME/code/pog-operator/video-work/videos-site.json}
+  [ -f "$ytv" ] || ytv=site/content/videos.json
+  step "YouTube videos from $([ "$ytv" = site/content/videos.json ] && echo "$ytv" || echo "the follower's list") ($(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$ytv" 2>/dev/null || echo none))"
   # build.py reads the video data only when named (a test's build never sees this checkout's files)
-  videos=(--videos site/content/videos.json --r2 site/content/r2.json --thumbs site/og/thumbs)
+  videos=(--videos "$ytv" --r2 site/content/r2.json --thumbs site/og/thumbs)
 fi
 # (batch290) the public repo sync's status on the Updates page (tools/public-push.sh); a test run only with POG_PUBLIC_DIR
 pubdir=${POG_PUBLIC_DIR:-}; [ -z "$pubdir" ] && [ "${POG_TEST:-0}" != 1 ] && pubdir=$HOME/.cache/pog-public
