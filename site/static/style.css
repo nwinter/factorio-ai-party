@@ -317,6 +317,24 @@ table.milestones.wide th[scope=row] { white-space: nowrap; }
 
 /* charts */
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+/* (batch314 B) the long run's charts: one a row (larger plots), a range bar every chart shares, notes on the data */
+.chart-grid-wide { grid-template-columns: minmax(0, 1fr); }
+.chart-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: .4rem 0 .6rem; }
+.chart-range[hidden] { display: none; }
+.chart-range select { font: inherit; padding: 2px 6px; min-height: 30px; border: 1px solid var(--line); border-radius: var(--fx-r-1); background: var(--surface); color: var(--ink); }
+.chart-range label { display: inline-flex; align-items: center; gap: 6px; font-size: .92rem; }
+.chart-notes { margin: .2rem 0 1rem; padding-left: 1.2rem; }
+.chart-notes li { margin: .15rem 0; }
+.chart-svg .gap { fill: var(--grid); opacity: .7; }
+.chart-svg .mark-tick { stroke: var(--line-strong); stroke-width: 1; }
+.chart-svg .line.sampled { opacity: .45; stroke-width: 1.5; }
+.chart-svg .line.avg { stroke-width: 3; }
+.legend-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: var(--fx-r-1); padding: 2px 6px; min-height: 28px; cursor: pointer; }
+.legend-btn[hidden] { display: none; }
+.legend-btn:hover { border-color: var(--line); }
+.legend-btn[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.legend-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tip .t-avg span { color: #cfcfcf; font-style: italic; }
 .chart { margin: 0; padding: 12px 14px 8px; min-width: 0; }
 .chart figcaption { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .chart figcaption strong { color: var(--heading); }
@@ -878,6 +896,7 @@ html { scroll-padding-top: 76px; }
      scrolling inside its own box, with the direct labels left to the legend and the hover */
   .chart .plot { overflow-x: auto; overscroll-behavior-x: contain; }
   .chart .plot .chart-svg { min-width: 520px; }
+  .chart .plot .chart-svg.drawn { min-width: 0; }  /* (batch314 B) site.js draws it at the phone's own width */
   .chart-svg .tick, .chart-svg .axis-label { font-size: 16px; }
   .chart-svg .mark-label { font-size: 15px; }
   .chart-svg .dlabel { display: none; }

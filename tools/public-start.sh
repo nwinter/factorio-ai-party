@@ -3,7 +3,7 @@
 #   POG_SEED=N tools/public-start.sh RUN YOUTUBE_VIDEO_ID [MINUTES] [--dry-run]
 # 1. Checks, refusing with the reason: POG_SEED set and not the test seed (20261010), RUN new, a video id, no stream
 #    service running (the previous shift stopped), OBS reachable.
-# 2. Every other run folder moves out of runs/ to POG_ARCHIVE (default ~/code/pog-archive/runs-YYYYMMDD; a rename on
+# 2. Every other run folder moves out of runs/ to POG_ARCHIVE (default ~/code/personal/player-of-games/artifacts/pog-archive/runs-YYYYMMDD; a rename on
 #    the same disk): agents list ../.. from their workspaces and could read the test runs' notes. The ones git tracks
 #    leave the index in one commit (history keeps them). The site's archive pages build from there again with
 #    POG_SITE_RUNS=$POG_ARCHIVE and "archive": true.
@@ -20,7 +20,7 @@ for a in "$@"; do [ "$a" = --dry-run ] && dry=1 || args+=("$a"); done
 run=${args[0]:-} video=${args[1]:-} minutes=${args[2]:-240}
 [ -n "$run" ] && [ -n "$video" ] || { sed -n 2,3p "$0"; exit 2; }
 seed=${POG_SEED:-}
-archive=${POG_ARCHIVE:-$HOME/code/pog-archive/runs-$(date +%Y%m%d)}
+archive=${POG_ARCHIVE:-$HOME/code/personal/player-of-games/artifacts/pog-archive/runs-$(date +%Y%m%d)}
 fail() { echo "public-start: refused: $*" >&2; exit 1; }
 [ -n "$seed" ] || fail "set POG_SEED (a new map; the test runs all used 20261010)"
 [ "$seed" != 20261010 ] || fail "POG_SEED 20261010 is the test runs' map"
