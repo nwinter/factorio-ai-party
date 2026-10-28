@@ -50,7 +50,8 @@
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
   remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
-  machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
+  machine; `{platform, item, at_least}` on a platform; in `all` or `any` each `produced` member counts its own machines
+  from the wait's first check); `platform_built` (`platform`: no foundation
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
