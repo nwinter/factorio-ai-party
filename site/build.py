@@ -1096,6 +1096,10 @@ def long_charts(lr, lo=None, hi=None, x0=0):
             notes.append(f'Shift {r["shift"]} read game time {esc(r["game0"])} to {esc(r["game1"])} again ({r["rows"]} score rows, '
                          f'{esc(_pt(r["t0"]))} to {esc(_pt(r["t1"]))} Pacific; the game time went back {esc(r["behind"])} from the furthest '
                          f'already read): those rows are left out of the charts and totals, so no game time counts twice.')
+        for r in lr.get("rollbacks") or []:
+            notes.append(f'Shift {r["shift"]}\'s score log went back {esc(r["back"])} of game time at {esc(_pt(r["t"]))} Pacific (to '
+                         f'{esc(r["game"])}) and play went on from there: those game minutes show twice in the charts, as read, and '
+                         f'packs are counted again from there (what the counters lost with it is not subtracted).')
         notes.append("Each point of a per-minute chart is one 10-game-minute window of the score log (a window never spans "
                      "a hole). The 1-game-hour average, when shown, is a separate line: the mean of the windows in the "
                      "game hour before each point; the points stay as they are.")
