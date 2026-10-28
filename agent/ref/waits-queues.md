@@ -51,8 +51,9 @@
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
   remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
   machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
-  ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
-  `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
+  ghost left; `entities: true` no entity ghost either; remote and platform lanes too) and `platform_ready` (`platform`:
+  no ghost left, entity or tile; `entities: false` tiles only; remote and platform lanes too; with `positions`, `area`
+  or `tiles`: that part's ghosts only, and the other takes the same subset; saw counts the ghosts left); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
   `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires; a hub with no wire reads every signal as 0, as the game's own circuit conditions do, so `below` is met and a guard `at_least` over 0 is refused there), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;

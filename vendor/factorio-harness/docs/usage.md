@@ -16716,3 +16716,17 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   transcripts).
 - Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
   its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
+
+## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
+- Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
+  `platform_built` and not `platform_ready`, while a direct wait_until took both. `agent/ref/waits-queues.md` gave both
+  in one sentence with the lanes.
+- `wait_until {until: "platform_ready", platform, positions?, area?, tiles?}` now runs in the remote and platform lanes
+  as a direct wait does, with the same arguments; the lane's refusal message names it.
+- `platform_ready` on the whole platform (no positions, area or tiles) counts entity ghosts too (`entities: false`: the
+  tile ghosts only); it counted the tile ghosts alone before, as `platform_built` does. With a subset both count that
+  part's entity and tile ghosts. saw: `platform NAME: N tile ghosts left, M entity ghosts`, or `platform NAME, the part
+  asked: M entity ghosts, N tile ghosts left`.
+- No other condition the waits reference gives for the lanes is refused there (tools/test_lane_waits.py reads both).
+- Tests: tests/d27_batch289.lua (the check on the whole platform and a part; queued in lane platform:Resolute and the
+  remote lane, not met then met; it fails on main's queue_lanes.lua); tools/test_lane_waits.py.
