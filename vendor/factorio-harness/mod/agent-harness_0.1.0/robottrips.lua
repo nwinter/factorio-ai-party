@@ -11,7 +11,7 @@
 -- only; bounded: GROUPS groups, LEGS legs checked for enemies.
 return function(api)
   local M = {}
-  M.LONG, M.GROUPS, M.LEGS, M.CHUNKS = 200, 32, 16, 64
+  M.LONG, M.GROUPS, M.LEGS, M.CHUNKS, M.COVERS = 200, 32, 16, 64, 8
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x * 10 + 0.5) / 10, math.floor(q.y * 10 + 0.5) / 10) end
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
@@ -46,18 +46,41 @@ return function(api)
     end
     return best or any
   end
-  -- jobs: {{kind = construct | deconstruct | deliver, pos, item, count (1 for a ghost or an entity; the items asked for
+  -- (d28 batch306, 2.0.77 on a copy, two roboport networks whose construction areas overlap, a character with a
+  -- personal roboport) which network builds a ghost several construction areas cover: the first holding its item at
+  -- the ghost's quality of: personal roboports (a mobile cell: a character's, a vehicle's), the network whose logistic
+  -- area holds the ghost, then the rest in find_logistic_networks_by_construction_area's order. Both roboport networks
+  -- holding it: the one with the ghost in its logistic area built it, and outside both logistic areas the first found,
+  -- whichever roboport was nearer; a character holding it built it inside the other's logistic area.
+  M.NOTE = 'a network that holds the item builds the ghost (a personal roboport first, then the network whose logistic area holds it)'
+  function M.build_order(s, force, pos, list)
+    local own = try(function() return force.find_logistic_network_by_position(pos, s) end)
+    local id = own and try(function() return own.network_id end)
+    local mobile, rest, at_area = {}, {}, nil
+    for _, n in ipairs(list) do
+      local cell = try(function() return n.find_cell_closest_to(pos) end)
+      if cell and try(function() return cell.mobile end) then mobile[#mobile+1] = n
+      elseif id and n.network_id == id then at_area = n
+      else rest[#rest+1] = n end
+    end
+    if at_area then mobile[#mobile+1] = at_area end
+    for _, n in ipairs(rest) do mobile[#mobile+1] = n end
+    return mobile
+  end
+  -- jobs: {{kind = construct | deconstruct | deliver, pos, item, quality (nil: normal), count (1 for a ghost or an entity; the items asked for
   -- a delivery), contents (what an entity to deconstruct holds)}}. Returns lines (nil when no job) and the counts.
   M.MAX_CELLS = 2048
   function M.preview(s, force, jobs)
     local groups, order = {}, {}
     for _, j in ipairs(jobs) do
       if j.pos and j.item then
-        local k = j.kind .. '|' .. j.item .. '|' .. math.floor(j.pos.x / 32) .. '|' .. math.floor(j.pos.y / 32)
+        local q = j.quality ~= 'normal' and j.quality or nil
+        local k = j.kind .. '|' .. j.item .. '@' .. (q or '') .. '|' .. math.floor(j.pos.x / 32) .. '|' .. math.floor(j.pos.y / 32)
         local g = groups[k]
         if not g then
           if #order >= M.GROUPS then break end
-          g = {kind=j.kind, item=j.item, n=0, items=0, sx=0, sy=0}
+          -- (d28 batch306 QL) id: the item as the network counts it, at the job's quality; label: item@quality
+          g = {kind=j.kind, item=j.item, id=q and {name=j.item, quality=q} or j.item, label=q and j.item .. '@' .. q or j.item, n=0, items=0, sx=0, sy=0}
           groups[k] = g; order[#order+1] = g
         end
         g.n = g.n + 1; g.items = g.items + (j.count or 1) + (j.contents or 0)
@@ -72,18 +95,40 @@ return function(api)
       ports[u] = ports[u] or {o=o, n=0}
       ports[u].n = ports[u].n + n
     end
-    local loads = {}
+    local loads, passed = {}, {}
     for _, g in ipairs(order) do
       local pos = {x=g.sx / g.n, y=g.sy / g.n}
       local net
       if g.kind == 'deliver' then net = try(function() return force.find_logistic_network_by_position(pos, s) end)
-      else net = (try(function() return s.find_logistic_networks_by_construction_area(pos, force) end) or {})[1] end
+      else
+        local list = try(function() return s.find_logistic_networks_by_construction_area(pos, force) end) or {}
+        net = list[1]
+        -- (d28 batch306 QL, Sol #2672: a dry run said network 954, a character's personal roboport, held none of the
+        -- items, while network 243 built 5 of the 6 ghosts in 9 s) every network whose construction area covers the
+        -- ghosts (the first COVERS), each with its count of the item at the ghost's quality, in the order the engine
+        -- tries them (NOTE); the first that holds it builds them
+        if g.kind == 'construct' then
+          g.covers = {}
+          for i, n in ipairs(M.build_order(s, force, pos, list)) do
+            if i > M.COVERS then break end
+            local c = {id=n.network_id, net=n, holds=try(function() return n.get_item_count(g.id) end) or 0}
+            g.covers[#g.covers+1] = c
+            if c.holds > 0 and not g.by then g.by = c end
+          end
+          if g.by then
+            net = g.by.net
+            for _, c in ipairs(g.covers) do
+              if c.holds == 0 then passed[c.id] = (passed[c.id] or 0) + g.n end
+            end
+          end
+        end
+      end
       if not net then uncovered = uncovered + g.n; g.uncovered = pos
       else
         local id = net.network_id
         -- (d18 batch38 B2, Haiku, 3 times: big pole ghosts whose network held none) what the covering network holds
-        if g.kind == 'construct' then g.net_id, g.holds = id, try(function() return net.get_item_count(g.item) end) end
-        nets[id] = nets[id] or {net=net, trips={construct=0, deconstruct=0, deliver=0}}
+        if g.kind == 'construct' then g.net_id, g.holds = id, g.by and g.by.holds or 0 end
+        nets[id] = nets[id] or {net=net, id=id, trips={construct=0, deconstruct=0, deliver=0}}
         local cap = loads[g.kind] or payload(force, g.kind)
         loads[g.kind] = cap
         local n
@@ -92,7 +137,7 @@ return function(api)
         else n = math.ceil(g.items / cap) end
         local a1, a2, b1, b2
         if g.kind == 'deliver' then
-          local pk = try(function() return net.select_pickup_point{name=g.item, position=pos} end)
+          local pk = try(function() return net.select_pickup_point{name=g.id, position=pos} end)
           local o = pk and try(function() return pk.owner end)
           if o and o.valid then
             local port = port_for(net, o.position, 'deliver', pcache)
@@ -103,7 +148,7 @@ return function(api)
           local port = port_for(net, pos, 'construct', pcache)
           if port then add_port(port, n) end
           if g.kind == 'construct' then
-            local pk = try(function() return net.select_pickup_point{name=g.item, position=pos} end)
+            local pk = try(function() return net.select_pickup_point{name=g.id, position=pos} end)
             local o = pk and try(function() return pk.owner end)
             if o and o.valid then a1, a2, b1, b2 = port and port.position or o.position, o.position, o.position, pos end
           else
@@ -141,11 +186,15 @@ return function(api)
       table.sort(plist, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.o.unit_number < y.o.unit_number end)
       local pt = {}
       for i = 1, math.min(3, #plist) do pt[i] = string.format('%s %s (%d trips)', plist[i].o.name, at(plist[i].o.position), plist[i].n) end
-      lines[#lines+1] = string.format('%d robot trips: about %d robots would go at once (the network\'s idle ones of that kind: %d), from %s%s; the longest trip %d tiles, the mean %d',
-        trips, robots, idle, table.concat(pt, ', '), #plist > 3 and string.format(' (+%d more roboports)', #plist - 3) or '', math.floor(longest.len + 0.5), math.floor(length / trips + 0.5))
+      local nl = {}
+      for _, x in pairs(nets) do if x.trips.construct + x.trips.deconstruct + x.trips.deliver > 0 then nl[#nl+1] = x.id end end
+      table.sort(nl)
+      lines[#lines+1] = string.format('%d robot trips: about %d robots would go at once (the network\'s idle ones of that kind: %d), from %s%s; the longest trip %d tiles, the mean %d; by network %s',
+        trips, robots, idle, table.concat(pt, ', '), #plist > 3 and string.format(' (+%d more roboports)', #plist - 3) or '', math.floor(longest.len + 0.5), math.floor(length / trips + 0.5),
+        table.concat(nl, ', ', 1, math.min(#nl, 4)) .. (#nl > 4 and string.format(' (+%d more)', #nl - 4) or ''))
       if long_n > 0 then
         local L = longest
-        lines[#lines+1] = string.format('%d trips over %d tiles; the longest, %d tiles, for %s near %s: %s', long_n, M.LONG, math.floor(L.len + 0.5), L.g.item, at({x=L.g.sx / L.g.n, y=L.g.sy / L.g.n}),
+        lines[#lines+1] = string.format('%d trips over %d tiles; the longest, %d tiles, for %s near %s: %s', long_n, M.LONG, math.floor(L.len + 0.5), L.g.label, at({x=L.g.sx / L.g.n, y=L.g.sy / L.g.n}),
           table.concat((function()
             local parts = {}
             if L.a1 then parts[#parts+1] = at(L.a1) .. ' to ' .. at(L.a2) end
@@ -194,12 +243,23 @@ return function(api)
     end
     local none = {}
     for _, g in ipairs(order) do
-      if g.kind == 'construct' and g.holds == 0 then
-        lines[#lines+1] = string.format('%d %s ghost%s near %s: network %d covering %s holds no %s', g.n, g.item, g.n == 1 and '' or 's',
-          at({x=g.sx / g.n, y=g.sy / g.n}), g.net_id, g.n == 1 and 'it' or 'them', g.item)
-      elseif g.no_source and #none < 4 then none[#none+1] = string.format('%d %s for %s', g.n, g.kind, g.item) end
+      if g.kind == 'construct' and g.holds == 0 and not g.uncovered then
+        local ids = {}
+        for i, c in ipairs(g.covers or {}) do ids[i] = c.id end
+        lines[#lines+1] = string.format('%d %s ghost%s near %s: %s covering %s %s no %s', g.n, g.label, g.n == 1 and '' or 's',
+          at({x=g.sx / g.n, y=g.sy / g.n}), #ids > 1 and 'networks ' .. table.concat(ids, ', ') or 'network ' .. tostring(ids[1] or g.net_id),
+          g.n == 1 and 'it' or 'them', #ids > 1 and 'hold' or 'holds', g.label)
+      elseif g.no_source and #none < 4 then none[#none+1] = string.format('%d %s for %s', g.n, g.kind, g.label) end
     end
     if #none > 0 then lines[#lines+1] = 'no chest of the network to take from or put into for ' .. table.concat(none, ', ') end
+    -- networks whose construction area covers ghosts another network builds (one holding none of their items)
+    local pl = {}
+    for id, n in pairs(passed) do pl[#pl+1] = {id=id, n=n} end
+    table.sort(pl, function(x, y) return x.id < y.id end)
+    for i, x in ipairs(pl) do
+      if i > 4 then break end
+      lines[#lines+1] = string.format('network %d\'s construction area covers %d of the ghosts too, and it holds none of their items: %s', x.id, x.n, M.NOTE)
+    end
     -- (B2, Haiku) a ghost outside every roboport's construction area: the nearest roboport and how far outside its area
     -- (the area is a square round it); cells of our networks on the surface, the first MAX_CELLS
     local cells
@@ -207,9 +267,9 @@ return function(api)
     local hub = try(function() return s.platform and s.platform.hub end)
     for _, g in ipairs(order) do
       if g.uncovered and g.kind ~= 'deliver' and hub and hub.valid then
-        local holds = try(function() return hub.get_item_count(g.item) end) or 0
-        lines[#lines+1] = string.format('%d %s %s near %s: on a space platform the hub builds %s from its inventory (no roboport); the hub holds %s', g.n, g.item,
-          g.kind == 'construct' and (g.n == 1 and 'ghost' or 'ghosts') or 'jobs', at(g.uncovered), g.n == 1 and 'it' or 'them', holds > 0 and holds .. ' ' .. g.item or 'no ' .. g.item)
+        local holds = try(function() return hub.get_item_count(g.id) end) or 0
+        lines[#lines+1] = string.format('%d %s %s near %s: on a space platform the hub builds %s from its inventory (no roboport); the hub holds %s', g.n, g.label,
+          g.kind == 'construct' and (g.n == 1 and 'ghost' or 'ghosts') or 'jobs', at(g.uncovered), g.n == 1 and 'it' or 'them', holds > 0 and holds .. ' ' .. g.label or 'no ' .. g.label)
       elseif g.uncovered and g.kind ~= 'deliver' then
         if not cells then
           cells = {}
@@ -226,7 +286,7 @@ return function(api)
           local out = math.max(math.abs(c.o.position.x - g.uncovered.x), math.abs(c.o.position.y - g.uncovered.y)) - c.r
           if not bo or out < bo then best, bo = c, out end
         end
-        lines[#lines+1] = string.format('%d %s %s near %s: no roboport\'s construction area covers %s%s', g.n, g.item, g.kind == 'construct' and (g.n == 1 and 'ghost' or 'ghosts') or 'jobs',
+        lines[#lines+1] = string.format('%d %s %s near %s: no roboport\'s construction area covers %s%s', g.n, g.label, g.kind == 'construct' and (g.n == 1 and 'ghost' or 'ghosts') or 'jobs',
           at(g.uncovered), g.n == 1 and 'it' or 'them',
           best and string.format('; the nearest roboport, %s %s (network %d), covers %d tiles round it, and %s %d tiles outside that', best.o.name, at(best.o.position), best.id, best.r,
             g.n == 1 and 'it is' or 'their middle is', math.ceil(bo)) or '; no roboport of ours with a construction area on this surface')
@@ -240,7 +300,7 @@ return function(api)
     local pr = try(function() return e.prototype.mineable_properties.products end)
     local item = pr and pr[1] and pr[1].type ~= 'fluid' and pr[1].name or nil
     if not item then return nil end
-    return {kind='deconstruct', pos=e.position, item=item, count=1, contents=try(function() return e.get_item_count() end) or 0}
+    return {kind='deconstruct', pos=e.position, item=item, quality=try(function() return e.quality.name end), count=1, contents=try(function() return e.get_item_count() end) or 0}
   end
   return M
 end

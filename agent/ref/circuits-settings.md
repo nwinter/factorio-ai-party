@@ -9,7 +9,8 @@
   entity does after either. `logistic: false` takes the logistic condition away. `clear: true` takes both away (a
   chest: its circuit condition). A call with no setting (`{position}` alone) changes nothing and is refused, naming each
   condition that holds the entity now and the argument that clears it. A logistic condition reads the network
-  whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
+  whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met), at its signal's quality:
+  `iron-plate@legendary < 400` counts legendary plates only, and the reads name `iron-plate@legendary`. The game's network count is what
   the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
   condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
   (`circuit_gate {source: the chest}`). inspect, supply's gate line and the off_by_condition alert say the same.

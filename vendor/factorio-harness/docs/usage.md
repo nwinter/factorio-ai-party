@@ -17144,6 +17144,33 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     unchanged.
 - Docs: agent/ref/movement-combat.md, the vehicle action's wait text. Test: tests/d28_batch300.lua (fails on main: the
   wait still running a second after sol's clear).
+## d28 batch306 (QL: logistic conditions explained at their quality; robot_dispatch names the network that builds, Sol #2672)
+
+- Sol (#2672): inspect compact explained `iron-plate@legendary < 400` with the normal count (reserved -54) and
+  `copper-plate@legendary < 100` with normal copper 31651; place_ghosts' dry run said network 954 (a character's
+  personal roboport) held none of the items while network 243 built 5 of the 6 in 9 s.
+- Engine facts (2.0.77, an OrbStack copy; the iMac was off):
+  - A logistic condition on `iron-plate@legendary < 10` reads the legendary count: 5 legendary beside 100 normal was
+    true, 20 legendary false, 0 true. A network's `get_item_count('iron-plate')` and `get_item_count{name}` both read the
+    normal 100 only; `{name, quality='legendary'}` the legendary.
+  - Two roboport networks A (found first) and B, construction areas overlapping, a ghost in both: the network holding
+    the item builds it (only A holds: A, though in B's logistic area; only B: B). Both holding: the one whose logistic
+    area holds the ghost (B at x 6040, A at 6020); in neither logistic area, A both times, nearer A or nearer B. A
+    legendary ghost took the legendary item from whichever held it.
+  - A character with a personal roboport is listed first by `find_logistic_networks_by_construction_area`; holding the
+    item it built the ghost inside B's logistic area while B held it too; holding none, B built it.
+  - Live with this runtime: a dry run named network 380 (B) for two normal chests and 379 (A, the only uncommon stock)
+    for an uncommon one; placed, B gave the 2 normal and A the uncommon.
+- Change:
+  - circuits.lua `item_id(signal)` ({name, quality}); inspect's compact condition line and `logistic_reads` count the
+    item at the condition's quality and name it `item@quality`; the reserved-beyond-stock note names it too (also in
+    gates and the off_by_condition alert). thrust.state_text names a circuit signal's quality.
+  - robottrips: jobs carry `quality` (place_ghosts, a requester's dry run, deconstruct); groups by item and quality;
+    `build_order` (personal roboports, the logistic-area network, the rest as found) and the first holding the item at
+    its quality builds; `by network N` on the trips line; a covering network that holds none of the items said once;
+    a ghost none holds it for names every covering network; counts and pickup points at the quality.
+- Tests: tests/d28_batch306.lua; tests/d17_batch34.lua's trips line ends `; by network 7`.
+
 ## d28 batch303 (RQ: a crafting machine's recipe quality in inspect, scan, the rate line and bottleneck, Sol #2665)
 
 - Sol (03:56): inspect named the Needle crusher (-6,0.5)'s recipe bare; it runs oxide-asteroid-reprocessing at
