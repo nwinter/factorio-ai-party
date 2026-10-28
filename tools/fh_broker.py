@@ -385,7 +385,7 @@ def main():
     uids = {k: int(v) for k, v in (u.split("=", 1) for u in a.uid)}
     port = a.port or pog.PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])
     pw = open(a.password_file or os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
-    broker = Broker(port, pw, a.log, group=a.group, uids=uids)
+    broker = Broker(port, pw, a.log, host=pog.HOSTS.get(a.world, "127.0.0.1"), group=a.group, uids=uids)
     broker.serve(a.dir, a.bots)
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: done.set())

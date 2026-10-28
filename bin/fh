@@ -28,6 +28,7 @@ case $world in
   n) port=27025 ;;
   sa) port=27030 ;;
   imac) port=27400 host=imac.local ;;  # (d27 batch279) the private copy on the iMac, tools/imac-copy.sh: RCON over the LAN
+  mt) port=27475 host=imac.local ;;    # (mt277, private) the multi-team server on the iMac, tools/mt/imac_mt.sh
   *) port=${POG_RCON_PORT:?set POG_RCON_PORT for world $world} ;;
 esac
 host=${POG_RCON_HOST:-$host}

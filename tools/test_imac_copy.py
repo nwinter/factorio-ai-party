@@ -39,7 +39,7 @@ def worlds():
     assert run(POG_WORLD="n")[:2] == ["127.0.0.1", "27025"]
     assert run(POG_WORLD="b205", POG_RCON_PORT="27205")[:2] == ["127.0.0.1", "27205"]
     import pog
-    assert pog.PORTS["imac"] == 27400 and pog.HOSTS == {"imac": "imac.local"}
+    assert pog.PORTS["imac"] == 27400 and pog.HOSTS["imac"] == "imac.local"
     src = open(os.path.join(HERE, "pog.py")).read()
     assert 'Rcon(os.environ.get("POG_RCON_HOST") or HOSTS.get(a.world, "127.0.0.1"), port, pw)' in src
     print("1. world imac: imac.local:27400; the others on the tunnel: ok")
