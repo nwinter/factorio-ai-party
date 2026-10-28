@@ -386,13 +386,28 @@ def fmt_num(v):
     return f"{v:g}"
 
 
+def mark_step(marks, X, width):
+    """(batch314 B) every k-th shift label (k from 1, 2, 5, 10, ...: S10, S20, ...) so that none of the labels
+    drawn collide: marks [(x, "S12")], X the scale, width a label's width with its gap, in the same units."""
+    nums = [(X(x), int(re.sub(r"\D", "", lab) or 0)) for x, lab in marks]
+    for k in (1, 2, 5, 10, 20, 25, 50, 100, 200, 500):
+        xs = [x for x, n in nums if k == 1 or n % k == 0]
+        if all(b - a >= width for a, b in zip(xs, xs[1:])):
+            return k
+    return 1000
+
+
 def line_chart(title, series, y_label, x_label="game time (minutes)", step=False, desc="", hours=False, marks=(), clock=(),
-               x0=0):
+               x0=0, gaps=(), smooth=False):
     """Inline SVG line chart with legend, direct end labels (<= 4 series), hover readout and a table view.
 
     series: [{"name": str, "points": [(x_minutes, y)], "var": "--sN", "dash": bool}] in fixed palette order.
-    hours: x ticks in hours of game time; marks: [(x_minutes, label)] dashed verticals (shift starts); clock:
-    [(x_minutes, "Oct 12, 20:17")] read by the hover for the real time; x0: the x axis starts here (a shift's page).
+    hours: x ticks in hours of game time; marks: [(x_minutes, label)] shift starts: a dashed vertical each, the labels
+    in a strip under the axis, thinned so none collide (batch314 B); clock: [(x_minutes, "Oct 12, 20:17")] read by
+    the hover for the real time; x0: the x axis starts here (a shift's page); gaps: [(x0, x1)] holes in the record,
+    shaded, the lines broken there; smooth: site.js may add a 1-game-hour average, drawn apart from the samples.
+    site.js draws the chart again at the page's own width (and for a range, legend toggles, the average) from the
+    chart-data JSON; this SVG is what shows without the script.
     """
     global _chart_n
     _chart_n += 1
@@ -401,8 +416,9 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
     xs = [p[0] for s in series for p in s["points"]] or [0, 1]
     ys = [p[1] for s in series for p in s["points"]] or [0, 1]
     # right margin fits the direct end labels ("Name 1.2k"), which are only drawn for <= 4 series
-    longest = max((len(s["name"]) + len(fmt_num(s["points"][-1][1])) + 1 for s in series if s["points"]), default=0)
-    L, R, T, B = 48, (int(18 + 7.6 * longest) if len(series) <= 4 else 16), 14, 36  # 13-unit labels
+    longest = max((len(s["name"]) + len(fmt_full(s["points"][-1][1])) + 1 for s in series if s["points"]), default=0)
+    SB = 18 if marks else 0  # the shift strip under the x ticks
+    L, R, T, B = 48, (int(18 + 7.6 * longest) if len(series) <= 4 else 16), 14, 36 + SB  # 13-unit labels
     if hours:
         xticks = [round(x0 + v * 60, 6) for v in nice_ticks(((max(xs) or 1) - x0) / 60, 8)]
     else:
@@ -424,13 +440,23 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
         parts.append(f'<text class="tick" x="{L-6}" y="{Y(v)+4:.1f}" text-anchor="end">{fmt_num(v)}</text>')
     for v in xticks:
         tick = f"{v / 60:g}h" if hours else fmt_num(v)
-        parts.append(f'<text class="tick" x="{X(v):.1f}" y="{H-B+16}" text-anchor="middle">{tick}</text>')
-    for mx, mlabel in marks:
-        if x0 <= mx <= xmax:
-            parts.append(f'<line class="mark" x1="{X(mx):.1f}" x2="{X(mx):.1f}" y1="{T}" y2="{T+ph}"/>'
-                         f'<text class="mark-label" x="{X(mx)+3:.1f}" y="{T+10}">{esc(mlabel)}</text>')
+        parts.append(f'<text class="tick" x="{X(v):.1f}" y="{T+ph+16}" text-anchor="middle">{tick}</text>')
+    for g0, g1 in gaps:
+        a, b = max(g0, x0), min(g1, xmax)
+        if b > a:
+            parts.append(f'<rect class="gap" x="{X(a):.1f}" y="{T}" width="{X(b) - X(a):.1f}" height="{ph}"><title>No score rows '
+                         f'{esc(longrun.game_time(g0 * 3600))} to {esc(longrun.game_time(g1 * 3600))}</title></rect>')
+    inside = [(mx, ml) for mx, ml in marks if x0 <= mx <= xmax]
+    k = mark_step(inside, X, 7.2 * max((len(ml) for _, ml in inside), default=3) + 8) if inside else 1
+    sy = T + ph + 22  # the strip: a tick per shift start, every k-th labelled
+    for mx, mlabel in inside:
+        num = int(re.sub(r"\D", "", mlabel) or 0)
+        parts.append(f'<line class="mark" x1="{X(mx):.1f}" x2="{X(mx):.1f}" y1="{T}" y2="{T+ph}"/>'
+                     f'<line class="mark-tick" x1="{X(mx):.1f}" x2="{X(mx):.1f}" y1="{sy}" y2="{sy+4}"/>')
+        if k == 1 or num % k == 0:
+            parts.append(f'<text class="mark-label" x="{X(mx):.1f}" y="{sy+15}" text-anchor="middle">{esc(mlabel)}</text>')
     parts.append(f'<line class="axis" x1="{L}" x2="{W-R}" y1="{T+ph}" y2="{T+ph}"/>')
-    parts.append(f'<text class="axis-label" x="{L+pw/2}" y="{H-4}" text-anchor="middle">{esc(x_label)}</text>')
+    parts.append(f'<text class="axis-label" x="{L+pw/2}" y="{H-4}" text-anchor="middle">{esc(x_label)}{" · S: shift starts" if marks else ""}</text>')
 
     label_slots = []
     for idx, s in enumerate(series):
@@ -439,8 +465,9 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
             continue
         var = s.get("var") or PALETTE[idx % len(PALETTE)]
         d = []
-        for k, (x, y) in enumerate(pts):
-            if k == 0:
+        for j, (x, y) in enumerate(pts):
+            # a line breaks across a hole in the record (gaps) and where game time goes back
+            if j == 0 or x < pts[j - 1][0] or any(pts[j - 1][0] <= g0 and x >= g1 for g0, g1 in gaps):
                 d.append(f"M{X(x):.1f},{Y(y):.1f}")
             elif step:
                 d.append(f"H{X(x):.1f}V{Y(y):.1f}")
@@ -453,7 +480,7 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
             continue  # a line ending at 0 (a pack not made at the shift's end) gets no end dot or label
         parts.append(f'<circle class="end" cx="{X(ex):.1f}" cy="{Y(ey):.1f}" r="4" style="fill:var({var})"/>')
         if len(series) <= 4:
-            label_slots.append([Y(ey), X(ex), s["name"], fmt_num(ey)])
+            label_slots.append([Y(ey), X(ex), s["name"], fmt_full(ey)])
     # direct labels, nudged apart vertically
     label_slots.sort()
     for k in range(1, len(label_slots)):
@@ -471,8 +498,10 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
             f'<li><span class="swatch" style="background:var({s.get("var") or PALETTE[i % 8]})"></span>{esc(s["name"])}</li>'
             for i, s in enumerate(series)) + "</ul>"
     data = {"L": L, "pw": pw, "xmax": xmax, "x0": x0, "W": W, "T": T, "ph": ph, "ymax": ymax, "step": step, "y": y_label,
-            "series": [{"name": s["name"], "var": s.get("var") or PALETTE[i % 8], "pts": [[round(x, 2), y] for x, y in s["points"]]}
-                       for i, s in enumerate(series)]}
+            "hours": hours, "xl": x_label, "marks": [[round(x, 2), m] for x, m in marks], "gaps": [[g0, g1] for g0, g1 in gaps],
+            "smooth": smooth or None,
+            "series": [{"name": s["name"], "var": s.get("var") or PALETTE[i % 8], "dash": s.get("dash") or None,
+                        "pts": [[round(x, 2), y] for x, y in s["points"]]} for i, s in enumerate(series)]}
     if clock == "page":
         data["clock"] = "page"  # the page's one #chart-clock list (long_charts), shared by its charts
     elif clock:
@@ -481,7 +510,7 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
     xs_all = sorted({x for s in series for x, _ in s["points"]})
     vals = [dict(s["points"]) for s in series]
     fx = (lambda x: longrun.game_time(x * 3600)) if hours else (lambda x: f"{x:.1f}")
-    rows = "".join(f"<tr><td>{fx(x)}</td>" + "".join(f"<td>{fmt_num(v[x]) if x in v else ''}</td>" for v in vals) + "</tr>"
+    rows = "".join(f"<tr><td>{fx(x)}</td>" + "".join(f"<td>{fmt_full(v[x]) if x in v else ''}</td>" for v in vals) + "</tr>"
                    for x in xs_all)
     heads = "".join(f"<th>{esc(s['name'])}</th>" for s in series) if len(series) > 1 else f"<th>{esc(y_label)}</th>"
     table = (f'<details class="table-view"><summary>Show data as a table</summary><div class="table-wrap"><table>'
@@ -1013,33 +1042,78 @@ def firsts_table(firsts, shift_links=True, filters=False):
             'losses: the stream director\'s log.</p>')
 
 
+RECENT_SHIFTS = 10  # (batch314 B) the charts' "recent" range: the last this many shifts
+
+
 def long_charts(lr, lo=None, hi=None, x0=0):
     """Science per minute by pack, technologies and rockets on the save's game clock, shift starts marked; one list
-    of Pacific times for the page's hovers."""
+    of Pacific times for the page's hovers. The whole run (lo None, batch314 B): one chart a row, a range bar shared by
+    every chart (the full run, the last RECENT_SHIFTS shifts, one shift; site.js), the data's cutoff, and the holes in
+    the record and the game time replayed from an earlier save named."""
     marks = [(x, f"S{n}") for x, n, _ in lr["bounds"]]
     inside = (lambda pts: [(x, y) for x, y in pts if (lo is None or x >= lo) and (hi is None or x <= hi)])
     clock = "page"
+    gaps = [(g["x0"], g["x1"]) for g in lr.get("gaps") or []]
     ps = pack_rate_series(lr["spm_packs"], lo, hi)
-    opts = dict(x_label="game time (hours)", hours=True, marks=marks, clock=clock, x0=x0)
+    opts = dict(x_label="game time (hours)", hours=True, marks=marks, clock=clock, x0=x0, gaps=gaps)
     charts = []
     tot = inside(lr["spm"])
     if tot:
         charts.append(line_chart("Science per minute (SPM)", [{"name": "SPM", "points": tot}], "research units per minute",
-                                 desc="Research units a minute: the labs' use of packs in sets. 10-game-minute windows.", **opts))
+                                 desc="Research units a minute: the labs' use of packs in sets. A point per 10-game-minute window.",
+                                 smooth=True, **opts))
     if ps:
         charts.append(line_chart("Science packs used by the labs per minute, by pack", ps, "packs per minute",
-                                 desc="10-game-minute windows.", **opts))
+                                 desc="A point per 10-game-minute window. Click a pack to hide or show it.", **opts))
     made = inside(lr.get("made_spm") or [])
     if made:
         charts.append(line_chart("Science packs made per minute, all colours", [{"name": "Packs made", "points": made}],
-                                 "packs per minute", desc="10-game-minute windows.", **opts))
+                                 "packs per minute", desc="A point per 10-game-minute window.", smooth=True, **opts))
     charts.append(line_chart("Technologies researched", [{"name": "Technologies", "points": inside(lr["research"])}],
                              "technologies", step=True, **opts))
     charts.append(line_chart("Rockets launched", [{"name": "Rockets", "points": inside(lr["rockets"])}], "rockets",
                              step=True, **opts))
     times = json.dumps([[x, _pt(t)] for x, t in inside(lr["clock"])]).replace("</", "<\\/")
-    return (f'<script type="application/json" id="chart-clock">{times}</script>'
-            f'<div class="chart-grid">{"".join(charts)}</div>')
+    head = ""
+    if lo is None:
+        bounds = lr["bounds"]
+        cut = lr.get("cutoff")
+        recent = bounds[-RECENT_SHIFTS][0] if len(bounds) > RECENT_SHIFTS else None
+        opts_html = "".join(f'<option value="{n}" data-lo="{x}" data-hi="{bounds[i + 1][0] if i + 1 < len(bounds) else (cut["x"] if cut else x)}">Shift {n}</option>'
+                            for i, (x, n, _) in enumerate(bounds))
+        bar = (f'<div class="chart-range" role="group" aria-label="Range of every chart below" hidden>'
+               f'<button type="button" class="fx-btn small" data-range="full" aria-pressed="true">Full run</button>'
+               + (f'<button type="button" class="fx-btn small" data-range="recent" data-lo="{recent}" aria-pressed="false">Last {RECENT_SHIFTS} shifts</button>' if recent is not None else "")
+               + f'<label class="range-shift">Shift <select data-range="shift"><option value="">choose</option>{opts_html}</select></label>'
+               f'<label class="range-smooth"><input type="checkbox" data-smooth> 1-game-hour average</label></div>')
+        notes = []
+        if cut:
+            notes.append(f'Data to game time {esc(cut["game"])}: the last score row read, {esc(_pt(cut["t"]))} Pacific, shift {cut["shift"]}.')
+        for g in lr.get("gaps") or []:
+            notes.append(f'No score rows from game time {esc(longrun.game_time(g["x0"] * 3600))} to {esc(longrun.game_time(g["x1"] * 3600))} '
+                         f'({esc(_pt(g["t0"]))} to {esc(_pt(g["t1"]))} Pacific, shift {g["shift"]}): shaded, the lines broken there.')
+        for r in lr.get("replays") or []:
+            notes.append(f'Shift {r["shift"]} read game time {esc(r["game0"])} to {esc(r["game1"])} again ({r["rows"]} score rows, '
+                         f'{esc(_pt(r["t0"]))} to {esc(_pt(r["t1"]))} Pacific; the game time went back {esc(r["behind"])} from the furthest '
+                         f'already read): those rows are left out of the charts and totals, so no game time counts twice.')
+        notes.append("Each point of a per-minute chart is one 10-game-minute window of the score log (a window never spans "
+                     "a hole). The 1-game-hour average, when shown, is a separate line: the mean of the windows in the "
+                     "game hour before each point; the points stay as they are.")
+        head = bar + '<ul class="chart-notes muted small">' + "".join(f"<li>{n}</li>" for n in notes) + "</ul>"
+    return (f'<script type="application/json" id="chart-clock">{times}</script>{head}'
+            f'<div class="chart-grid{" chart-grid-wide" if lo is None else ""}">{"".join(charts)}</div>')
+
+
+def replay_note(s):
+    """(batch314) a shift whose score log read game time already read (longrun.load's replays): which, and that its
+    numbers leave those rows out."""
+    r = s.get("replayed")
+    if not r:
+        return ""
+    return (f'<p class="muted small">The score log read game time {esc(r["game0"])} to {esc(r["game1"])} again in this shift '
+            f'({r["rows"]} rows, {esc(_pt(r["t0"]))} to {esc(_pt(r["t1"]))} Pacific; the game time went back {esc(r["behind"])} '
+            f'from the furthest already read). Those rows are left out of its numbers, charts and the run\'s totals, so no '
+            f'game time counts twice.</p>')
 
 
 def shift_stats(s):
@@ -1201,7 +1275,7 @@ def build_shift_page(s, v, lr):
 <p class="meta">{esc(_when(s["started"], s["ended"]))} Pacific · game time {esc(s["game0"])} to {esc(s["game1"])}</p>
 {nav}
 {watch}
-<div class="stats">{shift_stats(s)}</div>
+<div class="stats">{shift_stats(s)}</div>{replay_note(s)}
 {video}
 <h2>Milestones</h2>
 {firsts_table(mine, shift_links=False)}
@@ -1428,7 +1502,7 @@ def build_long_run(lr):
 {live_banner()}
 <h1>The long run</h1>
 <p class="meta">One save · started {esc(_pt(first["started"]))} Pacific · game clock paused between shifts</p>
-<nav class="jump" aria-label="On this page"><a href="#key-times">Key times</a><a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a><a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
+<nav class="jump" aria-label="On this page">{'<a href="#key-times">Key times</a>' if key_times(lr) else ""}<a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a><a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
 <div class="stats stats-compact">{stats}</div>
 {journey(lr)}
 {key_times(lr)}
@@ -1438,7 +1512,7 @@ def build_long_run(lr):
 {firsts_table(lr["firsts"], filters=True)}
 {platforms_table(lr["platforms"], lr.get("platform_losses"))}
 <h2 id="charts">Charts</h2>
-<p class="muted small">Game time on the x axis; S1, S2 ...: shift starts. Hover for the Pacific time.</p>
+<p class="muted small">Game time on the x axis; the strip under it marks shift starts (S1, S2 ...). Hover or tap a chart for exact values and the Pacific time; each one has its data as a table.</p>
 {long_charts(lr)}
 {packs_bars(lr["made"])}
 <h2 id="shifts">Shifts</h2>

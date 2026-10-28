@@ -98,6 +98,9 @@ HOST_CALL = re.compile(r"^(\d\d:\d\d:\d\d) \[(\w+)\] \((space\w*|research|attack
 # a research, attack or loss call is a big one when it names one of these
 BIG = re.compile(r"(?i)\b(rocket|silo|platform|hub|orbit|vulcanus|fulgora|gleba|aquilo|space science|oil processing|"
                  r"robot|nuclear|uranium|kovarex|foundry|planet|blue science|purple|yellow|metallurgic|landing)")
+# (batch314) a stretch of game time with no score row longer than this is a hole in the record (rows come every 1-2
+# game minutes): charts shade it and break their lines there, and no rate window spans it
+GAP_MIN = 30
 HOST_REPLY = re.compile(r"^(\d\d:\d\d:\d\d) \[(\w+)\] \(viewer_reply, [^)]*\) (.*)$")
 
 
@@ -182,7 +185,10 @@ def scores(path):
                      "platforms": [p["name"] for p in plats],
                      "at": {p["name"]: p.get("at") for p in plats},
                      "planets": list(s.get("planets") or [])})
-    rows.sort(key=lambda r: r["tick"])
+    # in the order written (chronological): a shift that began on an earlier save reads game time going back, and
+    # load() needs to see that (batch314); a log whose rows lack times keeps game-time order
+    if not all(isinstance(r["t"], str) for r in rows):
+        rows.sort(key=lambda r: r["tick"])
     return rows
 
 
@@ -464,12 +470,44 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         seen_first.add(key)
         firsts.append({"key": key, "label": label_, "kind": kind, "tick": tick, "t": t, "shift": shift_n})
 
+    # (batch314) game time counted once: a row behind the furthest game time already read (a shift that began on an
+    # earlier save: shift 13 read 3h17m back, then its later save was restored) replays time already counted, so it is
+    # left out of the totals, firsts and charts and named (replays); holes over GAP_MIN game minutes are listed (gaps)
+    base_raw = origin["raw"] if origin else 0
+    max_raw = origin["raw"] if origin else None
+    last_kept = origin
+    gaps, replays = [], []
     for i, name in enumerate(names):
         d = runs_dir / name
-        sc = [rebase(r, origin) for r in scores(d / "scores.jsonl")]
+        sc, replay, replay_from = [], [], None
+        for r in (rebase(r, origin) for r in scores(d / "scores.jsonl")):
+            if max_raw is not None and r["raw"] < max_raw:
+                if not replay:
+                    replay_from = max_raw
+                replay.append(r)
+                continue
+            if last_kept is not None and (r["raw"] - last_kept["raw"]) / 3600 > GAP_MIN:
+                gaps.append({"x0": round((last_kept["raw"] - base_raw) / 3600, 1), "x1": round(r["tick"] / 3600, 1),
+                             "t0": last_kept["t"], "t1": r["t"], "shift": n + 1})
+            max_raw, last_kept = r["raw"], r
+            sc.append(r)
         start_log = log_times(d / "start.log")
-        n += 1 if sc else 0  # only shifts that played are numbered
-        row = {"id": name, "n": n if sc else None, "moments": []}
+        n += 1 if sc or replay else 0  # only shifts that played are numbered
+        row = {"id": name, "n": n if sc or replay else None, "moments": []}
+        if replay:
+            top = max(r["tick"] for r in replay)
+            row["replayed"] = {"rows": len(replay), "x0": round(replay[0]["tick"] / 3600, 1), "x1": round(top / 3600, 1),
+                               "game0": game_time(replay[0]["tick"]), "game1": game_time(top), "t0": replay[0]["t"],
+                               "t1": replay[-1]["t"], "behind": game_time(replay_from - replay[0]["raw"]),
+                               "rockets": replay[0]["rockets"], "research": replay[0]["research"]}
+            replays.append(dict(row["replayed"], shift=n))
+        if not sc and replay:
+            nxt = names[i + 1] if i + 1 < len(names) else None
+            deaths, losses = stream_events(d / "stream-service.log")
+            row.update(started=replay[0]["t"], ended=replay[-1]["t"], empty=True, resumed_as=nxt, deaths=deaths, losses=losses,
+                       note="read only game time already counted: left out of the totals")
+            shifts.append(row)
+            continue
         if not sc:
             deaths, losses = stream_events(d / "stream-service.log")
             nxt = names[i + 1] if i + 1 < len(names) else None
@@ -480,7 +518,8 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         a, b = sc[0], sc[-1]
         base = prev or a
         mins = (b["tick"] - a["tick"]) / 3600
-        ta = parse_t(a["t"])
+        # the shift's own start: its first row, a replayed one included (shift 13 began 54 minutes before its restore)
+        ta = parse_t(replay[0]["t"] if replay and replay[0]["t"] < a["t"] else a["t"])
         deaths, losses, died, first_loss = stream_events(d / "stream-service.log", ta, detail=True)
         # packs made: the rise of every counter between consecutive rows, a fall counted as 0
         made0 = dict(made)
@@ -534,7 +573,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             v = interp(tx, ty, raw_tick) if tx else None
             return datetime.datetime.fromtimestamp(v).isoformat(timespec="seconds") if v is not None else None
 
-        row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], raw0=a["raw"], raw1=b["raw"],
+        row.update(started=replay[0]["t"] if replay and replay[0]["t"] < a["t"] else a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], raw0=a["raw"], raw1=b["raw"],
                    game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
                    researching=in_progress(b.get("current"), b.get("infinite")),
@@ -676,8 +715,14 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                 rockets_s.append((round(m, 1), r["rockets"]))
                 clock.append((round(m, 1), r["t"]))
                 last_m = m
-        w0 = a
+        w0, before_w = a, a
         for r in sc[1:]:
+            # (batch314) no window spans a hole in the record: one starts again after it
+            hole = (r["tick"] - before_w["tick"]) / 3600 > GAP_MIN
+            before_w = r
+            if hole:
+                w0 = r
+                continue
             dm = (r["tick"] - w0["tick"]) / 3600
             if dm >= 10:
                 x = round(r["tick"] / 3600, 1)
@@ -703,5 +748,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
     for k, pts in spm_packs.items():
         have = dict(pts)
         spm_packs[k] = [(x, have.get(x, 0.0)) for x in xs]
+    last = next((s for s in reversed(shifts) if not s.get("empty")), None)
     return {"shifts": shifts, "research": research, "spm": spm, "spm_packs": spm_packs, "made_spm": made_spm, "rockets": rockets_s,
-            "made": made, "firsts": firsts, "bounds": bounds, "clock": clock, "platforms": plats}
+            "made": made, "firsts": firsts, "bounds": bounds, "clock": clock, "platforms": plats,
+            # (batch314) holes in the record, game time replayed from an earlier save, and the last score row read
+            "gaps": gaps, "replays": replays,
+            "cutoff": {"x": round(last["tick1"] / 3600, 1), "game": last["game1"], "t": last["ended"], "shift": last["n"]} if last else None}
