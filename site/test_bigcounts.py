@@ -64,6 +64,7 @@ def main():
         long_page = (out / "runs" / "long" / "index.html").read_text()
         shift = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         home = (out / "index.html").read_text()
+        about = (out / "about" / "index.html").read_text()
         packs = 1_234_567_890_123 + 1_234_567_890_123 // 2  # every colour, from 0
         full = f"{packs:,}".replace(",", ",<wbr>")
         lv = values(long_page, "stat-value")
@@ -71,7 +72,9 @@ def main():
         assert "3,<wbr>456,<wbr>789,<wbr>012" in lv, lv  # rockets
         assert "1,<wbr>234h<wbr>05m" in lv, lv  # game time: grouped hours, a break after them
         assert "8h<wbr>00m" in lv, lv  # on stream: hours and minutes, not "8 h"
-        for page, name in [(long_page, "long"), (shift, "shift"), (home, "home")]:
+        av = values(about, "stat-value")
+        assert "3,<wbr>456,<wbr>789,<wbr>012" in av and "8h<wbr>00m" in av, av  # the About page's run totals too
+        for page, name in [(long_page, "long"), (shift, "shift"), (home, "home"), (about, "about")]:
             for cls in ("stat-value", "r-val", "k-val", "bar-val"):
                 for v in values(page, cls):
                     assert not re.search(r"\d(\.\d+)?\s*[kMBT]\b", v), (name, cls, v)  # never 9.43M or 12k
