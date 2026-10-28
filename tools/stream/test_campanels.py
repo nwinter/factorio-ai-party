@@ -7,8 +7,7 @@
    more) and a move is dropped (a GUI camera draws the world and has no move).
 3. OneCam with panels: insets go to a panel (with one client and no panel there is none); a cut never goes to a panel:
    the client on air is moved (one client), so every program cut is on "main".
-4. OBS (cuts.py): a panel's capture of cam1's window is cropped to the panel's rect, in the inset hole and behind the
-   on-air one; the other captures keep crop_for's centre crop.
+(OBS: tools/test_obs_panels.py, cp5: a panel is a scene of cam1's one capture, cropped to its rect.)
 """
 import os, sys
 
@@ -16,10 +15,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 import cams  # noqa: E402
-import cuts  # noqa: E402
 from onecam import OneCam  # noqa: E402
 from test_onecam import agent, snap  # noqa: E402
-from test_cuts import FakeOBS, LAYOUT  # noqa: E402
+from test_cuts import LAYOUT  # noqa: E402
 
 RIGHT, LEFT = [2388, 0, 492, 277], [0, 0, 492, 277]
 
@@ -132,30 +130,10 @@ def onecam():
     print("3. onecam: insets in a panel, every cut on main (the one client moved): ok")
 
 
-def obs():
-    o = FakeOBS()
-    o.sizes = {o.ids["stream cam1"]: (2880, 1620), o.ids["stream cam2"]: (2880, 1620), o.ids["stream cam3"]: (2880, 1620)}
-    c = cuts.Cuts(o, LAYOUT, log=lambda *a: None, start=False, vertical=None,
-                  panels={"stream cam2": RIGHT, "stream cam3": LEFT})
-    c.set({"onair": "main", "inset": "cam2"})
-    c.work()
-    t = o.tf("stream cam2")
-    assert (t["positionX"], t["boundsWidth"], t["boundsHeight"]) == (808, 408, 230), t
-    assert (t["cropLeft"], t["cropRight"], t["cropTop"], t["cropBottom"]) == (2388, 0, 0, 1343), t
-    t = o.tf("stream cam3")  # behind the on-air one, still its panel's rect
-    assert (t["boundsWidth"], t["cropLeft"], t["cropRight"], t["cropBottom"]) == (1208, 0, 2388, 1343), t
-    t = o.tf("stream cam1")
-    assert (t["cropLeft"], t["cropRight"]) == (492, 492), t  # the strips with the panels are off the picture
-    assert o.scenes["stream"][-2] == "stream cam2" and o.scenes["stream"][-3] == "stream cam1", o.scenes["stream"]
-    assert cuts.crop_of("stream cam2", 0, 0, 408, 230, {"stream cam2": RIGHT})["cropLeft"] == 0  # not hooked: none
-    print("4. OBS: a panel's capture is cropped to its rect; cam1 keeps its centre crop: ok")
-
-
 def main():
     switch()
     bodies()
     onecam()
-    obs()
     print("test_campanels: ok")
 
 
