@@ -9265,6 +9265,66 @@ function M.inserter_hand_max(e)
   end
   return n
 end
+-- hand_size as configure takes it, checked before anything changes: an inserter, the settings that go with it, 0..its
+-- hand size now (false for none), and its filters. The hand size wanted and its most. (d27 batch297 DR: shared with
+-- the entry check of place_ghosts and build, configure_precheck)
+function M.hand_size_want(e,a)
+  local ghost=e.type=='entity-ghost'
+  local kind=ghost and e.ghost_type or e.type
+  if kind~='inserter' then error('hand_size applies to inserters (built or ghost); '..(ghost and e.ghost_name or e.name)..' is a '..tostring(kind),0) end
+  M.configure_only(a,{'hand_size','filters','filter_mode','use_filters','spoil_priority'},M.configure_what(e))
+  local max=M.inserter_hand_max(e)
+  local want=a.hand_size==false and 0 or integer(a.hand_size,nil,0,max,'hand_size (1..'..max..', its hand size now; 0 or false for none)')
+  M.filters_check(e,a)
+  return want,max
+end
+-- (d27 batch297 DR, Astra #2649: a place_ghosts dry run passed configure {filters, hand_size 16, wait_for_full_hand
+-- false} on a stack inserter; the real call placed it, refused the whole configure for the wait, and the platform built
+-- an unfiltered stack inserter that put rockets into a magazine buffer) An entry's configure checked before anything
+-- is placed, by the functions configure runs before it changes anything: wait_for_full_hand (details.lua: 2.0.77 has
+-- no such setting, the prototype's is the only value) and hand_size (hand_size_want), on a stand-in of what the call
+-- places (a ghost, or for build the entity) of the force's hand size. Errors with configure's refusal.
+function M.configure_precheck(name,a,force,pos,ghost)
+  if type(a)~='table' or (a.wait_for_full_hand==nil and a.hand_size==nil) or type(name)~='string' then return end
+  local proto=prototypes.entity[name]
+  if not proto then
+    local item=prototypes.item[name]
+    proto=item and item.place_result
+    name=proto and proto.name or name
+  end
+  if not proto then return end
+  local e=ghost and {valid=true,type='entity-ghost',name='entity-ghost',ghost_name=name,ghost_type=proto.type,ghost_prototype=proto}
+    or {valid=true,type=proto.type,name=name,prototype=proto}
+  e.force,e.position,e.filter_slot_count=force,pos or {x=0,y=0},proto.filter_count or 0
+  if a.wait_for_full_hand~=nil then
+    M.configure_only(a,{'wait_for_full_hand','hand_size','spoil_priority','filters','filter','filter_mode','use_filters'},M.configure_what(e))
+    M.details.configure_wait_for_full_hand(e,a.wait_for_full_hand)
+  end
+  if a.hand_size~=nil then
+    local b={}
+    for k,v in pairs(a) do if k~='wait_for_full_hand' then b[k]=v end end
+    if b.filter~=nil and proto.type~='splitter' then
+      assert(b.filters==nil,'filter or filters, not both')
+      b.filters,b.filter=b.filter,nil
+    end
+    M.hand_size_want(e,b)
+  end
+end
+-- (d27 batch297 DR) an entry placed whose configure asking for filters was refused: removed (a ghost destroyed, a built
+-- entity mined back into the inventory), so no entity stands without the filters it asked for. What was done, or nil.
+function M.unplace_unfiltered(p,pos,name,ctx)
+  local item=type(name)=='string' and not prototypes.entity[name] and prototypes.item[name]
+  if item and item.place_result then name=item.place_result.name end
+  local s=M.call_surface(p,ctx or {})
+  for _,e in ipairs(s and s.find_entities_filtered{position=pos,force=p.force,limit=8} or {}) do
+    if e.type=='entity-ghost' and e.ghost_name==name then e.destroy(); return 'its ghost removed' end
+    if e.name==name then
+      local ok,mined=pcall(p.mine_entity,e,false)
+      if ok and mined then return 'mined back into your inventory' end
+      return nil
+    end
+  end
+end
 local function configure_branch(p,a)
   M.configure_together(a)
   if a.modules~=nil and a.ammo==nil then return M.configure_modules(p,a) end
@@ -9444,12 +9504,7 @@ local function configure_branch(p,a)
   -- inserter GUI's stack size override (2.0; "Override hand size" from 2.1.22): 1 up to its hand size now, 0 or false
   -- for none (its own hand size again); with its filters and spoil priority in the same call if asked.
   if a.hand_size~=nil then
-    local kind=e.type=='entity-ghost' and e.ghost_type or e.type
-    if kind~='inserter' then error('hand_size applies to inserters (built or ghost); '..e.name..' is a '..tostring(kind),0) end
-    M.configure_only(a,{'hand_size','filters','filter_mode','use_filters','spoil_priority'},M.configure_what(e))
-    local max=M.inserter_hand_max(e)
-    local want=a.hand_size==false and 0 or integer(a.hand_size,nil,0,max,'hand_size (1..'..max..', its hand size now; 0 or false for none)')
-    M.filters_check(e,a)
+    local want,max=M.hand_size_want(e,a)
     local _,before=pcall(function() return e.inserter_stack_size_override end)
     local ok,err=pcall(function() e.inserter_stack_size_override=want end)
     if not ok then error('the game refused hand size '..want..' on '..e.name..(e.type=='entity-ghost' and ' (a ghost)' or '')..': '..tostring(err),0) end
@@ -17011,7 +17066,9 @@ M.pumpcheck=require('pumpcheck'){read=function(e) return M.circuits.read(e) end}
 M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,together=function(a) return M.configure_together(a) end,
   call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason,
   dry=function(p,entry,kind,args,ctx) return M.settings_dry(p,entry,kind,args,ctx) end,
-  fix=function(action,args) return M.aliases.fix(action,args,M.takes) end,seen=function(p,ctx,pos) return M.settings_seen(p,ctx,pos) end}
+  fix=function(action,args) return M.aliases.fix(action,args,M.takes) end,seen=function(p,ctx,pos) return M.settings_seen(p,ctx,pos) end,
+  precheck=function(name,a,ctx,pos) local okp,q=pcall(position,pos); return M.configure_precheck(name,a,ctx.force,okp and q or nil,ctx.ghosts) end,
+  unplace=function(p,pos,name,ctx) return M.unplace_unfiltered(p,pos,name,ctx) end}
 -- (d24 batch142 PN2, Astra #2134) whether the live call can set an entry's settings at pos: they go by remote view
 -- (configure_target, circuits' target, requests and wire), which needs our own platform or a chunk our force sees now
 -- on the call's surface (ctx: platform, surface). true, or the refusal.
@@ -17190,7 +17247,7 @@ do
   handlers.place_ghosts=function(p,a)
     local aliased=type(a)=='table' and M.entryset.normalize(a.entities) or 0
     if type(a)~='table' or not M.entryset.any(a.entities) then return M.dry_verdict(place(p,a),a) end
-    local ctx={platform=a.platform,surface=a.surface,ghosts=true}
+    local ctx={platform=a.platform,surface=a.surface,ghosts=true,force=p.force}
     local fixed=M.entryset.check(a.entities,ctx)
     local out=place(p,a)
     if type(out)=='table' and #fixed>0 then out.settings_corrected=fixed end
@@ -17208,9 +17265,14 @@ do
     -- (d24 batch142 PN2, Astra #2134: 31 ghosts placed, all 17 settings refused, and the reply read as a success) the
     -- verdict and summary say how many settings were refused
     local nref=stats and #stats.failed or 0
+    -- (d27 batch297 DR) ghosts removed because a configure asking for filters was refused (entryset.lua)
+    local gone={}
+    for _,r in ipairs(out.settings or {}) do if r.removed then gone[#gone+1]=string.format('#%d %s (%g,%g)',r.index,tostring(r.name),r.position.x,r.position.y) end end
+    if #gone>0 then out.removed_unfiltered=gone end
     if nref>0 then
       out.settings_refused=nref
-      out.summary=string.format('%s ghost%s placed; %d of %d settings refused',tostring(out.placed or 0),out.placed==1 and '' or 's',nref,nref+stats.set)
+      out.summary=string.format('%s ghost%s placed%s; %d of %d settings refused',tostring(out.placed or 0),out.placed==1 and '' or 's',
+        #gone>0 and string.format(', %d removed again (its configure asking for filters refused)',#gone) or '',nref,nref+stats.set)
       out.verdict='partial: '..out.summary..': '..stats.failed[1]..(nref>1 and string.format(' (and %d more: settings_line, settings)',nref-1) or '')
     end
     if aliased>0 then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
@@ -17226,7 +17288,7 @@ do
   handlers.build=function(p,a)
     local aliased=type(a)=='table' and type(a.builds)=='table' and M.entryset.normalize(a.builds,'builds entry') or 0
     local entries=type(a)=='table' and (a.builds or {a}) or {}
-    if M.entryset.any(entries) then M.entryset.check(entries,{}) end
+    if M.entryset.any(entries) then M.entryset.check(entries,{force=p.force}) end
     local out=build(p,a)
     if aliased>0 and type(out)=='table' then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
     -- (AA8) as place_ghosts: settings that act on a signal with no red or green wire planned or standing
@@ -17304,7 +17366,7 @@ do
     if entries and (a.action=='place_ghosts' or args.builds) then M.entryset.normalize(entries) end
     local judged=(a.action=='place_ghosts' or a.action=='build') and {dry_run=true} or nil
     if not entries or not M.entryset.any(entries) then return M.dry_verdict(dry(p,a),judged) end
-    local fixed=M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
+    local fixed=M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface,ghosts=true,force=p.force} or {force=p.force})
     local out=dry(p,a)
     if #fixed>0 then out.settings_corrected=fixed end
     out.settings_planned=M.entryset.plan(entries)
