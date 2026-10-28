@@ -17092,3 +17092,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`fuel_outlook` and the alert), the schema text of `platform_endurance`. Tests:
   tests/d27_batch298.lua (fails on main: Sol's flight runs out); tests/platalerts.lua (the advisory's wording);
   tests/d22_batch96.lua (its fake counts the thruster and tank finds alone).
+- Bundle (compacted): 6,334,816 bytes on main (dfdcae3b), 6,343,604 with this branch (limit 8,388,608).
