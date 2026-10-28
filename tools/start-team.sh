@@ -131,6 +131,9 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
     echo "4e. public repo push loop (one per Mac, across shifts): $(tools/public-push.sh --check-loop 2>&1 | tail -1); started if not, its lines also in runs/$run/public-push.log"
   fi
+  if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_YT_FOLLOW:-1}" != 0 ]; then
+    echo "4f. YouTube rotation follower (one per Mac, across shifts): $(python3 tools/yt_archive.py follow --check 2>&1 | tail -1); started if not"
+  fi
   if [ "$has_agy" = 1 ]; then
     echo "4d. agy memory guard (an agy agent in the team): $(python3 tools/agy_memguard.py --check || true); started if not, log runs/$run/agy-memguard.log"
   fi
@@ -367,6 +370,14 @@ fi
 # 10 minutes after a skip. POG_PUBLIC_HOURLY=0 does not start it; nor does POG_PUSH_LIVE=0.
 if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
   log "$(tools/public-push.sh --start-loop "$rundir" 2>&1 | tail -1)"
+fi
+# (d28 batch315) the YouTube rotation (tools/yt_archive.py follow: each finished shift's video up, the newest public, the
+# one before it unlisted). One follower per Mac, not a helper of the shift: stop-team leaves it running (an upload can
+# take an hour) and this starts it only when its pid file (the operator's video-work) names no live one. The d27
+# rotation was a one-shot rotate started by hand; it ended with the day's quota and nothing started the follower.
+# POG_YT_FOLLOW=0 does not start it; nor does POG_PUSH_LIVE=0.
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_YT_FOLLOW:-1}" != 0 ]; then
+  log "$(python3 tools/yt_archive.py follow --start 2>&1 | tail -1)"
 fi
 # (d26 batch241) the chart alone, within minutes: site/chart_deploy.py deploys the run's changed cells into the build
 # production has, every 5 minutes (POG_CHART_DEPLOY_EVERY seconds; shift80's site map was 25-50 min behind the
