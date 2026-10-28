@@ -80,7 +80,7 @@ return function(api)
       margs.target={position={x=e.position.x,y=e.position.y},name=e.name,unit_number=e.unit_number}
       margs.reach='transfer'
     else
-      margs.position={x=t.point.x,y=t.point.y}; margs.reach='build'
+      margs.position={x=t.point.x,y=t.point.y}; margs.reach=t.reach or 'build'   -- (d27 batch288 UG) a reach in tiles: within reach of a pair's both ends
     end
     local out=api.handlers.move_to(p,margs)
     local walk=api.state().active[p.index]
