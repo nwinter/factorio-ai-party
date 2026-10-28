@@ -66,6 +66,10 @@ def research_units(used):
 
 HISTORY_S = 60  # game seconds: a line in the first chat read (the backlog at a restart) older than this is history
 CHAT_LOG_TAIL = 4 << 20  # bytes of runs/RUN/chat.jsonl read for restored lines' times (about 15000 lines)
+# (d28 batch309, viewer Aurora 09:38: "Could viewer chat retain replies as long as their prompts remain, across shifts and
+# reloads?") the replies kept (RUN/viewer-replies.jsonl, read back across REPLY_RUNS_BACK runs at a start; /replies.json
+# for push_live, which sends them to the site's reply store) and the newest REPLY_STATE in the state
+REPLIES_KEEP, REPLY_RUNS_BACK, REPLY_STATE = 400, 6, 40
 MAIDEN_STALE_S = 120  # game seconds: a platform_left read later than this (a restart catching up) is not shown
 # (d26 batch239 NP) game seconds: a platform first listed whose chronicle creation is older than this (a shift) gets
 # its hub now (a record waiting for its starter pack), said so instead of "new"
@@ -843,6 +847,40 @@ class Model:
             self.links_mtime, self.links = m, links
         return self.links
 
+    def set_reply_store(self, path):
+        """(d28 batch309) RUN/viewer-replies.jsonl: the replies this run and the REPLY_RUNS_BACK runs it resumed from kept
+        (a later record of a seq over an earlier one), the newest REPLIES_KEEP, read back as they were made (each with
+        its own time: unchanged, so push_live sends none again); each new reply is added to it."""
+        rows = {}
+        for p in viewer_replies.links_files(path, REPLY_RUNS_BACK):
+            for r in viewer_replies.read_rows(p):
+                rows[r["seq"]] = r
+        for r in sorted(rows.values(), key=lambda r: r["t"])[-REPLIES_KEEP:]:
+            self.add_reply(r, keep=False)
+        self.replies_path = path
+
+    def add_reply(self, row, keep=True):
+        """A reply row (viewer_replies.row), once per game seq: a restart's backlog reads lines whose replies are kept."""
+        seq = row.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            if seq in self.reply_seqs:
+                return False
+            if len(self.viewer_replies) == self.viewer_replies.maxlen:
+                self.reply_seqs.discard(self.viewer_replies[0].get("seq"))
+            self.reply_seqs.add(seq)
+        self.viewer_replies.append(row)
+        if keep and self.replies_path and isinstance(seq, int):
+            try:
+                with open(self.replies_path, "a") as f:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            except OSError as e:
+                print(f"[model] {self.replies_path}: {e}", flush=True)
+        return True
+
+    def replies_all(self):
+        """(d28 batch309) every reply kept, oldest first (serve.py /replies.json, for push_live's reply store)."""
+        return list(self.viewer_replies)
+
     def __init__(self, run):
         self.run = run
         self.agents = {}
@@ -851,7 +889,10 @@ class Model:
         self.chat = deque(maxlen=200)  # chat_window() picks each lane's latest from here
         # agents' and the Operator's lines that answer a viewer or speak to the viewers (viewer_replies.py; Nick, d15
         # 08:07): the live page's site chat shows them among the viewers' lines, so they outlive the chat window
-        self.viewer_replies = deque(maxlen=40)
+        # (d28 batch309) every reply kept, by game seq (once each), in RUN/viewer-replies.jsonl (set_reply_store): a
+        # restart or the next shift reads them back (the game's chat backlog is only its newest 30 lines)
+        self.viewer_replies = deque(maxlen=REPLIES_KEEP)
+        self.reply_seqs, self.replies_path = set(), None
         self.reply_threads = viewer_replies.Threads()  # a long reply's numbered parts stay in part 1's thread
         # viewers' lines to the Operator, which go to the run's operator inbox, not the game chat (viewer_replies.py):
         # set_inbox; read again when the file changes
@@ -1491,7 +1532,7 @@ class Model:
             r = self.reply_threads.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
                                             self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
             if r:
-                self.viewer_replies.append(viewer_replies.row(entry, r))
+                self.add_reply(viewer_replies.row(entry, r))
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))
         if cl:
             self._changelog(cl.group(2).strip(), m.get("tick"), entry["t"], version=cl.group(1))
@@ -3003,7 +3044,7 @@ class Model:
             "shift": self.run.get("shift"),
             "agents": agents,
             "chat": self.chat_window(),
-            "viewer_replies": list(self.viewer_replies),
+            "viewer_replies": list(self.viewer_replies)[-REPLY_STATE:],
             "operator_requests": list(self.operator_requests),
             # the run's chronicle, newest last: the agents' entries and the events the harness saw (the site's live page;
             # the hosts read a new entry)

@@ -296,7 +296,7 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None, board_all=None, tour=None):
+                 platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None):
     audio = audio or AudioHub()
     tour = tour or TourOverlay()
     segments = segments or Segments()
@@ -329,6 +329,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, hub.payload, "application/json; charset=utf-8")
             if path == "/board.json":  # (d22 batch99 BI3) every task, request, claim, project and reminder (push_live)
                 body = board_all() if board_all else None
+                return self.send(200, json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+            if path == "/replies.json":  # (d28 batch309) every reply kept (push_live: the site's reply store)
+                body = replies_all() if replies_all else []
                 return self.send(200, json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8")
             if path == "/director.json":
                 return self.send(200, json.dumps(list(decisions())).encode(), "application/json")
@@ -671,6 +674,9 @@ def main():
     # (d20 batch65 AA2) the line each Operator reply sent with tools/opreply.py answers, beside the inbox
     import viewer_replies
     model.set_reply_links(os.path.join(os.path.dirname(inbox), viewer_replies.LINKS_NAME) if inbox else None)
+    # (d28 batch309) the replies kept beside them, read back from this run and the runs before (a restart, a new shift)
+    if inbox:
+        model.set_reply_store(os.path.join(os.path.dirname(inbox), viewer_replies.ROWS_NAME))
     if a.run and not a.mock:  # chat read again at a restart keeps its time (chat-log.py's logged_at)
         model.set_chat_log(os.path.join(os.path.dirname(os.path.abspath(a.run)), "chat.jsonl"))
     # YouTube deletions, with what they remove, beside it: the site leaves those lines out (site/moderation.py)
@@ -882,12 +888,16 @@ def main():
         with lock:
             return model.board_all_snapshot()
 
+    def replies_all():
+        with lock:
+            return model.replies_all()
+
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
                                                                     show=show, host=host,
-                                                                    board_all=board_all, tour=tour))
+                                                                    board_all=board_all, tour=tour, replies_all=replies_all))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")
