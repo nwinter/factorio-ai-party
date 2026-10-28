@@ -16788,6 +16788,43 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   - Sol's whole plan (move_to, 17 entries) from the fast pairs: both pairs express and paired, the express belts and
     the bulk inserter built.
 - Bundle (compacted): 6,299,239 bytes on main (ddf11ddf, batch283 in it), 6,302,174 with this branch (limit 8,388,608).
+## d27 batch294 (TQ, Sol #2645: thruster quality in the burn and endurance text)
+
+- Sol: Resolute's 4 legendary thrusters used 47937 fuel in 41 s (about 70152 a minute) against the 28800 a minute
+  the rule gave (4 x 120 a second); `thruster_burn` said 2 fuel a tick, and `after_pumps` said the 12500 behind the
+  pumps would last 28 s at full thrust, at the normal burn. That fed a preflight capacity mistake.
+- Engine facts (2.0.77, the iMac copy, world n's _autosave5, Resolute in flight, pumps switched off by script):
+  - the thruster prototype gives min_performance {fluid_volume 0.1, fluid_usage 0.1, effectivity 1} and
+    max_performance {0.8, 2, 0.51}, and no quality reader; the tanks hold 1000 at every quality;
+  - the game's fluid statistics: 5 fuel and 5 oxidizer a tick per legendary thruster while the emptier tank was 80%
+    full or more, linearly less below, 0.25 a tick under 10%: 2.5 times normal's 2 and 0.1, at the same 80% and 10%;
+  - normal, normal, legendary and rare thrusters together burned 12.2 a tick of each (2 + 2 + 5 + 3.2);
+  - the rate follows the emptier of a thruster's two tanks: with the oxidizer 75 below the fuel, both fluids burned at
+    the oxidizer's rate;
+  - thrust, at speed 1.5 with full tanks: the speed gained a tick, less the drag measured with the thrusters off
+    (0.000671), was 1.300, 1.600, 1.900 and 2.500 times normal's (0.001409) for uncommon to legendary, and the mixed set
+    gave 6.1 / 4 of it. Quality's `default_multiplier` (1, 1.3, 1.6, 1.9, 2.5) scales burn and thrust alike, so thrust
+    per unit of fuel does not change.
+- Changes:
+  - `platforms` with `platform`: `after_pumps` burns at the thrusters' own quality and says which (`4 thrusters
+    (legendary x2.5) hold ... at full thrust 20 a tick in all (5 a thruster)`). Mixed qualities count as one pool at
+    their mean multiplier, said so. A last line names the fluid that sets the thrust.
+  - `thruster_burn` begins with the platform's thrusters by quality and their burn at full thrust (a tick, a second, a
+    minute), labelled the engine's figures, not measured use. The rule after it gives the normal burn as normal and the
+    quality multipliers, and its full-tank times for normal and legendary.
+  - The platforms row's `thrusters` gives the count by quality (`4 legendary x2.5, lowest tank 89%`).
+  - `platform_endurance`: `full_thrust` (that line) beside `fuel_outlook`, whose made and used stay the measured
+    statistics. The speed's ship check names a change of quality (`thrusters worth 4 normal ones then, 10 now (their
+    quality)`): legs record their thrust in normal thrusters' from now on.
+- Read on the copy: Resolute's `thruster_burn` gives 20 fuel and 20 oxidizer a tick in all, 72000 a minute of each.
+  For Sol's 12500 (3125 a thruster), the normal rule's 28 s of full thrust is 11.2 s at legendary.
+- Cost on the copy (the iMac): the quality reads and line for 4 thrusters take 0.012 ms. The geometry's thruster find
+  takes 0.30 ms, against 0.23 for main's count. The `platforms` read of Resolute's thrust fields took 6.5-11.5 ms a call
+  on this branch and 5.9-9.2 on main (5-call means, host noise). The whole Resolute row took 14-28 ms on both.
+- Docs: agent/ref/space-age.md (platforms, endurance; a topic file). Tests: tests/d27_batch294.lua (fails on main);
+  tests/thrust.lua, tests/space.lua and tests/d22_batch96.lua updated.
+- Bundle (compacted): 6,314,840 bytes on main (9a4a10ca), 6,319,872 with this branch (limit 8,388,608).
+
 ## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
 - Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
   `platform_built` and not `platform_ready`, while a direct wait_until took both. `agent/ref/waits-queues.md` gave both
