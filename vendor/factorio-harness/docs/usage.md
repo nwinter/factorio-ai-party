@@ -17260,4 +17260,5 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Cost on the copy (Mac under load, medians): the read 15.3 -> 7.7 ms (Resolute), 15.6 -> 6.7 (Asterion), 9.6 -> 5.8
   (Kestrel II); whole calls 18-22 -> 11-12, 16-24 -> 8.6-9.4, 13-15 -> 8.8-9.8 (the copy's number writing is about
   4.6 ms of Resolute's 121 numbers, about 0.5 on world n).
-- Test: tests/d28_batch304.lua (fails on main: the read finds 9 times).
+- Test: tests/d28_batch304.lua (fails on main: its first call on the fake platform makes 12 finds, against 2 here: the
+  one find and the belts, which both find with no background read yet).
