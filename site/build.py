@@ -1638,9 +1638,9 @@ def build_about_compact():
     if LONG:
         done = [x for x in LONG["shifts"] if not x.get("empty")]
         last = done[-1]
-        nums += [stat("shifts", len(done)), stat("on stream", f'{sum(_hours(x["started"], x["ended"]) for x in done):.0f} h'),
-                 stat("game time", last["game1"]), stat("technologies", last["research"]), stat("rockets", last["rockets"]),
-                 stat("viewer messages", sum(x["viewer_lines"] for x in done))]
+        nums += [stat("shifts", fmt_full(len(done))), stat("on stream", hm(sum(_hours(x["started"], x["ended"]) for x in done))),
+                 stat("game time", last["game1"]), stat("technologies", fmt_full(last["research"])), stat("rockets", fmt_full(last["rockets"])),
+                 stat("viewer messages", fmt_full(sum(x["viewer_lines"] for x in done)))]
     facts = [
         ("Players", "9 models from 5 labs, each in its own coding harness (Codex, Claude Code, Grok Build, Antigravity, "
                     "Muse Code). Same instructions apart from name and model."),
