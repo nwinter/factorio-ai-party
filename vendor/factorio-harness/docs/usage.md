@@ -16736,6 +16736,62 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   15:58, 16:49 platform:Resolute). Her 16:20 nudge still goes: a tell from Haiku was unanswered then.
 - Docs: agent/ref/waits-queues.md (the idle nudge line). Test: tools/test_idle_lanes.py (fails on main at Astra's
   16:49 row).
+## d27 batch288 (UG, Sol #2632: an underground fast-replace left an unpaired express input and fast output)
+
+- Sol's build on Vulcanus (queue job 38186, tick 73406504; shift88/sol/tools/expedition88/stone-disposal-retry.json):
+  express over two fast underground pairs ((63.5,142.5)-(63.5,144.5) and (63.5,146.5)-(63.5,148.5), both ends facing
+  south), from (60,145), within reach of both. Entry 1 replaced the input; entry 2 failed, "placement blocked by
+  fast-underground-belt (63.5,144.5)", leaving an express input and a fast output, unpaired. Reproduced on the iMac
+  copy from world n's save at tick 73400182 (before Sol's build), sol's bot, the same plan: the same failure and state.
+- Engine facts (2.0.77, the iMac copy):
+  - `can_place_entity` takes no underground type and checks the new end as an input. Over a fast output facing south,
+    express facing south reads false and facing north true (over a paired output too); over an input, facing south true.
+    An output end facing d has the shape of an input facing the other way.
+  - `create_entity {type: output, direction: south}` makes a south-flowing output (it reads direction 8) that pairs
+    with an express input facing south.
+  - `create_entity {fast_replace: true}` (no player) replaces one end only: both ends read unpaired after it, for an
+    input or an output. A bot has no LuaPlayer for a cursor build, so the harness replaces both ends itself.
+  - A script-placed wall over the other end makes `can_place_entity` false there; a deconstruction or upgrade mark does
+    not.
+- Cause: build_direct checked every underground at the direction asked. For the output end that is the wrong shape, so
+  the pair's other end (attempted right after entry 1) and entry 2 were both refused; the other end's note ("was not
+  replaced") was lost when entry 2 failed the batch. Two more faults showed once that was fixed: an entry for an end
+  already replaced with its pair failed the batch ("nothing was placed": the batch asserted an item was used), and with
+  none of the item left it failed earlier ("item is not in main inventory"). And the walk stood within reach of entry 1
+  only (Sol's first try: the other end 11.1 tiles off, refused).
+- Fix (runtime.lua, autowalk.lua):
+  - an output end is checked facing the other way (`underground_check_direction`); create_entity still takes the type
+    and direction asked;
+  - the other end is checked before either end changes: when it cannot take the new tier the build is refused with
+    nothing changed ("the other end cannot take express-underground-belt: placement blocked by ...; nothing was
+    changed");
+  - when the second end fails anyway, the first is put back (the old item from the inventory) and the build is refused
+    with nothing changed;
+  - an entry for an end replaced with its pair says `already` (with or without the item left) and the batch goes on;
+  - out of reach of either end, the build walks to the pair's middle with a reach (build reach less half the span less
+    a quarter tile) that holds both ends.
+- On the iMac copy with the fix (sol's bot):
+  - from (40,130), a build of entry 1 alone walked to (55.4,145.2), 8.6 and 8.2 tiles from the ends ("reach 8.75"),
+    and replaced both: an express pair;
+  - with a wall placed by script over (63.5,148.5), a build of express at (63.5,146.5) was refused: "fast-underground-
+    belt (63.5,146.5) is one end of a pair with fast-underground-belt (63.5,148.5); the other end cannot take ...:
+    placement blocked by stone-wall (63.5,148.5), ...; nothing was changed"; both fast ends stayed paired;
+  - Sol's whole plan (move_to, 17 entries) from the fast pairs: both pairs express and paired, the express belts and
+    the bulk inserter built.
+- Bundle (compacted): 6,299,239 bytes on main (ddf11ddf, batch283 in it), 6,302,174 with this branch (limit 8,388,608).
+## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
+- Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
+  `platform_built` and not `platform_ready`, while a direct wait_until took both. `agent/ref/waits-queues.md` gave both
+  in one sentence with the lanes.
+- `wait_until {until: "platform_ready", platform, positions?, area?, tiles?}` now runs in the remote and platform lanes
+  as a direct wait does, with the same arguments; the lane's refusal message names it.
+- `platform_ready` on the whole platform (no positions, area or tiles) counts entity ghosts too (`entities: false`: the
+  tile ghosts only); it counted the tile ghosts alone before, as `platform_built` does. With a subset both count that
+  part's entity and tile ghosts. saw: `platform NAME: N tile ghosts left, M entity ghosts`, or `platform NAME, the part
+  asked: M entity ghosts, N tile ghosts left`.
+- No other condition the waits reference gives for the lanes is refused there (tools/test_lane_waits.py reads both).
+- Tests: tests/d27_batch289.lua (the check on the whole platform and a part; queued in lane platform:Resolute and the
+  remote lane, not met then met; it fails on main's queue_lanes.lua); tools/test_lane_waits.py.
 ## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
 
 - Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
@@ -16790,3 +16846,23 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   (staging included; game.speed 10 on the copy).
 - Bundle (compacted): 6,298,628 bytes on main (d8cc948e, batch280 and batch281 in it), 6,300,749 with this branch
   (limit 8,388,608).
+
+## d27 batch287 (BT: platform_bom's tail minimum no longer sticks, Astra #2631)
+
+- Found (platbom.lua apply): an item with no min_payload of the user's took its base from the slot as it stood
+  (`mp = w.mp`). After a tail rewrite that is the keeper's own tail, so the next rewrite started from the tail. When
+  new ghosts raised what was still to come above it, the tail stayed the minimum. Resolute: turbo belt 6 with 753
+  asked, so rockets went with 6, 8 and 8 belts, not 50; bulk 22, SM 336 and pipe 16 the same. The adoption check
+  (batch21 A2) did not misfire: the slot matched what the keeper wrote. The fallback read the tail back as a ceiling.
+- Fix: the keeper keeps each item's ceiling (`ceiling`: the minimum payload before the tail) apart from what it writes.
+  The ceiling is the user's min_payload (the request's map, or one adopted from the slot), else a value found on a
+  slot the keeper had not written yet, else none (the game's default, a full rocket).
+  - A slot still at the keeper's own last write starts from its ceiling. The tail lowers that to what is still to
+    come, and the next rewrite starts from the ceiling again.
+  - A record kept from before this fix (no ceiling) that tails starts from the user's min_payload or a full rocket.
+    One that does not tail keeps the slot's value as before.
+  - Holds (batch281) are unchanged.
+- Lines: unchanged. A slot back at a full rocket says `minimum payload: a full rocket, 50 by weight (the game's
+  default)`.
+- Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
+  asked).
