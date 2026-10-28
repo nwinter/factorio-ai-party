@@ -632,6 +632,70 @@ return function(api)
     return string.format('holds %s of a hand of %s and waits for more items%s', held, tostring(hand or '?'),
       full and ' (stack-inserter waits for a full hand: its prototype\'s wait_for_full_hand, fixed in 2.0.77; its hand size override, configure hand_size, is the hand it waits for)' or '')
   end
+  -- (d27 batch295 HS, Astra #2646: inspect left the hand size out with no override, and agents read hand 1 from held 1
+  -- where research made it 3) An inserter's hand size (built or ghost). On 2.0.77 (the iMac copy of world n, d27 21:20):
+  -- its most is 1 + its prototype's inserter_stack_size_bonus (stack-inserter 4, the others 0) + the force's
+  -- bulk_inserter_capacity_bonus (a bulk prototype: bulk-inserter, stack-inserter) or inserter_stack_size_bonus (the
+  -- others); quality changes none of it. An override above 0 (the GUI's slider, configure hand_size, or a circuit's set
+  -- stack size, which writes it: 1 with no signal, back to 0 when turned off) caps it; one above the most reads as set
+  -- and leaves the most. inserter_target_pickup_count reads the result at once, also after a force bonus changes.
+  -- From a belt every inserter waited for a full hand (a compressed turbo belt, 60 s: fast 144 swings/min of 3, its arm
+  -- turns; bulk 86 of 12 and stack 75 of 16 a minute stopped, 78 and 64 moving; one item every 16 ticks: hands of 3
+  -- and 12 filled at the belt, a basic inserter took none from the moving turbo belt).
+  -- {effective_hand_size, hand_size_override, hand_size_max, capacity_bonus {name, force, prototype},
+  -- hand_size_by_circuit, wait_for_full_hand, held_count, swings_per_min, items_per_min_most, hand_line, short}, or nil.
+  local HAND_PROTO = {}  -- by prototype name: {own, bulk, uses, proto, turns {quality: arm turns a minute}} (a prototype read costs 40-200 us)
+  function M.hand(e)
+    if not inserter_kind(e) then return nil end
+    local ghost = e.type == 'entity-ghost'
+    local name = ghost and try(function() return e.ghost_name end) or e.name
+    local hp = HAND_PROTO[name]
+    if not hp then
+      local proto = ghost and try(function() return e.ghost_prototype end) or try(function() return e.prototype end)
+      hp = {own=proto and try(function() return proto.inserter_stack_size_bonus end) or 0, bulk=proto and try(function() return proto.bulk end) == true,
+        uses=not proto or try(function() return proto.uses_inserter_stack_size_bonus end) ~= false, proto=proto, turns={}}
+      HAND_PROTO[name] = hp
+    end
+    local own, bulk, uses = hp.own, hp.bulk, hp.uses
+    local kind = bulk and 'bulk_inserter_capacity_bonus' or 'inserter_stack_size_bonus'
+    local force = uses and try(function() return e.force[kind] end) or 0
+    local most = 1 + own + force
+    local override = try(function() return e.inserter_stack_size_override end) or 0
+    local size = not ghost and try(function() return e.inserter_target_pickup_count end)
+      or (override > 0 and math.min(override, most) or most)
+    local circuit = not ghost and try(function() local cb = e.get_control_behavior(); return cb and cb.circuit_set_stack_size end) == true
+    local h = not ghost and try(function() return e.held_stack end)
+    local held = not ghost and (h and h.valid_for_read and h.count or 0) or nil
+    local full = M.wait_for_full_hand(e)
+    -- arm turns a minute at its quality (one swing each: 60 x 60 x get_inserter_rotation_speed; the copy: fast 144)
+    local q = try(function() return e.quality.name end) or 'normal'
+    local turns = hp.turns[q]
+    if turns == nil then
+      turns = hp.proto and try(function() return hp.proto.get_inserter_rotation_speed(q) * 3600 end) or false
+      turns = turns and math.floor(turns * 10 + 0.5) / 10 or false
+      hp.turns[q] = turns
+    end
+    local parts = {'1'}
+    if own > 0 then parts[#parts+1] = 'its prototype\'s ' .. own end
+    if uses then parts[#parts+1] = string.format('the force\'s %s %d', kind, force) end
+    local made = string.format('%d: %s', most, table.concat(parts, ' + '))
+    local set = circuit and string.format('hand_size_override %d, written by its circuit\'s set stack size (1 with no signal)', override)
+      or string.format('hand_size_override %d', override)
+    local why
+    if override <= 0 then why = string.format('its most, %s; no override: hand_size_override 0', made)
+    elseif override < most then why = string.format('%s; its most without it %s', set, made)
+    else why = string.format('its most, %s; %s%s', made, set, override > most and ', above it' or '') end
+    -- (on the copy: from a chest of 1, fast, bulk, long and basic inserters swung with 1, a stack-inserter waited; from a
+    -- belt, sparse or full, moving or stopped, every swing of all five was a full hand, a part hand waiting at the belt)
+    local wait = full == true and 'waits for a full hand' or full == false and 'from a chest or machine swings with what it took; from a belt waits for a full hand' or nil
+    return {effective_hand_size=size, hand_size_override=override, hand_size_max=most,
+      capacity_bonus={name=uses and kind or nil, force=uses and force or nil, prototype=own}, hand_size_by_circuit=circuit or nil,
+      wait_for_full_hand=full, held_count=held, swings_per_min=turns or nil, items_per_min_most=turns and turns * size or nil,
+      hand_line=string.format('hand size %d (%s)%s%s%s', size, why, held and '; holds ' .. held or '', wait and '; ' .. wait or '',
+        turns and string.format('; %g arm turns a minute (a swing each), at most %g items a minute at this hand', turns, turns * size) or ''),
+      short=string.format('hand size %d (%s; most %d)%s', size, override > 0 and 'override ' .. override or 'no override', most,
+        full and ', waits for a full hand' or '')}
+  end
   -- configure wait_for_full_hand: the same as the inserter's own is read back (unchanged); the other is refused with
   -- what the game has.
   function M.configure_wait_for_full_hand(e, want)

@@ -396,6 +396,15 @@ return function(api)
       if #feeders == 0 then row.stops[#row.stops+1] = 'no inserter feeds it' end
       for _, i in ipairs(feeders) do
         local way = string.format('%s %s', i.name, at(i.position))
+        -- (d27 batch295 HS, Astra #2646) its hand size, override and arm turns: what one turn a swing moves at most
+        local hd = api.hand and try(function() return api.hand(i) end)
+        if hd then
+          row.feeders = row.feeders or {}
+          row.feeders[#row.feeders+1] = {name=i.name, position=i.position, effective_hand_size=hd.effective_hand_size, hand_size_override=hd.hand_size_override,
+            hand_size_max=hd.hand_size_max, capacity_bonus=hd.capacity_bonus, hand_size_by_circuit=hd.hand_size_by_circuit, wait_for_full_hand=hd.wait_for_full_hand,
+            held_count=hd.held_count, swings_per_min=hd.swings_per_min, items_per_min_most=hd.items_per_min_most}
+          way = way .. ' ' .. hd.short .. (hd.items_per_min_most and string.format(', at most %g/min', hd.items_per_min_most) or '')
+        end
         -- (AB3) a feeder its condition holds off now: its way is traced as any other, what is on it counted behind the gate
         local blocked = filter_blocks(i, takes)
         local shut = not blocked and off(i) and gate(i) or nil
@@ -793,7 +802,12 @@ return function(api)
       if all or low then
         shown = shown + 1
         if shown <= 16 then
-          lines[#lines+1] = string.format('%s %s: holds %d; %d reach it%s%s%s%s%s', row.name, at(row.position), row.own, row.reaches,
+          -- (d27 batch295 HS) its use at full fire of the ammunition it holds, and its feeders' most a minute
+          local most
+          for _, fd in ipairs(row.feeders or {}) do most = (most or 0) + (fd.items_per_min_most or 0) end
+          lines[#lines+1] = string.format('%s %s: holds %d%s; %d reach it%s%s%s%s%s', row.name, at(row.position), row.own,
+            (row.uses_per_min or most) and string.format(' (%s%s%s)', row.uses_per_min and string.format('uses %g %s/min at full fire', row.uses_per_min, row.uses_ammo or 'items') or '',
+              row.uses_per_min and most and ', ' or '', most and string.format('its feeders move at most %g/min', most) or '') or '', row.reaches,
             row.blocked and string.format(', %d more blocked by other ammunition ahead', row.blocked) or '',
             (row.behind_gate or 0) > 0 and string.format(', %d more behind a link gated closed now', row.behind_gate) or '',
             #row.ways > 0 and ' (' .. table.concat(row.ways, ' | ') .. ')' or '',
