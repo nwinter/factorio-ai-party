@@ -17038,3 +17038,58 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   shots that hit), N damage dealt, N kills`, in the alert and the line.
 - Docs: agent/ref/space-age.md (flight_watch). Test: tests/d27_batch296.lua (fails on main: no damage taken in the
   alert); tests/d22_batch98.lua's railgun phrase updated.
+## d27 batch298 (FW, Sol #2652: the fuel warning cried runout over batch production)
+
+- Found (endurance.lua fuel_outlook, platalerts.lua fuel_level): the outlook took made and used from the fluid
+  statistics' last minute and divided only what the thrusters and storage tanks held by the difference. Resolute's one
+  maker of each fluid (a chemical plant, advanced-thruster-fuel and -oxidizer: 1500 a craft, 10 s at speed 4.75, 2.11
+  s) counts a batch when its craft ends, so a minute held 9 or 10 batches. On the iMac copy (world n's _autosave6,
+  Resolute flying aquilo->gleba->vulcanus->nauvis) the thrusters' tanks stayed level at 1137.8 fuel and 842.1
+  oxidizer, as Sol read them. Used was 14400 a minute; made was 13500 in 95 of 235 one-minute windows and 15000 in
+  140, and 42000 or 43500 in 180 s windows. Main's outlook read `thruster-fuel 1138 held, made 13500/min, used
+  14403/min: runs out in 1m18s` (urgent: under 2 minutes at the rates now) every other minute. The fluid in the pipes
+  (Sol's 4800 and 4500 before the pumps; 8500 between the pumps and thrusters at full) was not counted.
+- Engine facts (the copy, 2.0.77):
+  - A thruster's fluid box answers `get_fluid_segment_id` with its pipes' segment, but the segment's contents leave
+    the thruster's own tank out. Pumps' and crafting machines' boxes have no segment.
+  - The segments beside the thrusters, storage tanks, pumps and makers' outputs, plus the thrusters', pumps' and makers'
+    own boxes: their sum changed by exactly made less used (the surface's fluid statistics) on every tick of 18333
+    ticks of flight, to 0.00.
+- Change (endurance.lua):
+  - Rates: the engine's longest sample all in this leg (180 s, else 60 s; engine.lua samples once a second), else the
+    statistics' last minute as before. The line says `over the last N s` when a sample is used.
+  - aboard: the fluid in the thrusters, tanks, pipes, pumps and makers' outputs, by fluid segment (one contents read a
+    segment). Held stays the thrusters and storage tanks. How long it lasts is aboard over used less made.
+  - Batches: the machines whose recipe makes either fluid, and the pumps, found by name (the machine names that can
+    craft those recipes' categories, and the pump names) and kept a minute a platform in storage. The line says
+    `made in batches of 1500 by 1 chemical-plant: advanced-thruster-fuel, a craft each 2.11 s at full speed, 42750/min;
+    34% of that made over the last 180 s`.
+  - A deficit within a batch a maker over the window (step: Resolute's 500/min over 180 s, 1500/min over 60 s) is
+    `used over made by N/min, within a batch a maker over N s (N/min): no deficit measured`, not short. Two
+    conditions: batches landed in the window (or a craft at full speed takes over half of it), and what is aboard
+    lasts 2 minutes or more even so. The copy's stopped fuel maker (1 left, 183/min used) read as within the step
+    before the first condition.
+  - Rows add aboard, window_s, batch {size, makers, recipes, craft_s, full_per_min, share, step, step_per_min} and
+    within_step; the outlook adds window_s.
+- Change (platalerts.lua):
+  - The scans' stock is aboard (held where the outlook has no aboard). A fall counts only past a batch a maker, in the
+    "fell ... at that fall it lasts" rule and the two-scans rule.
+  - Urgent at once (under 2 minutes at the rates now) only while the stock falls: lower than the scan before or a
+    minute ago, or no scan before.
+  - fuel_slope: a fluid the rates do not call short whose stock fell by more than a batch a maker from the first scan
+    kept at 90 s or more into the leg (up to 5 minutes back) at a fall that runs it out before the leg ends is short,
+    and urgent: `thruster-fuel aboard fell 8400 -> 6400 in 300 s, more than a batch a maker (1500): at that fall it
+    lasts 16.0 min, the leg 20.0`.
+  - The advisory says `at the rates over the last N s`. The trend adds `aboard with the pipes, pumps and makers A -> B`.
+- On the copy with this branch: 100 s into a leg, `made 13500/min, used 14478/min over the last 60 s: used over made by
+  978/min, within a batch a maker over 60 s (1500/min): no deficit measured`. No fuel alert in steady flight. With
+  the fuel maker stopped from the departure, 20 s into the leg: `urgent: thruster-fuel ... (thruster-fuel lasts 0m18s
+  at the rates now, under 2 minutes)`, aboard 6156 -> 1030.
+- Cost (the copy, endurance.lua loaded beside the runtime, Resolute, 20 calls each, 3 rounds): fuel_outlook 0.31-0.65
+  ms on main, 0.41-0.43 ms with the makers kept, 0.78-0.81 ms on the read a minute that finds them (all 147 assembling
+  machines by type with their recipes was 1.0-1.7 ms). The parts' validity, the segments and the makers' speed read
+  are the rest.
+- Docs: agent/ref/space-age.md (`fuel_outlook` and the alert), the schema text of `platform_endurance`. Tests:
+  tests/d27_batch298.lua (fails on main: Sol's flight runs out); tests/platalerts.lua (the advisory's wording);
+  tests/d22_batch96.lua (its fake counts the thruster and tank finds alone).
+- Bundle (compacted): 6,334,816 bytes on main (dfdcae3b), 6,343,604 with this branch (limit 8,388,608).

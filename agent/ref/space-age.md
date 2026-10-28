@@ -108,12 +108,17 @@
 - `platform_endurance {platform, route?, forecast?, pessimistic?, design?, progress?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
   hub slots free, power, solar power at the stops, and the asteroid chunks made a minute (the collectors' catch and the crushers' returns); `fuel_outlook`: one line
-  of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
-  whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
-  before the leg ends, once while it lasts: `urgent:` under 2 minutes of it at the rates now, or from 90 s into the
-  leg when the stock's own fall over a minute runs it out or the shortage holds on two scans a minute apart with the
-  stock lower; else `advisory:` with the stock's trend (thrusters and tanks, and the tanks), the pumps toward the
-  thrusters by state and the speed). `route`: the locations
+  of thruster fuel and oxidizer held (thrusters and tanks) and aboard (with the pipes, pumps and makers' outputs), made
+  and used a minute over the engine's last 180 s (else 60 s) all in the leg (else the last minute), and flying
+  whether what is aboard lasts the rest of the leg at the speed now; a maker's batch counts when its craft ends, so a
+  deficit within a batch a maker over that time is no deficit while batches land and what is aboard lasts 2 minutes or
+  more, and the line names the batches (size, makers, a craft's
+  time at full speed, the share of their full output made) (a team alert to the platform's people when one runs out
+  before the leg ends, once while it lasts: `urgent:` under 2 minutes of it at the rates now while the stock aboard
+  falls, or from 90 s into the leg when the stock's own fall, past a batch a maker, over a minute or the 5 minutes of
+  scans kept runs it out, or the shortage holds on two scans a minute apart with the stock lower past a batch a maker;
+  else `advisory:` with the stock's trend (thrusters and tanks, and the tanks), the pumps toward the thrusters by state
+  and the speed). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an

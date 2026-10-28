@@ -31,7 +31,12 @@ return function(api)
   -- (d20 batch60 V5, Astra #1594) the fuel alert: urgent at once under LOW_FUEL_MIN of a fluid at the rates now, or
   -- from SETTLE_S into the leg when the stock's own fall over the last WINDOW_S runs it out before the leg ends; else
   -- a projected shortage is an advisory, urgent once it holds on two scans WINDOW_S apart, both from SETTLE_S into the
-  -- leg, with the stock lower at the second
+  -- leg, with the stock lower at the second.
+  -- (d27 batch298 FW, Sol #2652) the stock is all of the fluid aboard where the outlook reads it (aboard: the pipes,
+  -- pumps and makers' outputs too); a maker's batch counts at the end of its craft, so a stock's fall counts only past a
+  -- batch a maker; urgent at once only while the stock falls; and a fluid the rates do not call short whose stock fell
+  -- by more than that over the scans kept (up to TREND_KEEP_S, from SETTLE_S into the leg) at a fall that runs it out
+  -- before the leg ends is short too, and urgent (fuel_slope)
   local LOW_FUEL_MIN, SETTLE_S, WINDOW_S, TREND_KEEP_S = 2, 90, 60, 300
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(v) return math.floor(v + 0.5) end
@@ -453,7 +458,7 @@ return function(api)
     -- The fuel outlook flying (batch27 B1): a fluid that runs out before the leg ends.
     if moving and api.fuel_outlook then sc.fuel = try(function() return api.fuel_outlook(pl) end) end
     -- (V5) and each scan's stock of it this leg, for the trend
-    if moving and sc.fuel then M.fuel_sample(r, sc.fuel, leg_name(pl) or '?')
+    if moving and sc.fuel then M.fuel_sample(r, sc.fuel, leg_name(pl) or '?'); M.fuel_slope(r, sc.fuel)
     else r.fuel_trend = nil end
     r.scan = sc
     return sc
@@ -504,11 +509,40 @@ return function(api)
       ft.start, ft.first_seen = game.tick - fuel.since_departure_s * 60, nil
       for _, x in ipairs(ft.samples) do x.s = math.floor((x.tick - ft.start) / 60 + 0.5) end
     end
-    local x = {tick=game.tick, s=math.floor((game.tick - ft.start) / 60 + 0.5), held={}, tanks={}, short={}}
-    for _, row in ipairs(fuel.rows or {}) do x.held[row.name], x.tanks[row.name] = row.held, row.in_tanks end
+    local x = {tick=game.tick, s=math.floor((game.tick - ft.start) / 60 + 0.5), held={}, tanks={}, short={}, stock={}, step={}}
+    for _, row in ipairs(fuel.rows or {}) do
+      x.held[row.name], x.tanks[row.name] = row.held, row.in_tanks
+      x.stock[row.name], x.step[row.name] = row.aboard or row.held, row.batch and row.batch.step or 0
+    end
     for _, n in ipairs(fuel.short or {}) do x.short[n] = true end
     ft.samples[#ft.samples+1] = x
     while #ft.samples > 1 and game.tick - ft.samples[1].tick > TREND_KEEP_S * 60 do table.remove(ft.samples, 1) end
+  end
+  -- (FW) a fluid the outlook's rates do not call short (no deficit, or one within a batch a maker) whose stock aboard fell
+  -- from the first scan kept at SETTLE_S or more into the leg, WINDOW_S or more before this one, by more than a batch a
+  -- maker, at a fall that runs it out before the leg ends: short too (fuel.short), its row's slope says why.
+  function M.fuel_slope(r, fuel)
+    local ft = r.fuel_trend
+    local now = ft and ft.samples[#ft.samples]
+    if not (now and fuel.leg_left_min) then return end
+    local base
+    for _, x in ipairs(ft.samples) do if x.s >= SETTLE_S then base = x; break end end
+    if not base or now.tick - base.tick < WINDOW_S * 60 then return end
+    local is = {}
+    for _, n in ipairs(fuel.short or {}) do is[n] = true end
+    for _, row in ipairs(fuel.rows or {}) do
+      local n = row.name
+      local s0, s1, step = base.stock[n], now.stock[n], now.step[n] or 0
+      local sec = (now.tick - base.tick) / 60
+      local per_min = s0 and s1 and (s0 - s1) * 60 / sec
+      if not is[n] and per_min and s0 - s1 > step and s1 / per_min < fuel.leg_left_min then
+        row.slope = string.format('%s aboard fell %d -> %d in %d s, more than a batch a maker (%d): at that fall it lasts %.1f min, the leg %.1f',
+          n, s0, s1, math.floor(sec + 0.5), step, s1 / per_min, fuel.leg_left_min)
+        fuel.short = fuel.short or {}
+        fuel.short[#fuel.short+1] = n
+        now.short[n] = true
+      end
+    end
   end
   -- How urgent a projected shortage is: 'urgent' or 'advisory', the reason, and the stock's trend in words.
   function M.fuel_level(r, fuel)
@@ -523,32 +557,41 @@ return function(api)
       if now.tick - ft.samples[i].tick >= WINDOW_S * 60 then w = ft.samples[i]; break end
     end
     local base = w or ft.samples[1]
+    local prev = ft.samples[#ft.samples - 1]
     local span = math.floor((now.tick - base.tick) / 60 + 0.5)
+    -- (FW) the stock aboard where the outlook read it, else held; a fall counts past a batch a maker
+    local function stock(x, n) return x.stock and x.stock[n] or x.held[n] or 0 end
+    local function step(n) return now.step and now.step[n] or 0 end
+    local function word(n) return stock(now, n) ~= (now.held[n] or 0) and 'aboard' or 'held' end
     local trend, rising = {}, true
     for _, n in ipairs(fuel.short) do
-      local h0, h1 = base.held[n] or 0, now.held[n] or 0
-      if h1 <= h0 then rising = false end
-      trend[#trend+1] = span > 0 and string.format('%s held %d -> %d over the last %d s (storage tanks %d -> %d)', n, h0, h1, span, base.tanks[n] or 0, now.tanks[n] or 0)
-        or string.format('%s held %d (storage tanks %d), one scan so far', n, h1, now.tanks[n] or 0)
+      local h0, h1, s0, s1 = base.held[n] or 0, now.held[n] or 0, stock(base, n), stock(now, n)
+      if s1 <= s0 then rising = false end
+      trend[#trend+1] = span > 0 and string.format('%s held %d -> %d over the last %d s (storage tanks %d -> %d%s)', n, h0, h1, span, base.tanks[n] or 0, now.tanks[n] or 0,
+          word(n) == 'aboard' and string.format('; aboard with the pipes, pumps and makers %d -> %d', s0, s1) or '')
+        or string.format('%s held %d (storage tanks %d%s), one scan so far', n, h1, now.tanks[n] or 0, word(n) == 'aboard' and string.format('; aboard %d', s1) or '')
     end
     trend = table.concat(trend, '; ')
     local at = ft.first_seen and 'since first seen under way' or 'into the leg'
     local why = {}
     for _, n in ipairs(fuel.short) do
       local row = rows[n]
-      if row and row.lasts_min and row.lasts_min < LOW_FUEL_MIN then
+      -- (FW) while it falls: lower than the scan before or than WINDOW_S ago (no scan before: as the rates say)
+      local falling = not prev or stock(now, n) < stock(prev, n) or (w and stock(now, n) < stock(w, n))
+      if row and row.lasts_min and row.lasts_min < LOW_FUEL_MIN and falling then
         why[#why+1] = string.format('%s lasts %s at the rates now, under %d minutes', n, string.format('%dm%02ds', math.floor(row.lasts_min), math.floor((row.lasts_min % 1) * 60)), LOW_FUEL_MIN)
       end
     end
     if #why > 0 then return 'urgent', table.concat(why, '; '), trend end
     if now.s >= SETTLE_S and w then
       for _, n in ipairs(fuel.short) do
-        local h0, h1 = w.held[n] or 0, now.held[n] or 0
+        local h0, h1 = stock(w, n), stock(now, n)
         local per_min = (h0 - h1) / ((now.tick - w.tick) / 3600)
-        if per_min > 0 and fuel.leg_left_min and h1 / per_min < fuel.leg_left_min then
-          why[#why+1] = string.format('%s held fell %d -> %d in %d s: at that fall it lasts %.1f min, the leg %.1f', n, h0, h1, span, h1 / per_min, fuel.leg_left_min)
-        elseif w.s >= SETTLE_S and w.short[n] and h1 < h0 then
-          why[#why+1] = string.format('%s short on the scans at +%d s and +%d s %s, held %d -> %d', n, w.s, now.s, at, h0, h1)
+        if rows[n] and rows[n].slope then why[#why+1] = rows[n].slope
+        elseif per_min > 0 and h0 - h1 > step(n) and fuel.leg_left_min and h1 / per_min < fuel.leg_left_min then
+          why[#why+1] = string.format('%s %s fell %d -> %d in %d s: at that fall it lasts %.1f min, the leg %.1f', n, word(n), h0, h1, span, h1 / per_min, fuel.leg_left_min)
+        elseif w.s >= SETTLE_S and w.short[n] and h1 < h0 - step(n) then
+          why[#why+1] = string.format('%s short on the scans at +%d s and +%d s %s, %s %d -> %d', n, w.s, now.s, at, word(n), h0, h1)
         end
       end
       if #why > 0 then return 'urgent', table.concat(why, '; '), trend end
@@ -734,9 +777,9 @@ return function(api)
               lines[#lines+1] = string.format('platform %s: urgent: %s runs out before the leg ends (%s): %s%s%s', name, table.concat(sc.fuel.short, ' and '), why, sc.fuel.line,
                 state, sc.fuel.since_line and '; ' .. sc.fuel.since_line or '')
             else
-              lines[#lines+1] = string.format('platform %s: advisory: %s projected to run out before the leg ends at the last minute\'s rates (%s; urgent under %d minutes of it, '
-                .. 'on a fall that runs it out, or when short on two scans %d s apart from %d s into the leg with the stock lower): %s%s%s', name, table.concat(sc.fuel.short, ' and '), why,
-                LOW_FUEL_MIN, WINDOW_S, SETTLE_S, sc.fuel.line, state, sc.fuel.since_line and '; ' .. sc.fuel.since_line or '')
+              lines[#lines+1] = string.format('platform %s: advisory: %s projected to run out before the leg ends at the rates over the last %d s (%s; urgent under %d minutes of it while it falls, '
+                .. 'on a fall that runs it out, or when short on two scans %d s apart from %d s into the leg with the stock lower, past a batch a maker): %s%s%s', name, table.concat(sc.fuel.short, ' and '),
+                sc.fuel.window_s or 60, why, LOW_FUEL_MIN, WINDOW_S, SETTLE_S, sc.fuel.line, state, sc.fuel.since_line and '; ' .. sc.fuel.since_line or '')
             end
           end
         else clear(seen, 'fuel') end
