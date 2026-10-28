@@ -16874,6 +16874,40 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,298,628 bytes on main (d8cc948e, batch280 and batch281 in it), 6,300,749 with this branch
   (limit 8,388,608).
 
+## d27 batch292 (IP: an unset engine inserter target with a belt on the tile, Astra #2639)
+
+- Engine facts, 2.0.77 on the iMac copy of world n (d27 18:40-19:10; bulk inserters on a powered test pad on Nauvis,
+  and Resolute's own two):
+  - Built with a belt, chest, underground belt or splitter on the pickup point, every inserter has its pickup target:
+    working, idle with an empty belt, disabled by a circuit condition or by a logistic condition. An underground belt
+    or a splitter is the target itself. Built over the ground: nil.
+  - A belt or chest destroyed and built again on a disabled inserter's pickup point (circuit or logistic condition)
+    leaves `pickup_target` nil while it stays disabled. Resolute's bulk inserters at (+-6.5,320.5), disabled by
+    `signal-S < 0`, read nil with a transport belt on (+-7.5,320.5). Enabling one set it within 407 ticks. Disabled
+    again, it kept it; the belt destroyed and built again under it, nil again.
+  - An enabled idle inserter's target was nil right after the rebuild and set within 3 s. A rebuilt drop chest was the
+    drop target again within 3 s, disabled or not.
+  - The tile's own entity (`find_entities_filtered{position=pickup_position}` of a type an inserter uses,
+    targets.lua `standing`) is the entity the engine targets once the inserter runs: the belt, underground belt,
+    splitter (either tile) or chest.
+- Change: targets.lua `unset(e, side)` gives what stands on a built inserter's point when the engine's target there is
+  nil: `transport-belt (-7.5,320.5) on its pickup tile` and `the engine's pickup target is unset until the inserter
+  runs` (drop: `the engine's drop target is unset`). Every reply that said the ground or no target uses it, and says
+  the ground only when nothing stands there:
+  - inspect: `io_warning` `pickup target unset by the engine (transport-belt (-7.5,320.5) on its pickup tile)`;
+    `pickup_unset` and `drop_unset` (with drop_unset no `drop_tile`); `io` `... transport-belt (engine pickup target
+    unset) -> ...`; the circuit line `picks from transport-belt (-7.5,320.5) on its pickup tile (the engine's pickup
+    target is unset until the inserter runs)`; `pickup_wait` for an enabled idle one.
+  - The compact line names each point's entity: `picks at (-7.5,320.5) transport-belt (engine target unset), drops at
+    (-5.3,320.5) fusion-reactor`; `(nothing there)` for the ground.
+  - feeders `takes_from`, the defense, hauling, networks and platform alert feeder lines, and platform_supply's takers
+    (an inserter whose pickup target is unset with the entity on its tile counts as its taker, said so). The
+    platform trace's pickup index counts it too.
+- Cost on the iMac copy, the same calls on main's runtime and this branch's (12 repeats each, LuaProfiler around the
+  dispatch): inspect of Resolute's inserter 5.2 / 5.9 ms main, 5.0 / 6.7 branch (min / median); compact 4.8 / 6.1
+  main, 4.6 / 5.4 branch; a compact area read of Resolute's 15 inserters 13.9 / 15.5 main, 13.9 / 15.3 branch. The
+  extra find runs only for a nil target.
+- Docs: agent/ref/building.md (inserter targets). Test: tests/d27_batch292.lua (fails on main: no `unset`).
 ## d27 batch287 (BT: platform_bom's tail minimum no longer sticks, Astra #2631)
 
 - Found (platbom.lua apply): an item with no min_payload of the user's took its base from the slot as it stood
