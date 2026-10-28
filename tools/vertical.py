@@ -82,11 +82,16 @@ def place(c, scene_uuid, item, x, y, w, h, crop=False):
 
 
 def ensure(c, scene_uuid, name, kind, settings):
-    """Global input `name` in this scene: created here if new, else updated (settings given) and added if missing."""
+    """Global input `name` in this scene: created here if new, else updated (settings given) and added if missing. A
+    camera (kind None) may also be a scene of the main canvas: added if missing."""
     inputs = {i["inputName"] for i in send(c, "GetInputList")["inputs"]}
-    if name not in inputs:
-        if kind is None:
+    if name not in inputs and kind is None:
+        # (d27 batch285 cp5) a camera panel is a scene of the main canvas (tools/obs.py panel_scene): CreateSceneItem
+        # finds it by name (obs-websocket looks names up in the main canvas when no canvasUuid is given) and libobs adds
+        # a scene of another canvas like any source (Aitum's own Add > Scene menu lists the main canvas's scenes)
+        if name not in {s["sceneName"] for s in send(c, "GetSceneList").get("scenes", [])}:
             raise SystemExit(f"input {name!r} is missing: run tools/obs.py stream-scene first")
+    elif name not in inputs:
         return send(c, "CreateInput", {"sceneUuid": scene_uuid, "inputName": name, "inputKind": kind,
                                        "inputSettings": settings, "sceneItemEnabled": True})["sceneItemId"]
     if settings:

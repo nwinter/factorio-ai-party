@@ -16996,6 +16996,32 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
 - Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
+## d27 batch297 (DR: place_ghosts' dry run and the real call refuse the same entry configure, Astra #2649)
+
+- Astra (tick 74609990): a place_ghosts dry run read ok for a stack-inserter with configure {filters
+  firearm-magazine, hand_size 16, wait_for_full_hand false}. The real call placed it and refused the whole configure
+  (the wait), and the platform built an unfiltered stack inserter that put rockets into a magazine buffer.
+- Engine facts (2.0.77, the iMac copy of world n): the engine refuses none of these settings. A stack-inserter ghost
+  takes filters (5 slots), use_filters and any stack size override (99 reads back), and the inserter built from it
+  keeps them. There is no wait_for_full_hand key on a ghost or a built inserter to read or write. The refusal was the
+  harness's: configure's wait_for_full_hand takes only the prototype's own value (stack-inserter true, the others
+  false) and refused the whole call, and hand_size above the hand size now (1 + its own + the force's bonus) the same.
+  The dry run checked neither.
+- Fix:
+  - entryset.check (run first by place_ghosts, build, their dry runs and dry_run) checks an entry's configure
+    wait_for_full_hand and hand_size with the functions configure runs (details.configure_wait_for_full_hand,
+    hand_size_want) on a stand-in of what the call places, of the force's hand size: a refusal places nothing, the
+    dry run and the real call alike.
+  - A configure asking for filters (filters, filter, use_filters, filter_mode, storage_filter) refused after placing
+    (a chunk our force does not see now, a refusal of the moment): the entity is removed again (a ghost destroyed, a
+    hand build mined back into the inventory), the row's `removed`, `removed_unfiltered`, the summary says so.
+  - Other refused settings leave the placement as before (`placed_without`).
+- On the copy: Astra's call, dry run and real, refused with the wait reason and nothing placed; with wait true (or
+  none) the ghost took filter, use_filters and hand 16; hand_size 17 refused before placing; a fast inserter with
+  filters in an unseen chunk: `asked for filters: its ghost removed`, the entry beside it kept.
+- Docs: agent/ref/building.md (entry settings). Test: tests/d27_batch297.lua (fails on main: Astra's settings pass the
+  check).
+
 ## d27 batch296 (FA: a flight watch's end alert said the railguns' fire, not the damage taken, Astra #2647)
 
 - Found (flightwatch.lua finish): the end alert in team.alerts was the turrets' phrase (`M.worst`), the power phrase

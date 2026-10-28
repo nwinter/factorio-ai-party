@@ -27,9 +27,11 @@ apart from `held_count`; on 2.0.77 every inserter waited at a belt for a full ha
   build sets each entry's as it is placed, ghosts after every entry is placed, then the wires; the reply's `settings`
   and `settings_line` say what was set or refused (a refused setting leaves the entry placed: `entry N configure: ...
   (storage-chest at (x,y) is placed without it)`, the row's `placed_without`; a hand build adds `settings_refused` and
-  `summary`); each setting goes to the ghost or entity of the entry's name at its position. Settings that go in
-  separate `configure` calls refuse the whole call before anything is placed (`entry N configure: configure sets ...
-  in separate calls ...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry is
+  `summary`), except a `configure` asking for filters: refused, the entity is removed again (`asked for filters: its
+  ghost removed` or `mined back into your inventory`, the row's `removed`, `removed_unfiltered`); each setting goes to
+  the ghost or entity of the entry's name at its position. Settings that go in separate `configure` calls, a
+  `wait_for_full_hand` other than the inserter's own (2.0.77: only stack-inserter waits, fixed) and a `hand_size` above
+  its hand size now refuse the whole call before anything is placed (`...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry is
   refused (in the dry run too); a `build` entry's chest takes it. A dry run gives `settings_planned` and `settings_check`, each
   setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
   (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already

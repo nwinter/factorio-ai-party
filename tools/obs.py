@@ -124,10 +124,82 @@ def host_view_source(c, scene="stream", layout=LAYOUT):
     return f"{HOST_SOURCE} ({HOST_EXE}) in {scene}, off until host view is on"
 
 
+def scene_source(c, scene, name):
+    """Source `name` (an input or a scene) in this scene: added if missing; its item id."""
+    if name not in [i["sourceName"] for i in c.get_scene_item_list(scene).scene_items]:
+        c.create_scene_item(scene, name, True)
+    return c.get_scene_item_id(scene, name).scene_item_id
+
+
+# (d27 batch285 cp5) Camera panels (tools/cams.py POG_CAM_PANELS) come out of cam1's capture. OBS hooks a process once:
+# a second game capture of factorio-cam1.exe never hooks (live check d27 22:08, OBS log `init_pipe: failed to start
+# pipe` every 2 s), while crop is per scene item, so one capture can show in several places. Each panel is a scene named
+# like the camera ("stream cam2"), holding one item of "stream cam1" cropped to the panel's rect and scaled to fill the
+# canvas: in "stream" it is one item per name as before (cuts.py, rehook-cams, cams and vertical.py find items by name)
+# and an ordinary 16:9 camera (crop_for). OBS names are unique across inputs and scenes, so the client capture of that
+# name is removed while panels are on (and the scene removed when they are off again).
+PANEL_SOURCE = "stream cam1"
+CANVAS = (1920, 1080)
+
+
+def panel_crop(rect, size):
+    """The crop that leaves rect [x, y, w, h] of a frame of size (w, h)."""
+    x, y, w, h = rect
+    sw, sh = size
+    return {"cropLeft": int(x), "cropTop": int(y), "cropRight": max(0, int(sw - x - w)), "cropBottom": max(0, int(sh - y - h))}
+
+
+def panel_scene(c, name, rect, src=PANEL_SOURCE):
+    """Scene `name` with one item of `src`, cropped to rect and filling the canvas; created (and an input of that name
+    removed) when missing. The crop is from the capture's size, or cam1's window (tools/cams.py CLIENT) before it hooks;
+    rehook-cams sets it again once it has hooked (panel_crops)."""
+    if name in [i["inputName"] for i in c.get_input_list().inputs]:
+        c.remove_input(name)
+    if name not in [s["sceneName"] for s in c.get_scene_list().scenes]:
+        c.create_scene(name)
+    item = None
+    for it in c.get_scene_item_list(name).scene_items:  # src once, nothing else
+        if it["sourceName"] == src and item is None:
+            item = it["sceneItemId"]
+        else:
+            c.remove_scene_item(name, it["sceneItemId"])
+    if item is None:
+        item = c.create_scene_item(name, src, True).scene_item_id
+    return set_panel_crop(c, name, item, rect)
+
+
+def set_panel_crop(c, name, item, rect):
+    """The panel scene's item cropped to rect and scaled into the canvas; returns the crop."""
+    import cams as cams_mod
+    t = c.get_scene_item_transform(name, item).scene_item_transform
+    size = (t["sourceWidth"], t["sourceHeight"]) if t.get("sourceWidth") and t.get("sourceHeight") else cams_mod.CLIENT
+    crop = panel_crop(rect, size)
+    c.set_scene_item_transform(name, item, dict(crop, positionX=0, positionY=0, alignment=5, boundsType="OBS_BOUNDS_SCALE_INNER",
+                                                boundsWidth=CANVAS[0], boundsHeight=CANVAS[1], boundsAlignment=0))
+    return crop
+
+
+def panel_crops(c, panels, src=PANEL_SOURCE):
+    """Each existing panel scene's crop set again from the capture's size (rehook-cams, once cam1 has hooked); a
+    missing panel scene is named (stream-scene makes it)."""
+    scenes = [s["sceneName"] for s in c.get_scene_list().scenes]
+    out = []
+    for name, rect in panels.items():
+        items = c.get_scene_item_list(name).scene_items if name in scenes else []
+        item = next((it["sceneItemId"] for it in items if it["sourceName"] == src), None)
+        if item is None:
+            out.append(f"{name} (panel scene): missing (run stream-scene)")
+            continue
+        crop = set_panel_crop(c, name, item, rect)
+        out.append(f"{name} (panel scene): {src}, crop {crop['cropLeft']}/{crop['cropRight']} {crop['cropTop']}/{crop['cropBottom']}")
+    return out
+
+
 def stream_scene(c, url, scene="stream", layout=LAYOUT):
     """Director layout under the browser-source overlay. One camera on air (layout.json mode "onecam"): the three
     captures of factorio-cam1..3.exe all sit in the left column, centre-cropped to its shape; the stream service
-    (tools/stream/cuts.py) brings the one on air to the front. Else (layout-3cam.json): 1 large + 2 small."""
+    (tools/stream/cuts.py) brings the one on air to the front. Else (layout-3cam.json): 1 large + 2 small.
+    POG_CAM_PANELS: "stream cam2"/"stream cam3" are panel scenes (panel_scene) instead of captures of their clients."""
     if scene not in [s["sceneName"] for s in c.get_scene_list().scenes]:
         c.create_scene(scene)
     lay = json.load(open(layout))
@@ -138,22 +210,29 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
     order.append(bg)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import cams as cams_mod
-    panels = cams_mod.panel_sources()  # (d27 batch285 B) POG_CAM_PANELS: cam2/cam3 capture cam1's window, cropped
+    panels = cams_mod.panel_sources()  # (d27 batch285 B) POG_CAM_PANELS: cam2/cam3 are views of cam1's capture
+    scenes = [s["sceneName"] for s in c.get_scene_list().scenes]
     for i, slot in enumerate(("main", "cam2", "cam3"), 1):
-        exe = "factorio-cam1.exe" if f"stream cam{i}" in panels else f"factorio-cam{i}.exe"
-        item = scene_input(c, scene, f"stream cam{i}", "game_capture", {
-            "capture_mode": "window", "window": f"Factorio 2.0.77:Factorio:{exe}", "priority": 2,
-            "capture_cursor": False, "allow_transparency": False})
+        name = f"stream cam{i}"
+        if name in panels:
+            panel_scene(c, name, panels[name])
+            item = scene_source(c, scene, name)
+        else:
+            if name in scenes:  # a panel scene from a shift with panels: the client capture takes its name again
+                c.remove_scene(name)
+            item = scene_input(c, scene, name, "game_capture", {
+                "capture_mode": "window", "window": f"Factorio 2.0.77:Factorio:factorio-cam{i}.exe", "priority": 2,
+                "capture_cursor": False, "allow_transparency": False})
         x, y, w, h = cams["main" if onecam else slot]
         place(c, scene, item, x, y, w, h)
         # cropped to the hole's shape (none for a 16:9 hole, which also clears a crop left by the other layout).
         # (d24 batch136 PH2) a capture not hooked yet reads 0 x 0: its crop is left as it is (crop_for gave none and the
         # main hole showed it letterboxed); rehook-cams crops it once its client has joined
         sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-        from cuts import crop_of
+        from cuts import crop_for
         src = c.get_scene_item_transform(scene, item).scene_item_transform
         if src.get("sourceWidth") and src.get("sourceHeight"):
-            c.set_scene_item_transform(scene, item, crop_of(f"stream cam{i}", src["sourceWidth"], src["sourceHeight"], w, h, panels))
+            c.set_scene_item_transform(scene, item, crop_for(src["sourceWidth"], src["sourceHeight"], w, h))
         order.append(item)
     order.append(host_capture(c, scene, lay))  # Nick's own client, off until host view (above the cameras)
     ov = scene_input(c, scene, "stream overlay", "browser_source", {
@@ -206,10 +285,7 @@ def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
         out.append(f"{name}: re-enabled")
         todo.append((len(out) - 1, name, item, True))
     sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-    from cuts import crop_of
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import cams as cams_mod
-    panels = cams_mod.panel_sources()
+    from cuts import crop_for
     left = wait_s
     for k, name, item, on in todo:
         while True:
@@ -224,22 +300,27 @@ def rehook_cams(c, scene="stream", n=3, wait_s=10.0, step_s=0.5, sleep=None):
             out[k] += (f"; no source size after {wait_s:g} s" if on else "; no source size") + \
                 f", crop not set (left {t.get('cropLeft', 0)}/{t.get('cropRight', 0)} {t.get('cropTop', 0)}/{t.get('cropBottom', 0)})"
             continue
-        crop = crop_of(name, sw, sh, bw, bh, panels)
+        crop = crop_for(sw, sh, bw, bh)
         was_crop = tuple(t.get(f"crop{side}", 0) for side in ("Left", "Right", "Top", "Bottom"))
         now = tuple(crop[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
         c.set_scene_item_transform(scene, item, crop)
         out[k] += (f"; crop {now[0]}/{now[1]} {now[2]}/{now[3]} (source {sw:g}x{sh:g} into {bw:g}x{bh:g}"
                    + (", unchanged)" if now == was_crop else f", was {was_crop[0]}/{was_crop[1]} {was_crop[2]}/{was_crop[3]})"))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import cams as cams_mod
+    panels = cams_mod.panel_sources()
+    if panels:  # (batch285 cp5) cam1 has hooked by now: each panel's crop from its real size
+        out += panel_crops(c, panels)
     return " | ".join(out)
 
 
 def cams_check(c, scene="stream", n=3, layout=LAYOUT):
     """Read only (d24 batch136 PH2: cam3 read crop 0 at about 21:07 while it was the inset, which is uncropped by
     design): each "stream camN" with its hole (by its bounds: layout.json's main or inset, layout-3cam.json's trio
-    tiles), source size, crop, and the crop crop_of gives that size in that hole (a camera panel: its rect in cam1's
-    window): ok, CROP OFF, or no source size."""
+    tiles), source size, crop, and the crop crop_for gives that size in that hole: ok, CROP OFF, or no source size.
+    With POG_CAM_PANELS, each panel scene's crop of cam1's capture against its rect too (panel_check)."""
     sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-    from cuts import crop_of, TRIO
+    from cuts import crop_for, TRIO
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import cams as cams_mod
     panels = cams_mod.panel_sources()
@@ -265,10 +346,35 @@ def cams_check(c, scene="stream", n=3, layout=LAYOUT):
         if not (sw and sh):
             out.append(text + ", no source size (not hooked)")
             continue
-        want = crop_of(name, sw, sh, bw, bh, panels)
+        want = crop_for(sw, sh, bw, bh)
         want = tuple(want[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
         out.append(text + f", source {sw:g}x{sh:g}: " + ("ok" if want == crop else f"CROP OFF (that hole takes {want[0]}/{want[1]} {want[2]}/{want[3]})"))
+    if panels:
+        out += panel_check(c, panels)
     return " | ".join(out)
+
+
+def panel_check(c, panels, src=PANEL_SOURCE):
+    """Read only: each panel scene's item of cam1's capture, its crop against its rect."""
+    import cams as cams_mod
+    scenes = [s["sceneName"] for s in c.get_scene_list().scenes]
+    out = []
+    for name, rect in panels.items():
+        items = c.get_scene_item_list(name).scene_items if name in scenes else []
+        item = next((it["sceneItemId"] for it in items if it["sourceName"] == src), None)
+        if item is None:
+            out.append(f"{name} (panel scene): MISSING (run stream-scene)")
+            continue
+        t = c.get_scene_item_transform(name, item).scene_item_transform
+        hooked = bool(t.get("sourceWidth") and t.get("sourceHeight"))
+        want = panel_crop(rect, (t["sourceWidth"], t["sourceHeight"]) if hooked else cams_mod.CLIENT)
+        crop = tuple(t.get(f"crop{side}", 0) for side in ("Left", "Right", "Top", "Bottom"))
+        want = tuple(want[f"crop{side}"] for side in ("Left", "Right", "Top", "Bottom"))
+        extra = "" if len(items) == 1 else f", {len(items)} items"
+        out.append(f"{name} (panel scene): {src} at {rect}, crop {crop[0]}/{crop[1]} {crop[2]}/{crop[3]}{extra}" +
+                   ("" if hooked else " (not hooked)") + (": ok" if want == crop and not extra else
+                                                          f": CROP OFF (the rect takes {want[0]}/{want[1]} {want[2]}/{want[3]})"))
+    return out
 
 
 def ensure_filter(c, source, name, kind, settings):

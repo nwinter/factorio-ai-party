@@ -1112,8 +1112,20 @@ second client runs.
   stream service and OBS's scene (`obs.py stream-scene`) from it. Off (unset): one camera or three clients, as before.
 - Slots: main is cam1; cam2 and cam3 are panels 1 and 2 of player 1, 16:9 across the strips the main hole's crop leaves
   off cam1's 2880x1620 window (492x277 at x 2388 and x 0). `cams.py count` stays 1 (the watchdog expects one client).
-- OBS: "stream cam2"/"stream cam3" capture factorio-cam1.exe, cropped to their panel's rect (`cuts.crop_of`), so a
-  panel fills the 408x230 inset hole. Two game captures of one window are untested on the box.
+- OBS (cp5): "stream cam2"/"stream cam3" are scenes, each holding one item of the "stream cam1" capture cropped to its
+  panel's rect and scaled to the 1920x1080 canvas (`obs.py panel_scene`). The live check (d27 22:08) showed that a
+  second game capture of factorio-cam1.exe never hooks: OBS's log repeats `init_pipe: failed to start pipe` every 2 s.
+  Crop is per scene item, so one capture can show in several places. In "stream" each camera name is still one item,
+  a 16:9 source cropped like a client (cuts.py, `rehook-cams` and `cams` need nothing else). OBS names are unique across
+  inputs and scenes, so `stream-scene` removes the cam2/cam3 client captures while panels are on and removes the panel
+  scenes when they are off again. The vertical scene loses a removed source: run `vertical.py scene` after
+  `stream-scene` when switching. The panel scenes show in OBS's scene list; selecting one puts it on the program.
+  `rehook-cams` sets each panel's crop again from cam1's hooked size; `cams` checks it (CROP OFF, MISSING).
+- Vertical canvas: a main-canvas scene can be an item in an Aitum Vertical scene. From the source (obs-studio 2735cc48,
+  obs-websocket master, obs-vertical-canvas 0d631701): libobs `obs_scene_add` has no canvas check (only recursion);
+  obs-websocket `CreateSceneItem` looks a name up in the main canvas when no canvasUuid is given; Aitum's own Add >
+  Scene menu lists `obs_enum_scenes` (the main canvas); a saved item loads by source uuid, then name, and Aitum loads
+  its scenes at FINISHED_LOADING, after the main collection. Not yet tried on the box.
 - Director (onecam.py): panels take insets only (`inset_free`); a cut never goes to a panel, so on air it is one
   client as with POG_CAMS=1 (`n_clients`). A panel's zoom is the director's times the panel's share of the window
   (0.171), within 0.05-4; a map shot is a world view there, and a move is dropped.
