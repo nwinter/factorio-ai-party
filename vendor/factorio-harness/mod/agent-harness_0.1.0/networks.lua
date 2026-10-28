@@ -2189,7 +2189,8 @@ return function(api)
             local memo = src and src.valid and tostring(tget(src, 'unit_number') or at_of(src)) .. '|' .. key
             local s = memo and (walked[memo] or source_fuel(src, names, surface, f))
             if memo then walked[memo] = s end
-            local text = s and string.format('%s %s from %s', ins.name, where, s.text) or string.format('%s %s with no pickup target', ins.name, where)
+            local text = s and string.format('%s %s from %s', ins.name, where, s.text) or (not src and api.unset_target and api.unset_target(ins, 'pickup') and string.format('%s %s with %s (engine pickup target unset)', ins.name, where, api.unset_target(ins, 'pickup')))
+              or string.format('%s %s with no pickup target', ins.name, where)
             if in_hand then text = string.format('%s %s holding %s in hand', ins.name, where, hand) end
             -- The chest it takes from, for the feed chest check (M.feed_chests).
             if s and s.chest and not b.chest then b.chest = {e=s.chest, count=s.count, held=s.held, feeder=ins.name .. ' ' .. where, names=names, tick=game.tick} end

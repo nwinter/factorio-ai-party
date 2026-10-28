@@ -50,7 +50,10 @@ return function(api)
       f.source = {name=pick.name, position=pick.position, counts=counts}
       f.takes_from = string.format('%s %s%s', pick.name, at(pick.position), #parts > 0 and ' holding ' .. table.concat(parts, ', ') or ' holding none of ' .. table.concat(items or {}, ', '))
     else
-      f.takes_from = 'nothing (the ground)'
+      -- (d27 batch292 IP) something it uses on the tile, the engine's target unset (targets.lua)
+      local text, note
+      if api.unset_target then text, note = api.unset_target(ins, 'pickup') end
+      f.takes_from = text and string.format('%s (%s)', text, note) or 'nothing (the ground)'
     end
     local parts = api.condition_parts and try(function() return api.condition_parts(ins) end)
     if parts and #parts > 0 then

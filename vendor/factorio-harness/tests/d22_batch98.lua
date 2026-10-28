@@ -39,7 +39,7 @@ local asteroid={valid=true,force='enemy',name='huge-metallic-asteroid'}
 local function hit(t,cause,damage) F.on_damaged({tick=t,cause=cause,entity=asteroid,final_damage_amount=damage}) end
 
 local r=F.call(p,{platform='Asterion'})
-assert(r.line:find('watching 3 ammo turrets %(2 railguns%) and 2 accumulators once a second'),r.line)
+assert(r.line:find('watching 3 ammo turrets %(2 railguns, all 3 aboard%) and 2 accumulators once a second'),r.line)
 eq(r.watch.sample_ticks,60); eq(r.watch.accumulators.count,2); eq(r.watch.accumulators.at_start,1)
 eq(st.flightwatch.powered[r1.unit_number],true,'railguns indexed for the events'); eq(st.flightwatch.powered[gun.unit_number],nil,'a gun turret is not')
 
@@ -83,7 +83,7 @@ assert(w.railgun_lines[2]:find('never below a shot\'s energy in a sample'),w.rai
 assert(w.line:find('one every 60 ticks'),w.line)
 assert(w.line:find('accumulators %(2%): least 50%% at %+'),w.line)
 assert(w.line:find('2 powered turrets %(railguns%): 1 read below a shot\'s energy %(its full buffer%) in some sample, the longest run 2s %(120 ticks%), railgun%-turret %(%-20,%-40%)'),w.line)
-assert(w.line:find('4 hits %(2 shots that hit%), 7500 damage, 1 kills'),w.line)
+assert(w.line:find('their fire: 4 hits %(2 shots that hit%), 7500 damage dealt, 1 kills'),w.line)
 assert(w.note:find('no energy_per_shot'),w.note)
 
 -- the end: the setter's alert carries the power phrase, and the event index empties

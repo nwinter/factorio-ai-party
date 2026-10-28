@@ -69,7 +69,9 @@ class Cuts:
     def __init__(self, obs, layout=None, scene="stream", sources=SOURCES, slots=SLOTS, log=print, start=True,
                  vertical=VERTICAL, trio=None):
         """vertical: the 9:16 scene in Aitum Vertical's canvas, restacked the same way when it exists (None: off).
-        trio: the holes of the three-tile layout (default layout-3cam.json's cams)."""
+        trio: the holes of the three-tile layout (default layout-3cam.json's cams).
+        Camera panels (tools/cams.py POG_CAM_PANELS) need nothing here: "stream cam2"/"stream cam3" are then scenes
+        showing a panel of cam1's capture at 16:9 (tools/obs.py panel_scene), placed and cropped like a client."""
         self.obs = obs
         self.targets = [{"name": scene, "ref": {"sceneName": scene}, "layout": layout or json.load(open(LAYOUT)),
                          "trio": trio or json.load(open(TRIO))["cams"], "placed": {}}]

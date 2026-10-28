@@ -26,7 +26,7 @@ $priv = ($procs | Measure-Object PrivateMemorySize64 -Sum).Sum
 $inuse = $total - $m.AvailableBytes
 $known = $ws + $m.PoolNonpagedBytes + $m.PoolPagedResidentBytes + $m.SystemDriverResidentBytes + $m.SystemCodeResidentBytes + $m.SystemCacheResidentBytes + $m.ModifiedPageListBytes
 "in use        $(G $inuse); processes, pools, drivers, cache and modified list account for $(G $known)"
-"no owner      $(G ([math]::Max(0, $inuse - $known))) at least (driver-locked or GPU-shared; a reboot frees it)"
+"no owner      $(G ([math]::Max([double]0, $inuse - $known))) at least (driver-locked or GPU-shared; a reboot frees it)"
 
 "--- GPU memory (WDDM counters)"
 try {

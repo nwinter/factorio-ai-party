@@ -1110,6 +1110,8 @@ return function(api)
     local view = {left_top={x=math.floor(hull.x0 / 32) * 32 - M.VIEW_MARGIN, y=math.floor(hull.y0 / 32) * 32 - M.VIEW_MARGIN},
       right_bottom={x=math.ceil(hull.x1 / 32) * 32 + M.VIEW_MARGIN, y=math.ceil(hull.y1 / 32) * 32 + M.VIEW_MARGIN}}
     local turrets, tlist, n = {}, {}, 0
+    -- (d28 batch302 FC) the turrets aboard counted; over MAX_TURRETS the rest are said, not dropped silently
+    local okc, total = pcall(s.count_entities_filtered, {type=TURRETS, force=q.force})
     for _, e in ipairs(s.find_entities_filtered{type=TURRETS, force=q.force, limit=M.MAX_TURRETS}) do
       n = n + 1
       tlist[n] = e.unit_number
@@ -1126,11 +1128,15 @@ return function(api)
     local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick, seconds=seconds, samples=0, platform=pl.name, surface=s.index,
       force=q.force.name, hull=hull, view=view, asts={}, nast=0, ntrack=0, untracked=0, untr={}, useen={}, uhit={}, udied={}, uview={}, queue={}, hits={}, turrets=turrets, tlist=tlist, cells={}, reason=reason, stats0=stats0}
     store()[p.index] = job
-    return {watching=true, seconds=seconds, start_tick=job.start, platform=pl.name, turrets=n,
+    total = okc and type(total) == 'number' and math.max(total, n) or n
+    job.turrets_total = total
+    return {watching=true, seconds=seconds, start_tick=job.start, platform=pl.name, turrets=n, turrets_total=total,
+      turrets_capped=total > n and M.MAX_TURRETS or nil,
       hull={left_top={x=hull.x0, y=hull.y0}, right_bottom={x=hull.x1, y=hull.y1}}, view=view,
       replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
-      line=string.format('watching the asteroids in view of %s (foundation box (%d,%d)-(%d,%d), view %d tiles out from its chunks) and its %d turrets for %ds, a read every %d ticks: platform_defense {platform, asteroids: true} reads it so far, and in full once done',
-        pl.name, hull.x0, hull.y0, hull.x1, hull.y1, M.VIEW_MARGIN, n, seconds, M.SAMPLE),
+      line=string.format('watching the asteroids in view of %s (foundation box (%d,%d)-(%d,%d), view %d tiles out from its chunks) and its %d turrets%s for %ds, a read every %d ticks: platform_defense {platform, asteroids: true} reads it so far, and in full once done',
+        pl.name, hull.x0, hull.y0, hull.x1, hull.y1, M.VIEW_MARGIN, n,
+        total > n and string.format(' (of %d aboard: a watch reads at most %d)', total, M.MAX_TURRETS) or '', seconds, M.SAMPLE),
       note=M.NOTE}
   end
   M.ARGS = {asteroids='optional true: an asteroid watch on that platform instead (d22 batch82 AR1): with seconds it starts one, without it reads yours: the asteroids in view of the platform (its foundation\'s chunks, 32 tiles out) and its turrets, a read every 15 ticks; one watch an agent, a new one replaces it',

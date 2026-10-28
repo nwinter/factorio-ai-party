@@ -4794,7 +4794,8 @@ end)()
   eq(short.count,5); eq(short.lines[1],'assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
   eq(short.lines[2],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
   assert(short.lines[3]:find('^%(20,20%): '),short.lines[3])
-  eq(short.lines[4],'inserter (3.5,4.5): health 150/150; hand: copper-cable*2')
+  -- (d27 batch295 HS) its hand size beside what it holds (the mock force has no bonus: 1)
+  eq(short.lines[4],'inserter (3.5,4.5): health 150/150; hand: copper-cable*2; hand size 1 (no override; most 1)')
   eq(short.lines[5],'small-electric-pole (4.5,4.5): health 100/100')
   list[#list]=nil; list[#list]=nil
   -- One position: one line.
@@ -4803,7 +4804,7 @@ end)()
   -- (d20 batch122, Astra #2087: legendary engines proved by a blueprint export) quality: area rows and compact lines
   -- when not normal, a full read always
   c.quality={name='legendary'}; a.quality={name='normal'}
-  eq(call('inspect',{position=c.position,compact=true}).lines[1],'legendary assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  eq(call('inspect',{position=c.position,compact=true}).lines[1],'legendary assembling-machine-2 (1.5,4.5): health 320/350; recipe normal electronic-circuit; in: copper-cable*8')
   r=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}})
   eq(r.entities[3].quality,'legendary'); eq(r.entities[2].quality,nil)
   eq(runtime.quality_name(c),'legendary'); eq(runtime.quality_name(a),nil); eq(runtime.quality_name({}),nil)

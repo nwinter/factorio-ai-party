@@ -183,4 +183,54 @@ do
   assert(not pcall(cams2.set,{player=2,position={x=0,y=0},move={segments={{pts={{x=0,y=0,zoom=1}},t0=5,t1=1}}}}),'t1 < t0 accepted')
   assert(not pcall(cams2.set,{player=2,follow='luna',move=move}),'a move on a follow accepted')
 end
+-- d27 batch285 B: camera panels, GUI camera elements on a director client's screen (one client, more views). Each is
+-- made once at its rect (style in GUI units = pixels / display scale, location in pixels), eases toward its subject
+-- like a camera, changes surface with a jump, is listed, and is removed on release; the host's own view is untouched.
+do
+  local surfaces={nauvis={name='nauvis',index=1,valid=true},['platform-1']={name='platform-1',index=2,valid=true}}
+  game.get_surface=function(n) return surfaces[n] end
+  api_bot.character.surface=surfaces.nauvis; api_bot.character.position={x=100,y=0}; api_bot.position={x=100,y=0}
+  local host=people[1]; host.display_scale=1.5
+  local screen, made={}, 0
+  screen.add=function(spec)
+    made=made+1
+    local el={valid=true,type=spec.type,name=spec.name,position=spec.position,surface_index=spec.surface_index,zoom=spec.zoom,style={}}
+    el.destroy=function() el.valid=false; screen[spec.name]=nil end
+    screen[spec.name]=el
+    return el
+  end
+  host.gui={screen=screen}
+  local before={x=host.position.x,y=host.position.y}
+  game.tick=2000
+  assert(not pcall(cams2.set,{player=1,panel=1,follow='luna'}),'a first panel call with no rect accepted')
+  local r=cams2.set{player=1,panel=1,follow='luna',zoom=0.5,rect={2388,0,492,277}}
+  local el=screen.pog_panel_1
+  eq(r.ok,true); eq(r.panel,1); eq(el.type,'camera'); eq(el.surface_index,1); eq(el.ignored_by_interaction,true)
+  eq(el.style.width,328); eq(el.style.height,185); eq(el.location.x,2388); eq(el.location.y,0)
+  eq(el.position.x,100); eq(el.zoom,0.5) -- the first call is a jump
+  eq(host.position.x,before.x); eq(host.position.y,before.y) -- the host's own view did not move
+  api_bot.character.position={x=110,y=0}
+  game.tick=2001; cams2.tick()
+  eq(math.abs(el.position.x-100.8)<1e-9,true) -- eased: 8% of the way a tick
+  cams2.set{player=1,panel=1,position={x=3,y=4},surface='platform-1',zoom=1}
+  eq(made,1); eq(el.surface_index,2); eq(el.position.x,3); eq(el.position.y,4) -- another surface: a jump, same element
+  game.tick=2002; cams2.tick()
+  eq(math.abs(el.zoom-0.5768)<1e-9,true) -- the zoom eases as a camera's does (0.5, 0.54 at the call, 0.5768)
+  local l=cams2.list()
+  eq(#l.panels,1); eq(l.panels[1].surface,'platform-1'); eq(l.panels[1].rect.x,2388)
+  cams2.set{player=1,panel=2,follow='luna',rect={x=0,y=0,w=492,h=277}}
+  eq(made,2); eq(screen.pog_panel_2.location.x,0)
+  cams2.set{player=1,panel=2,follow='luna',rect={x=0,y=300,w=492,h=277}}
+  eq(made,3); eq(screen.pog_panel_2.location.y,300) -- a new rect: made again there
+  assert(not pcall(cams2.set,{player=1,panel=1,map=true,position={x=0,y=0}}),'a map panel accepted')
+  assert(not pcall(cams2.set,{player=1,panel=5,follow='luna',rect={0,0,1,1}}),'panel 5 accepted')
+  cams2.set{player=1,panel=1,follow='luna',zoom=0.05} -- a panel's own range: a few hundred pixels wide
+  eq(cams2.list().panels[1].zoom,0.05)
+  assert(not pcall(cams2.set,{player=2,follow='luna',zoom=0.05}),'zoom 0.05 accepted for a camera')
+  r=cams2.set{player=1,panel=1,release=true}
+  eq(r.released,true); eq(screen.pog_panel_1,nil); eq(el.valid,false)
+  eq(#cams2.list().panels,1)
+  cams2.set{player=1,panel=2,release=true}
+  eq(cams2.list().panels,nil)
+end
 print('cameras ok ('..assertions..' assertions)')

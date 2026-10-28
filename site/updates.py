@@ -401,6 +401,65 @@ def _checked(data):
     return (f"Status notices checked through {_day(c)}." if c else "Status notices have no check time yet.")
 
 
+RUNTIME_DEPLOYED = re.compile(r"Harness runtime deployed \(([0-9a-f]{7,40})\)")
+
+
+def _iso_local(iso):
+    """An ISO time with an offset (tools/public-push.sh's status.json) -> Pacific, naive, as _day takes; None if bad."""
+    try:
+        t = datetime.datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None
+    if t.tzinfo:
+        t = t.astimezone(PACIFIC) if PACIFIC else t.astimezone()
+    return t.replace(tzinfo=None)
+
+
+def public_repo(data, st, esc, github=None):
+    """(d27 batch290, viewer Aurora site:5292: the public push skipped every gate merge and nobody could see it) The
+    public repository's last successful sync (when, the public main it pushed, the working repo's main it came from),
+    when it last checked, the newest failure or delay with its reason and whether a sync came after it, from
+    tools/public-push.sh's status.json (st; None: not shown); and the harness runtime's revision from the newest deploy
+    notice. The reasons are the script's fixed phrases."""
+    if not st:
+        return ""
+    items = []
+    ok, prob = st.get("ok") or {}, st.get("problem") or {}
+    okt, pt, ct = _iso_local(ok.get("t")), _iso_local(prob.get("t")), _iso_local(st.get("checked"))
+    if okt:
+        pub = esc(str(ok.get("public", ""))[:8])
+        if github and pub:
+            pub = f'<a href="{esc(github)}/commit/{esc(ok["public"])}"><code>{pub}</code></a>'
+        else:
+            pub = f"<code>{pub}</code>"
+        n = ok.get("pushed") or 0
+        what = f"{n} new commit{'' if n == 1 else 's'} pushed" if n else "it was already up to date"
+        items.append(f'<li>Last successful sync {esc(_day(okt))}: public main {pub}, from the working repository\'s main '
+                     f'<code>{esc(str(ok.get("source", ""))[:8])}</code> ({what}).</li>')
+    else:
+        items.append("<li>No successful sync since this status began.</li>")
+    if ct:
+        items.append(f'<li>Last checked {esc(_day(ct))}. It checks every {int(st.get("every_s", 3600)) // 60} minutes, and '
+                     f'{int(st.get("retry_s", 600)) // 60} minutes after a skip or a failure.</li>')
+    if pt:
+        kind = "failure" if prob.get("kind") == "failed" else "delay"
+        after = (f" A sync succeeded after it ({esc(_day(okt))})." if okt and okt >= pt
+                 else " Not resolved yet: the next sync waits for a new commit on main." if kind == "failure"
+                 else " Not resolved yet: it tries again within the next check.")
+        items.append(f'<li class="upd-public-problem">Last {kind} {esc(_day(pt))}: {esc(prob.get("reason", ""))}.{after}</li>')
+    else:
+        items.append("<li>No failure or delay recorded.</li>")
+    dep = next((n for n in sorted(data.get("notices", []), key=lambda n: when(n["t"]) or datetime.datetime.min, reverse=True)
+                if n.get("kind") == "deploy" and RUNTIME_DEPLOYED.search(n.get("text", ""))), None)
+    if dep:
+        items.append(f'<li>Harness runtime deployed: <code>{esc(RUNTIME_DEPLOYED.search(dep["text"]).group(1)[:8])}</code>, '
+                     f'{esc(_day(when(dep["t"])))} (the newest deploy notice below; a revision of the working repository\'s main).</li>')
+    repo = f'<a href="{esc(github)}">public repository</a>' if github else "public repository"
+    return (f'<h2 id="public-repo">Public repository</h2><p class="muted small">The {repo} is the working repository\'s main '
+            'with private details removed, brought up to date by a job on the operator\'s Mac; it never rewrites published '
+            'history.</p><ul class="upd-public" id="upd-public">' + "".join(items) + "</ul>")
+
+
 def _notices(data, esc):
     out = []
     for n in sorted(data["notices"], key=lambda n: when(n["t"]), reverse=True):
@@ -435,7 +494,7 @@ def _tools(rows, esc):
             '<p id="upd-shown" class="upd-shown muted small" aria-live="polite" hidden></p>')
 
 
-def build_page(data, asks, replies, esc, built=None):
+def build_page(data, asks, replies, esc, built=None, public=None, github=None):
     """(body, extra_head) of /updates/. built: when the site was built (Pacific, naive), said with the data's newest
     time under the heading (d23 batch124b, viewer Aurora 10:13: "Could deploys be overwriting newer status data?
     Please ... add a last-updated time": the 09:59 hourly refresh built from the committed file while the operator's
@@ -484,6 +543,7 @@ Pacific.</p>
 <h2 id="verified" data-group-head="verified">Verified (<span class="upd-n">{n_done}</span>)</h2>
 {done_ul}<p class="muted" id="upd-none-verified"{" hidden" if n_done else ""}>None yet.</p>
 </div>
+{public_repo(data, public, esc, github)}
 <h2 id="notices">Status notices</h2>
 <p class="muted small">Deploys, restarts, rests and outages, kept apart from the change announcements above.</p>
 <p class="small upd-checked" id="upd-checked">{esc(_checked(data))}</p>

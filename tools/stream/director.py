@@ -454,6 +454,14 @@ class Director:
             if "distance" in target:  # a pair: ~60 tiles across at zoom 1, keep both in frame
                 z = min(z, 60.0 / (target["distance"] + 24.0) * (2.0 if slot is not self.slots[0] else 1.0))
             body["zoom"] = round(min(self.cfg["max_zoom"], z), 2)
+        if slot.get("panel"):
+            # (d27 batch285 B) a camera panel drawn by the main client (tools/cams.py POG_CAM_PANELS): a GUI camera
+            # draws the world, so a map shot is a world view (zoom 0.05-4), and no move
+            body.update(panel=slot["panel"], rect=slot["rect"])
+            body.pop("map", None)
+            body.pop("move", None)
+            if body.get("zoom") is not None:  # the panel's share of the window (cams.py scale), within cameras.lua's
+                body["zoom"] = round(min(4.0, max(0.05, body["zoom"] * slot.get("scale", 1))), 2)  # panel range
         try:
             result = self.sender(body)
         except Exception as e:  # keep directing even if the harness call fails; the log shows it

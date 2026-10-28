@@ -768,6 +768,24 @@ return function(api)
     return {item=view(item, true), warnings=#warnings > 0 and warnings or nil}
   end
 
+  -- (d28 batch308 FT, viewer Aurora site:5343: Astra's #2516 read doing for 10h45m across two shift changes after its
+  -- step 2 was done, with no hold written until then) A step done, or a job closed (done or dropped) whose parent
+  -- project stays open and not blocked: what stays open, and what answers it, its owner's to write; nothing decides it.
+  local function follow_through(item, step_done)
+    local p, why
+    if item.kind == 'project' and step_done then p, why = item, 'a step of it is done'
+    elseif (item.status == 'done' or item.status == 'dropped') and item.parent then
+      local o = store().items[item.parent]
+      if o and o.kind == 'project' then p, why = o, string.format('#%d is %s', item.id, item.status) end
+    end
+    if not (p and ACTIVE[p.status] and p.status ~= 'blocked') then return nil end
+    local nxt
+    for _, st in ipairs(p.steps or {}) do if not st.done_by then nxt = st; break end end
+    return string.format('%s; #%d %s stays %s (%s%s; owner %s): its owner writes what comes next: the step taken next (a note, or board_focus), status blocked with what restarts it in the note, or status done or dropped to retire it',
+      why, p.id, clip(p.title, 60), p.status, p.steps and progress(p) or 'no steps yet', nxt and string.format('; next %d. %s', nxt.n, clip(nxt.text, 80)) or (p.steps and #p.steps > 0 and '; every step done' or ''),
+      tostring(p.owner or 'none'))
+  end
+
   local function update(by, a)
     assert(type(a.id) == 'number', 'id is required (a board item number)')
     local item = store().items[a.id]
@@ -1095,8 +1113,10 @@ return function(api)
     -- (d20 batch57 S2) a focus on it that this ends (progress.lua on_update): cleared, with the ready work
     -- (d23 batch123 CF1) and the focus and plan lines naming what it took away: marked stale
     local fc = api.on_update and api.on_update(by, item, removed) or nil
+    local step_done = false
+    for _, c in ipairs(done_changes) do if c.change == 'step_done' then step_done = true end end
     return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil, focus_cleared=fc and fc.focus_cleared, ready=fc and fc.ready,
-      stale=fc and fc.stale}
+      stale=fc and fc.stale, follow_through=follow_through(item, step_done)}
   end
 
   -- About how many bytes a value takes as JSON (brief listings stay near 3 KB).
@@ -1450,7 +1470,7 @@ return function(api)
       edit_step='project: {n, text}: change step n\'s text in place (its adder, its owner or a lead); the earlier text is kept in the step\'s history (last 8)',
       title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
-      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster; stale: the focus and team-plan lines naming what an edited or removed step, a link taken out or a title edit took away, marked stale where they show until set again, each one\'s agent told once'},
+      returns='the item in full and changed; follow_through (d28 batch308: a step done, or an item closed whose parent project stays open and not blocked: that project, its progress, next step and owner, and what answers it, its owner\'s to write: a note with the step taken next, status blocked with what restarts it, or status done or dropped); on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster; stale: the focus and team-plan lines naming what an edited or removed step, a link taken out or a title edit took away, marked stale where they show until set again, each one\'s agent told once'},
     board_review = {ownership='optional true: who covers each system, per surface (surface= one): each electric network\'s machines (assemblers and furnaces, from the census pass), each logistic network, each platform, with the open claims covering it (how many of its sampled machines or roboports lie in each claim\'s area; a platform: a claim on it or titled with its name), overlaps, an open claim with no area on that surface (planet-wide) when no area covers it, else none; each claim\'s owner, their last activity there and the last inspection of the area (a read there, by whom); then each listed owner\'s blocked board items with the latest note: surfaces [{surface, systems [{kind, id, name, size, claims, owner_line, line}]}], lines, blocked',surface='with ownership: one surface',id='optional: one item (a project) and the items under it; default every active item',
       returns='flags [{id, kind, line, platforms?}]: gone_platform (a title or open step naming a platform of ours no longer there; whole names, longest first, so "Kestrel II" is never the gone "Kestrel"; platforms [{name, index | gone, indexes}] every name matched there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
     lesson_add = {rule='1..160 characters: the rule or symptom, short', cause='optional root cause (240)', fix='optional fix (240)',

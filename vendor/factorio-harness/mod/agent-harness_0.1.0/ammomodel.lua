@@ -31,11 +31,25 @@ return function(api)
     local t = try(function() return prototypes.item[name].type end)
     return t == 'ammo' or t == 'repair-tool'
   end
+  -- (d28 batch304 EC) A recipe's products, amount a craft each ({name: amount}), read once a session: prototypes do not
+  -- change while the game runs, and reading them was 0.26 ms of Resolute's 148 machines a call on a copy of world n.
+  local PRODUCTS = {}
+  function M.products(r)
+    local name = try(function() return r.name end)
+    local made = name and PRODUCTS[name]
+    if made then return made end
+    made = {}
+    for _, pr in ipairs(try(function() return r.products end) or {}) do
+      made[pr.name] = (pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * (pr.probability or 1)
+    end
+    if name then PRODUCTS[name] = made end
+    return made
+  end
   -- o (all optional): places (a stock_places read already made), feed (an ammofeed trace already read; false: none),
   -- feed_why (why there is none), rate(name, category, fluid) (per minute over the caller's window; default the last 10
   -- minutes of the platform's production statistics), fluid_stock(names) (fluids in thrusters and tanks), background
   -- (true: the ammunition trace's last background read, never one in this call: a trace of a few hundred belts took 33 ms
-  -- on the private copy, d19 batch45).
+  -- on the private copy, d19 batch45), machines (the assembling machines aboard, found by the caller in this call).
   function M.new(pl, o)
     o = o or {}
     local m = {pl=pl}
@@ -94,24 +108,22 @@ return function(api)
       return out
     end
     -- The machines aboard that make an item: their recipe, products a craft, and the ingredients in their inputs.
-    -- (each machine's recipe and its products read once a call: {e, recipe, made = {product: amount a craft}})
-    local makers
+    -- (each machine's recipe read once a call: {e, recipe, made = {product: amount a craft}}, listed under each product;
+    -- a recipe's products once a session, PRODUCTS)
+    local makers   -- (EC) by product, each in the machines' order
     local function maker(name)
       if not makers then
         makers = {}
-        for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='assembling-machine', force=pl.force} end) or {}) do
+        for _, e in ipairs(o.machines or try(function() return pl.surface.find_entities_filtered{type='assembling-machine', force=pl.force} end) or {}) do
           local r = try(function() return e.get_recipe() end)
           if r then
-            local made = {}
-            for _, pr in ipairs(try(function() return r.products end) or {}) do
-              made[pr.name] = (pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * (pr.probability or 1)
-            end
-            makers[#makers+1] = {e=e, r=r, made=made}
+            local mk = {e=e, r=r, made=M.products(r)}
+            for product in pairs(mk.made) do makers[product] = makers[product] or {}; makers[product][#makers[product]+1] = mk end
           end
         end
       end
       local rec, per, inputs, fluids_in = nil, 0, {}, {}
-      for _, mk in ipairs(makers) do
+      for _, mk in ipairs(makers[name] or {}) do
         local e, r, made_here = mk.e, mk.r, mk.made[name] or 0
         if made_here > 0 then
           rec, per = r, made_here

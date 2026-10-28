@@ -172,7 +172,9 @@ return function(api)
               holds = try(function() return src.get_item_count(r.item) end)
             end
           end
-          feeds[#feeds+1] = string.format('%s from %s%s', ins.name, src and src.valid and string.format('%s (%g,%g)', src.name, src.position.x, src.position.y) or 'the ground',
+          local unset = not (src and src.valid) and api.unset_target and api.unset_target(ins, 'pickup')
+          feeds[#feeds+1] = string.format('%s from %s%s', ins.name, src and src.valid and string.format('%s (%g,%g)', src.name, src.position.x, src.position.y)
+            or unset and unset .. ' (engine pickup target unset)' or 'the ground',
             holds and string.format(' holding %d now', holds) or '')
         end
       end

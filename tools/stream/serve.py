@@ -617,6 +617,8 @@ def main():
             # the captures of the director's clients only (POG_CAMS=1: "stream cam1" alone; tools/cams.py)
             names = [s["slot"] for s in slots]
             cuts = cuts_mod.Cuts(OBS(host, int(port or 4455)), lay, slots=names,
+                                 # camera panels (tools/cams.py POG_CAM_PANELS): "stream cam2"/"stream cam3" are then
+                                 # scenes showing a panel of cam1's capture (tools/obs.py panel_scene)
                                  sources=["stream cam1" if n == "main" else f"stream {n}" for n in names])
     else:
         director = Director(slots, camera, log_path, **(run.get("director") or {}))

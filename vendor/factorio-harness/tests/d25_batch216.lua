@@ -187,7 +187,7 @@ print('d25_batch216 QAA1 not heard, removed, skipped, ended: ok')
 -- wiring: control.lua forwards the event; the runtime routes it and wires the ghost log; the platform read and its
 -- describe text; a mixed part's foundation
 local control=read('mod/agent-harness_0.1.0/control.lua')
-has(control,"'on_space_platform_built_tile'} do")
+has(control,"'on_space_platform_built_tile'")  -- (d28 batch305: more events follow it in the list)
 local rt=read('mod/agent-harness_0.1.0/runtime.lua')
 has(rt,"pcall(M.timed,'flightwatch.built_tile',M.flightwatch.on_built_tile,event)")
 has(rt,'ghost_forget_tile=function(s,name,pos) return M.ghostlog.forget_tile(s,name,pos) end')
