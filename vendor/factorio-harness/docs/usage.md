@@ -17445,3 +17445,31 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Test: tests/d28_batch310.lua (pairing and asks; open ground; a waited go_to; a slower follower; a stored route round
   a lake; retreats of either, kite, a go_to on the follower, a clear on the lead; a water step the follower cannot
   take; two prototypes; the follower's path to the lead's start). tests/waits.test.ts: the compact spider_go reply.
+
+## d28 batch313 (HB: Haiku's handbacks in the IVb/Fulgora copper check, viewer Aurora site:5364; board #2694)
+
+- The chain (shift92, 10:38-11:16 PDT, Haiku on Claude Haiku 5.5 at medium effort): Astra gave Haiku the IVb copper
+  evidence check. Haiku's corrected steps and what it had read:
+  - three "if you agree / say so" handbacks in 25 s after Astra said to proceed (model behaviour);
+  - an empty delivery_watch list read as "no harness record of a completed receipt" (the reply named no other record);
+  - ten Nauvis up pods summed as one 5000 cycle, two visits 54 game minutes apart: its ledger replies (40 and 47
+    rows, 20-25 KB) came in pages; page 1 held the oldest rows and the `./fh more` marker, and pods_line (how many,
+    which) came after the table on page 2; its own reasoning: "the output seems capped at 24 rows, so I'm missing the
+    newer entries"; it filled them in from an earlier 8-row read;
+  - `rates {item: copper-plate, surface: fulgora}`: row produced 1027 consumed 450 (10 idle recyclers' full-speed
+    figures) beside statistics made 0/min; Haiku called the made figure "crafters only", and Astra's correction called
+    the row an all-items aggregate (Astra, 11:21: that correction was wrong; the row is capacity);
+  - networks 96 and 840 swapped (north/south) with the right positions in front of it (model).
+- Fixes:
+  - rates rows: `basis: "full speed"`, `working` ("0 of 10 making it; 0 of 3 using it work now"); the reply's
+    `rows_are`; with item: `actual {made, used, per, over, source}` and `line` setting the full-speed figure beside
+    the statistics (rates.lua M.item_line). produced/consumed keep their names. Copy (world n 11:15 save): Fulgora
+    copper "would make 1027/min at full speed (0 of them working now); the game's statistics over 10 min: made 0/min,
+    used 75.6/min". Engine fact (copy, 721 ticks): recycler output is counted in the game's statistics (gears from scrap
+    +191); no copper-plate recycling ran.
+  - compact replies long enough to be paged lead with their one-line fields (host/format.ts lead, cli.ts): page 1 of
+    the same ledger read now starts "69 pod journeys ...; these sent from tick 76908515 (110m44s ago) to tick 77292844
+    (3m59s ago), oldest first". Shorter replies print as before.
+  - shipment pods_line names the span of the rows shown and their order.
+  - an empty delivery_watch list says a watch counts from when it is set and where earlier pods are (the ledger).
+- Docs: agent/ref/analysis.md (rates), the rates schema text. Tests: tests/d28_batch313.lua, tests/format.test.ts.
