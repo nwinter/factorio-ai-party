@@ -802,11 +802,26 @@ class OneCam(Director):
         return [s for s in self.slots if s["slot"] not in busy]
 
     def next_slot(self):
-        """The standby that frames the next subject (the first one; the other takes insets)."""
-        sb = self.standbys()
+        """The standby that frames the next subject (the first one; the other takes insets). Never a camera panel: a
+        panel is inset only (inset_free)."""
+        sb = [s for s in self.standbys() if not s.get("panel")]
         if self.pending:
             return self.slot(self.pending["slot"])
         return sb[0] if sb else None
+
+    def n_clients(self):
+        """The camera clients (slots that can go on air): camera panels (inset only) do not count."""
+        return sum(1 for s in self.slots if not s.get("panel"))
+
+    def inset_free(self, sb):
+        """The standby an inset takes, or None: a camera panel when one is free (d27 batch285 B, tools/cams.py
+        POG_CAM_PANELS: views drawn by the main client, for insets only), else the last client when two or more are
+        free (one stays free to frame the next cut)."""
+        panels = [s for s in sb if s.get("panel")]
+        if panels:
+            return panels[-1]
+        clients = [s for s in sb if not s.get("panel")]
+        return clients[-1] if len(clients) >= 2 else None
 
     def program(self):
         out = {"onair": self.onair, "inset": self.inset and self.inset["slot"], "layout": self.mode}
@@ -1075,7 +1090,9 @@ class OneCam(Director):
         sb = [s for s in self.standbys() if not (self.pending and s["slot"] == self.pending["slot"])]
         if self.inset:
             slot = self.slot(self.inset["slot"])
-        elif len(sb) >= 2 or (sb and not self.pending and len(self.slots) == 2):
+        elif self.inset_free(sb):
+            slot = self.inset_free(sb)
+        elif sb and not self.pending and self.n_clients() == 2 and not sb[-1].get("panel"):
             slot = sb[-1]
         else:
             return skip("no client free for an inset", score, parts)
@@ -2386,7 +2403,7 @@ class OneCam(Director):
             if self.group_contact(g):
                 continue
             sb = self.standbys()
-            slot = self.slot(ins["slot"]) if ins else (sb[-1] if len(sb) >= 2 else None)
+            slot = self.slot(ins["slot"]) if ins else self.inset_free(sb)
             if not slot:
                 return
             label = f"Incoming · {g.get('label') or 'enemies on the way'}"
@@ -2599,7 +2616,7 @@ class OneCam(Director):
                     (e.get("nearest_distance") or 1e9) <= cfg["enemy_contact"] or not self.threatened_on_air(e, by_name):
                 continue
             sb = self.standbys()
-            slot = self.slot(ins["slot"]) if ins else (sb[-1] if len(sb) >= 2 else None)
+            slot = self.slot(ins["slot"]) if ins else self.inset_free(sb)
             if not slot:
                 return
             label = e.get("label") or human_enemy(e)
@@ -2664,7 +2681,7 @@ class OneCam(Director):
             busy = f"{subj} {'fighting' if self.fighting(subj, by_name, now) else plan_kind(by_name[subj])} on air"
         if not busy:
             return "cut", "nothing more interesting on air"
-        if (self.inset and self.inset.get("why") not in ("attention", "cue", "departure")) or len(self.standbys()) < 2:
+        if (self.inset and self.inset.get("why") not in ("attention", "cue", "departure")) or self.inset_free(self.standbys()) is None:
             return "drop", f"{busy}; no client free for an inset"
         return "inset", busy
 
@@ -2699,7 +2716,7 @@ class OneCam(Director):
             if decision == "cut":
                 self.urgent(target, f"cue: {label}", scores, now)
             elif decision == "inset":
-                slot = self.slot(self.inset["slot"]) if self.inset else self.standbys()[-1]
+                slot = self.slot(self.inset["slot"]) if self.inset else self.inset_free(self.standbys())
                 self.frame_on(slot, target, f"inset cue: {label}", scores, now)
                 self.inset = {"slot": slot["slot"], "until": until, "why": "cue"}
             if decision != "drop":
@@ -3102,9 +3119,9 @@ class OneCam(Director):
             return
         att = self.attention_far(by_name[subj], by_name, now)
         sb = self.standbys()
-        if not att or len(sb) < 2:
+        if not att or self.inset_free(sb) is None:
             return  # (the first standby frames the next subject; the last one takes insets)
-        self.show_attention(sb[-1]["slot"], subj, by_name[subj], att, scores, now)
+        self.show_attention(self.inset_free(sb)["slot"], subj, by_name[subj], att, scores, now)
 
     def show_attention(self, slot, name, a, att, scores, now, since=None):
         cfg = self.cfg
@@ -3126,7 +3143,7 @@ class OneCam(Director):
 
     def maybe_map(self, scores, now, segment=None):
         cfg = self.cfg
-        if not cfg["map_every"] or len(self.slots) < 2 or self.mode != "onecam":
+        if not cfg["map_every"] or self.n_clients() < 2 or self.mode != "onecam":
             return
         last = self.last_map if self.last_map is not None else self.started - cfg["map_every"] + cfg["map_first"]
         if now - last < cfg["map_every"]:
@@ -3217,7 +3234,7 @@ class OneCam(Director):
         tour = self.tour_target(now)
         if tour:
             views.append(("tour", tour))
-        if len(self.slots) >= 2:
+        if self.n_clients() >= 2:
             plats = sorted(n for n, p in self.plat_rows.items() if (p.get("view") or {}).get("surface"))
             if plats:
                 name = min(plats, key=lambda n: (self.plat_shown.get(n, -1e9), n))
@@ -3356,7 +3373,7 @@ class OneCam(Director):
 
     def maybe_cloud(self, scores, now, segment=None):
         due = self.cloud_due
-        if not due or len(self.slots) < 2 or self.mode != "onecam":
+        if not due or self.n_clients() < 2 or self.mode != "onecam":
             return
         if now - due["t"] > self.cfg["cloud_late"]:
             self.cloud_due = None
@@ -3714,7 +3731,7 @@ class OneCam(Director):
                 cp["label"] = d["reason"]
                 self.danger_seen[cp["name"]] = (now, d.get("level", 0))
             return
-        if not rows or len(self.slots) < 2:
+        if not rows or self.n_clients() < 2:
             return
         busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and now < cur.get("hold_until", 0)) or
@@ -3768,7 +3785,7 @@ class OneCam(Director):
                 st = self.edge_legs[name] = {"leg": lg, "shown": False}
             if not st["shown"] and edgedense.in_dense(row) and (row.get("view") or {}).get("surface"):
                 due.append(name)
-        if not due or len(self.slots) < 2:
+        if not due or self.n_clients() < 2:
             return
         cur = self.state.get(self.onair)
         cp = (cur or {}).get("platform") or {}
@@ -3881,7 +3898,7 @@ class OneCam(Director):
         a routine one (AS1) on air for depart_routine_hold when routine_turn allows, else in a free inset, else not
         shown. One that comes back after an urgent shot (it has `until`) was decided already."""
         d = self.departure
-        if not d or (len(self.slots) < 2 and not d.get("maiden")):  # one camera: only a maiden flight
+        if not d or (self.n_clients() < 2 and not d.get("maiden")):  # one camera: only a maiden flight
             return
         routine = "news" in d and not d.get("news") and not d.get("maiden") and not d.get("until")
         if (now > d["until"] - self.cfg["platform_hold"] / 2) if d.get("until") else now - d["t"] > self.cfg["depart_late"]:
@@ -3934,14 +3951,15 @@ class OneCam(Director):
         busy = busy or ("an inset is up" if self.inset else "a replay or a trio" if self.hold_layout or self.mode != "onecam"
                 else "a segment" if segment else "a cut being framed" if self.pending or self.trio_pending
                 else "the ship is on air" if (cur.get("platform") or {}).get("name") == d["name"]
-                else "no client free for an inset" if len(sb) < 2 else None)
+                else "no client free for an inset" if self.inset_free(sb) is None else None)
         until = now + self.cfg["ready_s"] + self.cfg["depart_routine_hold"]
         t = None if busy else self.platform_target(d["name"], "departure", until, label=d["label"])
         if not t:
             self.log_departure(d, "none", f"{why}; {busy or 'no view of the ship'}", now)
             return
-        self.frame_on(sb[-1], t, f"inset departure: {d['label']}", scores, now)
-        self.inset = {"slot": sb[-1]["slot"], "until": until, "why": "departure", "platform": d["name"]}
+        slot = self.inset_free(sb)
+        self.frame_on(slot, t, f"inset departure: {d['label']}", scores, now)
+        self.inset = {"slot": slot["slot"], "until": until, "why": "departure", "platform": d["name"]}
         self.routine_inset_t.append((now, d["route"]))
         self.log_departure(d, "inset", why, now)
 
@@ -3977,7 +3995,7 @@ class OneCam(Director):
         """A visit: about every platform_every while a platform can be shown, the one shown longest ago."""
         cfg = self.cfg
         plats = sorted(n for n, p in self.plat_rows.items() if (p.get("view") or {}).get("surface"))
-        if not cfg["platform_every"] or not plats or len(self.slots) < 2 or self.mode != "onecam":
+        if not cfg["platform_every"] or not plats or self.n_clients() < 2 or self.mode != "onecam":
             return
         last = self.last_platform if self.last_platform is not None else \
             self.started - cfg["platform_every"] + cfg["platform_first"]
@@ -4017,7 +4035,7 @@ class OneCam(Director):
         self.builds_waiting = sorted((w for w in builds.values() if (w.get("view") or (self.plat_rows.get(w["platform"]) or {}).get("view"))
                                       and now - self.plat_work_shown.get(w["platform"], -1e9) >= cfg["work_build_gap"]
                                       and not self.fighting(w["agent"], by_name, now)), key=lambda w: -w["t"])
-        if not (fresh or builds) or len(self.slots) < 2:
+        if not (fresh or builds) or self.n_clients() < 2:
             return
         cur = self.state.get(self.onair)
         cp = (cur or {}).get("platform") or {}
@@ -4132,7 +4150,7 @@ class OneCam(Director):
     def maybe_trio(self, by_name, scores, ranked, now):
         """One camera long enough, nothing urgent: frame two standbys for a trio, switch once both are there."""
         cfg = self.cfg
-        if not cfg["trio"] or len(self.slots) < 3:
+        if not cfg["trio"] or self.n_clients() < 3:
             return
         cur = self.state.get(self.onair)
         subj = cur.get("subject") if cur else None
@@ -4155,7 +4173,7 @@ class OneCam(Director):
                 self.set_mode("trio", f"{p['why']}: {', '.join(p['agents'])}", now)
             return
         found = self.trio_pick(subj, by_name, scores, ranked, now)
-        sb = self.standbys()
+        sb = [s for s in self.standbys() if not s.get("panel")]  # a trio's tiles are clients, not panels
         if not found or len(sb) < 2:
             return
         pick, why = found
