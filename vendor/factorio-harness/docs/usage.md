@@ -16836,3 +16836,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   default)`.
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
+- Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
