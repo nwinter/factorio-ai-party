@@ -518,7 +518,8 @@ do
 end
 print('d22_batch96 BF1 platform scans in the background: ok')
 
--- 17. the fuel outlook's thrusters and tanks from the platform's background read when it has them
+-- 17. the fuel outlook's thrusters and tanks from the platform's background read when it has them (d27 batch298: its
+-- pumps and fuel makers are found apart, type by type)
 do
   game={tick=600}
   defines={flow_precision_index={one_minute=1}}
@@ -526,7 +527,7 @@ do
   local thr={valid=true,type='thruster',fluidbox=setmetatable({},{__len=function() return 2 end,__index=function(_,i) return {name=i==1 and 'thruster-fuel' or 'thruster-oxidizer',amount=100} end})}
   local found=0
   local pl={name='K',index=2,force={get_fluid_production_statistics=function() return nil end},
-    surface={find_entities_filtered=function() found=found+1; return {tank,thr} end},space_location={name='nauvis'}}
+    surface={find_entities_filtered=function(f) if type(f.type)~='table' then return {} end found=found+1; return {tank,thr} end},space_location={name='nauvis'}}
   local lists
   local E=dofile('mod/agent-harness_0.1.0/endurance.lua'){platform_lists=function() return lists end,leg=function() return nil end}
   local o=E.fuel_outlook(pl)
