@@ -73,7 +73,19 @@ function flatten(value: Json, prefix = ''): Json {
   }
   return cells;
 }
-export function formatCompact(value: unknown): string {
+/**
+ * lead (d28 batch313 HB, viewer Aurora site:5364): a reply's one-line fields (text, numbers, true/false) before its
+ * tables and lists, for a reply long enough to come in pages: Haiku's `shipment {ledger}` page 1 held the oldest 24 of
+ * 47 pods and the marker, while pods_line ("47 pod journeys ...") came after the table, on page 2.
+ */
+function leadScalars(body: Json): Json {
+  const scalar = (v: unknown) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+  const out: Json = {};
+  for (const [key, entry] of Object.entries(body)) if (scalar(entry)) out[key] = entry;
+  for (const [key, entry] of Object.entries(body)) if (!scalar(entry)) out[key] = entry;
+  return out;
+}
+export function formatCompact(value: unknown, lead = false): string {
   const lines: string[] = [];
   function render(entry: unknown, label: string, depth: number) {
     const indent = '  '.repeat(depth);
@@ -117,7 +129,7 @@ export function formatCompact(value: unknown): string {
       lines.push(`error: ${errorText(error)}${notes.length ? '; ' + notes.join('; ') : ''}`);
     } else {
       render(rest, '', 0);
-      if (record(body)) render(byClock(tallyLast(body)), '', 0);
+      if (record(body)) render(lead ? leadScalars(byClock(tallyLast(body))) : byClock(tallyLast(body)), '', 0);
       else if (!empty(body)) render(body, 'result', 0);
       if (notes.length) lines.push(`warning: ${notes.join('; ')}`);
     }

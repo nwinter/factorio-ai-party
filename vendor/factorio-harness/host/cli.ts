@@ -698,7 +698,13 @@ function withoutRepeats(value: unknown): unknown {
 }
 function output(value: unknown) {
   value = withPace(withDeadline(withCliNote(value)));
-  if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(withoutRepeats(value))));
+  if (outputFormat === 'compact') {
+    const shown = withoutOperator(withoutRepeats(value));
+    let text = formatCompact(shown);
+    // (d28 batch313 HB) a reply that will come in pages: its one-line fields first, so page 1 says what the tables hold
+    if (!streaming && pageBytes() > 0 && Buffer.byteLength(text) > pageBytes() + 2000) text = formatCompact(shown, true);
+    writePaged(operatorHead() + text);
+  }
   else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
   // so a reader of the terminal (or 2>&1 | tail -1) still sees it.

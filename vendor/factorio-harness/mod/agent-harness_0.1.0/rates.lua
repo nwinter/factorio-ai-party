@@ -25,13 +25,20 @@ return function(api)
     local path=kind..'/'..name..'/'..quality..(temperature and '@'..temperature or '')
     local r=set.rates[path]
     if not r then
-      r={type=kind,name=name,quality=quality,temperature=temperature,produced=0,consumed=0,producers={},consumers={}}
+      r={type=kind,name=name,quality=quality,temperature=temperature,produced=0,consumed=0,producers={},consumers={},makers=0,users=0,makers_on=0,users_on=0}
       set.rates[path]=r
     end
     local produced=category=='output'
     r[produced and 'produced' or 'consumed']=r[produced and 'produced' or 'consumed']+amount
     local counts=produced and r.producers or r.consumers
     counts[machine]=(counts[machine] or 0)+1
+    -- (d28 batch313 HB) how many of them work now (compute sets set.on per entity; nil: not read)
+    if set.on~=nil then
+      local k=produced and 'makers' or 'users'
+      r[k]=r[k]+1
+      if set.on then r[k..'_on']=r[k..'_on']+1 end
+      r.status_read=true
+    end
   end
   local function fluid_of(fluidbox,index)
     local f=fluidbox.get_filter(index) or fluidbox[index]
@@ -256,10 +263,35 @@ return function(api)
     if w>=1e6 then return round(w/1e6)..' MW' end
     return round(w/1e3)..' kW'
   end
+  -- (d28 batch313 HB) what a row's produced and consumed are
+  M.ROWS_ARE='produced, consumed and net: what these machines would make and use at full speed with their recipes, modules, beacons, quality and fuel (the Rate Calculator\'s figures), not what they made; working: how many of them work now'
+  -- the rows as replied (the full-speed figures kept for the caller's line dropped)
+  function M.strip(rows) for _,row in ipairs(rows or {}) do row.raw_net,row.max_made,row.max_used,row.makers,row.makers_on=nil,nil,nil,nil,nil end end
+  -- (d28 batch313 HB) rates {item}: the full-speed row beside the game's statistics, in one line (nil with no maker).
+  -- mine: {max_made (a minute, or a second with per second), makers, makers_on}; made, used: the statistics a minute
+  function M.item_line(item,surface,mine,made,used,per)
+    if not (mine and mine.max_made and mine.max_made>0) then return nil end
+    local a_min=mine.max_made*(per=='second' and 60 or 1)
+    return string.format('%s on %s: the %d machine%s set to recipes making it would make %s/min at full speed%s; the game\'s statistics over 10 min: made %g/min, used %g/min',
+      item,surface,mine.makers or 0,(mine.makers or 0)==1 and '' or 's',round(a_min),
+      (mine.makers or 0)>0 and string.format(' (%d of them working now)',mine.makers_on or 0) or '',made,used)
+  end
   -- Rows per item: produced, consumed, net at full speed, and the machines.
   function M.compute(p,entities,per)
     local set=new_set(p.force,p.surface)
-    for _,e in ipairs(entities) do if e.valid then entity_rates(set,e) end end
+    -- (d28 batch313 HB, viewer Aurora site:5364) each machine's status now, so a row says how many of its machines work:
+    -- on Fulgora at tick 77275952 a row read copper-plate produced 1027 consumed 450 (10 recyclers set to recipes making
+    -- it) while the game's statistics read made 0/min; two agents took the row for what was made
+    local working=defines and defines.entity_status and defines.entity_status.working
+    for _,e in ipairs(entities) do
+      if e.valid then
+        local ok,st=pcall(function() return e.status end)
+        set.on=nil
+        if ok and st~=nil and working~=nil then set.on=(st==working) end
+        entity_rates(set,e)
+      end
+    end
+    set.on=nil
     local scale=per=='second' and 1 or 60
     local rows,power={},nil
     for _,r in pairs(set.rates) do
@@ -268,19 +300,27 @@ return function(api)
         power[r.name]={produced=r.produced>0 and watts(r.produced) or nil,consumed=r.consumed>0 and watts(r.consumed) or nil}
       else
         local label=r.name..(r.quality~='normal' and ' ('..r.quality..')' or '')..(r.temperature and ' '..r.temperature..'C' or '')
+        local on
+        if r.status_read then
+          local parts={}
+          if r.makers>0 then parts[#parts+1]=string.format('%d of %d making it',r.makers_on,r.makers) end
+          if r.users>0 then parts[#parts+1]=string.format('%d of %d using it',r.users_on,r.users) end
+          on=#parts>0 and table.concat(parts,'; ')..' work now' or nil
+        end
         rows[#rows+1]={item=label,type=r.type~='item' and r.type or nil,produced=r.produced>0 and round(r.produced*scale) or nil,
           consumed=r.consumed>0 and round(r.consumed*scale) or nil,net=round((r.produced-r.consumed)*scale),
-          by=counts(r.producers),into=counts(r.consumers),raw_net=(r.produced-r.consumed)*scale}
+          basis='full speed',by=counts(r.producers),into=counts(r.consumers),working=on,raw_net=(r.produced-r.consumed)*scale,
+          max_made=r.produced*scale,max_used=r.consumed*scale,makers=r.makers,makers_on=r.makers_on}
       end
     end
     table.sort(rows,function(x,y) return x.item<y.item end)
-    return {rows=rows,power=power,errors=next(set.errors) and set.errors or nil,machines=#entities}
+    return {rows=rows,power=power,errors=next(set.errors) and set.errors or nil,machines=#entities,rows_are=M.ROWS_ARE}
   end
 
   function M.rates(p,a)
     assert(a.per==nil or a.per=='second' or a.per=='minute','per must be second or minute')
     local out=M.compute(p,M.select(p,a,RATE_TYPES),a.per)
-    for _,row in ipairs(out.rows) do row.raw_net=nil end
+    M.strip(out.rows)
     out.per=a.per or 'minute'
     return out
   end
