@@ -90,6 +90,17 @@ return function(api)
     for i, q in ipairs(a) do out[i] = api.position(q) end
     return out
   end
+  -- (d28 batch300 SR, viewer Aurora site:5308: a waited go_to ran to its timeout after another agent's clear) each
+  -- route the harness sets or clears, by anyone (go_to, append, clear, spider_kite taking it over): a number, who, how
+  -- and the tick; a waited go_to ends route_changed once its spidertron's number moves on.
+  function M.claim(spider, by, how)
+    local st = store()
+    st.sets = st.sets or {}
+    st.setseq = (st.setseq or 0) + 1
+    st.sets[spider.unit_number] = {seq=st.setseq, tick=game.tick, by=by, how=how}
+    return st.setseq
+  end
+  function M.seq(unit) local s = store().sets; return s and s[unit] and s[unit].seq or nil end
   -- The call: go_to (with mode) or clear. -> the reply's facts. index: the sender's player index (its standing
   -- retreat_guard); own: the go_to's own retreat cfg, or false for none (retreat: false).
   function M.set(spider, a, by, index, own)
@@ -138,6 +149,7 @@ return function(api)
         out.replaced = parts
       end
     end
+    M.claim(spider, by, a.clear and (a.go_to ~= nil and 'clear and go_to' or 'clear') or (a.mode == 'append' and 'go_to append' or 'go_to'))
     local r = route(spider)
     out.route, out.route_line = r, route_line(r)
     if #r > 0 then
@@ -402,6 +414,13 @@ return function(api)
       local e = game.get_entity_by_unit_number(unit)
       if not (e and e.valid) then st.locks[unit] = nil end
     end
+    -- (SR) a gone spidertron's last set, once an hour
+    if st.sets and game.tick % 216000 < M.SAMPLE then
+      for unit in pairs(st.sets) do
+        local e = game.get_entity_by_unit_number(unit)
+        if not (e and e.valid) then st.sets[unit] = nil end
+      end
+    end
     for unit, t in pairs(st.spiders) do
       local e = game.get_entity_by_unit_number(unit)
       local r = e and e.valid and route(e) or {}
@@ -477,7 +496,10 @@ return function(api)
   -- arrived (its route ended within 4 tiles of its last target); stalled (the stall line, after the recoveries);
   -- unreachable (stalled with no path found, or a target on water with no tile its legs stand on near it);
   -- route_changed (another go_to or clear, or a player, set its route); retreated (its guard sent it back);
-  -- route_emptied (its route ended elsewhere); destroyed. nil while it walks.
+  -- route_emptied (its route ended elsewhere); destroyed. nil while it walks. (d28 batch300 SR) route_changed at the
+  -- first read after another harness call set or cleared the route (M.claim's number moved on: action.changed says
+  -- who, how and when), or after its route came to lead elsewhere with no such call (a player in the game, or another
+  -- script: its last target no longer the go_to's).
   function M.watch(action)
     local e = action.spider
     if not (e and e.valid) then return 'destroyed' end
@@ -487,10 +509,22 @@ return function(api)
       action.done = done
       return done.arrived and 'arrived' or 'route_emptied'
     end
+    local s = st.sets and st.sets[action.unit]
+    if action.set_seq and s and s.seq ~= action.set_seq then
+      action.changed = {by=s.by, how=s.how, tick=s.tick}
+      return 'route_changed'
+    end
     local t = st.spiders[action.unit]
+    if t and t.tick ~= action.set_tick then return 'route_changed' end
+    if t and t.retreated then return 'retreated' end
+    if action.set_seq then
+      local r = route(e)
+      if #r > 0 and action.target and dist(r[#r], action.target) > 0.5 then
+        action.changed = {tick=game.tick, outside=true}
+        return 'route_changed'
+      end
+    end
     if not t then return nil end
-    if t.tick ~= action.set_tick then return 'route_changed' end
-    if t.retreated then return 'retreated' end
     if t.stalled then return (t.no_path or t.unlanded or action.unlanded) and 'unreachable' or 'stalled' end
     return nil
   end
@@ -516,7 +550,17 @@ return function(api)
       last.why = (f.stalled and f.stalled.line or 'no progress') .. (last.recovery and string.format('; %d recover%s tried', #last.recovery, #last.recovery == 1 and 'y' or 'ies') or '')
         .. (last.no_path and '; ' .. last.no_path or '') .. (outcome == 'unreachable' and not last.no_path and action.unlanded and '; ' .. action.unlanded or '')
     elseif outcome == 'route_changed' then
-      last.why = 'its route was set again (another go_to or clear, or a player): ' .. f.route_line
+      local c = action.changed
+      if c and c.outside then
+        last.why = string.format('its route was set outside the harness\'s calls (a player in the game, or another script), seen %s after this go_to: %s',
+          ago(c.tick - action.start_tick), f.route_line)
+        last.changed_tick = c.tick
+      elseif c then
+        last.why = string.format('its route was set again by %s (%s) %s after this go_to: %s', tostring(c.by or '?'), c.how or 'go_to', ago(c.tick - action.start_tick), f.route_line)
+        last.changed_by, last.changed_how, last.changed_tick = c.by, c.how, c.tick
+      else
+        last.why = 'its route was set again (another go_to or clear, or a player): ' .. f.route_line
+      end
     elseif outcome == 'retreated' then
       last.why = t and t.retreated and retreat_text(t.retreated) or 'it retreated'
     elseif outcome == 'route_emptied' and d then

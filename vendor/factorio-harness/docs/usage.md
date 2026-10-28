@@ -14572,7 +14572,8 @@ spiderroute.lua):
 - NV1: `vehicle {go_to, wait: true}` (`fh call vehicle --wait` with go_to sends it) runs as a timed action, kind
   `spider_go`, read after the route's samples (every 60 ticks). It ends `arrived` (its route ended within 4 tiles of
   its last target), `stalled` (the stall line after its recoveries), `unreachable` (stalled with no path found, or a
-  target on water with no tile its legs stand on near it), `route_changed` (another go_to or clear, or a player),
+  target on water with no tile its legs stand on near it), `route_changed` (another go_to or clear, or a player; from
+  d28 batch300 with who, how and when),
   `retreated` (its guard), `route_emptied` (its route ended elsewhere), `destroyed` or `timed_out` (`ticks` 60..54000,
   default 18000; the walk goes on). last: spidertron, position, target, route_line, recovery, no_path, landed, why.
   Status `active.spider_go` says where it is. A plain go_to replies at once, as before. A queue step waits for it.
@@ -17116,3 +17117,30 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   tests/d27_batch298.lua (fails on main: Sol's flight runs out); tests/platalerts.lua (the advisory's wording);
   tests/d22_batch96.lua (its fake counts the thruster and tank finds alone).
 - Bundle (compacted): 6,334,816 bytes on main (dfdcae3b), 6,343,604 with this branch (limit 8,388,608).
+## d28 batch300 (SR: a waited spidertron go_to ran to its timeout after another caller's clear, viewer Aurora site:5308)
+
+- Real. Through the runtime's dispatch with two callers on one spidertron (astra's `vehicle {go_to, wait: true}`, then
+  sol), on main:
+  - sol's go_to (replace or append): route_changed at the next read, as designed.
+  - sol's `clear: true`: the wait went on to its timeout (300 s by default, up to 900), then said `timed_out` with
+    "still walking after N s: no target: it stands".
+  - sol's `spider_kite` with it: the same, timed_out.
+  - a route set outside the harness (a player's remote): not seen; the wait went on and ended `arrived` at the
+    player's target.
+- Found (spiderroute.lua): `watch` told a change by its route entry's tick only. A clear (and spider_kite taking the
+  spidertron over) removes the entry with no end record, and with no entry `watch` returned nil: still walking. A
+  route set outside the harness keeps the entry, and the sampler takes the new route's last target as the one it is
+  going to.
+- Fix:
+  - Each route the harness sets or clears, by anyone, gets a number, who, how and the tick (`M.claim`: go_to, go_to
+    append, clear, clear and go_to, spider_kite). A waited go_to keeps the number its own go_to got (`set_seq`) and
+    ends `route_changed` at the first read after it moves on.
+  - A route whose last target is no longer the go_to's, with no such call, ends `route_changed` too, as set outside
+    the harness. A route rewritten round water, a back-off and the retreat keep their checks (the same last target;
+    `retreated` is read first).
+  - last adds `changed_by`, `changed_how`, `changed_tick`, and `why` says them: "its route was set again by sol
+    (clear) 2s after this go_to: no target: it stands". A wait begun before this deploy ends as before.
+  - arrived, stalled, unreachable, retreated, route_emptied (a player's clear is still that) and destroyed are
+    unchanged.
+- Docs: agent/ref/movement-combat.md, the vehicle action's wait text. Test: tests/d28_batch300.lua (fails on main: the
+  wait still running a second after sol's clear).
