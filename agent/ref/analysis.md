@@ -320,7 +320,9 @@
   the start and status work name it) or `agent` (a name) reads any agent's watch; `uptime@START_TICK` reads the one
   watch begun on that tick, and is refused with each id named when two or more were; `details: true` adds each row's
   line. The reply gives `started_tick`,
-  `to_tick` (the end, or now), `sampled_tick`, `samples`, `page`, `pages`, `machines_total`, `matched`. On a copy of
+  `to_tick` (the end, or now), `sampled_tick`, `samples`, `page`, `pages`, `machines_total`, `matched`; a watch with
+  `items` gives `flows` on every page (surface, start_tick, end_tick, every row, line: a done or kept one's as it
+  ended, for any agent; only machine rows page). On a copy of
   world n Sol's 20-machine Asterion watch read 13.5 KB for page 1 and 3.0 KB for page 2.
   A new watch keeps your last one done, readable by its id (`kept`: at most 4, 96 machines; `kept_dropped` says why).
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock
