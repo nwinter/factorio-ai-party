@@ -17144,6 +17144,33 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
     unchanged.
 - Docs: agent/ref/movement-combat.md, the vehicle action's wait text. Test: tests/d28_batch300.lua (fails on main: the
   wait still running a second after sol's clear).
+## d28 batch303 (RQ: a crafting machine's recipe quality in inspect, scan, the rate line and bottleneck, Sol #2665)
+
+- Sol (03:56): inspect named the Needle crusher (-6,0.5)'s recipe bare; it runs oxide-asteroid-reprocessing at
+  legendary in a normal crusher, and two agents read compact lines as normal plastic.
+- Engine facts (2.0.77, the iMac copy of world n):
+  - `get_recipe()` returns the LuaRecipe and a LuaQualityPrototype. A normal machine runs a legendary recipe, and a
+    legendary machine a normal one: `entity.quality` is the machine's alone. LuaEntity has no `recipe_quality` key.
+  - A machine on a legendary recipe takes only legendary ingredients: inserting normal plates gave 0. With 3 legendary
+    plates held, `get_item_count('iron-plate')` read 0 and `get_item_count{name, quality='legendary'}` 3.
+  - A furnace's recipe quality comes from its input: legendary ore read iron-plate legendary and made legendary plates;
+    a legendary furnace on normal ore read normal. Idle, `get_recipe()` is nil and `previous_recipe` is
+    `{name = LuaRecipePrototype, quality = LuaQualityPrototype}`.
+  - An assembling machine's ghost keeps its recipe and recipe quality (`create_entity{..., recipe, recipe_quality}` and
+    `set_recipe(name, quality)` both take it), its own quality apart, and revive keeps them. A furnace ghost has none.
+- Change:
+  - runtime.lua `recipe_quality_of(e, previous)` (name, quality with normal, previous) and `recipe_label`.
+  - inspect: `recipe_quality` beside `recipe` (built and ghost; normal too), an idle furnace's `previous_recipe` and
+    `previous_recipe_quality`; area and position rows the same. Compact lines: `recipe legendary NAME` when not normal,
+    `recipe normal NAME` when the line names the machine's quality, and `last recipe ...` for an idle furnace.
+  - scan: rows of crafting machines and their ghosts add `recipe_quality` when `recipe`, `status` or `output` is asked.
+  - craftrate (inspect's `rate`, platform_bom, platform_defense): `recipe_quality`; the line opens `legendary recipe
+    (takes legendary ingredients, makes legendary products[ or better at its quality chance]): ...`; its io line names
+    the recipe with its quality.
+  - bottleneck: a recipe at another quality is its own group (`assembling-machine-2 legendary iron-gear-wheel x1`), and
+    its ingredients are counted at the recipe's quality (a legendary recipe read short with them held).
+- Tests: tests/d28_batch303.lua; mod/tests/runtime_test.lua's legendary compact line now says `recipe normal`.
+
 ## d28 batch302 (FC: the flight watch read at most 128 ammo turrets and said nothing, Astra #2656)
 
 - Found (flightwatch.lua add_turret): `M.MAX_TURRETS = 128`. Over it a turret was not added and `w.capped` was set,
