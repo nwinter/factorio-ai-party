@@ -1088,10 +1088,31 @@ return function(api)
     if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
     return api.ammo_reserve(pl,p.force,c)
   end
-  checks['all']=function(p,c,estimate,record)
-    local all,saws=true,{}
+  -- (d28 batch311 GA, viewer Aurora: an any guard on a turret's ammo or a cutoff never fired once the turret was
+  -- removed: the turret member threw and the cutoff member was never counted) all and any read each member under
+  -- pcall, every member at every check (their baselines are read together whatever another does); an error is that
+  -- member's saw and is kept in record.member_errors [{index, until, error}].
+  local function read_members(p,c,record)
+    local out,errs={},nil
     for i,m in ipairs(c.conditions) do
-      local met,saw=checks[m['until']](p,m,nil,record)
+      local ok,met,saw=pcall(checks[m['until']],p,m,nil,record)
+      if ok then out[i]={met=met,saw=saw}
+      else
+        out[i]={err=tostring(met)}
+        errs=errs or {}
+        errs[#errs+1]={index=i,['until']=m['until'],error=out[i].err}
+      end
+    end
+    if record then record.member_errors=errs end
+    return out,errs
+  end
+  -- all: a member that could not be read raises its error (the first), as a lone condition's, once every member is read
+  checks['all']=function(p,c,estimate,record)
+    local res,errs=read_members(p,c,record)
+    if errs then error(errs[1].error,0) end
+    local all,saws=true,{}
+    for i in ipairs(c.conditions) do
+      local met,saw=res[i].met,res[i].saw
       if not met then all=false end
       saws[i]=(met and 'met: ' or 'not yet: ')..tostring(saw)
     end
@@ -1101,14 +1122,18 @@ return function(api)
   -- guards on) Any member holds: {until=any, conditions=[...]} met when one is; each member is read every check (their
   -- baselines start together); saw names the first that holds (#N) with its own saw, then the others'; the record keeps
   -- matched {index, until, saw}.
+  -- (GA) a member that holds keeps it met, whatever the others do: one that could not be read is named in saw ('#2
+  -- ammo_below: could not be read: ...'); with none holding, an error raises them all, named, as a lone condition's.
   checks['any']=function(p,c,estimate,record)
+    local res,errs=read_members(p,c,record)
     local first,saws=nil,{}
     for i,m in ipairs(c.conditions) do
-      local met,saw=checks[m['until']](p,m,nil,record)
-      if met and not first then first={index=i,['until']=m['until'],saw=tostring(saw)} end
-      saws[i]=string.format('#%d %s: %s%s',i,m['until'],met and 'met: ' or 'not yet: ',tostring(saw))
+      local r=res[i]
+      if r.met and not first then first={index=i,['until']=m['until'],saw=tostring(r.saw)} end
+      saws[i]=string.format('#%d %s: %s',i,m['until'],r.err and 'could not be read: '..r.err or (r.met and 'met: ' or 'not yet: ')..tostring(r.saw))
     end
     if record then record.matched=first end
+    if not first and errs then error('none yet, and '..(#errs==1 and 'a member' or #errs..' members')..' could not be read: '..table.concat(saws,'; '),0) end
     if not first then return false,'none yet: '..table.concat(saws,'; ') end
     local rest={}
     for i,t in ipairs(saws) do if i~=first.index then rest[#rest+1]=t end end

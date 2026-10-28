@@ -64,7 +64,9 @@
   "fluid":"thruster-oxidizer","at_least":12000}]}`; `any` (`conditions`: 1..8 plain conditions, met when one holds;
   every one is read each check and validated on submit and dry run; the remote and platform lanes take it when they
   take each; `saw` names the first that holds as `#N` with its saw, then the others', and `matched` {index, until,
-  saw} is in `last` and the step's history), e.g. `{"until":"any","conditions":[{"until":"platform_progress",
+  saw} is in `last` and the step's history; a member that cannot be read, such as a removed turret, is named in `saw`
+  as `could not be read` and in `member_errors` [{index, until, error}], one that holds still meets it, and with
+  none holding the read fails naming them all), e.g. `{"until":"any","conditions":[{"until":"platform_progress",
   "platform":"Asterion","at_least":0.002},{"until":"item_count","platform":"Asterion","item":
   "promethium-asteroid-chunk","at_least":25}]}`; `tick_at_least` (`tick`: a whole game tick, up to 1296000 ticks
   ahead: met once the game reaches it, at the first check when it has passed; a pause, resume or requeue never moves
@@ -144,7 +146,11 @@
   still armed. `queue_status` `guards` give each one's `scope`, and with a `tick_at_least` its `deadline_tick` and
   `ticks_left`. Guards set before scopes are standing. A guard with `tick_at_least` in its `when` is checked every tick
   from that tick: on a remote or platform lane it fires then even while the lane is paused or held, and its steps or
-  goto run; on the body lane `queue_resume` fires it before any step. `dry_run: true` checks the plan and queues nothing;
+  goto run; on the body lane `queue_resume` fires it before any step. A guard whose read fails stays armed and is read
+  again at each check: a `guard_error` history row and one team block line say so once while its reads keep failing,
+  and `queue_status` `guards` give its `read_error` {error, first_tick, last_tick, checks, cleared_tick}. A wait_until
+  whose deadline is still ahead keeps waiting when its read fails (one `wait_error` row), and the deadline still ends
+  it. `dry_run: true` checks the plan and queues nothing;
   `world_checks` reads each `platform_schedule` step as the call reads it now (`refused if it ran now:` the call's own
   refusal, e.g. new waits holding now without `go: true`; `when it runs:` what a refusal then turns on) and the first 4
   `requests` steps on a platform as their dry run (`waits_unmet`, `sends_down`), with the steps before each not applied.
