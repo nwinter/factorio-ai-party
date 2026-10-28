@@ -1427,7 +1427,8 @@ minute and a half of flight, and the hosts get a card and a headline.
   back for what is left of it. Host view (Nick's own view on air, hostview.py) comes first too: the director takes no
   maiden moment while it is on, and takes it after if it is still within `maiden_late`.
 - One camera (POG_CAMS=1): plain departures and platform visits stay off with one client, but a maiden flight moves the
-  one client to the ship, as a segment does.
+  one client to the ship, as a segment does. (Since d28 batch318 OC plain departures and visits move it too: see "One
+  client's timed shots" below.)
 - Tests: tools/stream/test_maiden.py covers the history along a run chain, a reused name and a rename, the moment
   and what is not one, three cameras and one camera, a departure already on air, a big loss and a segment first, the
   card's facts and camera, the overlay rows, and the hosts' call. vendor/factorio-harness/tests/chronicle.lua covers the

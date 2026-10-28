@@ -141,13 +141,21 @@ def three_cameras(m):
 
 
 def one_camera(m):
-    sent = []
-    d = OneCam(cams.slots("1"), lambda b: sent.append(b) or {"ok": True}, None, map_every=0, platform_every=0)
-    d.started = 0
     a, t = team(), 1000
+    # (d28 batch318 OC) a plain departure with one camera goes on air as with three (one_client_shots); off: not shown
+    for on in (True, False):
+        e = OneCam(cams.slots("1"), lambda b: {"ok": True}, None, map_every=0, platform_every=0, one_client_shots=on)
+        e.started = 0
+        for k in range(0, 50):
+            e.step(snap(a, [plat(at="nauvis->vulcanus 1%") if k >= 40 else plat()]), t + k)
+        assert [p[2] for p in e.platforms] == (["departure"] if on else []), (on, e.platforms)
+    sent = []
+    d = OneCam(cams.slots("1"), lambda b: sent.append(b) or {"ok": True}, None, map_every=0, platform_every=0,
+               one_client_shots=False)
+    d.started = 0
     for k in range(0, 40):
         d.step(snap(a, [plat()]), t + k)
-    for k in range(40, 50):  # a plain departure: not with one camera
+    for k in range(40, 50):  # a plain departure: not with one camera (one_client_shots off)
         d.step(snap(a, [plat(at="nauvis->vulcanus 1%")]), t + k)
     assert not d.platforms, d.platforms
     # a maiden flight: the one client goes to the ship and stays
