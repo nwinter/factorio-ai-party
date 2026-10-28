@@ -345,12 +345,18 @@ return function(api)
     end
     return 'read at each check'
   end
+  -- (GA) a guard's read error as status shows it: the latest text, the first and last failed check, how many
+  local function read_error_row(g)
+    local e=g.read_error
+    return e and {error=e.text,first_tick=e.tick,last_tick=e.last_tick,checks=e.checks,cleared_tick=e.cleared_tick} or nil
+  end
   local function guard_rows(q,status)
     local rows={}
     for _,g in ipairs(q.guards or {}) do
       local text,since=baseline(g.when)
       rows[#rows+1]={id=g.id,['until']=g.when['until'],set_tick=g.set_tick,since_tick=since,baseline=text,edit=status and status[g.id] or nil,scope=g.scope or 'standing',
         deadline_tick=g.deadline,ticks_left=g.deadline and math.max(0,g.deadline-game.tick) or nil,
+        read_error=read_error_row(g),
         reaction=g['goto'] and ('goto '..g['goto']) or g.steps and (#g.steps..' step'..(#g.steps==1 and '' or 's')) or 'abort (the queue pauses)'}
     end
     return rows
@@ -507,6 +513,7 @@ return function(api)
         for k,v in pairs(g) do c[k]=v end
         c.scope=g.scope or 'standing'
         if g.deadline then c.deadline=nil; c.deadline_tick=g.deadline; c.ticks_left=math.max(0,g.deadline-game.tick) end
+        c.read_error=read_error_row(g)
         gl[i]=c
       end
     end
@@ -755,11 +762,32 @@ return function(api)
       q.order=nil; q.pending={}; q.revision=q.revision+1
     end
   end
+  -- (d28 batch311 GA, viewer Aurora: a guard whose read failed was skipped with no word) a guard that could not be
+  -- read stays armed and is read again at each check; its error is said once (a guard_error history row and one team
+  -- block line) while its reads keep failing (each later one only counted, its text the latest), again after a read
+  -- that worked; kept on it (queue_status guards' read_error).
+  local function guard_error(q,g,err)
+    local text=tostring(err)
+    local e=g.read_error
+    if e and not e.cleared_tick then e.text,e.last_tick,e.checks=text,game.tick,e.checks+1; return end
+    g.read_error={text=text,tick=game.tick,last_tick=game.tick,checks=1}
+    local line=string.format('%s (%s) could not be read at tick %d: %s; it stays armed and is read again at each check%s',tostring(g.id),tostring(g.when['until']),game.tick,text,
+      g.deadline and string.format('; its deadline tick %d still fires it',g.deadline) or '')
+    q.history[#q.history+1]={action='guard_error',ok=false,result={guard=g.id,condition=g.when['until'],error=text,line=line},finished_tick=game.tick,plan=q.plan_seq}
+    if #q.history>MAX_HISTORY then table.remove(q.history,1) end
+    q.round_news=q.round_news or {}
+    q.round_news[#q.round_news+1]=line
+    while #q.round_news>3 do table.remove(q.round_news,1) end
+  end
   -- paused: a remote or platform lane paused or held (deadline_while_paused): only the guards whose deadline passed
   local function check_guards(q,p,paused)
     for i,g in ipairs(q.guards or {}) do
       local ok,met,saw=true,false,nil
-      if not paused or (g.deadline and game.tick>=g.deadline) then ok,met,saw=pcall(api.condition,p,g.when) end
+      if not paused or (g.deadline and game.tick>=g.deadline) then
+        ok,met,saw=pcall(api.condition,p,g.when)
+        if not ok then guard_error(q,g,met)
+        elseif g.read_error and not g.read_error.cleared_tick then g.read_error.cleared_tick=game.tick end
+      end
       if ok and met then
         -- A guard fires once; its reaction replaces whatever was running.
         table.remove(q.guards,i)
@@ -792,11 +820,14 @@ return function(api)
         return
       end
     end
-    -- every deadline still armed is ahead (one passed and unmet, as in an any whose read failed, waits for the
-    -- 10-tick check)
+    -- the next deadline wake: the earliest deadline ahead; one passed whose guard is still armed (its read failed) is
+    -- read again CHECK_TICKS on, so a paused lane, checked only at its wake, never loses it (GA: it was dropped here)
     if q.guard_due and game.tick>=q.guard_due then
       local due
-      for _,g in ipairs(q.guards or {}) do if g.deadline and g.deadline>game.tick and (not due or g.deadline<due) then due=g.deadline end end
+      for _,g in ipairs(q.guards or {}) do
+        local t=g.deadline and (g.deadline>game.tick and g.deadline or game.tick+CHECK_TICKS)
+        if t and (not due or t<due) then due=t end
+      end
       q.guard_due=due
     end
   end
@@ -1527,7 +1558,23 @@ return function(api)
               step.saw=ok and saw or nil
               q.current=nil
               local result={saw=step.saw}
-              if not ok then result.reason=tostring(met); fail(q,p,step,result)
+              -- (GA) a wait whose deadline (a tick_at_least, alone or in any) is still ahead keeps waiting when a read
+              -- fails: said once (wait_error), its saw the error, read again at each check; the deadline still ends it
+              if not ok and step.due and game.tick<step.due and game.tick<step.until_tick then
+                local text=tostring(met)
+                step.saw=text
+                if not step.read_error then
+                  local line=string.format('%s wait_until could not be read at tick %d: %s; it keeps waiting, read again at each check, and its deadline tick %d still ends it',
+                    tostring(step.id or '?'),game.tick,text,step.due)
+                  q.history[#q.history+1]={action='wait_error',ok=false,result={step=step.id,error=text,line=line},finished_tick=game.tick,plan=q.plan_seq}
+                  if #q.history>MAX_HISTORY then table.remove(q.history,1) end
+                  q.round_news=q.round_news or {}
+                  q.round_news[#q.round_news+1]=line
+                  while #q.round_news>3 do table.remove(q.round_news,1) end
+                end
+                step.read_error={text=text,tick=step.read_error and step.read_error.tick or game.tick,last_tick=game.tick,checks=(step.read_error and step.read_error.checks or 0)+1}
+                q.current=step
+              elseif not ok then result.reason=tostring(met); fail(q,p,step,result)
               elseif met then result.outcome='met'; record(q,step,true,result)
               elseif game.tick>=step.until_tick and step.args.timeout==nil and api.extend_wait and api.extend_wait(step,step.args,step.wait_started) then
                 step.until_tick=api.extend_wait(step,step.args,step.wait_started); q.current=step
@@ -1735,7 +1782,7 @@ return function(api)
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it; the label is on a later step of the list, or a step pending behind it with mode next or ahead: a submit and its dry run refuse one on no such step); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
-    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the lane is not paused (every tick once a tick_at_least in its when is reached); each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan; scope: "plan" (default) retires the guard in the tick the lane has no step left (none running or pending, no repeating plan), with a guards_retired history row and a team block line; "standing" keeps it armed until it fires, is removed or the queue is cancelled (guards set before scopes existed are standing); queue_status guards_after_plan names guards armed with no step left; a guard whose when is tick_at_least (alone or in any) fires at its tick on a remote or platform lane even while it is paused or held, and its steps or goto run then',max=MAX_GUARDS}
+    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the lane is not paused (every tick once a tick_at_least in its when is reached); each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan; scope: "plan" (default) retires the guard in the tick the lane has no step left (none running or pending, no repeating plan), with a guards_retired history row and a team block line; "standing" keeps it armed until it fires, is removed or the queue is cancelled (guards set before scopes existed are standing); queue_status guards_after_plan names guards armed with no step left; a guard whose when is tick_at_least (alone or in any) fires at its tick on a remote or platform lane even while it is paused or held, and its steps or goto run then; a guard whose read fails stays armed, read again at each check, said once (a guard_error history row and a team block line; queue_status guards read_error)',max=MAX_GUARDS}
   }
   return M
 end
