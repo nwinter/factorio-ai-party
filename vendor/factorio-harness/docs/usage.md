@@ -16716,6 +16716,26 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   transcripts).
 - Test: tests/d27_batch275.lua (fails on main: no wake on unread tells); tests/tells.lua (grok's first sleep after
   its tells sat unread 2 minutes); tests/rulessection.test.ts (a Claude workspace kept current, a Grok one left alone).
+
+## d27 batch286 (IL: no idle nudge while the agent's other lanes work)
+
+- Found (runs/shift88 nudges.jsonl): Astra was nudged "your character idle" at 15:58, 16:20 and 16:49 while
+  platform:Resolute ran (a wait_until step running; 14 steps done in the 10 min of the last two) and she slept 30 s
+  between checks (asleep 95-97%). She answered two with operator requests (16:21, 16:50). batch252 cp2 had kept
+  standing as the character's own and listed the lanes in the nudge.
+- tools/idle_nudge.py (host, read at shift start): `due()` returns `lanes working: platform:Resolute 14` (or
+  `... running`) for an agent whose other lanes (idle_report `lanes`: remote, platform:NAME) have a step done in the
+  window or a step running now, unless something asks it now: unanswered requests or tells (open.lua), unread mentions
+  apart from tells, a watch late, stalled, invalid or with its final unread, a board item overdue for review. Those
+  nudge as before, with the lanes named. The check comes after the rest and "not answering" checks, so their handoffs
+  and back-off are as before.
+- idle-nudge.log and nudges.jsonl get one line (`no idle nudge for astra (11 min standing): lanes working:
+  platform:Resolute 14`; a row with `skipped: true`) when it begins and when the set of working lanes changes.
+- Shifts 86-88 replayed from the nudges' own texts (the lanes part, the open part): 5 of 72 nudges sent would not
+  have gone, all Astra's (shift86 07:38 platform:Asterion; shift87 13:50 remote, 14:56 platform:Resolute; shift88
+  15:58, 16:49 platform:Resolute). Her 16:20 nudge still goes: a tell from Haiku was unanswered then.
+- Docs: agent/ref/waits-queues.md (the idle nudge line). Test: tools/test_idle_lanes.py (fails on main at Astra's
+  16:49 row).
 ## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
 
 - Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
@@ -16739,3 +16759,34 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
   `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
 - Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
+## d27 batch284 (AT, Sol #2619: the made wait timed out before the batch's own estimate)
+
+- Sol's assembler_batch for 100 accumulators in an assembler 2 at crafting speed 1.05 said "the 100 crafts take about
+  952 s: the made wait times out at 900 s first". The live plan's made wait timed out with the counter at 6 + 100 not
+  reached; Sol recovered by hand. A wait_until's timeout is 54000 ticks (900 s) at most, so no timeout on one wait could
+  cover it.
+- Measured on a private copy (2.0.77), the products-finished counter over about 1850 ticks against speed / energy x
+  (1 + productivity) x time:
+  - assembler 2 on gears: 46 (46.3); with two speed module 3: crafting_speed 1.5, 92 (92.7); beside a beacon with two
+    speed module 3: crafting_speed 1.875, 116 (115.8); with two productivity module 3: crafting_speed 0.525,
+    productivity_bonus 0.2, 38 (38.9);
+  - electromagnetic plant on copper cable: productivity_bonus 0.5, 186 (185.3); with the force's copper-cable recipe
+    productivity_bonus set to 0.3 the entity still read 0.5, and the counter rose 218 (217.8 at 1 + 0.5 + 0.3).
+  So crafting_speed includes modules and beacons, the entity's productivity_bonus its modules and its own base, and
+  recipe research adds on top.
+- assembler_batch now:
+  - estimates the crafts as crafts x energy / (crafting_speed x (1 + productivity)), productivity the entity's plus
+    the recipe's (`m.force.recipes[name].productivity_bonus`), at most the recipe's `maximum_productivity`;
+    `estimate_s` and `productivity` in the reply;
+  - holds in one made wait the crafts whose estimate, with a quarter and 30 s to spare, fits its 54000 ticks; a longer
+    batch's made step is several produced waits on the same counter (`counter_from` the count read at the plan), met
+    at those marks in turn, each with its own 54000-tick timeout (`made_waits`, labels "made N of M" then "made");
+  - refuses a batch past 8 made waits, naming the count that fits ("Refused: count 584 or less").
+  The dry run returns the steps a live call queues.
+- On the copy (sol's bot): an assembler 2 on accumulators (speed 0.75, 13.3 s a craft), count 60: the dry run said
+  about 800 s, 2 made waits met at 52 and 60. The live call queued
+  the same 10 steps; "made 52 of 60" was met ("made 52 crafts in 1 machine since the wait began (at least 52)"), then
+  "made" at 60, then the input went off; 60 accumulators were in the output chest, 49775 ticks after the submit
+  (staging included; game.speed 10 on the copy).
+- Bundle (compacted): 6,298,628 bytes on main (d8cc948e, batch280 and batch281 in it), 6,300,749 with this branch
+  (limit 8,388,608).

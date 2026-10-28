@@ -44,6 +44,12 @@ return function(api)
   local HOLD = ' < -2147483648'
   M.HOLD = HOLD
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d27 batch284 AT, Sol #2619: 100 accumulators at crafting speed 1.05, about 952 s, timed out at the made wait's 900 s)
+  -- A wait times out at 54000 ticks at most. The made step is as many produced waits on the machine's counter as its
+  -- crafts need, each holding what fits in one with a quarter and 30 s to spare, at most MADE_WAITS (about 2 hours);
+  -- a batch past that is refused with the count that fits.
+  local WAIT_MAX, MADE_WAITS = 54000, 8
+  M.MADE_WAITS = MADE_WAITS
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function qualities()
     local out = {}
@@ -224,6 +230,28 @@ return function(api)
     local stack = try(function() return prototypes.item[product].stack_size end)
     local speed = try(function() return m.crafting_speed end) or 1
     local idle_full = m.type == 'assembling-machine' and per * (1 + math.ceil(1.166 * speed / (recipe.energy or 1) - 1e-9)) or nil
+    -- (AT) the counter's rate, measured on a copy (2.0.77): speed / energy x (1 + productivity) a second, crafting_speed
+    -- with its modules and beacons, productivity its own (modules, an electromagnetic plant's 50%) and the force's
+    -- recipe productivity (research: not in the entity's productivity_bonus)
+    local prod = (try(function() return m.productivity_bonus end) or 0) + (try(function() return m.force.recipes[recipe.name].productivity_bonus end) or 0)
+    local prod_max = try(function() return prototypes.recipe[recipe.name].maximum_productivity end)
+    if prod_max and prod > prod_max then prod = prod_max end
+    local per_tick = speed > 0 and speed * (1 + prod) / (60 * (recipe.energy or 1)) or nil
+    local est_ticks = per_tick and crafts / per_tick or nil
+    -- crafts one made wait holds: its estimate with a quarter and 30 s to spare within the wait's 54000 ticks
+    local fits = per_tick and math.max(1, math.floor((WAIT_MAX - 1800) * per_tick / 1.25)) or crafts
+    local made_at = {}
+    if fits >= crafts then made_at[1] = crafts
+    elseif math.ceil(crafts / fits) > MADE_WAITS then
+      local most = fits * MADE_WAITS
+      local why = string.format('at its crafting speed %g%s the %d crafts take about %d s: more than %d made waits of 900 s hold (%d crafts each). Refused: count %d or less (%d crafts), or batches one after another',
+        speed, prod > 0 and string.format(' with productivity +%d%%', math.floor(prod * 100 + 0.5)) or '', crafts, math.floor(est_ticks / 60 + 0.5), MADE_WAITS, fits, most * per, most)
+      refused = refused and (refused .. '; ' .. why) or why
+      made_at[1] = crafts
+    else
+      for i = fits, crafts - 1, fits do made_at[#made_at+1] = i end
+      made_at[#made_at+1] = crafts
+    end
     -- Where the products go: the output inserter's drop target, and a chest's room for them.
     local dest = try(function() return output.drop_target end)
     local room
@@ -247,7 +275,10 @@ return function(api)
       steps[#steps+1] = {action='requests', args={position=rpos, clear_all=true}, label='staged'}
     end
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=false}, label='input on'}
-    steps[#steps+1] = {action='wait_until', args={['until']='produced', position=mpos, counter_from=pf, at_least=crafts, timeout=54000}, label='made'}
+    for i, upto in ipairs(made_at) do
+      steps[#steps+1] = {action='wait_until', args={['until']='produced', position=mpos, counter_from=pf, at_least=upto, timeout=WAIT_MAX},
+        label=i < #made_at and string.format('made %d of %d', upto, crafts) or 'made'}
+    end
     local i_back = i_own and back_args(ipos, i_own, false)
     steps[#steps+1] = i_back and {action='circuit_set', args=i_back, label='input condition back'}
       or {action='circuit_set', args={position=ipos, logistic=first .. HOLD}, label='input off'}
@@ -273,9 +304,11 @@ return function(api)
       plan[#plan+1] = string.format('%s %s has room for %d of the %d: once it is full the rest stays in the machine (inserters stop feeding it at %s held) and the batch waits until something takes from it',
         dest.name, at(dest.position), room, count, idle_full and tostring(idle_full) or 'its stack')
     end
-    local secs = crafts * (recipe.energy or 1) / speed
-    if secs > 900 then
-      plan[#plan+1] = string.format('at its crafting speed %g the %d crafts take about %d s: the made wait times out at 900 s first (the plan stops there: queue_status)', speed, crafts, math.floor(secs + 0.5))
+    if #made_at > 1 then
+      local marks = {}
+      for i, upto in ipairs(made_at) do marks[i] = tostring(pf + upto) end
+      plan[#plan+1] = string.format('at its crafting speed %g%s the %d crafts take about %d s, more than one wait holds (900 s): the made step is %d waits on its counter, met at %s, each up to 900 s',
+        speed, prod > 0 and string.format(' with productivity +%d%%', math.floor(prod * 100 + 0.5)) or '', crafts, math.floor(est_ticks / 60 + 0.5), #made_at, table.concat(marks, ', '))
     end
     if refused then plan[#plan+1] = refused elseif slot_line then plan[#plan+1] = slot_line end
     if m_own then
@@ -301,6 +334,7 @@ return function(api)
     local out = {machine=at(m.position), recipe=recipe.name, quality=quality, product=product, other_quality=#other > 0 and other or nil, crafts=crafts, requester=at(req.position), input=at(input.position),
       output=at(output.position), plan=plan, surplus=#surplus > 0 and surplus or nil,
       counter={now=pf, done_at=pf + crafts}, output_stack=stack, feeds_until=idle_full,
+      estimate_s=est_ticks and math.floor(est_ticks / 60 + 0.5) or nil, productivity=prod > 0 and prod or nil, made_waits=#made_at,
       destination=dest and string.format('%s %s', dest.name, at(dest.position)) or nil, room=room,
       machine_condition=m_own and own_text(m_own) or nil, output_condition=o_own and own_text(o_own) or nil, input_condition=i_own and own_text(i_own) or nil,
       trash_unrequested=trash ~= nil and (trash and 'on: switched off for the batch and on again after' or 'off') or nil}
@@ -321,6 +355,6 @@ return function(api)
     requester='optional {x,y}: the requester chest that feeds it (default: the one an inserter takes from into it)',
     input='optional {x,y}: that inserter', output='optional {x,y}: the inserter that takes from the machine (default: the one round it)',
     dry_run='true: the read and the plan (steps), nothing queued',
-    returns='slots {required, available} (what the requester must hold at once, each ingredient ceil(count / stack size) slots with what else it holds, against its slots under its bar; over: refused), quality (the recipe\'s: item ingredients asked for and waited for at it), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after), counter {now, done_at} (the machine\'s products-finished counter, as its GUI shows: crafts, productivity bonus crafts too), output_stack and feeds_until (one stack of the product in its output; inserters stop feeding it at that many held), destination and room (where the output inserter puts the products; a chest\'s room for them now), machine_condition, output_condition, input_condition (their own logistic condition, and circuit condition with a wire on them: switched off for the batch and set back after), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): the machine\'s and the output inserter\'s own conditions off, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits (produced, counter_from) for the crafts on the machine\'s counter while the products go out, input off (or its own condition set back), the others\' conditions set back. The inserters need a logistic network for their logistic condition'}}
+    returns='estimate_s (the crafts at its crafting speed with modules and beacons, and its productivity with recipe research: its counter rises speed / energy x (1 + productivity) a second), made_waits (a wait holds 900 s: past that the made step is several produced waits on the counter, each up to 900 s, at most 8; a batch past those is refused with the count that fits), slots {required, available} (what the requester must hold at once, each ingredient ceil(count / stack size) slots with what else it holds, against its slots under its bar; over: refused), quality (the recipe\'s: item ingredients asked for and waited for at it), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after), counter {now, done_at} (the machine\'s products-finished counter, as its GUI shows: crafts, productivity bonus crafts too), output_stack and feeds_until (one stack of the product in its output; inserters stop feeding it at that many held), destination and room (where the output inserter puts the products; a chest\'s room for them now), machine_condition, output_condition, input_condition (their own logistic condition, and circuit condition with a wire on them: switched off for the batch and set back after), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): the machine\'s and the output inserter\'s own conditions off, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits (produced, counter_from) for the crafts on the machine\'s counter while the products go out, input off (or its own condition set back), the others\' conditions set back. The inserters need a logistic network for their logistic condition'}}
   return M
 end
