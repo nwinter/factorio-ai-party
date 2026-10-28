@@ -101,6 +101,8 @@
   path (up to 3 times; with no water ahead, turned 60 degrees once), then `stalled` (`last.recovery`). Outcomes `clear`, `low_health` (0.4), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
   `stalled`, `route_changed`, `out_of_coverage`, `destroyed`, `timed_out` (3600). On a low end with `retreat` {x,y}
   (default your retreat_guard's `to`) its route goes there, guns on. Its go_to route is replaced at the start.
+  Another call's go_to (the same target too), append or clear on it, or its route emptied over 4 tiles short of its
+  target, ends it `route_changed` at its next read: its route, a path it asked and its switches stay as they stand.
   `--wait` reports `why`, kills, `kills_by`, `ammo_used`, `ammo_left`, `spidertron` (where, health, shield),
   `recovery`, `retreat`.
   Example: `./fh call spider_kite --args '{"vehicle":23036938,"retreat":{"x":-19,"y":-787}}' --wait`
@@ -243,6 +245,18 @@
   it at once: reply `shared_route` (a drive's `last.shared_route` too) "reused route N (checked at tick T)". Changed
   legs are asked again and spliced in, the line saying which and why; a route asked over 2 game hours ago is asked
   again in full. `"reuse":false` asks the pathfinder; `"route":N` takes that route only.
+  Pairs: `vehicle {"pair":{"lead":L,"follower":F,"distance":10}}` (unit_numbers or {x,y}; distance 6..40). A
+  spidertron another agent rides, runs an action with or sent last pairs once that agent makes the same call (within
+  10 min; the ask is in its alerts). A go_to on the lead then moves both: the lead walks its route as alone; the
+  follower walks the spots the lead stood on, about `distance` behind, so a water step or narrow pass the lead's legs
+  took its legs take (one prototype). The lead waits while the follower is over `distance` + 4 behind, and past a water
+  step or a narrow pass (dry ground 3 tiles wide or less) until the follower is past it, said once in alerts. Reply
+  `pair.gates` names those on the route before the move, `pair.join` the follower's way to the lead. Ends said in
+  alerts: both arrived; the follower without progress for 5 s (split: where it stands, the step; the lead goes on);
+  a retreat of either, spider_kite on either, or a go_to or clear on the follower (at once; the lead keeps its route,
+  and after the lead's retreat or kite the follower stops where it stands). A clear on the lead stops both. `--wait` on
+  the lead: `arrived` once both have, `stalled` when the follower stalled (`stalled_one`, `stalled_at`), `pair`.
+  `"pair":false` with `vehicle` ends a pair or an ask.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.
