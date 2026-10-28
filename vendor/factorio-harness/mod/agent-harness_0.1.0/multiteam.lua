@@ -14,6 +14,9 @@
 --   mt_corridor  whether a path between two starts avoids every nest by a margin (a grid walk over the area).
 --   mt_contacts  first contacts: the first time a team's chart shows another team's entity (on_chunk_charted), and
 --                the first hit between two teams (on_entity_damaged), per ordered pair, with tick, place and what.
+--   mt_chat_scrub (mt277) drops the game's join and leave lines (players notices) from the harness chat: the setup's
+--                team accounts (mt-red, ...) joined once each, and every agent's chat would show them. players.lua
+--                writes none on a map with teams set up (tools/mt/start-mt.sh runs this before agents launch).
 return function(api)
   local M = {operator={}}
   local MAX_TEAMS, MAX_PATCHES, MAX_CONTACTS = 8, 200, 200
@@ -555,6 +558,15 @@ return function(api)
       if not a.since or c.tick > a.since then out[#out+1] = c end
     end
     return {teams=team_names(), contacts=out, since_setup_tick=s.set_tick}
+  end
+  function M.operator.mt_chat_scrub(a)
+    local c = api.state().chat
+    local kept, dropped = {}, 0
+    for _, m in ipairs(c and c.messages or {}) do
+      if m.notice and m.from == 'players' then dropped = dropped + 1 else kept[#kept+1] = m end
+    end
+    if c then c.messages = kept end
+    return {dropped=dropped, kept=#kept}
   end
   return M
 end

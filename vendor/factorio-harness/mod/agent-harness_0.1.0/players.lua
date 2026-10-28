@@ -248,6 +248,9 @@ return function(api)
     local p = human(event.player_index)
     if not p then return end
     record(p).joined_tick = game.tick
+    -- (mt277, private) a multi-team map (tools/mt/mt_map.py): no join or leave line; the team accounts' setup joins
+    -- (mt-red, ...) named every team to every agent
+    if api.state().mt then return end
     local guest = p.permission_group and p.permission_group.name == GUEST
     api.notice('players', p.name .. ' joined the game' .. (guest and ' (guest group)' or ''))
   end
@@ -255,6 +258,7 @@ return function(api)
     local p = human(event.player_index)
     if not p then return end
     record(p).left_tick = game.tick
+    if api.state().mt then return end
     api.notice('players', p.name .. ' left the game')
   end
   function M.on_event(event)
