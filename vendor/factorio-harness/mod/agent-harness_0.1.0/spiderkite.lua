@@ -128,11 +128,22 @@ return function(api)
   local function round_water(spider, action)
     local P = api.path
     if not P then return nil end
-    local ok, lines = pcall(P.plan, spider, {action.dest}, {owner='kite', index=action.index})
+    local ok, lines = pcall(P.plan, spider, {action.dest}, {owner='kite', index=action.index, claim=action.set_seq})
     if ok and lines then action.water = lines[1]; return lines[1] end
+  end
+  -- (d28 batch310 item 5) another call took the route since this kite's claim: it yields, its route never written back.
+  -- -> the line, or nil while the route is its own.
+  local function taken(action)
+    if not (api.seq and action.set_seq) then return nil end
+    local seq = api.seq(action.unit)
+    if seq == action.set_seq then return nil end
+    local s = api.set_of and api.set_of(action.unit) or {}
+    return string.format('%s set its route (%s) after this spider_kite began: it yields; the new route and the targeting switches stay as they are', tostring(s.by or 'another call'), s.how or 'a call')
   end
   function M.routed(action, plan, spider, pts, notes)
     if not (action and action.kind == 'spider_kite' and action.spider == spider and action.dest) then return end
+    -- a path that came after another call took the route: not written (the kite yields at its next read)
+    if taken(action) or (plan.claim and plan.claim ~= action.set_seq) then return end
     -- a back-off's plan was asked toward the target it backed off from (action.base): its route goes on there
     if dist(plan.targets[1], action.dest) > 3 then
       if not (action.base and dist(plan.targets[1], action.base) <= 3) then return end
@@ -245,6 +256,10 @@ return function(api)
       action.why = string.format('%s at %s left the chunks our force sees (radar coverage or a character\'s sight): remote view lost it', spider.name, at(pos))
       return 'out_of_coverage'
     end
+    -- (d28 batch310 item 5) another call cleared, replaced (the same target too) or appended to its route: yield first, so
+    -- neither a route nor a low-health retreat of this kite is written over the new one
+    local took = taken(action)
+    if took then action.why, action.dest, action.yielded = took, nil, true; return 'route_changed' end
     local h, s = fractions(spider)
     if h < action.min_health then stop_line(action, 'health', h, action.min_health); return 'low_health' end
     if action.min_shield and s and s < action.min_shield then stop_line(action, 'shield', s, action.min_shield); return 'low_shield' end
@@ -253,7 +268,12 @@ return function(api)
     -- its route as we left it: arrived (empty), or set by someone else
     local q = first(spider)
     if action.dest then
-      if not q then action.dest = nil
+      -- (d28 batch310 item 5) empty: arrived only within 4 tiles of its target; else emptied by a player or a script
+      if not q and dist(pos, action.dest) > 4 then
+        action.why = string.format('its route was emptied by another call or a player %.0f tiles short of %s: it yields', dist(pos, action.dest), at(action.dest))
+        action.dest, action.yielded = nil, true
+        return 'route_changed'
+      elseif not q then action.dest = nil
       elseif not on_route(action, q) then
         action.why = string.format('its route was changed by another call or a player: it leads to %s, not %s', at(q), at(action.dest))
         action.dest = nil
@@ -417,9 +437,17 @@ return function(api)
     end
     pcall(halt, spider, action)
     if action.switches then
-      pcall(function() spider.vehicle_automatic_targeting_parameters = action.switches end)
-      local w = action.switches
-      last.targeting = string.format('switches back as they were: auto target with gunner %s, without gunner %s', tostring(w.auto_target_with_gunner), tostring(w.auto_target_without_gunner))
+      -- (d28 batch310 item 5) back as they were only when they still read as this kite set them (both on) and no other
+      -- call took the spidertron over; else left as they stand
+      local now = try(function() return spider.vehicle_automatic_targeting_parameters end) or {}
+      if action.yielded or not (now.auto_target_with_gunner and now.auto_target_without_gunner) then
+        last.targeting = string.format('switches left as they stand (%s): auto target with gunner %s, without gunner %s', action.yielded and 'another call took the spidertron over' or 'set since this spider_kite began',
+          tostring(now.auto_target_with_gunner), tostring(now.auto_target_without_gunner))
+      else
+        pcall(function() spider.vehicle_automatic_targeting_parameters = action.switches end)
+        local w = action.switches
+        last.targeting = string.format('switches back as they were: auto target with gunner %s, without gunner %s', tostring(w.auto_target_with_gunner), tostring(w.auto_target_without_gunner))
+      end
     end
   end
   return M

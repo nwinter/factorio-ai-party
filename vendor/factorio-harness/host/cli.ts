@@ -1422,6 +1422,11 @@ async function main() {
         reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk,
         // a position nothing led to, walked near instead (friction2)
         near_walk: last.near_walk, target: last.near_walk ? last.target : undefined} : {}),
+      // a waited spidertron go_to (d28 batch310 PS): where the spidertron stands, its route, its recoveries, and its
+      // pair's part (both arrived, or which one stalled and where); position above is the character's.
+      ...(last?.kind === 'spider_go' ? {spidertron: last.spidertron, spidertron_at: last.position, route_line: last.route_line,
+        recovery: last.recovery, no_path: last.no_path, landed: last.landed, pair: last.pair, stalled_one: last.stalled_one,
+        stalled_at: last.stalled_at} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
       ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up,
         // drivesafe: the box it planned for, a stop short of the target, ours it braked or stopped for, a dry run's path

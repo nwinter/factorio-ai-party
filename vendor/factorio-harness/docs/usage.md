@@ -17392,3 +17392,56 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/team.md (`board_progress`, `board_update`), the schema texts. Test: tests/d28_batch308.lua (fails
   on main: no `follow_through`).
 - Bundle (compacted): 6,362,465 bytes on main (b59129f9), 6,364,920 with this branch (limit 8,388,608).
+
+## d28 batch310 (PS: paired spidertron routes, narrow passes and short water steps; retreats independent; Updates row paired-spiders, viewer Aurora site:4841)
+
+- `vehicle {pair: {lead, follower, distance}}` (spiderpair.lua): two spidertrons on one route. lead and follower by
+  unit_number or {x,y}, by remote view in a chunk our force sees; distance 6..40 tiles, default 10.
+  - One agent's two spidertrons pair at once. A spidertron another agent rides, runs an action with, or sent last
+    (go_to, clear, spider_kite) pairs only once that agent makes the same call within 10 game minutes; the ask is in
+    that agent's alerts. `pair: false` with `vehicle` (either one) ends a pair, or withdraws or declines an ask.
+  - A go_to on the lead moves both. The lead walks its own route as alone: paths round water, stored routes
+    (batch305), recoveries, its retreat guard. The follower walks the lead's steps: the dry spots it stood on, read
+    every 10 ticks, at least 1.5 tiles apart. It gets each once the lead is `distance` - 5 tiles past it while the lead
+    walks (a spidertron brakes toward its last point), and only those `distance` behind once the lead's route ends.
+  - Its way to the lead's start: a path round water when its line there crosses more than its legs step (asked as a
+    go_to's, stored routes included); no steps are given until it comes.
+  - The lead waits (its route kept aside, given back after) while the follower is over `distance` + 4 tiles behind
+    along the steps, until within `distance` + 2; and while a gate lies between them it is `distance` + 4 past. A
+    gate: a water step (water on the line between two steps, which its legs crossed) or a narrow pass (dry ground
+    across its line no wider than 3 tiles, read 4 tiles each side). A wait with a gate between them is said once in
+    team alerts: "#L waits past the water step at (x,y) (N tiles of water) for #F to cross it".
+  - The go_to's reply: `pair.join`, `pair.gates` (the water steps and narrow passes on the lead's route, up to 8; when
+    its paths are still asked, said in team alerts when they come), `pair.rule`, `pair.line`.
+  - The rule both take: one prototype has one set of legs (2.0.77 has one spider-vehicle prototype, spidertron), so a
+    step the lead's legs took the follower's take. For two prototypes the lead's route is planned for the shorter
+    reach; a prototype other than spidertron has no measured reach, so any water on its line counts.
+- Ends:
+  - both arrived: said once to the pair's agents, with where each stands and how often the lead waited;
+  - the follower without progress for 5 s (its route not empty): the pair splits, said with where it stands, how far
+    behind, the gate it stood at and what is on its line ahead; the lead goes on alone, the follower's route is cleared;
+  - a retreat of either (its own guard), spider_kite on either, or a go_to or clear on the follower: the pair ends at
+    once, never waiting for or moving the partner. The lead gets its route back; after the lead's retreat or kite the
+    follower stops where it stands. A lead waiting for its follower that retreats leaves at once (spiderroute.retreat
+    drops the kept route);
+  - a clear on the lead stops both and keeps the pair; a gone spidertron ends it.
+- A waited go_to on the lead ends `arrived` once both have, and `stalled` when the follower stalled (last.stalled_one,
+  stalled_at, why); last.pair says the pair's part. The compact waited reply now shows a spidertron go_to's own facts:
+  spidertron, spidertron_at, route_line, recovery, no_path, landed, pair, stalled_one, stalled_at (host/cli.ts).
+- The follower keeps a spiderroute entry while paired (`paired`), so its own guard (its agent's standing
+  retreat_guard, else the rider's) reads it; the pair samples its progress instead of the stall sampler. status lists
+  the agent's pairs and asks.
+- Measured on the iMac copy (world n's d28 09:50 save):
+  - a spidertron walks 13-13.6 tiles/s; route points 4 tiles apart, all at once or added one at a time, keep that
+    speed; a cleared route stops it within 3-4 tiles; its route given back has it at full speed in about 1 s;
+  - the game's own `follow_target` walked straight at the lead and closed to 2 tiles when the lead stopped;
+  - the first build gave steps only `distance` behind: gaps 6-19 tiles, 100 tiles in 18.3 s. With the 5 tiles ahead:
+    10.5-11.3 tiles walking, 9.5 at rest, 100 tiles in 8.2 s (alone about 7.7 s);
+  - across the lake by a stored route (sol asked, astra agreed): "reused route 1 ... its 28 legs unchanged", gates
+    named before the move, both arrived in 28.3 s and 28.5 s back, 8-14 tiles apart, the lead waiting 2-3 times;
+  - cost (profile_ticks): `spiderpair.tick` 0.05-0.1 ms a run every 10 ticks while a pair walks, worst second 1.15 ms
+    (before the lead's route read was cut to its first point); the gates read 1.0-1.1 ms for a 321-tile route; pair
+    go_to and clear calls 3.3-8.6 ms a second.
+- Test: tests/d28_batch310.lua (pairing and asks; open ground; a waited go_to; a slower follower; a stored route round
+  a lake; retreats of either, kite, a go_to on the follower, a clear on the lead; a water step the follower cannot
+  take; two prototypes; the follower's path to the lead's start). tests/waits.test.ts: the compact spider_go reply.
