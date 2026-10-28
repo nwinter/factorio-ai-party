@@ -19904,7 +19904,7 @@ M.endurance=require('endurance'){state=state,player_of=function(i) local ok,q=pc
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
-  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end,
+  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end,thrusters=function(pl) return M.thrust.qualities(pl) end,
   leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end}
 function handlers.platform_endurance(p,a) return M.endurance.handler(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
@@ -19991,7 +19991,7 @@ space=space_module{made=function(t) return M.made.mark(t) end,floor_read=functio
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
-  state=state,thrust=function(pl) return M.thrust.read(pl) end,thrust_after=function(pl) return M.thrust.after_pumps(pl) end,
+  state=state,thrust=function(pl) return M.thrust.read(pl) end,thrust_after=function(pl) return M.thrust.after_pumps(pl) end,thrust_groups=function(l) return M.thrust.groups(l) end,
   rocket=function(e) return M.silo.rocket(e) end,
   -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
   -- character's action and queue go on (drop is passive); M.drop_jobs_tick sends them.
