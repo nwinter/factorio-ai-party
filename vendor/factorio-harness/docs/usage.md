@@ -17225,3 +17225,67 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   tests/d28_batch301_rt.lua (the real runtime and scheduler against a fake engine, each rocket's load stubbed; fails
   on main: `load, restore auto_requests, reset personal max, rocket 1 of 5, ...`).
 - Bundle (compacted): 6,343,736 bytes on main (61eaf3bc), 6,346,414 with this branch (limit 8,388,608).
+## d28 batch305 (NR: shared checked routes across agents and shifts, read again before reuse; Updates row nav-shared-routes, viewer Aurora)
+
+- The design is batch243's item 5. Built in sharedroutes.lua, with spiderpath.lua, spiderroute.lua and vehicles.lua
+  using it.
+- Kept:
+  - Every path the pathfinder finds round water for a spidertron, and every turning-room path to the target for a car
+    or tank (the drive's first plan), is kept in harness storage (`storage.agent_harness.sharedroutes`).
+  - Each route has its points (a spidertron's as thinned for its route; a drive's corners with legs cut to 16 tiles),
+    the surface and kind (spider; or drive with its box half-size and collision layers), who asked, the tick (`asked`)
+    and the shift (from `shift_start`).
+  - Per leg it keeps a fingerprint: the tile under each point `spiderpath.segment` reads on the line, one per tile,
+    as runs of tile codes (3 bytes a run). A drive's leg also keeps its corridor counts: entities whose layers meet
+    the vehicle's (movers left out: units, characters, vehicles, trains, spider legs, corpses, items on the ground,
+    ghosts, robots, projectiles, fire), and tiles that do, in the leg's box widened by the vehicle's half-size.
+- Read again before every reuse (`check`), in the call. A leg is stale when:
+  - a fingerprint tile changed (named: where, what it was, what it is now);
+  - for a drive, a corridor count changed, or a chunk within the leg's box plus 6 tiles was marked after the leg was
+    read. Marks come from build, mine, death, nest and tile events; equal counts can hide one thing removed and
+    another built.
+  - The whole route is stale once it was asked over 2 game hours ago (`MAX_AGE` 432000 ticks).
+  - A spidertron's legs step over entities (its paths use the doodad layer, which no building has), so its legs are
+    read by tiles only. The fingerprint holds every tile segment() reads, so an unchanged one reads as it did when the
+    path was found. Every 4 tiles (batch243's sketch) would miss two tiles that join two runs of water.
+- Reused:
+  - `vehicle {go_to}` (each segment that crosses water its legs cannot step across) and `vehicle {drive}` (its first
+    ask) take the stored route nearest from here to the target: its first point within 8 tiles (a drive: 6) of the
+    start and its last within 8 (a drive: its tolerance, 3) of the goal, either way. A drive also needs a route asked
+    for a box at least as big as its own and the same layers.
+  - All legs unchanged: the route is used in the call, with no path asked. The reply's `shared_route` (a drive's
+    `last.shared_route` too) says `reused route N (checked at tick T): asked by sol at tick T0 (3m ago, shift 89);
+    its 14 legs unchanged`. A spidertron's route is written at once (no alert).
+  - Stale legs: those legs and the legs between them are asked again as one stretch, from the first stale leg's start
+    to the last one's end. The path is spliced in, the route updated for the next use, and the rest kept. The line
+    says which legs were reused, which were asked again and why (the first two reasons). No path, or the route changed
+    meanwhile: the whole way is asked as before.
+  - Not used, and the pathfinder asked, saying why: a route asked over 2 hours ago; a line from the start to the
+    route, or from its end to the goal, that crosses water (a spidertron) or holds something the vehicle collides with
+    (a drive); a named route that does not fit; `reuse: false`.
+  - A recovery after a stall (gap 0: its legs failed to cross) never takes a stored route.
+  - A route a drive gets stuck on, or a spidertron stalls on, is dropped from the store (said in last.shared_route or
+    the stall's alert).
+- Args (vehicle): `reuse` (default true), `route: N` (that one only) with drive or go_to; `routes: true` lists the
+  routes on the agent's surface, nearest first (up to 20), with the store's counts.
+- Storage:
+  - At most 100 routes; over that, the one used or kept longest ago is evicted (`evicted` counts them).
+  - At most 240 legs and 3000 tiles a route; a longer path is not kept.
+  - A new route from and to the same places (within 8 tiles, either way) replaces the old one.
+  - Chunk marks are kept only on surfaces that hold a route, at most 4096. Over that, marks older than every route's
+    legs on their surface are dropped; if still over, the surface counts as marked at that tick.
+  - A route is plain data (numbers and strings); the store has a version, and a runtime with another version starts
+    it empty.
+- Across shifts: the store stays in the save. `shift_start` names the shift (its reply has `routes_kept`), routes
+  asked from then on carry it, and a later shift's reuse reads them again first like any other (tests/d28_batch305c).
+- control.lua forwards ten more events: on_robot_built_entity, script_raised_built, script_raised_revive,
+  script_raised_destroy, on_biter_base_built, and the player, robot and script tile events. This is a mod update,
+  taking effect when world n restarts with the new mod folder.
+  - Until then, marks come from the forwarded hand builds, mines and deaths.
+  - A robot-built entity in a drive leg's corridor still changes its count. A tile changed by a robot still changes
+    the fingerprint (on the line) or the tile count (in the corridor).
+- Tests:
+  - tests/d28_batch305.lua (cp1): the store, check, marks, bounds, and keeping from spiderpath and the drive.
+  - tests/d28_batch305b.lua (cp2): go_to and drive reuse, the splice, the fallbacks, the drop on a stall, the list.
+  - tests/d28_batch305c.lua (cp3): the carry across shifts and the wiring.
+  - tests/vehicles.lua: a drive's route kept, reused and dropped through `runtime.dispatch`.
