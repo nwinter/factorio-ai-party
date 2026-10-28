@@ -121,4 +121,33 @@ do
   fails(function() M.operator.mt_assign({player='nobody',team='red'}) end,'no player nobody')
   game,defines,helpers,log=nil,nil,nil,nil
 end
+-- (mt275) a second site slides as a whole along its axis to dry land; clears take only the named resources
+do
+  local made,destroyed={},{}
+  local res={}
+  local function rent(name,x,y) local e={name=name,position={x=x,y=y},destroy=function() destroyed[#destroyed+1]=name end} res[#res+1]=e return e end
+  rent('stone',0,0); rent('iron-ore',1,1)
+  local surface={name='nauvis'}
+  -- water where y < 100 (the site's centre at 0,0 is a lake); land beyond
+  surface.can_place_entity=function(f) return f.position.y>=100 end
+  surface.create_entity=function(f) made[#made+1]=f end
+  surface.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(res) do if not f.name or (function() for _,n in ipairs(f.name) do if n==e.name then return true end end end)() then out[#out+1]=e end end
+    return out
+  end
+  game={get_surface=function() return surface end,tick=1}
+  prototypes={entity={['iron-ore']={type='resource'},['copper-ore']={type='resource'},stone={type='resource'}}}
+  local store={}
+  local M=dofile('mod/agent-harness_0.1.0/multiteam.lua'){state=function() return store end}
+  local r=M.operator.mt_resources({surface='nauvis',clear={{x=0,y=0,r=50,names={'stone'}}},
+    sites={{name='second a-b',x=0.5,y=0.5,axis={0,1},slide=400,patches={{name='iron-ore',dx=-40,dy=0,r=5,amount=1000},{name='copper-ore',dx=40,dy=0,r=5,amount=800}}}}})
+  eq(r.cleared,1,'only the named resource cleared'); eq(destroyed[1],'stone')
+  eq(#r.placed,2)
+  eq(r.placed[1].slid,112,'slid along the axis to the first centre where both fit'); eq(r.placed[1].y,112.5); eq(r.placed[1].x,-39.5)
+  eq(r.placed[2].x,40.5); eq(r.placed[2].y,112.5)
+  local total=0 for _,m in ipairs(made) do if m.name=='iron-ore' then total=total+m.amount end end
+  eq(total,1000,'the iron total kept'); eq(r.placed[1].amount,1000)
+  game,prototypes=nil,nil
+end
 print('mt274 multi-team setup and first contact: ok')

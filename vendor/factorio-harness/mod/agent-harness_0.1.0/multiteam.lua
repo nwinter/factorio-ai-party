@@ -113,7 +113,7 @@ return function(api)
     local cleared, placed = 0, {}
     for _, c in ipairs(a.clear or {}) do
       local p = pos_of(c, 'clear')
-      for _, e in ipairs(surface.find_entities_filtered{position=p, radius=c.r, type='resource'}) do e.destroy(); cleared = cleared + 1 end
+      for _, e in ipairs(surface.find_entities_filtered{position=p, radius=c.r, type='resource', name=c.names}) do e.destroy(); cleared = cleared + 1 end
     end
     assert(#(a.patches or {}) <= MAX_PATCHES, 'patches: at most ' .. MAX_PATCHES)
     local s = st()
@@ -140,12 +140,13 @@ return function(api)
       end
       return c, nil
     end
-    for _, patch in ipairs(a.patches or {}) do
+    local function place(patch)
       local p = pos_of(patch, 'patch')
       assert(prototypes.entity[patch.name] and prototypes.entity[patch.name].type == 'resource', 'not a resource: ' .. tostring(patch.name))
       local shift
       p, shift = spot(patch.name, p, patch.wells and 10 or patch.r, patch.max_shift or 0)
-      local row = {name=patch.name, site=patch.site, x=p.x, y=p.y, amount=0, tiles=0, shifted=shift, no_dry_spot=shift == nil or nil}
+      local row = {name=patch.name, site=patch.site, x=p.x, y=p.y, amount=0, tiles=0, shifted=shift, no_dry_spot=shift == nil or nil,
+        slid=patch.slid}
       if patch.wells then
         local n, ring, k = patch.wells, 0, 0
         local spots = {}
@@ -176,14 +177,51 @@ return function(api)
             end
           end
         end
-        for _, c in ipairs(cells) do
-          local n = math.max(1, math.floor(patch.amount * c[2] / weight))
-          surface.create_entity{name=patch.name, position=c[1], amount=n}
-          row.amount, row.tiles = row.amount + n, row.tiles + 1
+        -- each tile its share rounded down; the rest to the richest tile, so the total is the patch's amount
+        local counts, sum, top = {}, 0, 1
+        for i, c in ipairs(cells) do
+          counts[i] = math.max(1, math.floor(patch.amount * c[2] / weight))
+          sum = sum + counts[i]
+          if c[2] > cells[top][2] then top = i end
+        end
+        if #cells > 0 and sum < patch.amount then counts[top] = counts[top] + patch.amount - sum end
+        for i, c in ipairs(cells) do
+          surface.create_entity{name=patch.name, position=c[1], amount=counts[i]}
+          row.amount, row.tiles = row.amount + counts[i], row.tiles + 1
         end
       end
       placed[#placed+1] = row
       if #s.patches < MAX_PATCHES then s.patches[#s.patches+1] = row end
+    end
+    for _, patch in ipairs(a.patches or {}) do place(patch) end
+    -- (mt275) a shared site between two starts slides as a whole along its axis (the line as far from both starts:
+    -- 16-tile steps either way, up to slide) to the first centre where every patch fits at its offset; then each patch
+    -- moves at most max_shift (48) from there. With no such centre in reach, the patches move one by one as above.
+    for _, site in ipairs(a.sites or {}) do
+      local c, ax = pos_of(site, 'site'), pos_of(site.axis, 'axis')
+      local found
+      for k = 0, math.floor((site.slide or 0) / 16) * 2 do
+        local d = (k % 2 == 1 and 1 or -1) * math.ceil(k / 2) * 16
+        local q = {x=c.x + d * ax.x, y=c.y + d * ax.y}
+        local all = true
+        for _, sp in ipairs(site.patches) do
+          if not fits(sp.name, {x=q.x + sp.dx, y=q.y + sp.dy}, sp.wells and 10 or sp.r) then all = false; break end
+        end
+        if all then found = {q, d}; break end
+      end
+      for _, sp in ipairs(site.patches) do
+        local patch = {}
+        for k2, v in pairs(sp) do patch[k2] = v end
+        patch.site = site.name
+        if found then
+          patch.x, patch.y = math.floor(found[1].x + sp.dx) + 0.5, math.floor(found[1].y + sp.dy) + 0.5
+          patch.max_shift, patch.slid = sp.near_shift or 48, found[2]
+        else
+          patch.x, patch.y = math.floor(c.x + sp.dx) + 0.5, math.floor(c.y + sp.dy) + 0.5
+          patch.max_shift = sp.max_shift or 288
+        end
+        place(patch)
+      end
     end
     return {surface=surface.name, cleared=cleared, placed=placed}
   end
@@ -320,18 +358,19 @@ return function(api)
     local blocked = {}
     local nests = surface.find_entities_filtered{area={{x1 - near, y1 - near}, {x2 + near, y2 + near}}, type='unit-spawner'}
     local k = math.ceil(near / cell)
-    for _, e in ipairs(nests) do
-      local cx, cy = math.floor((e.position.x - x1) / cell), math.floor((e.position.y - y1) / cell)
+    local function block(px, py)
+      local cx, cy = math.floor((px - x1) / cell), math.floor((py - y1) / cell)
       for dx = -k, k do
         for dy = -k, k do
           local gx, gy = cx + dx, cy + dy
           if gx >= 0 and gy >= 0 and gx < w and gy < h then
             local mx, my = x1 + (gx + 0.5) * cell, y1 + (gy + 0.5) * cell
-            if (mx - e.position.x) ^ 2 + (my - e.position.y) ^ 2 <= near * near then blocked[gy * w + gx] = true end
+            if (mx - px) ^ 2 + (my - py) ^ 2 <= near * near then blocked[gy * w + gx] = true end
           end
         end
       end
     end
+    for _, e in ipairs(nests) do block(e.position.x, e.position.y) end
     -- (water: true) a cell mostly water is blocked too: no one walks across it
     local wet = 0
     if a.water then
@@ -355,7 +394,7 @@ return function(api)
       local seen, queue, head = {}, {}, 1
       local sx, sy = math.floor((from.x - x1) / cell), math.floor((from.y - y1) / cell)
       local start = sy * w + sx
-      seen[start] = true; queue[1] = start
+      seen[start] = -1; queue[1] = start
       while head <= #queue do
         local i = queue[head]; head = head + 1
         local gx, gy = i % w, math.floor(i / w)
@@ -363,7 +402,7 @@ return function(api)
           local nx, ny = gx + d[1], gy + d[2]
           if nx >= 0 and ny >= 0 and nx < w and ny < h then
             local j = ny * w + nx
-            if not seen[j] and not blocked[j] then seen[j] = true; queue[#queue+1] = j end
+            if not seen[j] and not blocked[j] then seen[j] = i; queue[#queue+1] = j end
           end
         end
       end
@@ -378,9 +417,68 @@ return function(api)
         pairs_out[#pairs_out+1] = string.format('%s-%s: %s (%d open cells reached from %s)', t.name, u.name, seen[key] and 'open path' or 'no open path', n, t.name)
       end
     end
+    -- (mt275) close: true picks nests to place (biter spawners of the enemy force) until no pair keeps an open path:
+    -- each time on the middle cell of a shortest open path (the cell as far from both its ends' starts as the path
+    -- allows), off its starts' biter-free area (keep tiles from every start); place: true places them (a spawner and
+    -- a medium worm each). Returns the nests picked.
+    local picked = {}
+    if a.close then
+      local keep = a.keep or 300
+      for _ = 1, a.max_nests or 60 do
+        local cut
+        for i, t in ipairs(starts) do
+          local seen = walk(t.p)
+          for j = i + 1, #starts do
+            local u = starts[j]
+            local key = math.floor((u.p.y - y1) / cell) * w + math.floor((u.p.x - x1) / cell)
+            if seen[key] and not cut then
+              local path, c = {}, key
+              while c and c ~= -1 do path[#path+1] = c; c = seen[c] end
+              local best, bd
+              for _, cc in ipairs(path) do
+                local mx, my = x1 + (cc % w + 0.5) * cell, y1 + (math.floor(cc / w) + 0.5) * cell
+                local d = math.huge
+                for _, st0 in ipairs(starts) do d = math.min(d, math.sqrt((mx - st0.p.x) ^ 2 + (my - st0.p.y) ^ 2)) end
+                if d >= keep and (not bd or d > bd) and surface.count_tiles_filtered{position={mx, my}, radius=6, collision_mask='water_tile'} == 0 then best, bd = {mx, my}, d end
+              end
+              cut = best or false
+              if not best then pairs_out[#pairs_out+1] = string.format('%s-%s: no dry cell %d tiles from every start on its open path', t.name, u.name, keep) end
+            end
+          end
+        end
+        if not cut then break end
+        picked[#picked+1] = cut
+        block(cut[1], cut[2])
+      end
+      if a.place then
+        for i, q in ipairs(picked) do
+          local at = surface.find_non_colliding_position('biter-spawner', q, 24, 1)
+          if at then
+            surface.create_entity{name=i % 2 == 0 and 'spitter-spawner' or 'biter-spawner', position=at, force='enemy'}
+            local wpos = surface.find_non_colliding_position('medium-worm-turret', {at.x + 6, at.y}, 16, 1)
+            if wpos then surface.create_entity{name='medium-worm-turret', position=wpos, force='enemy'} end
+            q[3] = true
+          end
+        end
+      end
+    end
     local nb = 0
     for _ in pairs(blocked) do nb = nb + 1 end
-    return {surface=surface.name, box=string.format('(%d,%d)-(%d,%d)', x1, y1, x2, y2), cell=cell, nest_margin=near, nests=#nests,
+    local rows = {}
+    for _, q in ipairs(picked) do rows[#rows+1] = string.format('(%d,%d)%s', q[1], q[2], q[3] and ' placed' or '') end
+    if a.close then
+      local after = {}
+      for i, t in ipairs(starts) do
+        local seen = walk(t.p)
+        for j = i + 1, #starts do
+          local u = starts[j]
+          local key = math.floor((u.p.y - y1) / cell) * w + math.floor((u.p.x - x1) / cell)
+          after[#after+1] = string.format('%s-%s: %s', t.name, u.name, seen[key] and 'open path' or 'no open path')
+        end
+      end
+      rows[#rows+1] = 'after: ' .. table.concat(after, '; ')
+    end
+    return {surface=surface.name, box=string.format('(%d,%d)-(%d,%d)', x1, y1, x2, y2), cell=cell, nest_margin=near, nests=#nests, picked=#picked > 0 and rows or nil,
       cells=w * h, blocked=nb, water_cells=wet, chunks_not_made=missing, pairs=pairs_out}
   end
 

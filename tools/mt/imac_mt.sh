@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # (mt275, private) The multi-team server on the iMac, beside tools/imac-copy.sh's copy: its own folder, ports, password
 # and write-data, this branch's mod folder (control.lua's on_chunk_charted needs the mod, not a hot deploy).
-#   tools/mt/imac_mt.sh start SAVE.zip     copy the save and the mod folder, start the server, wait for RCON
+#   tools/mt/imac_mt.sh start SAVE.zip     (or imac:PATH) copy the save and the mod folder, start the server, wait for RCON
 #   tools/mt/imac_mt.sh stop               /quit (saves over saves/mt.zip), then the server's own PID if still up
 #   tools/mt/imac_mt.sh status
 # Then: python3 tools/mt/mt_map.py ... --host imac.local --port 27475 --password-file ~/.config/pog/rcon-imac-mt.pw
@@ -34,7 +34,10 @@ start)
   python3 -c 'import json; print(json.dumps({"name": "pog mt", "description": "tools/mt/imac_mt.sh", "visibility": {"public": False, "lan": False},
     "require_user_verification": False, "max_players": 0, "allow_commands": "admins-only", "autosave_interval": 0, "autosave_slots": 1,
     "auto_pause": False, "only_admins_can_pause_the_game": True, "autosave_only_on_server": True}))' | remote "cat > '$dir/server-settings.json'"
-  scp -q "$save" "$host:$dir/saves/mt.zip"
+  case $save in
+    imac:*) remote "cp '${save#imac:}' '$dir/saves/mt.zip'" ;;   # a save already on the iMac (mt_map.py seed-search)
+    *) scp -q "$save" "$host:$dir/saves/mt.zip" ;;
+  esac
   pw=$(cat "$pwfile")
   pid=$(remote "cd '$dir' && nohup '$bin' --config '$dir/config/config.ini' --start-server '$dir/saves/mt.zip' --mod-directory '$dir/mods' \
     --server-settings '$dir/server-settings.json' --rcon-bind 0.0.0.0:$rcon_port --rcon-password '$pw' --port $game_port \

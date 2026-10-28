@@ -59,6 +59,26 @@ SHIFT_START, SHIFT_SITE = 64, 288
 # every pair of starts had a path keeping 128 tiles from every nest, at 2000 still 96; at 1300 with enemy bases
 # frequency 2 no pair had one keeping 96 tiles (3 of 6 pairs one keeping 64)
 DISTANCE, ENEMY = 1300, (2.0, 1.0)
+# (mt275) a second site slides as a whole along the line as far from both its starts, up to this far, to dry land
+SLIDE = 400
+# each team's own patches on the other planets, in its frame there (u away from (0,0)); `clear` names the natural
+# resources removed within PLANET_CLEAR of each spawn first. Amounts near the means of what the four spawns of the
+# mt274 map had within 256 tiles (mt275 survey); coal and calcite on Vulcanus were within 15% and are left as made.
+PLANET_CLEAR = 256
+PLANET_PATCHES = {
+    "vulcanus": {"clear": ["tungsten-ore", "sulfuric-acid-geyser"], "patches": [
+        {"name": "tungsten-ore", "u": 150, "v": -150, "r": 16, "amount": 180_000},
+        {"name": "sulfuric-acid-geyser", "u": 85, "v": 10, "wells": 20, "amount": 20_000_000}]},
+    "fulgora": {"clear": ["scrap"], "patches": [{"name": "scrap", "u": 80, "v": 0, "r": 14, "amount": 40_000_000}]},
+    "gleba": {"clear": ["stone"], "patches": [{"name": "stone", "u": 45, "v": 0, "r": 11, "amount": 400_000}]},
+    "aquilo": {"clear": ["crude-oil", "fluorine-vent", "lithium-brine"], "patches": [
+        {"name": "crude-oil", "u": 28, "v": 0, "wells": 12, "amount": 12_000_000},
+        {"name": "fluorine-vent", "u": -50, "v": 60, "wells": 4, "amount": 1_000_000},
+        {"name": "lithium-brine", "u": -50, "v": -60, "wells": 5, "amount": 1_400_000}]},
+}
+SHIFT_PLANET = 96
+# (mt275) setup --close-corridors: no pair of starts keeps a path this far from every nest
+CLOSE_MARGIN = 64
 PLANET_RING = 600  # each team's spawn on the other planets: this far from (0,0), on the team's bearing
 
 
@@ -66,14 +86,23 @@ def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING):
     """Starts on a ring round (0,0), neighbours `distance` apart; patches and sites in map coordinates."""
     assert 2 <= teams <= len(TEAMS)
     ring = distance / 2 / math.sin(math.pi / teams) if teams > 2 else distance / 2
-    out = {"teams": [], "sites": [], "distance": distance, "ring": round(ring, 1), "patches": [], "clear": []}
+    out = {"teams": [], "sites": [], "distance": distance, "ring": round(ring, 1), "patches": [], "clear": [], "place_sites": [],
+           "planets": {p: {"clear": [], "patches": []} for p in PLANETS}}
     for i in range(teams):
         ang = 2 * math.pi * i / teams + math.pi / teams + (math.pi / 2 if teams == 2 else 0)
         ux, uy = math.cos(ang), math.sin(ang)
         sx, sy = round(ring * ux) + 0.5, round(ring * uy) + 0.5
         t = {"name": TEAMS[i], "bearing_deg": round(math.degrees(ang), 1), "spawns": {"nauvis": [sx, sy]}}
         for p in PLANETS:
-            t["spawns"][p] = [round(planet_ring * ux) + 0.5, round(planet_ring * uy) + 0.5]
+            px, py = round(planet_ring * ux) + 0.5, round(planet_ring * uy) + 0.5
+            t["spawns"][p] = [px, py]
+            spec = PLANET_PATCHES.get(p)
+            if spec:
+                out["planets"][p]["clear"].append({"x": px, "y": py, "r": PLANET_CLEAR, "names": spec["clear"]})
+                for q in spec["patches"]:
+                    x, y = px + q["u"] * ux - q["v"] * uy, py + q["u"] * uy + q["v"] * ux
+                    out["planets"][p]["patches"].append(dict({k: v for k, v in q.items() if k not in ("u", "v")}, x=round(x) + 0.5,
+                                                             y=round(y) + 0.5, site=f"{p} {TEAMS[i]}", max_shift=SHIFT_PLANET))
         out["teams"].append(t)
         out["clear"].append({"x": sx, "y": sy, "r": CLEAR_START})
         for q in PRIMARY:
@@ -90,7 +119,17 @@ def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING):
             wx, wy = -wx, -wy
         out["sites"].append({"name": name, "x": round(cx) + 0.5, "y": round(cy) + 0.5, "kind": kind})
         out["clear"].append({"x": round(cx) + 0.5, "y": round(cy) + 0.5, "r": clear})
-        for q in kind == "second" and SECOND or THIRD:
+        if kind == "second":
+            # the site slides as a whole along w (as far from both starts): natural resources cleared along it too
+            for d in range(-SLIDE, SLIDE + 1, 100):
+                if d:
+                    out["clear"].append({"x": round(cx + d * wx) + 0.5, "y": round(cy + d * wy) + 0.5, "r": clear, "along": name})
+            out["place_sites"].append({"name": name, "x": round(cx) + 0.5, "y": round(cy) + 0.5, "axis": [round(wx, 4), round(wy, 4)],
+                                       "slide": SLIDE, "patches": [dict({k: v for k, v in q.items() if k not in ("e", "w")},
+                                                                        dx=round(q["e"] * ex + q["w"] * wx), dy=round(q["e"] * ey + q["w"] * wy))
+                                                                   for q in SECOND]})
+            return
+        for q in THIRD:
             x = cx + q["e"] * ex + q["w"] * wx
             y = cy + q["e"] * ey + q["w"] * wy
             out["patches"].append(dict({k: v for k, v in q.items() if k not in ("e", "w")}, x=round(x) + 0.5, y=round(y) + 0.5, site=name,
@@ -201,10 +240,32 @@ def cmd_setup(a):
     t0 = time.time()
     for c in lay["clear"]:
         # the chunks a patch may move into are made too (a chunk made later would bring its natural ore)
-        reach = c["r"] + (SHIFT_START if c["r"] == CLEAR_START else SHIFT_SITE) + 32
+        reach = c["r"] + (SHIFT_START if c["r"] == CLEAR_START else 48 if c.get("along") else SHIFT_SITE) + 32
         op.call("mt_generate", {"surface": "nauvis", "position": [c["x"], c["y"]], "radius": math.ceil(reach / 32)})
     times["generate nauvis"] = time.time() - t0
-    res, times["mt_resources nauvis"] = op.call("mt_resources", {"surface": "nauvis", "clear": lay["clear"], "patches": lay["patches"]})
+    res, times["mt_resources nauvis"] = op.call("mt_resources", {"surface": "nauvis", "clear": lay["clear"], "patches": lay["patches"],
+                                                                 "sites": lay.get("place_sites", [])})
+    if a.close_corridors:
+        # (mt275) the box round the starts made, then nests placed by script until no pair of starts keeps a path
+        # CLOSE_MARGIN tiles from every nest (water blocked)
+        t0 = time.time()
+        op.call("mt_generate", {"surface": "nauvis", "position": [0, 0], "radius": min(64, math.ceil((lay["ring"] + 400) / 32))})
+        c, _ = op.call("mt_corridor", {"surface": "nauvis", "nest_margin": CLOSE_MARGIN, "margin": 300, "water": True, "close": True, "place": True})
+        times["close corridors"] = time.time() - t0
+        print("corridors at", CLOSE_MARGIN, "tiles: nests placed", len(c.get("picked") or [1]) - 1, (c.get("picked") or ["none needed"])[:-1],
+              (c.get("picked") or [""])[-1])
+    t0 = time.time()
+    for p in PLANETS:
+        for t in lay["teams"]:
+            x, y = t["spawns"][p]
+            op.call("mt_generate", {"surface": p, "position": [x, y], "radius": math.ceil((PLANET_CLEAR + SHIFT_PLANET + 32) / 32)})
+    times["generate planets"] = time.time() - t0
+    for p in PLANETS:
+        spec = lay.get("planets", {}).get(p)
+        if spec and spec["patches"]:
+            r2, times["mt_resources " + p] = op.call("mt_resources", {"surface": p, "clear": spec["clear"], "patches": spec["patches"]})
+            res["placed"] += r2["placed"]
+            print(p, "cleared", r2["cleared"], "natural resource entities")
     starts = {t["name"]: t["spawns"]["nauvis"] for t in lay["teams"]}
 
     def near(p):
@@ -212,17 +273,12 @@ def cmd_setup(a):
         return ", ".join(f"{n} {v:.0f}" for v, n in d)
     short = [f"{p['site']} {p['name']} {p['amount']} ({p['tiles']} tiles) at ({p['x']},{p['y']})"
              + (f" moved {p['shifted']}" if p.get("shifted") else "") + (" NO DRY SPOT" if p.get("no_dry_spot") else "")
-             + f"; nearest starts: {near(p)}" for p in res["placed"]]
+             + (f" slid {p['slid']}" if p.get("slid") else "") + (f"; nearest starts: {near(p)}" if p["site"].split()[0] in ("start", "second", "third") else "")
+             for p in res["placed"]]
     json.dump(res["placed"], open(os.path.join(a.dir, "placed.json"), "w"), indent=1)
     print("cleared", res["cleared"], "natural resource entities; placed", len(short), "patches")
     for line in short:
         print("  ", line)
-    t0 = time.time()
-    for p in PLANETS:
-        for t in lay["teams"]:
-            x, y = t["spawns"][p]
-            op.call("mt_generate", {"surface": p, "position": [x, y], "radius": a.planet_chunks})
-    times["generate planets"] = time.time() - t0
     print("times (s):", json.dumps({k: round(v, 1) for k, v in times.items()}))
 
 
@@ -359,6 +415,73 @@ def cmd_chart_test(a):
                f"name={{'radar','electric-energy-interface','medium-electric-pole'}},force='{t['name']}'}}) do e.destroy() end")
 
 
+def cmd_seed_search(a):
+    """Per seed: the map made on the iMac (its native build, the mt server stopped), the mt server started on it, the
+    Nauvis setup (forces, resources, second sites slid), the box round the starts made, and the corridor walk at 64 and
+    96 tiles (water blocked); nests within 600 of each start; each second patch's distances to its two starts. The
+    server is stopped after each seed."""
+    root = os.path.dirname(os.path.dirname(HERE))
+    sh = os.path.join(HERE, "imac_mt.sh")
+    subprocess.run([sh, "stop"], check=False, capture_output=True)
+    base = json.load(open(os.path.join(a.dir, "factorio/data/map-gen-settings.example.json")))
+    rows = []
+    for seed in a.seeds:
+        d = os.path.join(a.dir, "seeds", str(seed))
+        os.makedirs(d, exist_ok=True)
+        lay = layout(a.teams, a.distance, a.planet_ring)
+        lay.update(seed=seed, enemy={"frequency": a.enemy_frequency, "size": a.enemy_size})
+        json.dump(lay, open(os.path.join(d, "layout.json"), "w"), indent=1)
+        mgs = map_gen_settings(lay, base, seed, a.enemy_frequency, a.enemy_size)
+        json.dump(mgs, open(os.path.join(d, "map-gen-settings.json"), "w"))
+        t0 = time.time()
+        rd = f"{a.mt_dir}/seeds/{seed}"
+        ssh(a.client_host, f"mkdir -p '{rd}'")
+        subprocess.run(["scp", "-q", os.path.join(d, "map-gen-settings.json"), f"{a.client_host}:{rd}/mgs.json"], check=True)
+        ssh(a.client_host, f"'{a.client_app}/Contents/MacOS/factorio' --config '{a.mt_dir}/config/config.ini' --create '{rd}/map.zip' "
+                           f"--map-gen-settings '{rd}/mgs.json' --mod-directory '{a.mt_dir}/mods' > '{rd}/create.out' 2>&1")
+        created = time.time() - t0
+        r = subprocess.run([sh, "start", f"imac:{rd}/map.zip"], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(seed, "start failed:", r.stdout[-300:], r.stderr[-300:])
+            continue
+        try:
+            op = op_from(a)
+            t1 = time.time()
+            op.call("mt_setup", {"teams": [{"name": t["name"], "spawns": {"nauvis": t["spawns"]["nauvis"]}} for t in lay["teams"]],
+                                 "create_surfaces": False})
+            for c in lay["clear"]:
+                reach = c["r"] + (SHIFT_START if c["r"] == CLEAR_START else 48 if c.get("along") else SHIFT_SITE) + 32
+                op.call("mt_generate", {"surface": "nauvis", "position": [c["x"], c["y"]], "radius": math.ceil(reach / 32)})
+            res, _ = op.call("mt_resources", {"surface": "nauvis", "clear": lay["clear"], "patches": lay["patches"], "sites": lay["place_sites"]})
+            setup_s = time.time() - t1
+            op.call("mt_generate", {"surface": "nauvis", "position": [0, 0], "radius": min(64, math.ceil((lay["ring"] + 400) / 32))})
+            cor = {}
+            for m in (64, 96):
+                c, _ = op.call("mt_corridor", {"surface": "nauvis", "nest_margin": m, "margin": 300, "water": True})
+                cor[m] = [x.split(":")[0] for x in c["pairs"] if x.split(": ", 1)[1].startswith("open path")]
+            sv, _ = op.call("mt_survey", {"surface": "nauvis", "radius": 200, "nest_radius": 600})
+            starts = {t["name"]: t["spawns"]["nauvis"] for t in lay["teams"]}
+            gap, slid, dry = 0, [], 0
+            for p in res["placed"]:
+                if p["site"].startswith("second "):
+                    two = p["site"].split()[1].split("-")
+                    d1, d2 = (math.dist(starts[n], (p["x"], p["y"])) for n in two)
+                    gap = max(gap, abs(d1 - d2))
+                    if p.get("slid") is not None:
+                        slid.append(p["slid"])
+                if p.get("no_dry_spot"):
+                    dry += 1
+            row = {"seed": seed, "open64": cor[64], "open96": cor[96], "nests600": [x["nests"] for x in sv["starts"]],
+                   "nearest_nest": [x.get("nearest_nest") for x in sv["starts"]], "water200": [x["water_tiles"] for x in sv["starts"]],
+                   "second_gap_max": round(gap), "sites_slid": sorted(set(slid)), "no_dry_spot": dry,
+                   "create_s": round(created, 1), "setup_s": round(setup_s, 1)}
+            rows.append(row)
+            print(json.dumps(row), flush=True)
+        finally:
+            subprocess.run([sh, "stop"], check=False, capture_output=True)
+    json.dump(rows, open(os.path.join(a.dir, "seeds", "search.json"), "w"), indent=1)
+
+
 def cmd_contacts(a):
     res, _ = op_from(a).call("mt_contacts", {})
     print(json.dumps(res, indent=1))
@@ -367,7 +490,7 @@ def cmd_contacts(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("layout", "create", "setup", "assign", "join", "chart-test", "report", "contacts"):
+    for name in ("layout", "create", "setup", "assign", "join", "chart-test", "report", "contacts", "seed-search"):
         p = sub.add_parser(name)
         p.add_argument("--teams", type=int, default=4)
         p.add_argument("--distance", type=float, default=DISTANCE)
@@ -389,12 +512,14 @@ def main():
         p.add_argument("--client-host", default="imac.local")
         p.add_argument("--mt-dir", default=MT_DIR)
         p.add_argument("--keep", action="store_true", help="join: leave the client running")
+        p.add_argument("--seeds", type=int, nargs="*", default=[])
+        p.add_argument("--close-corridors", action="store_true")
         p.add_argument("--game-port", type=int, default=34475)
         p.add_argument("--join-timeout", type=int, default=240)
         p.add_argument("--seconds", type=int, default=60)
     a = ap.parse_args()
     {"layout": cmd_layout, "create": cmd_create, "setup": cmd_setup, "assign": cmd_assign, "join": cmd_join,
-     "chart-test": cmd_chart_test, "report": cmd_report, "contacts": cmd_contacts}[a.cmd](a)
+     "chart-test": cmd_chart_test, "report": cmd_report, "contacts": cmd_contacts, "seed-search": cmd_seed_search}[a.cmd](a)
 
 
 if __name__ == "__main__":
