@@ -128,6 +128,9 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     echo "    then tools/obs-steps.sh --stream: $(tools/obs-steps.sh --stream --dry-run | sed 's/^.*plan: //')"
   fi
   [ "${POG_BROKER:-0}" = 1 ] && echo "4b. RCON broker (POG_BROKER=1): sockets runs/$run/.sock/NAME.sock for $(echo $members); no key in the run"
+  if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
+    echo "4e. public repo push loop (one per Mac, across shifts): $(tools/public-push.sh --check-loop 2>&1 | tail -1); started if not, its lines also in runs/$run/public-push.log"
+  fi
   if [ "$has_agy" = 1 ]; then
     echo "4d. agy memory guard (an agy agent in the team): $(python3 tools/agy_memguard.py --check || true); started if not, log runs/$run/agy-memguard.log"
   fi
@@ -356,11 +359,11 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_SITE_HOURLY:-1}" != 0 ]; then
   helpers+=("site-hourly:$!:$rundir/site-hourly.log")
 fi
 # (d27 batch272 PG) the public repo brought up to main every hour (tools/public-push.sh: scrub, scan, fast-forward push;
-# failures are "public-push: FAILED" lines in this log). POG_PUBLIC_HOURLY=0 turns it off; off with POG_PUSH_LIVE=0.
+# failures are "public-push: FAILED" lines in this run's public-push.log). (d27 batch290) One loop per Mac, not a
+# helper of the shift: stop-team leaves it running, and this starts it only when none runs (after a reboot or a kill);
+# 10 minutes after a skip. POG_PUBLIC_HOURLY=0 does not start it; nor does POG_PUSH_LIVE=0.
 if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
-  nohup bash -c 'while sleep 3600; do tools/public-push.sh; done' >"$rundir/public-push.log" 2>&1 &
-  echo $! >> "$rundir/stream-service.pid"
-  helpers+=("public-push:$!:$rundir/public-push.log")
+  log "$(tools/public-push.sh --start-loop "$rundir" 2>&1 | tail -1)"
 fi
 # (d26 batch241) the chart alone, within minutes: site/chart_deploy.py deploys the run's changed cells into the build
 # production has, every 5 minutes (POG_CHART_DEPLOY_EVERY seconds; shift80's site map was 25-50 min behind the

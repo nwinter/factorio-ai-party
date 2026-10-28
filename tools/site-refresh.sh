@@ -11,11 +11,11 @@
 # Exit 0 when deployed (or built and checked with --no-deploy), 1 when a step failed (the log says which).
 # tools/shift-change.sh runs it in the background after the previous shift stops; it never blocks a shift.
 # Stubs for tests: POG_WRANGLER (the deploy command, split on spaces; default npx wrangler), POG_SITE_OUT (build dir),
-# POG_SITE_STATUS (the status.json to update), POG_SITE_GIT (the checkout whose MERGE_HEAD skips the refresh).
+# POG_SITE_STATUS (the status.json to update), POG_SITE_SOURCE and POG_SITE_WORKTREE (the clean copy of main, below).
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
-last="" deploy=1
+last="" deploy=1 args=("$@")
 while [ $# -gt 0 ]; do
   case $1 in
     --last-run) last=${2:?--last-run needs a run id}; shift ;;
@@ -41,21 +41,32 @@ step "start (runs $runs, out $out${last:+, last run $last})"
 # second waits for the first (a lock directory with its pid; one whose pid is gone is taken over), up to 10 minutes.
 lock=${POG_SITE_REFRESH_LOCK:-${TMPDIR:-/tmp}/pog-site-refresh.lock}
 waited=0
-until mkdir "$lock" 2>/dev/null; do
+until [ -n "${POG_SITE_INNER:-}" ] || mkdir "$lock" 2>/dev/null; do
   holder=$(cat "$lock/pid" 2>/dev/null || true)
   if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -rf "$lock"; continue; fi
   [ $waited -ge ${POG_SITE_REFRESH_WAIT:-600} ] && fail "another site refresh (pid ${holder:-?}) held the lock for ${waited} s"
   [ $waited = 0 ] && step "waiting for another site refresh (pid ${holder:-?})"
   sleep 5; waited=$((waited + 5))
 done
-echo $$ > "$lock/pid"
-trap 'rm -rf "$lock"' EXIT
-# (d27 batch265) never from a half-merged tree: the gate merges a branch in this checkout, runs the tests, then
-# commits; a refresh in between (the hourly loop at 08:04) built the branch's files. While MERGE_HEAD exists: one
-# line, exit 0, nothing built or deployed (the next hour's run builds). POG_SITE_GIT: the checkout to look at (tests).
-if git -C "${POG_SITE_GIT:-$root}" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-  step "skipped: a merge is in progress in ${POG_SITE_GIT:-$root} (MERGE_HEAD); nothing built or deployed"
-  exit 0
+if [ -z "${POG_SITE_INNER:-}" ]; then
+  echo $$ > "$lock/pid"
+  trap 'rm -rf "$lock"' EXIT
+fi
+# (d27 batch290) never from a half-merged tree, and never skipped for one: the gate merges a branch in this checkout,
+# runs the tests, then commits, all afternoon (batch265 skipped while MERGE_HEAD existed, and the site stayed at its
+# 15:19 build). The refresh runs the clean copy of main's own site-refresh.sh (tools/clean-main.sh: a detached worktree,
+# POG_SITE_WORKTREE, default worktrees/pog-site-refresh) under this lock, with what the build reads and writes outside
+# git linked to this checkout's: runs/, site/live/status.json (changed here by status_update.py), site/content/r2.json,
+# site/og/shifts/, site/og/thumbs/ and site/.wrangler/; the build goes to this checkout's site/dist as before.
+# POG_SITE_CLEAN=0 builds in place (a test run without POG_SITE_WORKTREE always does).
+if [ -z "${POG_SITE_INNER:-}" ] && [ "${POG_SITE_CLEAN:-1}" != 0 ] &&
+   { [ "${POG_TEST:-0}" != 1 ] || [ -n "${POG_SITE_WORKTREE:-}" ]; }; then
+  wt=${POG_SITE_WORKTREE:-$HOME/code/personal/player-of-games/worktrees/pog-site-refresh}
+  at=$(tools/clean-main.sh "${POG_SITE_SOURCE:-$root}" "$wt" runs/ site/live/status.json site/content/r2.json \
+       site/og/shifts/ site/og/thumbs/ site/.wrangler/ 2>&1) || fail "the clean copy of main: $(echo "$at" | tail -1)"
+  step "from the clean copy of main ${at:0:8} ($wt)"
+  POG_SITE_INNER=1 POG_SITE_OUT=$out POG_SITE_RUNS=$runs bash "$wt/tools/site-refresh.sh" ${args[@]+"${args[@]}"}
+  exit $?
 fi
 # (d26 batch241) OUT.deployed: the build in OUT is the one production has (site/chart_deploy.py deploys the chart only
 # into such a build); gone from the start of a build until its production deploy
@@ -76,6 +87,9 @@ if [ "${POG_SITE_VIDEOS:-1}" != 0 ]; then
   # build.py reads the video data only when named (a test's build never sees this checkout's files)
   videos=(--videos site/content/videos.json --r2 site/content/r2.json --thumbs site/og/thumbs)
 fi
+# (batch290) the public repo sync's status on the Updates page (tools/public-push.sh); a test run only with POG_PUBLIC_DIR
+pubdir=${POG_PUBLIC_DIR:-}; [ -z "$pubdir" ] && [ "${POG_TEST:-0}" != 1 ] && pubdir=$HOME/.cache/pog-public
+[ -n "$pubdir" ] && [ -f "$pubdir/status.json" ] && videos+=(--public-status "$pubdir/status.json")
 python3 site/build.py --out "$out" --runs-dir "$runs" ${videos[@]+"${videos[@]}"} || fail "build"
 [ "$status" = "$root/site/live/status.json" ] || cp "$status" "$out/live/status.json"  # a test's own status file
 python3 site/check.py "$out" || fail "check.py"
@@ -93,4 +107,5 @@ for branch in preview main; do
   step "deployed to $branch"
 done
 date +%s > "$out.deployed"
+cp "$out.deployed" "$out.last-deploy"   # kept through later builds: tools/freshness.py reads it
 step "done"
