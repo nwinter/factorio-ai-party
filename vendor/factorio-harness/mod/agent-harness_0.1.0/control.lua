@@ -109,7 +109,10 @@ for _,name in ipairs{'on_script_path_request_finished','on_entity_died','on_unit
     -- (d24 batch179) cargo pods leaving, landing and delivering: the pod ledger (podlog.lua)
     'on_cargo_pod_started_ascending','on_cargo_pod_finished_ascending','on_cargo_pod_finished_descending','on_cargo_pod_delivered_cargo',
     -- (d25 batch216) a tile a platform built (its hub, from its foundation): foundation rebuilt after an asteroid (flightwatch.lua)
-    'on_space_platform_built_tile'} do
+    'on_space_platform_built_tile',
+    -- (d28 batch305) robot and script builds, nests and tile changes: chunks marked for the stored routes (sharedroutes.lua)
+    'on_robot_built_entity','script_raised_built','script_raised_revive','script_raised_destroy','on_biter_base_built',
+    'on_player_built_tile','on_robot_built_tile','on_player_mined_tile','on_robot_mined_tile','script_raised_set_tiles'} do
   if defines.events[name] then forwarded[#forwarded+1]=defines.events[name] end
 end
 script.on_event(forwarded, function(event)

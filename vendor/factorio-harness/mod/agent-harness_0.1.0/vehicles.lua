@@ -667,6 +667,21 @@ return function(api)
       nav.extended = math.floor(gap * 10 + 0.5) / 10
       nav.path_length = nav.path_length + math.floor(gap + 0.5)
     end
+    -- (d28 batch305 NR) the turning room's path to the target (the first plan), kept for reuse by any agent
+    -- (sharedroutes.lua); one taken from the store is updated there instead
+    if api.routes and (nav.path_level or 0) == 0 and not nav.from_store and v and v.valid then
+      local pts = {}
+      for i, w in ipairs(path) do pts[i] = w.position end
+      local oks, kept = pcall(api.routes.save, 'drive', v.surface, pts, {by=api.who and api.who(p) or p.name, h=plan.h, layers=M.layers(v)})
+      if oks and kept then nav.kept = kept.id end
+    end
+  end
+  -- The vehicle's collision layers, as names.
+  function M.layers(v)
+    local out = {}
+    pcall(function() for layer in pairs(v.prototype.collision_mask.layers) do out[#out + 1] = layer end end)
+    table.sort(out)
+    return out
   end
   -- The next plan, or unreachable: no path, or every narrow one passes our entities.
   function M.next_plan(p, nav)

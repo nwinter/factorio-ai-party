@@ -343,6 +343,15 @@ return function(api)
           plan.ghopped[i] = rec.ghop
         end
         plan.segs[i] = pts
+        -- (d28 batch305 NR) kept for reuse by any agent (sharedroutes.lua): from the start, through its points, to the goal
+        if api.routes and plan.starts and plan.starts[i] then
+          local list = {plan.starts[i]}
+          for _, w in ipairs(pts) do list[#list + 1] = w end
+          local g = plan.goals and plan.goals[i]
+          if g and dist(list[#list], g) > 1 then list[#list + 1] = g end
+          local oks, kept = pcall(api.routes.save, 'spider', spider.surface, list, {by=plan.by})
+          if oks and kept then plan.kept = plan.kept or {}; plan.kept[i] = kept.id end
+        end
       elseif not rec.hop and not rec.ghop and not plan.hops[i] and plan.goals and plan.goals[i] then
         -- island escape from the start's side (spots its legs step to from where it stands), and to the target's side
         -- (spots it steps from onto the target's land: a target on an island), up to HOPS each
