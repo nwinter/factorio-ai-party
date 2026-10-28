@@ -259,9 +259,13 @@ return function(api)
       if run >= 1 then
         local b = P.segment(surface, last, c, 0)
         c.gate = {kind='water step', at=b and b.at or c, s=c.s, line=string.format('the water step at %s (%s of water)', at(b and b.at or c), tiles(run))}
+        w.neck = nil
       else
         local wd = M.neck(surface, last, c)
-        if wd then c.gate = {kind='narrow pass', at={x=c.x, y=c.y}, s=c.s, line=string.format('the narrow pass at %s (%s wide)', at(c), tiles(wd))} end
+        -- a neck read at consecutive steps is one pass: the gate ends at the last of them
+        if wd and w.neck and w.neck.s == last.s then w.neck.s = c.s
+        elseif wd then c.gate = {kind='narrow pass', at={x=c.x, y=c.y}, s=c.s, line=string.format('the narrow pass at %s (%s wide)', at(c), tiles(wd))} end
+        w.neck = wd and (c.gate or w.neck) or nil
       end
       w.crumbs[#w.crumbs + 1] = c
       last, d = c, 0

@@ -329,4 +329,19 @@ assert(#F.route>1,'its path to the lead\'s spot')
 run(2500,function() return Pair.of(7001).done end)
 assert(Pair.of(7001).done,'both arrived'); assert(dist(F.position,L.position)<16)
 
+-- 10. a narrow pass 10 tiles long, 2 wide (a neck in a water wall): one gate on the route and on the steps
+unpaint()
+for x=60,69 do for y=590,620 do if y~=605 and y~=606 then tiles[x..','..y]='water' end end end
+fresh(0.5,-9.5,605.5)
+out=R.set(L,{go_to={x=120.5,y=605.5}},'sol')
+eq(out.pair.gates,'a narrow pass 2 tiles wide at (60.5,605.5)')
+local gates10=0
+run(1500,function()
+  local p=Pair.of(7001)
+  if p.walk then local n=0 for _,c in ipairs(p.walk.crumbs) do if c.gate then n=n+1 end end gates10=math.max(gates10,n) end
+  return p.done
+end)
+assert(Pair.of(7001).done,'both through the neck')
+eq(gates10,1,'the neck read at each step inside it is one gate')
+
 print('d28_batch310 ok')
