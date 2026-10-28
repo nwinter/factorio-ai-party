@@ -637,6 +637,8 @@ local function finish(index, outcome)
       last.path_length=nav.path_length
       -- Which box the path was planned for, and a stop short of a target with no turning room around it (drivesafe).
       last.plan=nav.plan
+      -- (d28 batch305 NR) a stored route reused, or why its legs were asked again (sharedroutes.lua)
+      last.shared_route=nav.shared
       if nav.short_of and nav.finish then
         last.stopped_short=string.format('%.1f tiles from (%g,%g): the %s\'s turning room fits no closer (our entities or obstacles around it)',
           nav.short_of,action.target.x,action.target.y,action.vehicle and action.vehicle.valid and action.vehicle.name or 'vehicle')
@@ -14870,7 +14872,9 @@ handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
 -- A spidertron's route as its remote gives it: replace, append, clear; stalls said (spiderroute.lua; d22 batch101 BK1).
 -- (d24 batch191 addendum) its routes round water its legs cannot cross; no progress: a path, then the shore (spiderpath.lua).
-M.spiderpath=require('spiderpath'){state=state}
+-- (d28 batch305 NR) found paths kept for every agent and later shifts, read again before reuse (sharedroutes.lua)
+M.sharedroutes=require('sharedroutes'){state=state}
+M.spiderpath=require('spiderpath'){state=state,routes=M.sharedroutes}
 -- (d24 batch189 QAE1) a spidertron's retreat: the guard read as retreat.lua reads a vehicle's; the agent riding it.
 M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end,path=M.spiderpath,
   reading=function(e) return M.retreat.reading(e) end,retreat_check=function(e,cfg) return M.retreat.check_entity(e,cfg) end,
@@ -14884,7 +14888,7 @@ M.spiderroute=require('spiderroute'){state=state,position=position,who=function(
       end
     end
   end}
-M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
+M.vehicles=require('vehicles'){routes=M.sharedroutes,entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
   spider_set=function(e,a,by,index,own) return M.spiderroute.set(e,a,by,index,own) end,spider_seq=function(unit) return M.spiderroute.seq(unit) end,spider_facts=function(e,by,index) return M.spiderroute.facts(e,by,index) end,
   spider_retreat=function(p,a)
     local cfg=M.retreat.config(p,{retreat=a.retreat},'go_to')
@@ -21294,7 +21298,9 @@ M.operator={
     for _,i in ipairs(state().losses or {}) do if not i.closed then i.closed='shift'; closed=closed+1 end end
     -- Each agent's first reply of the shift carries a shift block (research.lua).
     local shift=M.research.shift_start(n,progress)
-    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0}
+    -- (d28 batch305 NR) the stored routes carry over; those asked from now name this shift
+    local okr,routes=pcall(M.sharedroutes.shift_start,n)
+    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0,routes_kept=okr and routes.routes or nil}
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
@@ -21303,6 +21309,11 @@ function M.on_event(event)
     local ok,err=pcall(M.timed,'flightwatch.built_tile',M.flightwatch.on_built_tile,event)
     if not ok then local s=state(); s.floorlog_error={tick=game.tick,error=tostring(err)} end
     return
+  end
+  -- (d28 batch305 NR) a build, mine, death or tile change marks its chunk for the stored routes there (sharedroutes.lua)
+  if M.sharedroutes.events[event.name] then
+    local ok,err=pcall(M.timed,'sharedroutes.mark',M.sharedroutes.mark,event)
+    if not ok then local s=state(); s.sharedroutes_errors={count=((s.sharedroutes_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
   end
   -- (d24 batch179 QV1) a cargo pod leaving, landing or delivering: the pod ledger (podlog.lua); faults are counted
   if M.podlog.EVENTS[event.name] then
