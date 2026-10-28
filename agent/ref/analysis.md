@@ -73,6 +73,10 @@
   272 out, 109 back in, statistics made 163). Completions count crafts finished, not items. uptime's `returned` (rows,
   groups) and supply's `returned` give out, back in, net and what the statistics count; supply's `used_by` lists the
   recipes, the burners holding or burning it (rate at full power), turrets holding it, and what used leaves out.
+- `rates {item | recipe | area | positions, surface?, per?}`: per item, `produced`, `consumed` and `net` are full-speed
+  figures (`basis: "full speed"`: what the machines would make and use running without stop, not what they made);
+  `working` says how many of them work now. With `item`, `actual` and `statistics` give what was made and used (the
+  game's statistics over 10 min), and `line` puts the two side by side.
 - `bottleneck {item, per_min?, all_stopped?, surface?}` (or `area`, `positions`): follows a shortage down its ingredient
   chain to where it starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved
   maker, the nearest chest within 64 tiles holding what it lacks and one `transfer` call that carries it there.

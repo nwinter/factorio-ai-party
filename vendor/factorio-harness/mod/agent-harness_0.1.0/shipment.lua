@@ -790,7 +790,10 @@ return function(api)
       if api.podlog then rows, total = api.podlog({surfaces=surface and {[surface]=true} or nil, up=up, platform=a.platform, item=a.item, silo=silo, from=from, to=to, limit=limit}) end
       local out = {surface=surface, pods=#rows > 0 and rows or nil, pods_total=total,
         pods_line=string.format('%d pod journe%s%s recorded%s%s%s', total, total == 1 and 'y' or 'ys', surface and ' to and from ' .. surface or ' on every planet',
-          a.platform and ' with ' .. a.platform or '', silo and ' launched by silo ' .. silo or '', total > #rows and string.format('; the newest %d here (limit)', #rows) or ''),
+          a.platform and ' with ' .. a.platform or '', silo and ' launched by silo ' .. silo or '', total > #rows and string.format('; the newest %d here (limit)', #rows) or '')
+          -- (d28 batch313 HB) the span of the rows shown and their order (Haiku summed pods of two visits 54 min apart)
+          .. (#rows > 0 and string.format('; these sent from tick %d (%s ago) to tick %d (%s ago), oldest first', rows[1].sent_tick, ago(game.tick - rows[1].sent_tick),
+            rows[#rows].sent_tick, ago(game.tick - rows[#rows].sent_tick)) or ''),
         note='the pod ledger: every cargo pod sent up (a rocket) or down (a hub\'s pod: landing pad requests, hub trash, drops) since this runtime recorded them, '
           .. 'the last 1000 on each planet, kept after the platform leaves; landing pad free slots are read as the pod lands and once it has delivered; '
           .. 'a rocket\'s silo is the one the game names (the launch event\'s rocket_silo, else the pod\'s origin): unknown for rockets sent before the ledger kept silos, never taken from nearby entities'}
