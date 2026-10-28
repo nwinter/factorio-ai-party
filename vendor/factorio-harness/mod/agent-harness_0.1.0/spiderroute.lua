@@ -219,7 +219,7 @@ return function(api)
     -- (d24 batch191) each straight leg read for water its legs cannot cross; paths round it requested (spiderpath.lua)
     if a.go_to ~= nil and #r > 0 and api.path and not out.unlanded then
       -- (d28 batch305 NR) a stored route serves a crossing (read again first; reuse: false asks the pathfinder)
-      local prec = {owner='route', by=by, reuse=a.reuse ~= false, route=a.route}
+      local prec = {owner='route', by=by, reuse=a.reuse ~= false, route=a.route, claim=M.seq(spider.unit_number)}
       -- (d28 batch310 PS) a pair's lead: planned for the shorter reach of the two (nil: its own)
       if M.pair then prec.gap = M.pair.gap(spider) end
       local ok, lines, shared, now = pcall(api.path.plan, spider, r, prec)
@@ -247,6 +247,14 @@ return function(api)
   function M.routed(rec, plan, spider, pts, notes, quiet)
     local unit = spider.unit_number
     -- (d28 batch310 PS) a lead waiting for its follower: the path goes into its route kept aside
+    -- (d28 batch310 item 5, Aurora 10:28) asked before another call set or cleared the route (a clear, a go_to to the
+    -- same target, an append): not written; the new route stays
+    if plan.claim and plan.claim ~= M.seq(unit) then
+      local s = M.set_of(unit) or {}
+      event(string.format('spidertron #%d: the path round the water asked for %s came after %s set its route (%s): not used; its route stays %s', unit,
+        plan.by or 'its go_to', tostring(s.by or 'another call'), s.how or 'a call', route_line(route(spider))), plan.by, unit)
+      return
+    end
     local held = store().spiders[unit] and store().spiders[unit].held
     local r = held and held.route or route(spider)
     local last = plan.targets[#plan.targets]
@@ -303,7 +311,7 @@ return function(api)
     for _, w in ipairs(r) do route2[#route2 + 1] = w end
     local err = P.write(e, route2)
     -- its legs did not cross here: any water on the line from the back-off spot asks for a path (gap 0)
-    local okp, lines = pcall(P.plan, e, {target}, {owner='route', by=t.by, from=back, gap=0})
+    local okp, lines = pcall(P.plan, e, {target}, {owner='route', by=t.by, from=back, gap=0, claim=M.seq(e.unit_number)})
     local did = string.format('stalled %s, %s from water on the line to %s, with no path being asked: backed off to %s, the %s, and %s (recovery %d of %d)',
       at(pos), ahead == 1 and '1 tile' or ahead .. ' tiles', at(q), at(back),
       from_trail and 'last spot it stood 3 tiles or more back with room for a path' or 'spot with room for a path straight back from its target',
@@ -425,7 +433,7 @@ return function(api)
     -- re-route and shore recovery once more on this route
     local water
     if not refused and api.path then
-      local okp, lines = pcall(api.path.plan, e, {cfg.to}, {owner='route', by=t.by})
+      local okp, lines = pcall(api.path.plan, e, {cfg.to}, {owner='route', by=t.by, claim=M.seq(e.unit_number)})
       if okp and lines then water = lines[1] .. ': a path round the water was requested (the route becomes it when it comes)' end
     end
     t.rerouted, t.recovered, t.tries = nil, nil, nil

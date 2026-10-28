@@ -14974,7 +14974,8 @@ do
 end
 -- (d24 batch191 QAG1) spider_kite: kite for a spidertron you ride or send by remote view (spiderkite.lua): its guns on
 -- auto by its targeting switches, its legs moved by route targets as its remote sets them, every 10 ticks.
-M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath}
+M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath,
+  seq=function(unit) return M.spiderroute.seq(unit) end,set_of=function(unit) return M.spiderroute.set_of(unit) end}
 function handlers.spider_kite(p,a)
   local c=p.character
   assert(c and c.valid,'a living character is required')
@@ -15006,7 +15007,9 @@ function handlers.spider_kite(p,a)
   -- the fight owns its route now: a go_to's stall sampling (spiderroute.lua) ends, the route is cleared; (d28 batch300
   -- SR) a waited go_to on it ends route_changed, naming this call
   if sr then sr.spiders[spider.unit_number]=nil end
-  M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
+  -- (d28 batch310 item 5, Aurora 10:28) its claim's number: another call setting or clearing the route after it (a clear,
+  -- a same-target go_to, an append) moves it on, and the kite yields (spiderkite.lua)
+  action.set_seq=M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
   if #route>0 then spider.autopilot_destination=nil end
   local targeting=M.spiderkite.start(action)
   state().active[p.index]=action

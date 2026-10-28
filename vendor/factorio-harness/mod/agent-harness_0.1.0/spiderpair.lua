@@ -164,7 +164,7 @@ return function(api)
     local reach = M.reach(F)
     local b = P.segment(F.surface, F.position, w.crumbs[1], reach)
     if b then
-      local ok, lines = pcall(P.plan, F, {w.crumbs[1]}, {owner='route', by=pr.agents[1], reuse=true, gap=reach ~= P.GAP and reach or nil})
+      local ok, lines = pcall(P.plan, F, {w.crumbs[1]}, {owner='route', by=pr.agents[1], reuse=true, gap=reach ~= P.GAP and reach or nil, claim=api.seq(F.unit_number)})
       out.join = ok and lines and string.format('#%d\'s line to #%d crosses water its legs do not step across (%s): a path round it was asked for #%d; #%d waits for it', F.unit_number, L.unit_number, b.line, F.unit_number, L.unit_number)
         or string.format('#%d\'s line to #%d crosses water its legs do not step across (%s), and no path could be asked: it walks the line', F.unit_number, L.unit_number, b.line)
     else
