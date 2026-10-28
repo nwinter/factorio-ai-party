@@ -17138,3 +17138,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/space-age.md (`load_silo`), the schema text of `rockets` and `launch_split`. Test:
   tests/d28_batch301_rt.lua (the real runtime and scheduler against a fake engine, each rocket's load stubbed; fails
   on main: `load, restore auto_requests, reset personal max, rocket 1 of 5, ...`).
+- Bundle (compacted): 6,343,736 bytes on main (61eaf3bc), 6,346,414 with this branch (limit 8,388,608).
