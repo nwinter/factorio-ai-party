@@ -947,13 +947,23 @@ class LiveSource:
                 errors["tells"] = str(e)
         if self.has_operator:  # agents' requests to the operator, read as the operator: the inbox file and the ticker
             try:
-                res, _ = self.h.operator_read("operator_requests", {"since": self.operator_seq, "limit": 30})
-                rows = operator_inbox.append(self.inbox_path, res.get("requests"), self.operator_seq)
-                obs["operator_requests"] = rows
-                if rows:
-                    self.operator_seq = max(r["seq"] for r in rows)
-                elif res.get("cursor") is not None and res["cursor"] < self.operator_seq:
-                    self.operator_seq = res["cursor"]  # a fresh world counts its requests from 1 again
+                # (d28 batch299 IC) the runtime returns the oldest 30 after the cursor and how many more wait; the cursor
+                # moves to the last row written, and the read pages until caught up (at most 8 pages a poll, the rest
+                # next poll). An older runtime returned the newest 30 (no `more`): one read, as before.
+                obs["operator_requests"] = []
+                for _ in range(8):
+                    res, _ = self.h.operator_read("operator_requests", {"since": self.operator_seq, "limit": 30})
+                    if res.get("trimmed"):
+                        errors["operator_requests_trimmed"] = (f"{res['trimmed']} requests after seq {self.operator_seq}"
+                                                               " left the runtime's kept log before this read")
+                    rows = operator_inbox.append(self.inbox_path, res.get("requests"), self.operator_seq)
+                    obs["operator_requests"] += rows
+                    if rows:
+                        self.operator_seq = max(r["seq"] for r in rows)
+                    elif res.get("cursor") is not None and res["cursor"] < self.operator_seq:
+                        self.operator_seq = res["cursor"]  # a fresh world counts its requests from 1 again
+                    if not rows or not res.get("more"):
+                        break
             except Exception as e:
                 errors["operator_requests"] = str(e)
         if getattr(self, "has_chronicle", False):  # the run's chronicle: new entries and events, every poll

@@ -838,7 +838,8 @@ return function(api)
         stored/1e6,cap/1e6,math.floor(f*100),math.floor(c.fraction*100+0.5))
     end,
     -- A platform's foundation built (Astra, d15 06:23: ship conversions ran in the body queue with an outside tile
-    -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either.
+    -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either. platform_ready
+    -- (the same check): entity ghosts too unless entities=false.
     platform_built=function(p,c)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
@@ -858,7 +859,10 @@ return function(api)
         return ents==0 and tiles==0,string.format('platform %s, the part asked: %d entity ghost%s, %d tile ghost%s left',c.platform,ents,ents==1 and '' or 's',tiles,tiles==1 and '' or 's')
       end
       local tiles=surface.count_entities_filtered{type='tile-ghost',force=p.force}
-      local ents=c.entities and surface.count_entities_filtered{type='entity-ghost',force=p.force} or nil
+      -- (d27 batch289, Astra #2634) platform_ready on the whole platform counts its entity ghosts too (entities=false:
+      -- the foundation only, as platform_built); platform_built only with entities=true
+      local want=c.entities or (c['until']=='platform_ready' and c.entities~=false)
+      local ents=want and surface.count_entities_filtered{type='entity-ghost',force=p.force} or nil
       local met=tiles==0 and (ents==nil or ents==0)
       return met,string.format('platform %s: %d tile ghost%s left%s',c.platform,tiles,tiles==1 and '' or 's',
         ents and string.format(', %d entity ghost%s',ents,ents==1 and '' or 's') or '')

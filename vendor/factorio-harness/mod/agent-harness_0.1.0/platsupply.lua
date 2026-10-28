@@ -33,9 +33,14 @@ return function(api)
     local area = {left_top={x=b.left_top.x - 3, y=b.left_top.y - 3}, right_bottom={x=b.right_bottom.x + 3, y=b.right_bottom.y + 3}}
     local out = {}
     for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', area=area, force=force} end) or {}) do
-      if try(function() return i.pickup_target end) == e then
+      -- (d27 batch292 IP) one whose pickup target the engine left unset with e on its pickup tile counts too, said so
+      local pt = try(function() return i.pickup_target end)
+      local unset = not pt and api.unset_target and select(3, api.unset_target(i, 'pickup')) == e
+      if pt == e or unset then
         local d = try(function() return i.drop_target end)
-        out[#out+1] = string.format('%s %s into %s', i.name, at(i.position), d and d.valid and (d.name .. ' ' .. at(d.position)) or 'nothing (no drop target)')
+        local du = not (d and d.valid) and api.unset_target and api.unset_target(i, 'drop')
+        out[#out+1] = string.format('%s %s into %s%s', i.name, at(i.position), d and d.valid and (d.name .. ' ' .. at(d.position)) or du and du .. ' (engine drop target unset)' or 'nothing (no drop target)',
+          unset and ' (engine pickup target unset)' or '')
       end
     end
     return out
@@ -66,6 +71,8 @@ return function(api)
     local by_pickup = {}
     for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=force} end) or {}) do
       local src = try(function() return i.pickup_target end)
+      -- (d27 batch292 IP) the engine's pickup target unset with something it uses on the tile: that entity
+      if not (src and src.valid) and api.unset_target then src = select(3, api.unset_target(i, 'pickup')) end
       if src and src.valid then
         local k = src.unit_number or src
         by_pickup[k] = by_pickup[k] or {}

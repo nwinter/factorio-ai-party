@@ -8,9 +8,11 @@
 - (d22 batch97 BG3) one refresh at a time: a lock held by a live process is waited for (up to POG_SITE_REFRESH_WAIT,
   then the refresh fails, naming its pid); one whose process is gone is taken over; the lock goes when it ends;
 - (d26 batch241) DIST.deployed only while the build in DIST is the one production has (site/chart_deploy.py);
-- (d27 batch265) while a merge is in progress in the checkout (MERGE_HEAD), one line and exit 0: nothing built,
-  status.json untouched, nothing deployed, the lock gone; once the merge is committed it builds again. The other
-  cases look at a folder with no merge (the gate runs this test in the live checkout mid-merge).
+- (d27 batch290) the refresh runs the clean copy of main (tools/clean-main.sh): a source repo (this branch's tracked
+  files, committed) with a merge in progress, a tracked file changed and an untracked one builds and deploys main's
+  files, with runs/ and the other paths it writes linked to the source's; DIST.last-deploy stays through later
+  builds; a folder at the copy's path that is not a worktree is left alone (FAILED, nothing deployed). The other
+  cases build in place (a test run without POG_SITE_WORKTREE).
 """
 import json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -29,7 +31,7 @@ def run(tmp, *args, **env):
     e = dict(os.environ, POG_TEST="1", POG_WRANGLER=str(tmp / "wrangler"), POG_SITE_RUNS=str(tmp / "runs"), POG_SITE_OUT=str(tmp / "dist"),
              POG_SITE_STATUS=str(tmp / "status.json"), POG_SITE_CONTENT=str(tmp / "site.json"), POG_SITE_CARDS="0", POG_SITE_VIDEOS="0",
              WRANGLER_LOG=str(tmp / "wrangler.log"), POG_SITE_REFRESH_LOCK=str(tmp / "lock"),
-             **dict({"POG_SITE_GIT": str(tmp / "nogit")}, **env))
+             **env)
     (tmp / "wrangler.log").write_text("")
     r = subprocess.run([str(ROOT / "tools" / "site-refresh.sh"), *args], cwd=ROOT, env=e, capture_output=True, text=True,
                        timeout=300)
@@ -82,32 +84,53 @@ def main():
             holder.wait()
         r, calls = run(tmp, "--no-deploy")
         assert r.returncode == 0 and "done (--no-deploy)" in r.stdout, "a lock whose pid is gone is taken over: " + r.stdout
-        # a merge in progress in the checkout: skipped, one line
-        repo = tmp / "repo"
-        repo.mkdir()
-        git = lambda *a: subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
-                                         *a], capture_output=True, text=True)  # noqa: E731
-        git("init", "-q")
-        (repo / "f.txt").write_text("a\n")
-        git("add", "f.txt")
-        git("commit", "-qm", "a")
-        git("checkout", "-qb", "other")
-        (repo / "f.txt").write_text("b\n")
-        git("commit", "-qam", "b")
-        git("checkout", "-q", "-")
-        (repo / "f.txt").write_text("c\n")
-        git("commit", "-qam", "c")
-        git("merge", "-q", "other")  # a conflict: the merge stays in progress
-        assert git("rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0, "the test's merge is in progress"
-        before = (tmp / "status.json").read_text()
+        assert (tmp / "dist.last-deploy").is_file(), "the last production deploy stays through a --no-deploy build"
+        # a merge in progress in the source checkout: built from the clean copy of main
+        src, wt = tmp / "src", tmp / "wt"
+        git = lambda repo, *a: subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                                               *a], capture_output=True, text=True)  # noqa: E731
+        files = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z"], capture_output=True,
+                               text=True, check=True).stdout.split("\0")
+        for f in files:
+            if f and (ROOT / f).is_file() and not (ROOT / f).is_symlink():
+                (src / f).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / f, src / f)
+        (src / ".gitignore").write_text("runs/\nsite/dist/\nsite/content/r2.json\nsite/og/shifts/\nsite/og/thumbs/\nsite/.wrangler/\n__pycache__/\n")
+        git(src, "init", "-q", "-b", "main")
+        git(src, "add", "-A")
+        assert git(src, "commit", "-qm", "main").returncode == 0
+        git(src, "checkout", "-qb", "other")
+        (src / "f.txt").write_text("b\n")
+        git(src, "add", "f.txt")
+        git(src, "commit", "-qm", "b")
+        git(src, "checkout", "-q", "main")
+        (src / "f.txt").write_text("c\n")
+        git(src, "add", "f.txt")
+        git(src, "commit", "-qm", "c")
+        git(src, "merge", "-q", "other")  # a conflict: the merge stays in progress
+        assert git(src, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0, "the test's merge is in progress"
+        css = (src / "site" / "static" / "style.css").read_text()
+        (src / "site" / "static" / "style.css").write_text(css + "\n/* a branch's uncommitted change */\n")
+        (src / "site" / "untracked.txt").write_text("x\n")
         shutil.rmtree(tmp / "dist", ignore_errors=True)
-        r, calls = run(tmp, "--last-run", "s1", POG_SITE_GIT=str(repo))
-        lines = [ln for ln in r.stdout.splitlines() if "site-refresh:" in ln]
-        assert r.returncode == 0 and calls == [] and len(lines) == 2 and "skipped: a merge is in progress" in lines[1], r.stdout
-        assert not (tmp / "dist").exists() and (tmp / "status.json").read_text() == before and not (tmp / "lock").exists()
-        git("merge", "--abort")
-        r, calls = run(tmp, "--no-deploy", POG_SITE_GIT=str(repo))
-        assert r.returncode == 0 and "done (--no-deploy)" in r.stdout and "skipped" not in r.stdout, r.stdout
+        r, calls = run(tmp, "--last-run", "s1", POG_SITE_SOURCE=str(src), POG_SITE_WORKTREE=str(wt))
+        assert r.returncode == 0 and len(calls) == 2 and "skipped" not in r.stdout, r.stdout + r.stderr
+        head = git(src, "rev-parse", "main").stdout.strip()
+        assert f"site-refresh: from the clean copy of main {head[:8]} ({wt})" in r.stdout, r.stdout
+        assert (tmp / "dist" / "static" / "style.css").read_text() == css, "built from main, not the working tree"
+        assert not (wt / "site" / "untracked.txt").exists() and (wt / "runs").is_symlink()
+        assert os.readlink(wt / "site" / "live" / "status.json") == str((src / "site" / "live" / "status.json").resolve())
+        assert json.loads((tmp / "status.json").read_text())["last_run"]["id"] == "s1"
+        assert (tmp / "dist.deployed").is_file() and (tmp / "dist.last-deploy").is_file() and not (tmp / "lock").exists()
+        assert git(src, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0, "the source's merge left alone"
+        r, calls = run(tmp, "--no-deploy", POG_SITE_SOURCE=str(src), POG_SITE_WORKTREE=str(wt))   # again: the copy is reused
+        assert r.returncode == 0 and "done (--no-deploy)" in r.stdout and (tmp / "dist.last-deploy").is_file(), r.stdout
+        plain = tmp / "plain"
+        plain.mkdir()
+        (plain / "keep.txt").write_text("mine\n")
+        r, calls = run(tmp, POG_SITE_SOURCE=str(src), POG_SITE_WORKTREE=str(plain))
+        assert r.returncode == 1 and calls == [] and "is not a worktree of" in r.stdout and "FAILED" in r.stdout, r.stdout
+        assert (plain / "keep.txt").read_text() == "mine\n"
     print("site refresh: ok (status.json, build, checks, preview then production; failures stop before production; one at a time)")
 
 

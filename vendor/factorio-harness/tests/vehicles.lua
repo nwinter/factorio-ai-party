@@ -349,6 +349,41 @@ last=astra('status').last
 eq(last.outcome,'blocked')
 assert(last.why:find('again after backing off 2 times, from (',1,true) and last.why:find('in front: nothing that collides',1,true),last.why)
 assert(last.backed_up:find('backed off and asked for a new path; then stuck at',1,true),last.backed_up)
+-- (d28 batch305 NR) a stored route through the runtime: the drive's first path kept; the next drive from about there
+-- takes it in the call (reply shared_route, last.shared_route), no path asked; stuck on it, it is dropped from the store
+do
+  local get,cef,ctf=surface.get_tile,surface.count_entities_filtered,surface.count_tiles_filtered
+  surface.get_tile=function() return {valid=true,name='grass-1'} end
+  surface.count_entities_filtered=function() return 0 end
+  surface.count_tiles_filtered=function() return 0 end
+  blocked=false; asked={}
+  car.position={x=100,y=20}; car.orientation=0.25; car.speed=0
+  r=astra('vehicle',{drive={x=140,y=20}})
+  eq(#asked,1); eq(r.shared_route,nil)
+  runtime.on_event{name=10,id=901,path={{position={x=100,y=20}},{position={x=120,y=30}},{position={x=140,y=20}}}}
+  for _=1,1500 do physics(); advance(1); if not astra('status').active then break end end
+  eq(astra('status').last.outcome,'arrived')
+  local S=storage.agent_harness.sharedroutes
+  local id,kept=next(S.routes)
+  assert(kept and kept.kind=='drive' and kept.by=='astra','kept')
+  r=astra('vehicle',{drive={x=100,y=20}})
+  eq(#asked,1,'no path asked')
+  assert(r.shared_route:find('reused route '..id..' (checked at tick ',1,true) and r.shared_route:find(', walked from its end',1,true),r.shared_route)
+  blocked=true
+  drive_ticks(95)
+  eq(S.routes[id],nil,'stuck on it: dropped')
+  drive_ticks(60); eq(#asked,2,'the back-off asks the pathfinder')
+  runtime.on_event{name=10,id=902,path={{position={x=140,y=20}},{position={x=100,y=20}}}}
+  drive_ticks(95); drive_ticks(60); eq(#asked,3)
+  runtime.on_event{name=10,id=903,path={{position={x=140,y=20}},{position={x=100,y=20}}}}
+  drive_ticks(100)
+  last=astra('status').last
+  eq(last.outcome,'blocked')
+  assert(last.shared_route:find('reused route '..id,1,true) and last.shared_route:find('route '..id..' dropped from the store',1,true),last.shared_route)
+  surface.get_tile,surface.count_entities_filtered,surface.count_tiles_filtered=get,cef,ctf
+  storage.agent_harness.sharedroutes=nil
+  blocked=false
+end
 -- No path for the car's turning room, nor to open ground near the target, nor for its length or width:
 -- unreachable, saying so (drivesafe: the turning room first, then near the target, then narrower).
 blocked=false; asked={}
@@ -541,7 +576,8 @@ eq(r.dry_run,true)
 assert(asked[1].start.x~=120 or asked[1].start.y~=90.5,'started elsewhere')
 local lead=asked[1].start
 runtime.on_event{name=10,id=901,path={{position=lead},{position={x=150,y=90.5}}}}
-advance(1)
+-- (a few ticks: 1 to 4 by the tick's phase; d28 batch305's case above moved it by 677 ticks)
+for _=1,10 do advance(1); if not astra('status').active then break end end
 last=astra('status').last
 eq(last.outcome,'previewed'); eq(car.position.x,120)
 assert(last.preview.path:find('^%(120,90.5%) '),last.preview.path); eq(last.preview.plan,'turning room')

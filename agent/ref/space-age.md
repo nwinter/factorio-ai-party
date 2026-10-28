@@ -6,7 +6,10 @@
   known, at arrival, as `science` and `preflight` count them. `inspect` of a hub shows the same speed and ETA fields.
   With `platform`: one platform with its full hub inventory, `thrust_inputs` (a line per thruster input under half
   full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
-  naming them), `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
+  naming them), `after_pumps` and `thruster_burn` (what the thrusters burn at full thrust and how long the fluid behind
+  the pumps lasts, at each thruster's own quality: quality multiplies burn and thrust, a legendary thruster 5 of each
+  fluid a tick against a normal one's 2; `platform_endurance` gives it as `full_thrust`, apart from the measured use),
+  `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
   and 3000 tile ghosts and says `at least` and how many were counted past that). With no platform named the read is
   compact: a line a platform, blockers only when new to you; `compact: false` gives every platform's full row, 2
   a page (`page`; the reply's `next` names the next), `request_edits: true` each hub section's last edit. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
@@ -105,12 +108,17 @@
 - `platform_endurance {platform, route?, forecast?, pessimistic?, design?, progress?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
   hub slots free, power, solar power at the stops, and the asteroid chunks made a minute (the collectors' catch and the crushers' returns); `fuel_outlook`: one line
-  of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
-  whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
-  before the leg ends, once while it lasts: `urgent:` under 2 minutes of it at the rates now, or from 90 s into the
-  leg when the stock's own fall over a minute runs it out or the shortage holds on two scans a minute apart with the
-  stock lower; else `advisory:` with the stock's trend (thrusters and tanks, and the tanks), the pumps toward the
-  thrusters by state and the speed). `route`: the locations
+  of thruster fuel and oxidizer held (thrusters and tanks) and aboard (with the pipes, pumps and makers' outputs), made
+  and used a minute over the engine's last 180 s (else 60 s) all in the leg (else the last minute), and flying
+  whether what is aboard lasts the rest of the leg at the speed now; a maker's batch counts when its craft ends, so a
+  deficit within a batch a maker over that time is no deficit while batches land and what is aboard lasts 2 minutes or
+  more, and the line names the batches (size, makers, a craft's
+  time at full speed, the share of their full output made) (a team alert to the platform's people when one runs out
+  before the leg ends, once while it lasts: `urgent:` under 2 minutes of it at the rates now while the stock aboard
+  falls, or from 90 s into the leg when the stock's own fall, past a batch a maker, over a minute or the 5 minutes of
+  scans kept runs it out, or the shortage holds on two scans a minute apart with the stock lower past a batch a maker;
+  else `advisory:` with the stock's trend (thrusters and tanks, and the tanks), the pumps toward the thrusters by state
+  and the speed). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an
@@ -122,7 +130,7 @@
   comes off first (`other_use_per_min`). Ammunition on rockets on their way up counts once (`received`). Rows, `flight`,
   `departure`, `forecast` and `ammo_rates` (preflight, platforms) use this one count and say which limit binds
   (`no machine aboard makes it now` when the rate was measured before its makers went). Speed: the last leg's distance
-  flown over its time, flagged when the thrusters or hull width differ now. The forecast counts each asteroid's
+  flown over its time, flagged when the thrusters (count or quality) or hull width differ now. The forecast counts each asteroid's
   fragments (huge into 3 big, big into 3 medium, medium into 3 small) and says `uncalibrated` for kinds the legs flown
   met none of; rockets' damage is their projectile's:
   `binds: the stock (none made aboard)`, `the make rate`, or `the ingredients: iron-plate (...)`. Rows add
@@ -327,7 +335,7 @@
   entrance), the inserters picking on the 64 tiles back; flagged: a stopped lane none takes from, or one whose front
   item none takes (lane choice, filter). Default the items for thruster fuel, oxidizer and ammunition; `all`: every item.
 - `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
-  aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
+  aboard, up to 1024; more is refused, naming positions) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
   body. Rows: `held`, `on_the_way`, `requested`; `hub` (what the hub holds of each item asked), `refills` (requests and
   rounds asked on this platform since). An `item` a named turret does not take is refused with each kind and the
@@ -414,8 +422,12 @@
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
   names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
   step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The
-  setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
-  two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
+  setter hears in team.alerts when it begins at a departure and when it ends; the end line starts with the damage
+  taken and the losses over the whole watch (the same as `{id}`'s `damage` and `lost_count`, a pause and a coast
+  included), and its railgun part (`their fire: N hits`) is what the railguns hit, never damage taken. A turret empty under a second between
+  two samples can be missed. Every ammo turret aboard is read, up to 1024 a watch: `turrets_total` (aboard at its last
+  find, every minute), `turrets_read`, and `turrets_left_out` and `turrets_capped` past that, said in its lines too.
+  The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
   Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
   `now`) and each railgun (`railguns`): energy least, at the start and now; samples, runs and the longest run below a
   shot's energy (its full 10 MJ buffer; refilled at 10 MW, 60 ticks from empty); `hits`, `shots_hit` (ticks it hit
@@ -557,7 +569,9 @@
   over one rocket goes, with `launch`, as rockets of at most a full rocket each, queued in turn (`rockets`,
   `rocket_cargo`, `split`); `launch_split: false` refuses it, and so do `all_or_nothing` and `wait_platform` (one rocket
   each) unless `launch_split: true`; `rockets: 3` with `launch`
-  queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
+  queues the same load for 3 rockets. A direct call appends those rocket steps to your queue; a `load_silo` that runs
+  as a queue step becomes them in place, right after it and before the steps that follow (`in_place`, `steps`,
+  `behind`), or is refused, nothing queued, when the queue has no room. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
   launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`
   and `from` the walk gathers from the chests first, then waits at the silo the same way (a walking load with `launch`

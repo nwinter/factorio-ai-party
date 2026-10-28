@@ -2907,16 +2907,24 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   The thrusters and pumps are found again every minute. `after_pumps` (thrust.lua; Grok, shift17 20:40: an oxidizer
   pump cut at V < 15 and the leg peaked at 51 km/s): per thruster fluid, what stays with the thrusters when their pumps
   stop (their own tanks, and the pipes and tanks between them and the pumps; the walk stops at a pump) and how long
-  that burns: `thruster-oxidizer: if its pumps stop, 2 thrusters hold 2000 and the pipes and tanks between them and
-  the pumps 160 (1080 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.1 a tick until empty at
-  37.4 s; pump (3.5,7): off by its circuit condition ...`. `thruster_burn`, the game's rule as measured on 2.0.77 (the
-  thruster prototype's min_performance and max_performance): a thruster burns 2 fuel and 2 oxidizer a tick while its
-  tanks (1000 each) are 80% full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; its thrust falls
-  with it to about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply: 1.7 s at full
-  thrust, 20.1 s until 10%, about 10.3 s of full thrust in all. With no thrust (or a tenth of it) a platform slows,
-  then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s
-  in 6 s on one full tank with no supply; how far a platform's speed goes on what is left depends on its weight,
-  width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
+  that burns at the thrusters' own quality (d27 batch294): `thruster-oxidizer: if its pumps stop, 2 thrusters (normal)
+  hold 2000 and the pipes and tanks between them and the pumps 160 (1080 a thruster): at full thrust 4 a tick in all
+  (2 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.2 a tick in all until empty at 37.4 s; pump
+  (3.5,7): off by its circuit condition ...`. Mixed qualities are counted as one pool the pipes keep level, at their
+  mean multiplier, and said so. With both fluids a last line names the one that sets the thrust (both burn at the rate
+  the emptier tank sets). `thruster_burn`: the platform's thrusters by quality and what they burn at full thrust (`4
+  thrusters, legendary x2.5: at full thrust (the emptier tank 80% full or more) they burn 20 fuel and 20 oxidizer a
+  tick in all (1200 a second, 72000 a minute of each; 5 a tick a thruster), thrust 10 times one normal thruster's (the engine's figures
+  for their quality, not measured use)`), then the game's rule as measured on 2.0.77 (the thruster prototype's
+  min_performance and max_performance, and the quality's default_multiplier): a thruster burns fuel and oxidizer alike,
+  at the rate the emptier of its two tanks (1000 each) sets; a normal thruster 2 of each a tick while that tank is 80%
+  full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; quality multiplies the burn and the thrust
+  alike (uncommon 1.3, rare 1.6, epic 1.9, legendary 2.5), at the same 80% and 10%; its thrust falls with the burn to
+  about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply a normal thruster gives
+  1.7 s at full thrust, 20.1 s until 10%, about 10.3 s of full thrust in all (a legendary one 0.7 s, 8 s, 4.1 s). With
+  no thrust (or a tenth of it) a platform slows, then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test
+  platform with 1 normal thruster went from 0 to 86 km/s in 6 s on one full tank with no supply; how far a platform's
+  speed goes on what is left depends on its weight, width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
   the first spoils in 1m10s (95% spoiled); all within 5 min`), and in flight `; arrival at nauvis in 3m30s: 200 spoil
   before it, 595 arrive, the next spoils 2m05s after arrival`.
 - `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
@@ -4419,6 +4427,7 @@ fh --bot astra call status                                                      
 - In game every bot is marked for the stream, with no per-tick cost (rendering attached to its character, redrawn on spawn, on a `profile` change and by a 5 s recheck that also covers a hot deploy): its character is tinted in its `color` (or, with none, the avatar's default colour from its name), a name tag `glyph display_name` (or the bot name) sits just over its head in that colour (very dark colours are lightened for the text), and, in a world started with the current mod (`data.lua` sprites), its pixel `avatar` floats above the tag, drawn from the same parts and palette as the overlay's `avatar.js`. Emoji glyphs show blank: the game font has no emoji, so letters read better.
 - `say` also draws the text over the speaker's character (above its name tag and avatar) in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.
 - Director cameras (operator only): `remote.call("agent_harness","camera", json)` with `{"player":1,"follow":"astra","zoom":0.8}` (zoom 0.3..4) or `{"player":1,"position":{"x":0,"y":0},"smooth":false}`; `{"player":1,"release":true}` stops following. The player becomes a spectator once (its character is removed), and its view eases toward the target every tick, jumping when the target is over 200 tiles away. `speed` (tiles per second, over 0 and at most 60) caps how fast a smooth camera moves toward its position (the stream's platform detail pans send a step a second at their pan speed, so the view glides evenly). `remote.call("agent_harness","cameras")` and the read action `cameras` list them. An attached agent cannot be made a director. A follow tracks the character's spot on the ground: flying in mech armor its position is drawn `flight_height` tiles north (about 1.1, bobbing 0.3 to 0.5 tiles every 95 ticks as it hovers), so the camera and `cameras` use y + flight_height and hold still through takeoff, landing and the bob (d20 batch65 AA6).
+- Camera panels (operator only, d27 batch285): the same call with `"panel":1` (1-4) and `"rect":[x,y,w,h]` (pixels of the director client's window, needed on the first call) puts a GUI camera element on that client's screen: one more view drawn by the same client, which itself does not move. It takes follow, position, surface (another planet or platform too), zoom (0.05..4) and speed, eased every tick as a camera is; no map and no move. `{"player":1,"panel":1,"release":true}` removes it; `cameras` lists them under `panels`.
 - Directors: players that ever were cameras, spectators, and players named `pog-cam<N>` or `pog-director` (the camera clients, even before their first camera call). They never appear in `profiles`, and `say` lines are printed only to other players (camera views show the bubbles, not the chat console). A camera's view hides the GUI (minimap, research, side menu, quickbar, shortcut bar, crafting queue, alerts, tool bar, hotkey hints) but keeps entity info; if a camera player comes back with a character (a reconnect), it is made a spectator again within a tick, and its view settings are re-applied every 5 s. Every 5 s each connected director, with a camera or not (a camera client before its first camera call, or a released one), is also made a characterless spectator with `show_on_map=false`, so no director's name or body shows in the world on stream.
 
 ## Team board, reply hints, harness requests, saved plans
@@ -11190,7 +11199,7 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   - Armed from "departure": it begins on the first sample that reads the platform flying after one that read it
     stopped. It ends at the first sample stopped at a location after it flew, or at `minutes`, or with the platform
     gone. Armed 24 h with no departure, it ends unbegun.
-  - Once a second (tick % 60 == 51), each ammo turret aboard (found at the start and again each minute: up to 128):
+  - Once a second (tick % 60 == 51), each ammo turret aboard (found at the start and again each minute: up to 128; from d28 batch302 up to 1024, said):
     the item count in its ammo slots. Kept: least and its tick, at the start, now, empty_samples, empty_ticks (each
     empty sample counts the ticks since the sample before), empty_runs, longest_empty_ticks and longest_from_tick,
     gone_tick, added_tick.
@@ -11205,7 +11214,7 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   - Kept in storage until cleared. A done watch read once is dropped an hour after that read. At most 8 a force; a
     new one drops the oldest read one, else is refused. A second watch on the same platform, while the first runs or
     is unread, needs `replace: true`. The setter hears in team.alerts when one begins at a departure and when one
-    ends (with the turrets in one phrase). A read gives up to 24 turret rows: those that read empty, the longest run
+    ends (with the turrets in one phrase; from d27 batch296 the damage taken and the losses first). A read gives up to 24 turret rows: those that read empty, the longest run
     first, then the lowest on ammo; `turrets_more` and `turrets_more_line` count the rest.
   - The `platform` read's defense row gives `sampled_tick`, the tick its turrets were counted (the reply's: it is not
     cached).
@@ -14563,7 +14572,8 @@ spiderroute.lua):
 - NV1: `vehicle {go_to, wait: true}` (`fh call vehicle --wait` with go_to sends it) runs as a timed action, kind
   `spider_go`, read after the route's samples (every 60 ticks). It ends `arrived` (its route ended within 4 tiles of
   its last target), `stalled` (the stall line after its recoveries), `unreachable` (stalled with no path found, or a
-  target on water with no tile its legs stand on near it), `route_changed` (another go_to or clear, or a player),
+  target on water with no tile its legs stand on near it), `route_changed` (another go_to or clear, or a player; from
+  d28 batch300 with who, how and when),
   `retreated` (its guard), `route_emptied` (its route ended elsewhere), `destroyed` or `timed_out` (`ticks` 60..54000,
   default 18000; the walk goes on). last: spidertron, position, target, route_line, recovery, no_path, landed, why.
   Status `active.spider_go` says where it is. A plain go_to replies at once, as before. A queue step waits for it.
@@ -16736,6 +16746,99 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   15:58, 16:49 platform:Resolute). Her 16:20 nudge still goes: a tell from Haiku was unanswered then.
 - Docs: agent/ref/waits-queues.md (the idle nudge line). Test: tools/test_idle_lanes.py (fails on main at Astra's
   16:49 row).
+## d27 batch288 (UG, Sol #2632: an underground fast-replace left an unpaired express input and fast output)
+
+- Sol's build on Vulcanus (queue job 38186, tick 73406504; shift88/sol/tools/expedition88/stone-disposal-retry.json):
+  express over two fast underground pairs ((63.5,142.5)-(63.5,144.5) and (63.5,146.5)-(63.5,148.5), both ends facing
+  south), from (60,145), within reach of both. Entry 1 replaced the input; entry 2 failed, "placement blocked by
+  fast-underground-belt (63.5,144.5)", leaving an express input and a fast output, unpaired. Reproduced on the iMac
+  copy from world n's save at tick 73400182 (before Sol's build), sol's bot, the same plan: the same failure and state.
+- Engine facts (2.0.77, the iMac copy):
+  - `can_place_entity` takes no underground type and checks the new end as an input. Over a fast output facing south,
+    express facing south reads false and facing north true (over a paired output too); over an input, facing south true.
+    An output end facing d has the shape of an input facing the other way.
+  - `create_entity {type: output, direction: south}` makes a south-flowing output (it reads direction 8) that pairs
+    with an express input facing south.
+  - `create_entity {fast_replace: true}` (no player) replaces one end only: both ends read unpaired after it, for an
+    input or an output. A bot has no LuaPlayer for a cursor build, so the harness replaces both ends itself.
+  - A script-placed wall over the other end makes `can_place_entity` false there; a deconstruction or upgrade mark does
+    not.
+- Cause: build_direct checked every underground at the direction asked. For the output end that is the wrong shape, so
+  the pair's other end (attempted right after entry 1) and entry 2 were both refused; the other end's note ("was not
+  replaced") was lost when entry 2 failed the batch. Two more faults showed once that was fixed: an entry for an end
+  already replaced with its pair failed the batch ("nothing was placed": the batch asserted an item was used), and with
+  none of the item left it failed earlier ("item is not in main inventory"). And the walk stood within reach of entry 1
+  only (Sol's first try: the other end 11.1 tiles off, refused).
+- Fix (runtime.lua, autowalk.lua):
+  - an output end is checked facing the other way (`underground_check_direction`); create_entity still takes the type
+    and direction asked;
+  - the other end is checked before either end changes: when it cannot take the new tier the build is refused with
+    nothing changed ("the other end cannot take express-underground-belt: placement blocked by ...; nothing was
+    changed");
+  - when the second end fails anyway, the first is put back (the old item from the inventory) and the build is refused
+    with nothing changed;
+  - an entry for an end replaced with its pair says `already` (with or without the item left) and the batch goes on;
+  - out of reach of either end, the build walks to the pair's middle with a reach (build reach less half the span less
+    a quarter tile) that holds both ends.
+- On the iMac copy with the fix (sol's bot):
+  - from (40,130), a build of entry 1 alone walked to (55.4,145.2), 8.6 and 8.2 tiles from the ends ("reach 8.75"),
+    and replaced both: an express pair;
+  - with a wall placed by script over (63.5,148.5), a build of express at (63.5,146.5) was refused: "fast-underground-
+    belt (63.5,146.5) is one end of a pair with fast-underground-belt (63.5,148.5); the other end cannot take ...:
+    placement blocked by stone-wall (63.5,148.5), ...; nothing was changed"; both fast ends stayed paired;
+  - Sol's whole plan (move_to, 17 entries) from the fast pairs: both pairs express and paired, the express belts and
+    the bulk inserter built.
+- Bundle (compacted): 6,299,239 bytes on main (ddf11ddf, batch283 in it), 6,302,174 with this branch (limit 8,388,608).
+## d27 batch294 (TQ, Sol #2645: thruster quality in the burn and endurance text)
+
+- Sol: Resolute's 4 legendary thrusters used 47937 fuel in 41 s (about 70152 a minute) against the 28800 a minute
+  the rule gave (4 x 120 a second); `thruster_burn` said 2 fuel a tick, and `after_pumps` said the 12500 behind the
+  pumps would last 28 s at full thrust, at the normal burn. That fed a preflight capacity mistake.
+- Engine facts (2.0.77, the iMac copy, world n's _autosave5, Resolute in flight, pumps switched off by script):
+  - the thruster prototype gives min_performance {fluid_volume 0.1, fluid_usage 0.1, effectivity 1} and
+    max_performance {0.8, 2, 0.51}, and no quality reader; the tanks hold 1000 at every quality;
+  - the game's fluid statistics: 5 fuel and 5 oxidizer a tick per legendary thruster while the emptier tank was 80%
+    full or more, linearly less below, 0.25 a tick under 10%: 2.5 times normal's 2 and 0.1, at the same 80% and 10%;
+  - normal, normal, legendary and rare thrusters together burned 12.2 a tick of each (2 + 2 + 5 + 3.2);
+  - the rate follows the emptier of a thruster's two tanks: with the oxidizer 75 below the fuel, both fluids burned at
+    the oxidizer's rate;
+  - thrust, at speed 1.5 with full tanks: the speed gained a tick, less the drag measured with the thrusters off
+    (0.000671), was 1.300, 1.600, 1.900 and 2.500 times normal's (0.001409) for uncommon to legendary, and the mixed set
+    gave 6.1 / 4 of it. Quality's `default_multiplier` (1, 1.3, 1.6, 1.9, 2.5) scales burn and thrust alike, so thrust
+    per unit of fuel does not change.
+- Changes:
+  - `platforms` with `platform`: `after_pumps` burns at the thrusters' own quality and says which (`4 thrusters
+    (legendary x2.5) hold ... at full thrust 20 a tick in all (5 a thruster)`). Mixed qualities count as one pool at
+    their mean multiplier, said so. A last line names the fluid that sets the thrust.
+  - `thruster_burn` begins with the platform's thrusters by quality and their burn at full thrust (a tick, a second, a
+    minute), labelled the engine's figures, not measured use. The rule after it gives the normal burn as normal and the
+    quality multipliers, and its full-tank times for normal and legendary.
+  - The platforms row's `thrusters` gives the count by quality (`4 legendary x2.5, lowest tank 89%`).
+  - `platform_endurance`: `full_thrust` (that line) beside `fuel_outlook`, whose made and used stay the measured
+    statistics. The speed's ship check names a change of quality (`thrusters worth 4 normal ones then, 10 now (their
+    quality)`): legs record their thrust in normal thrusters' from now on.
+- Read on the copy: Resolute's `thruster_burn` gives 20 fuel and 20 oxidizer a tick in all, 72000 a minute of each.
+  For Sol's 12500 (3125 a thruster), the normal rule's 28 s of full thrust is 11.2 s at legendary.
+- Cost on the copy (the iMac): the quality reads and line for 4 thrusters take 0.012 ms. The geometry's thruster find
+  takes 0.30 ms, against 0.23 for main's count. The `platforms` read of Resolute's thrust fields took 6.5-11.5 ms a call
+  on this branch and 5.9-9.2 on main (5-call means, host noise). The whole Resolute row took 14-28 ms on both.
+- Docs: agent/ref/space-age.md (platforms, endurance; a topic file). Tests: tests/d27_batch294.lua (fails on main);
+  tests/thrust.lua, tests/space.lua and tests/d22_batch96.lua updated.
+- Bundle (compacted): 6,318,675 bytes on main (712a3c64), 6,323,707 with this branch (limit 8,388,608).
+
+## d27 batch289 (PR, Astra #2634: platform_ready refused in a platform lane)
+- Cause: the remote lane's wait check (queue_lanes.lua, the remote lane and every `platform:NAME` lane) took
+  `platform_built` and not `platform_ready`, while a direct wait_until took both. `agent/ref/waits-queues.md` gave both
+  in one sentence with the lanes.
+- `wait_until {until: "platform_ready", platform, positions?, area?, tiles?}` now runs in the remote and platform lanes
+  as a direct wait does, with the same arguments; the lane's refusal message names it.
+- `platform_ready` on the whole platform (no positions, area or tiles) counts entity ghosts too (`entities: false`: the
+  tile ghosts only); it counted the tile ghosts alone before, as `platform_built` does. With a subset both count that
+  part's entity and tile ghosts. saw: `platform NAME: N tile ghosts left, M entity ghosts`, or `platform NAME, the part
+  asked: M entity ghosts, N tile ghosts left`.
+- No other condition the waits reference gives for the lanes is refused there (tools/test_lane_waits.py reads both).
+- Tests: tests/d27_batch289.lua (the check on the whole platform and a part; queued in lane platform:Resolute and the
+  remote lane, not met then met; it fails on main's queue_lanes.lua); tools/test_lane_waits.py.
 ## d27 batch283 (WP, Sol #2612: produced waits called a working machine gone)
 
 - Sol's remote-lane `wait_until {until: all, conditions: [5 produced]}` on Vulcanus (four processing-unit machines,
@@ -16759,6 +16862,32 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - tests/d27_batch283.lua covers Sol's five members on another surface, the same machine twice, `counter_from` twice,
   `any`, a machine that is gone, two platform members and a record from before. It fails on main with Sol's message.
 - Bundle (compacted): 6,280,624 bytes on main (e67afa91), 6,281,235 with this branch (limit 8,388,608).
+
+## d27 batch291 (LS, Sol #2638: each lab's speed and full-speed pack use, from the engine)
+
+- Sol rebuilt the full-speed demand of 30 labs from beacons by hand three times (173.1, 158.34, 172.15 a minute) to
+  set a freight cap, with a source proven at 172.8 a minute; the 10-minute statistics of starved labs cannot stand in.
+- Engine facts (2.0.77, the iMac copy, world n's save at tick 73616015: 30 biolabs on Nauvis researching
+  low-density-structure-productivity, units of 3600 ticks and one each of 5 packs, the force's
+  laboratory_speed_modifier 2.5):
+  - a lab's `speed_bonus` is its modules' and beacons' (`effects.speed`) plus the force's lab speed: 0.67 + 2.5 = 3.17;
+    `productivity_bonus` is its modules' plus the force's laboratory_productivity_bonus (0.4, 0.5 with 0.1 set);
+  - researching speed by quality (`get_researching_speed`): biolab 2, 2.6, 3.2, 3.8, 5; lab 1, 1.3, 1.6, 1.9, 2.5;
+    `science_pack_drain_rate_percent`: biolab 50, lab 100;
+  - measured: a biolab cut off from its inserters and filled, its packs' durability over about 11000 ticks: 5.845 of
+    each pack a minute at modules and beacons +0.67, 4.550 at +0.30. Those are 2 x (1 + 0.67) x (1 + 2.5) = 11.69 and
+    2 x 1.3 x 3.5 = 9.1 units a minute at 50%: the two bonuses multiply. The summed speed_bonus would give 4.17 and
+    3.8. Productivity (+40% on both) changed no pack use.
+- `labs` now gives `full_speed` {labs, units_per_min, progress_per_min (with productivity), packs_per_min, line} for
+  the labs read, `lab_rates` (a line a lab, the first 64) and each group's figures at the end of its line; `inspect` on a
+  lab gives `research_rate` {speed, researching_speed, modules_beacons, force_lab_speed, drain_percent, productivity,
+  unit_s, units_per_min, packs_per_min, line, note}. All are the engine's figures at full supply for the current
+  research; what was used stays in `science` (the 10-minute statistics).
+- Read on the copy: the 30 biolabs on Nauvis at full supply research 311.15 units a minute (454.7 with productivity)
+  and use 155.58 of each pack a minute. The two measured labs read 5.85 and 4.55, as measured.
+- Cost on the copy (the iMac, native): the new reads and lines for 30 labs, 0.43 ms. The whole labs read of Nauvis
+  through dispatch took 18.5 ms with them and 18.2-29.6 ms on main's runtime (the existing read: groups, feeders,
+  sources), so the added part is under 0.5 ms; the read itself was over 10 ms before this change.
 ## d27 batch284 (AT, Sol #2619: the made wait timed out before the batch's own estimate)
 
 - Sol's assembler_batch for 100 accumulators in an assembler 2 at crafting speed 1.05 said "the 100 crafts take about
@@ -16791,6 +16920,63 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Bundle (compacted): 6,298,628 bytes on main (d8cc948e, batch280 and batch281 in it), 6,300,749 with this branch
   (limit 8,388,608).
 
+## d27 batch292 (IP: an unset engine inserter target with a belt on the tile, Astra #2639)
+
+- Engine facts, 2.0.77 on the iMac copy of world n (d27 18:40-19:10; bulk inserters on a powered test pad on Nauvis,
+  and Resolute's own two):
+  - Built with a belt, chest, underground belt or splitter on the pickup point, every inserter has its pickup target:
+    working, idle with an empty belt, disabled by a circuit condition or by a logistic condition. An underground belt
+    or a splitter is the target itself. Built over the ground: nil.
+  - A belt or chest destroyed and built again on a disabled inserter's pickup point (circuit or logistic condition)
+    leaves `pickup_target` nil while it stays disabled. Resolute's bulk inserters at (+-6.5,320.5), disabled by
+    `signal-S < 0`, read nil with a transport belt on (+-7.5,320.5). Enabling one set it within 407 ticks. Disabled
+    again, it kept it; the belt destroyed and built again under it, nil again.
+  - An enabled idle inserter's target was nil right after the rebuild and set within 3 s. A rebuilt drop chest was the
+    drop target again within 3 s, disabled or not.
+  - The tile's own entity (`find_entities_filtered{position=pickup_position}` of a type an inserter uses,
+    targets.lua `standing`) is the entity the engine targets once the inserter runs: the belt, underground belt,
+    splitter (either tile) or chest.
+- Change: targets.lua `unset(e, side)` gives what stands on a built inserter's point when the engine's target there is
+  nil: `transport-belt (-7.5,320.5) on its pickup tile` and `the engine's pickup target is unset until the inserter
+  runs` (drop: `the engine's drop target is unset`). Every reply that said the ground or no target uses it, and says
+  the ground only when nothing stands there:
+  - inspect: `io_warning` `pickup target unset by the engine (transport-belt (-7.5,320.5) on its pickup tile)`;
+    `pickup_unset` and `drop_unset` (with drop_unset no `drop_tile`); `io` `... transport-belt (engine pickup target
+    unset) -> ...`; the circuit line `picks from transport-belt (-7.5,320.5) on its pickup tile (the engine's pickup
+    target is unset until the inserter runs)`; `pickup_wait` for an enabled idle one.
+  - The compact line names each point's entity: `picks at (-7.5,320.5) transport-belt (engine target unset), drops at
+    (-5.3,320.5) fusion-reactor`; `(nothing there)` for the ground.
+  - feeders `takes_from`, the defense, hauling, networks and platform alert feeder lines, and platform_supply's takers
+    (an inserter whose pickup target is unset with the entity on its tile counts as its taker, said so). The
+    platform trace's pickup index counts it too.
+- Cost on the iMac copy, the same calls on main's runtime and this branch's (12 repeats each, LuaProfiler around the
+  dispatch): inspect of Resolute's inserter 5.2 / 5.9 ms main, 5.0 / 6.7 branch (min / median); compact 4.8 / 6.1
+  main, 4.6 / 5.4 branch; a compact area read of Resolute's 15 inserters 13.9 / 15.5 main, 13.9 / 15.3 branch. The
+  extra find runs only for a nil target.
+- Docs: agent/ref/building.md (inserter targets). Test: tests/d27_batch292.lua (fails on main: no `unset`).
+## d27 batch295 (HS: an inserter's hand size always, Astra #2646)
+
+- Astra: Resolute's gun at (16,-52) starved twice; inspect gave no hand size with no override, and agents read hand 1
+  from held 1 where research made a fast inserter's hand 3.
+- Engine facts (2.0.77, the iMac copy of world n): hand size = 1 + the prototype's inserter_stack_size_bonus
+  (stack-inserter 4, the others 0) + the force's bulk_inserter_capacity_bonus (bulk-inserter, stack-inserter) or
+  inserter_stack_size_bonus (burner, basic, long-handed, fast). Quality changes none of it. An override above 0 caps
+  it; one above the most reads back as set and the most applies. A circuit's set stack size writes the override (1
+  with no signal, 0 when turned off). `inserter_target_pickup_count` reads the result at once.
+  - From a belt every inserter waited at the belt for a full hand (compressed turbo, sparse, moving or stopped). From
+    a chest holding 1, all but stack-inserter swung with 1.
+  - A compressed turbo belt, 60 s: basic 50, long 72, fast 144 swings a minute of 3 (their arm turns); bulk 86 of 12
+    and stack 75 of 16 stopped, 78 and 64 moving. One item every 16 ticks on one lane: a basic inserter took none.
+- inspect (built or ghost): `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max`, `capacity_bonus
+  {name, force, prototype}`, `hand_size_by_circuit`, `held_count`, `swings_per_min`, `items_per_min_most`, and
+  `hand_line`. The compact line: `hand size 3 (no override; most 3)`.
+- platform_defense feed: each turret row's `feeders` with the same fields, `feed_per_min_most`, and `uses_per_min` /
+  `uses_ammo` (ammo_use's full fire of the ammunition it holds). Each feeder in the turret's line: `fast-inserter
+  (15.5,-53.5) hand size 1 (override 1; most 3), at most 144/min`, and the line opens `holds 12 (uses 150
+  firearm-magazine/min at full fire, its feeders move at most 576/min)`.
+- Docs: agent/ref/building.md (inserter hand size). Test: tests/d27_batch295.lua (fails on main: details has no
+  `hand`).
+
 ## d27 batch287 (BT: platform_bom's tail minimum no longer sticks, Astra #2631)
 
 - Found (platbom.lua apply): an item with no min_payload of the user's took its base from the slot as it stood
@@ -16810,3 +16996,399 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   default)`.
 - Docs: agent/ref/space-age.md (`tail: true`). Test: tests/d27_batch287.lua (fails on main: the 6 stays with 753
   asked).
+- Bundle (compacted): 6,301,820 bytes on main (b04e89ca), 6,307,212 with this branch (limit 8,388,608).
+## d28 batch299 (IC: the operator inbox read pages oldest first; CV: a failed cover handoff stays pending; viewer Aurora)
+
+- IC (Aurora site 00:47): `operator_requests` (tells.lua, an operator read) returned the newest `limit` (30) after
+  `since`, and live.py moved its cursor to the newest row it got. With more than 30 waiting (the stream service down
+  or restarting while agents file), the older ones never reached runs/RUN/operator-inbox.jsonl. It happened once in
+  the logs: shift13 at 16:55:36 (d14) read 188-217 after 172, and 173-187 are missing from shift13's inbox (shift12's
+  file had them).
+  - The read now returns the oldest `limit` after `since`, oldest first, with `more` (how many after them still to
+    read), `cursor` (the newest seq filed, as before) and `trimmed` (how many after `since` left the kept log of 200
+    before the read; absent when none).
+  - live.py writes each page and moves its cursor to the last row written. It reads again in the same poll while
+    `more` is above 0 (at most 8 pages a poll; the rest next poll). A `trimmed` count goes to the poll's errors as
+    `operator_requests_trimmed`. An older runtime (no `more`) gets one read a poll, as before.
+  - Test: tools/stream/test_operator_inbox_paging.py runs tells.lua in `lua`, with storage kept across reads and
+    service restarts, files through the `operator` handler and polls through live.py into the inbox file (45 while
+    down, 31 more across a restart, the kept log trimmed, a fresh world). On the iMac copy, the branch runtime with 36
+    requests waiting gave 2 reads in one poll (30, then 6), all 36 written in order once, in 21 ms.
+- CV (Aurora site 00:46): tools/idle_nudge.py marked a handoff's episode sent even when it did not go (no active lead,
+  or the tell refused), so it was never tried again in that episode. Now the episode stays pending: each poll tries
+  again, the log (nudges.jsonl and the log line) has one row for each kind of failure in the episode (`pending: true`),
+  and the handoff is delivered once, when a lead is active and the tell goes (`after_failed`: the failed tries).
+  The back-off counts delivered handoffs only, as before. Test: tools/test_idle_nudge_pending.py.
+
+## d27 batch297 (DR: place_ghosts' dry run and the real call refuse the same entry configure, Astra #2649)
+
+- Astra (tick 74609990): a place_ghosts dry run read ok for a stack-inserter with configure {filters
+  firearm-magazine, hand_size 16, wait_for_full_hand false}. The real call placed it and refused the whole configure
+  (the wait), and the platform built an unfiltered stack inserter that put rockets into a magazine buffer.
+- Engine facts (2.0.77, the iMac copy of world n): the engine refuses none of these settings. A stack-inserter ghost
+  takes filters (5 slots), use_filters and any stack size override (99 reads back), and the inserter built from it
+  keeps them. There is no wait_for_full_hand key on a ghost or a built inserter to read or write. The refusal was the
+  harness's: configure's wait_for_full_hand takes only the prototype's own value (stack-inserter true, the others
+  false) and refused the whole call, and hand_size above the hand size now (1 + its own + the force's bonus) the same.
+  The dry run checked neither.
+- Fix:
+  - entryset.check (run first by place_ghosts, build, their dry runs and dry_run) checks an entry's configure
+    wait_for_full_hand and hand_size with the functions configure runs (details.configure_wait_for_full_hand,
+    hand_size_want) on a stand-in of what the call places, of the force's hand size: a refusal places nothing, the
+    dry run and the real call alike.
+  - A configure asking for filters (filters, filter, use_filters, filter_mode, storage_filter) refused after placing
+    (a chunk our force does not see now, a refusal of the moment): the entity is removed again (a ghost destroyed, a
+    hand build mined back into the inventory), the row's `removed`, `removed_unfiltered`, the summary says so.
+  - Other refused settings leave the placement as before (`placed_without`).
+- On the copy: Astra's call, dry run and real, refused with the wait reason and nothing placed; with wait true (or
+  none) the ghost took filter, use_filters and hand 16; hand_size 17 refused before placing; a fast inserter with
+  filters in an unseen chunk: `asked for filters: its ghost removed`, the entry beside it kept.
+- Docs: agent/ref/building.md (entry settings). Test: tests/d27_batch297.lua (fails on main: Astra's settings pass the
+  check).
+
+## d27 batch296 (FA: a flight watch's end alert said the railguns' fire, not the damage taken, Astra #2647)
+
+- Found (flightwatch.lua finish): the end alert in team.alerts was the turrets' phrase (`M.worst`), the power phrase
+  (`M.power_text`) and the ammunition used. It never had the damage taken. The power phrase's railgun part
+  `0 hits (0 shots that hit), 0 damage, 0 kills` is the railguns' own fire (on_entity_damaged with a railgun as the
+  cause). Resolute's watch #1469 (gleba->aquilo, guard 32's pause at tick 74365680, then a coast to Aquilo) took one
+  2317.4 hit from a medium oxide asteroid while its railguns hit nothing, so the alert read "0 hits, 0 damage" and
+  `flight_watch {id: 1469}` read 1 hit, 2317.4. The damage itself was never lost: there is one source (platalerts'
+  running totals, the change from the watch's start), with no reset at a pause and no window starting at the coast.
+  The read at tick 74366418, during the pause, already had the hit.
+- Fix: the end alert starts with the damage taken and the losses: `damage taken 2317.4 in 1 hit (railgun-turret
+  2317.4); 0 lost`. It is the same phrase `flight_watch {id}`'s line has, built by one function from `totals()` of the
+  values the watch kept at its end, which `{id}` reads once done. The railgun part now reads `their fire: N hits (N
+  shots that hit), N damage dealt, N kills`, in the alert and the line.
+- Docs: agent/ref/space-age.md (flight_watch). Test: tests/d27_batch296.lua (fails on main: no damage taken in the
+  alert); tests/d22_batch98.lua's railgun phrase updated.
+## d27 batch298 (FW, Sol #2652: the fuel warning cried runout over batch production)
+
+- Found (endurance.lua fuel_outlook, platalerts.lua fuel_level): the outlook took made and used from the fluid
+  statistics' last minute and divided only what the thrusters and storage tanks held by the difference. Resolute's one
+  maker of each fluid (a chemical plant, advanced-thruster-fuel and -oxidizer: 1500 a craft, 10 s at speed 4.75, 2.11
+  s) counts a batch when its craft ends, so a minute held 9 or 10 batches. On the iMac copy (world n's _autosave6,
+  Resolute flying aquilo->gleba->vulcanus->nauvis) the thrusters' tanks stayed level at 1137.8 fuel and 842.1
+  oxidizer, as Sol read them. Used was 14400 a minute; made was 13500 in 95 of 235 one-minute windows and 15000 in
+  140, and 42000 or 43500 in 180 s windows. Main's outlook read `thruster-fuel 1138 held, made 13500/min, used
+  14403/min: runs out in 1m18s` (urgent: under 2 minutes at the rates now) every other minute. The fluid in the pipes
+  (Sol's 4800 and 4500 before the pumps; 8500 between the pumps and thrusters at full) was not counted.
+- Engine facts (the copy, 2.0.77):
+  - A thruster's fluid box answers `get_fluid_segment_id` with its pipes' segment, but the segment's contents leave
+    the thruster's own tank out. Pumps' and crafting machines' boxes have no segment.
+  - The segments beside the thrusters, storage tanks, pumps and makers' outputs, plus the thrusters', pumps' and makers'
+    own boxes: their sum changed by exactly made less used (the surface's fluid statistics) on every tick of 18333
+    ticks of flight, to 0.00.
+- Change (endurance.lua):
+  - Rates: the engine's longest sample all in this leg (180 s, else 60 s; engine.lua samples once a second), else the
+    statistics' last minute as before. The line says `over the last N s` when a sample is used.
+  - aboard: the fluid in the thrusters, tanks, pipes, pumps and makers' outputs, by fluid segment (one contents read a
+    segment). Held stays the thrusters and storage tanks. How long it lasts is aboard over used less made.
+  - Batches: the machines whose recipe makes either fluid, and the pumps, found by name (the machine names that can
+    craft those recipes' categories, and the pump names) and kept a minute a platform in storage. The line says
+    `made in batches of 1500 by 1 chemical-plant: advanced-thruster-fuel, a craft each 2.11 s at full speed, 42750/min;
+    34% of that made over the last 180 s`.
+  - A deficit within a batch a maker over the window (step: Resolute's 500/min over 180 s, 1500/min over 60 s) is
+    `used over made by N/min, within a batch a maker over N s (N/min): no deficit measured`, not short. Two
+    conditions: batches landed in the window (or a craft at full speed takes over half of it), and what is aboard
+    lasts 2 minutes or more even so. The copy's stopped fuel maker (1 left, 183/min used) read as within the step
+    before the first condition.
+  - Rows add aboard, window_s, batch {size, makers, recipes, craft_s, full_per_min, share, step, step_per_min} and
+    within_step; the outlook adds window_s.
+- Change (platalerts.lua):
+  - The scans' stock is aboard (held where the outlook has no aboard). A fall counts only past a batch a maker, in the
+    "fell ... at that fall it lasts" rule and the two-scans rule.
+  - Urgent at once (under 2 minutes at the rates now) only while the stock falls: lower than the scan before or a
+    minute ago, or no scan before.
+  - fuel_slope: a fluid the rates do not call short whose stock fell by more than a batch a maker from the first scan
+    kept at 90 s or more into the leg (up to 5 minutes back) at a fall that runs it out before the leg ends is short,
+    and urgent: `thruster-fuel aboard fell 8400 -> 6400 in 300 s, more than a batch a maker (1500): at that fall it
+    lasts 16.0 min, the leg 20.0`.
+  - The advisory says `at the rates over the last N s`. The trend adds `aboard with the pipes, pumps and makers A -> B`.
+- On the copy with this branch: 100 s into a leg, `made 13500/min, used 14478/min over the last 60 s: used over made by
+  978/min, within a batch a maker over 60 s (1500/min): no deficit measured`. No fuel alert in steady flight. With
+  the fuel maker stopped from the departure, 20 s into the leg: `urgent: thruster-fuel ... (thruster-fuel lasts 0m18s
+  at the rates now, under 2 minutes)`, aboard 6156 -> 1030.
+- Cost (the copy, endurance.lua loaded beside the runtime, Resolute, 20 calls each, 3 rounds): fuel_outlook 0.31-0.65
+  ms on main, 0.41-0.43 ms with the makers kept, 0.78-0.81 ms on the read a minute that finds them (all 147 assembling
+  machines by type with their recipes was 1.0-1.7 ms). The parts' validity, the segments and the makers' speed read
+  are the rest.
+- Docs: agent/ref/space-age.md (`fuel_outlook` and the alert), the schema text of `platform_endurance`. Tests:
+  tests/d27_batch298.lua (fails on main: Sol's flight runs out); tests/platalerts.lua (the advisory's wording);
+  tests/d22_batch96.lua (its fake counts the thruster and tank finds alone).
+- Bundle (compacted): 6,334,816 bytes on main (dfdcae3b), 6,343,604 with this branch (limit 8,388,608).
+## d28 batch300 (SR: a waited spidertron go_to ran to its timeout after another caller's clear, viewer Aurora site:5308)
+
+- Real. Through the runtime's dispatch with two callers on one spidertron (astra's `vehicle {go_to, wait: true}`, then
+  sol), on main:
+  - sol's go_to (replace or append): route_changed at the next read, as designed.
+  - sol's `clear: true`: the wait went on to its timeout (300 s by default, up to 900), then said `timed_out` with
+    "still walking after N s: no target: it stands".
+  - sol's `spider_kite` with it: the same, timed_out.
+  - a route set outside the harness (a player's remote): not seen; the wait went on and ended `arrived` at the
+    player's target.
+- Found (spiderroute.lua): `watch` told a change by its route entry's tick only. A clear (and spider_kite taking the
+  spidertron over) removes the entry with no end record, and with no entry `watch` returned nil: still walking. A
+  route set outside the harness keeps the entry, and the sampler takes the new route's last target as the one it is
+  going to.
+- Fix:
+  - Each route the harness sets or clears, by anyone, gets a number, who, how and the tick (`M.claim`: go_to, go_to
+    append, clear, clear and go_to, spider_kite). A waited go_to keeps the number its own go_to got (`set_seq`) and
+    ends `route_changed` at the first read after it moves on.
+  - A route whose last target is no longer the go_to's, with no such call, ends `route_changed` too, as set outside
+    the harness. A route rewritten round water, a back-off and the retreat keep their checks (the same last target;
+    `retreated` is read first).
+  - last adds `changed_by`, `changed_how`, `changed_tick`, and `why` says them: "its route was set again by sol
+    (clear) 2s after this go_to: no target: it stands". A wait begun before this deploy ends as before.
+  - arrived, stalled, unreachable, retreated, route_emptied (a player's clear is still that) and destroyed are
+    unchanged.
+- Docs: agent/ref/movement-combat.md, the vehicle action's wait text. Test: tests/d28_batch300.lua (fails on main: the
+  wait still running a second after sol's clear).
+## d28 batch306 (QL: logistic conditions explained at their quality; robot_dispatch names the network that builds, Sol #2672)
+
+- Sol (#2672): inspect compact explained `iron-plate@legendary < 400` with the normal count (reserved -54) and
+  `copper-plate@legendary < 100` with normal copper 31651; place_ghosts' dry run said network 954 (a character's
+  personal roboport) held none of the items while network 243 built 5 of the 6 in 9 s.
+- Engine facts (2.0.77, an OrbStack copy; the iMac was off):
+  - A logistic condition on `iron-plate@legendary < 10` reads the legendary count: 5 legendary beside 100 normal was
+    true, 20 legendary false, 0 true. A network's `get_item_count('iron-plate')` and `get_item_count{name}` both read the
+    normal 100 only; `{name, quality='legendary'}` the legendary.
+  - Two roboport networks A (found first) and B, construction areas overlapping, a ghost in both: the network holding
+    the item builds it (only A holds: A, though in B's logistic area; only B: B). Both holding: the one whose logistic
+    area holds the ghost (B at x 6040, A at 6020); in neither logistic area, A both times, nearer A or nearer B. A
+    legendary ghost took the legendary item from whichever held it.
+  - A character with a personal roboport is listed first by `find_logistic_networks_by_construction_area`; holding the
+    item it built the ghost inside B's logistic area while B held it too; holding none, B built it.
+  - Live with this runtime: a dry run named network 380 (B) for two normal chests and 379 (A, the only uncommon stock)
+    for an uncommon one; placed, B gave the 2 normal and A the uncommon.
+- Change:
+  - circuits.lua `item_id(signal)` ({name, quality}); inspect's compact condition line and `logistic_reads` count the
+    item at the condition's quality and name it `item@quality`; the reserved-beyond-stock note names it too (also in
+    gates and the off_by_condition alert). thrust.state_text names a circuit signal's quality.
+  - robottrips: jobs carry `quality` (place_ghosts, a requester's dry run, deconstruct); groups by item and quality;
+    `build_order` (personal roboports, the logistic-area network, the rest as found) and the first holding the item at
+    its quality builds; `by network N` on the trips line; a covering network that holds none of the items said once;
+    a ghost none holds it for names every covering network; counts and pickup points at the quality.
+- Tests: tests/d28_batch306.lua; tests/d17_batch34.lua's trips line ends `; by network 7`.
+
+## d28 batch303 (RQ: a crafting machine's recipe quality in inspect, scan, the rate line and bottleneck, Sol #2665)
+
+- Sol (03:56): inspect named the Needle crusher (-6,0.5)'s recipe bare; it runs oxide-asteroid-reprocessing at
+  legendary in a normal crusher, and two agents read compact lines as normal plastic.
+- Engine facts (2.0.77, the iMac copy of world n):
+  - `get_recipe()` returns the LuaRecipe and a LuaQualityPrototype. A normal machine runs a legendary recipe, and a
+    legendary machine a normal one: `entity.quality` is the machine's alone. LuaEntity has no `recipe_quality` key.
+  - A machine on a legendary recipe takes only legendary ingredients: inserting normal plates gave 0. With 3 legendary
+    plates held, `get_item_count('iron-plate')` read 0 and `get_item_count{name, quality='legendary'}` 3.
+  - A furnace's recipe quality comes from its input: legendary ore read iron-plate legendary and made legendary plates;
+    a legendary furnace on normal ore read normal. Idle, `get_recipe()` is nil and `previous_recipe` is
+    `{name = LuaRecipePrototype, quality = LuaQualityPrototype}`.
+  - An assembling machine's ghost keeps its recipe and recipe quality (`create_entity{..., recipe, recipe_quality}` and
+    `set_recipe(name, quality)` both take it), its own quality apart, and revive keeps them. A furnace ghost has none.
+- Change:
+  - runtime.lua `recipe_quality_of(e, previous)` (name, quality with normal, previous) and `recipe_label`.
+  - inspect: `recipe_quality` beside `recipe` (built and ghost; normal too), an idle furnace's `previous_recipe` and
+    `previous_recipe_quality`; area and position rows the same. Compact lines: `recipe legendary NAME` when not normal,
+    `recipe normal NAME` when the line names the machine's quality, and `last recipe ...` for an idle furnace.
+  - scan: rows of crafting machines and their ghosts add `recipe_quality` when `recipe`, `status` or `output` is asked.
+  - craftrate (inspect's `rate`, platform_bom, uptime): `recipe_quality`; the line opens `legendary recipe
+    (takes legendary ingredients, makes legendary products[ or better at its quality chance]): ...`; its io line names
+    the recipe with its quality.
+  - bottleneck: a recipe at another quality is its own group (`assembling-machine-2 legendary iron-gear-wheel x1`), and
+    its ingredients are counted at the recipe's quality (a legendary recipe read short with them held).
+- Tests: tests/d28_batch303.lua; mod/tests/runtime_test.lua's legendary compact line now says `recipe normal`.
+
+## d28 batch302 (FC: the flight watch read at most 128 ammo turrets and said nothing, Astra #2656)
+
+- Found (flightwatch.lua add_turret): `M.MAX_TURRETS = 128`. Over it a turret was not added and `w.capped` was set,
+  which only the full read's `turrets_capped` showed; no line said it, and which turrets were left out followed the
+  find's order. Resolute (129 ammo turrets, 32 railguns) lost its railgun at (18.5,380.5) from watch 1520.
+- The same kind of limit elsewhere: platform_rearm without positions topped up the first 256 found and said nothing;
+  the ammunition trace (ammofeed.lua, the watch's feed lines) traced 512 and said nothing; asteroid_watch
+  (`platform_defense {asteroids: true}`) watches 400 turrets of every kind and said only how many it watched. The
+  ammo_below guards (conditions.lua) read up to 1024 and refuse an area over that, so they cover the 129th
+  (tests/d28_batch302.lua). platform_defense's own count and platform_endurance have no limit.
+- Fix:
+  - flight_watch reads every ammo turret aboard up to 1024. Each find (at the start and every minute) counts them:
+    `turrets_total`, `turrets_read`, and past the cap `turrets_left_out` and `turrets_capped`; `turrets_count_line`
+    and the start line, the begin alert, the end alert and the read's line say "N ammo turrets (R railguns, all N
+    aboard)" or "(K more aboard not read: a watch reads at most 1024; T at the last find)".
+  - A sample reads 256 a tick (`M.PAGE`); the rest on the ticks after (each turret still once a second, its empty
+    ticks counted from its own reads).
+  - A watch running at the deploy: its 128 keep their baselines and samples; the ones the old cap left out are added
+    at its next find (within a minute), each from that read, marked `uncapped` with "read from +Ns (an earlier cap of
+    the watch left it out until then)".
+  - platform_rearm without positions takes every ammo turret aboard up to 1024 and refuses more (name positions).
+    The ammunition trace traces 1024 and says `turrets_capped` past that. asteroid_watch's start says its turrets
+    `turrets_total` and `turrets_capped` past its 400.
+- Measured on the iMac copy (world n's shift90 save, branch runtime, profile_ticks 30 s each, Resolute flying or
+  stopped with a watch running): 129 turrets, one call a second, 0.74 ms average (worst second 2.35 ms with the
+  minute's find); 300 turrets (171 gun turrets added on the copy), two calls a second (256 + 44), 0.62 ms average a
+  call, 1.3 ms a second; 1100 turrets (1024 read), four calls a second, 1.04 ms average a call, 4.3 ms a second,
+  worst second 10.1 ms over its 4 calls in a garbage-collection second. On the same copy, Resolute's watch #1522
+  (begun under the old runtime, 128 read) added the railgun at (18.5,380.5) at its first find after the deploy.
+- Docs: agent/ref/space-age.md (flight_watch, platform_rearm). Test: tests/d28_batch302.lua (fails on main: 128 of 129
+  read); tests/d21_batch72.lua, d22_batch98.lua and d24_batch151.lua's start lines updated ("all N aboard").
+## d28 batch301 (LS, Astra #2654: a queued load_silo that split appended its rockets after the later steps)
+
+- Found (runtime.lua load_silo_run; scheduler.lua): a launch over one rocket's lift or slots, and `rockets: N`, queued
+  their rocket steps with `queue_submit` mode `append`. In a queue the scheduler takes a step off pending before it
+  calls the step's handler, so the steps that follow are already pending and the rockets went behind them all. Astra's
+  body job 37499 (500 magazines to Kestrel IVb, 5000 kg: 5 rockets of 100) returned success; job 37500 put the auto
+  requests back before any rocket launched, and the reset after it failed with the 500 still held. load_silo runs in
+  the body lane only (the remote and platform lanes refuse it at submit), so the body scheduler is the one place.
+- Change:
+  - scheduler.lua: the step a handler runs as is kept per agent while its call runs (`running_step`), and
+    `insert_after_running(p, steps)` puts steps right after it, before the steps that follow, in order. They are
+    checked as a submit checks them, in the running step's plan (its step count grows) and its standing order's run
+    (its total grows). With no room (capacity 128, the byte budget) it is refused and nothing is queued.
+  - runtime.lua: the split and `rockets: N` go through one helper. A call running as a queue step becomes its rockets
+    in place: `split` or `note` says `this step job-1 became 5 load_silo steps (job-4, ..., job-8), run right after it
+    and before the 2 steps that follow in your queue`, and the reply adds `in_place`, `steps` (their ids) and `behind`.
+    No room: the step fails with `the list is over one rocket (...) and goes as 5 rockets, which this queue step could
+    not become in place (queue capacity exceeded: 125 pending and 5 more is over 128); nothing loaded or queued: load
+    less a step, or launch_split: false for one rocket`. A direct call appends as before.
+- Docs: agent/ref/space-age.md (`load_silo`), the schema text of `rockets` and `launch_split`. Test:
+  tests/d28_batch301_rt.lua (the real runtime and scheduler against a fake engine, each rocket's load stubbed; fails
+  on main: `load, restore auto_requests, reset personal max, rocket 1 of 5, ...`).
+- Bundle (compacted): 6,343,736 bytes on main (61eaf3bc), 6,346,414 with this branch (limit 8,388,608).
+## d28 batch305 (NR: shared checked routes across agents and shifts, read again before reuse; Updates row nav-shared-routes, viewer Aurora)
+
+- The design is batch243's item 5. Built in sharedroutes.lua, with spiderpath.lua, spiderroute.lua and vehicles.lua
+  using it.
+- Kept:
+  - Every path the pathfinder finds round water for a spidertron, and every turning-room path to the target for a car
+    or tank (the drive's first plan), is kept in harness storage (`storage.agent_harness.sharedroutes`).
+  - Each route has its points (a spidertron's as thinned for its route; a drive's corners with legs cut to 16 tiles),
+    the surface and kind (spider; or drive with its box half-size and collision layers), who asked, the tick (`asked`)
+    and the shift (from `shift_start`).
+  - Per leg it keeps a fingerprint: the tile under each point `spiderpath.segment` reads on the line, one per tile,
+    as runs of tile codes (3 bytes a run). A drive's leg also keeps its corridor counts: entities whose layers meet
+    the vehicle's (movers left out: units, characters, vehicles, trains, spider legs, corpses, items on the ground,
+    ghosts, robots, projectiles, fire), and tiles that do, in the leg's box widened by the vehicle's half-size.
+- Read again before every reuse (`check`), in the call. A leg is stale when:
+  - a fingerprint tile changed (named: where, what it was, what it is now);
+  - for a drive, a corridor count changed, or a chunk within the leg's box plus 6 tiles was marked after the leg was
+    read. Marks come from build, mine, death, nest and tile events; equal counts can hide one thing removed and
+    another built.
+  - The whole route is stale once it was asked over 2 game hours ago (`MAX_AGE` 432000 ticks).
+  - A spidertron's legs step over entities (its paths use the doodad layer, which no building has), so its legs are
+    read by tiles only. The fingerprint holds every tile segment() reads, so an unchanged one reads as it did when the
+    path was found. Every 4 tiles (batch243's sketch) would miss two tiles that join two runs of water.
+- Reused:
+  - `vehicle {go_to}` (each segment that crosses water its legs cannot step across) and `vehicle {drive}` (its first
+    ask) take the stored route nearest from here to the target: its first point within 8 tiles (a drive: 6) of the
+    start and its last within 8 (a drive: its tolerance, 3) of the goal, either way. A drive also needs a route asked
+    for a box at least as big as its own and the same layers.
+  - All legs unchanged: the route is used in the call, with no path asked. The reply's `shared_route` (a drive's
+    `last.shared_route` too) says `reused route N (checked at tick T): asked by sol at tick T0 (3m ago, shift 89);
+    its 14 legs unchanged`. A spidertron's route is written at once (no alert).
+  - Stale legs: those legs and the legs between them are asked again as one stretch, from the first stale leg's start
+    to the last one's end. The path is spliced in, the route updated for the next use, and the rest kept. The line
+    says which legs were reused, which were asked again and why (the first two reasons). No path, or the route changed
+    meanwhile: the whole way is asked as before.
+  - Not used, and the pathfinder asked, saying why: a route asked over 2 hours ago; a line from the start to the
+    route, or from its end to the goal, that crosses water (a spidertron) or holds something the vehicle collides with
+    (a drive); a named route that does not fit; `reuse: false`.
+  - A recovery after a stall (gap 0: its legs failed to cross) never takes a stored route.
+  - A route a drive gets stuck on, or a spidertron stalls on, is dropped from the store (said in last.shared_route or
+    the stall's alert).
+- Args (vehicle): `reuse` (default true), `route: N` (that one only) with drive or go_to; `routes: true` lists the
+  routes on the agent's surface, nearest first (up to 20), with the store's counts.
+- Storage:
+  - At most 100 routes; over that, the one used or kept longest ago is evicted (`evicted` counts them).
+  - At most 240 legs and 3000 tiles a route; a longer path is not kept.
+  - A new route from and to the same places (within 8 tiles, either way) replaces the old one.
+  - Chunk marks are kept only on surfaces that hold a route, at most 4096. Over that, marks older than every route's
+    legs on their surface are dropped; if still over, the surface counts as marked at that tick.
+  - A route is plain data (numbers and strings); the store has a version, and a runtime with another version starts
+    it empty.
+- Across shifts: the store stays in the save. `shift_start` names the shift (its reply has `routes_kept`), routes
+  asked from then on carry it, and a later shift's reuse reads them again first like any other (tests/d28_batch305c).
+- control.lua forwards ten more events: on_robot_built_entity, script_raised_built, script_raised_revive,
+  script_raised_destroy, on_biter_base_built, and the player, robot and script tile events. This is a mod update,
+  taking effect when world n restarts with the new mod folder.
+  - Until then, marks come from the forwarded hand builds, mines and deaths.
+  - A robot-built entity in a drive leg's corridor still changes its count. A tile changed by a robot still changes
+    the fingerprint (on the line) or the tile count (in the corridor).
+- Tests:
+  - tests/d28_batch305.lua (cp1): the store, check, marks, bounds, and keeping from spiderpath and the drive.
+  - tests/d28_batch305b.lua (cp2): go_to and drive reuse, the splice, the fallbacks, the drop on a stall, the list.
+  - tests/d28_batch305c.lua (cp3): the carry across shifts and the wiring.
+  - tests/vehicles.lua: a drive's route kept, reused and dropped through `runtime.dispatch`.
+## d28 batch307 (UF, Astra #2673: a kept item-only uptime watch read by id lost its flow totals)
+
+- Cause (uptime.lua `M.read`): the paged read built only machine rows and the watch's fields. It never added `flows`,
+  for any watch, running or done. `uptime {}` returns the final (`M.result`), which has `flows`, so an agent's own
+  current watch showed them and a read by id never did. A kept watch still held `result.flows` (`M.keep` left out only
+  lines, rows and group lines), with its rows dropped above `FLOW_ROWS` 10. The flows carried no start or end tick.
+- Change: `M.flows_result` gives `start_tick` (the watch's start) and `end_tick` (the tick it was read: a done watch's
+  end). `M.result` of a done watch (at its end, when a new watch replaces it, or when `close` makes it a segment) keeps
+  its flows whole as `job.flows_done`; the final's copy still leaves rows out above 10. `uptime {read: true, ...}`
+  gives `flows` {surface, start_tick, end_tick, rows (every row), line} on every page of a watch with items, for any
+  agent: a done, kept or segment watch's as kept, a running one's read now. A watch done before this runtime gives its
+  final's flows, ticks from the watch, and `rows_left_out` when its rows were dropped. The page line adds `; flows: N
+  rows of the production statistics, ticks A-B`. Only machine rows page.
+- Bound: at most `ITEMS` 8 items x the visible qualities (5 in Space Age) = 40 rows a watch, about 8.4 KB serialized
+  with its line at 40 rows; a done watch with items keeps one such table (with 10 rows or fewer, the final shares it).
+  The kept and segment bounds (4 kept, 4 segments each) are unchanged.
+- Docs: agent/ref/analysis.md (`uptime {read: true}`), the schema's `read` and `returns`. Test: tests/d28_batch307.lua
+  (an item-only watch read by id while running, after it finished, after a new watch replaced it, replaced while
+  running, by the other agent; 15 rows on both pages of a 20-machine watch; a segment; a watch kept before this
+  change); fails on main: `a running watch's flows by id`.
+
+## d28 batch304 (EC, Updates row endurance-cost: the plain platform_endurance under 10 ms on world n)
+
+- Found (a copy of world n's 03:58 save on OrbStack, timers per part inside the read; main's runtime): Resolute's read
+  took 15.3 ms of a 18-22 ms call, Asterion's 15.6 of 16-24. Most of it was a dozen passes over the platform's whole
+  surface, each about 0.3 ms plus 1 us an entity found (world n's finds cost the same; its Lua runs about twice as fast,
+  and it writes numbers about 10x faster than the copy):
+  - the thrusters' and tanks' fluids read six times a call (the ammunition model's fluid ingredients, the fluid rows,
+    the fuel outlook), each a find or a background-list count and every fluid box;
+  - separate finds for the turrets and machines (stock), the assembling machines (the model's makers), the solar
+    panels, the status count (1015 entities on Resolute, 674 of them inserters), the thrusters (twice: the speed's
+    geometry, the outlook's thrust), a pole for the power line;
+  - the speed read twice (the read and its fuel outlook), with its geometry's tile counts each time;
+  - every item prototype read twice a call (the ammunition list, the chunk list), each item's statistics at all 6
+    qualities, the ammunition trace's belt count by type.
+- Change (every figure the same: main's and this branch's replies compared field by field on the paused copy for 11
+  platforms, 4 flying, and with forecast: true for 4):
+  - endurance.lua: one find a call of the types the plain read looks at, sorted by type and kept by platform in storage
+    (`endurance_scan`: entities only, never what they hold); each call counts those types and checks each kept one is
+    still valid, and finds them again when the count differs or one is gone. Read once a call and shared: the fluids
+    (all of them, each asked set taken from it), the speed and its geometry, the thrusters for the outlook. The power
+    line reads the platform's own network (a pole's statistics there are the surface's; no pole found). Statistics
+    reads take the totals since the game began once a call: an item never counted reads 0 with no read, one only ever
+    counted at normal is read at normal alone. The status count walks the lists by type and reads a turret's buffer
+    only when it is on low power. The ammunition, repair pack and chunk names and the space connections are read once a
+    session.
+  - ammomodel.lua: the makers from the caller's machines, indexed by product once a call; a recipe's products read
+    once a session. freight.lua: stock_places takes the caller's turret, machine and inserter lists; geometry takes
+    the thrusters and finds each hull edge by halving its 32-column strip (16-18 tile counts, not up to 60; the same
+    widths for all 19 platforms on the copy). thrust.lua: qualities takes the thrusters. ammofeed.lua: the belt count
+    goes by belt names (the same count, 0.74 ms against 2.56 on Resolute); a background read asked for with one done
+    says the belts that read covered (its `as_of`), not a count now.
+- Cost on the copy (Mac under load, medians): the read 15.3 -> 7.7 ms (Resolute), 15.6 -> 6.7 (Asterion), 9.6 -> 5.8
+  (Kestrel II); whole calls 18-22 -> 11-12, 16-24 -> 8.6-9.4, 13-15 -> 8.8-9.8 (the copy's number writing is about
+  4.6 ms of Resolute's 121 numbers, about 0.5 on world n).
+- Test: tests/d28_batch304.lua (fails on main: its first call on the fake platform makes 12 finds, against 2 here: the
+  one find and the belts, which both find with no background read yet).
+- Bundle (compacted): 6,353,761 bytes on main (eb7839f3), 6,358,489 with this branch (limit 8,388,608).
+
+## d28 batch308 (FT, viewer Aurora site:5343: follow-through after a job ends while its project stays open)
+
+- Found (runs/shift85-91 journals, chat, operator tells): Astra's #2516 (LDS productivity) read `doing` for 10h45m
+  across two shift changes after its step 2 was done; 14 of its 20 ten-minute lines in shift86 said `progress seen`
+  from the entities in her Aquilo freight claim #1099 (the project has no area), which also held off its stalled
+  count; no reply or line said that nothing had been written on it since the step. Luna's #2518 kept a written hold.
+- Change:
+  - board.lua: `board_update` adds `follow_through` when it marks a step done, or closes (done, dropped) an item whose
+    `parent` project stays open and not blocked: the project, progress, next step and owner, and what answers it (a
+    note with the step taken next, status blocked with what restarts it, or status done or dropped). Nothing is
+    decided; the owner writes it.
+  - progress.lua: a project is read in its own area only (a task or request with none still in its owner's claims);
+    the ten-minute line of a project not blocked whose board entry is unchanged since its last step was done
+    (`FOLLOW`, an hour or more) says so, with the same three answers.
+- Docs: agent/ref/team.md (`board_progress`, `board_update`), the schema texts. Test: tests/d28_batch308.lua (fails
+  on main: no `follow_through`).
+- Bundle (compacted): 6,362,465 bytes on main (b59129f9), 6,364,920 with this branch (limit 8,388,608).

@@ -11,7 +11,7 @@
 -- MAX_BELTS belts read per turret, 512 turrets.
 return function(api)
   local M = {}
-  M.MAX_BELTS, M.MAX_TURRETS, M.LOW = 4000, 512, 10
+  M.MAX_BELTS, M.MAX_TURRETS, M.LOW = 4000, 1024, 10  -- (d28 batch302 FC) turrets: as a flight watch reads, any more said
   -- (d17 batch23 A2, operator 23:47: a whole Kestrel II trace is about 25 ms, over the 20 ms a command may take on n)
   -- platforms with more than SYNC_BELTS belts are read in the background, READ_PER_TICK belts a tick, and their trace
   -- computed from those reads in one tick; a read is fresh for FRESH ticks.
@@ -383,7 +383,10 @@ return function(api)
     end
     local rows, reached_belts, reached_src, any_hub = {}, {}, {}, false
     local hub_inv = hub and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
-    local turrets = try(function() return s.find_entities_filtered{type='ammo-turret', force=f, limit=M.MAX_TURRETS} end) or {}
+    local turrets = try(function() return s.find_entities_filtered{type='ammo-turret', force=f, limit=M.MAX_TURRETS + 1} end) or {}
+    -- (d28 batch302 FC) over the cap: the first MAX_TURRETS traced, the cap said (turrets_capped) where it was silent
+    local tcapped = #turrets > M.MAX_TURRETS
+    if tcapped then turrets[#turrets] = nil end
     local pending, starts = {}, {}
     local takes_by = {}
     for _, t in ipairs(turrets) do
@@ -396,6 +399,15 @@ return function(api)
       if #feeders == 0 then row.stops[#row.stops+1] = 'no inserter feeds it' end
       for _, i in ipairs(feeders) do
         local way = string.format('%s %s', i.name, at(i.position))
+        -- (d27 batch295 HS, Astra #2646) its hand size, override and arm turns: what one turn a swing moves at most
+        local hd = api.hand and try(function() return api.hand(i) end)
+        if hd then
+          row.feeders = row.feeders or {}
+          row.feeders[#row.feeders+1] = {name=i.name, position=i.position, effective_hand_size=hd.effective_hand_size, hand_size_override=hd.hand_size_override,
+            hand_size_max=hd.hand_size_max, capacity_bonus=hd.capacity_bonus, hand_size_by_circuit=hd.hand_size_by_circuit, wait_for_full_hand=hd.wait_for_full_hand,
+            held_count=hd.held_count, swings_per_min=hd.swings_per_min, items_per_min_most=hd.items_per_min_most}
+          way = way .. ' ' .. hd.short .. (hd.items_per_min_most and string.format(', at most %g/min', hd.items_per_min_most) or '')
+        end
         -- (AB3) a feeder its condition holds off now: its way is traced as any other, what is on it counted behind the gate
         local blocked = filter_blocks(i, takes)
         local shut = not blocked and off(i) and gate(i) or nil
@@ -755,7 +767,8 @@ return function(api)
     for _, g in ipairs(gate_list) do g.seen = nil end
     return {rows=rows, reaches=reaches, stranded=stranded, stranded_groups=glines, stranded_recover=recover, stranded_more=#groups > 6 and #groups - 6 or nil,
       hub_ammo=hub_total, hub_reaches=any_hub, turret_own=turret_own, on_belts_reached=belt_reach, in_sources=src_total,
-      stranded_by=stranded_by, hub_stranded=hub_stranded, via_hub=via_hub, at_end=at_end_n, at_end_rows=end_rows, gates=gate_list}
+      stranded_by=stranded_by, hub_stranded=hub_stranded, via_hub=via_hub, at_end=at_end_n, at_end_rows=end_rows, gates=gate_list,
+      turrets_capped=tcapped and M.MAX_TURRETS or nil}
   end
   -- The read's lines: the totals, the turrets low or empty with what reaches them and what stops it, the stranded stock.
   -- The call that would recover a stranded group: a belt pickup where your character stands on that surface (aboard),
@@ -793,7 +806,12 @@ return function(api)
       if all or low then
         shown = shown + 1
         if shown <= 16 then
-          lines[#lines+1] = string.format('%s %s: holds %d; %d reach it%s%s%s%s%s', row.name, at(row.position), row.own, row.reaches,
+          -- (d27 batch295 HS) its use at full fire of the ammunition it holds, and its feeders' most a minute
+          local most
+          for _, fd in ipairs(row.feeders or {}) do most = (most or 0) + (fd.items_per_min_most or 0) end
+          lines[#lines+1] = string.format('%s %s: holds %d%s; %d reach it%s%s%s%s%s', row.name, at(row.position), row.own,
+            (row.uses_per_min or most) and string.format(' (%s%s%s)', row.uses_per_min and string.format('uses %g %s/min at full fire', row.uses_per_min, row.uses_ammo or 'items') or '',
+              row.uses_per_min and most and ', ' or '', most and string.format('its feeders move at most %g/min', most) or '') or '', row.reaches,
             row.blocked and string.format(', %d more blocked by other ammunition ahead', row.blocked) or '',
             (row.behind_gate or 0) > 0 and string.format(', %d more behind a link gated closed now', row.behind_gate) or '',
             #row.ways > 0 and ' (' .. table.concat(row.ways, ' | ') .. ')' or '',
@@ -903,7 +921,18 @@ return function(api)
     for i, b in ipairs(job.all) do if b.valid then all[#all+1] = b; keys[#keys+1] = job.all_keys[i] end end
     job.all, job.all_keys = all, keys
     local ok, tr = pcall(M.trace, pl, job)
-    J.done[index] = {tick=game.tick, started=job.started, tr=ok and tr or nil, error=not ok and tostring(tr) or nil}
+    J.done[index] = {tick=game.tick, started=job.started, tr=ok and tr or nil, error=not ok and tostring(tr) or nil, belts=#all}
+  end
+  -- (d28 batch304 EC) the belt names of BELTS' types, read once a session: a count by name is the same count, cheaper
+  -- (Resolute's 4187 belts on a copy of world n: 0.74 ms against 2.56 by type; Asterion's 7322: 0.44 against 0.67)
+  local BELT_NAMES
+  local function belt_names()
+    if not BELT_NAMES then
+      BELT_NAMES = {}
+      for n in pairs(try(function() return prototypes.get_entity_filtered{{filter='type', type=BELTS}} end) or {}) do BELT_NAMES[#BELT_NAMES+1] = n end
+      table.sort(BELT_NAMES)
+    end
+    return BELT_NAMES
   end
   -- The trace for a reader: read at once for a platform of up to SYNC_BELTS belts; else the last background read (said
   -- with its age; a new one begins when it is older than max_age, default FRESH), or nil and why while the first runs.
@@ -911,7 +940,16 @@ return function(api)
   -- 6 turrets at once, 33 ms on the private copy).
   function M.get(pl, max_age, background)
     local J = jobs()
-    local n = J and (try(function() return pl.surface.count_entities_filtered{type=BELTS, force=pl.force} end) or 0) or 0
+    -- (EC) the background read asked for and one done: the belts it read (its as_of says them), not counted again
+    local done = J and J.done[pl.index]
+    local n = background and done and done.tr and done.belts
+    if not n then
+      local names = J and belt_names()
+      n = J and (try(function()
+        if #names > 0 then return pl.surface.count_entities_filtered{name=names, force=pl.force} end
+        return pl.surface.count_entities_filtered{type=BELTS, force=pl.force}
+      end) or 0) or 0
+    end
     if not J or n <= M.SYNC_BELTS and not background then
       local tr = M.trace(pl)
       tr.read_tick, tr.read_started, tr.belts = game.tick, game.tick, n

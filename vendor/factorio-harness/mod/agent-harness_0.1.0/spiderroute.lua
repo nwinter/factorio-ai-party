@@ -90,11 +90,25 @@ return function(api)
     for i, q in ipairs(a) do out[i] = api.position(q) end
     return out
   end
+  -- (d28 batch300 SR, viewer Aurora site:5308: a waited go_to ran to its timeout after another agent's clear) each
+  -- route the harness sets or clears, by anyone (go_to, append, clear, spider_kite taking it over): a number, who, how
+  -- and the tick; a waited go_to ends route_changed once its spidertron's number moves on.
+  function M.claim(spider, by, how)
+    local st = store()
+    st.sets = st.sets or {}
+    st.setseq = (st.setseq or 0) + 1
+    st.sets[spider.unit_number] = {seq=st.setseq, tick=game.tick, by=by, how=how}
+    return st.setseq
+  end
+  function M.seq(unit) local s = store().sets; return s and s[unit] and s[unit].seq or nil end
   -- The call: go_to (with mode) or clear. -> the reply's facts. index: the sender's player index (its standing
   -- retreat_guard); own: the go_to's own retreat cfg, or false for none (retreat: false).
   function M.set(spider, a, by, index, own)
     assert(a.mode == nil or a.mode == 'replace' or a.mode == 'append', 'mode is "replace" (the default: the route becomes these targets, as a click on the remote) or "append" (added at the end, as a shift-click)')
     assert(a.clear == nil or a.clear == true, 'clear must be true')
+    assert(a.reuse == nil or type(a.reuse) == 'boolean', 'reuse must be true or false')
+    assert(a.route == nil or (type(a.route) == 'number' and a.route >= 1 and a.route == math.floor(a.route)), 'route is a stored route\'s number (vehicle {routes: true} lists them)')
+    assert((a.reuse == nil and a.route == nil) or a.go_to ~= nil, 'reuse and route go with go_to')
     local st = store()
     local lock = st.locks and st.locks[spider.unit_number]
     local out = {}
@@ -138,6 +152,7 @@ return function(api)
         out.replaced = parts
       end
     end
+    M.claim(spider, by, a.clear and (a.go_to ~= nil and 'clear and go_to' or 'clear') or (a.mode == 'append' and 'go_to append' or 'go_to'))
     local r = route(spider)
     out.route, out.route_line = r, route_line(r)
     if #r > 0 then
@@ -155,13 +170,26 @@ return function(api)
     end
     -- (d24 batch191) each straight leg read for water its legs cannot cross; paths round it requested (spiderpath.lua)
     if a.go_to ~= nil and #r > 0 and api.path and not out.unlanded then
-      local ok, lines = pcall(api.path.plan, spider, r, {owner='route', by=by})
+      -- (d28 batch305 NR) a stored route serves a crossing (read again first; reuse: false asks the pathfinder)
+      local prec = {owner='route', by=by, reuse=a.reuse ~= false, route=a.route}
+      local ok, lines, shared, now = pcall(api.path.plan, spider, r, prec)
+      -- the stored routes it takes: dropped if it stalls on them (tick)
+      local t1 = st.spiders[spider.unit_number]
+      if t1 and prec.used then t1.from_store = prec.used end
       if ok and lines then out.water = {crossing=lines, note='paths round the water were requested: the route becomes them when they come (often within this call), said once in team alerts (this reply or a later one)'} end
+      if ok and shared then out.shared_route = table.concat(shared, '; ') end
+      if ok and now then
+        M.routed({owner='route', by=by}, now.plan, spider, now.route, now.notes, true)
+        local r2 = route(spider)
+        out.route, out.route_line = r2, route_line(r2)
+        out.water.note = 'its route goes round the water now, by stored routes read again in this call (no path asked)'
+      end
     end
     return out
   end
   -- (d24 batch191) the paths of a plan are in: its route goes round the water (unless it was set again since).
-  function M.routed(rec, plan, spider, pts, notes)
+  -- (d28 batch305 NR) quiet: written in the go_to's own call (stored routes, no path asked): its reply says it, no alert.
+  function M.routed(rec, plan, spider, pts, notes, quiet)
     local unit = spider.unit_number
     local r = route(spider)
     local last = plan.targets[#plan.targets]
@@ -179,6 +207,7 @@ return function(api)
     local now = route(spider)
     local t = store().spiders[unit]
     if t and #now > 0 then t.near, t.best, t.target, t.moved = dist(spider.position, now[1]), dist(spider.position, now[1]), {x=now[1].x, y=now[1].y}, game.tick end
+    if quiet then return end
     -- (d26 batch243) a back-off's plan with no path found: its route goes back there and on, said as such
     event(string.format(found and 'spidertron #%d: its route goes round the water now: %s%s%s' or 'spidertron #%d: no path round the water from its back-off spot either; its route: %s%s%s',
       unit, route_line(now), #notes > 0 and '; ' .. table.concat(notes, '; ') or '', err and '; the game refused it: ' .. err or ''), plan.by, unit)
@@ -402,6 +431,13 @@ return function(api)
       local e = game.get_entity_by_unit_number(unit)
       if not (e and e.valid) then st.locks[unit] = nil end
     end
+    -- (SR) a gone spidertron's last set, once an hour
+    if st.sets and game.tick % 216000 < M.SAMPLE then
+      for unit in pairs(st.sets) do
+        local e = game.get_entity_by_unit_number(unit)
+        if not (e and e.valid) then st.sets[unit] = nil end
+      end
+    end
     for unit, t in pairs(st.spiders) do
       local e = game.get_entity_by_unit_number(unit)
       local r = e and e.valid and route(e) or {}
@@ -451,17 +487,21 @@ return function(api)
           if t.stalled then event(string.format('spidertron #%d moves again: at %s toward %s', unit, at(pos), at(r[1])), t.by, unit) end
           t.pos, t.near, t.best, t.moved, t.stalled, t.target = {x=pos.x, y=pos.y}, near, near, game.tick, nil, {x=r[1].x, y=r[1].y}
         elseif quick or (not t.stalled and idle >= M.STALL) then
+          -- (d28 batch305 NR) stalled on stored routes: dropped from the store, so no one is sent along them again unasked
+          local gone = t.from_store and P and P.drop_routes and P.drop_routes(t.from_store)
+          t.from_store = nil
+          gone = gone and string.format('; stored route %s dropped (it stalled on it)', gone) or ''
           local did = recover(e, t, r)
           if did then
             local now = route(e)
             t.moved, t.best, t.near = game.tick, now[1] and dist(pos, now[1]) or near, now[1] and dist(pos, now[1]) or near
             if now[1] then t.target = {x=now[1].x, y=now[1].y} end
-            event(string.format('spidertron #%d: no progress toward %s for %s; %s', unit, at(r[1]), ago(idle), did), t.by, unit)
+            event(string.format('spidertron #%d: no progress toward %s for %s; %s%s', unit, at(r[1]), ago(idle), did, gone), t.by, unit)
           else
             t.stalled = true
             local f = M.facts(e)
             local held = st.locks and st.locks[unit]
-            event(string.format('spidertron #%d: %s%s%s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress',
+            event(string.format('spidertron #%d: %s%s%s%s; its route: %s (%s)', unit, f.stalled and f.stalled.line or 'no progress', gone,
               t.tries and #t.tries > 0 and string.format('; %d recover%s tried', #t.tries, #t.tries == 1 and 'y' or 'ies') or '',
               t.no_path and '; ' .. t.no_path or t.unlanded and '; ' .. t.unlanded or '', f.route_line,
               held and 'its retreat route; held: go_to is refused until re-armed (retreat_guard set or cleared, or a go_to with its own retreat)'
@@ -477,7 +517,10 @@ return function(api)
   -- arrived (its route ended within 4 tiles of its last target); stalled (the stall line, after the recoveries);
   -- unreachable (stalled with no path found, or a target on water with no tile its legs stand on near it);
   -- route_changed (another go_to or clear, or a player, set its route); retreated (its guard sent it back);
-  -- route_emptied (its route ended elsewhere); destroyed. nil while it walks.
+  -- route_emptied (its route ended elsewhere); destroyed. nil while it walks. (d28 batch300 SR) route_changed at the
+  -- first read after another harness call set or cleared the route (M.claim's number moved on: action.changed says
+  -- who, how and when), or after its route came to lead elsewhere with no such call (a player in the game, or another
+  -- script: its last target no longer the go_to's).
   function M.watch(action)
     local e = action.spider
     if not (e and e.valid) then return 'destroyed' end
@@ -487,10 +530,22 @@ return function(api)
       action.done = done
       return done.arrived and 'arrived' or 'route_emptied'
     end
+    local s = st.sets and st.sets[action.unit]
+    if action.set_seq and s and s.seq ~= action.set_seq then
+      action.changed = {by=s.by, how=s.how, tick=s.tick}
+      return 'route_changed'
+    end
     local t = st.spiders[action.unit]
+    if t and t.tick ~= action.set_tick then return 'route_changed' end
+    if t and t.retreated then return 'retreated' end
+    if action.set_seq then
+      local r = route(e)
+      if #r > 0 and action.target and dist(r[#r], action.target) > 0.5 then
+        action.changed = {tick=game.tick, outside=true}
+        return 'route_changed'
+      end
+    end
     if not t then return nil end
-    if t.tick ~= action.set_tick then return 'route_changed' end
-    if t.retreated then return 'retreated' end
     if t.stalled then return (t.no_path or t.unlanded or action.unlanded) and 'unreachable' or 'stalled' end
     return nil
   end
@@ -516,7 +571,17 @@ return function(api)
       last.why = (f.stalled and f.stalled.line or 'no progress') .. (last.recovery and string.format('; %d recover%s tried', #last.recovery, #last.recovery == 1 and 'y' or 'ies') or '')
         .. (last.no_path and '; ' .. last.no_path or '') .. (outcome == 'unreachable' and not last.no_path and action.unlanded and '; ' .. action.unlanded or '')
     elseif outcome == 'route_changed' then
-      last.why = 'its route was set again (another go_to or clear, or a player): ' .. f.route_line
+      local c = action.changed
+      if c and c.outside then
+        last.why = string.format('its route was set outside the harness\'s calls (a player in the game, or another script), seen %s after this go_to: %s',
+          ago(c.tick - action.start_tick), f.route_line)
+        last.changed_tick = c.tick
+      elseif c then
+        last.why = string.format('its route was set again by %s (%s) %s after this go_to: %s', tostring(c.by or '?'), c.how or 'go_to', ago(c.tick - action.start_tick), f.route_line)
+        last.changed_by, last.changed_how, last.changed_tick = c.by, c.how, c.tick
+      else
+        last.why = 'its route was set again (another go_to or clear, or a player): ' .. f.route_line
+      end
     elseif outcome == 'retreated' then
       last.why = t and t.retreated and retreat_text(t.retreated) or 'it retreated'
     elseif outcome == 'route_emptied' and d then

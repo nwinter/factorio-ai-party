@@ -113,7 +113,11 @@
   it returns dated last-seen memory. It flags a held-item refusal. A refused argument shape names every shape it
   takes; `./fh help trace` gives a call for each mode. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
-  and the research ETA; `surface` reads that surface.
+  and the research ETA; `surface` reads that surface. `full_speed` and `lab_rates` (and `inspect`'s `research_rate` on a
+  lab): the engine's figures at full supply for the current research. Speed = researching speed at its quality × (1 +
+  modules and beacons) × (1 + the force's lab speed): the two multiply, so the entity's `speed_bonus` (their sum) is not
+  it. Each pack a minute = its amount × units a minute × drain (biolab 50%). Productivity adds progress, not pack use.
+  What the labs used is `science` (the 10-minute statistics).
 - Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
   add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
@@ -148,6 +152,12 @@
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
   returns dated last-seen memory. `inspect {position}` with nothing there lists what stands within 3 tiles (`not_at`
   says so); with a `name` that left out what stands there, the refusal names that entity. `positions`: up to 8 entities in one call (`positions_limit` says 8; more is refused; `compact: true`: one line each). What it shows:
+  - a machine (or its ghost): `recipe` and `recipe_quality`, the quality its recipe runs at (normal too; `quality` is
+    the machine's own, and a normal machine can run a legendary recipe: it takes and makes legendary items); an idle
+    furnace `previous_recipe` and `previous_recipe_quality` (a furnace's comes from its input). Compact lines put it
+    before the recipe when not normal or when they name the machine's quality (`recipe legendary NAME`, `recipe normal
+    NAME`), the rate line opens with it when not normal, and `scan` rows add `recipe_quality` with `recipe`, `status`
+    or `output`;
   - a machine: its `rate` (crafts and output per minute, net of what goes back in), `output_fill` (and `full`) and
     `output_stop`: per product its `capacity`, `delivers_up_to` (a finished craft goes out while that much or less is
     held, else waits in the machine), `full` and `idle_full_output_from`, and `blocking`: `output` (a finished craft
@@ -310,7 +320,9 @@
   the start and status work name it) or `agent` (a name) reads any agent's watch; `uptime@START_TICK` reads the one
   watch begun on that tick, and is refused with each id named when two or more were; `details: true` adds each row's
   line. The reply gives `started_tick`,
-  `to_tick` (the end, or now), `sampled_tick`, `samples`, `page`, `pages`, `machines_total`, `matched`. On a copy of
+  `to_tick` (the end, or now), `sampled_tick`, `samples`, `page`, `pages`, `machines_total`, `matched`; a watch with
+  `items` gives `flows` on every page (surface, start_tick, end_tick, every row, line: a done or kept one's as it
+  ended, for any agent; only machine rows page). On a copy of
   world n Sol's 20-machine Asterion watch read 13.5 KB for page 1 and 3.0 KB for page 2.
   A new watch keeps your last one done, readable by its id (`kept`: at most 4, 96 machines; `kept_dropped` says why).
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock

@@ -1989,6 +1989,8 @@ def main():
                     "none: no videos)")
     ap.add_argument("--r2",
                     help="the shifts that play on R2 (site/content/r2.json: site/videos_page.py refresh; none: none)")
+    ap.add_argument("--public-status", help="the public repo sync's status.json (tools/public-push.sh; the Updates page "
+                    "shows it; none: not shown)")
     ap.add_argument("--thumbs", help="the shifts' thumbnails, shift-N.jpg (site/og/thumbs: site/videos_page.py refresh)")
     ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
     args = ap.parse_args()
@@ -2127,7 +2129,13 @@ def main():
         hidden = moderation.load(args.runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")
         asks, replies = op_updates.messages(args.runs_dir, op_updates.refs(data["updates"]), clean, keep_line, hidden)
         built = datetime.datetime.now(op_updates.PACIFIC).replace(tzinfo=None)
-        body, head = op_updates.build_page(data, asks, replies, esc, built=built)
+        public = None   # (batch290) tools/public-push.sh's status.json, only when named (tools/site-refresh.sh)
+        if args.public_status:
+            try:
+                public = json.loads(Path(args.public_status).read_text())
+            except (OSError, ValueError) as e:
+                print(f"updates: public status {args.public_status}: {e}", file=sys.stderr)
+        body, head = op_updates.build_page(data, asks, replies, esc, built=built, public=public, github=GITHUB_URL)
         write("updates/index.html", page("Operator updates", body, "/updates/",
                                          "Changes viewers and agents asked for, and whether each is planned, in progress, live or verified.",
                                          extra_head=head, path="/updates/"))

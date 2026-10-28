@@ -227,7 +227,7 @@ do
     since_line='left nauvis 0m40s ago; samples last 60 s (20 s of it at the stop before it left): thruster-fuel used 5333/min'} end
   jump(601)
   local fl=has(alerts(astra),'projected to run out before the leg ends')
-  assert(fl and fl:find(S..': advisory: thruster-fuel projected to run out before the leg ends at the last minute\'s rates (40 s into the leg, under 90;',1,true),tostring(fl))
+  assert(fl and fl:find(S..': advisory: thruster-fuel projected to run out before the leg ends at the rates over the last 60 s (40 s into the leg, under 90;',1,true),tostring(fl))
   assert(fl:find('): leg nauvis->gleba, 9000 km left;',1,true),tostring(fl))
   assert(fl:find('; stock: thruster-fuel held 900 (storage tanks 0), one scan so far; thruster-fuel pumps no pump between the thrusters and the rest of the line; speed now 60 km/s',1,true),tostring(fl))
   -- d20 batch54 N1: with the time since it left its stop and the engine's samples

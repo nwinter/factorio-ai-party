@@ -783,7 +783,7 @@ return function(api)
         end
         local text = api.condition_text and try(function() return api.condition_text(c) end) or (first and first.name or 'blank')
         parts[#parts+1] = string.format('%s condition %s%s', k[3], text, v and (k[3] == 'logistic' and v < 0 and api.negative_note
-          and (try(function() return api.negative_note(first.name, v) end) or '') or string.format(' (%s %d now)', fq and first.name .. '@' .. fq or first.name, v)) or '')
+          and (try(function() return api.negative_note(fq and first.name .. '@' .. fq or first.name, v) end) or '') or string.format(' (%s %d now)', fq and first.name .. '@' .. fq or first.name, v)) or '')
       end
     end
     if not other then return nil end

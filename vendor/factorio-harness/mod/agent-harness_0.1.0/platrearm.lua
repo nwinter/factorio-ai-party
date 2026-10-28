@@ -7,7 +7,7 @@
 return function(api)
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
-  M.POSITIONS = 32
+  M.POSITIONS, M.ALL = 32, 1024  -- (d28 batch302 FC) ALL: the ammo turrets a call without positions tops up at most
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function store(name)
@@ -63,7 +63,10 @@ return function(api)
         else turrets[#turrets+1] = {entity=e} end
       end
     else
-      for _, e in ipairs(surface.find_entities_filtered{type='ammo-turret', force=p.force, limit=256}) do turrets[#turrets+1] = {entity=e} end
+      -- (d28 batch302 FC) every ammo turret aboard: the first 256 found were taken before and the rest left out unsaid
+      local found = surface.find_entities_filtered{type='ammo-turret', force=p.force, limit=M.ALL + 1}
+      if #found > M.ALL then error(string.format('%s has more than %d ammo turrets: name them with positions (up to %d a call)', a.platform, M.ALL, M.POSITIONS), 0) end
+      for _, e in ipairs(found) do turrets[#turrets+1] = {entity=e} end
       table.sort(turrets, function(x, y) local u, v = x.entity.position, y.entity.position; if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
     end
     -- (d19 batch41 A2, Sol seq 868: firearm-magazine requested of 5 railgun and 6 rocket turrets on Bastion) the ammunition

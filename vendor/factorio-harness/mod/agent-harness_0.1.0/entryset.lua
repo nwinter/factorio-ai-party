@@ -14,6 +14,10 @@ return function(api)
   local KINDS = {{'configure', 'configure'}, {'requests', 'requests'}, {'circuit', 'circuit_set'}}
   local MAX_WIRES = 16
   local WIRE_KEYS = {to=true, color=true, from_side=true, to_side=true, disconnect=true}
+  -- a configure that sets what an entity lets through (an inserter's, loader's, splitter's or storage chest's filters)
+  local function filters_asked(c)
+    return type(c) == 'table' and (c.filters ~= nil or c.filter ~= nil or c.use_filters ~= nil or c.filter_mode ~= nil or c.storage_filter ~= nil)
+  end
   local function has(e) return type(e) == 'table' and (e.configure ~= nil or e.requests ~= nil or e.circuit ~= nil or e.wires ~= nil) end
   function M.any(entries)
     for _, e in ipairs(type(entries) == 'table' and entries or {}) do if has(e) then return true end end
@@ -97,6 +101,12 @@ return function(api)
             -- (d25 batch208 QU2, Astra #2357) the settings that go in one configure call, as configure checks them
             if k[1] == 'configure' and api.together then
               local ok, err = pcall(api.together, v)
+              if not ok then error(where .. ' configure: ' .. api.reason(err) .. '; nothing placed', 0) end
+            end
+            -- (d27 batch297 DR, Astra #2649) what configure refuses on that entity before it changes anything (its
+            -- wait for a full hand, hand_size): refused here, in the dry run and the real call alike, before placing
+            if k[1] == 'configure' and api.precheck then
+              local ok, err = pcall(api.precheck, e.name or e.item, v, ctx or {}, e.position)
               if not ok then error(where .. ' configure: ' .. api.reason(err) .. '; nothing placed', 0) end
             end
           end
@@ -209,10 +219,23 @@ return function(api)
               row[k[1]] = 'set'; set_n = set_n + 1
               if k[1] == 'configure' and type(res) == 'table' and res.line then row.configure = 'set: ' .. res.line end
             else
-              -- (d25 batch208 QU2) the entity stands without it: the row says which and where
-              row[k[1]] = api.reason(res); row.placed_without = row.placed_without or {}
-              row.placed_without[#row.placed_without+1] = k[1]
-              failed[#failed+1] = string.format('entry %d %s: %s (%s at %s is placed without it)', i, k[1], row[k[1]], (e.name or e.item) and tostring(e.name or e.item) or 'the entity', at(pos))
+              row[k[1]] = api.reason(res)
+              -- (d27 batch297 DR) a configure asking for filters refused: the entity is removed, not left without them
+              -- (a wrong filter is worse than none: Astra's unfiltered stack inserter put rockets in a magazine buffer)
+              local gone
+              if k[1] == 'configure' and filters_asked(e[k[1]]) and api.unplace then
+                local okr, said = pcall(api.unplace, p, pos, e.name or e.item, ctx)
+                gone = okr and said or nil
+              end
+              if gone then
+                row.removed = gone
+                failed[#failed+1] = string.format('entry %d %s: %s (%s at %s asked for filters: %s)', i, k[1], row[k[1]], (e.name or e.item) and tostring(e.name or e.item) or 'the entity', at(pos), gone)
+              else
+                -- (d25 batch208 QU2) the entity stands without it: the row says which and where
+                row.placed_without = row.placed_without or {}
+                row.placed_without[#row.placed_without+1] = k[1]
+                failed[#failed+1] = string.format('entry %d %s: %s (%s at %s is placed without it)', i, k[1], row[k[1]], (e.name or e.item) and tostring(e.name or e.item) or 'the entity', at(pos))
+              end
             end
           end
         end
@@ -281,7 +304,12 @@ return function(api)
       -- refused, each row naming the entity placed without it (settings[i].placed_without)
       if #batch.failed>0 then
         out.settings_refused=#batch.failed
-        out.summary=string.format('%d of %d settings refused; the entities stand placed without them: %s%s',#batch.failed,#batch.failed+batch.set,
+        local gone = 0
+        for _, r in ipairs(batch.rows) do if r.removed then gone = gone + 1 end end
+        out.removed_unfiltered = gone > 0 and gone or nil
+        out.summary=string.format('%d of %d settings refused; %s: %s%s',#batch.failed,#batch.failed+batch.set,
+          gone > 0 and string.format('%d entit%s removed again (a configure asking for filters refused), the others stand placed without them', gone, gone == 1 and 'y' or 'ies')
+            or 'the entities stand placed without them',
           batch.failed[1],#batch.failed>1 and string.format(' (and %d more: settings_line, settings)',#batch.failed-1) or '')
       end
       if not complete and #batch.wires>0 then out.settings_note=#batch.wires..' entries have wires pending until the batch finishes' end
@@ -290,6 +318,6 @@ return function(api)
   end
   M.schema_text = 'configure {recipe, filters, filter_mode, modules, ...} as configure takes them; requests {set, clear, ...} '
     .. 'as requests takes them; circuit {enable, read, settings, decider, arithmetic, signals, ...} as circuit_set takes them; '
-    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line; a live call with any refused: settings_refused, summary, verdict partial); ghost settings go by remote view: an entry or wire end in a chunk our force does not see now is refused, in the dry run too (settings_unseen); unwired (a warning, dry runs too): an entry whose circuit sets what acts on a signal (an enable condition, set filters, stack size, recipe, requests ...) with no red or green wire in the call (its own wires or another entry\'s to it) and none on what stands there, and what the game does then (2.0.77: an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'
+    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line; a live call with any refused: settings_refused, summary, verdict partial), except a configure asking for filters (filters, filter, use_filters, filter_mode, storage_filter): refused, the entity is removed again (row removed: its ghost removed, or mined back into your inventory; removed_unfiltered); configure\'s wait_for_full_hand and hand_size are checked before anything is placed, in the dry run too (a refusal places nothing); ghost settings go by remote view: an entry or wire end in a chunk our force does not see now is refused, in the dry run too (settings_unseen); unwired (a warning, dry runs too): an entry whose circuit sets what acts on a signal (an enable condition, set filters, stack size, recipe, requests ...) with no red or green wire in the call (its own wires or another entry\'s to it) and none on what stands there, and what the game does then (2.0.77: an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'
   return M
 end

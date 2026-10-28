@@ -304,8 +304,12 @@ return function(api)
     local groups,order,limits={},{},{}
     local by_machine={}
     for _,e in ipairs(machines) do
-      local recipe=(e.type=='assembling-machine' or e.type=='furnace') and e.get_recipe()
-      local key=e.name..(recipe and ' '..recipe.name or '')
+      local recipe,rq
+      if e.type=='assembling-machine' or e.type=='furnace' then recipe,rq=e.get_recipe() end
+      -- (d28 batch303 RQ, Sol #2665) a recipe at another quality is its own group, named with it; its ingredients are
+      -- counted at that quality (2.0.77: get_item_count(name) counts normal only; a legendary recipe takes legendary)
+      rq=rq and rq.name or 'normal'
+      local key=e.name..(recipe and ' '..(rq~='normal' and rq..' ' or '')..recipe.name or '')
       local g=groups[key]
       if not g then g={machine=key,count=0,statuses={}}; groups[key]=g; order[#order+1]=key end
       g.count=g.count+1
@@ -322,7 +326,7 @@ return function(api)
         if status=='item_ingredient_shortage' or status=='fluid_ingredient_shortage' then
           local inv=e.get_inventory(e.type=='furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input)
           for _,ingredient in pairs(recipe.ingredients) do
-            local have=ingredient.type=='item' and inv and inv.get_item_count(ingredient.name) or nil
+            local have=ingredient.type=='item' and inv and inv.get_item_count({name=ingredient.name,quality=rq}) or nil
             if have and have<ingredient.amount then g.short=g.short or {}; g.short[ingredient.name]=(g.short[ingredient.name] or 0)+1 end
           end
         end

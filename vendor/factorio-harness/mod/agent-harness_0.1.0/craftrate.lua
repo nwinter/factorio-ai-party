@@ -82,12 +82,14 @@ return function(api)
   end
   -- A built crafting machine: its recipe at its speed and productivity now, as if it ran all the time.
   function M.machine(e)
-    local recipe = try(function() return e.get_recipe() end)
+    local okr, recipe, quality = pcall(e.get_recipe)
+    recipe = okr and recipe or nil
     if not recipe then
       -- An idle furnace: the recipe it ran last (previous_recipe {name, quality}).
       local prev = try(function() return e.previous_recipe end)
       local name = prev and name_of(prev.name)
       recipe = name and try(function() return e.force.recipes[name] end)
+      quality = prev and prev.quality
     end
     if not recipe then return nil end
     local speed = try(function() return e.crafting_speed end) or try(function() return e.prototype.get_crafting_speed(e.quality) end) or 1
@@ -102,6 +104,9 @@ return function(api)
     if pr.capped then parts[#parts+1] = string.format('capped at the recipe\'s +%d%%', math.floor(pr.max * 100 + 0.5)) end
     local out = M.rates(recipe, speed, pr.machine + research, parts)
     out.recipe = recipe.name
+    -- (d28 batch303 RQ, Sol #2665) the quality the recipe runs at (normal too), apart from the machine's; named first in
+    -- the line when not normal: its ingredients are taken and its products made at that quality
+    out.recipe_quality = type(quality) == 'string' and quality or quality and quality.name or 'normal'
     out.productivity_machine, out.productivity_research = r1(pr.machine * 100) / 100, research ~= 0 and r1(research * 100) / 100 or nil
     -- (d24 batch171 QN1, Sol 15:09: three plants' rates summed against the platform's statistics, which count every maker)
     out.line = out.line .. ' (this machine alone, at full speed all the time; status, input and output decide what it makes)'
@@ -109,6 +114,10 @@ return function(api)
     -- The quality effect is stored as 0.1 per 1% the GUI shows (2.0.77: five rare quality-module-1 read 0.8, the GUI 8%;
     -- Astra 05:43 saw "80%").
     if q and q > 0 then out.quality_chance = string.format('%g%%', math.floor(q * 100 + 0.5) / 10) end
+    if out.recipe_quality ~= 'normal' then
+      out.line = string.format('%s recipe (takes %s ingredients, makes %s products%s): %s', out.recipe_quality, out.recipe_quality,
+        out.recipe_quality, out.quality_chance and ' or better at its quality chance' or '', out.line)
+    end
     return out
   end
   -- A recipe read's row: at crafting speed 1, or at a machine prototype's speed (its quality normal) and base effect.
@@ -178,8 +187,9 @@ return function(api)
     local lines = {}
     if input then lines[#lines+1] = input.line end
     if output then lines[#lines+1] = output.line end
-    return {recipe=rate.recipe, input=input, output=output, line=string.format('%s %s (%s): %s', e.name, string.format('(%g,%g)', e.position.x, e.position.y),
-      rate.recipe, table.concat(lines, '; '))}
+    return {recipe=rate.recipe, recipe_quality=rate.recipe_quality, input=input, output=output, line=string.format('%s %s (%s): %s', e.name,
+      string.format('(%g,%g)', e.position.x, e.position.y), (rate.recipe_quality or 'normal') ~= 'normal' and rate.recipe_quality .. ' ' .. rate.recipe or rate.recipe,
+      table.concat(lines, '; '))}
   end
   return M
 end

@@ -16,16 +16,22 @@
   before acting (need, held, missing, queued, hand_craftable; its dry run too). An inserter build says what its sides
   touch: `pickup` and `drop` (`requester-chest (44.5,190.5)`, `none: the ground at (42.5,190.5)`), with `inserter`
   (its direction in words) and `io_warning`; build replies and `inspect` flag a built inserter with no pickup or drop
-  target. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
+  target. A belt or chest built again on a disabled inserter's pickup tile leaves the engine's pickup target unset
+  until the inserter runs (2.0.77); replies then name both (`pickup target unset by the engine (transport-belt
+  (-7.5,320.5) on its pickup tile)`), and `the ground` only when nothing stands there. `inspect` always gives an inserter's hand size:
+`effective_hand_size`, `hand_size_override` (0 none), `hand_size_max` (1 + the force's research bonus, `capacity_bonus`),
+apart from `held_count`; on 2.0.77 every inserter waited at a belt for a full hand. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
   chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles). Entry settings (a
   single `build`, `builds` entries, `place_ghosts` entries): `configure`, `requests`, `circuit` (the arguments of
   `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side, to_side}]`. A hand
   build sets each entry's as it is placed, ghosts after every entry is placed, then the wires; the reply's `settings`
   and `settings_line` say what was set or refused (a refused setting leaves the entry placed: `entry N configure: ...
   (storage-chest at (x,y) is placed without it)`, the row's `placed_without`; a hand build adds `settings_refused` and
-  `summary`); each setting goes to the ghost or entity of the entry's name at its position. Settings that go in
-  separate `configure` calls refuse the whole call before anything is placed (`entry N configure: configure sets ...
-  in separate calls ...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry is
+  `summary`), except a `configure` asking for filters: refused, the entity is removed again (`asked for filters: its
+  ghost removed` or `mined back into your inventory`, the row's `removed`, `removed_unfiltered`); each setting goes to
+  the ghost or entity of the entry's name at its position. Settings that go in separate `configure` calls, a
+  `wait_for_full_hand` other than the inserter's own (2.0.77: only stack-inserter waits, fixed) and a `hand_size` above
+  its hand size now refuse the whole call before anything is placed (`...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry is
   refused (in the dry run too); a `build` entry's chest takes it. A dry run gives `settings_planned` and `settings_check`, each
   setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
   (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already
@@ -43,8 +49,10 @@
   (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires, circuit
   settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one end of an underground pair
   with another tier replaces its other end too when that is ours, in build reach and you hold the item for it
-  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`); else it is refused naming the other end
-  and a spot within reach of both. Rails: `{item: "rail", entity: "straight-rail"
+  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`, even with none of the item left); else it
+  is refused naming the other end and a spot within reach of both. Both ends are checked before either changes: one
+  that cannot take the new tier refuses the build with nothing changed, and a second end that fails puts the first
+  back. A build out of reach walks within reach of both ends. Rails: `{item: "rail", entity: "straight-rail"
   | "curved-rail-a" | "curved-rail-b" | "half-diagonal-rail"}`; stops, locomotives and wagons build as any entity.
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.
@@ -324,7 +332,10 @@
   `fluid_mix` unless `mix_fluids: true`. `robot_dispatch` (place_ghosts, paste, blueprint_place): the construction
   robots' trips to the ghosts, as the network would pick them: how many at once, from which roboports, the longest
   and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows (each with its
-  read's age and whether its chunk is in sight now); ghosts whose covering network holds none of their item, and
+  read's age and whether its chunk is in sight now); `by network N`: of the networks whose construction area covers a
+  ghost, the engine takes the first holding its item at the ghost's quality: a personal roboport (character or
+  vehicle) first, then the network whose logistic area holds the ghost, then the others as found; a covering network
+  that holds none of the items is named; ghosts no covering network holds their item for (at their quality), and
   ghosts outside every construction area with the nearest roboport and how far outside its area. `closes_in` names the entry that fills the last gap out when the plan would close you
   in where you stand; a build reply says `closed_in` after it. `build` dry runs name off-character `pockets`, their
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
