@@ -13,7 +13,10 @@ their dates and adds notices (times given, no clock), and refuses what the build
 links it in the nav. (d23, viewer Aurora 18:46: "Could superseded queue notes become dated history, so each card's
 current status and note agree?") set --note keeps the note it replaces as dated history, folded under the current
 note; a note written under another status says so; a status past planned needs work: the tool refuses one without it,
-problems() and the page flag one already in the data.
+problems() and the page flag one already in the data. (d27 batch290, viewer Aurora site:5292) the public repository
+section from the public push's status.json: the last sync with both revisions, the last check and cadence, the
+newest failure or delay and whether a sync came after it, the deployed harness runtime from the newest deploy notice;
+none without a status file.
 """
 import html, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
@@ -230,16 +233,50 @@ def tool():
         assert "old-live" in run("list").stdout and run("list").stdout.count("(no work)") == 1, run("list").stdout
 
 
+PUB = "a" * 40
+SRC = "b" * 40
+STATUS = {"schema": 1, "checked": "2026-10-27T18:10:00-07:00", "every_s": 3600, "retry_s": 600,
+          "ok": {"t": "2026-10-27T17:12:03-07:00", "public": PUB, "source": SRC, "pushed": 3},
+          "problem": {"t": "2026-10-27T16:22:00-07:00", "kind": "delayed", "reason": "another public push was still running",
+                      "source": ""}}
+
+
+def public_repo():
+    data = {"notices": [{"t": "2026-10-27 15:32", "kind": "restart", "text": "Stream service restarting."},
+                        {"t": "2026-10-27 17:37", "kind": "deploy", "text": "Harness runtime deployed (8c9e960d)."},
+                        {"t": "2026-10-26 09:00", "kind": "deploy", "text": "Harness runtime deployed (1234abcd)."}]}
+    assert updates.public_repo(data, None, esc) == ""
+    h = updates.public_repo(data, STATUS, esc, "https://github.com/o/r")
+    text = re.sub(r"<[^>]+>", "", h)
+    assert 'id="public-repo"' in h and f'href="https://github.com/o/r/commit/{PUB}"' in h, h
+    assert "Last successful sync Tue 27 Oct 17:12: public main aaaaaaaa, from the working repository's main bbbbbbbb (3 new commits pushed)." in text, text
+    assert "Last checked Tue 27 Oct 18:10. It checks every 60 minutes, and 10 minutes after a skip or a failure." in text, text
+    assert ("Last delay Tue 27 Oct 16:22: another public push was still running. A sync succeeded after it (Tue 27 Oct 17:12)."
+            in text), text
+    assert "Harness runtime deployed: 8c9e960d, Tue 27 Oct 17:37" in text, text
+    failed = dict(STATUS, problem={"t": "2026-10-27T18:05:00-07:00", "kind": "failed", "source": SRC,
+                                   "reason": "the scan found 2 findings in main bbbbbbbb; nothing pushed"})
+    text = re.sub(r"<[^>]+>", "", updates.public_repo(data, failed, esc))
+    assert ("Last failure Tue 27 Oct 18:05: the scan found 2 findings in main bbbbbbbb; nothing pushed. Not resolved yet: the "
+            "next sync waits for a new commit on main.") in text, text
+    delayed = {"checked": "2026-10-27T18:05:00-07:00", "problem": dict(STATUS["problem"], t="2026-10-27T18:05:00-07:00")}
+    text = re.sub(r"<[^>]+>", "", updates.public_repo({"notices": []}, delayed, esc))
+    assert "No successful sync since this status began." in text and "Not resolved yet: it tries again" in text, text
+    assert "Harness runtime deployed" not in text and "/Users/" not in text, text
+
+
 def build():
     with tempfile.TemporaryDirectory() as d:
         runs = Path(d) / "runs"
         runs.mkdir()
         out = Path(d) / "dist"
-        r = subprocess.run([sys.executable, str(HERE / "build.py"), "--out", str(out), "--runs-dir", str(runs)],
-                           capture_output=True, text=True, timeout=120)
+        (Path(d) / "status.json").write_text(json.dumps(STATUS))
+        r = subprocess.run([sys.executable, str(HERE / "build.py"), "--out", str(out), "--runs-dir", str(runs),
+                            "--public-status", str(Path(d) / "status.json")], capture_output=True, text=True, timeout=120)
         assert r.returncode == 0, r.stderr[-2000:]
         page_html = (out / "updates" / "index.html").read_text()
         assert "<h1>Operator updates</h1>" in page_html and 'id="u-operator-updates"' in page_html
+        assert 'id="public-repo"' in page_html and "aaaaaaaa" in page_html, "the public repository section"
         assert 'href="/updates/"' in (out / "index.html").read_text()
         r = subprocess.run([sys.executable, str(HERE / "check.py"), str(out)], capture_output=True, text=True, timeout=120)
         assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
@@ -251,6 +288,7 @@ def main():
     asks, replies = messages()
     page(asks, replies)
     tool()
+    public_repo()
     build()
     print("operator updates: ok (the JSON checked, asks and replies quoted from the run folders, open before verified "
           "before notices, the tool's add/set/notice, notes kept as dated history, no work flagged or refused, /updates/ built "
