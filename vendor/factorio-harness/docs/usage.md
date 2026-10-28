@@ -17262,3 +17262,4 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   4.6 ms of Resolute's 121 numbers, about 0.5 on world n).
 - Test: tests/d28_batch304.lua (fails on main: its first call on the fake platform makes 12 finds, against 2 here: the
   one find and the belts, which both find with no background read yet).
+- Bundle (compacted): 6,353,761 bytes on main (eb7839f3), 6,358,489 with this branch (limit 8,388,608).
