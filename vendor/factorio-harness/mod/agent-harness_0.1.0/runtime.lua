@@ -14660,8 +14660,23 @@ function handlers.load_silo_run(p,a)
     for k,v in pairs(a) do if k~='dry_run' then rest[k]=v end end
     a=rest
   end
-  -- rockets (Sonnet 13:51): the same load for N rockets in one call, as N queue steps appended to your queue, each
-  -- loading and launching one rocket in turn (each waits for its rocket as a single load_silo does).
+  -- (d28 batch301 LS, Astra #2654: body job 37499's split appended its 5 rockets behind job 37500, which put the auto
+  -- requests back before any launched) the rocket steps a load_silo becomes: a direct call appends them to your queue;
+  -- a call running as a queue step becomes them in place, right after it and before the steps that follow
+  -- (scheduler.lua insert_after_running); one the queue has no room for is refused (refused(why)), nothing queued.
+  -- Returns the reply and, in place, {step, ids, behind}.
+  local function queue_rockets(steps,refused)
+    local step=scheduler.running_step and scheduler.running_step(p.index)
+    if not step then return scheduler.handlers.queue_submit(p,{steps=steps,mode='append'}),nil end
+    local ok,items,behind=pcall(scheduler.insert_after_running,p,steps)
+    if not ok then error(refused(reason(items)),0) end
+    local ids={}
+    for i,it in ipairs(items) do ids[i]=it.id end
+    return {queued=true,in_place=true,steps=ids,behind=behind},{step=tostring(step.id),ids=table.concat(ids,', '),behind=behind}
+  end
+  local function behind_text(at) return string.format('before the %d step%s that follow in your queue',at.behind,at.behind==1 and '' or 's') end
+  -- rockets (Sonnet 13:51): the same load for N rockets in one call, as N queue steps, each loading and launching one
+  -- rocket in turn (each waits for its rocket as a single load_silo does).
   if a.rockets~=nil then
     local n=integer(a.rockets,nil,2,20,'rockets')
     assert(a.launch==true,'rockets goes with launch: true (the next rocket is built after this one leaves)')
@@ -14674,13 +14689,19 @@ function handlers.load_silo_run(p,a)
       if args.auto_requests~=nil then c={}; for k,v in pairs(args) do c[k]=v end; c.pause_left=n-i+1 end
       steps[i]={action='load_silo',args=c,label=string.format('rocket %d of %d',i,n)}
     end
-    local out=scheduler.handlers.queue_submit(p,{steps=steps,mode='append'})
+    local out,at=queue_rockets(steps,function(why)
+      return string.format('rockets: %d could not become %d steps in place of this queue step (%s); nothing loaded or queued',n,n,why)
+    end)
     out.rockets=n
-    out.note=string.format('%d load_silo steps appended to your queue, labelled rocket 1 of %d to rocket %d of %d: each loads the list and launches; queue_status follows them',n,n,n,n)
+    out.note=at and string.format('this step %s became %d load_silo steps (%s), labelled rocket 1 of %d to rocket %d of %d, run right after it and %s: each loads the list and launches; queue_status follows them',
+      at.step,n,at.ids,n,n,n,behind_text(at))
+      or string.format('%d load_silo steps appended to your queue, labelled rocket 1 of %d to rocket %d of %d: each loads the list and launches; queue_status follows them',n,n,n,n)
     return out
   end
-  -- A launch whose list is over one rocket's lift or slots (B1, Sonnet 18:20): this call loads and launches the first
-  -- rocket's part, and the rest go as load_silo steps appended to your queue, one a rocket (as rockets: N does).
+  -- A launch whose list is over one rocket's lift or slots (B1, Sonnet 18:20): the list goes as load_silo steps, one a
+  -- rocket (as rockets: N does): a direct call appends them to your queue; (d28 batch301 LS, Astra #2654) a call running
+  -- as a queue step becomes them in place, right after it and before the steps that follow (scheduler.lua
+  -- insert_after_running); one the queue has no room for is refused, nothing queued.
   if a.launch==true and a.rockets==nil and not a.split_part and not a.to_total and not a.up_to and a.items~=nil then
     local okl,list=pcall(M.rocketload.items,a.items,'items')
     if okl then
@@ -14719,11 +14740,15 @@ function handlers.load_silo_run(p,a)
         end
         local steps={}
         for i=1,#parts do steps[#steps+1]={action='load_silo',args=args_for(parts[i],#parts-i+1),label=string.format('rocket %d of %d',i,#parts)} end
-        local out=scheduler.handlers.queue_submit(p,{steps=steps,mode='append'})
+        local default=a.launch_split==nil and ' (split by default: launch_split: false refuses a list over one rocket)' or ''
+        local out,at=queue_rockets(steps,function(why)
+          return string.format('the list is over one rocket (%s kg; lift %g kg, %d slots) and goes as %d rockets, which this queue step could not become in place (%s); nothing loaded or queued: load less a step, or launch_split: false for one rocket',
+            total,lift/1000,slots,#parts,why)
+        end)
         out.rockets=#parts
         out.rocket_cargo=lines
-        out.split=string.format('%s kg over %d rockets (lift %g kg, %d slots): %s; each a load_silo step appended to your queue, loading and launching in turn%s',
-          total,#parts,lift/1000,slots,table.concat(lines,'; '),a.launch_split==nil and ' (split by default: launch_split: false refuses a list over one rocket)' or '')
+        out.split=string.format('%s kg over %d rockets (lift %g kg, %d slots): %s; %s, loading and launching in turn%s',total,#parts,lift/1000,slots,table.concat(lines,'; '),
+          at and string.format('this step %s became %d load_silo steps (%s), run right after it and %s',at.step,#parts,at.ids,behind_text(at)) or 'each a load_silo step appended to your queue',default)
         return out
       end
     end

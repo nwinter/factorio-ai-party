@@ -569,7 +569,9 @@
   over one rocket goes, with `launch`, as rockets of at most a full rocket each, queued in turn (`rockets`,
   `rocket_cargo`, `split`); `launch_split: false` refuses it, and so do `all_or_nothing` and `wait_platform` (one rocket
   each) unless `launch_split: true`; `rockets: 3` with `launch`
-  queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
+  queues the same load for 3 rockets. A direct call appends those rocket steps to your queue; a `load_silo` that runs
+  as a queue step becomes them in place, right after it and before the steps that follow (`in_place`, `steps`,
+  `behind`), or is refused, nothing queued, when the queue has no room. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
   launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`
   and `from` the walk gathers from the chests first, then waits at the silo the same way (a walking load with `launch`
