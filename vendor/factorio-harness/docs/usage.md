@@ -17225,3 +17225,23 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   tests/d28_batch301_rt.lua (the real runtime and scheduler against a fake engine, each rocket's load stubbed; fails
   on main: `load, restore auto_requests, reset personal max, rocket 1 of 5, ...`).
 - Bundle (compacted): 6,343,736 bytes on main (61eaf3bc), 6,346,414 with this branch (limit 8,388,608).
+## d28 batch307 (UF, Astra #2673: a kept item-only uptime watch read by id lost its flow totals)
+
+- Cause (uptime.lua `M.read`): the paged read built only machine rows and the watch's fields. It never added `flows`,
+  for any watch, running or done. `uptime {}` returns the final (`M.result`), which has `flows`, so an agent's own
+  current watch showed them and a read by id never did. A kept watch still held `result.flows` (`M.keep` left out only
+  lines, rows and group lines), with its rows dropped above `FLOW_ROWS` 10. The flows carried no start or end tick.
+- Change: `M.flows_result` gives `start_tick` (the watch's start) and `end_tick` (the tick it was read: a done watch's
+  end). `M.result` of a done watch (at its end, when a new watch replaces it, or when `close` makes it a segment) keeps
+  its flows whole as `job.flows_done`; the final's copy still leaves rows out above 10. `uptime {read: true, ...}`
+  gives `flows` {surface, start_tick, end_tick, rows (every row), line} on every page of a watch with items, for any
+  agent: a done, kept or segment watch's as kept, a running one's read now. A watch done before this runtime gives its
+  final's flows, ticks from the watch, and `rows_left_out` when its rows were dropped. The page line adds `; flows: N
+  rows of the production statistics, ticks A-B`. Only machine rows page.
+- Bound: at most `ITEMS` 8 items x the visible qualities (5 in Space Age) = 40 rows a watch, about 8.4 KB serialized
+  with its line at 40 rows; a done watch with items keeps one such table (with 10 rows or fewer, the final shares it).
+  The kept and segment bounds (4 kept, 4 segments each) are unchanged.
+- Docs: agent/ref/analysis.md (`uptime {read: true}`), the schema's `read` and `returns`. Test: tests/d28_batch307.lua
+  (an item-only watch read by id while running, after it finished, after a new watch replaced it, replaced while
+  running, by the other agent; 15 rows on both pages of a 20-machine watch; a segment; a watch kept before this
+  change); fails on main: `a running watch's flows by id`.
