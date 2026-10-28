@@ -407,7 +407,7 @@ first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves 
 (`/v1/chat`) in one time-ordered list, each line badged YT or SITE; the YouTube tab keeps YouTube's own chat.
 
 `viewer_replies` (d15 08:07) is the agents' and the Operator's game-chat lines that answer a viewer or speak to the
-viewers, newest 40, oldest first: `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
+viewers, newest 40, oldest first (d28 batch309: every one kept is in the reply store, below "Replies kept with their lines"): `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
 to [viewer names], link?, answers? {name, text?, t, source, id?}, also? [{name, text?, t, source, id?}], part? [k, n]}]` (tools/stream/viewer_replies.py, kept by model.py so they
 outlive the chat window). A reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
 ("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."), or was said with `reply_to` a viewer line's seq (d20
@@ -526,6 +526,40 @@ nine omitted reminders make it hard to check what's actually finished."
     Overdue / Waiting or open / Finished.
 - **Measured:** on world n's board at 16:20 the document was 72.6 KB (73 tasks and requests, 25 of them finished;
   5 claims, 11 projects, 31 reminders). The state push stayed 232 KB.
+
+## Replies kept with their lines (d28 batch309)
+
+Viewer Aurora (site:5348, 09:38): "Could viewer chat retain replies as long as their prompts remain, across shifts and
+reloads? Preserve all parts and late answers. Test a restart with over 40 replies and no duplicates."
+
+- **What dropped them:**
+  - The stream service rebuilt its replies at every start (a restart, or the next shift's service) from the game's chat
+    backlog: live.py's first read returns the newest 30 lines (plus older lines that name a reader). On d28 at the
+    09:13 restart that kept part 1 of the Operator's 07:58 two-part reply (it names Astra and Luna) and lost part 2,
+    and every shift90-91 reply to the lines the page still showed (site:5306-5343).
+  - The state carries the newest 40 replies (model.py and push_live.py `REPLY_MAX`), while a reload shows the newest
+    60 site lines (16 hours on d28; 25-30 replies a shift).
+- **The stream service** keeps every reply row it makes in `runs/RUN/viewer-replies.jsonl` (one per game chat seq) and
+  at a start reads it back from this run and the 6 runs it resumed from (the newest 400, as they were made, so
+  push_live sends none again); a restart's backlog adds none twice. serve.py's `/replies.json` returns them; the state keeps the newest 40.
+  `tools/stream/replies_backfill.py runs/RUN [--dry-run]` adds the replies made before that (each run's chat.jsonl
+  with its inbox and the Operator's records, as site/longrun.py reads a shift) for the seqs the store lacks; the
+  service reads them at its next start (on d28 at 09:55, shift86-92: 144 rows, 73 of them for the 60 lines the page
+  showed, 46 KB; the page showed 2).
+- **`POST /v1/replies`** (Authorization: Bearer PUBLISH_TOKEN): `{replies: [row]}`, at most 200 rows of 8 KB, each a
+  `viewer_replies` row (push_live.public_replies, scrubbed). Stored by `seq` (the game chat seq, one sequence across
+  shifts); a row sent again unchanged is left as it is. The newest 5000 by time are kept. push_live.py sends the rows
+  serve.py keeps that the worker does not have as they are now, every 10 s (all again after push_live restarts; a
+  worker without the route is asked again in 10 minutes).
+- **`GET /v1/chat?...&replies=1`** adds `replies` (oldest first, at most 500) and `replies_rv` (the store's version):
+  - without `replies_after`: every reply that names one of the lines returned (`answers.id` site:N) or came after the
+    oldest of them (less 60 s for the clocks), so a reload's 60 lines come with their replies at any age;
+  - with `replies_after=RV`: the replies stored or changed since (the page's polls; a late answer arrives this way),
+    the first 500 of them, `replies_rv` the version they reach (the next poll takes the rest).
+  - A line the site hides is left out of the replies to it (its words in `answers`/`also`, its viewer in `to`), as
+    push_live does. The relay's reads (no `replies=1`) are unchanged.
+- **The live page** asks for them on its chat reads and joins them with the state's newest 40, one row per seq (the
+  state's when both have it).
 
 ## Moderation (operator)
 

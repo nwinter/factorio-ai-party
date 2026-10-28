@@ -101,6 +101,17 @@
   // viewer_replies.py; d15 08:07: what the models said back stays readable after it scrolled past live). Shown
   // unless the reader unticks them (remembered per browser).
   var showReplies = store('chatReplies') !== '0';
+  // (d28 batch309, viewer Aurora 09:38: "Could viewer chat retain replies as long as their prompts remain, across shifts
+  // and reloads?") The worker's reply store (GET /v1/chat?replies=1) returns the replies to the lines it returns, at any
+  // age, then (replies_after) each one stored or changed since; the state's newest ones join them, one row per game seq.
+  var stateReplies = [], storedReplies = {}, repliesRv = null;
+  function okReply(m) { return m && m.text && m.by && isFinite(m.t); }
+  function mergeReplies() {
+    var by = {}, rest = [];
+    Object.keys(storedReplies).forEach(function (k) { by[k] = storedReplies[k]; });
+    stateReplies.forEach(function (m) { if (typeof m.seq === 'number') by[m.seq] = m; else rest.push(m); });  // the state's is the newer
+    replyLines = Object.keys(by).map(function (k) { return by[k]; }).concat(rest).sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+  }
   var THREAD_S = 20 * 60, NEW_S = 10 * 60;  // (AK6) a reply threads under a line at most THREAD_S older; "new" for NEW_S
   // The viewer line a reply answers, in this list: the same viewer, the same words (the relay's "@astra " stripped,
   // its cut "…" too), written before the reply.
@@ -380,9 +391,18 @@
     polling = true; pollAgain = false;
     var visible = !app.querySelector('[data-pane="site"]').hidden;
     // channels=all: the viewers-only lines too (the Worker leaves them out for the relay to the game)
-    getJSON(API + '/v1/chat' + (lastSeq != null ? '?after=' + lastSeq : '?limit=60') + '&channels=all').then(function (d) {
+    getJSON(API + '/v1/chat' + (lastSeq != null ? '?after=' + lastSeq : '?limit=60') + '&channels=all&replies=1' +
+        (repliesRv != null ? '&replies_after=' + repliesRv : '')).then(function (d) {
       var hidden = {}; (d.hidden || []).forEach(function (s) { hidden[s] = 1; });
       chatMsgs = mergeChat(chatMsgs.filter(function (m) { return !hidden[m.seq]; }), d.messages);
+      // (batch309) the replies with these lines, or changed since the last poll: one per game seq
+      if (Array.isArray(d.replies)) {
+        d.replies.forEach(function (m) { if (okReply(m) && typeof m.seq === 'number') storedReplies[m.seq] = m; });
+        var keys = Object.keys(storedReplies);
+        if (keys.length > 2000) keys.sort(function (a, b) { return storedReplies[a].t - storedReplies[b].t; }).slice(0, keys.length - 2000).forEach(function (k) { delete storedReplies[k]; });
+        mergeReplies();
+      }
+      if (typeof d.replies_rv === 'number') repliesRv = d.replies_rv;
       if (d.messages && d.messages.length) lastSeq = Math.max(lastSeq || 0, d.messages[d.messages.length - 1].seq);
       else if (lastSeq == null) lastSeq = d.last_seq || 0;
       chatForm.hidden = d.open === false;
@@ -851,7 +871,8 @@
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};
     if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
     ytLines = Array.isArray(s.youtube_chat) ? s.youtube_chat.filter(function (m) { return m && m.text && isFinite(m.t); }) : [];
-    replyLines = Array.isArray(s.viewer_replies) ? s.viewer_replies.filter(function (m) { return m && m.text && m.by && isFinite(m.t); }) : [];
+    stateReplies = Array.isArray(s.viewer_replies) ? s.viewer_replies.filter(okReply) : [];
+    mergeReplies();
     // (d17 batch35 D1, viewer Aurora) each site line's delivery from the relay: relayed (to whom), held, operator, not relayed (why)
     delivery = s.viewer_delivery && typeof s.viewer_delivery === 'object' ? s.viewer_delivery : {};
     readUpTo = s.viewer_read && isFinite(s.viewer_read.after) ? s.viewer_read.after : null;  // (AA5) queued past it

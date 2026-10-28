@@ -5,8 +5,11 @@
 //   GET  /v1/board            every task, request, claim, project and reminder (public; the live page's full lists)
 //   POST /v1/board            replace it (Authorization: Bearer PUBLISH_TOKEN; site/push_live.py, when it changed)
 //   GET  /v1/chat?after=SEQ   viewer chat messages after SEQ (public); the ones that go to the game only, unless
-//                             &channels=all (the live page): then the viewers-only ones too, each with its channel
-//   POST /v1/chat             post a message {name, text, cid?, channel?} (no accounts; rate limited per client; the
+//                             &channels=all (the live page): then the viewers-only ones too, each with its channel;
+//                             &replies=1: the agents' and the Operator's replies to the lines returned (at any age), or
+//                             with &replies_after=RV every one stored or changed since (batch309)
+//   POST /v1/replies          {replies: [row]}: reply rows by game chat seq (Authorization: Bearer PUBLISH_TOKEN; push_live)
+//   POST /v1/chat            post a message {name, text, cid?, channel?} (no accounts; rate limited per client; the
 //                             same cid from the same client is stored once: a repeat returns the first message);
 //                             channel "viewers": on the site only, never relayed to the agents (default "game")
 //   POST /v1/mod              hide/unhide/ban/unban/open/close (Authorization: Bearer PUBLISH_TOKEN)
@@ -36,6 +39,16 @@ const CHAT = {
   globalPerMinute: 60,  // all clients together
   keep: 2000,           // messages kept
   pageMax: 100,
+};
+// (d28 batch309, viewer Aurora 09:38: "Could viewer chat retain replies as long as their prompts remain, across shifts
+// and reloads?") The agents' and the Operator's replies to viewers (push_live.py from the stream service's kept rows),
+// one per game chat seq: GET /v1/chat?replies=1 returns the ones for the lines it returns, at any age.
+const REPLIES = {
+  postMax: 200,          // rows per POST /v1/replies
+  rowBytes: 8 * 1024,    // one row's JSON
+  keep: 5000,            // rows kept (the oldest dropped; a shift has 25-100)
+  readMax: 500,          // rows in one GET (the newest)
+  skewS: 60,             // a reply's time is the stream service's clock: lines this much older than a reply still count
 };
 // Site viewers: each open live page posts a random id (made per page load, never stored) once a minute. A page seen in
 // the last `windowS` counts; at most `perClient` pages per client address, so one script can't inflate it. Kept in
@@ -220,11 +233,23 @@ export default {
       micro.set(key, { at: Date.now(), body });
       return withCors(json(body, 200), req, env);
     }
-    if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/announce")) for (const k of micro.keys()) if (k.startsWith("/v1/chat")) micro.delete(k);
+    if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/announce" || path === "/v1/replies")) for (const k of micro.keys()) if (k.startsWith("/v1/chat")) micro.delete(k);
     if (req.method === "POST" && path.startsWith("/v1/polls")) for (const k of micro.keys()) if (k.startsWith("/v1/polls")) micro.delete(k);
     return withCors(resp, req, env);
   },
 };
+
+// (d28 batch309) a reply row with the lines in `gone` (site seqs the site hides) left out of answers and also, and their
+// viewers' names out of `to` (push_live.public_replies does the same when it sends them)
+function hideAnswers(r, gone) {
+  const hid = (a) => a && gone.has(+((/^site:(\d+)$/.exec(String(a.id || "")) || [])[1]));
+  const names = [r.answers, ...(r.also || [])].filter(hid).map((a) => String(a.name || "").toLowerCase());
+  if (!names.length) return r;
+  const out = { ...r, to: (r.to || []).filter((n) => !names.includes(String(n).toLowerCase())) };
+  if (hid(r.answers)) delete out.answers;
+  if (Array.isArray(r.also)) out.also = r.also.filter((a) => !hid(a));
+  return out;
+}
 
 function sameSecret(want, got) {
   want = String(want || "");
@@ -333,6 +358,13 @@ export class Live {
       // op: the Operator's announcement (POST /v1/announce, batch293)
       try { this.sql.exec(`ALTER TABLE chat ADD COLUMN op INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
       this.hostTimes = [];
+      // (d28 batch309) replies: seq = the game chat line's seq; prompt = the site line it answers (site:N), if any; rv =
+      // the store's version when it last changed (GET /v1/chat?replies_after=rv)
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS replies (seq INTEGER PRIMARY KEY, t REAL NOT NULL, prompt INTEGER,
+        rv INTEGER NOT NULL, row TEXT NOT NULL)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_rv ON replies (rv)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_t ON replies (t)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_prompt ON replies (prompt)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
@@ -393,6 +425,7 @@ export class Live {
         case "POST /v1/state": return this.postState(req, text);
         case "GET /v1/board": return this.getBoard();
         case "POST /v1/board": return this.postBoard(req, text);
+        case "POST /v1/replies": return this.postReplies(req, text);
         case "GET /v1/chat": return this.getChat(url);
         case "POST /v1/chat": return await this.postChat(req, text);
         case "POST /v1/announce": return this.announce(req, text);
@@ -505,14 +538,71 @@ export class Live {
     rows = rows.map(({ host, op, ...r }) => ({ ...r, ...(host ? { host: true } : {}), ...(op ? { op: true } : {}) }));
     const maxRow = this.sql.exec("SELECT COALESCE(MAX(seq), 0) AS m FROM chat").toArray()[0];
     const hidden = this.sql.exec("SELECT seq FROM chat WHERE hidden = 1 ORDER BY seq DESC LIMIT 200").toArray().map((r) => r.seq);
-    return json({
+    const out = {
       schema: SCHEMA,
       open: this.get("chat_open") !== "0",
       messages: rows,
       last_seq: maxRow.m,
       hidden,
       limits: { max_len: CHAT.maxLen, min_gap_s: CHAT.minGapS, per_minute: CHAT.perMinute },
-    });
+    };
+    if (url.searchParams.get("replies") === "1") Object.assign(out, this.replies(url, rows));
+    return json(out);
+  }
+
+  // (d28 batch309) GET /v1/chat?replies=1: with replies_after=RV, the replies stored or changed since (the page's polls),
+  // the first readMax of them, replies_rv the version they reach (the next poll takes the rest); without, the replies to
+  // the lines returned: each one that names one of them (site:N) or came after the oldest, the newest readMax, and
+  // replies_rv the store's version. Oldest first.
+  replies(url, lines) {
+    const after = parseInt(url.searchParams.get("replies_after") || "", 10);
+    let got = [], rv = this.sql.exec("SELECT COALESCE(MAX(rv), 0) AS m FROM replies").toArray()[0].m;
+    if (Number.isFinite(after)) {
+      got = this.sql.exec("SELECT rv, row FROM replies WHERE rv > ? ORDER BY rv LIMIT ?", after, REPLIES.readMax).toArray();
+      if (got.length === REPLIES.readMax) rv = got[got.length - 1].rv;
+    } else if (lines.length) {
+      const lo = lines[0].seq, hi = lines[lines.length - 1].seq;
+      const t0 = Math.min(...lines.map((m) => m.t)) - REPLIES.skewS;
+      got = this.sql.exec("SELECT row FROM replies WHERE t >= ? OR prompt BETWEEN ? AND ? ORDER BY t DESC LIMIT ?",
+        t0, lo, hi, REPLIES.readMax).toArray();
+    }
+    let rows = got.map((r) => JSON.parse(r.row)).sort((a, b) => a.t - b.t || a.seq - b.seq);
+    // a line the site hides since: its words and its viewer's name left out of the replies to it (push_live does the same)
+    const ids = rows.flatMap((r) => [r.answers, ...(r.also || [])]).map((a) => /^site:(\d+)$/.exec(String((a && a.id) || ""))).filter(Boolean).map((m) => +m[1]);
+    if (ids.length) {
+      const gone = new Set(this.sql.exec("SELECT seq FROM chat WHERE hidden = 1 AND seq BETWEEN ? AND ?", Math.min(...ids), Math.max(...ids))
+        .toArray().map((r) => r.seq));
+      if (gone.size) rows = rows.map((r) => hideAnswers(r, gone));
+    }
+    return { replies: rows, replies_rv: rv };
+  }
+
+  // (d28 batch309) POST /v1/replies {replies: [row]}: push_live's public reply rows (push_live.public_replies), each
+  // stored by its game seq; a row sent again unchanged is left as it is (its rv too).
+  postReplies(req, text) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    if (text.length > MAX_STATE_BYTES) return json({ error: "replies too large", max_bytes: MAX_STATE_BYTES }, 413);
+    const body = JSON.parse(text);
+    const list = body && Array.isArray(body.replies) ? body.replies : null;
+    if (!list || list.length > REPLIES.postMax) return json({ error: `replies must be a list of at most ${REPLIES.postMax}` }, 400);
+    let rv = this.sql.exec("SELECT COALESCE(MAX(rv), 0) AS m FROM replies").toArray()[0].m;
+    let stored = 0, same = 0, refused = 0;
+    for (const r of list) {
+      const row = r && typeof r === "object" && !Array.isArray(r) ? JSON.stringify(r) : "";
+      if (!row || row.length > REPLIES.rowBytes || !Number.isSafeInteger(r.seq) || r.seq < 0 || !Number.isFinite(r.t)
+          || typeof r.by !== "string" || typeof r.text !== "string" || !r.text) { refused++; continue; }
+      const old = this.sql.exec("SELECT row FROM replies WHERE seq = ?", r.seq).toArray();
+      if (old.length && old[0].row === row) { same++; continue; }
+      const m = /^site:(\d+)$/.exec(String((r.answers && r.answers.id) || ""));
+      this.sql.exec(`INSERT INTO replies (seq, t, prompt, rv, row) VALUES (?, ?, ?, ?, ?) ON CONFLICT(seq) DO UPDATE SET
+        t = excluded.t, prompt = excluded.prompt, rv = excluded.rv, row = excluded.row`, r.seq, r.t, m ? +m[1] : null, ++rv, row);
+      stored++;
+    }
+    const n = this.sql.exec("SELECT COUNT(*) AS n FROM replies").toArray()[0].n;
+    if (n > REPLIES.keep) {
+      this.sql.exec("DELETE FROM replies WHERE seq IN (SELECT seq FROM replies ORDER BY t ASC LIMIT ?)", n - REPLIES.keep);
+    }
+    return json({ ok: true, stored, same, refused, rv });
   }
 
   async postChat(req, text) {
