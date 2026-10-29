@@ -256,6 +256,37 @@ def digest(s):
             board.get("claims_total"), board.get("in_progress"), len(s.get("alerts") or []))
 
 
+SUBJECT_KEYS = {"agent": "agent", "agents": "agent", "platform": "platform", "ship": "platform"}
+
+
+def subjects_of(facts, e=None):
+    """(d28 batch324 SF, viewer Aurora 16:46, site:5415: "Favor the main verified subject as audio plays ... skip
+    uncertain targets") The agents and platforms a host line's own event names: its facts' and event's "agent",
+    "agents", "platform" and "ship" fields (up to two levels down, as "arrival": {"platform": ...}), never words of the
+    line. [{"agent": name} | {"platform": name}], in the order named, each once; the director keeps only those it
+    knows (onecam.speech_subjects)."""
+    out = []
+
+    def add(kind, v):
+        for x in (v if isinstance(v, list) else [v]):
+            if isinstance(x, dict):
+                x = x.get("name")
+            if isinstance(x, str) and x.strip() and {kind: x.strip()} not in out:
+                out.append({kind: x.strip()})
+
+    def walk(d, depth):
+        if not isinstance(d, dict) or depth > 2:
+            return
+        for k, v in d.items():
+            if k in SUBJECT_KEYS:
+                add(SUBJECT_KEYS[k], v)
+            elif isinstance(v, dict):
+                walk(v, depth + 1)
+    walk(e or {}, 1)
+    walk(facts or {}, 1)
+    return out[:4]
+
+
 def clip_rank(e):
     """The page's playback rank for a host line (static/audio.js): urgent events and space moments interrupt an
     agent speaking aloud, which interrupts answers to viewers, which interrupt host banter."""
@@ -3153,7 +3184,8 @@ class Caster:
             # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
             self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
                        "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
-                       "rank": clip_rank(e), "exchange": base.get("exchange")}, audio, ctype)
+                       "rank": clip_rank(e), "exchange": base.get("exchange"),
+                       "subjects": subjects_of(facts, e)}, audio, ctype)  # (batch324 SF) for the camera
             self.caster_free = time.time() + dur
             self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
                         **({"delivery": direction[i]} if direction.get(i) else {}),

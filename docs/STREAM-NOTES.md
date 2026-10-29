@@ -2576,6 +2576,36 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
   marked sent (records without a rid, from before, count as sent).
 - tools/stream/test_durable_delivery.py.
 
+## Speech-linked framing, still agents' remote work, the one-client trio (2026-10-28, d28 batch324, viewer Aurora 16:46-17:00, site:5414-5416)
+
+- **Speech** (onecam `maybe_speech`, `speech_*`; serve.py snapshot `speech`: every line playing, hosts, agents, the
+  Operator, the narrator).
+  - A line's subjects are verified ones only: a host line's event's own agent, agents, platform or ship fields
+    (caster.py `subjects_of`, sent with the clip); an agent line's speaker (a line with a look stays a cue); an
+    Operator line's agent and platform names in its text. Names the director does not know are skipped.
+  - The first subject on air already: held while the line plays (the still rules wait). Else one cut to it, when the
+    story has been up `speech_min` (12 s), no speech cut came within `speech_gap` (40 s), no rocket is due and nothing
+    holds the camera (urgent shots, battles, operator looks and follows, tours, segments, a fight or big action on
+    air); else in a free panel; else not shown. A second subject goes in a panel beside the first (a comparison); the
+    rest are not shown: one cut a line at most. A subject a line put on air within `speech_merge` (120 s) is not cut
+    to again; the same subject in the next line extends the hold. Holds and insets end with the line's playback.
+  - Each decision is a program row "speech hold|cut|inset|drop: why" with the line's id, channel and subjects.
+- **Still agents' remote work** (one client; `swap_*`): the agent on air standing still `swap_still` (20 s) while its
+  attention inset shows work that changes the world there (building, configuring, moving items; anything on a
+  platform; not a look at an entity), the inset up `swap_min` (4 s), no rocket due, at most every `swap_gap` (90 s):
+  the work on the main view ("@work", "Luna placing ghosts 80 m north") for `swap_hold` (20 s), the agent in the panel
+  (away inset); back after, or at once when it moves or acts again.
+- **The trio with one client** (`panel_trio`): one client and two camera panels: the main view as it is (layout.json
+  main hole and crop: the panels' strips stay out) and both panels at once in `panel_trio_holes` (top left and top
+  right of the main view). program() gives `holes`; cuts.py places the captures by them and stacks the small tiles on
+  top; the overlay takes the holes for its tile labels. No map tile (a panel draws the world).
+  (cp3, operator 19:59) It starts only while the story on air is acting now (moved or acted within `moving_s` with
+  an action running or news), a big action, a fight or a live event shot (a launch, a platform's work or story); it
+  leaves once that story has stood `still_cut`; at most one every `panel_trio_gap` (30 min).
+- **Replay** (director_replay.py `--attention`: attention points from the journals; `--speech`: the played lines from
+  RUN/audio-played.jsonl with words and subjects from the caster logs).
+- tools/stream/test_speechframe.py, tools/stream/test_paneltrio.py.
+
 ## Replay sound and speaker alarms (2026-10-28, d28 batch326 RA/RA2, viewer Aurora site:5417, site:5423)
 
 **Before** (OBS read on pogwin, profile "pog", d28 19:2x, no change made):

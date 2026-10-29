@@ -12,6 +12,8 @@ tools/vertical.py) shares the captures and is restacked the same way in layout-p
 Trio (onecam.py, program "layout": "trio"): the three captures move to layout-3cam.json's holes, the client on air in
 the big one ("tiles": hole -> client); back to the on-air hole when it ends. Transforms only, over the websocket, so
 the switch is live (no scene rebuild). The vertical scene stays one camera: the client on air (the big tile) in front.
+(d28 batch324 SF2) A panel trio (one client, two camera panels) brings its own holes in the program ("holes": main as
+layout.json's, the panels over it): the main capture keeps its crop, so no GUI strip shows in it.
 """
 import json, os, re, threading, time, traceback
 
@@ -166,17 +168,21 @@ class Cuts:
         onair = self.by_slot.get(want.get("onair"))
         inset = self.by_slot.get(want.get("inset")) if want.get("inset") else None
         hole = {}  # capture -> its trio hole, when this scene shows the trio
+        holes = want.get("holes") or target.get("trio")  # (batch324) a panel trio's own holes, from the program
         if want.get("layout") == "trio" and target.get("trio") and want.get("tiles"):
             hole = {self.by_slot.get(s): h for h, s in want["tiles"].items()}
         for src, iid in cams.items():  # the hole each capture belongs in: on air and standby share the main one
             role = "trio:" + hole[src] if src in hole else "inset" if src == inset else "main"
-            if target["placed"].get(src) != role:
+            key = role + (":" + ",".join(map(str, holes[role[5:]])) if role.startswith("trio:") else "")
+            if target["placed"].get(src) != key:
                 # kept as placed only once cropped from a known size: a capture not hooked yet is placed again next time
-                if self.place(target, iid, role):
-                    target["placed"][src] = role
+                if self.place(target, iid, role, holes):
+                    target["placed"][src] = key
                 else:
                     target["placed"].pop(src, None)
-        front = [s for s in (inset, onair) if s in cams] + [s for s in self.by_slot.values() if s in cams and s not in (inset, onair)]
+        tiles = [s for s in hole if s in cams and s != onair]  # (batch324) a trio's small tiles over the big one
+        front = tiles + [s for s in (inset, onair) if s in cams and s not in tiles] + \
+            [s for s in self.by_slot.values() if s in cams and s not in (inset, onair) and s not in tiles]
         stack = dict(cams)
         if HOST in ids:  # in front of every camera while on, behind them while off
             stack[HOST] = ids[HOST]
@@ -190,13 +196,13 @@ class Cuts:
                 cur.remove(iid)
                 cur.insert(idx, iid)
 
-    def place(self, target, iid, role):
+    def place(self, target, iid, role, holes=None):
         """The capture into its role's hole, cropped to the hole's shape; True when its source size was known.
         (d24 batch136 PH2) A game capture reads 0 x 0 until it hooks its client: then the hole is set and the crop left as
         it is. Before, crop_for(0, 0, ...) wrote no crop and the role was kept as placed, so a capture that hooked later
         stayed uncropped in the main hole until its role changed (16:20: cam1 and cam3 after the shift change)."""
         o, ref = self.obs, target["ref"]
-        x, y, w, h = target["trio"][role[5:]] if role.startswith("trio:") else target["layout"]["cams"][role]
+        x, y, w, h = (holes or target["trio"])[role[5:]] if role.startswith("trio:") else target["layout"]["cams"][role]
         t = o.call("GetSceneItemTransform", dict(ref, sceneItemId=iid))["sceneItemTransform"]
         known = bool(t.get("sourceWidth") and t.get("sourceHeight"))
         tr = dict(positionX=float(x), positionY=float(y), boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=float(w),
