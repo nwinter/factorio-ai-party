@@ -133,7 +133,7 @@ return function(api)
     local rows = {}
     for i, e in ipairs(found) do
       if i > 16 then break end
-      if e.valid and e.unit_number then rows[#rows+1] = {unit_number=e.unit_number, name=e.name,
+      if e.valid then rows[#rows+1] = {unit_number=e.unit_number, name=e.name,
         position={x=e.position.x,y=e.position.y}, surface=e.surface.name, original=e.unit_number == unit} end
     end
     return {status=#found >= 17 and 'capped' or 'complete', entities=rows}
@@ -167,7 +167,7 @@ return function(api)
       for _, hit in ipairs(it.matching) do
         hits[#hits+1] = row_text(hit)
         hit_rows[#hit_rows+1] = {unit_number=hit.unit_number or it.unit, name=hit.name or it.rec.name,
-          tick=hit.tick, last_tick=hit.last, position=hit.position, surface=hit.surface or it.rec.surface,
+          tick=hit.tick, last_tick=hit.last, position=hit.position, surface=hit.surface,
           position_status=hit.position and 'recorded' or 'unknown', count=hit.count, damage=hit.damage, type=hit.type}
       end
       rows[#rows+1] = {unit_number=it.unit, name=first.name or it.rec.name, position=pos,
@@ -180,6 +180,6 @@ return function(api)
       note='hits on our entities in a chunk our force saw at the time; only rows matching this area, newest first; one row per source and hit position within a second; last 8 rows per unit, 512 units kept. Alive is a visible lookup by original unit number; destroyed/removed requires a recorded event; otherwise unknown. Current occupants are separate units at the returned historical position, only when visible. Legacy rows lack per-hit positions and use the first observation as a search anchor. Sources are the game event, never inferred.'}
   end
   M.schema = {damage_log = {position='optional {x,y} (default you)', radius='1..64 (default 8)', surface='optional planet or platform name (default yours)',
-    returns='entities [{unit_number, name, position, position_basis, hit_tick, last_hit_tick, state: alive|destroyed|removed|unknown, alive: true/false only when confirmed, state_reason?, current_position?, current_surface?, removal?: {state,tick,position,surface}, current_occupants: {status: complete|capped|unknown, entities?: [{unit_number,name,position,surface,original}]}, hit_rows: [{unit_number,name,tick,last_tick,position?,position_status,surface,count,damage,type}], hits: source/cause text newest first}]; only matching historical hit positions (legacy first observation labelled); more; last 8 rows per unit, 512 units. Current occupant lookup is bounded to 17, at the returned position in current sight. Read only'}}
+    returns='entities [{unit_number, name, position, position_basis, hit_tick, last_hit_tick, state: alive|destroyed|removed|unknown, alive: true/false only when confirmed, state_reason?, current_position?, current_surface?, removal?: {state,tick,position,surface}, current_occupants: {status: complete|capped|unknown, entities?: [{unit_number?,name,position,surface,original}]}, hit_rows: [{unit_number,name,tick,last_tick,position?,position_status,surface?,count,damage,type}], hits: source/cause text newest first}]; only matching historical hit positions (legacy first observation labelled); more; last 8 rows per unit, 512 units. Current occupant lookup is bounded to 17, at the returned position in current sight. Read only'}}
   return M
 end

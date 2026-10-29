@@ -92,8 +92,12 @@ eq(st.damage_log.by[99],nil)
 -- Legacy rows never claim an exact per-hit position.
 local legacy=st.damage_log.by[1].rows[1]
 legacy.position=nil; legacy.surface=nil; legacy.unit_number=nil; legacy.name=nil
-r=read()[3]; eq(r.unit_number,1); eq(r.hit_rows[1].position,nil); eq(r.hit_rows[1].position_status,'unknown')
+r=read()[3]; eq(r.unit_number,1); eq(r.hit_rows[1].position,nil); eq(r.hit_rows[1].position_status,'unknown'); eq(r.hit_rows[1].surface,nil)
 assert(r.position_basis:find('legacy'))
+-- Entities without unit numbers are still visible occupants; none is mistaken for the original.
+local rock=make(120,'big-rock',10,0); rock.unit_number=nil
+r=read(10)[1]; eq(r.current_occupants.status,'complete'); eq(#r.current_occupants.entities,1)
+eq(r.current_occupants.entities[1].name,'big-rock'); eq(r.current_occupants.entities[1].original,false)
 -- Bounded occupancy and history; reaching the find bound is incomplete.
 for id=100,118 do make(id,'transport-belt',50,0) end
 hit(units[100],800)
