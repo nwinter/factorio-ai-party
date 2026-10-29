@@ -243,7 +243,10 @@ def web_block():
         full_tools.web_block(tmp)
         full_tools.web_block(tmp)
         assert len(json.load(open(os.path.join(tmp, ".claude", "settings.json")))["permissions"]["deny"]) == 4, "twice: no duplicates"
-        assert "agy: read_url_content and browser_subagent off" in full_tools.web_state(tmp, "agy")
+        assert "agy: search_web, read_url_content and browser_subagent off" in full_tools.web_state(tmp, "agy")
+        assert full_tools.agy_agent(tmp) == "--agent main"
+        md = open(os.path.join(tmp, ".agents", "agents", "main", "agent.md")).read()
+        assert "tools:\n  - ask_question\n" in md and "run_command" in md and "search_web" not in md and "read_url" not in md, md
         assert json.loads(full_tools.AGY_WEB_OFF) == {"permissions": {"deny": ["read_url(*)", "execute_url(*)"]}}
         # POG_SHELL_NET=socket: Codex's profile allows the one socket, first line default_permissions, the proxy on
         import tomllib
@@ -261,6 +264,7 @@ def web_block():
         del os.environ["POG_SHELL_NET"]
         la = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
         assert '--dangerously-skip-permissions $agy_web --print-timeout' in la and 'codex-socket-only "$dir"' in la
+        assert 'full_tools.py" agy-agent "$dir"' in la
         assert open(os.path.join(tmp, ".web-state")).read().startswith("codex: ")   # the last web_state call's
         assert full_tools.web_state(tmp, "codex").startswith("codex: web_search disabled; shell network open")
         # Codex's profile: search disabled (it takes an allowlist only), whatever POG_FULL_TOOLS says

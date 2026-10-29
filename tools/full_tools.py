@@ -571,6 +571,23 @@ def grok_args(d):
 # DIR/.web-state.
 MUSE_WEB_OFF = "-c 'tools.web_search.mode=\"off\"' -c 'tools.web_fetch.enabled=false'"
 AGY_WEB_OFF = json.dumps({"permissions": {"deny": ["read_url(*)", "execute_url(*)"]}}, separators=(",", ":"))
+# (mt280 W1) and search_web off too: a workspace agent (.agents/agents/main/agent.md, run with --agent main) whose
+# `tools:` allowlist is agy's default tool set less search_web, read_url_content and browser_subagent (checked with agy
+# 1.x in a throwaway workspace: "No web search tool available", "No URL tool available", the shell as before; the
+# frontmatter's disabledTools and enabledTools had no effect). The settings above stay: they hold if the file is edited.
+AGY_AGENT = "main"
+AGY_TOOLS = ["ask_question", "define_subagent", "edit_file", "invoke_subagent", "manage_subagents", "manage_task",
+             "read_file", "run_command", "schedule", "send_message", "write_file"]
+
+
+def agy_agent(d):
+    """DIR/.agents/agents/main/agent.md: the workspace agent without web tools; returns the --agent flag."""
+    path = os.path.join(d, ".agents", "agents", AGY_AGENT)
+    os.makedirs(path, exist_ok=True)
+    with open(os.path.join(path, "agent.md"), "w") as f:
+        f.write("---\nname: %s\ndescription: plays the game from this workspace\nmainAgent: true\ntools:\n%s---\n# %s\n"
+                "Follow the instructions in AGENTS.md.\n" % (AGY_AGENT, "".join(f"  - {t}\n" for t in AGY_TOOLS), AGY_AGENT))
+    return f"--agent {AGY_AGENT}"
 
 
 # POG_SHELL_NET=socket: the shell reaches no host, only the agent's own broker socket. Codex (codex-cli 0.164): its
@@ -632,7 +649,7 @@ def web_state(d, kind):
            "codex": "web_search disabled",
            "grok": f"web_search excluding {hosts}, web_fetch off",
            "muse": "web_search and web_fetch off (-c options)",
-           "agy": "read_url_content and browser_subagent off (read_url and execute_url denied); search_web on (no switch)"}.get(kind, "?")
+           "agy": "search_web, read_url_content and browser_subagent off (a workspace agent's tools; read_url and execute_url denied)"}.get(kind, "?")
     net = {"claude": "shell in the sandbox (no network but the broker socket)" if os.environ.get("POG_BROKER") == "1"
                      else "shell in the sandbox (local network only)",
            "codex": "shell network: the broker socket only (Codex's network proxy, no host)" if shell_net() == "socket"
@@ -703,6 +720,8 @@ if __name__ == "__main__":
         codex_socket_only(sys.argv[2], sys.argv[3])
     elif cmd == "agy-web-off":
         print(AGY_WEB_OFF)
+    elif cmd == "agy-agent":   # agy-agent DIR: writes the workspace agent, prints --agent NAME
+        print(agy_agent(sys.argv[2]))
     elif cmd == "muse-web-off":
         print(MUSE_WEB_OFF)
     elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed (stdout: >> team-tools-sync.log)

@@ -14,9 +14,9 @@ if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
 agy_loop_script() {
-  # POG_WEB_BLOCK: no page reads or browser for agy (session settings; tools/full_tools.py AGY_WEB_OFF)
+  # POG_WEB_BLOCK: no web tools for agy (a workspace agent's tool list, and session settings: tools/full_tools.py)
   local agy_web=""
-  [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)'"
+  [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)' $(python3 "$root/tools/full_tools.py" agy-agent "$dir")"
   cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
