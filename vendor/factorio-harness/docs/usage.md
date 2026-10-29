@@ -3295,6 +3295,17 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   name@quality) and `held_count`, as the exact inspect gives them. A crafting machine's row adds `in_progress` ("one
   craft 40% done (its products are in no slot yet)") beside `holds` (its slots). Belts' `holds` are their lanes, a
   turret's its ammo slots, robots' their cargo, as before.
+- (d29 batch343 MD, Luna #2749: "Read-only inspect of Gleba biochambers reports recipe, inputs and status but omits
+  installed module names/counts") Each `inspect` area or radius row of an entity with module slots (assemblers,
+  furnaces, biochambers, labs, beacons, drills, silos ..., built or ghost) adds `modules` (`{"productivity-module-3@rare":
+  2, "speed-module@normal": 1}`, normal quality named too; absent when none is installed), `module_slots` ("3/4": used of
+  the total) and, while an item request or a ghost's insert plan moves some, `modules_requested` and `modules_removing`
+  ("efficiency-module*1"). Compact lines add `modules productivity-module-3@rare*2 speed-module*1 (3/4 slots)`, or
+  `modules none (0/4 slots)`, with `, speed-module*1 requested` and `, ... coming out`. The exact inspect's `modules`
+  adds `installed`, `used` and `line` beside `slots`, `contents` and `by_slot`. It is a read: nothing changes. Cost
+  (iMac copy, 45 Gleba biochambers and beacons): about 14 µs a row (one module inventory read, about 0.6 µs; the slots
+  and their qualities, the item request, the text); a 33-row radius page read 14.1 ms before and 14.8 ms after
+  (compact 26.1 and 27.5 ms), medians of 5, within the noise of about 1 ms.
 - (d28 batch328 SC, Astra #2725) An entity whose surface conditions the surface does not meet is refused naming the
   condition, before any footprint check, in `build`, `place_ghosts`, `paste` and `blueprint_place` and their dry runs:
   `placement blocked: iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0` (the
