@@ -45,6 +45,10 @@ done
 export POG_DENY_READ=$deny
 # Claude Code: reads scoped to the tree and the team's folder (tools/launch-agent.sh), so its settings name no other team
 export POG_READ_SCOPE=1
+# Nick d29 09:38: shell network closed for Codex (only its broker socket, tools/full_tools.py codex_socket_only) and
+# Muse (not possible yet: Muse's restricted modes block the broker socket too, so its stays on); agy's page reads and
+# browser off (POG_WEB_BLOCK above)
+export POG_SHELL_NET=socket
 resume=${POG_RESUME:-}
 only=${POG_MT_TEAMS:-}
 teams=$(awk -F'\t' -v only=",$only," '!/^#/ && NF >= 8 && (only == ",," || index(only, "," $1 ",")) && !seen[$1]++ {print $1}' "$teams_file")

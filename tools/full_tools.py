@@ -565,9 +565,44 @@ def grok_args(d):
 # Claude Code drops WebSearch (all or nothing) and denies WebFetch and the sandbox's network those hosts (web_block);
 # Codex's web_search has only an allowlist, so it is disabled (tools/clean-profile.py); Grok's web_search excludes the
 # hosts and web_fetch stays off (tools/grok-home.py, tools/profile-flags.sh); Muse has no host list, so web_search and
-# web_fetch are off (MUSE_WEB_OFF); agy has no per-workspace switch (its deny rules live in the owner's global
-# settings), so search_web, read_url_content and browser_subagent stay on. web_state writes that in DIR/.web-state.
+# web_fetch are off (MUSE_WEB_OFF); agy (1.x) takes session settings (--settings), and a deny rule holds under
+# --dangerously-skip-permissions: read_url(*) and execute_url(*) take read_url_content and the browser subagent out of
+# its tools (AGY_WEB_OFF, checked d29); search_web has no rule or switch, so it stays on. web_state writes that in
+# DIR/.web-state.
 MUSE_WEB_OFF = "-c 'tools.web_search.mode=\"off\"' -c 'tools.web_fetch.enabled=false'"
+AGY_WEB_OFF = json.dumps({"permissions": {"deny": ["read_url(*)", "execute_url(*)"]}}, separators=(",", ":"))
+
+
+# POG_SHELL_NET=socket: the shell reaches no host, only the agent's own broker socket. Codex (codex-cli 0.164): its
+# network proxy with a permission profile allowing that one Unix socket and no domain (checked: the socket answers,
+# github.com and wiki.factorio.com do not, direct or through the proxy); ai-session's --sandbox/--network are left out
+# so the profile applies (tools/launch-agent.sh). Muse's restricted and proxy-only modes block Unix sockets and
+# loopback TCP alike (muse 1.4.14), so fh could not reach the broker: Muse's shell network stays enabled.
+CODEX_PROFILE = "pog_socket"
+
+
+def shell_net():
+    return os.environ.get("POG_SHELL_NET", "")
+
+
+def codex_socket_only(d, sock):
+    """DIR/.codex/config.toml: default_permissions (a top-level key, so first), features.network_proxy in [features],
+    and the profile: the workspace's file access, network on through the proxy, the one socket allowed."""
+    path = os.path.join(d, ".codex", "config.toml")
+    text = open(path).read() if os.path.exists(path) else ""
+    if f'default_permissions = "{CODEX_PROFILE}"' in text:
+        return
+    lines = text.splitlines()
+    if "[features]" in lines:
+        lines.insert(lines.index("[features]") + 1, "network_proxy = true")
+    else:
+        lines += ["[features]", "network_proxy = true"]
+    head = ["# Written by tools/full_tools.py (POG_SHELL_NET=socket): the shell reaches only this agent's broker socket",
+            f'default_permissions = "{CODEX_PROFILE}"']
+    tail = [f"[permissions.{CODEX_PROFILE}]", 'extends = ":workspace"', f"[permissions.{CODEX_PROFILE}.network]", "enabled = true",
+            f"[permissions.{CODEX_PROFILE}.network.unix_sockets]", f"{json.dumps(sock)} = \"allow\""]
+    with open(path, "w") as f:
+        f.write("\n".join(head + lines + tail) + "\n")
 
 
 def web_blocked():
@@ -597,11 +632,13 @@ def web_state(d, kind):
            "codex": "web_search disabled",
            "grok": f"web_search excluding {hosts}, web_fetch off",
            "muse": "web_search and web_fetch off (-c options)",
-           "agy": "search_web, read_url_content and browser_subagent on (no per-workspace switch)"}.get(kind, "?")
+           "agy": "read_url_content and browser_subagent off (read_url and execute_url denied); search_web on (no switch)"}.get(kind, "?")
     net = {"claude": "shell in the sandbox (no network but the broker socket)" if os.environ.get("POG_BROKER") == "1"
                      else "shell in the sandbox (local network only)",
-           "codex": "shell network open (--network)", "grok": "shell network open",
-           "muse": "shell network open (--sandbox-network enabled)", "agy": "shell network open"}.get(kind, "?")
+           "codex": "shell network: the broker socket only (Codex's network proxy, no host)" if shell_net() == "socket"
+                    else "shell network open (--network)", "grok": "shell network open",
+           "muse": "shell network open (--sandbox-network enabled)" + ("; Muse's restricted modes block the broker socket" if shell_net() == "socket" else ""),
+           "agy": "shell network open"}.get(kind, "?")
     line = f"{kind}: {web}; {net}"
     with open(os.path.join(d, ".web-state"), "w") as f:
         f.write(line + "\n")
@@ -662,6 +699,10 @@ if __name__ == "__main__":
         web_block(sys.argv[2])
     elif cmd == "web-state":
         print(web_state(sys.argv[2], sys.argv[3]))
+    elif cmd == "codex-socket-only":   # codex-socket-only DIR SOCKET
+        codex_socket_only(sys.argv[2], sys.argv[3])
+    elif cmd == "agy-web-off":
+        print(AGY_WEB_OFF)
     elif cmd == "muse-web-off":
         print(MUSE_WEB_OFF)
     elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed (stdout: >> team-tools-sync.log)

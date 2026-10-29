@@ -14,6 +14,9 @@ if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
 agy_loop_script() {
+  # POG_WEB_BLOCK: no page reads or browser for agy (session settings; tools/full_tools.py AGY_WEB_OFF)
+  local agy_web=""
+  [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)'"
   cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
@@ -35,7 +38,7 @@ turn() {
   touch .agy-stamp
   t0=\$(date +%s)
   # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.
-  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions --print-timeout ${POG_AGY_TURN_S:-300}s
+  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions $agy_web --print-timeout ${POG_AGY_TURN_S:-300}s
   # ran into the timeout: it ends at turn_s (a turn that ends by itself much later was not cut)
   took=\$((\$(date +%s) - t0)); timed_out=0
   [ "\$took" -ge "\$((turn_s - 2))" ] && [ "\$took" -le "\$((turn_s + 30))" ] && timed_out=1
@@ -260,6 +263,12 @@ case $kind in
     python3 "$root/tools/clean-profile.py" "$kind" "$dir"
     # ai-session passes no environment: the wait cap goes in the workspace config's shell environment.
     python3 "$root/tools/sleepcap/setup.py" codex "$dir"
+    # POG_SHELL_NET=socket (POG_BROKER=1): the shell reaches only this bot's broker socket, by Codex's own network proxy
+    # and a permission profile in the workspace config; without --sandbox and --network, which would override it
+    if [ "${POG_SHELL_NET:-}" = socket ] && [ "${POG_BROKER:-0}" = 1 ]; then
+      args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --approval never)
+      python3 "$root/tools/full_tools.py" codex-socket-only "$dir" "$(dirname "$dir")/.sock/${POG_BOT:-$player}.sock"
+    fi
     # (d29 batch331 LS) through tools/ai-session-spawn.sh: a pane whose shell missed ai-session's 20 s is waited for
     # and the manifest run there (shift96 and shift97 failed on it); it prints the pane, or exits 1 with the output
     pane=$("$root/tools/ai-session-spawn.sh" "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start)

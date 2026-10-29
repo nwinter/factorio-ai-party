@@ -243,8 +243,25 @@ def web_block():
         full_tools.web_block(tmp)
         full_tools.web_block(tmp)
         assert len(json.load(open(os.path.join(tmp, ".claude", "settings.json")))["permissions"]["deny"]) == 4, "twice: no duplicates"
-        assert "agy: search_web, read_url_content and browser_subagent on" in full_tools.web_state(tmp, "agy")
-        assert open(os.path.join(tmp, ".web-state")).read().startswith("agy: ")
+        assert "agy: read_url_content and browser_subagent off" in full_tools.web_state(tmp, "agy")
+        assert json.loads(full_tools.AGY_WEB_OFF) == {"permissions": {"deny": ["read_url(*)", "execute_url(*)"]}}
+        # POG_SHELL_NET=socket: Codex's profile allows the one socket, first line default_permissions, the proxy on
+        import tomllib
+        os.makedirs(os.path.join(tmp, ".codex"))
+        open(os.path.join(tmp, ".codex", "config.toml"), "w").write('web_search = "disabled"\n[features]\nplugins = false\n[skills]\ninclude_instructions = false\n')
+        full_tools.codex_socket_only(tmp, "/r/red/.sock/astra.sock")
+        full_tools.codex_socket_only(tmp, "/r/red/.sock/astra.sock")   # twice: once
+        raw = open(os.path.join(tmp, ".codex", "config.toml")).read()
+        cfg = tomllib.loads(raw)
+        assert cfg["default_permissions"] == "pog_socket" and cfg["features"] == {"network_proxy": True, "plugins": False}, cfg
+        assert cfg["permissions"]["pog_socket"] == {"extends": ":workspace", "network": {"enabled": True, "unix_sockets": {"/r/red/.sock/astra.sock": "allow"}}}
+        assert raw.count("default_permissions") == 1 and cfg["skills"] == {"include_instructions": False}
+        os.environ["POG_SHELL_NET"] = "socket"
+        assert "codex: web_search disabled; shell network: the broker socket only" in full_tools.web_state(tmp, "codex")
+        del os.environ["POG_SHELL_NET"]
+        la = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
+        assert '--dangerously-skip-permissions $agy_web --print-timeout' in la and 'codex-socket-only "$dir"' in la
+        assert open(os.path.join(tmp, ".web-state")).read().startswith("codex: ")   # the last web_state call's
         assert full_tools.web_state(tmp, "codex").startswith("codex: web_search disabled; shell network open")
         # Codex's profile: search disabled (it takes an allowlist only), whatever POG_FULL_TOOLS says
         for full in ("0", "1"):
