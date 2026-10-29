@@ -280,17 +280,45 @@ BRIEF = {
     "harness-claude.md": T0, "spaceage.md": ["world:space_age"] + PLATFORM, "ref/index.md": T0,
 }
 BRIEF_ITEMS = [
-    ("PLAYBOOK.md", r"leave a queue plan|queue plan check|pauses your running queue|queue submit --file", ["with:queue_submit"]),
-    ("PLAYBOOK.md", r"urgent alert", ["event:enemy_seen", "event:low_power", "event:died", "event:second_surface"]),
     ("PLAYBOOK.md", r"^- More detail", ["never"]),
-    ("team.md", r"Out of sight, reads add `fog`", ["event:loss", "research:radar"]),
-    ("team.md", r"--aloud", ["world:stream"]),
     ("full-tools.md", r"Aethera and Peregrine", ["never"]),
 ]
 
 # Doc entries by their lead (the text before the first ": " of a top-level item), first match wins, before the actions
 # the entry names: an entry about a feature unlocks with the feature.
 DOCS = [
+    # (cp4) parts split from large entries: "- `ACTION`, FEATURE: ..."
+    (r"^- `transfer`, quality", QUALITY),
+    (r"^- `transfer`, (two places|from nearest|nearest room|pick|steps|via)", ["habit:chest_moves:5"]),
+    (r"^- `transfer`, (robots bring|personal requests)", LOGISTIC),
+    (r"^- `transfer`, spoilage", SPOIL),
+    (r"^- `collect`, pods", SILO + ["event:freight"]),
+    (r"^- `collect`, hauls", ["with:queue_submit"]),
+    (r"^- `move_to`, stand off", ENEMY),
+    (r"^- `move_to`, gates", ["built:gate"]),
+    (r"^- `move_to`, mech armor", ["research:mech-armor"]),
+    (r"^- `configure`, (item requests|storage filter)", ROBOTS),
+    (r"^- `configure`, (circuit recipe|speaker|combinators)", CIRCUIT),
+    (r"^- `configure`, modules", ["research:modules"]),
+    (r"^- `configure`, filters", ["research:fast-inserter"]),
+    (r"^- `configure`, turret targets", TURRET),
+    (r"^- `configure`, rocket silo", SILO),
+    (r"^- `inspect`, (robots|networks)", ROBOTS),
+    (r"^- `inspect`, fusion", ["research:fusion-reactor"]),
+    (r"^- `inspect`, (turret kills|ammo)", TURRET + VEHICLE),
+    (r"^- `inspect`, inserter waits", ["scale:inserters:10"]),
+    (r"^- `inspect`, captive spawner", ["research:captive-biter-spawner"]),
+    (r"^- `inspect`, (agriculture|burnt result)", GLEBA),
+    (r"^- `build`, railguns", ["research:railgun"]),
+    (r"^- `build`, (inserter targets|check inserters)", ["scale:inserters:10", "habit:refused:1"]),
+    (r"^- `build`, entry settings", ["scale:machines:10"] + CIRCUIT + LOGISTIC),
+    (r"^- `build`, fast replace", ["scale:machines:10", "research:logistics-2"]),
+    (r"^- `build`, rails", RAIL),
+    # (cp4) moved from the core: what was in it at tick 0 stays open at tick 0
+    (r"^- `--wait`|^- `\./fh wait --until \"tell|^- Remote reads", T0),
+    (r"^- Urgent alerts", ["event:enemy_seen", "event:low_power", "event:died", "event:second_surface"]),
+    (r"^- A direct action that drives your character|^- Waiting and planning", ["with:queue_submit"]),
+    (r"^- Out of sight, reads add `fog`", ["event:loss", "research:radar"]),
     (r"^- Game rule, ghosts|^- Who placed it", ROBOTS),
     (r"^- Couriers", ["habit:chest_moves:5"]),
     (r"^- Rail and chain signals|^- Rolling stock", RAIL),
@@ -309,7 +337,8 @@ DOCS = [
     (r"seed loop|keeps a seed going|^- Gleba|^- Spoilage", GLEBA),
     (r"Frozen entities|heating tower", ["arrived:aquilo", "research:heating-tower"]),
     (r"belt carrying items destroyed|line cut|`line_cut`", ["event:attacked", "event:loss"]),
-    (r"platform|Platform|Hub requests|hub's trash|Aboard", PLATFORM),
+    # (cp4) anchored: an entry about platforms, not one whose signature takes `platform?`
+    (r"^- (Platform|Hub requests|A hub's trash|Aboard)", PLATFORM),
     (r"Supply left without a path", PLATFORM),
     (r"`fields|`scan \{|A scan lists", ["scale:machines:20"]),
     (r"plan list", ["with:plan_save"]),
