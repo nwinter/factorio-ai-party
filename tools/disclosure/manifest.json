@@ -2238,7 +2238,7 @@
 {"id":"doc:space-age#shipment","kind":"doc","topic":"space-age","lead":"- `shipment {platform | item}`","condition":{"world":[],"any":["with:action:shipment"]},"bytes":3867},
 {"id":"doc:space-age#shipment-totals","kind":"doc","topic":"space-age","lead":"- `shipment`, totals","condition":{"world":[],"any":["with:action:shipment"]},"bytes":370},
 {"id":"doc:space-age#delivery_watch","kind":"doc","topic":"space-age","lead":"- `delivery_watch {item, count, to","condition":{"world":[],"any":["with:action:delivery_watch"]},"bytes":3278},
-{"id":"doc:space-age#flight_watch","kind":"doc","topic":"space-age","lead":"- `flight_watch {platform, from?","condition":{"world":[],"any":["with:action:flight_watch"]},"bytes":5273},
+{"id":"doc:space-age#flight_watch","kind":"doc","topic":"space-age","lead":"- `flight_watch {platform, from?","condition":{"world":[],"any":["with:action:flight_watch"]},"bytes":5551},
 {"id":"doc:space-age#fleet","kind":"doc","topic":"space-age","lead":"- `fleet {platform?, leg?}`","condition":{"world":[],"any":["with:action:fleet"]},"bytes":1151},
 {"id":"doc:space-age#min_payload","kind":"doc","topic":"space-age","lead":"- `min_payload {platforms?, set?}`","condition":{"world":[],"any":["with:action:min_payload"]},"bytes":562},
 {"id":"doc:space-age#platform-2","kind":"doc","topic":"space-age","lead":"- `platform` given to an action that takes the platform under another name runs as that (`corrected`","condition":{"world":[],"any":["with:action:platform"]},"bytes":412},
