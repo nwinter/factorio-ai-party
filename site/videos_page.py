@@ -199,10 +199,15 @@ class Shelf:
         self.lr, self.h, self.thumbs = lr, h, thumbs
         self.done = [s for s in lr["shifts"] if not s.get("empty")]
         self.by_n = {s["n"]: s for s in self.done}
-        self.vid = {int(v["shift"]): v for v in videos.values()}
-        self.r2 = {x["shift"]: dict(x, master=x.get("master") or master_url(run)) for run, x in r2.items()}
+        # (d29 batch350) a video by its run id's shift row, as build.py's links key them (runs shift96 and shift97 are
+        # empty rows, so run shift99's video is Shift 97 here); a video whose run is no played shift is left out
+        n_of = {s["id"]: s["n"] for s in self.done}
+        self.vid = {n_of[rid]: v for rid, v in videos.items() if rid in n_of}
+        self.r2 = {n_of[run]: dict(x, master=x.get("master") or master_url(run)) for run, x in r2.items() if run in n_of}
         self.playlist = next((v["playlist"] for v in videos.values() if v.get("playlist")), None)
-        self.pub = public_shifts({k: dict(v, shift=int(v["shift"])) for k, v in videos.items()})
+        # the YouTube rule's public ones (tools/yt_archive.py, by the video's own shift number), as rows here
+        pub = set(public_shifts({k: dict(v, shift=int(v["shift"])) for k, v in videos.items()}))
+        self.pub = sorted(n_of[rid] for rid, v in videos.items() if rid in n_of and int(v["shift"]) in pub)
         self.latest = max(self.vid) if self.vid else None
         self.firsts = {}
         for f in lr["firsts"]:
