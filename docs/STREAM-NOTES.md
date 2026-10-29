@@ -2554,6 +2554,7 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
   see the batch318 report for d28's numbers.
 - **obs.py stats** `--seconds N --world n`: OBS's frames and skips and the game's ticks, each second (read only).
 - tools/stream/test_oneclient.py; tools/test_obs_stats.py.
+
 ## Delivery receipts after a durable write (2026-10-28, d28 batch323 DR, viewer Aurora 16:19, site:5413)
 
 - Every writer of runs/RUN/operator-inbox.jsonl appends through `operator_inbox.write_rows`: whole lines in one write,
