@@ -61,8 +61,8 @@ return function(api)
   local CELL, MAXC, CMAX = 4, 128, 160
   local function try(fn) local ok, v = pcall(fn) if ok then return v end end
   -- (mt276 C) a pass per team force: the player force's at state().census (as before), another's at
-  -- state().census_teams[name]; the steps go round the team forces a tick each (api.team_names; a one-team world steps
-  -- the player force every tick, as before). A read takes the asking force's pass.
+  -- state().census_teams[name]; each takes its step every tick (api.team_names; a one-team world: the player force
+  -- alone, as before). A read takes the asking force's pass.
   local function store(fname)
     local s = api.state()
     if fname == nil or fname == 'player' then
@@ -792,16 +792,22 @@ return function(api)
       st.job = nil
     end
   end
+  -- (mt276 C) every team force's pass takes its step each tick, as one force's did alone: a walk step reads one band,
+  -- so steps in turn walked each force's chunks a team-count times slower (measured on the iMac's 4-team save: the
+  -- player force's pass still on Nauvis after 52,600 ticks; 63,224 for every surface alone)
+  local PLAYER_ONLY = {'player'}
   function M.tick(tick)
-    local teams = api.team_names and api.team_names() or nil
-    local fname = teams and teams[tick % #teams + 1] or 'player'
-    local st = store(fname)
-    local ok, err = pcall(timed, 'census.step', M.step, st, tick, game.forces[fname])
-    if not ok then
-      st.job = nil
-      st.errors = {count=((st.errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
-      -- (the last pass keeps the tick it started at, its as_of; the next starts PERIOD after the failure, snapfail.lua)
-      if st.done then st.done.refresh_failed = snapfail.failed(err, tick) end
+    local teams = api.team_names and api.team_names() or PLAYER_ONLY
+    for i = 1, #teams do
+      local fname = teams[i]
+      local st = store(fname)
+      local ok, err = pcall(timed, 'census.step', M.step, st, tick, game.forces[fname])
+      if not ok then
+        st.job = nil
+        st.errors = {count=((st.errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
+        -- (the last pass keeps the tick it started at, its as_of; the next starts PERIOD after the failure, snapfail.lua)
+        if st.done then st.done.refresh_failed = snapfail.failed(err, tick) end
+      end
     end
   end
 
