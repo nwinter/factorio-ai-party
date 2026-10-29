@@ -187,6 +187,9 @@ function M.team_names()
   if s.team_names then return s.team_names end
   local set,out={},{}
   for _,b in ipairs(M.bots.list()) do local f=b.force or 'player'; if not set[f] then set[f]=true; out[#out+1]=f end end
+  -- (mt282) a human team has no bots: a team still (its census, stores and sweeps), once mt_humans sets it up
+  local h=s.mt and s.mt.humans
+  if h and h.team and game.forces[h.team] and not set[h.team] then set[h.team]=true; out[#out+1]=h.team end
   if #out==0 then out={'player'} end
   table.sort(out)
   s.team_names=out

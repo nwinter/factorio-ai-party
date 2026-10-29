@@ -396,6 +396,34 @@ def team_views():
     print("team views: ok")
 
 
+def client_mod():
+    """mt282: the human clients' mod: six files, no harness module, no private name; a tampered copy fails the scan."""
+    import zipfile
+    tmp = tempfile.mkdtemp()
+    try:
+        r = subprocess.run([os.path.join(ROOT, "tools", "mt", "client_mod.sh"), tmp], capture_output=True, text=True)
+        assert r.returncode == 0 and "scan: clean (6 files" in r.stdout, r.stdout + r.stderr
+        z = zipfile.ZipFile(os.path.join(tmp, "agent-harness_0.1.0.zip"))
+        names = sorted(n for n in z.namelist() if not n.endswith("/"))
+        assert names == ["agent-harness_0.1.0/" + f for f in ("avatar_parts.lua", "control.lua", "data.lua", "graphics/avatar-parts.png",
+                                                             "info.json", "runtime.lua")], names
+        info = json.loads(z.read("agent-harness_0.1.0/info.json"))
+        assert "? squeak-through-2" in info["dependencies"] and "base >= 2.0.0" in info["dependencies"], info
+        assert b"--" not in z.read("agent-harness_0.1.0/control.lua").split(b"\n")[0], "comments dropped"
+        bad = os.path.join(tmp, "bad.zip")
+        with zipfile.ZipFile(bad, "w") as out:
+            for n in z.namelist():
+                data = z.read(n)
+                if n.endswith("control.lua"):
+                    data += b"\n-- multiteam\n"
+                out.writestr(n, data)
+        r = subprocess.run([os.path.join(ROOT, "tools", "mt", "client_mod.sh"), "--scan", bad], capture_output=True, text=True)
+        assert r.returncode == 1 and "private names" in r.stdout, r.stdout
+    finally:
+        shutil.rmtree(tmp)
+    print("client mod: ok")
+
+
 if __name__ == "__main__":
     brief_and_new_run()
     claude_settings()
@@ -405,3 +433,5 @@ if __name__ == "__main__":
     web_block()
     launch_tree()
     team_views()
+
+    client_mod()

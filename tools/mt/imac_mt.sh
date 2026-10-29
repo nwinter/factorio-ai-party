@@ -30,8 +30,29 @@ start)
   [ -s "$pwfile" ] || { python3 -c 'import secrets; print(secrets.token_hex(16))' > "$pwfile"; chmod 600 "$pwfile"; }
   [ -e "$(dirname "$pwfile")/rcon-imac2.pw" ] || ln -s "$(basename "$pwfile")" "$(dirname "$pwfile")/rcon-imac2.pw"
   remote "mkdir -p '$dir/saves' '$dir/mods' '$dir/config' '$dir/data/saves' '$dir/clients'"
-  rsync -a --delete --exclude tests "$mod/" "$host:$dir/mods/agent-harness_0.1.0/"
-  scp -q "$root/tools/imac-mod-list.json" "$host:$dir/mods/mod-list.json"
+  # (mt282) POG_MT_CLIENT_MOD=1 (the default with POG_MT_HUMANS=1): the harness mod as human clients get it
+  # (tools/mt/client_mod.sh: no harness module, a stub runtime; the real one arrives by deploy). Else the full folder.
+  if [ "${POG_MT_CLIENT_MOD:-${POG_MT_HUMANS:-0}}" = 1 ]; then
+    cm=$(mktemp -d); "$root/tools/mt/client_mod.sh" "$cm" >/dev/null
+    rsync -a --delete "$cm/agent-harness_0.1.0/" "$host:$dir/mods/agent-harness_0.1.0/"
+    echo "the client build of the harness mod (tools/mt/client_mod.sh)"
+    rm -rf "$cm"
+  else
+    rsync -a --delete --exclude tests "$mod/" "$host:$dir/mods/agent-harness_0.1.0/"
+  fi
+  # the mod list: ours, and each of agent/mt/mods.tsv's mods enabled when its zip is in the mods folder (none is
+  # downloaded: Nick puts the zips there)
+  have=$(remote "ls '$dir/mods'" 2>/dev/null | tr '\n' ' ')
+  python3 - "$root/tools/imac-mod-list.json" "$root/agent/mt/mods.tsv" "$have" <<'PY2' | remote "cat > '$dir/mods/mod-list.json'"
+import json, sys
+ml = json.load(open(sys.argv[1]))
+have = sys.argv[3].split()
+for line in open(sys.argv[2]):
+    if line.strip() and not line.startswith("#"):
+        name, version = line.split("\t")[:2]
+        ml["mods"].append({"name": name, "enabled": f"{name}_{version}.zip" in have})
+print(json.dumps(ml, indent=1))
+PY2
   printf '[path]\nread-data=__PATH__system-read-data__\nwrite-data=%s/data\n' "$dir" | remote "cat > '$dir/config/config.ini'"
   # (mt278) POG_MT_HUMANS=1: a game password (~/.config/pog/mt-humans.pw, made once) and the server whitelist: the human
   # roster (agent/mt/humans.tsv), the camera client and the setup accounts. No admin list: the console stays RCON's.

@@ -90,6 +90,7 @@ return function(api)
     h.used = h.used or 0
     h.offline_since = h.offline_since or game.tick
     s.mt.humans = h
+    s.team_names = nil   -- the runtime's team list takes the human team in (runtime.lua M.team_names)
     human_group(); frozen_group()
     local placed = {}
     for _, p in pairs(game.players) do if h.players[p.name] then placed[#placed+1] = M.place(p) end end
