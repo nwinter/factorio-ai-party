@@ -532,6 +532,49 @@ return function(api)
     return row
   end
 
+  -- (d29 batch343 MD, Luna #2749: "Read-only inspect of Gleba biochambers reports recipe, inputs and status but omits
+  -- installed module names/counts") An area or radius row's modules, and the exact inspect's installed: {installed
+  -- ({['name@quality'] = count}, quality normal too), used, slots, line ('speed-module*2 (2/4 slots)', or 'none (0/4
+  -- slots)'), requested, removing (M.requests' text)}, or nil with no module slots. One get_module_inventory read; a
+  -- ghost's slots and its insert plan.
+  function M.row(e)
+    local ghost = e.type == 'entity-ghost'
+    local inv = not ghost and try(function() return e.get_module_inventory() end)
+    local slots = inv and #inv or (ghost and try(function() return e.ghost_prototype.module_inventory_size end)) or 0
+    if slots == 0 then return nil end
+    local installed, by, list, used = {}, {}, {}, 0
+    for i = 1, inv and slots or 0 do
+      local st = inv[i]
+      if st.valid_for_read then
+        local q = st.quality.name
+        local k = key(st.name, q)
+        if not by[k] then by[k] = {name=st.name, quality=q, count=0}; list[#list+1] = by[k] end
+        by[k].count = by[k].count + st.count
+        installed[k] = by[k].count
+        used = used + 1
+      end
+    end
+    local out = {installed=installed, used=used, slots=slots}
+    out.line = string.format('%s (%d/%d slots)', used > 0 and M.text(list) or 'none', used, slots)
+    -- requests only when there are some (a built machine's item request; a ghost's insert plan): no second read else
+    local proxy = not ghost and try(function() return e.item_request_proxy end)
+    if ghost or (proxy and proxy.valid) then
+      local req = M.requests(e)
+      if req then out.requested = req.requested; out.removing = req.removing end
+    end
+    return out
+  end
+
+  -- M.row's installed as words, by name then quality: 'speed-module-2@rare*2 efficiency-module*1', or 'none'.
+  function M.installed_text(installed)
+    local keys = {}
+    for k in pairs(installed or {}) do keys[#keys+1] = k end
+    table.sort(keys)
+    local parts = {}
+    for _, k in ipairs(keys) do parts[#parts+1] = k:gsub('@normal$', '') .. '*' .. installed[k] end
+    return #parts > 0 and table.concat(parts, ' ') or 'none'
+  end
+
   -- What inspect adds to modules: the requests on a machine (its item request) or ghost (its insert plan).
   function M.requests(e)
     local mc = try(function() return machine(e) end)
