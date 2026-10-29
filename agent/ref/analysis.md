@@ -172,40 +172,12 @@
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
   - inserters: pickup and drop tiles; a built inserter with no pickup or drop target is flagged (build replies too);
-  - a logistic or construction robot: `robot` {unit_number, cargo (item, quality, count), heading (where it flies),
-    network}; area and `scan` rows of a robot give its `unit_number` and `cargo`, area rows `holds` and `heading` too;
-    other rows at one position carry `unit_number`.
-    Nothing records where a robot picked up its cargo;
-  - a fusion reactor: `fusion`: its neighbour reactors (those whose side points meet its own, plasma or coolant side,
-    fluid connection or not) and the bonus at full, its most at its quality (coolant and plasma a second, fuel, electric,
-    plasma MW alone and with neighbours: formula), and once sampled, fuel burnt over a rolling 30 s (measured) with
-    coolant and plasma a second derived from it and the plasma MW its neighbours give now (estimate), and `totals` since
-    sampling began (fuel MJ, average MW, seconds covered and burning, gaps where cells went in); sampling goes on 600 s
-    after the last read (a read after that begins a new stretch; the ended one's totals stay in `last_stretch`, expired); `power` lists it in `fusion_reactors`;
-  - a built turret, artillery turret or wagon: `kills` and `damage_dealt`, its tooltip's Kills and Damage dealt, its own
-    since it was placed (area rows and compact lines too; `turret_tally` watches them over a window);
-  - a turret, artillery, car or spidertron: `ammo_rounds` per ammunition inventory: items (a part-used magazine is one
-    item in `inventories`) and the rounds left in them (`partial`: stacks whose top magazine is part-used); area rows
-    and compact lines say `ammo: firearm-magazine*10 (93 rounds)`, the vehicle read's guns `5 firearm-magazine (43
-    rounds)`;
-  - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
-    a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
-    holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
-  - a captive biter spawner not producing: `starving`: its health, the minutes it has left (it loses 1 HP a second
-    while it makes nothing; at 0 a hostile biter-spawner takes its place) and why (fuel slot empty, output full);
   - fluid connection tiles (`fluid_connections[].joins` is where a pipe must go); a ghost shows its fluid ports as
     `ports` does; a heat entity its heat connections and temperature; `inspect.heating` reports freezing, demand,
     adjacent heat buffers and the heat connections there (what is frozen now across a planet: the `frozen` alert,
     `game_alerts {kind: "frozen"}`);
   - a machine, solar panel or accumulator: its maximum under `electricity`; poles and machines their
     `electric_network_id`, wired entities `circuit.wires`;
-  - a roboport or logistic chest: its network (the number `stock {network}` and `reservations` take) and, for a
-    roboport, its own area and robots, or that no roboport's logistic area covers the chest, and `port.power` at its
-    quality: charging slots, kW a slot and with all charging, drain, buffer and input flow limit (a legendary
-    roboport: 4 slots at 1250 kW, 12.5 MW input);
-  - an agricultural tower: its `empty_cells` and why; any entity its `damage_history`;
-  - a burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` (in scan, supply,
-    bottleneck and the status warning too), with what fills it, whatever the game's status reads.
   `area` (or `position` with `radius`: the square round it) lists every entity of ours there (where inspect reads):
   belts, inserters, poles, chests, machines, ghosts, each with its position and direction, an inserter's pickup and
   drop, and `holds`, `requests`, `recipe`, `status_name` where it has them. It always returns `entities` (64 a page:
@@ -215,6 +187,38 @@
   health, recipe, what it holds, and `spoil:` (each spoilable item's count and spoiled share, the first to spoil or hatch
   and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
   condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
+- `inspect`, robots: a logistic or construction robot: `robot` {unit_number, cargo (item, quality, count), heading
+  (where it flies), network}; area and `scan` rows of a robot give its `unit_number` and `cargo`, area rows `holds`
+  and `heading` too; other rows at one position carry `unit_number`. Nothing records where a robot picked up its
+  cargo;
+- `inspect`, fusion: a fusion reactor: `fusion`: its neighbour reactors (those whose side points meet its own, plasma
+  or coolant side, fluid connection or not) and the bonus at full, its most at its quality (coolant and plasma a
+  second, fuel, electric, plasma MW alone and with neighbours: formula), and once sampled, fuel burnt over a rolling
+  30 s (measured) with coolant and plasma a second derived from it and the plasma MW its neighbours give now
+  (estimate), and `totals` since sampling began (fuel MJ, average MW, seconds covered and burning, gaps where cells
+  went in); sampling goes on 600 s after the last read (a read after that begins a new stretch; the ended one's totals
+  stay in `last_stretch`, expired); `power` lists it in `fusion_reactors`;
+- `inspect`, turret kills: a built turret, artillery turret or wagon: `kills` and `damage_dealt`, its tooltip's Kills
+  and Damage dealt, its own since it was placed (area rows and compact lines too; `turret_tally` watches them over a
+  window);
+- `inspect`, ammo: a turret, artillery, car or spidertron: `ammo_rounds` per ammunition inventory: items (a part-used
+  magazine is one item in `inventories`) and the rounds left in them (`partial`: stacks whose top magazine is
+  part-used); area rows and compact lines say `ammo: firearm-magazine*10 (93 rounds)`, the vehicle read's guns `5
+  firearm-magazine (43 rounds)`;
+- `inspect`, inserter waits: an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup
+  holds of what it may take, a requester's network stock of it, robots taking from it, and whether the drop target
+  takes it now and what it holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it
+  runs low);
+- `inspect`, captive spawner: a captive biter spawner not producing: `starving`: its health, the minutes it has left
+  (it loses 1 HP a second while it makes nothing; at 0 a hostile biter-spawner takes its place) and why (fuel slot
+  empty, output full);
+- `inspect`, networks: a roboport or logistic chest: its network (the number `stock {network}` and `reservations`
+  take) and, for a roboport, its own area and robots, or that no roboport's logistic area covers the chest, and
+  `port.power` at its quality: charging slots, kW a slot and with all charging, drain, buffer and input flow limit (a
+  legendary roboport: 4 slots at 1250 kW, 12.5 MW input);
+- `inspect`, agriculture: an agricultural tower: its `empty_cells` and why; any entity its `damage_history`;
+- `inspect`, burnt result: a burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full`
+  (in scan, supply, bottleneck and the status warning too), with what fills it, whatever the game's status reads.
 - `ports {name, position, direction?, recipe?, mirror?, platform? | surface?}`: where each fluid port of an unbuilt machine is and
   the fluid the recipe puts there. More boxes on a side than fluids: the first fluid takes the extra ones (a cryogenic
   plant on lithium: lithium-brine left and middle, ammonia right); `box` is the fluidbox inspect gives once built.
@@ -509,3 +513,8 @@
   `limit` cuts the rows (up to 1024 belts). `item: "rocket"` adds `belt_item`: how many on how many belts, and each
   belt holding it (`positions`, 64; `line` names the first 12). Example:
   `./fh call scan --args '{"platform":"Kestrel III","area":{"left_top":{"x":-64,"y":-64},"right_bottom":{"x":64,"y":64}},"type":"transport-belt","item":"rocket"}'`
+- Out of sight, reads add `fog`: what our force saw there that is gone, with
+  its age, our ghosts now, ours lost. `./fh call losses` lists our lost buildings and what rebuilding them needs;
+  `rebuild {area}` builds the ghosts robots will not.
+- Remote reads: `inspect`, `belt_flow`, `trace` where we see now; `scan`,
+  `observe`, `nearest` at a charted centre; `surface=`, `platform=` elsewhere.

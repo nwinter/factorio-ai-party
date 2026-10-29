@@ -72,11 +72,15 @@ def cond(atoms):
 
 
 def item_key(text, seen):
-    """An item's id within its file, from its own lead so an edit elsewhere keeps it: the command it starts with
-    (belt_route), else its first four words (game-rule-ghosts); a second item of the same lead gets -2, -3, ..."""
+    """An item's id within its file, from its own lead so an edit elsewhere keeps it: a split part's action and feature
+    (build-fast-replace), the command it starts with (belt_route), else its first four words (game-rule-ghosts); a
+    second item of the same lead gets -2, -3, ..."""
     flat = " ".join(text.split())
+    # (cp4) a part split from a large entry, "- `ACTION`, FEATURE: ...": ACTION-FEATURE (build-fast-replace)
+    part = re.match(r"- `([a-z][a-z_]*)`, ([a-z][a-z0-9 -]*?):", flat)
     m = re.match(r"(?:- )?`(?:\./fh (?:call )?)?([a-z][a-z_]*)", flat)
-    base = m.group(1) if m else "-".join(re.findall(r"[a-z0-9]+", flat.lower())[:4]) or "item"
+    base = (part.group(1) + "-" + "-".join(part.group(2).split())) if part else \
+        m.group(1) if m else "-".join(re.findall(r"[a-z0-9]+", flat.lower())[:4]) or "item"
     key, k = base, 2
     while key in seen:
         key, k = f"{base}-{k}", k + 1

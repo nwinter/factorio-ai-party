@@ -97,9 +97,6 @@
   settings, as its GUI sets them; `inspect` reads each back. A success sets every setting given (`applied`; `ignored`:
   `by`, `quality`, `fluid` or `force` given without what they modify); settings that do not go together, or one the
   entity has not, refuse the call before anything changes.
-  - `item_requests: false` (or `ammo: false` on a built turret): a built entity's item requests removed, every one on
-    it, as a deconstruction planner over it and a cancel of that deconstruction do (`removed` per entity); with
-    `priority_targets` and `ignore_unprioritised`, each turret's targeting is set after.
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
     where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
     what it held comes to your inventory (the reply says `moved` and ends with `inv`). A remote refusal never walks the body. Aboard,
@@ -108,53 +105,59 @@
     keeps one the new recipe takes; a machine's box has no pipe segment to flush. `fluid: "drain"` (or `"keep"`,
     `force: true`) makes the change; the reply's `fluid` and `fluid_flushed` say how much left the machine and anything
     still in it.
-  - Set recipe on (`circuit_set_recipe`): the game sets the recipe from the red and green wires and ignores one set by
-    hand, so `configure recipe` is refused saying so. It takes `recipe:NAME` above 0 at its quality (the lowest recipe
-    order among several), else an item signal picks a recipe making it. After the wires change the recipe, the old
-    recipe's items go to the machine's dump slots (`assembling_machine_dump`) and it has no recipe until they are
-    empty. inspect's `circuit_recipe` says what the wires give and why it has none.
-  - `modules: ["speed-module-2","speed-module-2"]` sets a machine's module slots: the modules it already holds that
-    the list names stay in their slots, the rest go into the other slots (past the list: empty);
-    `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes only slot 2. In
-    reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or `by: "robots"`) an item
-    request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back (`by_slot`).
-    `transfer {position, item: <module>}` also puts a module in a machine's or beacon's module slots.
-  - Inserters and loaders: `filters`, `filter_mode` (or `mode`), `use_filters` (shown in `scan` rows: `filters:
-    whitelist: iron-plate`, `off`, `set by circuit`); a filter is `"iron-plate"` (normal), `"plastic-bar@epic"`,
-    `"plastic-bar@<=epic"` (`=`, `!=`, `<`, `<=`, `>`, `>=`), `"coal@any"` or `{name, quality, comparator}`, read back so; `hand_size: N` sets an inserter's stack size override, as
-    its GUI does (1 up to its hand size now; 0 or false for none); `spoil_priority: fresh_first | spoiled_first | none` sets an
-    inserter's Spoil priority (built or ghost). `wait_for_full_hand` has no setting in 2.0.77: it is fixed by the
-    prototype (stack-inserter waits until its hand is full; burner, inserter, fast, long-handed and bulk do not). The
-    same as its own is read back; the other is refused. A stack inserter waits for its hand size, which `hand_size`
-    (or a circuit's set stack size) sets. `inspect` reads `wait_for_full_hand`, and `hand_wait` on one holding part of
-    a hand.
   - `bar: N` sets a chest's, logistic chest's, cargo wagon's or landing pad's red-X bar (N usable slots; `false`: none);
     items past it stay, new ones go only under it. A crafting machine's output has no bar in 2.0.77 and its GUI no
     output limit: with nothing taking from it, it holds one stack. `bar` on one is refused, naming its output inserters,
     the chests they fill and its own logistic condition (`circuit_set logistic`).
-  - `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no other item in it), with
-    `bar` in the same call if given (both checked first; a ghost takes no bar);
-    `input_priority`, `output_priority`, `filter` set a splitter's (left and right facing the way items move).
-  - Turrets: `priority_targets: ["big-metallic-asteroid", ...]` with `ignore_unprioritised: true` sets a turret's (or
-    ghost's) priority list as its GUI does, on one or `positions`; blueprints keep it. A turret ghost's targeting
-    (configure, or `configure` on a `place_ghosts` entry) is checked once it is built: a turret that reads otherwise
-    is set to the ghost's, and you are told. A railgun's reply adds `line_of_fire` (as platform_defense). Artillery: `auto_targeting: false` switches automatic targeting off.
-  - A programmable speaker: `speaker_alert {show_alert?, show_on_map?, message?, icon?, condition?}` sets its GUI's
-    alert part (the rest kept; `icon: false` clears it) and its circuit condition (`"rocket-part < 1"`); the reply
-    reads them back with whether the condition holds now. It alerts while the condition holds: `game_alerts {kind:
-    "speaker"}`, the team block and `fh wait --until "alert speaker"` tell it. `speaker_alert {speaker_sound: {volume?
-    (0..1), mode? (local|surface|global), polyphony?, instrument?, note?}}` sets its GUI's sound settings (instrument and
-    note by name, `"alarms"`, `"siren"`, or number from 0); the reply's line ends `sound: alarms/alarm-1 at volume 100%,
-    local` or `sound: off (volume 0)`.
-  - An arithmetic, decider, selector or constant combinator (built or ghost): `description` (up to 500 bytes, newlines
-    kept; `""` or `false` clears it) sets the description its GUI shows; `circuit_set` takes it too. `inspect`, `circuit`
-    and `circuit_set` replies show it as `description`; blueprints keep it, and a ghost placed from one has it.
-  - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
-    there by remote view where our force sees the chunk. Switching automatic requests on moves cargo loaded by hand
-    into the silo's trash slots, which never launch: `auto_requests: true` is refused while the rocket holds cargo no
-    platform stopped above asks this planet for, naming it (`force: true` switches them on anyway); `silo` lists the
-    trash slots. A silo's ghost takes both too (a place_ghosts entry's `configure` among them), and the silo built from it keeps them.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
+- `configure`, item requests: `item_requests: false` (or `ammo: false` on a built turret): a built entity's item
+  requests removed, every one on it, as a deconstruction planner over it and a cancel of that deconstruction do
+  (`removed` per entity); with `priority_targets` and `ignore_unprioritised`, each turret's targeting is set after.
+- `configure`, circuit recipe: Set recipe on (`circuit_set_recipe`): the game sets the recipe from the red and green
+  wires and ignores one set by hand, so `configure recipe` is refused saying so. It takes `recipe:NAME` above 0 at its
+  quality (the lowest recipe order among several), else an item signal picks a recipe making it. After the wires
+  change the recipe, the old recipe's items go to the machine's dump slots (`assembling_machine_dump`) and it has no
+  recipe until they are empty. inspect's `circuit_recipe` says what the wires give and why it has none.
+- `configure`, modules: `modules: ["speed-module-2","speed-module-2"]` sets a machine's module slots: the modules it
+  already holds that the list names stay in their slots, the rest go into the other slots (past the list: empty);
+  `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes only slot 2. In
+  reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or `by: "robots"`) an item request
+  robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back (`by_slot`). `transfer
+  {position, item: <module>}` also puts a module in a machine's or beacon's module slots.
+- `configure`, filters: `filters`, `filter_mode` (or `mode`), `use_filters` (shown in `scan` rows: `filters:
+  whitelist: iron-plate`, `off`, `set by circuit`); a filter is `"iron-plate"` (normal), `"plastic-bar@epic"`,
+  `"plastic-bar@<=epic"` (`=`, `!=`, `<`, `<=`, `>`, `>=`), `"coal@any"` or `{name, quality, comparator}`, read back
+  so; `hand_size: N` sets an inserter's stack size override, as its GUI does (1 up to its hand size now; 0 or false
+  for none); `spoil_priority: fresh_first | spoiled_first | none` sets an inserter's Spoil priority (built or ghost).
+  `wait_for_full_hand` has no setting in 2.0.77: it is fixed by the prototype (stack-inserter waits until its hand is
+  full; burner, inserter, fast, long-handed and bulk do not). The same as its own is read back; the other is refused.
+  A stack inserter waits for its hand size, which `hand_size` (or a circuit's set stack size) sets. `inspect` reads
+  `wait_for_full_hand`, and `hand_wait` on one holding part of a hand.
+- `configure`, storage filter: `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no
+  other item in it), with `bar` in the same call if given (both checked first; a ghost takes no bar);
+  `input_priority`, `output_priority`, `filter` set a splitter's (left and right facing the way items move).
+- `configure`, turret targets: `priority_targets: ["big-metallic-asteroid", ...]` with `ignore_unprioritised: true`
+  sets a turret's (or ghost's) priority list as its GUI does, on one or `positions`; blueprints keep it. A turret
+  ghost's targeting (configure, or `configure` on a `place_ghosts` entry) is checked once it is built: a turret that
+  reads otherwise is set to the ghost's, and you are told. A railgun's reply adds `line_of_fire` (as
+  platform_defense). Artillery: `auto_targeting: false` switches automatic targeting off.
+- `configure`, speaker: `speaker_alert {show_alert?, show_on_map?, message?, icon?, condition?}` sets its GUI's alert
+  part (the rest kept; `icon: false` clears it) and its circuit condition (`"rocket-part < 1"`); the reply reads them
+  back with whether the condition holds now. It alerts while the condition holds: `game_alerts {kind: "speaker"}`, the
+  team block and `fh wait --until "alert speaker"` tell it. `speaker_alert {speaker_sound: {volume? (0..1), mode?
+  (local|surface|global), polyphony?, instrument?, note?}}` sets its GUI's sound settings (instrument and note by
+  name, `"alarms"`, `"siren"`, or number from 0); the reply's line ends `sound: alarms/alarm-1 at volume 100%, local`
+  or `sound: off (volume 0)`.
+- `configure`, combinators: An arithmetic, decider, selector or constant combinator (built or ghost): `description`
+  (up to 500 bytes, newlines kept; `""` or `false` clears it) sets the description its GUI shows; `circuit_set` takes
+  it too. `inspect`, `circuit` and `circuit_set` replies show it as `description`; blueprints keep it, and a ghost
+  placed from one has it.
+- `configure`, rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and
+  `position` it acts there by remote view where our force sees the chunk. Switching automatic requests on moves cargo
+  loaded by hand into the silo's trash slots, which never launch: `auto_requests: true` is refused while the rocket
+  holds cargo no platform stopped above asks this planet for, naming it (`force: true` switches them on anyway);
+  `silo` lists the trash slots. A silo's ghost takes both too (a place_ghosts entry's `configure` among them), and the
+  silo built from it keeps them.
 - `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
   queue plan, each step a call whose reply says what it did: the machine's own conditions (its logistic condition, and
   its circuit condition when a wire is on it) and the output inserter's switched off; the input inserter held (logistic
