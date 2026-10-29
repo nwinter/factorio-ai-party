@@ -204,6 +204,7 @@ return function(api)
       if kind == 'craft' then
         local pf = try(function() return e.products_finished end) or 0
         m.pf = pf
+        m.p0, m.t0 = pf, now
         m.r = recipe_of(e)
         -- its crafts since built, in full; the shift's share only when it was built this shift
         credit(m, pf, m.r, m.built >= shift_tick and t ~= nil)
@@ -221,8 +222,11 @@ return function(api)
       if kind == 'craft' then
         local pf = try(function() return e.products_finished end) or 0
         local d = pf - (m.pf or 0)
-        if d < 0 then d = pf end
+        if d < 0 then d = pf; m.p0, m.t0, m.p1, m.t1 = nil, nil, nil, nil end
         m.pf = pf
+        -- (d29 batch336 FL5) two anchors of the counter, renewed every ANCHOR ticks: a measured rate over 10-20 minutes
+        if not m.t0 then m.p0, m.t0 = pf, now
+        elseif now - m.t0 >= M.ANCHOR then m.p1, m.t1, m.p0, m.t0 = m.p0, m.t0, pf, now end
         local r = recipe_of(e) or m.r
         m.r = r
         credit(m, d, r, true)
@@ -335,6 +339,17 @@ return function(api)
       ore_about=math.floor(a.ore + 0.5), ore_shift_about=math.floor((a.shift_ore or 0) + 0.5),
       lab_units_about=math.floor(a.units + 0.5), lab_units_shift_about=math.floor((a.shift_units or 0) + 0.5),
       hand_items_shift=hand_shift, machine_share_pct=share, top_items=top_items(a)}
+  end
+  -- (d29 batch336 FL5, Astra #2694: rates rows read as actual flow) a crafting machine's counter then: the older anchor
+  -- (10-20 min back), else the newer one when it is at least MIN_SPAN back; nil when not counted yet (a new machine, or
+  -- one the walk has not reached). Returns products_finished then and its tick.
+  M.ANCHOR, M.MIN_SPAN = 36000, 3600
+  function M.counter_then(unit, now)
+    local m = st().machines[unit]
+    if not m then return nil end
+    if m.t1 then return m.p1, m.t1 end
+    if m.t0 and (now or game.tick) - m.t0 >= M.MIN_SPAN then return m.p0, m.t0 end
+    return nil
   end
   function M.read()
     local E = st()

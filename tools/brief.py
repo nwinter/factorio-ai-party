@@ -142,7 +142,13 @@ def open_index(open_):
     return idx.split("\n- ", 1)[0].rstrip("\n") + "\n\n" + "\n".join(lines) + "\n"
 
 
-def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None):
+def expedition_text(line):
+    """(d29 batch336 FL7) The {{EXPEDITION}} line after the deadline paragraph: the expedition's own clock at this shift's
+    start (tools/expedition.py), or nothing (the placeholder's line goes)."""
+    return line.strip() + "\n" if line and line.strip() else ""
+
+
+def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, expedition=""):
     """AGENTS.md as tools/new-run.sh writes it: it ends with the compaction instructions (Claude Code reads a "Compact
     instructions" section, and every harness's summarizer sees the instructions file). open_ (disclosure_open()): only
     the brief items and index commands open for the team."""
@@ -153,6 +159,7 @@ def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None):
         line = DISCLOSURE_LINE.rstrip("\n") + (REFUSE_LINE if open_.get("refuse") else "") + "\n"
         text = shut_items(text, open_).replace("\n## Pace\n", "\n" + line + "\n## Pace\n", 1)
     text = text.replace("{{TIME}}", time_text)
+    text = text.replace("{{EXPEDITION}}\n", expedition_text(expedition))
     if os.environ.get("POG_SPACE_AGE") == "1":
         text = text.replace("base game, default map", "Space Age (with Quality and Elevated Rails), default map")
     return fill(text, values(player, mate, mate_notes, role))
@@ -209,7 +216,15 @@ def topic_units(player, open_=None):
 
 def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
     open_ = disclosure_open()
-    open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role, open_))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import expedition  # tools/expedition.py: the shift start's expedition clock, if start-team saved one
+        line = expedition.line(os.path.dirname(os.path.abspath(d)))
+    except ImportError:  # a copy of tools/ without it (tests copy a few scripts): no line
+        line = ""
+    finally:
+        sys.path.pop(0)
+    open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role, open_, line))
     ref = os.path.join(d, "ref")
     os.makedirs(ref, exist_ok=True)
     for topic, (text, units) in topic_units(player, open_).items():
