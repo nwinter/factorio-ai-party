@@ -528,9 +528,13 @@ return function(api)
     return math.floor((now - r.wall) / 1000 * 60)
   end
   local function review_text(r) return r.text or ('tick ' .. r.tick) end
+  -- The items with a review time (store().reviews: id -> true), so a reply's check reads those alone.
   local function set_review(item, r, by)
     if r then r.by, r.set = by, game.tick end
     item.review = r or nil
+    local b = store()
+    b.reviews = b.reviews or {}
+    if item.id then b.reviews[item.id] = r and true or nil end
   end
   local function project_view(i, full)
     local notes = i.notes
@@ -726,8 +730,11 @@ return function(api)
   -- a reply (each then marked said).
   function M.review_lines(name, told)
     local rows = {}
-    for _, i in pairs(store().items) do
-      local mine = i.owner == name or (not i.owner and i.requested_by == name)
+    local b = store()
+    for id in pairs(b.reviews or {}) do
+      local i = b.items[id]
+      if not (i and i.review) then b.reviews[id] = nil; i = nil end
+      local mine = i and (i.owner == name or (not i.owner and i.requested_by == name))
       local past = mine and ACTIVE[i.status] and i.review and (not told or not i.review.told) and review_past(i)
       if past then
         if told then i.review.told = true end
@@ -836,6 +843,7 @@ return function(api)
     end
     local b = store()
     item.id = b.next_id; b.next_id = b.next_id + 1
+    if item.review then b.reviews = b.reviews or {}; b.reviews[item.id] = true end
     b.items[item.id] = item; b.count = b.count + 1
     if sup_post and #sup_post > 0 then
       item.supersedes = sup_post
