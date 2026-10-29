@@ -17566,3 +17566,19 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   10-tick clock, pumps on C < 1 and C < 2 enabled the tick after, the clock stopped 100 ticks: 9.4% and 18.9%, runs,
   the stop as a 109-tick disabled run and a window of 0, the 60-tick watch reading C = 0 at every sample, bounds,
   capped histograms, an entity gone).
+
+## d28 batch320 LP: who ordered a launch, and the request then (Sol #2711)
+- Measured on the iMac copy (world n's save, a test platform T320 at Vulcanus, automation packs supplied from one
+  chest, a level-script recorder of on_rocket_launch_ordered): a hub lacking L = min - (holds + on the way) gets
+  max(L, payload) (payload: the custom minimum payload), cut into rockets of up to a rocket's lift; the last carries the
+  rest. Lacking 2683 with payload 1000: 1000, 1000, 683 (Lark's 683 and 583); lacking 1500: 500 then 1000; lacking 18
+  with payload 100: one rocket of 100 (the hub goes past its min). The max is not a cap (a 100 went with room for 50).
+  A rocket waits until it holds its share (a 976 waited with the network empty); removing the request unloads it; the
+  platform leaving unloads it. The game's launch event names a player only for a player's launch: the silo's own and a
+  script's launch_rocket both carry none.
+- ledger.lua: each launch records `ordered` (space.lua's launch marks the silo and tick: `harness launch by NAME`;
+  `player NAME`; else `automatic (or a script: the game names no player)`) and `request` rows per cargo item {item,
+  min, max, payload, holds, on_the_way, rockets, this} (podlog.lua `on_the_way`: rockets sent to the platform and not
+  landed). shipment {ledger, surface} adds `launches` (the platform's with platform, the newest 16) and the line text
+  adds max, minimum payload, on the way and the total with this rocket.
+- Test: tests/d28_batch320.lua (fails on main: no on_the_way).

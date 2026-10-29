@@ -382,6 +382,12 @@
   {unit_number, surface, position} is the silo the game names for that launch (native launches for platform requests
   too); `unknown` for rockets sent before the ledger kept silos (d25), never taken from nearby entities. `silo: N`
   (a unit number) lists that silo's rockets.
+  `launches` (with a surface; with `platform` that platform's; the newest 16): who ordered each rocket (`harness
+  launch by NAME`, `player NAME`, or `automatic`: the game's event does not tell a script's launch from the silo's
+  own) and per cargo item the request then: `min`, `max`, `payload` (the custom minimum payload), `holds`,
+  `on_the_way` (rockets sent and not landed), `this` (the rocket's count). Measured (2.0.77): a hub lacking
+  min - (holds + on the way) gets max(lacking, payload), cut into rockets of up to a rocket's lift; the last carries
+  the rest, which can be under the payload (Lark: lacking 2683, payload 1000: 1000, 1000, 683).
 - `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
