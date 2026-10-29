@@ -164,14 +164,14 @@ for i = START, math.min(#list, START + COUNT - 1) do
     r.module_slots = g(function() return e.module_inventory_size end)
     r.belt_speed_items_per_s = g(function() return e.belt_speed and e.belt_speed * 60 * 8 end)
     r.inserter_rotation_speed = g(function() return e.get_inserter_rotation_speed and e.get_inserter_rotation_speed() or e.inserter_rotation_speed end)
-    r.pumping_speed_per_s = g(function() return e.get_pumping_speed and e.get_pumping_speed() * 60 or (e.pumping_speed and e.pumping_speed * 60) end)
+    r.pumping_speed_per_s = g(function() return e.get_pumping_speed() * 60 end)
     r.burner = g(function() return e.burner_prototype and {effectivity=e.burner_prototype.effectivity, categories=e.burner_prototype.fuel_categories} end)
     r.electric = g(function() return e.electric_energy_source_prototype ~= nil end)
     r.emissions_per_minute = emissions(e.electric_energy_source_prototype, e) or emissions(e.burner_prototype, e)
     r.supply_area = g(function() return e.get_supply_area_distance() end)
     r.max_wire_distance = (t == "electric-pole") and g(function() return e.get_max_wire_distance() end) or nil
     r.target_temperature = g(function() return e.target_temperature end)
-    r.max_fluid_usage = g(function() return e.fluid_usage_per_tick and e.fluid_usage_per_tick * 60 end)
+    r.max_fluid_usage = g(function() return e.get_fluid_usage_per_tick() * 60 end)
     r.attack_range = g(function() return e.attack_parameters and e.attack_parameters.range end)
     r.attack_cooldown = g(function() return e.attack_parameters and e.attack_parameters.cooldown end)
     r.movement_speed = (t == "unit" or t == "car" or t == "locomotive") and g(function() return e.speed end) or nil
@@ -369,7 +369,7 @@ local out = {}
 for i = START, math.min(#list, START + COUNT - 1) do
   local e = all[list[i]]
   local r = {name=e.name, type=e.type}
-  r.max_fluid_usage_per_s = g(function() return e.get_fluid_usage_per_tick() * 60 end) or g(function() return e.fluid_usage_per_tick * 60 end)
+  r.max_fluid_usage_per_s = g(function() return e.get_fluid_usage_per_tick() * 60 end)
   r.two_direction_only = g(function() return e.two_direction_only end)
   r.effectivity = g(function() return e.effectivity end)
   r.neighbour_bonus = g(function() return e.neighbour_bonus end)

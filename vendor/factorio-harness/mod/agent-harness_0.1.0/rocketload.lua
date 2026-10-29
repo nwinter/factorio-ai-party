@@ -566,7 +566,7 @@ return function(api)
   -- GUI shows its input and part count. nil when nothing is short.
   function M.parts_short(silo)
     local recipe = try(function() return silo.get_recipe() end)
-    local input = try(function() return silo.get_inventory(defines.inventory.assembling_machine_input) end)
+    local input = try(function() return silo.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
     if not (recipe and input) then return nil end
     local parts = try(function() return silo.rocket_parts end) or 0
     local required = try(function() return silo.prototype.rocket_parts_required end) or 0

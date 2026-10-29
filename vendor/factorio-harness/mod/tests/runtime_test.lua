@@ -1089,6 +1089,24 @@ eq(call('transfer',{position={x=3,y=0}}).direction,'to_player')
 fails(function() call('transfer',{position={x=3,y=0},item='iron-plate'}) end,'holds 0 iron-plate and the target holds 0')
 fails(function() call('transfer',{position={x=3,y=0},item='coal',direction='sideways'}) end,'direction must be to_entity or to_player')
 main=kept_main; main[1].count=12; f1.slots[2][1].count,f1.slots[2][1].valid_for_read=0,false
+-- batch353: the engine can expose only crafter_* IDs. Legacy agent names and inferred transfers still work.
+do
+  local saved_defs,saved_main,saved_find=defines.inventory,main,p.surface.find_entities_filtered
+  defines.inventory={chest=1,fuel=2,crafter_input=3,crafter_output=4,crafter_modules=5}
+  for _,kind in ipairs{'furnace','assembling-machine','rocket-silo'} do
+    local f=furnace(3,stack('iron-plate',5)); f.type=kind
+    main=inv(stack('iron-ore',10),stack(nil,0))
+    p.surface.find_entities_filtered=function() return {f} end
+    local legacy=kind=='furnace' and 'furnace_source' or 'assembling_machine_input'
+    eq(call('transfer',{position={x=3,y=0},item='iron-ore',count=2,direction='to_entity',inventory=legacy}).transferred,2)
+    eq(call('transfer',{position={x=3,y=0},item='iron-ore',count=1,direction='to_entity',inventory='crafter_input'}).transferred,1)
+    eq(f.slots[3][1].count,3)
+    eq(call('transfer',{position={x=3,y=0},item='iron-plate',count=2,direction='to_player',inventory='crafter_output'}).transferred,2)
+    eq(f.slots[4][1].count,3)
+    eq(runtime.slots.inventory_of(f),f.slots[3],'fullness reads the common input ID')
+  end
+  defines.inventory,main,p.surface.find_entities_filtered=saved_defs,saved_main,saved_find
+end
 -- Courier tools (shift08: Grok, Luna, Sonnet, Muse). up_to=true moves what there is and says how short it fell; a
 -- short or empty source is never an error.
 do
