@@ -15,7 +15,8 @@ unchanged; checked on a copy against entity.effects, 60 of 60; a machine's total
 and science drain multipliers; the `effects` page merges into entities.json each machine's base_effect (the EM plant's
 productivity 0.5), what it uses, allowed effects and module categories, crafting or researching speed by quality, and a
 beacon's distribution effectivity, its bonus a quality level and profile. `--password-file` reads a private copy's
-password.
+password. Surface conditions (d28 batch328 SC, Astra #2725): `--only surface_conditions` merges each entity's
+surface_conditions into entities.json and the planets' and surfaces' surface_properties into locations.json.
 
   python3 tools/analyst/dump_prototypes.py                      # world live -> tools/analyst/kb/base-2.0.77/
   python3 tools/analyst/dump_prototypes.py --world sa --port 27031 --out tools/analyst/kb/space-age-2.0.77
@@ -395,10 +396,45 @@ for i = START, math.min(#list, START + COUNT - 1) do
 end
 rcon.print(helpers.table_to_json({total=#list, items=out}))
 """,
+    "surface_conditions": r"""
+local list = {}
+for n, e in pairs(prototypes.entity) do
+  local c = g(function() return e.surface_conditions end)
+  if c and #c > 0 then list[#list+1] = n end
+end
+table.sort(list)
+local out = {}
+for i = START, math.min(#list, START + COUNT - 1) do
+  local e = prototypes.entity[list[i]]
+  local cs = {}
+  for _, c in pairs(e.surface_conditions) do
+    local r = {property=c.property}
+    if c.min and c.min > -1e300 then r.min = c.min end
+    if c.max and c.max < 1e300 then r.max = c.max end
+    cs[#cs+1] = r
+  end
+  out[#out+1] = {name=list[i], conditions=cs}
+end
+if START == 1 then
+  local props = {}
+  for n, l in pairs(prototypes.space_location) do
+    local sp = g(function() return l.surface_properties end)
+    if sp and next(sp) then props[n] = sp end
+  end
+  for n, sf in pairs(prototypes.surface) do
+    local sp = g(function() return sf.surface_properties end)
+    if sp and next(sp) then props[n] = sp end
+  end
+  local defaults = {}
+  for n, sp in pairs(prototypes.surface_property) do defaults[n] = g(function() return sp.default_value end) end
+  out[#out+1] = {name="", surfaces=props, defaults=defaults}
+end
+rcon.print(helpers.table_to_json({total=#list, items=out}))
+""",
 }
 
 PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "locations": 1, "settings": 1,
-        "asteroids": 3, "fluid_energy": 10, "qualities": 20, "effects": 20}
+        "asteroids": 3, "fluid_energy": 10, "qualities": 20, "effects": 20, "surface_conditions": 60}
 SINGLE = ("settings", "locations")
 # The longest command that ran live (the entities page, 2026-10-13): nothing longer is sent.
 MAX_COMMAND = 6800
@@ -505,6 +541,43 @@ def add_module_qualities(out_dir):
     return f"modules: {n} with effects_by_quality ({', '.join(q['name'] for q in quals)}) in {os.path.relpath(ip)}"
 
 
+def merge_surface_conditions(out_dir, rows):
+    """(d28 batch328 SC, Astra #2725: "Prototype export should expose surface_conditions") Each entity's
+    surface_conditions into entities.json (`surface_conditions`: [{property, min?, max?}], an open end left out), and
+    into locations.json each planet's, space location's and surface's (the space platform's) surface_properties and
+    every property's default (`surface_properties`). An entity of a type the entities page leaves out gets a row of
+    its own ({name, type: null}). Returns the line printed."""
+    conds = {r["name"]: [{k: tidy(v) for k, v in c.items()} for c in r["conditions"]] for r in rows if r.get("name")}
+    extra = next((r for r in rows if not r.get("name")), None)
+    path = os.path.join(out_dir, "entities.json")
+    with open(path) as f:
+        entities = json.load(f)
+    seen = set()
+    for e in entities:
+        if e["name"] in conds:
+            e["surface_conditions"] = conds[e["name"]]
+            seen.add(e["name"])
+        else:
+            e.pop("surface_conditions", None)
+    for n in sorted(set(conds) - seen):
+        entities.append({"name": n, "type": None, "surface_conditions": conds[n]})
+    entities.sort(key=lambda e: e["name"])
+    with open(path, "w") as f:
+        json.dump(entities, f, indent=0, sort_keys=True, ensure_ascii=False)
+        f.write("\n")
+    line = f"surface_conditions: {len(conds)} entities -> {os.path.relpath(path)}"
+    if extra:
+        lpath = os.path.join(out_dir, "locations.json")
+        with open(lpath) as f:
+            loc = json.load(f)
+        loc["surface_properties"] = {"surfaces": tidy(extra.get("surfaces") or {}), "defaults": tidy(extra.get("defaults") or {})}
+        with open(lpath, "w") as f:
+            json.dump(loc, f, indent=0, sort_keys=True, ensure_ascii=False)
+            f.write("\n")
+        line += f"; surface_properties of {len(extra.get('surfaces') or {})} locations and surfaces -> {os.path.relpath(lpath)}"
+    return line
+
+
 def merge_fluid_energy(out_dir, rows):
     """fluid_energy rows go into entities.json by name, as each entity's "fluid" object (the entities page is near
     MAX_COMMAND, so they are read apart). Returns the line printed."""
@@ -554,6 +627,9 @@ def main():
             continue
         if cat == "effects":
             print(merge_effects(a.out, rows))
+            continue
+        if cat == "surface_conditions":
+            print(merge_surface_conditions(a.out, rows))
             continue
         if cat == "qualities":
             rows = tidy(rows)

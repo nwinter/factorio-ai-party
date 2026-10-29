@@ -6645,8 +6645,52 @@ function M.mask_meets(proto,e)
   return false
 end
 end
+-- (d28 batch328 SC, Astra #2725: "R12 iron-chest dryrun passed but actualplace79326730/79327131 failed vague placement
+-- blocked ... chest forbidden space"; "name gravity restriction instead of footprint") An entity prototype's
+-- surface_conditions (2.0.77: [{property, min, max}], an open end at +-1.8e308) against the surface's properties
+-- (LuaSurface.get_property): the first that fails, as "iron-chest cannot be placed on Resolute: needs gravity >= 0.1,
+-- this surface has 0", else nil. Prototype reads cost 40-200 us: each prototype's conditions are read once (a module
+-- table, not storage), each surface's properties once a game minute.
+local sc_conds,sc_props={},{}
+local function sc_num(v) return string.format('%g',math.floor(v*1000+0.5)/1000) end
+function M.surface_block(surface,proto)
+  if not (surface and surface.valid and proto) then return nil end
+  local name=proto.name
+  local conds=sc_conds[name]
+  if conds==nil then
+    conds=false
+    local ok,c=pcall(function() return proto.surface_conditions end)
+    if ok and type(c)=='table' and #c>0 then
+      conds={}
+      for _,x in pairs(c) do
+        conds[#conds+1]={property=x.property,min=x.min and x.min>-1e300 and x.min or nil,max=x.max and x.max<1e300 and x.max or nil}
+      end
+    end
+    sc_conds[name]=conds
+  end
+  if not conds then return nil end
+  local props=sc_props[surface.index]
+  if not props or game.tick-props.tick>=3600 then props={tick=game.tick}; sc_props[surface.index]=props end
+  for _,c in ipairs(conds) do
+    local v=props[c.property]
+    if v==nil then
+      local ok,got=pcall(surface.get_property,c.property)
+      v=ok and got or false
+      props[c.property]=v
+    end
+    if v and ((c.min and v<c.min) or (c.max and v>c.max)) then
+      local need=c.min and c.max and string.format('%s between %s and %s',c.property,sc_num(c.min),sc_num(c.max))
+        or c.min and string.format('%s >= %s',c.property,sc_num(c.min)) or string.format('%s <= %s',c.property,sc_num(c.max))
+      local where=surface.platform and surface.platform.name or (surface.planet and surface.planet.name) or surface.name
+      return string.format('%s cannot be placed on %s: needs %s, this surface has %s',name,where,need,sc_num(v))
+    end
+  end
+  return nil
+end
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
+  local sc=M.surface_block(p.surface,proto)  -- (batch328) before the footprint: the surface's conditions
+  if sc then return ': '..sc end
   local pad=M.one_pad(p.surface,p.force,proto,pos)
   if pad then return ': '..pad end
   if proto.type=='rail-ramp' then
@@ -14384,7 +14428,7 @@ M.launchbudget=require('launchbudget'){silo=M.silo,census_typed=function(f,sf,t)
 function handlers.launch_budget(p,a) return M.timed('launch_budget.read',M.launchbudget.read,p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){trash=M.trash,starter_line=function(e) return M.silo.starter_line(e) end,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){surface_block=function(s,pr) return M.surface_block(s,pr) end,trash=M.trash,starter_line=function(e) return M.silo.starter_line(e) end,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
