@@ -17968,3 +17968,61 @@ At 376h48 (shift99, tick 81382616) Opus pasted Resolute-W45-99-strip3 on Asterio
   generators and accumulators. A dry run over a 120x255 area of Asterion took 60-65 ms with or without it.
 - **Tests:** tests/d29_batch341.lua (the strip paste case; a bridge kept; an undersized bridge; accumulators left; a
   quiet network; a planet with steam engines, an idle and a working fusion generator).
+## d29 batch344 (GS, Sol #2750: a snapshot of the turret and its feeders when an ammo guard fires)
+
+Sol's report: "Trial31 guard477 fired 81734480 railgun (19.5,-75.5) at 4 ammo; by next readonly inspect gun recovered 10,
+so cannot distinguish sparse belt, pickup batch latency, control or power."
+
+**When it is taken:** when `ammo_below` on a platform is met (a guard firing, a wait ending), its check reads the
+lowest turret and what feeds it on that tick (turretsnap.lua).
+
+**What it holds:**
+- **The turret:** unit number, name, position, its ammo stacks (item, quality, count), items and rounds (a magazine:
+  the first stack's ammo left plus a full magazine for each other item).
+- **Each feeding inserter:** every inserter whose drop target is the turret, at most 8 (`feeders_more` counts the
+  rest), found within 3 tiles of the turret's box. For each:
+  - unit number, name, position, status;
+  - the held stack;
+  - hand settings: stack size override, filter mode and filters;
+  - pickup and drop targets;
+  - energy, and whether it is connected to an electric network;
+  - circuit control: disabled, enable/disable, the condition;
+  - for a belt pickup, each transport line's count of the turret's ammo and of all items.
+- **The platform:** its leg (from, to, km flown and left) or stop, and its speed.
+
+**Where it is kept and read:**
+- The condition's evidence names it (snapshot id and line). A fired guard's evidence and saw carry it into the queue
+  history.
+- The newest 32 a force are kept.
+- `queue_status {snapshots: true, from?}` lists them, newest first, 8 a page (`next_from`).
+- `queue_status {snapshot: id}` reads one in full. Read only.
+- batch327's triple reads (signalwatch.lua) count every tick into histograms; these are one-tick reads written apart
+  for this shape.
+
+**Measured** (iMac copy of world n's newest autosave):
+- One snapshot of a Resolute railgun with its feeder: 0.13-0.14 ms (3 turrets x 3).
+- `wait_until ammo_below {platform: Resolute, count: 1000}` was met with snapshot #1. A queue guard fired with snapshot
+  #2 as its evidence (tick 81822980: the railgun at 9, its feeder waiting for source items with an empty hand, both
+  belt lanes 0).
+
+**Test:** tests/d29_batch344.lua.
+## d29 batch345 (BP, Astra #2753: assembler_batch stages ingredients for base crafts)
+
+Astra's foundry at Vulcanus (26.5,47.5), +50% productivity on turbo underground belts (2 a craft, 2 express underground
+belts and 40 tungsten plates an ingredient set): a batch of 228 staged 4560 tungsten and 228 belts, the ingredients of
+114 crafts, and was refused on the requester's 48 slots (96 needed); 114 completions on its counter need 76 base
+crafts at +50% (opus-ugbatch-228-refused.txt, tick 81798147).
+
+- **Base crafts.** Each base craft fills the machine's productivity bar (bonus_progress) by its productivity (its own
+  and the recipe's research, capped at the recipe's maximum); a full bar is one more completion with no ingredients.
+  base = the fewest b with b + floor(bar + b x productivity) >= the completions the batch needs (crafts, unchanged: the
+  stop on the counter). The ingredients, the slot check and the plan use base; `base_crafts`, `bonus_crafts` and
+  `bonus_progress` are in the reply, and a plan line gives them with the stop. A product with an amount productivity
+  leaves out (ignored_by_productivity) is staged in full, as before. A craft in progress is not counted (its
+  completion only adds to what the batch makes).
+- **On the copy** (iMac, world n's autosave, tick 81.86 M, as Sol at Vulcanus): the bar 0.50; 228 belts: 114 completions,
+  76 base crafts, 38 bonus; 3032 tungsten and 152 belts to hold, 65 slots against 48: refused. The largest count that
+  fits is 168 (56 base crafts, 48 slots); before, the staging of every completion fit about 112. A dry run took 3.9-4.3 ms.
+- **Tests:** tests/d29_batch345.lua (Astra's 228 and a count that fits; two adjacent batches with the bar carried;
+  every even count 2..60 at five bars: the fewest base crafts, never short; no productivity, and a product productivity
+  leaves out, staged in full).
