@@ -82,8 +82,16 @@ local rec, units = ores.read_chunk(surface, force, 0, 0)
 eq(#rec.cells, 9, 'cells of chunk 0,0'); eq(rec.buildings, nil); eq(units, 3+16+2+4+7, 'three finds and the tiles read')
 local west = ores.read_chunk(surface, force, -1, -2)
 local wells = 0
-for _, c in ipairs(west.cells) do wells = wells+c.n end
+for _, c in ipairs(west.cells) do wells = wells+c[3] end  -- (d29 batch334 cp4) a read chunk's cells are positional: n is [3]
 eq(wells, 1, 'the well at x=-20 only; the one at -33 belongs to chunk -2')
+-- (cp4) {cx, cy, n, amount, sx, sy, l, t, r, b, name}; a record from before (keyed cells) is packed when read
+eq(rec.cells[1].cx, nil, 'positional once read'); eq(type(rec.cells[1][11]), 'string')
+do
+  local old = {cells={}}
+  for i, c in ipairs(rec.cells) do old.cells[i] = {cx=c[1], cy=c[2], n=c[3], amount=c[4], sx=c[5], sy=c[6], l=c[7], t=c[8], r=c[9], b=c[10], name=c[11]} end
+  ores.packed(old)
+  for i, c in ipairs(rec.cells) do for j = 1, 11 do eq(old.cells[i][j], c[j], 'packed as read, cell ' .. i .. ' field ' .. j) end end
+end
 
 -- Nests, drills, buildings.
 ents[#ents+1] = ent{name='biter-spawner', type='unit-spawner', position={x=64.5, y=45}, force={name='enemy'}, half=2}   -- 43 tiles south of B
@@ -170,7 +178,7 @@ eq(partial.by ~= nil, true, 'cells by key kept while the chunk is read')
 local u = u1
 for from = 8, 24, 8 do u = u+ores.read_band(surface, partial, 0, 0, from, from+8) end
 eq(partial.by, nil)
-local function sum(rec) local n, a = 0, 0; for _, c in ipairs(rec.cells) do n = n+c.n; a = a+c.amount end; return n..'/'..a end
+local function sum(rec) local n, a = 0, 0; for _, c in ipairs(rec.cells) do n = n+(c.n or c[3]); a = a+(c.amount or c[4]) end; return n..'/'..a end
 eq(sum(partial), sum(whole), 'banded = whole'); eq(#partial.cells, #whole.cells)
 storage.ores, storage.ores_busy = nil, nil
 ores.handlers.ores(me, {})
