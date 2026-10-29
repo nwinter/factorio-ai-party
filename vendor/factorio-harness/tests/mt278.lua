@@ -25,8 +25,12 @@ local permissions={get_group=function(n) return groups[n] end,create_group=funct
 local ents={}
 for i=1,5 do ents[i]={valid=true,type=i<=4 and 'assembling-machine' or 'electric-pole',unit_number=100+i,destructible=true,force={name='white'}} end
 ents[6]={valid=true,type='assembling-machine',unit_number=106,destructible=false,force={name='white'}}  -- the map's own: stays so
+-- the base: every entity in the chunk of the team's spawn (0,2830): chunk (0,88); chunks round it generated
 local surface={name='nauvis',find_entities_filtered=function(f)
-  assert(f.force==white and f.type,'a find by force and type'); return ents end,
+  assert(f.force==white and f.type and f.area,'a find by force, type and chunk area')
+  local x,y=f.area[1][1],f.area[1][2]
+  return (x==0 and y==88*32) and ents or {} end,
+  is_chunk_generated=function(_,c) local p=c.x and c or {x=c[1],y=c[2]}; return math.abs(p.x)<=3 and math.abs(p.y-88)<=3 end,
   find_non_colliding_position=function(_,p) return p end}
 local nick={name='nick',index=1,connected=true,force=force('player'),valid=true}
 nick.set_controller=function() end
@@ -35,11 +39,12 @@ nick.create_character=function() nick.character={valid=true,destroy=function() n
 local stranger={name='bob',index=2,connected=true,force=nick.force}
 local connected={nick}
 game={tick=1000,forces={white=white,red=red,blue=blue},permissions=permissions,players={nick,stranger},connected_players=connected,
-  surfaces={nauvis=surface},get_surface=function() return surface end,get_player=function(i) return ({nick,stranger})[i] end}
+  surfaces={nauvis=surface},get_surface=function(n) return (n==nil or n=="nauvis") and surface or nil end,get_player=function(i) return ({nick,stranger})[i] end}
 local s={mt={order={'red','blue','white'},teams={red=true,blue=true,white=true}}}
 local H=dofile('mod/agent-harness_0.1.0/humans.lua'){state=function() return s end}
-H.STEP=4
+H.STEP_UNITS=40
 
+surface.is_chunk_generated=function(c) local p=c.x and c or {x=c[1],y=c[2]}; return math.abs(p.x)<=3 and math.abs(p.y-88)<=3 end
 local r=H.operator.mt_humans({team='white',players={'nick'},budget_h=3,block_h=1,offline_min=30,warm_min=10,quiet_min=10})
 eq(r.placed[1].force,'white','a roster player online is placed'); eq(nick.force,white); eq(nick.at.y,2830,'at the team spawn')
 eq(nick.permission_group.name,'pog-humans'); eq(groups['pog-humans'].allows[3],false,'no blueprint import')
@@ -70,9 +75,10 @@ local f=state()
 eq(f.state,'frozen'); eq(f.until_tick-s.mt.humans.since,2*H_TICKS,'the hours asked')
 eq(white.get_cease_fire('red'),true); eq(red.get_cease_fire('white'),true,'a cease-fire both ways'); eq(blue.get_cease_fire('white'),true)
 eq(nick.permission_group.name,'pog-frozen'); eq(groups['pog-frozen'].allows[1],true,'chat allowed'); eq(groups['pog-frozen'].allows[2],false,'no build')
-tick_to(game.tick+2)
-eq(ents[1].destructible,false,'core entities indestructible'); eq(ents[5].destructible,false,'in steps of STEP')
-eq(state().queue,nil,'all queued done')
+tick_to(game.tick+20)
+eq(ents[1].destructible,false,'core entities indestructible'); eq(ents[5].destructible,false)
+eq(state().queue,nil,'all queued done'); eq(state().queue_done.entities,5,'five set (one was indestructible already)')
+assert(state().queue_done.ticks>5,'a few chunks a tick (STEP_UNITS 40): '..state().queue_done.ticks..' ticks')
 -- a core entity built while frozen
 local new={valid=true,type='furnace',unit_number=200,destructible=true,force={name='white'}}
 H.on_event({name=4,entity=new}); eq(new.destructible,false)
@@ -82,7 +88,7 @@ tick_to(s.mt.humans.since+H_TICKS+10)
 H.on_event({name=2,player_index=1,message='!unfreeze'}); tick_to(game.tick+120)
 eq(state().state,'off','unfrozen when asked after a block')
 eq(red.get_cease_fire('white'),false,'the earlier cease-fires back'); eq(white.get_cease_fire('red'),false)
-tick_to(game.tick+3)
+tick_to(game.tick+20)
 eq(ents[1].destructible,true); eq(ents[6].destructible,false,'one the freeze did not set stays as it was')
 eq(nick.permission_group.name,'pog-humans')
 local used=state().used_h

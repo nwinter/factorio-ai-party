@@ -86,6 +86,7 @@ PLANET_RING = 600  # each team's spawn on the other planets: this far from (0,0)
 # distance away), on the bearing between the first two AI starts, with the same primary patches; nests within
 # HUMAN_NEST_CLEAR of its start are removed on a map made without it (add-humans)
 HUMAN_TEAM, HUMAN_FACTOR, HUMAN_NEST_CLEAR = "white", 1.75, 400
+HUMAN_BOX, HUMAN_WET = 150, 0.05
 
 
 def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING):
@@ -162,16 +163,22 @@ def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING):
     return out
 
 
-def human_part(lay, factor=HUMAN_FACTOR):
-    """The human team for a layout: its spawns (Nauvis and the planets, factor x the AI ring's spacing out), the natural
-    resources cleared round its start and its primary patches (as an AI team's, rotated with its bearing)."""
+def human_target(lay, factor=HUMAN_FACTOR):
+    """(radius, bearing in radians) of the human start: on the bearing between the first two AI starts, its nearest AI
+    start factor x the AI distance away."""
     n, d, ring = len(lay["teams"]), lay["distance"], lay["ring"]
     th = math.pi / n if n > 2 else math.pi / 2
-    a0 = math.radians(lay["teams"][0]["bearing_deg"])
-    ang = a0 + th
+    ang = math.radians(lay["teams"][0]["bearing_deg"]) + th
     want = factor * d
     # the distance from the nearest AI start (ring, th away in angle) is want: R^2 - 2 R ring cos(th) + ring^2 = want^2
-    rad = ring * math.cos(th) + math.sqrt(max(0.0, want ** 2 - (ring * math.sin(th)) ** 2))
+    return ring * math.cos(th) + math.sqrt(max(0.0, want ** 2 - (ring * math.sin(th)) ** 2)), ang
+
+
+def human_part(lay, factor=HUMAN_FACTOR, at=None):
+    """The human team for a layout: its spawns (Nauvis and the planets, factor x the AI ring's spacing out), the natural
+    resources cleared round its start and its primary patches (as an AI team's, rotated with its bearing). at: (radius,
+    bearing) found on the map (add-humans: dry land) in place of the target."""
+    rad, ang = at or human_target(lay, factor)
     ux, uy = math.cos(ang), math.sin(ang)
     sx, sy = round(rad * ux) + 0.5, round(rad * uy) + 0.5
     t = {"name": HUMAN_TEAM, "bearing_deg": round(math.degrees(ang), 1), "spawns": {"nauvis": [sx, sy]}, "humans": True}
@@ -547,20 +554,45 @@ def cmd_add_humans(a):
     spawns as they are, contacts kept), its start's chunks made, natural resources cleared and its patches placed, the
     nests within HUMAN_NEST_CLEAR of its start removed, and its planet spawns' patches."""
     lay = layout(a.teams, a.distance, a.planet_ring)
-    h = human_part(lay, a.human_factor)
     op = op_from(a)
+    # dry land: from the target outward (farther only, never nearer an AI start) and round its bearing, the first spot
+    # whose box of +-HUMAN_BOX tiles is under HUMAN_WET water (mt275-final: the target sat in a lake, 55% water)
+    rad0, ang0 = human_target(lay, a.human_factor)
+    found, tried = None, []
+    for dr in range(0, 901, 150):
+        for dd in (0, -8, 8, -16, 16, -24, 24):
+            rad, ang = rad0 + dr, ang0 + math.radians(dd)
+            x, y = round(rad * math.cos(ang)) + 0.5, round(rad * math.sin(ang)) + 0.5
+            if min(math.dist((x, y), t["spawns"]["nauvis"]) for t in lay["teams"]) < a.human_factor * lay["distance"] - 1:
+                continue
+            op.call("mt_generate", {"surface": "nauvis", "position": [x, y], "radius": math.ceil(HUMAN_BOX / 32) + 1})
+            wet = int(op.lua(f"/silent-command rcon.print(game.surfaces.nauvis.count_tiles_filtered{{area={{{{{x - HUMAN_BOX},{y - HUMAN_BOX}}},"
+                             f"{{{x + HUMAN_BOX},{y + HUMAN_BOX}}}}},collision_mask='water_tile'}})").strip())
+            frac = wet / (2 * HUMAN_BOX) ** 2
+            tried.append(f"({x},{y}) {frac:.0%}")
+            if frac < HUMAN_WET:
+                found = (rad, ang)
+                break
+        if found:
+            break
+    print("dry land:", "; ".join(tried))
+    if not found:
+        raise SystemExit("no spot under the water limit: a human start needs another seed or factor")
+    h = human_part(lay, a.human_factor, at=found)
     teams = [{"name": t["name"], "spawns": t["spawns"]} for t in lay["teams"]] + [{"name": h["team"]["name"], "spawns": h["team"]["spawns"]}]
     res, _ = op.call("mt_setup", {"teams": teams})
     print("mt_setup", json.dumps(res))
     x, y = h["team"]["spawns"]["nauvis"]
     t0 = time.time()
     op.call("mt_generate", {"surface": "nauvis", "position": [x, y], "radius": math.ceil((max(CLEAR_START + SHIFT_START, HUMAN_NEST_CLEAR) + 32) / 32)})
-    r, _ = op.call("mt_resources", {"surface": "nauvis", "clear": h["clear"], "patches": h["patches"], "sites": []})
-    print(f"nauvis: start ({x},{y}), {h['radius']} from (0,0), nearest AI start {h['nearest_ai']}; cleared {r['cleared']}; placed",
-          [f"{p['name']} {p['amount']} at ({p['x']},{p['y']})" + (f" moved {p['shifted']}" if p.get("shifted") else "") for p in r["placed"]])
+    # the nests first: a patch is placed only where nothing stands (mt275-final: iron, coal and oil came out empty)
     gone = op.lua(f"/silent-command local n=0 for _,e in ipairs(game.surfaces.nauvis.find_entities_filtered{{position={{{x},{y}}},radius={HUMAN_NEST_CLEAR},"
                   f"force='enemy'}}) do if e.valid then e.destroy() n=n+1 end end rcon.print(n)")
     print(f"enemies removed within {HUMAN_NEST_CLEAR} of the start: {gone.strip()}")
+    r, _ = op.call("mt_resources", {"surface": "nauvis", "clear": h["clear"], "patches": h["patches"], "sites": []})
+    print(f"nauvis: start ({x},{y}), {h['radius']} from (0,0), nearest AI start {h['nearest_ai']}; cleared {r['cleared']}; placed",
+          [f"{p['name']} {p['amount']} ({p.get('tiles')} tiles) at ({p['x']},{p['y']})" + (f" moved {p['shifted']}" if p.get("shifted") else "")
+           + (" NO DRY SPOT" if p.get("no_dry_spot") else "") for p in r["placed"]])
     for p in PLANETS:
         spec = h["planets"][p]
         surface_made = op.lua(f"/silent-command rcon.print(game.get_surface('{p}') and 'yes' or 'no')").strip() == "yes"

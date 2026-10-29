@@ -10,8 +10,8 @@
 -- no roster player has been online for offline_min. It starts after warm_min minutes announced to the team, and never
 -- within quiet_min minutes of a hit between the team and another team (a hit during the warm-up starts the wait again).
 -- While frozen: a cease-fire both ways with every other team (the earlier settings put back after), the team's
--- players in the group pog-frozen (no action but chat), and its core entities (CORE_TYPES) indestructible, set in
--- steps of at most STEP entities a tick. It ends when its hours are up (an automatic one: once a roster player is back,
+-- players in the group pog-frozen (no action but chat), and its core entities (CORE_TYPES) indestructible, set a
+-- few chunks a tick (STEP_UNITS). It ends when its hours are up (an automatic one: once a roster player is back,
 -- after block_h at least), on "!unfreeze" after block_h, or when the day's budget runs out.
 return function(api)
   local M = {operator={}}
@@ -20,7 +20,6 @@ return function(api)
   M.CORE_TYPES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'rocket-silo', 'agricultural-tower', 'boiler',
     'generator', 'burner-generator', 'reactor', 'heat-pipe', 'fusion-reactor', 'fusion-generator', 'solar-panel',
     'accumulator', 'electric-pole', 'lightning-attractor', 'offshore-pump', 'cargo-landing-pad', 'cargo-bay'}
-  M.STEP = 2000   -- entities set destructible or not a tick (mt278: measured on the iMac copy, report-mt278.md)
   local core = {}
   for _, t in ipairs(M.CORE_TYPES) do core[t] = true end
   local GROUP, FROZEN = 'pog-humans', 'pog-frozen'
@@ -116,39 +115,70 @@ return function(api)
     return {player=p.name, force=p.force.name, character=p.character ~= nil}
   end
 
-  -- What changes the team's core entities: a list of {entity, unit} to set, worked through STEP a tick (M.tick).
+  -- What changes the team's core entities, a few chunks a tick (M.tick): each surface's chunks in rings round the team's
+  -- spawn there (its entities stand in chunks made round its own ground), a surface done after three rings with no
+  -- generated chunk. Its place is kept in storage (a joining client loads it), and
+  -- each tick spends at most STEP_UNITS: a generated chunk's find 10, an entity found 1, a chunk only checked 1 (mt278,
+  -- the iMac copy: a find 7.5 us a chunk, 0.5 us an entity found and set; 6000 units a step: median 5.5 ms; 4000 here). Back to
+  -- destructible: every core entity but those already indestructible before the freeze (h.keep: a few; a set of every
+  -- entity frozen grew a hash table of 30000 and its rehash made one step 25 ms).
+  M.STEP_UNITS = 4000
   local function queue(h, value)
-    local f = team_force()
-    local list = {}
-    for _, surface in pairs(game.surfaces) do
-      for _, e in ipairs(surface.find_entities_filtered{force=f, type=M.CORE_TYPES}) do
-        if value == false and e.destructible then list[#list+1] = e
-        elseif value == true then list[#list+1] = e end
-      end
-    end
-    if value == true then
-      -- back to destructible: only those the freeze set (an indestructible one of the map's own stays so)
-      local set, keep = h.set or {}, {}
-      for _, e in ipairs(list) do if e.valid and e.unit_number and set[e.unit_number] then keep[#keep+1] = e end end
-      list = keep
-    end
-    h.queue = {value=value, list=list, at=1}
-    return #list
+    local names = {}
+    for _, surface in pairs(game.surfaces) do names[#names+1] = surface.name end
+    table.sort(names)
+    h.queue = {value=value, surfaces=names, si=1, ring=0, i=0, seen=false, empty=0, done=0, started=game.tick}
+    if value == false then h.keep = {} end
+  end
+  local function ring_chunk(r, i)
+    if r == 0 then return 0, 0 end
+    local side = 2 * r
+    if i < side then return -r + i, -r end
+    if i < 2 * side then return r, -r + (i - side) end
+    if i < 3 * side then return r - (i - 2 * side), r end
+    return -r, r - (i - 3 * side)
   end
   local function work(h)
     local q = h.queue
     if not q then return end
-    local last = math.min(#q.list, q.at + M.STEP - 1)
-    h.set = h.set or {}
-    for i = q.at, last do
-      local e = q.list[i]
-      if e.valid then
-        e.destructible = q.value
-        if e.unit_number then h.set[e.unit_number] = (q.value == false) or nil end
+    local f = team_force()
+    local units = 0
+    while units < M.STEP_UNITS do
+      local surface = game.get_surface(q.surfaces[q.si] or '')
+      if not surface then
+        h.queue = nil
+        h.queue_done = {value=q.value, entities=q.done, ticks=game.tick - q.started + 1}
+        return
+      end
+      if not q.cx then
+        local sp = f.get_spawn_position(surface)
+        q.cx, q.cy = math.floor(sp.x / 32), math.floor(sp.y / 32)
+      end
+      local dx, dy = ring_chunk(q.ring, q.i)
+      local cx, cy = q.cx + dx, q.cy + dy
+      if surface.is_chunk_generated({cx, cy}) then
+        q.seen = true
+        units = units + 10
+        local x, y = cx * 32, cy * 32
+        for _, e in ipairs(surface.find_entities_filtered{area={{x, y}, {x + 32, y + 32}}, force=f, type=M.CORE_TYPES}) do
+          units = units + 1
+          if q.value == false then
+            if e.destructible then e.destructible = false; q.done = q.done + 1
+            elseif e.unit_number then h.keep[e.unit_number] = true end
+          elseif not e.destructible and not (h.keep and e.unit_number and h.keep[e.unit_number]) then
+            e.destructible = true; q.done = q.done + 1
+          end
+        end
+      else
+        units = units + 1
+      end
+      q.i = q.i + 1
+      if q.i >= math.max(1, 8 * q.ring) then
+        q.empty = q.seen and 0 or q.empty + 1
+        q.ring, q.i, q.seen = q.ring + 1, 0, false
+        if q.empty >= 3 and q.ring > 3 then q.si, q.ring, q.empty, q.cx, q.cy = q.si + 1, 0, 0, nil, nil end
       end
     end
-    q.at = last + 1
-    if q.at > #q.list then h.queue = nil end
   end
 
   local function freeze(h)
@@ -163,9 +193,8 @@ return function(api)
       if h.players[p.name] and p.force == f then p.permission_group = frozen_group() end
     end
     h.state, h.since = 'frozen', game.tick
-    local n = queue(h, false)
-    say(h, string.format('frozen until tick %d at the latest (%d core entities set indestructible); budget left today %.1f h',
-      h.until_tick, n, (h.budget_ticks - day_used(h)) / TICKS_H))
+    queue(h, false)
+    say(h, string.format('frozen until tick %d at the latest; budget left today %.1f h', h.until_tick, (h.budget_ticks - day_used(h)) / TICKS_H))
   end
   local function thaw(h, why)
     local f = team_force()
@@ -177,8 +206,8 @@ return function(api)
     h.prev = nil
     h.state, h.since, h.until_tick, h.reason = 'off', nil, nil, nil
     for _, p in pairs(game.players) do if h.players[p.name] and p.force == f then M.place(p) end end
-    local n = queue(h, true)
-    say(h, 'unfrozen (' .. why .. '): ' .. n .. ' core entities destructible again')
+    queue(h, true)
+    say(h, 'unfrozen (' .. why .. ')')
   end
 
   -- A request: by a player (hours) or by itself (auto). Refused without budget for a block.
@@ -253,10 +282,7 @@ return function(api)
     elseif h.state == 'frozen' and (event.name == e.on_built_entity or event.name == e.on_robot_built_entity
         or event.name == e.script_raised_built or event.name == e.script_raised_revive) then
       local ent = event.entity
-      if ent and ent.valid and ent.force.name == h.team and core[ent.type] and ent.destructible then
-        ent.destructible = false
-        if ent.unit_number then h.set = h.set or {}; h.set[ent.unit_number] = true end
-      end
+      if ent and ent.valid and ent.force.name == h.team and core[ent.type] and ent.destructible then ent.destructible = false end
     end
   end
 
@@ -281,8 +307,17 @@ return function(api)
     end
     return {team=h.team, state=h.state, since=h.since, until_tick=h.until_tick, warm_until=h.warm_until, reason=h.reason,
       used_h=day_used(h) / TICKS_H, budget_h=h.budget_ticks / TICKS_H, last_fight=h.last_fight, online=online(h),
-      offline_since=h.offline_since, queue=h.queue and {value=h.queue.value, left=#h.queue.list - h.queue.at + 1} or nil,
-      log=h.log}
+      offline_since=h.offline_since, queue=h.queue and {value=h.queue.value, surface=h.queue.surfaces[h.queue.si], ring=h.queue.ring,
+      done=h.queue.done} or nil, queue_done=h.queue_done, log=h.log}
+  end
+  -- (test) one step of the queue, timed from the console round a dispatch
+  function M.operator.mt_freeze_step(a)
+    local h = st()
+    assert(h, 'no human team')
+    if a.queue ~= nil then queue(h, a.queue) end   -- (test) the destructible walk alone, false or true
+    assert(h.queue, 'nothing queued')
+    work(h)
+    return {queue=h.queue and {surface=h.queue.surfaces[h.queue.si], ring=h.queue.ring, done=h.queue.done} or nil, queue_done=h.queue_done}
   end
   return M
 end
