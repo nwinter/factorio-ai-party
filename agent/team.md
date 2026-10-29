@@ -8,6 +8,7 @@
 
 You share the factory, research and power. `./fh` controls your character and inventory.
 `technologies {name, level}` reads cost without queueing.
+`wait_until` arrival/progress waits in platform lanes take up to 80 game hours (`./fh help waits-queues`).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in

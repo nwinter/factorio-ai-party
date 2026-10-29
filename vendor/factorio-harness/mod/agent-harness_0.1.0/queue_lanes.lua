@@ -95,6 +95,7 @@ return function(api)
     local papi={}
     for k,v in pairs(remote_api) do papi[k]=v end
     papi.queue_key=M_key(name)
+    papi.platform_lane=true  -- only these lanes allow the long arrival/progress timeout
     -- (BY1) a flight_watch start without platform or id watches the lane's platform; (d25 batch205 QR2) read: true reads it
     papi.check_step=function(action,a)
       if action=='flight_watch' and type(a)=='table' and a.platform==nil and a.id==nil then a.platform=name end
@@ -125,12 +126,13 @@ return function(api)
     if not (r and q.current and q.current.plan==r.id) then return nil end
     return {kind=r.kind,name=r.name,tick=r.tick,steps=r.steps}
   end
-  local function brief(q)
+  local function brief(q,engine)
     if not q then return {paused=true,pending=0,active=false} end
     local step=q.current
     local waiting=not q.paused and step and (step.action=='wait_until' or step.action=='wait_ticks') and
       {kind=step.action,condition=step.action=='wait_until' and step.args or nil,until_tick=step.until_tick} or nil
     if waiting and api.base.wait_info then api.base.wait_info(waiting,step) end
+    if waiting and engine then waiting.deadline=engine.wait_deadline(step) end
     -- what paused it (d17 batch16 A4): "paused by you (queue_pause) ..." holds; any other pause says its cause
     local why=q.paused and q.paused_why and q.paused_why.line or nil
     return {revision=q.revision,paused=q.paused,paused_by=why,held=q.held and true or nil,pending=#q.pending,repeating=q.loop~=nil,waiting=waiting,
@@ -144,7 +146,7 @@ return function(api)
     local out={body=brief((s.queues or {})[index]),remote=brief((s.remote_queues or {})[index])}
     for name in pairs(s.platform_lanes or {}) do
       local q=(s[M_key(name)] or {})[index]
-      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q) end
+      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q,platform_engine(name)) end
     end
     return out
   end
@@ -172,7 +174,7 @@ return function(api)
     end
   end
   M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched|tick_at_least or item_count with platform, ammo_below, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface, all or any of those (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; flight_watch (in a platform lane a start or a read: true without platform or id watches or reads the lane\'s platform); body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
-  M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
+  M.schema.queue_status.returns=M.schema.queue_status.returns..'; wait_deadlines (platform arrival/progress waits): tick, game_seconds, ticks_left, wall_unix_ms and wall_seconds_left projected at 60 ticks/s; state waiting for an active wait, if_started_now for a pending step (its start depends on earlier work/resume). Also on submission and dry-run replies; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   -- (d24 batch153, harness review bug 6: Sol's status listed 7 platform lanes for platforms gone) a lane queue whose
   -- platform is no platform of ours, with no step running, for CLOSE_TICKS in a row (a lane staged before its platform
