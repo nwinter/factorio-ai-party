@@ -23,6 +23,9 @@ return function(api)
   -- can be taken by anyone (shift07: #284 power held "doing" for two shifts).
   local QUIET = 20 * 3600
   local MAX_ALLOW = 8
+  -- (d29 batch334) the alert callbacks' empty list: alert_lines made a new {} for each of ~22 that returned nothing, in
+  -- every reply; never written
+  local EMPTY = {}
   -- Projects (operator 00:50): long jobs that outlive an agent's context and
   -- its shift (a rail line, a nuclear plant, a robot mall). A goal, steps
   -- anyone adds and marks done (who did each), areas, notes, and a handoff
@@ -2423,27 +2426,27 @@ return function(api)
     -- A captive spawner of this agent's dying within 2 minutes or dead (pushalerts.lua; d17 batch18 C6).
     if api.captive_lines then
       local ok, list = pcall(api.captive_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- Programmable speaker alerts on this agent's surface or of its speakers, each once while up (pushalerts.lua; batch30 A2).
     if api.speaker_lines then
       local ok, list = pcall(api.speaker_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- Eggs of ours on this agent's surface or built by it that hatch within 5 minutes (spoil.lua).
     if api.hatch_lines then
       local ok, list = pcall(api.hatch_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A death of ours that left a corpse with items (runtime.lua M.death_lines; batch24 C2).
     if api.death_lines then
       local ok, list = pcall(api.death_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- Landed cargo pods on the ground, once an hour (landed.lua; d17 pods).
     if api.pods_lines then
       local ok, list = pcall(api.pods_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- One line per incident (threat.attack_line). An incident this agent was
     -- told about comes again, as "continues" with its totals, only after
@@ -2483,7 +2486,7 @@ return function(api)
     -- A pole's death that cut power (powercut.lua): each cut once, at most 3 lines.
     if api.power_lines then
       local ok, list = pcall(api.power_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- (d17 alerts) the kinds that wake a sleep (urgent.lua: your character hit, eggs, attacks, enemy groups, losses,
     -- power cuts) come before here and always show; what follows shows again only after REPEAT_SHOWN (alerts_seen below)
@@ -2491,77 +2494,77 @@ return function(api)
     -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua).
     if api.launch_lines then
       local ok, list = pcall(api.launch_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A turret built from a ghost read other targeting than the ghost's (turretwatch.lua; backlog #569).
     if api.turret_lines then
       local ok, list = pcall(api.turret_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- The owner's 10-minute line on each owned board item (progress.lua; d17 batch15 C3).
     if api.progress_lines then
       local ok, list = pcall(api.progress_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- (d23 batch123 CF2) a watch of this agent's split by an edit inside what it measures (mixed.lua)
     if api.mixed_lines then
       local ok, list = pcall(api.mixed_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).
     if api.shipment_lines then
       local ok, list = pcall(api.shipment_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A delivery watch's blocker, deadline or arrival, to its setter (delivwatch.lua; d21 batch66 AB5).
     if api.delivery_lines then
       local ok, list = pcall(api.delivery_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A spidertron sent by go_to making no progress, or moving again, to its sender (spiderroute.lua; d22 batch101 BK1).
     if api.spider_lines then
       local ok, list = pcall(api.spider_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A flight watch begun at a departure or ended, to its setter (flightwatch.lua; d21 batch72 AH1).
     if api.flight_lines then
       local ok, list = pcall(api.flight_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- Hand-fed burner machines running dry within 10 minutes (burnerfuel.lua).
     if api.burner_lines then
       local ok, list = pcall(api.burner_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A personal request unfilled in a network with no logistic robots (personal.lua).
     if api.personal_lines then
       local ok, list = pcall(api.personal_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- A plan of this agent's that paused on a step failing in its first seconds (batch29 A1).
     if api.queue_lines then
       local ok, list = pcall(api.queue_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- Our platforms (platalerts.lua), with their own cap of 6 lines.
     if api.platform_lines then
       local ok, list = pcall(api.platform_lines, p, h)
-      for i, line in ipairs(ok and list or {}) do if i <= 6 then lines[#lines+1] = line end end
+      for i, line in ipairs(ok and list or EMPTY) do if i <= 6 then lines[#lines+1] = line end end
     end
     -- Drops this agent sent or was named in: still descending, or where they landed (drops.lua).
     if api.drop_lines then
       local ok, list = pcall(api.drop_lines, p, h)
-      for i, line in ipairs(ok and list or {}) do if i <= 4 then lines[#lines+1] = line end end
+      for i, line in ipairs(ok and list or EMPTY) do if i <= 4 then lines[#lines+1] = line end end
     end
     -- The game's alerts and warnings for areas this agent claimed, built or is nearest (pushalerts.lua).
     if api.push_lines then
       local ok, list = pcall(api.push_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     -- Our buildings out of radar sight per planet, at most once an hour (pushalerts.lua; d17 territory, Nick 17:22).
     if api.sight_lines then
       local ok, list = pcall(api.sight_lines, p, h)
-      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+      for _, line in ipairs(ok and list or EMPTY) do lines[#lines+1] = line end
     end
     return M.alerts_seen(h, lines, urgent_upto)
   end

@@ -192,23 +192,41 @@ return function(api)
   end
 
   -- Whether agent `me` (name) hears about platform pl.
-  local function addressed(pl, r, me)
+  -- (d29 batch334) who is on which platform, read once for a reply (addressed() read every agent's place for each
+  -- platform: platforms x agents lookups, each a player or a bot proxy and its surface): the bots aboard by the
+  -- platform's name, the players by the platform their surface is (compared with == as before)
+  local EMPTY = {}  -- never written
+  local function aboard()
+    local by_name, on = {}, {}
+    for _, a in ipairs(api.agents()) do
+      local b = api.bot(a.index)
+      if b then
+        local t = b.travel
+        if t and t.state == 'aboard' and t.platform ~= nil then
+          local l = by_name[t.platform] or {}
+          by_name[t.platform] = l
+          l[#l+1] = a.name
+        end
+      else
+        local p = api.lookup(a.index)
+        local s = p and p.valid and (try(function() return p.physical_surface end) or try(function() return p.surface end))
+        local spl = s and try(function() return s.platform end)
+        if spl then on[#on+1] = {pl=spl, name=a.name} end
+      end
+    end
+    return {by_name=by_name, on=on}
+  end
+  -- who: aboard()'s, made here when not given
+  local function addressed(pl, r, me, who)
     local any = false
     if r.creator then any = true; if r.creator == me then return true end end
     for n, t in pairs(r.workers) do
       if game.tick - t <= WORKER_TICKS then any = true; if n == me then return true end end
     end
-    for _, a in ipairs(api.agents()) do
-      local b = api.bot(a.index)
-      local on
-      if b then
-        on = b.travel and b.travel.state == 'aboard' and b.travel.platform == pl.name
-      else
-        local p = api.lookup(a.index)
-        local s = p and p.valid and (try(function() return p.physical_surface end) or try(function() return p.surface end))
-        on = s and try(function() return s.platform end) == pl
-      end
-      if on then any = true; if a.name == me then return true end end
+    who = who or aboard()
+    for _, name in ipairs(who.by_name[pl.name] or EMPTY) do any = true; if name == me then return true end end
+    for _, x in ipairs(who.on) do
+      if x.pl == pl then any = true; if x.name == me then return true end end
     end
     return not any
   end
@@ -653,8 +671,9 @@ return function(api)
   function M.listeners(pl)
     local out = {}
     local r = rec(pl)
+    local who = aboard()
     for _, a in ipairs(api.agents()) do
-      if addressed(pl, r, a.name) then out[#out+1] = {name=a.name, index=a.index} end
+      if addressed(pl, r, a.name, who) then out[#out+1] = {name=a.name, index=a.index} end
     end
     return out
   end
@@ -671,10 +690,13 @@ return function(api)
     local me = api.who(p)
     local lines = {}
     h.platforms = h.platforms or {}
+    local who, live = nil, {}
     for _, pl in pairs(p.force.platforms) do
+      if pl.valid then live[pl.index] = true end
       local r = pl.valid and pl.surface and by[pl.index]
       if not r and pl.valid and pl.surface then r = rec(pl) end
-      if r and addressed(pl, r, me) then
+      if r and not who then who = aboard() end
+      if r and addressed(pl, r, me, who) then
         local seen = h.platforms[pl.index] or {}
         h.platforms[pl.index] = seen
         -- Every line names the platform and its surface (status alerts rows:
@@ -808,11 +830,9 @@ return function(api)
     end
     -- Platforms that stopped at or left this agent's planet (freight.lua; Gemini, 16:50).
     for _, line in ipairs(api.platform_events and api.platform_events(p, h) or {}) do lines[#lines+1] = line end
-    -- Platforms gone: forget them.
+    -- Platforms gone: forget them (the valid ones as the first loop read them).
     for index in pairs(h.platforms) do
-      local ok = false
-      for _, pl in pairs(p.force.platforms) do if pl.valid and pl.index == index then ok = true; break end end
-      if not ok then h.platforms[index] = nil end
+      if not live[index] then h.platforms[index] = nil end
     end
     return #lines > 0 and lines or nil
   end

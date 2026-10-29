@@ -248,9 +248,11 @@ end
 local function main_inventory(p) local ok,inv=pcall(function() return p.get_main_inventory() end); return ok and inv or nil end
 -- seated: a character in a vehicle is allowed (reads, chat, crafting, research,
 -- remote-view actions and vehicle itself, set per request in M.seated_ok; a drive in progress).
-local function player(index,seated)
+-- check (d29 batch334): the same asserts, true instead of the player or proxy (the scheduler's idle queues: a bot's proxy
+-- is a table, a metatable and 2 closures, 344 B, each queue each tick)
+local function player(index,seated,check)
   seated=seated or M.seated_ok
-  if M.bots.is_index(index) then return M.bots.actor(index,seated) end
+  if M.bots.is_index(index) then return M.bots.actor(index,seated,check) end
   local p = game.get_player(index or 1)
   assert(p and p.valid, 'player does not exist')
   local controlled=state().controlled and state().controlled[p.index]
@@ -258,6 +260,7 @@ local function player(index,seated)
   assert(p.physical_controller_type == defines.controllers.character and p.character and p.character.valid, 'a living survival character is required')
   assert(not p.cheat_mode or (controlled and controlled.allow_cheat_mode), 'cheat mode requires explicit testing opt-in')
   assert(not p.driving or (seated and p.vehicle), 'the character is in a vehicle or riding a rocket/cargo pod: vehicle {exit: true} gets out of a vehicle (reads, chat, crafting, research and remote actions work seated); a ride ends by itself (poll status)')
+  if check then return true end
   return body(p)
 end
 local function stop(p)
@@ -17617,7 +17620,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   left_undone=function(index) return M.left_undone(index) end,
   guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,deadline=function(c) return conditions.deadline(c) end,
   recheck_read=function(rc) return space.recheck_read(rc) end,
-  state=state,player=player,handlers=handlers,timed=M.timed,
+  state=state,player=player,player_check=function(index,seated) return player(index,seated,true) end,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args); M.step_length_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,

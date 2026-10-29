@@ -95,18 +95,19 @@ return function(api)
       __newindex=function(_, k, v) if alive(b) then b.character[k] = v end end})
   end
   -- A controllable bot: alive, like player() for a player.
-  function M.actor(index, seated)
+  -- check (d29 batch334): the same asserts, true instead of the proxy
+  function M.actor(index, seated, check)
     local b = bots().by_index[index]
     assert(b, 'bot does not exist')
     -- Aboard a platform: a bodiless proxy on the platform's surface, for the
     -- remote-view actions check_action lets through.
-    if b.travel and b.travel.state == 'aboard' then return M.proxy(b) end
+    if b.travel and b.travel.state == 'aboard' then return check or M.proxy(b) end
     if b.travel then error(no_body(b), 0) end
     if not alive(b) then
       error(string.format('bot %s is dead; it respawns at tick %s (status reports dead_until_tick; fh sleep SECONDS waits and wakes with respawned)', b.name, tostring(b.dead_until_tick)), 0)
     end
     assert(not b.character.driving or (seated and b.character.vehicle), 'the character is in a vehicle: vehicle {exit: true} gets out (reads, chat, crafting, research and remote actions work seated)')
-    return M.proxy(b)
+    return check or M.proxy(b)
   end
   -- The proxy for status and cleanup, dead or alive.
   function M.lookup(index)
@@ -252,9 +253,19 @@ return function(api)
     assert(not (held and held.valid_for_read), 'put the held stack away first (only worn armor and guns travel)')
   end
   -- The platform a ride belongs to, by index (names can change or repeat).
+  -- (d29 batch334) the one found last is kept per bot while it is valid and still matches: a force's platforms is a new
+  -- table of every platform (2.4 KB a read with 22 platforms), read each tick for each bot aboard. The same platform
+  -- comes back either way, so every peer gets the same.
+  local found = {}
+  local function matches(pl, t)
+    return pl.valid and (t.platform_index and pl.index == t.platform_index or not t.platform_index and pl.name == t.platform)
+  end
   local function find_platform(b, t)
-    for _, pl in pairs(force_of(b).platforms or {}) do
-      if pl.valid and (t.platform_index and pl.index == t.platform_index or not t.platform_index and pl.name == t.platform) then return pl end
+    local pl = found[b.name]
+    if pl and matches(pl, t) then return pl end
+    found[b.name] = nil
+    for _, x in pairs(force_of(b).platforms or {}) do
+      if matches(x, t) then found[b.name] = x; return x end
     end
   end
   -- The rider is in the rocket: armor and guns into the kit, body gone, and
@@ -368,7 +379,8 @@ return function(api)
       end
     elseif t.state == 'aboard' then
       local pl = find_platform(b, t)
-      if not (pl and pl.surface and pl.surface.valid) then return lost(b, tick, 'platform ' .. t.platform .. ' is gone') end
+      local ps = pl and pl.surface
+      if not (ps and ps.valid) then return lost(b, tick, 'platform ' .. t.platform .. ' is gone') end
       t.platform = pl.name
       if tick % 30 == 0 and pl.hub and pl.hub.valid then b.position = pl.hub.position end
     elseif t.state == 'descending' then
