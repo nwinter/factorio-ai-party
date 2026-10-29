@@ -66,6 +66,7 @@ def frames():
     assert c.public()['acknowledged']['onair'] == 'cam2'
     assert c.public()['on_air']['onair'] == 'main'
     n = len(o.calls)
+    c.set({'onair': 'cam2', 'inset': None, 'frames': {'main': {'label': 'new ship progress'}}})
     c.work(11.1)
     assert len(o.calls) == n
     o.sizes[o.ids['stream cam2']] = (2880, 1620)
@@ -73,6 +74,10 @@ def frames():
     assert c.applied['onair'] == 'cam2'
     assert o.scenes['stream'][-2] == 'stream cam2'
     assert o.tf('stream cam2')['cropLeft'] == 492
+    n = len(o.calls)
+    c.set({'onair': 'cam2', 'inset': None, 'frames': {'main': {'label': 'latest ship progress'}}})
+    c.work(12)
+    assert len(o.calls) == n and c.applied['frames']['main']['label'] == 'latest ship progress'
     # A newly visible panel, trio tile and host obey the same readiness gate.
     for want, src in [({'onair': 'cam2', 'inset': 'cam3'}, 'stream cam3'),
                       ({'onair': 'cam2', 'layout': 'trio', 'tiles': {'main': 'cam2', 'cam2': 'main', 'cam3': 'cam3'}}, 'stream cam3')]:
