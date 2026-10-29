@@ -38,7 +38,7 @@ script.on_event(defines.events.on_tick,function(event)
   local s,force,f=storage.surface,game.forces.player,storage.fixture
   force.chart(s,{{-256,-256},{256,256}})
   local function profile(label,fn)
-    local p=game.create_profiler(); local r=fn(); p.stop(); log({'','FRICTION6 ',label,' ',p}); return r
+    local p=helpers.create_profiler(); local r=fn(); p.stop(); log({'','FRICTION6 ',label,' ',p}); return r
   end
   local area={position={x=-99,y=-100},radius=2}
   local one=supply.fluid_supply(s,force,'water',area)

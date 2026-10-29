@@ -135,8 +135,8 @@ return function(api)
       end
       return 0
     end
-    local inv = try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end)
-      or try(function() return e.get_inventory(defines.inventory.furnace_source) end)
+    local inv = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
+      or try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.furnace_source)) end)
     return inv and try(function() return inv.get_item_count(ing.name) end) or 0
   end
   local function hub_count(pl, item)

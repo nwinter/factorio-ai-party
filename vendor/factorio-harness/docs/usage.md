@@ -110,6 +110,7 @@ fh call status
   taken stays as it is (`rearm`: the turret there); with `radius` neither is touched (`rearm`: the radius's centre). Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
+- Machine inventory names `crafter_input`, `crafter_output`, and `crafter_modules` work for furnaces, assemblers, and silos. Existing names such as `furnace_source`, `furnace_result`, and `assembling_machine_input` remain accepted.
 - `transfer` is `{position, direction: "to_entity"|"to_player", item, count, inventory?}` at one entity
   (`fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"rocket_silo_rocket","item":"rocket-fuel",
   "position":{"x":15.5,"y":59.5}}'`), or `{pick, positions, item or items, to}` to take at the first listed place that

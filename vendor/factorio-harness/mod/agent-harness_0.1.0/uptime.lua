@@ -49,7 +49,7 @@ return function(api)
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function store() local s = api.state(); s.uptime = s.uptime or {}; return s.uptime end
   local function input_inv(e)
-    local which = e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input
+    local which = e.type == 'furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input
     return try(function() return e.get_inventory(which) end)
   end
   -- (d20 batch58 T1, Sol #1453: a rare quality-module-3 recipe holding rare circuits read every ingredient short, least
@@ -101,7 +101,7 @@ return function(api)
   -- in between and that interval is unknown. A recipe with a product by chance or in a range has no fixed amount: unknown.
   local function output_inv(e)
     if e.type == 'rocket-silo' then return nil end
-    local which = e.type == 'furnace' and defines.inventory.furnace_result or defines.inventory.assembling_machine_output
+    local which = e.type == 'furnace' and (defines.inventory.crafter_output or defines.inventory.furnace_result) or defines.inventory.assembling_machine_output
     return try(function() return e.get_inventory(which) end)
   end
   local function fixed_products(r)

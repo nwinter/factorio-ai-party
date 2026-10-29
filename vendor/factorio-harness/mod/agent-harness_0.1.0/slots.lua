@@ -67,7 +67,8 @@ return function()
     ['cargo-landing-pad']='cargo_landing_pad_main', ['space-platform-hub']='hub_main'}
   function M.inventory_of(e)
     local name = e and try(function() return INV[e.type] end)
-    local id = name and defines.inventory[name]
+    local crafter = name == 'assembling_machine_input' or name == 'furnace_source'
+    local id = name and ((crafter and defines.inventory.crafter_input) or defines.inventory[name])
     return id and try(function() return e.get_inventory(id) end) or nil
   end
   -- The entity's own full() for an item.
