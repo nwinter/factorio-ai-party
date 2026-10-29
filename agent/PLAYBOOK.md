@@ -76,3 +76,4 @@ has passed. Then add a final summary to `notes.md` (milestones with game times, 
 you down, harness problems you hit, the tool changes that would have helped most) and end your turn; a summary written
 earlier is a draft to finish then. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and
 `./fh board` show what is still open.
+{{EXPEDITION}}

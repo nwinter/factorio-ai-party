@@ -242,6 +242,9 @@
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
+  `long: true` (with `platform`, or `surface` for a planet): made and used over the game's 1 h, 10 h, 50 h and 250 h
+  windows (game time; totals), the 16 items most made and used in all (or `item`). Imports are not production: what
+  cargo pods and rockets bring in or take away is in neither.
 - `platform_defense {platform, asteroids: true, seconds: N}` (10..1800) starts a watch of the asteroids in view of the
   platform (its foundation's chunks, 32 tiles out) and its turrets; the same without `seconds` reads it. Each asteroid:
   its approach (the platform faces north: front, side or rear by where its straight line enters the box round the
@@ -394,6 +397,10 @@
   `on_the_way` (rockets sent and not landed), `this` (the rocket's count). Measured (2.0.77): a hub lacking
   min - (holds + on the way) gets max(lacking, payload), cut into rockets of up to a rocket's lift; the last carries
   the rest, which can be under the payload (Lark: lacking 2683, payload 1000: 1000, 1000, 683).
+- `shipment`, totals: `shipment {totals: true, platform?}` gives each platform's pods since the harness began counting
+  them (`since_tick`): up (rockets to it) and down (its hub's pods), each with cargo by item and the planets, and the
+  same over 1h, 10h, 50h and 250h (each window covers its length less up to one 10-minute, 1-hour or 10-hour bucket;
+  `from_tick`).
 - `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or

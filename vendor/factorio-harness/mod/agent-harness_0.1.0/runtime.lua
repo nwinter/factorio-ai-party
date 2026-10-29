@@ -2202,7 +2202,7 @@ function handlers.describe(_,a)
       stock={unrequested='true: requester and buffer chests in our logistic networks on the surface (surface= another) holding items they do not request (item= one): per chest what and how many, where, its network, what it asks, and whether trash unrequested sends them to storage; the most first, 32 rows; items: per item the count and chests; 512 requester points a call (page: the next; next says it). Read only',items='optional 1..32 item names (name@quality: that row at that quality) instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more). An item that places a vehicle (spidertron, car, tank, locomotive, wagons): total is what is stored (as items); scope_line and placed give our vehicles of it placed, on every surface, as where_is does',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest); holders_left_out: the kinds it left out, with their count and places; when no place passes it the summary says so with those)',quality='default normal; places and position reads count that quality; a planet\'s whole count (surface alone, or item without radius) is of normal quality only: with another quality, surface alone is refused (naming the reads that count it) and the default total is the 128 tiles round you (quality_note)',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={spoiling='optional true: a recipe with a spoilable ingredient queues every craft asked; without it only the crafts that finish before the first held stack of it spoils (the hand queue ahead, then each craft at your crafting speed), and spoil says how many; products_spoil: how long each spoilable product lasts fresh once it lands',force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
-      rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',surface='optional planet or platform name: that surface by remote view, as inspect and supply (d18 batch40 A3)',
+      rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest); and producers, one row a machine making it (the first 48): full_per_min at full speed as inspect gives it beside measured_per_min, what it made by its own crafts counter over measured_over (10-20 min), with status; producer_lines',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',surface='optional planet or platform name: that surface by remote view, as inspect and supply (d18 batch40 A3)',
         returns='rows per item: produced, consumed, net at full speed (what the machines would make and use running without stop, not what they made: rows_are says so), basis "full speed", by/into machines x count, working (how many of them work now: "1 of 3 making it; 3 of 3 using it work now"); power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...); with item: actual {made, used, per, over, source} and statistics (what was made and used, the game\'s) and line (the full-speed figure beside them)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
       bottleneck={chain='with item: true: the recipe chain back from the item, a link per item: makers (the census pass\'s lists, up to 32 a link read now: states, speed), made and used a minute now, full (at full speed), asked (what the link it feeds takes at its full speed), stock (logistic networks); limit: the link the shortage comes down to, with its numbers and its makers\' states; at most 16 links',all_stopped='with item: true: stopped, per step of the line, every maker not working grouped by cluster (count, box, by name and state, every position)',shares='returned for a fluid (lubricant, heavy-oil, ...): its users by recipe on the surface: machines, how many work now, what they take at full speed and their share of all users\' take, against what the surface used and made in the last 10 min and its makers at full speed',item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack, spoilage its recipe does not take in its input; a maker stopped by its output: the chest its output waits on when every slot of it is used, slots used/total and what fills them), full_chests (those chests, with the machines whose output waits on each), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there; none for an item held by its feeder\'s condition), held_by_feeders (makers lacking an item their input inserter\'s source holds while that inserter is off by its condition: the condition, its wire values, the source\'s stock, what sets the signal), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
@@ -2246,7 +2246,7 @@ function handlers.describe(_,a)
         pick='first_with_stock|most_stock with positions and item or items: as transfer\'s pick (one listed place that holds it now; empty ones skipped, never short)',items='with pick: 1..16 item names',to='with pick: {x,y} or {item: {x,y}}: carry what was taken there and give it (as transfer\'s to)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
-      research={target_level='{technology: level, ...} (a leveled technology, e.g. physical-projectile-damage-7: 10): keeps it coming until that level is researched: the next level goes to the end of the queue whenever it is neither researching nor queued and the queue has room; 0 removes a target; at most 16, 100 levels past the one researching; returns targets (each: target, now researching / queued at N / waiting for room, levels left)',targets='true: read the target levels',technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue (a leveled technology may stand in it several times, each entry the next level, as the research GUI queues them: research_queue and append keep repeats up to the levels left; front puts one in front); over_levels: a technology named more times than it has levels left, queued that many times; targets (the report): target levels as targets=true reads them; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={name='optional: one recipe name, or a list of 1..64: those only (unknown or not enabled is refused, with names like it)',prefix='optional',limit='1..256',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={name='optional: one technology name, or a list of 1..64: those only',prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those; a technology with levels: level (the one researching next), levels_done and max_level (an infinite one reads researched false for ever)'},
+      research={target_level='{technology: level, ...} (a leveled technology, e.g. physical-projectile-damage-7: 10): keeps it coming until that level is researched: the next level goes to the end of the queue whenever it is neither researching nor queued and the queue has room; 0 removes a target; at most 16, 100 levels past the one researching; returns targets (each: target, now researching / queued at N / waiting for room, levels left)',targets='true: read the target levels',technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue (a leveled technology may stand in it several times, each entry the next level, as the research GUI queues them: research_queue and append keep repeats up to the levels left; front puts one in front); over_levels: a technology named more times than it has levels left, queued that many times; targets (the report): target levels as targets=true reads them; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={name='optional: one recipe name, or a list of 1..64: those only (unknown or not enabled is refused, with names like it)',prefix='optional',limit='1..256 (default 64)',from='optional: the entry to start at, in name order (next_from gives the next page)',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={name='optional: one technology name, or a list of 1..64: those only',prefix='optional',limit='1..32 (default 32): a page',from='optional: the entry to start at, in name order (next_from gives the next page; total counts them all)',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those; a technology with levels: level (the one researching next), levels_done and max_level (an infinite one reads researched false for ever); effects: what it gives as the research screen lists them, in prototype names (unlock recipes, travel to a place, a quality, items given, modifiers such as ammo-damage (bullet) +40% or low-density-structure productivity +10%); next_level (a technology with levels not all done): "level 8 adds ...; N units"; each one not researched (labs research it): progress % kept, takes (the time it alone would take at the labs\' measured rate, as research\'s done_in), packs_needed (each pack for its units left, with the count where the labs are: the labs the census pass listed and the logistic networks of their surfaces) and packs_short (those under it); lab_rate: the rate and its window'},
       blueprint_import={blueprint='export string (fh blueprint import --file F reads it from a file)',slot='default clipboard',name='or a team library entry: the string goes into the team library under that name, you its author (the same name replaces an entry as blueprint_save does: its author any time, anyone after 24 game hours unused); one blueprint, not a book',description='with name: optional text up to 300 characters (default: the string\'s own description)',anchor='with name: optional {x,y} in blueprint coordinates, as blueprint_export gives it: blueprint_place {name, position} puts this point at position'},
       blueprint_export={slot='default clipboard',name='or a team library entry (blueprint_save): its string (label the name, the entry\'s description) with name, author, entities, tiles, description, anchor and size_kb; fh call blueprint_export writes the string to blueprints/NAME.txt in your workspace (--out FILE: there) and replies with its path',layout='true returns normalized relative layout and material costs instead of export string',from='with name: a string over 262144 bytes (a whole platform) comes in pages: blueprint_page, blueprint_bytes and next_from, the byte the next page starts at (fh call blueprint_export reads every page into the file)'},
       blueprint_list={name='optional team library entry: that entry in full (all entity counts, description, anchor, captured area)',limit='optional 1..256 entries a page (default 64)',from='optional 1-based: the page starts at this entry by name (default 1)',returns='slots (your own); library: the team\'s entries by name {name, author, entities, tiles, footprint WxH tiles, counts (largest 4), saved, last_used (ago, by whom) or never, uses, surface, anchor, description, size_kb (its string), imported}; library_size (entries and KB of strings of the limits), library_bytes, library_bytes_limit, library_limit; library_page when entries are left out'},
@@ -4239,7 +4239,77 @@ end
 end -- rates {recipe | item} with no area or positions (Gemini 02:36: rates filtered by recipe or item across a surface):
 -- every crafter of ours on the surface set to that recipe (or to one making the item), at most 512, as the rates read
 -- computes them, with the surface's statistics for the item beside it (made and used a minute over 10 min).
+-- (d29 batch336 FL7) the expedition's own clock for the brief (tools/start-team.sh at shift_start; tools/brief.py): the
+-- world's game time, the solar system edge's connection to the Shattered Planet and its length, and each platform of
+-- ours stopped at the edge or the Shattered Planet or on a connection to either, with the km left to the Shattered
+-- Planet along that connection and then the edge's (the platform's distance along its connection, from its from end).
+local EDGE,SHATTERED='solar-system-edge','shattered-planet'
+function M.expedition_facts()
+  local leg
+  for _,c in pairs(prototypes.space_connection or {}) do
+    local a,b=c.from and c.from.name,c.to and c.to.name
+    if (a==EDGE and b==SHATTERED) or (a==SHATTERED and b==EDGE) then leg=c end
+  end
+  local L2=leg and leg.length or nil
+  local rows={}
+  for _,pl in pairs(game.forces.player.platforms or {}) do
+    if pl.valid then
+      local at=pl.space_location and pl.space_location.name
+      local c=pl.space_connection
+      local row
+      if at==SHATTERED then row={platform=pl.name,at=at,km_left=0}
+      elseif at==EDGE then row={platform=pl.name,at=at,km_left=L2}
+      elseif c and not at then
+        local from,to=c.from.name,c.to.name
+        local d=pl.distance or 0
+        local function toward(name) return to==name and (1-d)*c.length or d*c.length end
+        if from==SHATTERED or to==SHATTERED then row={platform=pl.name,from=from,to=to,progress=d,km_left=toward(SHATTERED)}
+        elseif (from==EDGE or to==EDGE) and L2 then row={platform=pl.name,from=from,to=to,progress=d,km_left=toward(EDGE)+L2} end
+      end
+      if row then row.km_left=row.km_left and math.floor(row.km_left+0.5) or nil; rows[#rows+1]=row end
+    end
+  end
+  table.sort(rows,function(x,y) return (x.km_left or math.huge)<(y.km_left or math.huge) end)
+  return {tick=game.tick,edge_to_shattered_km=L2,platforms=rows}
+end
 M.RATES_SURFACE=512
+-- (d29 batch336 FL5, Astra #2694 s92: "Make rates capacity versus actual explicit in structured rows") rates {item}: one
+-- row a producer, its full speed (craftrate, as inspect) beside what it made: its products_finished counter now against
+-- the efficiency walk's anchor 10-20 min back (efficiency.lua counter_then), crafts a minute x the item a craft (per_craft
+-- / (1 + productivity): a productivity completion makes the productive part). PRODUCERS rows, the rest counted.
+M.PRODUCERS=48
+function M.rates_producers(list,item)
+  local rows,lines,full_sum,meas_sum,measured_n={},{},0,0,0
+  local now=game.tick
+  for i,e in ipairs(list) do
+    if i>M.PRODUCERS then break end
+    local okr,r=pcall(M.craftrate.machine,e)
+    local pr
+    for _,x in ipairs(okr and r and r.products or {}) do if x.name==item then pr=x end end
+    if pr then
+      local row={entity=e.name,position={x=e.position.x,y=e.position.y},recipe=r.recipe,full_per_min=pr.per_min,status=M.machine_status(e)}
+      local okp,pf=pcall(function() return e.products_finished end)
+      if not okp then pf=nil end
+      local then_pf,then_t=M.efficiency.counter_then(e.unit_number,now)
+      if pf and then_pf and now>then_t then
+        local minutes=(now-then_t)/3600
+        local per_done=(pr.per_craft or 0)/(1+(r.productivity or 0))
+        row.measured_per_min=math.floor((pf-then_pf)/minutes*per_done*10+0.5)/10
+        row.measured_over=M.research.minutes(now-then_t)
+        meas_sum=meas_sum+row.measured_per_min; measured_n=measured_n+1
+      end
+      full_sum=full_sum+pr.per_min
+      rows[#rows+1]=row
+      lines[#lines+1]=string.format('%s (%g,%g) %s: %s, full speed %g/min%s',e.name,e.position.x,e.position.y,tostring(r.recipe),
+        row.measured_per_min and string.format('made %g/min over the last %s',row.measured_per_min,row.measured_over) or 'not counted yet',
+        pr.per_min,row.status and ', '..row.status or '')
+    end
+  end
+  if #rows==0 then return nil,nil,nil end
+  if #list>M.PRODUCERS then lines[#lines+1]=string.format('+%d more producers not read (the first %d)',#list-M.PRODUCERS,M.PRODUCERS) end
+  lines[#lines+1]=string.format('these %d: made %g/min (%d counted) against %g/min at full speed',#rows,math.floor(meas_sum*10+0.5)/10,measured_n,math.floor(full_sum*10+0.5)/10)
+  return rows,lines,'full_per_min: the machine at full speed with its modules, beacons and productivity (as inspect); measured_per_min: what it made, from its own crafts counter over measured_over (10-20 min, the harness\'s background count; not counted yet: a machine new to it); the statistics line is every machine on the surface'
+end
 function handlers.rates(p,a)
   if (a.recipe~=nil or a.item~=nil) and a.area==nil and a.positions==nil then
     assert(a.recipe==nil or (type(a.recipe)=='string' and prototypes.recipe[a.recipe]),'recipe must be a recipe name')
@@ -4280,6 +4350,7 @@ function handlers.rates(p,a)
       -- (d28 batch313 HB, board #2694) what was made and used, apart from the rows' full-speed figures
       out.actual={made=made,used=used,per='minute',over='10 min',source='the game\'s production statistics'}
       out.line=rates.item_line(a.item,p.surface.name,mine,made,used,a.per)
+      out.producers,out.producer_lines,out.producers_note=M.rates_producers(list,a.item)
     end
     out.machines=found; out.machines_read=#list<found and #list or nil; out.surface=p.surface.name; out.per=a.per or 'minute'
     out.scope=string.format('%d crafter%s on %s set to %s%s',found,found==1 and '' or 's',p.surface.name,a.recipe or ('a recipe making '..a.item),
@@ -9049,7 +9120,7 @@ M.step_ranges={
   -- a constant where the module has one)
   scan={{'limit',1,1024},{'radius',1,64},{'page',function() return 1,math.ceil(1024/M.SCAN_PAGE) end}},
   nearest={{'limit',1,64},{'radius',1,128}},inspect={{'radius',1,64}},stock={{'limit',1,64},{'radius',1,1024}},
-  map={{'radius',32,1024},{'limit',1,256}},recipes={{'limit',1,256}},technologies={{'limit',1,256}},
+  map={{'radius',32,1024},{'limit',1,256}},recipes={{'limit',1,256},{'from',1,4096}},technologies={{'limit',1,32},{'from',1,4096}},
   shipment={{'limit',1,128,when=function(a) return a.ledger==true end}},damage_log={{'radius',1,64}},grid={{'radius',1,64}},
   artillery={{'radius',1,4096}},alerts_digest={{'limit',1,64}},danger={{'radius',8,128},{'quiet_s',10,3600}},
   power={{'radius',1,64,when=function(a) return a.fragile~=true end},{'radius',8,512,when=function(a) return a.fragile==true end},{'limit',1,256}},
@@ -13668,8 +13739,59 @@ function handlers.research_next(p,a)
   end
   return {started=false,current=false}
 end
-do local function catalog(p,a,kind)
-  local limit=integer(a.limit,64,1,256,'limit')
+do local TECH_FX={}  -- (d29 batch336 FL1) each technology's effects, by name: a prototype read once (they never change)
+-- What a technology gives, as the research screen lists them, in prototype names (research.lua unlocks).
+local function tech_effects(t)
+  local fx=TECH_FX[t.name]
+  if not fx then fx=M.research.unlocks(t); TECH_FX[t.name]=fx end
+  return fx
+end
+-- (d29 batch336 FL2, batch321's facts the agents named as missing) the time a technology would take on its own at the
+-- labs' measured rate (research.lua rate: the research work done a tick over the last minute, as the queue's done_in),
+-- and the packs its units left take against the packs where the labs are (the labs and the logistic networks of the
+-- labs' surfaces, as the queue's waits_for counts them).
+local function tech_times(p,list,out)
+  local force=p.force
+  local rate,window,fell_back=M.research.rate(force.name)
+  local cur=force.current_research
+  local names,seen={},{}
+  for _,t in ipairs(list) do
+    if not t.researched and not t.prototype.research_trigger then
+      for _,ing in ipairs(t.research_unit_ingredients or {}) do if not seen[ing.name] then seen[ing.name]=true; names[#names+1]=ing.name end end
+    end
+  end
+  if #names==0 then return {} end
+  local stock=M.research.pack_stock(force,names,true)
+  local rows={}
+  for i,t in ipairs(list) do
+    if not t.researched and not t.prototype.research_trigger then
+      local progress=0
+      if cur and cur.name==t.name then progress=force.research_progress or 0
+      else local ok,saved=pcall(function() return t.saved_progress end); if ok and type(saved)=='number' then progress=saved end end
+      local units=(1-progress)*(t.research_unit_count or 0)
+      local need,short={},{}
+      for _,ing in ipairs(t.research_unit_ingredients or {}) do
+        local n=math.ceil(units*ing.amount-1e-9)
+        local have=stock[ing.name] and stock[ing.name].here or 0
+        need[#need+1]=string.format('%s %d (%d where the labs are)',ing.name,n,have)
+        if have<n then short[#short+1]=string.format('%s %d',ing.name,n-have) end
+      end
+      rows[i]={progress=progress>0 and math.floor(progress*1000+0.5)/10 or nil,
+        takes=rate and rate>0 and M.research.minutes(units*(t.research_unit_energy or 0)/rate) or nil,
+        packs_needed=table.concat(need,', '),packs_short=#short>0 and table.concat(short,', ') or nil}
+    end
+  end
+  out.lab_rate=rate and string.format('%.4g research work a tick (units x unit time), measured over the last %s%s; takes is one technology alone at it',
+    rate,M.research.minutes(window),fell_back and ' (no research progress in the last minute)' or '')
+    or 'not measured yet (needs 30 s of research progress): no takes'
+  return rows
+end
+local function catalog(p,a,kind)
+  -- (d29 batch336 cp2, operator 07:24: 64 technologies took 7.8-8.3 ms on the iMac copy, ~16 ms at n's scale) a page of
+  -- TECH_PAGE technologies at most, from: where it starts (next_from gives the next page)
+  local page=kind=='technologies' and M.TECH_PAGE or 256
+  local limit=integer(a.limit,kind=='technologies' and M.TECH_PAGE or 64,1,page,'limit')
+  local from=integer(a.from,1,1,M.CATALOG_FROM,'from')
   local prefix=a.prefix or ''; assert(type(prefix)=='string','prefix must be a string')
   local names={}
   -- available: unresearched technologies whose prerequisites are all done.
@@ -13702,9 +13824,17 @@ do local function catalog(p,a,kind)
   end
   end
   table.sort(names)
-  local out={entries={},truncated=#names>limit}
-  for i=1,math.min(#names,limit) do
-    local entry=p.force[kind][names[i]]
+  local last=math.min(#names,from+limit-1)
+  local out={entries={},truncated=last<#names,total=#names,from=from>1 and from or nil,next_from=last<#names and last+1 or nil}
+  local times
+  if kind=='technologies' then
+    local list={}
+    for i=from,last do list[#list+1]=p.force[kind][names[i]] end
+    times=tech_times(p,list,out)
+  end
+  for k=from,last do
+    local i=k-from+1
+    local entry=p.force[kind][names[k]]
     if kind=='recipes' then
       out.entries[i]={name=entry.name,ingredients=entry.ingredients,products=entry.products,energy=entry.energy}
       -- Crafts and output per minute at crafting speed 1 or at a.machine's speed, with research and the machine's own productivity.
@@ -13722,10 +13852,19 @@ do local function catalog(p,a,kind)
         prerequisites=prerequisites,ingredients=entry.research_unit_ingredients,
         count=not entry.prototype.research_trigger and entry.research_unit_count or nil,energy=not entry.prototype.research_trigger and entry.research_unit_energy or nil,
         trigger=trigger_text(entry)}
+      -- (FL1) its effects; a leveled one's next level adds the same (level and units as the game sets them)
+      local e,fx=out.entries[i],tech_effects(entry)
+      e.effects=#fx>0 and fx or nil
+      if leveled and not entry.researched then
+        e.next_level=string.format('level %d adds %s; %d units',entry.level or 1,#fx>0 and table.concat(fx,', ') or 'nothing listed',entry.research_unit_count or 0)
+      end
+      local tr=times and times[i]
+      if tr then e.progress,e.takes,e.packs_needed,e.packs_short=tr.progress,tr.takes,tr.packs_needed,tr.packs_short end
     end
   end
   return out
 end
+M.TECH_PAGE,M.CATALOG_FROM=32,4096
 function handlers.recipes(p,a) return catalog(p,a,'recipes') end
 function handlers.technologies(p,a) return catalog(p,a,'technologies') end
 end -- The client that renders a screenshot: a player's own. A bot has none, and
@@ -17864,7 +18003,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){wall=function() return M.wall_ms end,state=state,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -17880,7 +18019,7 @@ M.board=require('board'){state=state,rest_label=function(name) local r=M.rests a
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
-M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end,
+M.research=require('research'){state=state,labs_of=function(f,sf) return M.census and M.census.typed(f,sf,'lab') end,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end,
   use_lines=function(force) return M.research_use.lines(force) end}
 function handlers.research_done(p,a) return M.research.done(p,a) end
 function handlers.research_options(p,a) return M.research.options(p.force,a) end
@@ -18875,6 +19014,8 @@ end
 function M.dispatch(request)
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
+  -- (d29 batch336 FL6) the request's wall clock (ms since 1970), which fh puts in the envelope; the game has none
+  M.wall_ms=type(request)=='table' and type(request.wall)=='number' and request.wall or nil
   local called_as=M.resolve_alias(request)
   M.direct_paused=nil
   -- (d18 batch37 C3, Muse, daily) queue_resume_after: true on any call: a queue it pauses runs again when it ends
@@ -20137,7 +20278,7 @@ M.shipment=require('shipment'){integer=integer,freight=function() return M.freig
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
   launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,
-  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end,podlog=function(f) return M.podlog.read(f) end}
+  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end,podlog=function(f) return M.podlog.read(f) end,pod_totals=function(pl) return M.podlog.totals(pl) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- (d21 batch66 AB5, viewer Aurora) delivery_watch: a count of an item followed to a named consumer (delivwatch.lua)
 M.delivwatch=require('delivwatch'){state=state,who=function(p) return M.board.who(p) end,freight=M.freight,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
@@ -21497,7 +21638,9 @@ M.operator={
     local shift=M.research.shift_start(n,progress)
     -- (d28 batch305 NR) the stored routes carry over; those asked from now name this shift
     local okr,routes=pcall(M.sharedroutes.shift_start,n)
-    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0,routes_kept=okr and routes.routes or nil}
+    local oke,expedition=pcall(M.expedition_facts)
+    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0,routes_kept=okr and routes.routes or nil,
+      expedition=oke and expedition or {error=tostring(expedition)}}
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)

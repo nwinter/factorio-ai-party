@@ -76,7 +76,17 @@
 - `rates {item | recipe | area | positions, surface?, per?}`: per item, `produced`, `consumed` and `net` are full-speed
   figures (`basis: "full speed"`: what the machines would make and use running without stop, not what they made);
   `working` says how many of them work now. With `item`, `actual` and `statistics` give what was made and used (the
-  game's statistics over 10 min), and `line` puts the two side by side.
+  game's statistics over 10 min), and `line` puts the two side by side. With `item`, `producers` gives one row a
+  machine making it (the first 48): `full_per_min` (full speed, as `inspect`) beside `measured_per_min`, what it made
+  by its own crafts counter over `measured_over` (10-20 min; "not counted yet" for a machine the harness's background
+  count has not reached).
+- `technologies {name? | prefix?, available?, limit?}`: each technology's `effects` as the research screen lists them
+  (recipes unlocked, places, qualities, modifiers such as `ammo-damage (bullet) +40%` or `low-density-structure
+  productivity +10%`) and, for one with levels, `next_level` ("level 8 adds ...; N units"). Each one not researched:
+  `progress`, `takes` (the time it alone would take at the labs' rate measured over the last minute, as the research
+  queue's `done_in`; `lab_rate` gives the rate), `packs_needed` (each pack for its units left, with the count where the
+  labs are: the labs the census pass listed and the logistic networks of their surfaces) and `packs_short`. Example:
+  `./fh call technologies --args '{"name":"physical-projectile-damage-7"}'`
 - `bottleneck {item, per_min?, all_stopped?, surface?}` (or `area`, `positions`): follows a shortage down its ingredient
   chain to where it starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved
   maker, the nearest chest within 64 tiles holding what it lacks and one `transfer` call that carries it there.
