@@ -17857,3 +17857,24 @@ next queued flight_watch refused done and not read."
 - Another agent's start is refused and nothing is read.
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
+
+## d29 batch345 (BP, Astra #2753: assembler_batch stages ingredients for base crafts)
+
+Astra's foundry at Vulcanus (26.5,47.5), +50% productivity on turbo underground belts (2 a craft, 2 express underground
+belts and 40 tungsten plates an ingredient set): a batch of 228 staged 4560 tungsten and 228 belts, the ingredients of
+114 crafts, and was refused on the requester's 48 slots (96 needed); 114 completions on its counter need 76 base
+crafts at +50% (opus-ugbatch-228-refused.txt, tick 81798147).
+
+- **Base crafts.** Each base craft fills the machine's productivity bar (bonus_progress) by its productivity (its own
+  and the recipe's research, capped at the recipe's maximum); a full bar is one more completion with no ingredients.
+  base = the fewest b with b + floor(bar + b x productivity) >= the completions the batch needs (crafts, unchanged: the
+  stop on the counter). The ingredients, the slot check and the plan use base; `base_crafts`, `bonus_crafts` and
+  `bonus_progress` are in the reply, and a plan line gives them with the stop. A product with an amount productivity
+  leaves out (ignored_by_productivity) is staged in full, as before. A craft in progress is not counted (its
+  completion only adds to what the batch makes).
+- **On the copy** (iMac, world n's autosave, tick 81.86 M, as Sol at Vulcanus): the bar 0.50; 228 belts: 114 completions,
+  76 base crafts, 38 bonus; 3032 tungsten and 152 belts to hold, 65 slots against 48: refused. The largest count that
+  fits is 168 (56 base crafts, 48 slots); before, the staging of every completion fit about 112. A dry run took 3.9-4.3 ms.
+- **Tests:** tests/d29_batch345.lua (Astra's 228 and a count that fits; two adjacent batches with the bar carried;
+  every even count 2..60 at five bars: the fewest base crafts, never short; no productivity, and a product productivity
+  leaves out, staged in full).
