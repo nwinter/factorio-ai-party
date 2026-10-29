@@ -1378,6 +1378,23 @@ def build_shift_page(s, v, lr):
                 shift_summary(s, mine), path=shift_href(s), og=(card, f"/static/og/shift-{s['n']}.png") if card else None)
 
 
+def build_unplayed_page(s, lr):
+    """(d29 batch350, Nick 12:30: numbered by run) a run that did not play keeps its number: a short page saying so,
+    with the shifts that played around it (its URL showed another run's shift before the site numbered by run)."""
+    done = [x for x in lr["shifts"] if not x.get("empty")]
+    before = [x for x in done if x["n"] < s["n"]]
+    after = [x for x in done if x["n"] > s["n"]]
+    prev_l = f'<a href="{shift_href(before[-1])}">← Shift {before[-1]["n"]}</a>' if before else ""
+    next_l = f'<a href="{shift_href(after[0])}">Shift {after[0]["n"]} →</a>' if after else ""
+    when = f' ({esc(_when(s["started"], s["ended"]))} Pacific)' if s.get("started") else ""
+    went_on = f' The run went on in <a href="{shift_href(after[0])}">Shift {after[0]["n"]}</a>.' if after else ""
+    body = (f'<h1>Shift {s["n"]}</h1><p>This shift did not play: {esc(s.get("note") or "it did not start")}{when}.{went_on} '
+            f'Shifts are numbered by run, so its number stays with no game time, research or video.</p>'
+            f'<p class="shift-nav">{prev_l}<a href="/runs/long/">All shifts</a>{next_l}</p>')
+    return page(f"Shift {s['n']} (not played)", body, "/runs/" if archive() else "/runs/long/",
+                f"Shift {s['n']} of the long run did not play.", path=shift_href(s))
+
+
 def _when(a, b):
     """'Oct 11, 02:52 to 04:53' from two local ISO times (scores.jsonl's `t`)."""
     try:
@@ -1549,7 +1566,10 @@ def build_long_run(lr):
             note = s["note"]
             if ids and s.get("resumed_as"):
                 note = note.rstrip(")") + f'; resumed as {s["resumed_as"]})'
-            rows.append(f'<tr class="empty"><th scope="row">–{rid}</th>'
+            # (d29 batch350) numbered by run: the row keeps its number; a run that did not play says so (no page)
+            label = (f'<a href="{shift_href(s)}">Shift {s["n"]}</a> <span class="muted small">not played</span>' if s.get("not_played")
+                     else f'Shift {s["n"]}')
+            rows.append(f'<tr class="empty"><th scope="row">{label}{rid}</th>'
                         f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td><td colspan="9" class="muted">{esc(note)}</td></tr>')
             continue
         firsts = by_shift.get(s["n"], [])
@@ -2274,6 +2294,8 @@ def main():
         terrain.publish(out, args.runs_dir, LONG)
         chartpub.publish(out, args.runs_dir, LONG)
         for s in LONG["shifts"]:
+            if s.get("not_played"):  # (batch350) numbered by run: a short page for a run that did not play
+                write(f"runs/long/shift-{s['n']}/index.html", build_unplayed_page(s, LONG))
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))
                 card = shift_card(s, LONG)
