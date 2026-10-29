@@ -125,7 +125,7 @@ def main():
         ids = [s["id"] for s in lr["shifts"]]
         assert ids == ["s1", "s2", "s3"], ids
         s1, s2, s3 = lr["shifts"]
-        assert (s1["n"], s2["n"], s3["n"]) == (1, None, 2) and s2.get("empty") and s2["resumed_as"] == "s3"
+        assert (s1["n"], s2["n"], s3["n"]) == (1, 2, 3) and s2.get("empty") and s2["not_played"] and s2["resumed_as"] == "s3"  # numbered by run (d29)
         assert (s1["deaths"], s1["losses"]) == (2, 3), s1  # three loss alerts, not fifteen buildings or four lines
         # SPM: research units a minute from the labs' use; a log without it has none; packs made a minute apart
         assert s1["spm"] is None and s1["made_per_min"] == 10.0, s1
@@ -141,13 +141,13 @@ def main():
                                  "reached Vulcanus", "Platform's named. Solstice."], s3["moments"]
         plat = lr["platforms"]  # every platform row by row: where it stopped, still active (never gone from the list)
         assert [(p["name"], p["built_shift"], p["places"], p["lost"], p["at"]) for p in plat] == [
-            ("Solstice", 2, ["nauvis", "vulcanus"], None, "vulcanus")], plat
+            ("Solstice", 3, ["nauvis", "vulcanus"], None, "vulcanus")], plat
         assert s3["platforms_built"] == ["Solstice"] and s3["platforms_lost"] == []
         firsts = {f["key"]: f for f in lr["firsts"]}
-        assert firsts["rockets:1"]["tick"] == 3600 * 102 and firsts["rockets:1"]["shift"] == 2, firsts["rockets:1"]
+        assert firsts["rockets:1"]["tick"] == 3600 * 102 and firsts["rockets:1"]["shift"] == 3, firsts["rockets:1"]
         assert firsts["depart:nauvis"]["label"] == "First platform departure from Nauvis (Solstice)"
         assert firsts["arrive:vulcanus"]["tick"] == firsts["planet:vulcanus"]["tick"] == 3600 * 122
-        assert firsts["pack:space-science-pack"]["tick"] == 3600 * 82 and firsts["tech:rocket-silo"]["shift"] == 2
+        assert firsts["pack:space-science-pack"]["tick"] == 3600 * 82 and firsts["tech:rocket-silo"]["shift"] == 3
         assert firsts["death"]["label"] == "First agent death (Sonnet)" and firsts["death"]["t"] == "2026-10-11T02:30:00"
         assert [f["tick"] for f in lr["firsts"]] == sorted(f["tick"] for f in lr["firsts"])
         qa = s1["qa"]  # the viewer once (the resend dropped), the agent's answer naming them, the owner's line (shown
@@ -174,39 +174,44 @@ def main():
         r = subprocess.run([sys.executable, str(SITE / "check.py"), str(out)], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
         page = (out / "runs" / "long" / "index.html").read_text()
+        # (d29 batch350) numbered by run: s2 did not play, keeps its number and says so, with a short page of its own
+        assert '<tr class="empty"><th scope="row"><a href="/runs/long/shift-2/">Shift 2</a> <span class="muted small">not played</span>' in page
+        sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        assert "<h1>Shift 2</h1>" in sp2 and "This shift did not play: did not start (stopped while setting up)" in sp2, sp2[-2000:]
+        assert 'href="/runs/long/shift-1/">← Shift 1' in sp2 and 'href="/runs/long/shift-3/">Shift 3 →' in sp2
         assert "The long run" in page and "did not start" in page and "resumed as s3" in page and "Solstice" in page
         assert "quota" not in page and "Weekly" not in page and "codex" not in page  # start.log's text never shows
         assert 'href="/runs/long/"' in (out / "index.html").read_text()
         home = (out / "index.html").read_text()  # the run so far, which live.js moves under the heading between shifts
-        assert 'id="run-summary"' in home and "Latest milestones" in home and 'href="/runs/long/shift-2/"' in home
+        assert 'id="run-summary"' in home and "Latest milestones" in home and 'href="/runs/long/shift-3/"' in home
         assert "placeSummary" in (out / "static" / "live.js").read_text()
         assert 'href="/runs/long/"' in (out / "runs" / "index.html").read_text()
         assert len(page) < 80000, len(page)
         assert "Shift videos" not in page and "youtube" not in (out / "runs" / "long" / "shift-1" / "index.html").read_text()
         sp = (out / "runs" / "long" / "shift-1" / "index.html").read_text()  # every shift has a page, video or not
         assert "fan_1" in sp and "two turrets going up now" in sp and "owner line" in sp  # the owner's line shows (d27)
-        assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
+        assert 'href="/runs/long/shift-3/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
         assert "platforms built</span></div><div class=stat-sub>0 lost · 1 active</div>" in page and "Space platforms" in page
         assert 'class="journey"' in page and "/static/game/place/vulcanus-big.webp" in page, "the planets in order, pictured"
         assert [(t["label"], t["tick"]) for t in s3["techs"]] == [("Rocket silo", 3600 * 102)], s3["techs"]
-        assert "Unique technologies researched (1)" in (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        assert "Unique technologies researched (1)" in (out / "runs" / "long" / "shift-3" / "index.html").read_text()
         # key times (game time, hours on stream, Pacific), the kind filter, the live banner (hidden until site.js)
         assert 'id="key-times"' in page and "First rocket" in page and "1h42m" in page, "first rocket at game 102 min"
         assert 'class="kind-filter"' in page and 'data-kind="space"' in page and '<tr data-kind="research">' in page
         assert 'class="live-banner"' in page and " hidden>" in page.split('class="live-banner"')[1][:200]
         assert '">on now</span>' not in page  # no "on now" chip from the build: a built page goes stale
-        sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
-        assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 unique technologies · +2 rockets' in sp2
-        assert "The team plan at the end of the shift" in sp2 and "Rocket silo, then Vulcanus" in sp2 and "set at 1h10m" in sp2
-        assert "rocket silo at (40,-30)" in sp2 and "fuel for the Solstice run" in sp2 and "set at 1h50m by astra" in sp2
-        assert "Load the rocket" in sp2 and "3 open requests nobody was on · 2 in progress" in sp2 and "quota" not in sp2
+        sp3 = (out / "runs" / "long" / "shift-3" / "index.html").read_text()
+        assert 'content="Shift 3: Oct 11, 05:00 to 06:00 Pacific · +1 unique technologies · +2 rockets' in sp3
+        assert "The team plan at the end of the shift" in sp3 and "Rocket silo, then Vulcanus" in sp3 and "set at 1h10m" in sp3
+        assert "rocket silo at (40,-30)" in sp3 and "fuel for the Solstice run" in sp3 and "set at 1h50m by astra" in sp3
+        assert "Load the rocket" in sp3 and "3 open requests nobody was on · 2 in progress" in sp3 and "quota" not in sp3
         assert "The team plan at the end" not in sp  # shift 1 left no plan file
-        # the Chronicle (viewers Alex and syndesis): shift 2's entry with its title, where and what it is filed beside; the
+        # the Chronicle (viewers Alex and syndesis): shift 3's entry with its title, where and what it is filed beside; the
         # harness's record beside it (Comet built, a rocket, Comet lost with where, what destroyed it and its cargo); the
         # owner's line and research left out; linked from the nav and the shift page; on the timeline with details
         ch = (out / "chronicle" / "index.html").read_text()
-        assert "<h1>Chronicle</h1>" in ch and 'id="shift-2"' in ch and 'id="shift-1"' not in ch, ch[:500]
+        assert "<h1>Chronicle</h1>" in ch and 'id="shift-3"' in ch and 'id="shift-1"' not in ch, ch[:500]
         assert "The silo rises" in ch and "We poured the silo&#x27;s foundation under a red sky." in ch and "Beside: research finished: rocket-silo" in ch, ch
         assert "codex-b said hi" not in ch and "Platform Comet built at Nauvis by luna" in ch and "<b>1 rocket launched</b> from" in ch and "to Comet 1" in ch, ch
         assert ("Platform Comet lost flying nauvis-&gt;vulcanus 40%, destroyed by medium metallic asteroid; hit most by medium metallic "
@@ -224,8 +229,8 @@ def main():
         assert "/static/game/item/firearm-magazine.webp" in line and "150" in line and "/static/game/place/fulgora.webp" in line, line
         assert chron.cargo_items("firearm-magazine*100, rocket-fuel*10") == [("firearm-magazine", 100), ("rocket-fuel", 10)]
         assert 'href="/chronicle/"' in page  # the long run's platform table links it (the nav does outside the archive)
-        sp2c = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
-        assert 'href="/chronicle/#shift-2"' in sp2c and 'href="/chronicle/#shift-' not in sp, "only a shift with a chronicle links it"
+        sp3c = (out / "runs" / "long" / "shift-3" / "index.html").read_text()
+        assert 'href="/chronicle/#shift-3"' in sp3c and 'href="/chronicle/#shift-' not in sp, "only a shift with a chronicle links it"
         tl = (out / "timeline" / "index.html").read_text()
         assert "Platform Comet built at Nauvis by luna" in tl and "Platform Comet lost flying nauvis-&gt;vulcanus 40%" in tl, tl
         assert "Platform Solstice built" in tl, "a platform the chronicle does not cover: from the score rows"
@@ -237,23 +242,23 @@ def main():
         env = dict(os.environ, POG_OG_SHIFTS=str(og), POG_SITE_CONTENT=str(Path(d) / "site.json"))
         subprocess.run([sys.executable, str(SITE / "og_card.py"), "--shifts", "--runs-dir", str(root), "--html-only"],
                        check=True, capture_output=True, env=env)
-        card = (og / "shift-2.html").read_text()
-        assert "Shift 2" in card and "+2" in card and "First rocket launched" in card and "Oct 11, 05:00 to 06:00" in card
+        card = (og / "shift-3.html").read_text()
+        assert "Shift 3" in card and "+2" in card and "First rocket launched" in card and "Oct 11, 05:00 to 06:00" in card
         import build as site_build
-        (og / "shift-2.png").write_bytes(b"\x89PNG fake")
-        (og / "shift-2.key").write_text(site_build.shift_card_key(site_build.shift_card_facts(s3, lr)) + "\n")
+        (og / "shift-3.png").write_bytes(b"\x89PNG fake")
+        (og / "shift-3.key").write_text(site_build.shift_card_key(site_build.shift_card_facts(s3, lr)) + "\n")
         (og / "shift-1.png").write_bytes(b"\x89PNG old")
         (og / "shift-1.key").write_text("stale\n")  # drawn for other numbers: not used
         subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(root),
                         "--content", str(Path(d) / "site.json")], check=True, capture_output=True, env=env)
-        sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
-        assert "/static/og/shift-2.png?v=" in sp2 and (out / "static" / "og" / "shift-2.png").exists()
+        sp3 = (out / "runs" / "long" / "shift-3" / "index.html").read_text()
+        assert "/static/og/shift-3.png?v=" in sp3 and (out / "static" / "og" / "shift-3.png").exists()
         assert "/static/og.png?v=" in (out / "runs" / "long" / "shift-1" / "index.html").read_text()
         assert not (out / "static" / "og" / "shift-1.png").exists()
         # a shift with a YouTube video: its row links its page, the run page embeds it, the page has the chapters
         videos = Path(d) / "videos.json"
         videos.write_text(json.dumps({
-            "s3": {"id": "AbC_12-xyz9", "shift": 2, "title": "Factorio AI Party · Shift 2: The first 2 rockets",
+            "s3": {"id": "AbC_12-xyz9", "shift": 2, "title": "Factorio AI Party · Shift 3: The first 2 rockets",
                    "description": "Shift 2 of the Factorio AI Party.\n\nWhat happened\n• 2 rockets launched\n\n"
                                   "Chapters\n0:00 Start\n1:00:05 First rocket launched",
                    "chapters": [{"at": 0, "time": "0:00", "title": "Start"},
@@ -266,9 +271,9 @@ def main():
         r = subprocess.run([sys.executable, str(SITE / "check.py"), str(out)], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
         page = (out / "runs" / "long" / "index.html").read_text()
-        assert "Shift videos" in page and "youtube-nocookie.com/embed/AbC_12-xyz9" in page and 'href="/runs/long/shift-2/"' in page
+        assert "Shift videos" in page and "youtube-nocookie.com/embed/AbC_12-xyz9" in page and 'href="/runs/long/shift-3/"' in page
         assert "bad id" not in page and "youtube" not in (out / "runs" / "long" / "shift-1" / "index.html").read_text()
-        sp = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        sp = (out / "runs" / "long" / "shift-3" / "index.html").read_text()
         assert "embed/AbC_12-xyz9" in sp and "watch?v=AbC_12-xyz9&amp;t=3605s" in sp and "First rocket launched" in sp
         assert "<li>2 rockets launched</li>" in sp and "list=PLx" in sp and sp.count("1:00:05") == 1  # chapters once
         # milestones link their moment in the video: the first rocket's row (05:40) is 32 min of the first recording
