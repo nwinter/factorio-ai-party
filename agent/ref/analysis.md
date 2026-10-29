@@ -492,11 +492,14 @@
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines. Short machines are missing stock, or held back by
   their feeder's condition (its source holds the ingredient: the inserter, condition, value now, source stock).
-- `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), for hits our force saw:
+- `damage_log {position?, radius?, surface?}`: what hit our entities there, for hits our force saw:
   what dealt each hit (a fire, projectile or stream) and the game's cause with its position, facing and distance against
   its range, both from the game's event. A fire's cause is the turret whose stream lit the first fire; a hit past its
-  range is a fire that spread. Empty ground says if its chunk was never charted, is charted and out of sight
-  (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
+  range is a fire that spread. Rows identify the original unit ID; `hit_rows` retains target name, tick/last_tick and
+  position. State is alive by original ID in current sight, destroyed/removed by a recorded event, otherwise unknown
+  (`alive` omitted). `current_position` can differ from the hit position. `current_occupants` separately lists IDs now
+  standing at the returned historical position when visible, with complete/capped/unknown status. Legacy hits have
+  unknown per-hit positions and a labelled first-observation search anchor. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
   or ok each; feasible, sustained and the first unsatisfied. An item that spoils gives the residual supply measured in
