@@ -152,6 +152,14 @@
   not built yet, read only, on this platform's route and turrets. `progress: {from, to}` cuts each leg to that part of
   its connection. Each leg gives asteroids by kind, a 600 s window's, and shots per ammunition; `estimated` lists what
   is not modelled.
+- `platform_endurance`, return allowance: `turnaround.return_allowance {legs, items: {item: count}, label,
+  evidence_ticks?}` is your own count of each item over legs back after the connection's start (`legs`: "from->to" as
+  the reply's legs name them), used there in place of the net rate x time; the turn itself, out and back on the
+  connection, keeps the net rate. The harness takes it as given and does not measure or check it; counts are 0 or more.
+  A leg that is not one of those, or names more than one, is refused. Each such item gives `allowance`,
+  `allowance_replaces` (what the net rate gave over those legs), `costs {turn, legs_at_net, allowance}` and
+  `unadjusted {out_km_max, spare_km, left_at_return}`; `return_budget.allowance` repeats your label, evidence ticks,
+  legs and km, and `binds_unadjusted` is what binds without it. `budget_below` takes it in its `turnaround`.
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from

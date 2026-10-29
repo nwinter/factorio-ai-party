@@ -675,6 +675,7 @@ return {
   ["space-age#platform_rename"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_delete"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_endurance"]={g={},a={"research:space-platform","built:space-platform-hub"}},
+  ["space-age#platform_endurance-return-allowance"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_supply"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_plan"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_bom"]={g={},a={"research:space-platform","built:space-platform-hub"}},

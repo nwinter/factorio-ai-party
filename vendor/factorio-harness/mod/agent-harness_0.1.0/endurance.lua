@@ -15,6 +15,7 @@ return function(api)
   local STARTUP_S = 60  -- (d29 batch339) a leg's first minute: what the return budget's window leaves out
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(x, d) if d == 0 then return math.floor(x + 0.5) end local m = 10 ^ (d or 1); return math.floor(x * m + 0.5) / m end
+  local RA_FORM = 'turnaround.return_allowance is {legs, items: {item: count}, label, evidence_ticks?}: the caller\'s own count of each item over legs back after the connection\'s start, in place of the net rate x time there'
   local function mins(m)
     if not m then return 'unknown' end
     if m >= 60 then return string.format('%dh%02dm', math.floor(m / 60), math.floor(m % 60)) end
@@ -529,7 +530,7 @@ return function(api)
   end
 
   function M.return_budget(items, o)
-    local out, binds = {}, nil
+    local out, binds, binds0 = {}, nil, nil
     for _, it in ipairs(items) do
       local np, n10 = (it.used or 0) - (it.made or 0), (it.used10 or 0) - (it.made10 or 0)
       local net = math.max(np, n10)
@@ -543,23 +544,97 @@ return function(api)
       r.usable_basis = string.format('(%d %s - %d kept) / (1 + %g margin)', round(it.stock, 0), it.scope and 'aboard' or 'stock', res, o.margin or 0)
       if res > it.stock then r.reserve_over_stock = true end
       if o.selected and not o.selected[it.name] then r.not_selected = true end
+      -- (d29 batch351 RA) the caller's allowance for legs back after the connection's start: its count there in place of
+      -- net x time over those km (o.allowance = {items, km}); the read without it is kept as unadjusted
+      local c = o.allowance and o.allowance.items[it.name]
+      local A = c and o.allowance.km or 0
       if net > 0 and o.v and o.v > 0 then
-        local x = (usable / net * o.v - o.flown_km - o.back_km) / 2
+        local x = ((usable - (c or 0)) / net * o.v - o.flown_km - (o.back_km - A)) / 2
         r.out_km_max = round(x, 0)
         r.lasts_min = round(usable / net, 1)
         if o.out_km then
-          r.left_at_return = round(it.stock - net * (2 * o.out_km + o.flown_km + o.back_km) / o.v, 0)
+          r.left_at_return = round(it.stock - net * (2 * o.out_km + o.flown_km + o.back_km - A) / o.v - (c or 0), 0)
           r.spare_km = round(x - o.out_km, 0)
         end
+        if c then
+          local x0 = (usable / net * o.v - o.flown_km - o.back_km) / 2
+          r.allowance = c
+          r.allowance_replaces = round(net * A / o.v, 0)
+          -- the costs apart: out and back on this connection, the other legs back at the net rate, the allowance
+          if o.out_km then
+            r.costs = {turn=round(net * (2 * o.out_km + o.flown_km) / o.v, 0), legs_at_net=round(net * (o.back_km - A) / o.v, 0), allowance=c}
+          end
+          r.unadjusted = {out_km_max=round(x0, 0), spare_km=o.out_km and round(x0 - o.out_km, 0) or nil,
+            left_at_return=o.out_km and round(it.stock - net * (2 * o.out_km + o.flown_km + o.back_km) / o.v, 0) or nil}
+          if not r.not_selected and (not binds0 or x0 < binds0.x) then binds0 = {name=it.name, x=x0} end
+        elseif o.allowance and not r.not_selected and (not binds0 or x < binds0.x) then binds0 = {name=it.name, x=x} end
         if not r.not_selected and (not binds or x < binds.x) then binds = {name=it.name, x=x} end
-      elseif net <= 0 then r.not_used = true end
+      elseif net <= 0 then
+        r.not_used = true
+        if c then r.allowance = c; if c > usable then r.allowance_over_usable = true end end
+      end
       out[#out+1] = r
     end
-    local b
-    for _, r in ipairs(out) do if binds and r.name == binds.name then b = r end end
-    return out, b
+    local b, b0
+    for _, r in ipairs(out) do
+      if binds and r.name == binds.name then b = r end
+      if binds0 and r.name == binds0.name then b0 = r end
+    end
+    return out, b, b0 and {name=b0.name, out_km_max=b0.unadjusted and b0.unadjusted.out_km_max or b0.out_km_max,
+      spare_km=b0.unadjusted and b0.unadjusted.spare_km or b0.spare_km} or nil
   end
 
+  -- (d29 batch351 RA, Astra #2762: Resolute's 36th deep turn charged railgun ammunition 35/min over the 100000 km back to
+  -- Aquilo, 1666.7, while its whole Aquilo return had made 2522 and used 2432) a turnaround's return_allowance: the
+  -- caller's own count of an item over legs back after the connection's start, in place of net x time there. The
+  -- harness takes it as given (label and evidence ticks said back), never infers one, credits no production (counts
+  -- are 0 or more), and keeps the read without it beside (unadjusted). The turn itself, out and back on this
+  -- connection, keeps the net rate.
+  function M.check_allowance(ra)
+    assert(type(ra) == 'table', RA_FORM)
+    assert(type(ra.label) == 'string' and #ra.label >= 1 and #ra.label <= 200, 'turnaround.return_allowance.label is the source of the counts, 1..200 characters (said in the reply as given)')
+    local legs = type(ra.legs) == 'string' and {ra.legs} or ra.legs
+    assert(type(legs) == 'table' and #legs >= 1 and #legs <= 8, 'turnaround.return_allowance.legs: 1..8 legs back after the connection\'s start, each "from->to" as the reply\'s legs name them')
+    local seen = {}
+    for _, l in ipairs(legs) do
+      assert(type(l) == 'string' and l:match('^[^%s]+%->[^%s]+$'), 'turnaround.return_allowance.legs: each is "from->to" (' .. tostring(l) .. ')')
+      assert(not seen[l], 'turnaround.return_allowance.legs: ' .. l .. ' named twice')
+      seen[l] = true
+    end
+    assert(type(ra.items) == 'table' and next(ra.items) ~= nil, 'turnaround.return_allowance.items is {item: count}: the count each takes over those legs')
+    for k, n in pairs(ra.items) do
+      assert(type(k) == 'string' and (prototypes.item[k] or (prototypes.fluid and prototypes.fluid[k])), 'turnaround.return_allowance.items: unknown item or fluid ' .. tostring(k))
+      assert(type(n) == 'number' and n >= 0 and n <= 1e9, 'turnaround.return_allowance.items.' .. k .. ' is a count, 0 or more (no production is credited)')
+    end
+    assert(ra.evidence_ticks == nil or (type(ra.evidence_ticks) == 'table' and #ra.evidence_ticks >= 1 and #ra.evidence_ticks <= 8),
+      'turnaround.return_allowance.evidence_ticks is a list of 1..8 game ticks (said in the reply as given)')
+    for _, t in ipairs(ra.evidence_ticks or {}) do
+      assert(type(t) == 'number' and t == math.floor(t) and t >= 0 and t <= game.tick, 'turnaround.return_allowance.evidence_ticks: game ticks up to now')
+    end
+    for k in pairs(ra) do
+      assert(k == 'label' or k == 'legs' or k == 'items' or k == 'evidence_ticks', 'turnaround.return_allowance takes legs, items, label and evidence_ticks (' .. tostring(k) .. ')')
+    end
+  end
+  -- The named legs among the turnaround's legs back after the connection's start (turn 'on'): each exactly one, else
+  -- refused naming those there are. -> {legs, km, items, label, evidence_ticks}
+  function M.match_allowance(turn, legs, ra)
+    local on = {}
+    for _, l in ipairs(legs) do if l.turn == 'on' then on[#on+1] = l end end
+    local names = {}
+    for _, l in ipairs(on) do names[#names+1] = l.from .. '->' .. l.to end
+    assert(#on > 0, string.format('turnaround.return_allowance: no leg back after %s: back_to is the connection\'s start, and the way back on %s->%s keeps the net rate', turn.from, turn.from, turn.to))
+    local out = {legs={}, km=0, items=ra.items, label=ra.label, evidence_ticks=ra.evidence_ticks}
+    for _, want in ipairs(type(ra.legs) == 'string' and {ra.legs} or ra.legs) do
+      local hit = 0
+      for _, l in ipairs(on) do if l.from .. '->' .. l.to == want then hit = hit + 1; out.km = out.km + l.km end end
+      if hit ~= 1 then
+        error(string.format('turnaround.return_allowance.legs: %s %s; the legs back after %s: %s', want,
+          hit == 0 and 'is not one of the legs back after the connection\'s start' or 'names more than one leg (ambiguous)', turn.from, table.concat(names, ', ')), 0)
+      end
+      out.legs[#out.legs+1] = want
+    end
+    return out
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local design = a.design
@@ -596,6 +671,9 @@ return function(api)
       for _, n in ipairs(ta.items or {}) do
         assert(type(n) == 'string' and (prototypes.item[n] or (prototypes.fluid and prototypes.fluid[n])), 'turnaround.items: unknown item or fluid ' .. tostring(n))
       end
+      -- (d29 batch351 RA, Astra #2762) return_allowance: the caller's own count for legs back after the connection's
+      -- start, in place of the net rate x time there; the harness takes it as given and labels it the caller's
+      if ta.return_allowance ~= nil then M.check_allowance(ta.return_allowance) end
     end
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
@@ -637,6 +715,7 @@ return function(api)
           turn.back_km = turn.back_km + h.km
         end
       end
+      if ta.return_allowance then turn.allowance = M.match_allowance(turn, legs, ta.return_allowance) end
       route_by, stops = 'turnaround', {}
     elseif leg_now then
       -- A given route read from the leg it flies (d17 batch12 C3, Astra 2x: route [aquilo, fulgora] on the way from
@@ -1002,8 +1081,8 @@ return function(api)
       end
       local selected
       if ta.items then selected = {}; for _, n in ipairs(ta.items) do selected[n] = true end end
-      local out, binds = M.return_budget(items, {v=vplan, flown_km=turn.flown_km, back_km=turn.back_km, out_km=turn.out_km,
-        margin=ta.margin or 0.1, reserve=ta.reserve, selected=selected})
+      local out, binds, binds0 = M.return_budget(items, {v=vplan, flown_km=turn.flown_km, back_km=turn.back_km, out_km=turn.out_km,
+        margin=ta.margin or 0.1, reserve=ta.reserve, selected=selected, allowance=turn.allowance})
       local head = string.format('turnaround: %d km farther out on %s->%s (to %d of its %d km), back %d km to %s%s; at %s km/s (%s), margin %d%%',
         math.floor(turn.out_km + 0.5), turn.from, turn.to, math.floor(turn.flown_km + turn.out_km + 0.5), math.floor(turn.length + 0.5),
         math.floor(turn.out_km + turn.flown_km + 0.5), turn.from, turn.back_km > 0 and string.format(', then %d km to %s', math.floor(turn.back_km + 0.5), turn.back_to) or '',
@@ -1018,20 +1097,32 @@ return function(api)
           parts[#parts+1] = string.format('%s: made at least as fast as used over %s (%d %s)%s', r.name, r.window or 'its window', r.stock,
             fo_rows[r.name] and string.format('aboard, %d held in thrusters and tanks', fo_rows[r.name].held or 0) or 'counted', tail)
         elseif r.out_km_max then
-          parts[#parts+1] = string.format('%s: at most %d km farther out (%d %s%s; net %g/min, the worse of %s (%g/min) and %s (%g/min)%s)%s',
+          parts[#parts+1] = string.format('%s: at most %d km farther out (%d %s%s; net %g/min, the worse of %s (%g/min) and %s (%g/min)%s)%s%s',
             r.name, r.out_km_max, r.stock, r.stock_scope and r.stock_scope:match('^aboard') and 'aboard' or 'reaching it',
             r.reserve > 0 and string.format(', %d kept', r.reserve) or '', r.net_used, r.phase_from or 'this phase', r.net_phase, r.window or 'the last 10 min', r.net_10min,
             r.spare_km and (r.spare_km >= 0 and string.format('; the planned turn fits, %d km to spare, about %d left back at %s', r.spare_km, math.max(0, r.left_at_return), turn.back_to)
-              or string.format('; the planned turn is %d km too far', -r.spare_km)) or '', tail)
+              or string.format('; the planned turn is %d km too far', -r.spare_km)) or '',
+            r.allowance and string.format('; with the caller\'s %d over %s in place of %d at the net rate (unadjusted: at most %d km farther out)', r.allowance,
+              table.concat(turn.allowance.legs, ', '), r.allowance_replaces, r.unadjusted.out_km_max) or '', tail)
         end
       end
       return_budget = {out_km=round(turn.out_km, 0), flown_km=round(turn.flown_km, 0), connection_km=round(turn.length, 0), back_to=turn.back_to,
         back_km=round(turn.out_km + turn.flown_km + turn.back_km, 0), speed_km_s=vplan and round(vplan / 60, 2) or nil, margin=ta.margin or 0.1,
         items=out, binds=binds and {name=binds.name, out_km_max=binds.out_km_max, spare_km=binds.spare_km} or nil, selected=ta.items,
+        -- (d29 batch351 RA) the caller's allowance as given, and what binds without it
+        allowance=turn.allowance and {by='the caller (turnaround.return_allowance), as given: the harness does not measure or check it',
+          label=turn.allowance.label, evidence_ticks=turn.allowance.evidence_ticks, legs=turn.allowance.legs, km=round(turn.allowance.km, 0),
+          items=turn.allowance.items} or nil,
+        binds_unadjusted=turn.allowance and binds0 or nil,
         startup_s=STARTUP_S, window=wtext,
         line=head .. '; ' .. (binds and string.format('%s binds first: at most %d km farther out%s', binds.name, binds.out_km_max,
           binds.spare_km and (binds.spare_km >= 0 and string.format(' (the planned turn fits, %d km to spare)', binds.spare_km) or string.format(' (the planned turn is %d km too far)', -binds.spare_km)) or '')
-          or (ta.items and 'no item of items is used faster than it is made' or 'no item is used faster than it is made')) .. (#parts > 0 and '. ' .. table.concat(parts, '; ') or ''),
+          or (ta.items and 'no item of items is used faster than it is made' or 'no item is used faster than it is made'))
+          .. (turn.allowance and string.format(' (with the caller\'s return allowance "%s" over %s, %d km%s; without it: %s)', turn.allowance.label,
+            table.concat(turn.allowance.legs, ', '), math.floor(turn.allowance.km + 0.5),
+            turn.allowance.evidence_ticks and ', evidence ticks ' .. table.concat(turn.allowance.evidence_ticks, ', ') or '',
+            binds0 and string.format('%s binds first, at most %d km farther out', binds0.name, binds0.out_km_max) or 'no item binds') or '')
+          .. (#parts > 0 and '. ' .. table.concat(parts, '; ') or ''),
         note='read only: facts from the production statistics and the stock that reaches the turrets; nothing lowers a floor or changes the route'}
     end
     local slots = hub and #hub or 0
@@ -1174,7 +1265,7 @@ return function(api)
     assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh is true or false')
     return M.read(p, a)
   end
-  M.schema = {platform_endurance = {turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, speed_floor?, margin?, reserve?, items?}: (d29 batch339) items: the item or fluid names that may bind (e.g. the ammunition and repair packs), the rest listed, not binding; thruster fuel and oxidizer counted as fuel_outlook counts them (everything aboard, its clean sample of the last 180 or 60 s in the leg; a deficit within a batch a maker: none); the 10-minute rate only when it lies wholly after the leg\'s first 60 s, else the last 5 or 1 minute that does (window); each row\'s stock_scope, usable and usable_basis. a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
+  M.schema = {platform_endurance = {turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, speed_floor?, margin?, reserve?, items?}: (d29 batch339) items: the item or fluid names that may bind (e.g. the ammunition and repair packs), the rest listed, not binding; thruster fuel and oxidizer counted as fuel_outlook counts them (everything aboard, its clean sample of the last 180 or 60 s in the leg; a deficit within a batch a maker: none); the 10-minute rate only when it lies wholly after the leg\'s first 60 s, else the last 5 or 1 minute that does (window); each row\'s stock_scope, usable and usable_basis. a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. (d29 batch351) return_allowance {legs (1..8 "from->to" among the legs back after the connection\'s start, as legs names them), items {item: count (0 or more)}, label, evidence_ticks?}: the caller\'s own count of each item over those legs, in place of net x time there; taken as given (not measured or checked), refused when a leg is not one of them or names more than one; each such item: allowance, allowance_replaces (what the net rate gave there), costs {turn, legs_at_net, allowance} and unadjusted {out_km_max, spare_km, left_at_return}; return_budget.allowance {by, label, evidence_ticks, legs, km, items} and binds_unadjusted. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
     design='optional {width, height | tiles, mass?, speed, ammo?}: a hull not built yet, read only (nothing built, placed or imported), on the platform\'s route with its turrets\' ammunition and settings (or ammo: up to 8 names) and our bonuses: width and height in tiles, or tiles (up to 256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; speed km/s as the GUI shows it; mass is said and not used (the speed is given; asteroids come per km). Returns design, legs [{from, to, part {f0, f1}, km, minutes, asteroids {kind: count}, total, per_600s, total_per_600s, shots {ammo: shots}}], basis (the spawn line, the count rule and its fit, distance not time, width, speed, progress, shots), estimated (what is not modelled exactly), ammo, lines; a light read: no rates, stock or production read',
     fresh='optional; every call reads now',
     progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',
