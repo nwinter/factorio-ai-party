@@ -324,6 +324,14 @@ return function(api)
         saw=saw..string.format(' (of %d on %s; lowest %s (%g,%g): %s)',n,on,lowest.name,pos.x,pos.y,
           held and held~='' and held or 'no ammo')
       elseif on then saw=saw..' (no ammo turret of ours '..(c.area and 'in that area' or c.platform and 'aboard' or 'within the radius')..' on '..on..')' end
+      -- (d29 batch344 GS, Sol #2750) met on a platform: the lowest turret and its feeders read on this tick, kept
+      -- (turretsnap.lua); a guard's evidence names the snapshot (queue_status {snapshot: id} reads it)
+      if low>0 and c.platform and lowest and api.turret_snapshot then
+        local okp,pl=pcall(M.platform_named,p,c.platform)
+        local oks,ev=pcall(api.turret_snapshot,okp and pl or nil,lowest,saw)
+        local holder=c  -- (the guard's evidence, as the other checks keep theirs)
+        if okp and oks and ev then holder.evidence=ev; saw=saw..'; '..ev.line end
+      end
       return low>0,saw
     end,
     health_below=function(p,c)
