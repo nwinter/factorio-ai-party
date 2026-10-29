@@ -61,5 +61,15 @@ do
   eq(w.key,'1|red'); eq(w.box.left,31-4); eq(w.box.right,31+4,'round the bot only (not the player force\'s player)')
   local p=W.start(s,{},{max_chunks=1,force='player'})
   eq(p.key,nil); eq(p.box.left,-50,'the player force: the generated chunks as before')
+  -- a team with nothing on a surface (no box, bot or player of its own): nothing to walk; its own platform: one find
+  local v=W.start({index=2},{},{max_chunks=1,force='red'})
+  eq(v.done,true); eq(W.band(v,{index=2},{}),nil)
+  local own=W.start({index=3,platform={force={name='red'}}},{},{max_chunks=1,force='red'})
+  eq(own.whole,true)
+  local other=W.start({index=3,platform={force={name='blue'}}},{},{max_chunks=1,force='red'})
+  eq(other.done,true,'another team\'s platform: nothing')
+  game.players[2]={surface={index=2},position={x=64,y=64},force={name='red'}}
+  local mine=W.start({index=2},{},{max_chunks=1,force='red'})
+  eq(mine.box.left,2-4,'a player of its own there: the box round it')
   print('mt276 C walk boxes per force: ok')
 end
