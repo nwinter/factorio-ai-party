@@ -17,7 +17,7 @@ connects after it when told to):
 - the pages: index.html is data-page main, portrait.html portrait, and overlay.js and audio.js put the name in the
   one shared event stream.
 """
-import http.server, json, os, socket, subprocess, sys, tempfile, threading, time
+import http.server, json, os, re, socket, subprocess, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -167,7 +167,8 @@ def main():
         ok, line = shift_change.health(rd, os.path.join(rd, "team.txt"), time.time(), obs=["true"], state_url=url + "/state.json")
         assert not ok and "overlay NOT connected" in line, line
         r = cli("watch", "--stale", "1", "--wait", "1")
-        assert r.returncode == 0 and "OVERLAY: no main overlay stream for 1 s; toggled the source: connected again" in r.stdout, r.stdout + r.stderr
+        # The health reads above and process startup add wall time after the 1.1 s wait.
+        assert r.returncode == 0 and re.search(r"OVERLAY: no main overlay stream for [1-9]\d* s; toggled the source: connected again", r.stdout), r.stdout + r.stderr
         assert len(toggles()) == 3, toggles()
         # no page after a toggle: still not connected, then the next pass within --again: no second toggle
         for p in pages:
