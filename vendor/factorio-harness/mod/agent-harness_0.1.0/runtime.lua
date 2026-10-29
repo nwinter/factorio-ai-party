@@ -2246,7 +2246,7 @@ function handlers.describe(_,a)
         pick='first_with_stock|most_stock with positions and item or items: as transfer\'s pick (one listed place that holds it now; empty ones skipped, never short)',items='with pick: 1..16 item names',to='with pick: {x,y} or {item: {x,y}}: carry what was taken there and give it (as transfer\'s to)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
-      research={target_level='{technology: level, ...} (a leveled technology, e.g. physical-projectile-damage-7: 10): keeps it coming until that level is researched: the next level goes to the end of the queue whenever it is neither researching nor queued and the queue has room; 0 removes a target; at most 16, 100 levels past the one researching; returns targets (each: target, now researching / queued at N / waiting for room, levels left)',targets='true: read the target levels',technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue (a leveled technology may stand in it several times, each entry the next level, as the research GUI queues them: research_queue and append keep repeats up to the levels left; front puts one in front); over_levels: a technology named more times than it has levels left, queued that many times; targets (the report): target levels as targets=true reads them; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={name='optional: one recipe name, or a list of 1..64: those only (unknown or not enabled is refused, with names like it)',prefix='optional',limit='1..256',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={name='optional: one technology name, or a list of 1..64: those only',prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those; a technology with levels: level (the one researching next), levels_done and max_level (an infinite one reads researched false for ever)'},
+      research={target_level='{technology: level, ...} (a leveled technology, e.g. physical-projectile-damage-7: 10): keeps it coming until that level is researched: the next level goes to the end of the queue whenever it is neither researching nor queued and the queue has room; 0 removes a target; at most 16, 100 levels past the one researching; returns targets (each: target, now researching / queued at N / waiting for room, levels left)',targets='true: read the target levels',technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue (a leveled technology may stand in it several times, each entry the next level, as the research GUI queues them: research_queue and append keep repeats up to the levels left; front puts one in front); over_levels: a technology named more times than it has levels left, queued that many times; targets (the report): target levels as targets=true reads them; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={name='optional: one recipe name, or a list of 1..64: those only (unknown or not enabled is refused, with names like it)',prefix='optional',limit='1..256',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={name='optional: one technology name, or a list of 1..64: those only',prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those; a technology with levels: level (the one researching next), levels_done and max_level (an infinite one reads researched false for ever); effects: what it gives as the research screen lists them, in prototype names (unlock recipes, travel to a place, a quality, items given, modifiers such as ammo-damage (bullet) +40% or low-density-structure productivity +10%); next_level (a technology with levels not all done): "level 8 adds ...; N units"; each one not researched (labs research it): progress % kept, takes (the time it alone would take at the labs\' measured rate, as research\'s done_in), packs_needed (each pack for its units left, with the count where the labs are: the labs and the logistic networks of their surfaces) and packs_short (those under it); lab_rate: the rate and its window'},
       blueprint_import={blueprint='export string (fh blueprint import --file F reads it from a file)',slot='default clipboard',name='or a team library entry: the string goes into the team library under that name, you its author (the same name replaces an entry as blueprint_save does: its author any time, anyone after 24 game hours unused); one blueprint, not a book',description='with name: optional text up to 300 characters (default: the string\'s own description)',anchor='with name: optional {x,y} in blueprint coordinates, as blueprint_export gives it: blueprint_place {name, position} puts this point at position'},
       blueprint_export={slot='default clipboard',name='or a team library entry (blueprint_save): its string (label the name, the entry\'s description) with name, author, entities, tiles, description, anchor and size_kb; fh call blueprint_export writes the string to blueprints/NAME.txt in your workspace (--out FILE: there) and replies with its path',layout='true returns normalized relative layout and material costs instead of export string',from='with name: a string over 262144 bytes (a whole platform) comes in pages: blueprint_page, blueprint_bytes and next_from, the byte the next page starts at (fh call blueprint_export reads every page into the file)'},
       blueprint_list={name='optional team library entry: that entry in full (all entity counts, description, anchor, captured area)',limit='optional 1..256 entries a page (default 64)',from='optional 1-based: the page starts at this entry by name (default 1)',returns='slots (your own); library: the team\'s entries by name {name, author, entities, tiles, footprint WxH tiles, counts (largest 4), saved, last_used (ago, by whom) or never, uses, surface, anchor, description, size_kb (its string), imported}; library_size (entries and KB of strings of the limits), library_bytes, library_bytes_limit, library_limit; library_page when entries are left out'},
@@ -13668,7 +13668,54 @@ function handlers.research_next(p,a)
   end
   return {started=false,current=false}
 end
-do local function catalog(p,a,kind)
+do local TECH_FX={}  -- (d29 batch336 FL1) each technology's effects, by name: a prototype read once (they never change)
+-- What a technology gives, as the research screen lists them, in prototype names (research.lua unlocks).
+local function tech_effects(t)
+  local fx=TECH_FX[t.name]
+  if not fx then fx=M.research.unlocks(t); TECH_FX[t.name]=fx end
+  return fx
+end
+-- (d29 batch336 FL2, batch321's facts the agents named as missing) the time a technology would take on its own at the
+-- labs' measured rate (research.lua rate: the research work done a tick over the last minute, as the queue's done_in),
+-- and the packs its units left take against the packs where the labs are (the labs and the logistic networks of the
+-- labs' surfaces, as the queue's waits_for counts them).
+local function tech_times(p,list,out)
+  local force=p.force
+  local rate,window,fell_back=M.research.rate(force.name)
+  local cur=force.current_research
+  local names,seen={},{}
+  for _,t in ipairs(list) do
+    if not t.researched and not t.prototype.research_trigger then
+      for _,ing in ipairs(t.research_unit_ingredients or {}) do if not seen[ing.name] then seen[ing.name]=true; names[#names+1]=ing.name end end
+    end
+  end
+  if #names==0 then return {} end
+  local stock=M.research.pack_stock(force,names)
+  local rows={}
+  for i,t in ipairs(list) do
+    if not t.researched and not t.prototype.research_trigger then
+      local progress=0
+      if cur and cur.name==t.name then progress=force.research_progress or 0
+      else local ok,saved=pcall(function() return t.saved_progress end); if ok and type(saved)=='number' then progress=saved end end
+      local units=(1-progress)*(t.research_unit_count or 0)
+      local need,short={},{}
+      for _,ing in ipairs(t.research_unit_ingredients or {}) do
+        local n=math.ceil(units*ing.amount-1e-9)
+        local have=stock[ing.name] and stock[ing.name].here or 0
+        need[#need+1]=string.format('%s %d (%d where the labs are)',ing.name,n,have)
+        if have<n then short[#short+1]=string.format('%s %d',ing.name,n-have) end
+      end
+      rows[i]={progress=progress>0 and math.floor(progress*1000+0.5)/10 or nil,
+        takes=rate and rate>0 and M.research.minutes(units*(t.research_unit_energy or 0)/rate) or nil,
+        packs_needed=table.concat(need,', '),packs_short=#short>0 and table.concat(short,', ') or nil}
+    end
+  end
+  out.lab_rate=rate and string.format('%.4g research work a tick (units x unit time), measured over the last %s%s; takes is one technology alone at it',
+    rate,M.research.minutes(window),fell_back and ' (no research progress in the last minute)' or '')
+    or 'not measured yet (needs 30 s of research progress): no takes'
+  return rows
+end
+local function catalog(p,a,kind)
   local limit=integer(a.limit,64,1,256,'limit')
   local prefix=a.prefix or ''; assert(type(prefix)=='string','prefix must be a string')
   local names={}
@@ -13703,6 +13750,12 @@ do local function catalog(p,a,kind)
   end
   table.sort(names)
   local out={entries={},truncated=#names>limit}
+  local times
+  if kind=='technologies' then
+    local list={}
+    for i=1,math.min(#names,limit) do list[i]=p.force[kind][names[i]] end
+    times=tech_times(p,list,out)
+  end
   for i=1,math.min(#names,limit) do
     local entry=p.force[kind][names[i]]
     if kind=='recipes' then
@@ -13722,6 +13775,14 @@ do local function catalog(p,a,kind)
         prerequisites=prerequisites,ingredients=entry.research_unit_ingredients,
         count=not entry.prototype.research_trigger and entry.research_unit_count or nil,energy=not entry.prototype.research_trigger and entry.research_unit_energy or nil,
         trigger=trigger_text(entry)}
+      -- (FL1) its effects; a leveled one's next level adds the same (level and units as the game sets them)
+      local e,fx=out.entries[i],tech_effects(entry)
+      e.effects=#fx>0 and fx or nil
+      if leveled and not entry.researched then
+        e.next_level=string.format('level %d adds %s; %d units',entry.level or 1,#fx>0 and table.concat(fx,', ') or 'nothing listed',entry.research_unit_count or 0)
+      end
+      local tr=times and times[i]
+      if tr then e.progress,e.takes,e.packs_needed,e.packs_short=tr.progress,tr.takes,tr.packs_needed,tr.packs_short end
     end
   end
   return out

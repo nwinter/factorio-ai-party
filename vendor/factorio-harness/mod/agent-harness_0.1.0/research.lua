@@ -42,6 +42,9 @@ return function(api)
       elseif kind == 'unlock-space-location' then out[#out+1] = 'travel to ' .. tostring(name_of(e.space_location))
       elseif kind == 'unlock-quality' then out[#out+1] = tostring(name_of(e.quality)) .. ' quality'
       elseif kind == 'give-item' then out[#out+1] = tostring(e.count or 1) .. ' ' .. tostring(name_of(e.item))
+      -- (d29 batch336 FL1) a recipe's productivity research carries `change`, not `modifier` (LDS productivity read no effect)
+      elseif kind == 'change-recipe-productivity' and type(e.change) == 'number' then
+        out[#out+1] = tostring(name_of(e.recipe)) .. ' productivity ' .. signed(e.change)
       elseif kind ~= 'nothing' and type(e.modifier) == 'number' then
         local scope = name_of(e.ammo_category) or name_of(e.turret_id)
         out[#out+1] = kind .. (scope and ' (' .. tostring(scope) .. ')' or '') .. ' ' .. signed(e.modifier)
@@ -458,6 +461,8 @@ return function(api)
     end
     return out
   end
+  M.pack_stock = packs_stock   -- (d29 batch336 FL2) technologies: the packs a technology needs against these
+  M.minutes = minutes
   -- "0 where the labs are (nauvis: labs 0, logistic networks 0); 2288 elsewhere (aquilo: logistic networks 2288)".
   local function stock_text(s)
     local here = {}
