@@ -35,6 +35,12 @@ REARM_S = 30.0       # quiet this long: the next sound of it cues again
 LOCAL_RANGE = 64.0   # tiles: a local speaker the camera hears
 KEEP_S = 1800.0      # intervals and alarms remembered this long
 FILTERS = {"cue": "alarm cue", "hold": "alarm hold"}
+# (d29 batch335 AQ, viewer Aurora site:5438: "AlarmQuiet.apply catches failed OBS filter writes but caches the desired
+# mode as applied, so recovery is never retried") each source's filter has a desired and a confirmed state: a write is
+# read back (GetSourceFilter) and only a read that matches confirms it; a failed or unconfirmed write stays pending and
+# is tried again after RETRY_S, doubling to RETRY_MAX_S, with no change of alarm needed; every VERIFY_S each filter is
+# read again, so one changed outside the service (by hand, an OBS restart) is put back.
+RETRY_S, RETRY_MAX_S, VERIFY_S = 2.0, 120.0, 60.0
 SOURCES = ("stream game audio", "stream game clean", "replay game ambience")
 
 
@@ -60,7 +66,11 @@ class AlarmQuiet:
         self.alarms = {}      # key -> {first, last, cued, message}: an alarm sounding, or quiet under REARM_S
         self.intervals = []   # [start, end or None]: when any audible alarm sounded (replays.overlaps)
         self.want = "none"    # none | cue | hold
-        self.applied = None   # what OBS has, None before the first apply (a start sets it whatever it was)
+        self.applied = None   # the gain every filter confirms, None until they all do (a start reads them all)
+        # (AQ) (source, filter) -> {desired, confirmed (None: not read), pending, attempts, next_try, error, checked}
+        self.filters = {(src, name): {"desired": False, "confirmed": None, "pending": True, "attempts": 0, "next_try": float("-inf"),
+                                      "error": None, "checked": None} for src in sources for name in FILTERS.values()}
+        self.said_missing = False
         self._load()
 
     def _load(self):
@@ -134,24 +144,57 @@ class AlarmQuiet:
         with self.lock:
             return any(s < t1 and (e is None or e > t0) for s, e in self.intervals)
 
-    def apply(self, call):
-        """Set the OBS filters to the decision (call: obsws OBS.call); every time on the first call after a start."""
+    def apply(self, call, now=None):
+        """Bring the OBS filters to the decision (call: obsws OBS.call). Each filter whose confirmed state differs from
+        its desired one (or not confirmed yet, or due for its VERIFY_S read) is written if needed and read back; a failure
+        or a read that does not match stays pending and is tried again after its backoff. Returns how many were written."""
+        now = time.time() if now is None else now
         want = self.want
-        if want == self.applied:
-            return False
-        missing = []
-        for src in self.sources:
-            for kind, name in FILTERS.items():
-                try:
-                    call("SetSourceFilterEnabled", {"sourceName": src, "filterName": name, "filterEnabled": kind == want})
-                except Exception:  # not set up yet (tools/obs_setup_326.py): nothing changes; said once
+        wrote, missing = 0, []
+        for (src, name), f in self.filters.items():
+            f["desired"] = name == FILTERS.get(want)
+            due = f["pending"] or f["confirmed"] != f["desired"] or f["checked"] is None or now - f["checked"] >= VERIFY_S
+            if not due or now < f["next_try"]:
+                continue
+            try:
+                written = False
+                for _ in range(2):  # a read that finds it otherwise (changed by hand since) is written in the same pass
+                    if f["confirmed"] != f["desired"] and not written:  # never read, or reads otherwise: write it
+                        call("SetSourceFilterEnabled", {"sourceName": src, "filterName": name, "filterEnabled": f["desired"]})
+                        wrote += 1
+                        written = True
+                    got = call("GetSourceFilter", {"sourceName": src, "filterName": name})
+                    f["confirmed"], f["checked"] = bool((got or {}).get("filterEnabled")), now
+                    if f["confirmed"] == f["desired"] or written:
+                        break
+                if f["confirmed"] != f["desired"]:
+                    # read back otherwise (the write did not take, or OBS changed it since): written again next time
+                    raise RuntimeError(f"OBS reads it {'enabled' if f['confirmed'] else 'disabled'} after the write")
+                f.update(pending=False, attempts=0, next_try=float("-inf"), error=None)
+            except Exception as x:
+                f["pending"] = True
+                f["attempts"] += 1
+                f["next_try"] = now + min(RETRY_MAX_S, RETRY_S * 2 ** (f["attempts"] - 1))
+                f["error"] = f"{type(x).__name__}: {str(x)[:160]}"
+                if "not found" in str(x).lower() or "600" in str(x) or "no such" in str(x).lower():
                     missing.append(f"{src}/{name}")
-        if missing and self.applied is None:
+        if missing and not self.said_missing:  # not set up yet (tools/obs_setup_326.py): said once a run
+            self.said_missing = True
             self.log(f"[alarms] no alarm gains in OBS yet ({', '.join(missing)}): alarms air as before until "
-                     f"tools/obs_setup_326.py --apply")
-        self.applied = want
-        return True
+                     f"tools/obs_setup_326.py --apply; tried again with backoff")
+        ok = all(not f["pending"] and f["confirmed"] == f["desired"] for f in self.filters.values())
+        self.applied = want if ok else None
+        return wrote
 
-    def public(self):
+    def public(self, now=None):
+        """For the service's /state.json (replays.alarm): the gain wanted, whether OBS confirms it, and each filter's
+        desired and confirmed state, pending writes, attempts, next try and last error."""
+        now = time.time() if now is None else now
         with self.lock:
-            return {"gain": self.want, "sounding": len([1 for r in self.alarms.values() if time.time() - r["last"] < 5])}
+            sounding = len([1 for r in self.alarms.values() if now - r["last"] < 5])
+        rows = [{"source": src, "filter": name, "desired": f["desired"], "confirmed": f["confirmed"], "pending": f["pending"],
+                 "attempts": f["attempts"], "next_try_in": round(max(0.0, f["next_try"] - now), 1) if f["pending"] else None,
+                 "error": f["error"], "checked_ago": round(now - f["checked"], 1) if f["checked"] is not None else None}
+                for (src, name), f in self.filters.items()]
+        return {"gain": self.want, "confirmed": self.applied == self.want, "sounding": sounding, "filters": rows,
+                "pending": sum(1 for r in rows if r["pending"])}
