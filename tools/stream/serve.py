@@ -83,6 +83,13 @@ class AudioHub:
     is ducked under it). The page's start report carries `started_at`, the moment it started, which /audio/status and
     the log keep. /audio/status lists `queued`: clips posted, not started or ended yet and not expired. POST
     /audio/cancel {id} takes a clip back before it plays (the page drops it).
+
+    (d28 batch319 SU, viewer Aurora site:5401) A narrator clip may carry `segment` {id, part, parts}: the page holds
+    routine clips from the segment's first part until its last has played (audio.js). POST /audio/release {segment}
+    ends a hold at once (the tour's end, its early stop): a `release` event. A page that connects (a reload, a
+    reconnect) is sent the clips still queued (not started, not done, not expired; a timed clip only while its moment
+    is under 2 s past), and the page drops an id it has seen, so a reload loses no waiting line and plays none twice.
+    A skip report's reason (expired, late, cancelled) is logged.
     """
 
     MAX_CLIPS = 120
@@ -101,6 +108,7 @@ class AudioHub:
         self.seq = 0
         self.playing = {}  # id -> {meta, started}
         self.done = set()  # ids started, ended, skipped or cancelled (not queued any more)
+        self.skipped = set()  # ids whose skip was logged (two pages report each)
         self.listeners = 0
         self.last_report = None
         self.log_path = log_path
@@ -200,6 +208,7 @@ class AudioHub:
                 gone = self.order.pop(0)
                 self.clips.pop(gone, None)
                 self.done.discard(gone)
+                self.skipped.discard(gone)
             self.cond.notify_all()
             return meta
 
@@ -211,6 +220,30 @@ class AudioHub:
             self.done.add(cid)
         self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
         return True
+
+    def release(self, segment):
+        """POST /audio/release {segment}: the page ends that segment's hold now (a `release` event)."""
+        if not segment:
+            return False
+        self.push({"channel": "control", "release": str(segment), "expires_in": 30}, b"", "text/plain")
+        return True
+
+    def pending(self, now=None):
+        """The clips a page that connects now still needs: not started, done or expired, not control events, a timed
+        one only while its moment is less than 2 s past (the page plays none late)."""
+        now = now or time.time()
+        with self.cond:
+            out = []
+            for c in self.order:
+                if c not in self.clips or c in self.done:
+                    continue
+                m = self.clips[c][2]
+                if m.get("channel") == "control" or m["expires"] <= now:
+                    continue
+                if isinstance(m.get("at"), (int, float)) and m["at"] < now - 2:
+                    continue
+                out.append(m)
+            return out
 
     def wait(self, seq, timeout):
         with self.cond:
@@ -246,12 +279,17 @@ class AudioHub:
                 if v:
                     self._end(cid, v, st, now, num("played"), num("duration"))
             elif st == "skip":  # expired in the page's queue: never played
+                if cid in self.skipped:
+                    return  # (batch319) a second page's report of the same skip: logged once
+                self.skipped.add(cid)
                 self.done.add(cid)
                 self.playing.pop(cid, None)
                 meta = self.clips.get(cid, (None, None, {}))[2]
+                why = report.get("reason")  # (batch319) the page's why: expired, late, cancelled
                 row = {"t": round(now, 2), "id": cid, "ended": True, "state": "skip", "channel": meta.get("channel"),
                        "speaker": meta.get("speaker"), "agent": meta.get("agent"), "played": 0.0,
-                       "duration": meta.get("duration"), "early": False, "reason": None}
+                       "duration": meta.get("duration"), "early": False,
+                       "reason": why if why in ("expired", "late", "cancelled") else None}
                 self.ended.append((now, row))
                 self._log(row)
             # a page that goes away mid-clip never reports the end; forget clips well past their length
@@ -385,6 +423,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             if path == "/audio/played":
                 audio.played(body)
                 return self.send(200, b"{}", "application/json")
+            if path == "/audio/release":  # (batch319 SU) the tour ends its segment's hold
+                ok = audio.release(body.get("segment"))
+                return self.send(200 if ok else 400, json.dumps({"released": ok}).encode(), "application/json")
             if path == "/audio/cancel":  # (CK1) the tour takes back a narration it scheduled
                 ok = audio.cancel(str(body.get("id") or ""))
                 return self.send(200 if ok else 404, json.dumps({"cancelled": ok}).encode(), "application/json")
@@ -498,6 +539,10 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 with audio.cond:
                     audio.listeners += 1
             try:
+                if want_audio:  # (batch319 SU) the clips still queued, for a page that (re)connects
+                    for c in audio.pending():
+                        self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                    self.wfile.flush()
                 while True:
                     # with audio, wake often so a clip goes out within ~0.25 s (snapshots come once a second)
                     new, payload = hub.wait(version, 0.25 if want_audio else 15)
