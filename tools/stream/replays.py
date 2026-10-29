@@ -987,6 +987,15 @@ class Replays:
         deleted when the replay ends): c["clean"] is its path, or None with c["clean_why"]."""
         if "clean" in c or not self.cfg["clean_audio"]:
             return
+        # (cp2) before tools/obs_setup_326.py has run, OBS records no game-only track: nothing is tried or changed
+        try:
+            names = {i.get("inputName") for i in self.obs.call("GetInputList").get("inputs") or []}
+        except OBSError:
+            names = set()
+        if "stream game clean" not in names:
+            c["clean"], c["clean_why"] = None, 'no "stream game clean" in OBS yet (tools/obs_setup_326.py)'
+            self.once("noclean", f"[replays] {c['clean_why']}: replays air muted, as before")
+            return
         try:
             c["clean"], why = self.remux(c["path"])
         except Exception as e:
@@ -1004,6 +1013,13 @@ class Replays:
                  f'del /q "{path.replace("/", chr(92))}"'], capture_output=True, text=True, timeout=15)
         except Exception as e:
             self.log(f"[replays] deleting {path}: {type(e).__name__}: {e}")
+
+    def once(self, key, line):
+        """(cp2) A line about OBS setup said once a service run."""
+        said = self.__dict__.setdefault("said_once", set())
+        if key not in said:
+            said.add(key)
+            self.log(line)
 
     def audio_for(self, c):
         """(RA) ("clean", None) when the clip airs its game-only track, else ("ambience", why)."""
@@ -1035,7 +1051,8 @@ class Replays:
                                                "sceneItemEnabled": track == "ambience"})
             except OBSError as e:
                 if track == "ambience":
-                    self.log(f"[replays] no {c['ambience']!r} in the {c['scene']!r} scene ({e}): the replay airs silent under the voices")
+                    self.once("noambience", f"[replays] no {c['ambience']!r} in the {c['scene']!r} scene ({e}): replays without "
+                                            f"their own sound air silent under the voices, as before")
         # what is turned off goes first: never the clip's sound and the ambience at once, even between two calls
         for step in ((ambience, mute) if track == "clean" else (mute, ambience)):
             step()

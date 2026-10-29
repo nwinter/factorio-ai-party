@@ -42,7 +42,7 @@ class OBS:
         if req == "GetSceneList":
             out = {"scenes": [{"sceneName": "stream"}, {"sceneName": "replay"}]}
         elif req == "GetInputList":
-            out = {"inputs": [{"inputName": n} for n in ("stream overlay", "replay clip", "replay banner", "replay game ambience")]}
+            out = {"inputs": [{"inputName": n} for n in ("stream overlay", "replay clip", "replay banner", "replay game ambience", "stream game clean")]}
         elif req == "GetReplayBufferStatus":
             out = {"outputActive": True}
         elif req == "SaveReplayBuffer":
@@ -88,7 +88,7 @@ def world(remux, obs=None, alarm=None):
 def air(seg, rpl, o, t0, clip):
     """Put one saved clip on air through the segment and return the time it went on air."""
     with rpl.lock:
-        rpl.clip = dict(clip, id="clip-x", saved_t=t0, label=clip.get("label", "a loss"), queued_t=t0)
+        rpl.clip = dict(clip, id=f"clip-{t0}", saved_t=t0, label=clip.get("label", "a loss"), queued_t=t0)
     for t in range(t0, t0 + 20):
         snap = {"agents": [], "fights": [], "alerts": []}
         seg.step(snap, t)
@@ -141,6 +141,36 @@ def ra():
     air(seg, rpl, o, 1000, dict(base))
     assert made == [base["path"]] and o.files[-1].endswith("-game.mkv") and not o.muted, (made, o.files)
     print("1-2. track choice: the companion with its sound; an old, slow or alarm clip muted over the ambience; cued alike: ok")
+
+    # (cp2) OBS before tools/obs_setup_326.py: no "stream game clean", no ambience, no alarm gains: nothing is tried or
+    # changed but what today does (the clip muted, the scene switch), and each is said once
+    class Bare(OBS):
+        def call(self, req, data=None):
+            if req == "GetInputList":
+                self.calls.append((req, data))
+                return {"inputs": [{"inputName": n} for n in ("stream overlay", "replay clip", "replay banner", "stream game audio")]}
+            if req in ("GetSceneItemId", "SetSourceFilterEnabled"):
+                self.calls.append((req, data))
+                raise rp.OBSError("600: no such source or filter")
+            return OBS.call(self, req, data)
+    made = []
+    al = aq.AlarmQuiet(log=lambda *a: None)
+    seg, rpl, ob, logs = world(lambda path: made.append(path) or (path, None), obs=Bare(), alarm=al)
+    t = air(seg, rpl, ob, 1000, dict(base))
+    run_out(seg, rpl, ob, t)
+    al.decide(read([EGG], t=float(t)), float(t))
+    al.decide(read([EGG], t=float(t + 5)), float(t + 5))
+    rpl.work(t + 6)
+    second = dict(base, id="clip-2")  # the next replay: the same, said no more
+    rpl.prepare_audio(second)
+    rpl.replay_audio(rpl.audio_for(second)[0])
+    rpl.replay_audio(None)
+    assert made == [] and second["clean"] is None, "no remux without the clean capture"
+    assert ob.muted and not ob.ambience and ob.files == [base["path"]], (ob.muted, ob.files)
+    said = [l for l in logs if ("obs_setup_326" in l or "replay game ambience" in l) and "on air:" not in l]
+    assert len(said) == 2, said
+    assert not any(c[0] in ("CreateInput", "CreateSourceFilter", "SetInputVolume", "SetInputAudioTracks") for c in ob.calls)
+    print("1b. OBS not set up yet: replays air muted as before, no remux, nothing created; each missing piece said once: ok")
 
     # 3. a replay cut short by an attack
     seg, rpl, o, logs = world(clean)

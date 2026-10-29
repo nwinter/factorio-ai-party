@@ -139,13 +139,16 @@ class AlarmQuiet:
         want = self.want
         if want == self.applied:
             return False
+        missing = []
         for src in self.sources:
             for kind, name in FILTERS.items():
                 try:
                     call("SetSourceFilterEnabled", {"sourceName": src, "filterName": name, "filterEnabled": kind == want})
-                except Exception as x:  # the operator has not made it yet (or the source is missing): said once
-                    if self.applied is None:
-                        self.log(f"[alarms] {src}: filter {name!r} not set ({type(x).__name__}: {str(x)[:80]})")
+                except Exception:  # not set up yet (tools/obs_setup_326.py): nothing changes; said once
+                    missing.append(f"{src}/{name}")
+        if missing and self.applied is None:
+            self.log(f"[alarms] no alarm gains in OBS yet ({', '.join(missing)}): alarms air as before until "
+                     f"tools/obs_setup_326.py --apply")
         self.applied = want
         return True
 
