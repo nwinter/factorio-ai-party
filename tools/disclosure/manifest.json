@@ -1986,6 +1986,7 @@
 {"id":"doc:building#who-placed-it-inspect","kind":"doc","topic":"building","lead":"- Who placed it","condition":{"world":[],"any":["research:construction-robotics","research:logistic-robotics","built:roboport"]},"bytes":498},
 {"id":"doc:building#remove_ghosts","kind":"doc","topic":"building","lead":"- `remove_ghosts {area | positions, surface? | platform?, names?, tiles?, owner?, dry_run?}`","condition":{"world":[],"any":["with:action:remove_ghosts"]},"bytes":992},
 {"id":"doc:building#deconstruct","kind":"doc","topic":"building","lead":"- `deconstruct {area | positions, tiles?, cancel?, dry_run?}`","condition":{"world":[],"any":["with:action:deconstruct"]},"bytes":1963},
+{"id":"doc:building#deconstruct-power-left","kind":"doc","topic":"building","lead":"- `deconstruct`, power left","condition":{"world":[],"any":["with:action:deconstruct"]},"bytes":746},
 {"id":"doc:building#upgrade","kind":"doc","topic":"building","lead":"- `upgrade {area | position, to, from?, quality?}` or `{area, map","condition":{"world":[],"any":["with:action:upgrade"]},"bytes":595},
 {"id":"doc:building#paste","kind":"doc","topic":"building","lead":"- `paste {position, name?, direction?, mode?, preserve_existing_settings_and_wires?, dry_run?, surfa","condition":{"world":[],"any":["with:action:paste"]},"bytes":646},
 {"id":"doc:building#placements","kind":"doc","topic":"building","lead":"- `placements {name, near?, radius?, limit?, separate?, powered?, surface?, resource?, fluids?, reci","condition":{"world":[],"any":["with:action:placements"]},"bytes":2025},

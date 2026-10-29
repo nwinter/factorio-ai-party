@@ -2,6 +2,8 @@
 -- construction remains the player's/robots' job and consumes real inventory.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
+-- (d29 batch341 PW) what makes or stores electric power: a removal of one is read for the network it leaves (powerleft.lua)
+local POWER_PART={generator=true,['fusion-generator']=true,['solar-panel']=true,['burner-generator']=true,['electric-energy-interface']=true,['lightning-attractor']=true,accumulator=true}
   local H = {}
   local MAX_ENTITIES, MAX_TILES, MAX_STRING, MAX_SLOTS = 4096, 8192, 1000000, 32
   local PASTE = {entities=MAX_ENTITIES, tiles=MAX_TILES} -- (d22 batch80 AP1) for code below a local MAX_TILES of its own
@@ -797,11 +799,17 @@ return function(api)
         if not okr then out.report_error='the paste was made (count and by_name above); reading it back failed: '..tostring(errr) end
         -- What a forced paste marked for deconstruction (trees, rocks; superforced: our own entities in the way).
         if marked_before then
-          local n,by=0,{}
+          local n,by,power_parts=0,{},{}
           for _,e in pairs(marked()) do
-            if e.valid and not marked_before[mark_key(e)] then n=n+1; by[e.name]=(by[e.name] or 0)+1 end
+            if e.valid and not marked_before[mark_key(e)] then n=n+1; by[e.name]=(by[e.name] or 0)+1
+              if POWER_PART[e.type] then power_parts[#power_parts+1]=e end end
           end
           if n>0 then out.marked_for_deconstruction=n; out.marked_by_name=by end
+          -- (d29 batch341 PW, Asterion 376h48: a superforced strip paste marked its 9 solar panels and 143 accumulators)
+          if #power_parts>0 and api.power_left then
+            local okp,pl=pcall(api.power_left,p.force,power_parts,false)
+            if okp and pl then out.power_left=pl end
+          end
         end
         -- A library entry placed: when, by whom, how often (blueprint_list's last used; the 24 h rule).
         if a.name~=nil then
@@ -1226,6 +1234,7 @@ return function(api)
     local changed,by=0,{}
     -- Heat-network parts it marks (Sol, shift19): what their removal does to heat (heating.lua loss).
     local heat_parts,already={},0
+    local power_parts={}  -- (d29 batch341 PW) generators and accumulators it marks (or would)
     local HEAT_PART={['heat-pipe']=true,reactor=true,boiler=true,['heat-interface']=true}
     -- A ghost given a deconstruction order is removed at once, as a planner removes it (Astra, shift20, 3 times: the next
     -- read of it failed "LuaEntity API call when LuaEntity was invalid"): what is read of an entity is read before the
@@ -1307,6 +1316,7 @@ return function(api)
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
           if not e.to_be_deconstructed(p.force) then
             changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end; note(i,'would_mark')
+            if POWER_PART[t] then power_parts[#power_parts+1]=e end
             -- (d17 batch34 B3) the robots' trips for it
             if t~='entity-ghost' and t~='tile-ghost' and api.deconstruct_job and #jobs<4096 then local j=api.deconstruct_job(e); if j then jobs[#jobs+1]=j end end
           else note(i,'already_marked') end
@@ -1319,6 +1329,7 @@ return function(api)
             note(i,'marked',ghost_name and 'a ghost: removed at once' or nil)
             if ghost_name then removed=removed+1; ghost_names[ghost_name]=(ghost_names[ghost_name] or 0)+1
             elseif HEAT_PART[t] and e.valid then heat_parts[#heat_parts+1]=e end
+            if not ghost_name and POWER_PART[t] and e.valid then power_parts[#power_parts+1]=e end
             -- (B3) what it frees, for the contested ghosts (one job an item is enough)
             if not ghost_name and e.valid and api.deconstruct_job and api.contested and #jobs<64 then local j=api.deconstruct_job(e); if j then jobs[#jobs+1]=j end end
           elseif not e.valid then gone=gone+1; note(i,'missing','gone before it was reached (removed with a ghost before it)')
@@ -1327,6 +1338,11 @@ return function(api)
       end
     end
     out.changed=changed
+    -- (d29 batch341 PW) an electric network these marks (or a dry run's) leave with consumers and no generation
+    if not cancel and #power_parts>0 and api.power_left then
+      local okp,pl=pcall(api.power_left,p.force,power_parts,dry)
+      if okp and pl then out.power_left=pl end
+    end
     if st then
       -- (DP) one row a position, in the order given; a position whose entity another one names has that one's status
       local count={}
