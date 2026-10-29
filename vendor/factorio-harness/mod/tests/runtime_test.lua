@@ -5210,7 +5210,7 @@ end)()
     [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
   -- Another action's unknown argument: its example.
   fails(function() call('technologies',{pack='electromagnetic-science-pack'}) end,
-    [[unknown argument pack for technologies; valid: available, limit, name, prefix; accepted: available (boolean), limit (1..256), name (optional), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
+    [[unknown argument pack for technologies; valid: available, from, limit, name, prefix; accepted: available (boolean), from (optional), limit (1..32), name (optional), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
   -- batch25 A3 (Luna): the call itself corrected: an argument the action takes no form of dropped, a plural for a
   -- singular renamed with its one entry; each change said.
   fails(function() call('technologies',{prefix='automation',surface='gleba'}) end,
