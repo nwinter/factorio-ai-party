@@ -81,6 +81,21 @@ def streams(op):
         return {}
 
 
+def refusals(op, names):
+    """{agent: [count, last host]} of the network gate's refusals (op/netgate.jsonl, POG_NETGATE=1)."""
+    out = {}
+    try:
+        for line in open(os.path.join(op, "netgate.jsonl")):
+            r = json.loads(line)
+            if r.get("passed") is False and r.get("agent") in names:
+                c = out.setdefault(r["agent"], [0, None])
+                c[0] += 1
+                c[1] = r.get("host")
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 def collect(r, op):
     view = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "teams": [], "errors": {}}
     try:
@@ -125,6 +140,7 @@ def collect(r, op):
             col["errors"]["tells"] = str(e)
         col["chat"] = tail_jsonl(os.path.join(op, team, "chat.jsonl"), 8)
         col["stream"] = streams(op).get(team)
+        col["refused"] = refusals(op, names)
         view["teams"].append(col)
     return view
 
@@ -149,6 +165,7 @@ def page(view):
                         f"{e(text_of(t)[:200])}</li>" for t in c.get("tells") or [])
         chat = "".join(f"<li>{e(str(m.get('from') or m.get('player')))}: {e(text_of(m)[:200])}</li>" for m in c.get("chat") or [])
         errs = "".join(f"<li class=err>{e(k)}: {e(v[:200])}</li>" for k, v in c["errors"].items())
+        errs += "".join(f"<li class=small>{e(a)}: {n} refused by the network gate (last {e(str(h))})</li>" for a, (n, h) in (c.get("refused") or {}).items())
         link = f" <a class=small href=\"{e(c['stream'].strip())}\">stream</a>" if c.get("stream") else ""
         cols.append(f"""<section><h2>{e(c['team'])}{link}</h2><ul>{agents}</ul>
 <h3>Score</h3><p>tick {e(str(s.get('tick')))}; research {len(s.get('research') or [])}{'; researching ' + e(str(s['researching'])) if s.get('researching') else ''};

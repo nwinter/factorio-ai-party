@@ -575,6 +575,34 @@ AGY_WEB_OFF = json.dumps({"permissions": {"deny": ["read_url(*)", "execute_url(*
 # `tools:` allowlist is agy's default tool set less search_web, read_url_content and browser_subagent (checked with agy
 # 1.x in a throwaway workspace: "No web search tool available", "No URL tool available", the shell as before; the
 # frontmatter's disabledTools and enabledTools had no effect). The settings above stay: they hold if the file is edited.
+# (mt284 X) The run's network gate (tools/mt/netgate.py, start-mt.sh POG_NETGATE=1): each CLI's own API, auth and
+# telemetry hosts, as its traffic showed through the gate in a throwaway session (d29: Grok 1.0.70, Muse 1.4.14, agy
+# 1.x); everything else a shell asks for is refused. npm's registry and the owner's MCP servers are left out.
+NETGATE_ALLOW = {
+    "grok": ["grok.com", "cli-chat-proxy.grok.com", "api.x.ai", "api.mixpanel.com"],
+    "muse": ["api.meta.ai", "auth.meta.com", "lookaside.facebook.com"],
+    "agy": ["oauth2.googleapis.com", "www.googleapis.com", "daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com",
+            "aicode.googleapis.com", "play.googleapis.com", "antigravity-unleash.goog", "lh3.googleusercontent.com"],
+}
+
+
+def netgate_config(team_files, out_json, out_tsv, base=18101):
+    """The gate's config for a run: a port per Grok, Muse or agy agent of the teams' team.tsv files (name kind ...)."""
+    agents, port = {}, base
+    for tf in team_files:
+        for line in open(tf):
+            f = line.rstrip("\n").split("\t")
+            if line.startswith("#") or len(f) < 2 or f[1] not in NETGATE_ALLOW:
+                continue
+            agents[f[0]] = {"port": port, "allow": NETGATE_ALLOW[f[1]], "kind": f[1]}
+            port += 1
+    json.dump({"agents": agents}, open(out_json, "w"), indent=1)
+    with open(out_tsv, "w") as t:
+        for name, a in agents.items():
+            t.write(f"{name}\t{a['port']}\n")
+    return agents
+
+
 AGY_AGENT = "main"
 AGY_TOOLS = ["ask_question", "define_subagent", "edit_file", "invoke_subagent", "manage_subagents", "manage_task",
              "read_file", "run_command", "schedule", "send_message", "write_file"]
@@ -662,6 +690,8 @@ def web_state(d, kind):
            "grok": "shell network open" + ("; Grok's network filter is Linux-only" if shell_net() == "socket" else ""),
            "muse": "shell network open (--sandbox-network enabled)" + ("; Muse's restricted modes block the broker socket, and a profile allowing it needs a human approver" if shell_net() == "socket" else ""),
            "agy": "shell network open"}.get(kind, "?")
+    if os.environ.get("POG_PROXY") and kind in NETGATE_ALLOW:
+        net = f"shell network through the run's gate ({os.environ['POG_PROXY']}: only {kind}'s own hosts; a client that ignores proxy settings goes around it)"
     line = f"{kind}: {web}; {net}"
     with open(os.path.join(d, ".web-state"), "w") as f:
         f.write(line + "\n")
@@ -726,6 +756,9 @@ if __name__ == "__main__":
         codex_socket_only(sys.argv[2], sys.argv[3])
     elif cmd == "agy-web-off":
         print(AGY_WEB_OFF)
+    elif cmd == "netgate-config":   # netgate-config OUT_JSON OUT_TSV TEAM_TSV...
+        for name, a in netgate_config(sys.argv[4:], sys.argv[2], sys.argv[3]).items():
+            print(f"{name} {a['kind']} 127.0.0.1:{a['port']}")
     elif cmd == "agy-agent":   # agy-agent DIR: writes the workspace agent, prints --agent NAME
         print(agy_agent(sys.argv[2]))
     elif cmd == "muse-web-off":

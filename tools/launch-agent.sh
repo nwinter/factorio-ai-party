@@ -20,6 +20,7 @@ agy_loop_script() {
   cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
+${proxy_env:+export $proxy_env}
 # deadline.txt has minutes only; without explicit seconds date -j takes the current ones (shake2: a turn at 22:46:12).
 d=\$(cat deadline.txt)
 deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
@@ -124,6 +125,12 @@ fi
 # A run in parts is RUN/PART: the part's folder runs/RUN/PART holds its prompt, roster, keys or sockets and team-tools;
 # names and labels use RUN-PART
 label=${run//\//-}
+# POG_PROXY (http://127.0.0.1:PORT, start-mt.sh POG_NETGATE=1): this agent's shell and CLI through the run's network
+# gate (tools/mt/netgate.py: only the CLI's own hosts), set in the launch's own environment only (Grok, Muse, agy)
+proxy_env=""
+if [ -n "${POG_PROXY:-}" ]; then
+  proxy_env="HTTPS_PROXY=$POG_PROXY HTTP_PROXY=$POG_PROXY ALL_PROXY=$POG_PROXY https_proxy=$POG_PROXY http_proxy=$POG_PROXY all_proxy=$POG_PROXY NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1"
+fi
 name="pog-${POG_WS:-$world}-$label"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
@@ -295,7 +302,7 @@ case $kind in
     # tools/profile-flags.sh. Started from a script: the full command is about 1,450 characters, and typed into a
     # pane whose shell is not ready yet, input past the terminal's 1,024-byte line limit can be cut (smoke-l4g's
     # Grok never started). grok-start.log shows that the script ran.
-    grok_run_script "$dir" "$home_env $ctx_env '$sleepcap_run'" "$model" "$effort" "$prompt" "$compact_rule"
+    grok_run_script "$dir" "$home_env $ctx_env $proxy_env '$sleepcap_run'" "$model" "$effort" "$prompt" "$compact_rule"
     herdr pane run "$pane" "'$dir/.grok-run.sh'" >/dev/null
     ;;
   agy)
@@ -317,7 +324,7 @@ case $kind in
     [ -z "${POG_WEB_BLOCK:-}" ] || clean_args="$clean_args $(python3 "$root/tools/full_tools.py" muse-web-off)"
     pane=$(new_pane)
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" \
-      "exec env $muse_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
+      "exec env $muse_env $proxy_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
       > "$dir/.muse-run.sh"
     chmod +x "$dir/.muse-run.sh"
     herdr pane run "$pane" "'$dir/.muse-run.sh'" >/dev/null

@@ -18,7 +18,8 @@
 #   it names is every team's: B is in now), POG_SCORE_EVERY (default 120 s), POG_MT_CAM (default 1: the camera client
 #   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails),
 #   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...),
-#   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist).
+#   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist),
+#   POG_NETGATE (default 0; 1: Grok's, Muse's and agy's shells through the run's network gate, tools/mt/netgate.py).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
 # sandbox would not). Nothing of this run is public: no public stream, site, polls, casters, analyst or viewer relay.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
@@ -209,6 +210,17 @@ else
   log "camera: off (POG_MT_CAM=0): ./shot fails"
 fi
 
+# 2d. (mt284) POG_NETGATE=1: the run's network gate (tools/mt/netgate.py): a port per Grok, Muse or agy agent passing
+# only its CLI's own hosts; the agent's launch gets HTTPS_PROXY and the rest in its own environment (POG_PROXY), nothing
+# in ~ or the system. Refusals in op/netgate.jsonl (the team page counts them). Stopped with the helpers.
+if [ "${POG_NETGATE:-0}" = 1 ]; then
+  python3 tools/full_tools.py netgate-config "$op/netgate.json" "$op/netgate.tsv" "$rundir"/*/team.tsv | while read -r line; do log "netgate: $line"; done
+  nohup python3 tools/mt/netgate.py "$op/netgate.json" "$op/netgate.jsonl" >"$op/netgate.err" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+  log "netgate: pid $!, log $op/netgate.jsonl"
+fi
+proxy_of() { [ -f "$op/netgate.tsv" ] && awk -v n="$1" '$1 == n {print "http://127.0.0.1:" $2; exit}' "$op/netgate.tsv"; }
+
 # 3. Agents: one Herdr tab per team, from the launch tree.
 # A failed launch is logged as not started (op/not-started.txt, launch-agent.sh's last lines) and the others go on, as
 # in tools/start-team.sh (batch331).
@@ -220,7 +232,7 @@ for t in $teams; do
   while IFS=$'\t' read -r name kind route model effort label harness; do
     [ -z "$name" ] || [[ $name == \#* ]] && continue
     wanted=$((wanted + 1))
-    if out=$(POG_TEAM="$td/team.txt" POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" \
+    if out=$(POG_PROXY="$(proxy_of "$name")" POG_TEAM="$td/team.txt" POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" \
           POG_MODEL="$label ($harness)" POG_ROUTE="$route" "$tree/tools/launch-agent.sh" "$run/$t" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
           2> >(tee "$op/launch-$t-$name.err" >&2)); then
       pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')

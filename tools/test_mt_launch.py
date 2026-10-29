@@ -424,6 +424,45 @@ def client_mod():
     print("client mod: ok")
 
 
+def netgate():
+    """mt284 X: the run's network gate: an allowlist match, a refused CONNECT (403, logged with its User-Agent), the
+    config per Grok, Muse or agy agent, .web-state."""
+    import socket, time
+    sys.path.insert(0, os.path.join(ROOT, "tools", "mt"))
+    import netgate as ng, full_tools
+    assert ng.allowed("api.x.ai", ["api.x.ai"]) and ng.allowed("a.b.x.ai", ["*.x.ai"]) and not ng.allowed("factorio.nickwinter.net", ["*.x.ai"])
+    tmp = tempfile.mkdtemp()
+    try:
+        tf = os.path.join(tmp, "team.tsv")
+        open(tf, "w").write("# name\tkind\nastra\tcodex\tx\ngrok\tgrok\tx\nmuse\tmuse\tx\n")
+        agents = full_tools.netgate_config([tf], os.path.join(tmp, "g.json"), os.path.join(tmp, "g.tsv"), base=18151)
+        assert list(agents) == ["grok", "muse"] and agents["grok"]["port"] == 18151 and "api.x.ai" in agents["grok"]["allow"], agents
+        log = os.path.join(tmp, "g.jsonl")
+        p = subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "mt", "netgate.py"), os.path.join(tmp, "g.json"), log])
+        try:
+            for _ in range(50):
+                try:
+                    c = socket.create_connection(("127.0.0.1", 18151), timeout=1)
+                    break
+                except OSError:
+                    time.sleep(0.1)
+            c.sendall(b"CONNECT factorio.nickwinter.net:443 HTTP/1.1\r\nHost: factorio.nickwinter.net:443\r\nUser-Agent: curl/8.7.1\r\n\r\n")
+            reply = c.recv(200)
+            assert reply.startswith(b"HTTP/1.1 403"), reply
+            time.sleep(0.2)
+            rows = [json.loads(l) for l in open(log)]
+            ref = [r for r in rows if r.get("passed") is False]
+            assert ref and ref[0]["agent"] == "grok" and ref[0]["host"] == "factorio.nickwinter.net" and ref[0]["user_agent"] == "curl/8.7.1", rows
+        finally:
+            p.terminate()
+        os.environ["POG_PROXY"] = "http://127.0.0.1:18151"
+        assert "shell network through the run's gate" in full_tools.web_state(tmp, "grok")
+        del os.environ["POG_PROXY"]
+    finally:
+        shutil.rmtree(tmp)
+    print("netgate: ok")
+
+
 if __name__ == "__main__":
     brief_and_new_run()
     claude_settings()
@@ -435,3 +474,5 @@ if __name__ == "__main__":
     team_views()
 
     client_mod()
+
+    netgate()
