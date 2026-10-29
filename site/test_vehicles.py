@@ -94,6 +94,24 @@ def main():
           FakeHarness(dict(READ, vehicles={}, vehicles_total=0)).census_vehicles()["rows"] == [])
     check("harness.census_vehicles: none from a runtime without the part (the read prints {})", FakeHarness({}).census_vehicles() is None)
 
+    # A bounded census reply's rows cannot substitute for its whole-census total, at any summary layer.
+    page = [dict(READ["vehicles"][0], unit_number=i) for i in range(64)]
+    for total in (137, 0, None):
+        read = dict(READ, vehicles=page)
+        if total is None:
+            del read["vehicles_total"]
+        else:
+            read["vehicles_total"] = total
+        counted = FakeHarness(read).census_vehicles()
+        check("census page preserves total or unknown", counted["total"] == total, counted)
+        model = Model({"agents": {}})
+        model.ingest({"vehicles": dict(counted, t=1000.0)}, now=1000.0)
+        snapshot = model.vehicles_snapshot(1000.0)
+        check("vehicle summaries preserve total or unknown through publication",
+              snapshot["total"] == total and push_live.public_vehicles(snapshot)["total"] == total, snapshot)
+    check("public vehicle truncation does not invent a total",
+          push_live.public_vehicles({"rows": page + page})["total"] is None)
+
     m = Model({"agents": {"opus": {"display_name": "Opus"}}})
     check("model: no vehicles before a read", m.vehicles_snapshot(1000.0) is None)
     m.ingest({"vehicles": dict(v, t=1000.0)}, now=1000.0)

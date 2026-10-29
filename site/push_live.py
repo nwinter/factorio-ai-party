@@ -173,7 +173,7 @@ def public_vehicles(v):
             if isinstance(p, dict) and all(isinstance(p.get(c), (int, float)) for c in "xy"):
                 row[k] = {"x": round(p["x"], 1), "y": round(p["y"], 1)}
         rows.append(row)
-    return {"rows": rows, "total": v.get("total") or len(rows), "read_age_s": v.get("read_age_s")} if rows else None
+    return {"rows": rows, "total": v.get("total"), "read_age_s": v.get("read_age_s")} if rows else None
 
 
 CLOUD_KEYS = ("surface", "label", "pollutant", "chunks", "max", "total", "age_s")

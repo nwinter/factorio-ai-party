@@ -745,7 +745,8 @@ class Harness:
         if not isinstance(r, dict) or r.get("part") != "vehicles":
             return None
         rows = r.get("vehicles") if isinstance(r.get("vehicles"), list) else []  # table_to_json writes an empty table as {}
-        return {"tick": r.get("tick"), "rows": [x for x in rows if isinstance(x, dict)], "total": r.get("vehicles_total") or len(rows)}
+        # Census rows stop at 64; a missing whole-census total is unknown.
+        return {"tick": r.get("tick"), "rows": [x for x in rows if isinstance(x, dict)], "total": r.get("vehicles_total")}
 
     def vehicles(self, units):
         """(batch232) {unit: row} for these vehicles' unit numbers (VEHICLES_LUA), at most 16."""
