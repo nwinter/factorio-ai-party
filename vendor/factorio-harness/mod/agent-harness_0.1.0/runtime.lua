@@ -17743,7 +17743,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{turret_snapshot=function(pl,t,why) return M.turretsnap.take(pl,t,why) end,return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
@@ -17754,7 +17754,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
-M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
+M.scheduler_api={snapshots=function(p,a) return M.turretsnap.read(p,a) end,collect_waiting=function(index) return M.waits.collect_waiting(index) end,
   -- (d22 batch112 BV1) a build's entries its running action had left (a walk for the rest, a step aside): {count, line}
   left_undone=function(index) return M.left_undone(index) end,
   guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,deadline=function(c) return conditions.deadline(c) end,
@@ -20284,6 +20284,8 @@ function M.work_watches(p)
 end
 -- (d22 batch117 BZ1, Astra #1970) a platform's whole ammunition reserve, read in the background (ammoreserve.lua)
 M.ammoreserve=require('ammoreserve'){state=state}
+-- (d29 batch344 GS) snapshots of a turret and its feeders when an ammo_below guard on a platform fires
+M.turretsnap=require('turretsnap'){state=state,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
   fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,

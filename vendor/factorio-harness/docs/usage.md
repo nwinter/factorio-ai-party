@@ -17857,3 +17857,42 @@ next queued flight_watch refused done and not read."
 - Another agent's start is refused and nothing is read.
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
+
+## d29 batch344 (GS, Sol #2750: a snapshot of the turret and its feeders when an ammo guard fires)
+
+Sol's report: "Trial31 guard477 fired 81734480 railgun (19.5,-75.5) at 4 ammo; by next readonly inspect gun recovered 10,
+so cannot distinguish sparse belt, pickup batch latency, control or power."
+
+**When it is taken:** when `ammo_below` on a platform is met (a guard firing, a wait ending), its check reads the
+lowest turret and what feeds it on that tick (turretsnap.lua).
+
+**What it holds:**
+- **The turret:** unit number, name, position, its ammo stacks (item, quality, count), items and rounds (a magazine:
+  the first stack's ammo left plus a full magazine for each other item).
+- **Each feeding inserter:** every inserter whose drop target is the turret, at most 8 (`feeders_more` counts the
+  rest), found within 3 tiles of the turret's box. For each:
+  - unit number, name, position, status;
+  - the held stack;
+  - hand settings: stack size override, filter mode and filters;
+  - pickup and drop targets;
+  - energy, and whether it is connected to an electric network;
+  - circuit control: disabled, enable/disable, the condition;
+  - for a belt pickup, each transport line's count of the turret's ammo and of all items.
+- **The platform:** its leg (from, to, km flown and left) or stop, and its speed.
+
+**Where it is kept and read:**
+- The condition's evidence names it (snapshot id and line). A fired guard's evidence and saw carry it into the queue
+  history.
+- The newest 32 a force are kept.
+- `queue_status {snapshots: true, from?}` lists them, newest first, 8 a page (`next_from`).
+- `queue_status {snapshot: id}` reads one in full. Read only.
+- batch327's triple reads (signalwatch.lua) count every tick into histograms; these are one-tick reads written apart
+  for this shape.
+
+**Measured** (iMac copy of world n's newest autosave):
+- One snapshot of a Resolute railgun with its feeder: 0.13-0.14 ms (3 turrets x 3).
+- `wait_until ammo_below {platform: Resolute, count: 1000}` was met with snapshot #1. A queue guard fired with snapshot
+  #2 as its evidence (tick 81822980: the railgun at 9, its feeder waiting for source items with an empty hand, both
+  belt lanes 0).
+
+**Test:** tests/d29_batch344.lua.
