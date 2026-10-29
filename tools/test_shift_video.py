@@ -13,6 +13,12 @@
   edge (the Space Age victory) leads the title, the chapters and what happened; routine trips are no chapter and are
   summed by route; a far trip set out for before has no "first time"; a platform built at a place does not reach it
   "for the first time"; chapters spread to the recording's end.
+- (d29 batch338 VT, Nick: shifts 91-94 all "Resolute leaves the solar system edge for the Shattered Planet") a platform
+  that sets out for a far place it set out for in an earlier shift, and arrives where it arrived before, makes routine
+  trips: the shift's farthest toward it (the score log's km) leads when it beats the run's record ("Resolute reaches
+  38,000 km toward the Shattered Planet, its farthest yet"), and the description says the tries and the farthest; short
+  of the record, the next-heaviest leads; a lead whose words (numbers aside) are the shift before's does not lead
+  (research level 9 after level 8: another technology); a thousandth rocket leads only when nothing else is there.
 """
 import datetime, json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -125,7 +131,86 @@ def chronicle_case(root):
     (cb / "chronicle.jsonl").write_text("\n".join(rows) + "\n")
 
 
+def resolute_case(root):
+    """Four shifts of Resolute's trials: ra sets out once and gets 30,000 km; rb, rc and rd set out 5 times each and get
+    38,200 km (a record), 37,000 and 36,000 km."""
+    def score_at(t, tick, km=None, rockets=1000):
+        plats = [{"name": "Resolute", "at": "in transit", "hub": True, "to": "shattered-planet",
+                  "route": "solar-system-edge->shattered-planet", "km": km, "len": 4000000}] if km is not None else []
+        return score(datetime.datetime.fromtimestamp(t, PDT).strftime("%Y-%m-%dT%H:%M:%S"), tick, ["automation"],
+                     rockets=rockets, platforms=plats)
+
+    def row(t, kind, **k):
+        return json.dumps(dict(k, kind=kind, type="event", t=t, tick=int(t) % 10000000))
+    t0 = datetime.datetime(2026, 10, 27, 8, 0, tzinfo=PDT).timestamp()
+    ra = root / "ra"
+    ra.mkdir()
+    (ra / "stream.json").write_text(json.dumps({"shift": {"start": t0 - 4 * 3600, "end": t0}}))
+    (ra / "start.log").write_text("03:59:00 world n: x\n04:00:05 helper stream-service pid 2 up: x\n")
+    (ra / "chronicle.jsonl").write_text("\n".join([
+        row(t0 - 6000, "platform_left", platform="Resolute", at="aquilo", to="solar-system-edge"),
+        row(t0 - 3000, "platform_arrived", platform="Resolute", at="solar-system-edge"),
+        row(t0 - 3000, "platform_left", platform="Resolute", at="solar-system-edge", to="shattered-planet"),
+        row(t0 - 1000, "platform_arrived", platform="Resolute", at="aquilo")]) + "\n")
+    (ra / "scores.jsonl").write_text("\n".join([score_at(t0 - 3 * 3600, 100), score_at(t0 - 2500, 200, km=30000),
+                                                score_at(t0 - 60, 300)]) + "\n")
+    prev = "ra"
+    for k, (name, best, techs) in enumerate([("rb", 38200, ["toolbelt-equipment"]),
+                                             ("rc", 37000, ["physical-projectile-damage-8"]),
+                                             ("rd", 36000, ["physical-projectile-damage-9", "laser-weapons-damage-2"])]):
+        s0 = t0 + k * 4 * 3600
+        d = root / name
+        d.mkdir()
+        (d / "resumed-from").write_text(prev + "\n")
+        prev = name
+        (d / "stream.json").write_text(json.dumps({"shift": {"start": s0, "end": s0 + 4 * 3600}}))
+        (d / "start.log").write_text("x world n: x\n")
+        rows, scores = [], [score_at(s0 + 60, 1000 + k)]
+        for i in range(5):  # out from the edge, turned back, home at Aquilo, back to the edge
+            b = s0 + 600 + i * 2700
+            rows += [row(b, "platform_arrived", platform="Resolute", at="solar-system-edge"),
+                     row(b, "platform_left", platform="Resolute", at="solar-system-edge", to="shattered-planet"),
+                     row(b + 1500, "platform_arrived", platform="Resolute", at="aquilo"),
+                     row(b + 1800, "platform_left", platform="Resolute", at="aquilo", to="solar-system-edge")]
+            scores.append(score_at(b + 600, 2000 + i, km=best if i == 1 else 20000 + 1000 * i))
+        rows += [row(s0 + 3000 + 600 * j, "research", name=t) for j, t in enumerate(techs)]
+        scores.append(score_at(s0 + 4 * 3600 - 60, 9000 + k, rockets=1600))
+        (d / "chronicle.jsonl").write_text("\n".join(rows) + "\n")
+        (d / "scores.jsonl").write_text("\n".join(scores) + "\n")
+
+
 def main():
+    with tempfile.TemporaryDirectory() as d:
+        rroot = Path(d) / "res"
+        rroot.mkdir()
+        resolute_case(rroot)
+        vb = sv.build("rb", rroot)
+        assert vb["title"] == "Factorio AI Party · Shift 2: Resolute: 38,000 km toward the Shattered Planet, its farthest yet", vb["title"]
+        chap = [c["title"] for c in vb["chapters"]]
+        assert "Resolute: 38,000 km toward the Shattered Planet, its farthest yet" in chap, chap
+        assert not any("leaves the solar system edge" in c or "reaches the solar system edge" in c for c in chap), chap
+        happened = vb["description"].split("What happened\n", 1)[1].split("\n\n", 1)[0].splitlines()
+        assert "• Resolute set out for the Shattered Planet again (5 times), 38,000 km at the farthest" in happened, happened
+        assert "• Resolute set out for the solar system edge again (5 times)" in happened, happened
+        sv.write(vb, rroot / "rb" / "video", thumb=False)
+        vc = sv.build("rc", rroot)  # 37,000 km: no record, the research leads
+        assert vc["title"] == "Factorio AI Party · Shift 3: Physical projectile damage 8 researched", vc["title"]
+        assert any(h.endswith("37,000 km at the farthest") for h in vc["description"].splitlines()), vc["description"]
+        sv.write(vc, rroot / "rc" / "video", thumb=False)
+        vd = sv.build("rd", rroot)  # level 9 reads as rc's level 8: the other technology leads
+        assert vd["title"] == "Factorio AI Party · Shift 4: Laser weapons damage 2 researched", vd["title"]
+        assert sv.build("rd", rroot, previous="")["title"].endswith(": Physical projectile damage 9 researched")
+        got = sv.retitle(2, 2, rroot)  # (no shiftN folders here: none)
+        assert got == [], got
+        # the rockets: a thousandth one leads only when nothing else does; a repeat leads when nothing else is left
+        t = datetime.datetime(2026, 10, 27, 8, 0, tzinfo=PDT)
+        rk = sv.ev(t, "rocket", "Rocket 64,000 launched", 50, first=False, count=918)
+        steel = sv.ev(t, "research", "Steel axe researched", 36, tech="steel-axe", label="Steel axe")
+        assert sv.highlight([rk, steel], {}, 0) == "Steel axe researched"
+        assert sv.highlight([rk], {}, 0) == "918 more rockets"
+        assert sv.highlight([rk], {}, 0, previous="1478 more rockets") == "918 more rockets"
+        assert sv.highlight([rk, steel], {}, 0, previous="Steel axe researched") == "918 more rockets"
+
     with tempfile.TemporaryDirectory() as d:
         croot = Path(d) / "chron"
         croot.mkdir()
@@ -237,7 +322,7 @@ def main():
             assert r.returncode != 0 and want in r.stderr, (flags, r.stderr)
         assert not conf.exists() and not (out / "upload.json").exists()
     print("shift videos: ok (box clock, split files, edges, midnight, chapter rules and picks, description, box plan, "
-          "upload dry run)")
+          "upload dry run, repeated far trials and records, titles unlike the shift before's)")
 
 
 if __name__ == "__main__":

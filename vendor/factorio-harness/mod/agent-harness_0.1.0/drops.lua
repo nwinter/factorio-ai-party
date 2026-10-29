@@ -15,6 +15,7 @@ return function(api)
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.MAX_TO = 8
   local KEEP, SAMPLE, SEARCH, GIVE_UP, QUIET = 20, 15, 24, 600, 300
+  M.SAMPLE = SAMPLE
   local MAX_LINES = 4  -- a reply's team block shows this many drop lines (board.lua)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()

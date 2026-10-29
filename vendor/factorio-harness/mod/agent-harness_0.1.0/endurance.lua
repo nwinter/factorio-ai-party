@@ -12,6 +12,7 @@ return function(api)
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.ROUTE_MAX = 12
+  local STARTUP_S = 60  -- (d29 batch339) a leg's first minute: what the return budget's window leaves out
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(x, d) if d == 0 then return math.floor(x + 0.5) end local m = 10 ^ (d or 1); return math.floor(x * m + 0.5) / m end
   local function mins(m)
@@ -515,16 +516,34 @@ return function(api)
   -- farther out and back to the start is 2x + flown_km, then back_km: the stock less its reserve, over 1 + margin,
   -- lasts usable / net minutes, so x = (usable / net * v - flown_km - back_km) / 2. An item made at least as fast as it
   -- is used binds nothing. Facts only: nothing is changed, no floor is lowered.
+  -- (d29 batch339 RB) The statistics' window for the return budget's second rate: the last 10 minutes when they lie
+  -- wholly after the leg's first STARTUP_S (the stop it left and its first minute flying), else the longest of 5 and 1
+  -- minute that does, else none. leg_min: minutes since this leg began (nil: not known, the 10). -> precision index,
+  -- minutes, text.
+  function M.budget_window(leg_min, P)
+    local clean = leg_min and leg_min - STARTUP_S / 60 or nil
+    if not clean or clean >= 10 then return P.ten_minutes, 10, 'the last 10 min' end
+    if clean >= 5 and P.five_minutes then return P.five_minutes, 5, 'the last 5 min (the 10 would hold the leg\'s startup)' end
+    if clean >= 1 and P.one_minute then return P.one_minute, 1, 'the last 1 min (the 10 would hold the leg\'s startup)' end
+    return nil, nil, 'no window after the leg\'s startup yet'
+  end
+
   function M.return_budget(items, o)
     local out, binds = {}, nil
     for _, it in ipairs(items) do
       local np, n10 = (it.used or 0) - (it.made or 0), (it.used10 or 0) - (it.made10 or 0)
       local net = math.max(np, n10)
+      if it.within_step then net = 0 end  -- (d29 batch339) a fuel deficit within a batch a maker: none measured
       local res = type(o.reserve) == 'table' and (o.reserve[it.name] or 0) or (o.reserve or 0)
       local r = {name=it.name, stock=round(it.stock, 0), reserve=res, net_phase=round(np, 2), net_10min=round(n10, 2), net_used=round(net, 2),
-        phase_from=it.from, worse=np >= n10 and 'this phase' or 'the last 10 min'}
+        phase_from=it.from, window=it.window, worse=np >= n10 and 'this phase' or (it.window or 'the last 10 min'), stock_scope=it.scope,
+        within_step=it.within_step or nil}
+      local usable = (it.stock - res) / (1 + (o.margin or 0))
+      r.usable = round(usable, 0)
+      r.usable_basis = string.format('(%d %s - %d kept) / (1 + %g margin)', round(it.stock, 0), it.scope and 'aboard' or 'stock', res, o.margin or 0)
+      if res > it.stock then r.reserve_over_stock = true end
+      if o.selected and not o.selected[it.name] then r.not_selected = true end
       if net > 0 and o.v and o.v > 0 then
-        local usable = (it.stock - res) / (1 + (o.margin or 0))
         local x = (usable / net * o.v - o.flown_km - o.back_km) / 2
         r.out_km_max = round(x, 0)
         r.lasts_min = round(usable / net, 1)
@@ -532,7 +551,7 @@ return function(api)
           r.left_at_return = round(it.stock - net * (2 * o.out_km + o.flown_km + o.back_km) / o.v, 0)
           r.spare_km = round(x - o.out_km, 0)
         end
-        if not binds or x < binds.x then binds = {name=it.name, x=x} end
+        if not r.not_selected and (not binds or x < binds.x) then binds = {name=it.name, x=x} end
       elseif net <= 0 then r.not_used = true end
       out[#out+1] = r
     end
@@ -570,6 +589,12 @@ return function(api)
       assert(ta.reserve == nil or (type(ta.reserve) == 'number' and ta.reserve >= 0) or type(ta.reserve) == 'table', 'turnaround.reserve is a count for every item, or {item: count}')
       for k, n in pairs(type(ta.reserve) == 'table' and ta.reserve or {}) do
         assert(type(k) == 'string' and type(n) == 'number' and n >= 0, 'turnaround.reserve: {item: count}')
+      end
+      -- (d29 batch339 RB, Sol #2745) items: the ones that may bind (e.g. the ammunition and repair packs; the rest
+      -- listed, not binding)
+      assert(ta.items == nil or (type(ta.items) == 'table' and #ta.items >= 1 and #ta.items <= 32), 'turnaround.items is a list of 1..32 item or fluid names')
+      for _, n in ipairs(ta.items or {}) do
+        assert(type(n) == 'string' and (prototypes.item[n] or (prototypes.fluid and prototypes.fluid[n])), 'turnaround.items: unknown item or fluid ' .. tostring(n))
       end
     end
     local pl = api.platform(p, a.platform)
@@ -935,19 +960,35 @@ return function(api)
     -- Hub space: free slots now.
     -- (PR) the turnaround's return budget: each item's stock reaching it, its net use the worse of the current phase
     -- (this leg so far, and for ammunition the moving phase) and the last 10 minutes, both given
-    local return_budget
+    local return_budget, fo_now  -- (batch339) the fuel outlook read once a call: the budget's and the reply's
     if turn then
       local floor = ta.speed_floor and ta.speed_floor * 60 or nil
       local vplan = v and (floor and math.min(v, floor) or v) or nil
       local items = {}
+      -- (d29 batch339 RB, Sol #2745: Resolute's fuel read 1977 held against fuel_outlook's 8703 aboard, and the
+      -- 10-minute window held the stop and the departure) fuel and oxidizer as fuel_outlook counts them: everything
+      -- aboard (thrusters, tanks, pipes, pumps, the makers' outputs) and its clean sample, the longest wholly in this leg
+      -- (180 s, else 60 s), a deficit within a batch a maker counting as none; the 10-minute rate only when the 10
+      -- minutes are wholly after the leg's first STARTUP_S (startup: the stop it left and its first minute flying,
+      -- thrusters filling and belts settling), else the longest window that is (5 or 1 minute), said; none, none.
+      local fo_rows = {}
+      fo_now = try(function() return M.fuel_outlook(pl, ctx) end)
+      for _, fr in ipairs(fo_now and fo_now.rows or {}) do fo_rows[fr.name] = fr end
+      local wp, wmin, wtext = M.budget_window(open_leg and (game.tick - open_leg.start) / 3600 or nil, P)
       for _, row in ipairs(rows) do
-        if not row.flight_rate then
-          local fluid = row.name == 'thruster-fuel' or row.name == 'thruster-oxidizer'
-          local st = fluid and fluid_stats or items_stats
-          local m10 = st and P.ten_minutes and (try(function() return flow(st, row.name, 'input', P.ten_minutes) end) or 0) / 10 or 0
-          local u10 = st and P.ten_minutes and (try(function() return flow(st, row.name, 'output', P.ten_minutes) end) or 0) / 10 or 0
+        local fr = fo_rows[row.name]
+        if fr then
+          local m, u = fr.made_per_min or 0, fr.used_per_min or 0
+          items[#items+1] = {name=row.name, stock=fr.aboard or fr.held or row.stock, made=m, used=u, made10=m, used10=u,
+            from=string.format('fuel_outlook\'s last %d s, flying', fr.window_s or 60), window=string.format('its last %d s', fr.window_s or 60),
+            scope='aboard: thrusters, tanks, pipes, pumps and the makers\' outputs (fuel_outlook; held in thrusters and tanks ' .. tostring(fr.held) .. ')',
+            within_step=fr.within_step}
+        elseif not row.flight_rate then
+          local st = items_stats
+          local m10 = wp and (try(function() return flow(st, row.name, 'input', wp) end) or 0) / wmin or 0
+          local u10 = wp and (try(function() return flow(st, row.name, 'output', wp) end) or 0) / wmin or 0
           local made, used, from = row.made_per_min, row.used_per_min, row.rate_from
-          local is_ammo = not fluid and prototypes.item[row.name] and prototypes.item[row.name].type == 'ammo'
+          local is_ammo = prototypes.item[row.name] and prototypes.item[row.name].type == 'ammo'
           local lm, lu, lfrom
           if is_ammo then lm, lu, lfrom = leg_now_rate(row.name) end  -- freight's counts are ammunition's
           if lm and lu - lm > used - made then made, used, from = lm, lu, lfrom end
@@ -955,11 +996,14 @@ return function(api)
           if mv and mv.used_per_min - mv.made_per_min > used - made then
             made, used, from = mv.made_per_min, mv.used_per_min, string.format('moving phase, %s', mins(mv.minutes))
           end
-          items[#items+1] = {name=row.name, stock=row.stock, made=made, used=used, made10=m10, used10=u10, from=from}
+          items[#items+1] = {name=row.name, stock=row.stock, made=made, used=used, made10=m10, used10=u10, from=from, window=wtext,
+            scope=is_ammo and 'reaches the turrets: hub, turrets, belts, hands, machines\' outputs (stranded apart)' or 'aboard: hub, turrets, belts, hands, machines\' outputs'}
         end
       end
+      local selected
+      if ta.items then selected = {}; for _, n in ipairs(ta.items) do selected[n] = true end end
       local out, binds = M.return_budget(items, {v=vplan, flown_km=turn.flown_km, back_km=turn.back_km, out_km=turn.out_km,
-        margin=ta.margin or 0.1, reserve=ta.reserve})
+        margin=ta.margin or 0.1, reserve=ta.reserve, selected=selected})
       local head = string.format('turnaround: %d km farther out on %s->%s (to %d of its %d km), back %d km to %s%s; at %s km/s (%s), margin %d%%',
         math.floor(turn.out_km + 0.5), turn.from, turn.to, math.floor(turn.flown_km + turn.out_km + 0.5), math.floor(turn.length + 0.5),
         math.floor(turn.out_km + turn.flown_km + 0.5), turn.from, turn.back_km > 0 and string.format(', then %d km to %s', math.floor(turn.back_km + 0.5), turn.back_to) or '',
@@ -967,19 +1011,27 @@ return function(api)
         math.floor((ta.margin or 0.1) * 100 + 0.5))
       local parts = {}
       for _, r in ipairs(out) do
-        if r.out_km_max then
-          parts[#parts+1] = string.format('%s: at most %d km farther out (%d aboard%s; net %g/min, the worse of %s (%g/min) and the last 10 min (%g/min)%s)',
-            r.name, r.out_km_max, r.stock, r.reserve > 0 and string.format(', %d kept', r.reserve) or '', r.net_used, r.phase_from or 'this phase', r.net_phase, r.net_10min,
+        local tail = (r.not_selected and '; not in items: not binding' or '') .. (r.reserve_over_stock and string.format('; the %d kept is more than the %d counted', r.reserve, r.stock) or '')
+        if r.within_step then
+          parts[#parts+1] = string.format('%s: used over made within a batch a maker over %s: no deficit measured (%d aboard)%s', r.name, r.window or 'its window', r.stock, tail)
+        elseif r.not_used and (tail ~= '' or fo_rows[r.name]) then
+          parts[#parts+1] = string.format('%s: made at least as fast as used over %s (%d %s)%s', r.name, r.window or 'its window', r.stock,
+            fo_rows[r.name] and string.format('aboard, %d held in thrusters and tanks', fo_rows[r.name].held or 0) or 'counted', tail)
+        elseif r.out_km_max then
+          parts[#parts+1] = string.format('%s: at most %d km farther out (%d %s%s; net %g/min, the worse of %s (%g/min) and %s (%g/min)%s)%s',
+            r.name, r.out_km_max, r.stock, r.stock_scope and r.stock_scope:match('^aboard') and 'aboard' or 'reaching it',
+            r.reserve > 0 and string.format(', %d kept', r.reserve) or '', r.net_used, r.phase_from or 'this phase', r.net_phase, r.window or 'the last 10 min', r.net_10min,
             r.spare_km and (r.spare_km >= 0 and string.format('; the planned turn fits, %d km to spare, about %d left back at %s', r.spare_km, math.max(0, r.left_at_return), turn.back_to)
-              or string.format('; the planned turn is %d km too far', -r.spare_km)) or '')
+              or string.format('; the planned turn is %d km too far', -r.spare_km)) or '', tail)
         end
       end
       return_budget = {out_km=round(turn.out_km, 0), flown_km=round(turn.flown_km, 0), connection_km=round(turn.length, 0), back_to=turn.back_to,
         back_km=round(turn.out_km + turn.flown_km + turn.back_km, 0), speed_km_s=vplan and round(vplan / 60, 2) or nil, margin=ta.margin or 0.1,
-        items=out, binds=binds and {name=binds.name, out_km_max=binds.out_km_max, spare_km=binds.spare_km} or nil,
+        items=out, binds=binds and {name=binds.name, out_km_max=binds.out_km_max, spare_km=binds.spare_km} or nil, selected=ta.items,
+        startup_s=STARTUP_S, window=wtext,
         line=head .. '; ' .. (binds and string.format('%s binds first: at most %d km farther out%s', binds.name, binds.out_km_max,
           binds.spare_km and (binds.spare_km >= 0 and string.format(' (the planned turn fits, %d km to spare)', binds.spare_km) or string.format(' (the planned turn is %d km too far)', -binds.spare_km)) or '')
-          or 'no item is used faster than it is made') .. (#parts > 0 and '. ' .. table.concat(parts, '; ') or ''),
+          or (ta.items and 'no item of items is used faster than it is made' or 'no item is used faster than it is made')) .. (#parts > 0 and '. ' .. table.concat(parts, '; ') or ''),
         note='read only: facts from the production statistics and the stock that reaches the turrets; nothing lowers a floor or changes the route'}
     end
     local slots = hub and #hub or 0
@@ -1090,7 +1142,7 @@ return function(api)
         l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)'
           or l.via_for and ' (on the way ' .. l.via_for .. (l.also and ', ' .. l.also or '') .. ')' or '')
     end
-    local fo_all = try(function() return M.fuel_outlook(pl, ctx) end)
+    local fo_all = fo_now or try(function() return M.fuel_outlook(pl, ctx) end)
     local outlook = fo_all and fo_all.line
     local reply = {platform=pl.name, route=route_by, route_note=route_note, ammo_feed=ammo_feed, legs=legs, return_budget=return_budget, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',
@@ -1122,7 +1174,7 @@ return function(api)
     assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh is true or false')
     return M.read(p, a)
   end
-  M.schema = {platform_endurance = {turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, speed_floor?, margin?, reserve?}: a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
+  M.schema = {platform_endurance = {turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, speed_floor?, margin?, reserve?, items?}: (d29 batch339) items: the item or fluid names that may bind (e.g. the ammunition and repair packs), the rest listed, not binding; thruster fuel and oxidizer counted as fuel_outlook counts them (everything aboard, its clean sample of the last 180 or 60 s in the leg; a deficit within a batch a maker: none); the 10-minute rate only when it lies wholly after the leg\'s first 60 s, else the last 5 or 1 minute that does (window); each row\'s stock_scope, usable and usable_basis. a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
     design='optional {width, height | tiles, mass?, speed, ammo?}: a hull not built yet, read only (nothing built, placed or imported), on the platform\'s route with its turrets\' ammunition and settings (or ammo: up to 8 names) and our bonuses: width and height in tiles, or tiles (up to 256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; speed km/s as the GUI shows it; mass is said and not used (the speed is given; asteroids come per km). Returns design, legs [{from, to, part {f0, f1}, km, minutes, asteroids {kind: count}, total, per_600s, total_per_600s, shots {ammo: shots}}], basis (the spawn line, the count rule and its fit, distance not time, width, speed, progress, shots), estimated (what is not modelled exactly), ammo, lines; a light read: no rates, stock or production read',
     fresh='optional; every call reads now',
     progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',

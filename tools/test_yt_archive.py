@@ -18,7 +18,9 @@ python3 tools/test_yt_archive.py
   --retry, and the follower goes on; no rotate or upload while the checkout has MERGE_HEAD (Busy past --merge-wait);
   new code on disk runs again with the same arguments; the site's list lives in video-work (site-refresh.sh names it);
   follow --start keeps one per Mac in its own session, --check/--stop, a second follower refuses; start-team starts
-  it, stop-team leaves it; a test run never touches the live one.
+  it, stop-team leaves it; a test run never touches the live one;
+- (d29 batch338) titles: old -> new from each video.json, the units, the snippet sent back with only the title
+  changed, the manifest written, all or none within today's room.
 """
 import argparse
 import contextlib
@@ -291,8 +293,73 @@ def main():
     # ---- follow: the autopilot's "shiftN up" lines
     assert ya.UP_LINE.match("10-27 07:09:26 shift86 up ()").group(2) == "86"
     assert not ya.UP_LINE.match("10-27 07:09:26 watchdog shift86 pid 1")
+    retitles()
     follower()
     print("test_yt_archive: ok")
+
+
+class TitleClient:
+    """Stands in for yt_archive.Client for titles: videos.list answers each id's snippet as YouTube has it."""
+    calls = []
+
+    def __init__(self, ledger, dry=False):
+        self.ledger = ledger
+
+    def call(self, name, method, url, body=None):
+        TitleClient.calls.append((name, url, body))
+        self.ledger.spend(name, None, ya.COST[name])
+        if name == "videos.list":
+            ids = url.split("id=", 1)[1].split(",")
+            return {"items": [{"id": i, "snippet": {"title": "old", "description": "d\n\nChapters\n0:00 start",
+                                                    "tags": ["Factorio"], "categoryId": "20", "channelId": "UCx",
+                                                    "thumbnails": {}}} for i in ids if i != "VID87xxxxx"]}
+        return {}
+
+
+def retitles():
+    """(d29 batch338 VT) titles: the videos whose video.json title is new, old -> new and 1 + 50 units each; --apply
+    sends the snippet as YouTube has it with the title changed (its description and chapters kept, read-only fields
+    left out), writes the manifest, leaves out a video YouTube no longer has, and waits when today has no room."""
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        videos = vids(85, 86, 87)
+        (d / "manifest.json").write_text(json.dumps(videos))
+        for n, t in ((85, "Shift 85: new"), (86, "Shift 86"), (87, "Shift 87: new")):
+            (d / "runs" / f"shift{n:02d}" / "video").mkdir(parents=True)
+            (d / "runs" / f"shift{n:02d}" / "video" / "video.json").write_text(json.dumps({"title": t}))
+        a = argparse.Namespace(manifest=str(d / "manifest.json"), extra=str(d / "none.json"), state=str(d / "state.json"),
+                               ledger=str(d / "q.json"), site_videos=str(d / "site.json"), runs_dir=str(d / "runs"),
+                               shifts=None, daily=ya.DAILY, margin=ya.MARGIN)
+        assert ya.title_changes(ya.all_videos([a.manifest]), a.runs_dir) == [
+            ("shift85", "Shift 85", "Shift 85: new"), ("shift87", "Shift 87", "Shift 87: new")]
+        assert ya.title_units(2) == 101 and ya.title_units(51) == 2 + 51 * 50
+        real = ya.Client
+        ya.Client = TitleClient
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                ya.titles(a, dry=True)
+            assert not TitleClient.calls and "2 titles; quota: 101 units" in out.getvalue(), out.getvalue()
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                assert ya.titles(argparse.Namespace(**dict(vars(a), daily=300)), dry=False) == 1
+            assert not TitleClient.calls and "not today" in out.getvalue(), out.getvalue()
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                ya.titles(a, dry=False)
+            names = [c[0] for c in TitleClient.calls]
+            assert names == ["videos.list", "videos.update"], names
+            body = TitleClient.calls[1][2]
+            assert body == {"id": "VID85xxxxx", "snippet": {"title": "Shift 85: new", "description": "d\n\nChapters\n0:00 start",
+                                                            "tags": ["Factorio"], "categoryId": "20"}}, body
+            assert "shift87 (VID87xxxxx): not on YouTube, left out" in out.getvalue(), out.getvalue()
+            m = json.loads((d / "manifest.json").read_text())
+            assert m["shift85"]["title"] == "Shift 85: new" and m["shift87"]["title"] == "Shift 87", m
+            assert json.loads((d / "q.json").read_text())[ya.pacific_day()]["units"] == 51
+            TitleClient.calls.clear()
+            a.shifts = "85-86"
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                ya.titles(a, dry=False)
+            assert not TitleClient.calls and "0 titles" in out.getvalue(), out.getvalue()
+        finally:
+            ya.Client = real
 
 
 class Stop(Exception):

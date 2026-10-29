@@ -9,6 +9,10 @@
   python3 tools/yt_archive.py follow --start       # the follower in the background, unless one runs (start-team)
   python3 tools/yt_archive.py follow --check | --stop
   python3 tools/yt_archive.py quota                # today's ledger
+  python3 tools/yt_archive.py titles [--shifts 85-94] [--apply]  # (d29 batch338) the videos whose title differs from
+                                                   # runs/RUN/video/video.json's, old -> new and the units; --apply
+                                                   # sets them on YouTube (each video's description, tags and
+                                                   # category as YouTube has them) and in the manifest
 
 The rule (selection): every shift video is unlisted and in one public playlist in shift order. Three are public:
 shift 1, shift 63 (the edge victory) and the latest shift with a video. The latest slot rotates: a newer shift's
@@ -398,6 +402,85 @@ def site_videos(videos, state, path=SITE_VIDEOS):
     return out
 
 
+# ---------------------------------------------------------------- titles (d29 batch338 VT)
+
+# the snippet fields videos.update writes: a field left out of a snippet update is cleared (YouTube Data API,
+# videos.update), so each is sent back as videos.list read it, the title changed
+SNIPPET_KEEP = ("title", "description", "tags", "categoryId", "defaultLanguage", "defaultAudioLanguage")
+
+
+def title_changes(videos, runs_dir, shifts=None):
+    """[(run, title now, new title)]: the videos whose runs/RUN/video/video.json title (tools/shift_video.py --titles
+    --write) differs from the manifest's, in shift order; shifts: only those numbers."""
+    out = []
+    for run in sorted(videos, key=lambda r: videos[r]["shift"]):
+        if shifts and videos[run]["shift"] not in shifts:
+            continue
+        new = load(Path(runs_dir) / run / "video" / "video.json").get("title")
+        if new and new != videos[run].get("title"):
+            out.append((run, videos[run].get("title"), new))
+    return out
+
+
+def title_units(n):
+    """A videos.list call (1 unit) for each 50 videos and a videos.update (50) for each."""
+    return -(-n // 50) * COST["videos.list"] + n * COST["videos.update"]
+
+
+def titles(a, dry=True):
+    """Set the new titles on YouTube: videos.list part=snippet for the current snippets, then videos.update part=snippet
+    with only the title changed (the description keeps its chapters); each done one written to its manifest at once,
+    then the site's list. All of them or none within today's room (--daily less --margin less what is spent)."""
+    videos = all_videos([a.manifest, a.extra])
+    first, _, last = (a.shifts or "").partition("-")
+    shifts = set(range(int(first), int(last or first) + 1)) if first else None
+    changes = title_changes(videos, a.runs_dir, shifts)
+    ledger = Ledger(a.ledger)
+    units = title_units(len(changes))
+    for run, old, new in changes:
+        print(f"{run} ({videos[run]['id']}): {old}\n  -> {new}")
+    room = a.daily - a.margin - ledger.today["units"]
+    print(f"{len(changes)} titles; quota: {units} units ({ledger.today['units']} spent today by this tool, "
+          f"{room} room today)")
+    if dry or not changes:
+        return 0
+    if ledger.today.get("exhausted") or units > room:
+        print("not today: the titles wait for a day with room (Pacific)")
+        return 1
+    client = Client(ledger)
+    state = load(a.state, {"videos": {}})
+    done = 0
+    try:
+        for i in range(0, len(changes), 50):
+            part = changes[i:i + 50]
+            r = client.call("videos.list", "GET", f"{yt.API}/videos?part=snippet&id=" + ",".join(videos[x[0]]["id"] for x in part))
+            got = {it.get("id"): it.get("snippet") or {} for it in r.get("items", [])}
+            for run, _, new in part:
+                vid = videos[run]["id"]
+                if vid not in got:
+                    print(f"  {run} ({vid}): not on YouTube, left out")
+                    continue
+                snippet = {k: got[vid][k] for k in SNIPPET_KEEP if k in got[vid]}
+                snippet["title"] = new
+                client.call("videos.update", "PUT", f"{yt.API}/videos?part=snippet", body={"id": vid, "snippet": snippet})
+                for path in (a.manifest, a.extra):
+                    m = load(path)
+                    if run in m:
+                        m[run]["title"] = new
+                        save(path, m)
+                        break
+                videos[run]["title"] = new
+                done += 1
+                print(f"  done: {run}", flush=True)
+    except QuotaExceeded as e:
+        print(f"quota exceeded after {done} titles: {e}; run it again tomorrow (Pacific)")
+    finally:
+        site = site_videos(videos, state, a.site_videos)
+        print(f"{a.site_videos}: {len(site)} videos the site can show")
+    print(f"done {done} of {len(changes)} titles; quota spent today by this tool: {ledger.today['units']}")
+    return 0
+
+
 # ---------------------------------------------------------------- commands
 
 def describe(ops, videos):
@@ -766,7 +849,9 @@ def quota(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["plan", "apply", "rotate", "follow", "quota"])
+    ap.add_argument("cmd", choices=["plan", "apply", "rotate", "follow", "quota", "titles"])
+    ap.add_argument("--shifts", help="titles: FIRST-LAST, the shift numbers to retitle (default every video)")
+    ap.add_argument("--apply", action="store_true", help="titles: set them on YouTube (default: list them)")
     ap.add_argument("--refresh", action="store_true", help="read YouTube's state first (a few units)")
     ap.add_argument("--dry-run", action="store_true", help="rotate: list the uploads, upload nothing")
     ap.add_argument("--manifest", default=str(MANIFEST))
@@ -802,6 +887,8 @@ def main(argv=None):
         return 0
     if a.cmd == "follow":
         return follow_cmd(a)
+    if a.cmd == "titles":
+        return titles(a, dry=not a.apply)
     return quota(a)
 
 

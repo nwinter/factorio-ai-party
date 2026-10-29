@@ -17753,3 +17753,64 @@ ship ..."
   - The read takes 9.3-9.5 ms with a turnaround and the same without one, so the budget adds nothing measurable; the
     plain read is 7.07 ms on n (tools/read_cost.py).
   - `budget_below` on Kestrel IVa was met under 30,000,000 km and held under 10 km.
+
+## d29 batch339 (RB, Sol #2745: the return budget's fuel at its stock aboard, an items filter, no startup in the window)
+
+Sol's report: "return_budget fuel stock1977/oxid1682 vs fuel_outlook8703aboard; reserve12k yields negative outmax and
+binds ... Clean179s leg: held853fuel/558oxid vs fuel_outlook7208aboard; fuel7190use/6000made within1500batch no deficit
+... Last10min includes startup1653net."
+
+**What the budget does now** (`platform_endurance` turnaround, `return_budget`):
+- **Fuel and oxidizer** are counted as fuel_outlook counts them:
+  - the stock is everything aboard (thrusters, tanks, pipes, pumps, the makers' outputs), with the held count said in
+    `stock_scope`;
+  - the rates are its clean sample, the longest wholly in this leg (180 s, else 60 s);
+  - a deficit within a batch a maker binds nothing (`within_step`).
+- **`turnaround.items`** lists the item or fluid names that may bind, for example the ammunition and repair packs. The
+  others stay listed with their numbers, `not_selected`, and do not bind. budget_below follows it, since the
+  turnaround is passed through.
+- **The second rate's window** is the last 10 minutes only when they lie wholly after the leg's first 60 s (startup:
+  the stop it left and its first minute flying). Otherwise it is the last 5 or 1 minute that does, else none. `window`
+  says which (`M.budget_window`).
+- **Each row** gives `stock_scope`, `usable` and `usable_basis` ("(N aboard - K kept) / (1 + margin)"), and
+  `reserve_over_stock` when the reserve is more than the stock.
+- **The fuel outlook** is read once a call, for the budget and the reply.
+
+**Checked:**
+- **tests/d29_batch339.lua**, with Sol's numbers:
+  - fuel at 8703 aboard rather than 1977 held, and the 12000 reserve said to be over it;
+  - 7190 used / 6000 made in batches of 1500: no deficit;
+  - with items (ammunition and repair packs), the ammunition binds and fuel does not;
+  - the window at 13 s, 179 s, 3, 10.5 and 11 min into a leg.
+- **On the iMac copy of world n's newest autosave** (tick 81,390,184): Resolute on aquilo->solar-system-edge, a 20,000
+  km turn.
+  - Fuel 8606 aboard (844 held), made at least as fast as used. A minute later: within a batch, no deficit, 7324
+    aboard. The 12,000 reserve is said to be over it, and fuel is not in items.
+  - Railgun ammunition binds (165,696 km), its second rate over the last 1 min since the 10 would hold the leg's
+    startup.
+  - The read takes 10.8-10.9 ms with a turnaround and 9.9-11.6 ms without, at that state of Resolute.
+## d29 batch337 (WR, Sol #2741: a queued flight_watch start refused after a queued read)
+
+Sol's report: "Cinder queued flight_watch read:true and queued explicit id1660 both returned archived donewatch, but
+next queued flight_watch refused done and not read."
+
+**What Sol's journal shows (shift99):**
+- The queued read (job 67, tick 81243368) read #1660 while it was still **watching**. A running watch has no result to
+  acknowledge, so nothing was marked.
+- The watch ended at Cinder's arrival, which the queue then waited for. The start after it (job 71, tick 81248280)
+  found #1660 done and unread and was refused.
+- The earlier refusal (job 61, #1659) came with no read before it: that queue's read steps came after the start.
+- Every direct read of a done watch marked it. Queue and plan steps call the same handler (runtime.lua
+  `handlers.flight_watch` -> `flightwatch.call`), so a read of a done watch marks it wherever it runs.
+
+**The change:**
+- A start by the setter of the platform's done, unread watch reads it first: its read tick is set, and its full row
+  is returned in `previous_watch` and `previous_line`. The start then goes on.
+- Another agent's unread watch still refuses a start. `replace: true` is unchanged.
+
+**Test:** tests/d29_batch337.lua.
+- Sol's sequence: a read while watching marks nothing, the watch ends at the arrival, and the setter's start reads it
+  and goes on. On main's flightwatch.lua that start is refused.
+- Another agent's start is refused and nothing is read.
+- Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
+- `replace: true` is unchanged.

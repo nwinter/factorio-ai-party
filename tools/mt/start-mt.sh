@@ -131,7 +131,10 @@ case $deploy_status in ok*) ;; *) exit 1 ;; esac
 python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
 log "world: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>&1)"
 # The game's join and leave lines of the setup's team accounts (mt-red, ...) out of the harness chat (multiteam.lua)
-log "chat: $(python3 tools/pog.py --world "$world" rcon '/silent-command rcon.print(remote.call("agent_harness","dispatch",[[{"id":"start-mt-scrub","operator":true,"action":"mt_chat_scrub","args":{}}]]))' 2>&1 | cut -c1-200)"
+# the player force's chat (an older save's) and each team's own (mt276 B: an operator request runs as its team field)
+for t in "" $teams; do
+  log "chat${t:+ $t}: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"dispatch\",[[{\"id\":\"start-mt-scrub$t\",\"operator\":true${t:+,\"team\":\"$t\"},\"action\":\"mt_chat_scrub\",\"args\":{}}]]))" 2>&1 | cut -c1-200)"
+done
 mkdir -p "$rundir"
 [ -n "$resume" ] && echo "$resume" > "$rundir/resumed-from"
 

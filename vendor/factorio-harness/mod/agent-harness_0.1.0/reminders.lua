@@ -43,6 +43,7 @@ return function(api)
   local MIN_EVERY, MAX_EVERY = 3600, 7 * 24 * 216000
   local MAX_STEPS, MIN_STEP_EVERY = 12, 1800
   local CHECK = 60
+  M.CHECK = CHECK
   local TEAM = {team=true, all=true, everyone=true}
   local function store()
     local s = api.state()

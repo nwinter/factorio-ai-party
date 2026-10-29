@@ -111,13 +111,17 @@ return function(api)
     return sec .. 's'
   end
 
-  -- Agents: every player who is not a director, and every bot.
+  -- Agents: every player who is not a director, and every bot. (mt276 B) Of the team the call runs as (api.team_now:
+  -- the player force in a one-team world); a LuaPlayer mt_assign put in a team's force (a spectator that charts) is none.
   local function agents()
     local out = {}
+    local team = api.team_now and api.team_now() or 'player'
+    local mt = api.state().mt
+    local assigned = mt and mt.players or EMPTY
     for _, p in pairs(game.players) do
-      if not api.director(p.index) then out[#out+1] = {index=p.index, name=who(p)} end
+      if not api.director(p.index) and not assigned[p.name] and fname_of(p) == team then out[#out+1] = {index=p.index, name=who(p)} end
     end
-    for _, b in ipairs(api.bots()) do out[#out+1] = {index=b.index, name=b.name} end
+    for _, b in ipairs(api.bots()) do if (b.force or 'player') == team then out[#out+1] = {index=b.index, name=b.name} end end
     for _, a in ipairs(out) do
       local pr = api.profile(a.index)
       a.display_name = pr and pr.display_name
@@ -2667,7 +2671,8 @@ return function(api)
     end
     hit.seq = s.alert_seq
     hit.last = event.tick; hit.hits = hit.hits + 1; hit.damage = hit.damage + (event.final_damage_amount or 0)
-    hit.by = event.cause and event.cause.valid and event.cause.name or hit.by
+    -- (mt276 G) an attacker of another player force is named with its force
+    hit.by = event.cause and event.cause.valid and (api.cause_text and api.cause_text(event.cause, e.force.name) or event.cause.name) or hit.by
   end
   return M
 end
