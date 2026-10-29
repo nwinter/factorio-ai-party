@@ -191,6 +191,21 @@ eq(rows[3].status, 'blocked'); has(rows[3].why, 'collides with planned #1 assemb
 eq(rows[4].status, 'ok'); has(rows[4].reach, '30.5 tiles from you, reach 10')
 eq(rows[5].status, 'needs_tiles'); has(rows[5].why, 'stands on 4 water tiles: needs 4 landfill first')
 eq(rows[6].status, 'blocked'); has(rows[6].why, 'blocked by tree-01 (-8,6)')
+-- (d28 batch330, Astra 22:10 on batch328) the surface's conditions first, also on an occupied spot (the tree), then what
+-- else is in the way; a free spot: the condition alone
+do
+  api.surface_block = function(_, pr) if pr.name == 'gun-turret' then return 'gun-turret cannot be placed on nauvis: needs gravity >= 0.1, this surface has 0' end end
+  local o = dryrun.check(p, {kind='build', entities={
+    {index=1, name='gun-turret', position={x=-8, y=6}, item='gun-turret'},
+    {index=2, name='gun-turret', position={x=12, y=-4}, item='gun-turret'},
+    {index=3, name='assembling-machine-1', position={x=5, y=0}, item='assembling-machine-1'}}})
+  local r = {}
+  for _, x in ipairs(o.entities) do r[x.index] = x end
+  eq(r[1].status, 'blocked'); eq(r[1].why, 'gun-turret cannot be placed on nauvis: needs gravity >= 0.1, this surface has 0; blocked by tree-01 (-8,6)')
+  eq(r[2].status, 'blocked'); eq(r[2].why, 'gun-turret cannot be placed on nauvis: needs gravity >= 0.1, this surface has 0')
+  eq(r[3], nil, 'no condition: as before')
+  api.surface_block = nil
+end
 eq(rows[7].status, 'blocked'); has(rows[7].why, '(60.5,-0.5) is outside the map')
 -- Blocked by an entity and needing tiles too (Astra, shift19: a Fulgora roboport's dry run named the accumulators only;
 -- the build after mining them met shallow oil): both are said.

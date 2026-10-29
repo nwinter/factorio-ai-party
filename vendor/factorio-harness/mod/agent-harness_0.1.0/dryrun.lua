@@ -1569,6 +1569,15 @@ return function(api)
           end
         end
       end
+      -- (d28 batch330, Astra 22:10 on batch328: "occupied(-16.5,-56.5) still only says blocked by turbo belt, not surface
+      -- first") the surface's conditions first, whatever else stands in the way
+      if rec.proto and rec.status ~= 'exists' and api.surface_block then
+        local sc = try(function() return api.surface_block(s, rec.proto) end)
+        if sc and not table.concat(reasons, '; '):find('cannot be placed on', 1, true) then
+          table.insert(reasons, 1, sc)
+          rec.status = 'blocked'
+        end
+      end
       rec.why = #reasons > 0 and table.concat(reasons, '; ') or nil
       -- A pump's ports, blocked or not (Grok, shift19: one placed backwards, one with its output past an underground
       -- pipe's mouth): each tile it joins, one past its body, and what stands there now or is planned.
