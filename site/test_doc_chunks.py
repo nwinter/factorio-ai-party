@@ -9,7 +9,9 @@ the same store):
 - nothing reads or writes kv's old "state" and "board" rows (a store that has them starts with no documents);
 - a start that fails (SQLITE_NOMEM) answers 503 with the error, and the next request starts the object and serves;
 - a storage error in a request answers 503 (it was 400 bad request), a body that is not JSON still 400;
-- GET /v1/debug needs the publish token and reports the documents' rows.
+- GET /v1/debug needs the publish token and reports the documents' rows;
+- a move: /v1/debug/export pages and /v1/debug/import (a named new object only) carry every table but kv's old
+  documents, the salt with them, and the chat's numbering goes on.
 """
 import json
 import os
@@ -26,6 +28,7 @@ const { DatabaseSync } = require('node:sqlite');
 const [, , workerUrl, token, dbPath] = process.argv;
 const db = new DatabaseSync(dbPath);
 const seen = [];
+globalThis.fetch = async () => ({ text: async () => 'colo=TST\nloc=US\n' });  // /v1/debug's trace, no network
 let failNext = 0;
 const sql = { exec(q, ...params) {
   if (failNext > 0) { failNext--; throw new Error('out of memory: SQLITE_NOMEM'); }
@@ -84,6 +87,30 @@ import(workerUrl).then(async (mod) => {
   out.badJson = (await call(live, 'POST', '/v1/state', '{not json', token)).status;
   out.debugNoToken = (await call(live, 'GET', '/v1/debug')).status;
   out.debug = (await call(live, 'GET', '/v1/debug', null, token)).body;
+  // a move (d29): every COPY table exported in pages from this object and imported into a new one; the salt goes along
+  const db2 = new DatabaseSync(':memory:');
+  const sql2 = { exec(q, ...params) { const st = db2.prepare(q); let rows; try { rows = st.all(...params); } catch (e) { if (/does not return data|returns no data/i.test(String(e.message))) { st.run(...params); rows = []; } else throw e; } return { toArray: () => rows }; } };
+  const other = new mod.Live({ storage: { sql: sql2 }, blockConcurrencyWhile: async (f) => f() }, { PUBLISH_TOKEN: token });
+  await new Promise((r) => setTimeout(r, 5));
+  for (let i = 0; i < 3; i++) { live.recent.clear(); live.lastText.clear(); await call(live, 'POST', '/v1/chat', { name: 'v' + i, text: 'line ' + i }); }
+  out.moved = {};
+  for (const t of ['kv', 'chat', 'replies', 'polls', 'votes', 'poll_ideas', 'bans', 'blueprints']) {
+    let after = null, n = 0;
+    for (;;) {
+      const e = (await call(live, 'GET', '/v1/debug/export?table=' + t + '&limit=2' + (after == null ? '' : '&after=' + after), null, token)).body;
+      if (!e.rows.length) break;
+      n += (await call(other, 'POST', '/v1/debug/import?do=main-test', { table: t, rows: e.rows }, token)).body.stored;
+      after = e.rows[e.rows.length - 1][e.key];
+    }
+    out.moved[t] = n;
+  }
+  out.movedKv = db2.prepare("SELECT k FROM kv ORDER BY k").all().map((r) => r.k);
+  out.saltSame = live.salt === other.salt && !!live.salt;
+  out.movedChat = (await call(other, 'GET', '/v1/chat?limit=10')).body.messages.map((m) => m.text);
+  const next = (await call(other, 'POST', '/v1/chat', { name: 'later', text: 'after the move' })).body;
+  out.nextSeq = next.message ? next.message.seq : next;
+  out.importNoName = (await call(other, 'POST', '/v1/debug/import', { table: 'chat', rows: [] }, token)).status;
+  out.exportNoToken = (await call(live, 'GET', '/v1/debug/export?table=chat')).status;
   process.stdout.write(JSON.stringify(out), () => process.exit(0));
 }).catch((e) => { console.error(e && e.stack || e); process.exit(1); });
 """
@@ -119,12 +146,17 @@ def main():
     assert o["debugNoToken"] == 401, o
     dbg = o["debug"]
     assert dbg["ready"] is True and dbg["init_error"] is None, dbg
+    assert dbg["trace"] == ["colo=TST", "loc=US"], dbg["trace"]
     docs = {r["k"]: r for r in dbg["reads"]["docs"]}
     assert docs["board"]["rows"] == 6 and docs["state"]["rows"] == 1 and docs["state"]["chars"] == 15, docs
     assert max(r["longest"] for r in docs.values()) <= 16384, docs
+    assert o["moved"]["chat"] == 3 and o["moved"]["kv"] == 3, o["moved"]  # salt, received, board_received
+    assert "state" not in o["movedKv"] and "board" not in o["movedKv"], o["movedKv"]
+    assert o["saltSame"] and o["movedChat"] == ["line 0", "line 1", "line 2"] and o["nextSeq"] == 4, o
+    assert o["importNoName"] == 404 and o["exportNoToken"] == 401, o
     print("doc chunks: ok (a 230 KB state and an 85 KB board in 15 and 6 rows of at most 16384 characters, the same "
           "after a restart with pairs on the cuts; a shorter one drops its rows; kv's old rows never read; a failed "
-          "start answers 503 and the next request serves, a storage error 503, bad JSON 400; /v1/debug behind the token)")
+          "start answers 503 and the next request serves, a storage error 503, bad JSON 400; /v1/debug behind the token; a move in pages keeps the salt and the chat's numbering)")
 
 
 if __name__ == "__main__":

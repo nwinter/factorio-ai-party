@@ -27,6 +27,7 @@
 //   POST /v1/polls, POST /v1/polls/ID/close, GET /v1/polls/ID/voters, GET /v1/polls/suggestions?after=ID
 //                             the operator's (Authorization: PUBLISH_TOKEN): create, close early, the voter log, ideas
 //   GET  /v1/debug            the start's error and the store's sizes (Authorization: Bearer PUBLISH_TOKEN; batch333)
+//   GET  /v1/debug/export?table=T&after=K, POST /v1/debug/import?do=main-NAME   a move to a new object (the same token)
 //
 // Everything is unlisted: every response carries X-Robots-Tag noindex and /robots.txt disallows all.
 // Client addresses are never stored: rate limits and bans key on a salted hash.
@@ -183,6 +184,12 @@ function withCors(resp, req, env) {
 // (The Cache API is not available on workers.dev.)
 const micro = new Map();
 const MICRO_TTL = { "/v1/state": 3000, "/v1/chat": 2000, "/v1/polls": 3000, "/v1/board": 10000 };
+// /v1/debug* ?do=NAME: the old "main" (reads), or a new object (probe-NAME, main-NAME; import only into these)
+const NEW_OBJECT = /^(probe|main)-[a-z0-9-]{1,40}$/;
+const OBJECT_NAME = /^(main|(probe|main)-[a-z0-9-]{1,40})$/;
+// (d29 batch333) the tables a move copies, each by its key; kv's "state" and "board" rows stay behind (unreadable on the
+// old object; the Mac sends both again within seconds)
+const COPY = { kv: "k", chat: "seq", replies: "seq", polls: "id", votes: "id", poll_ideas: "id", bans: "who", blueprints: "id" };
 const PUBLIC_POST = /^\/v1\/(chat|here|blueprints|polls\/\d+\/vote|polls\/suggest)$/;
 
 export default {
@@ -227,7 +234,10 @@ export default {
       if (hit && Date.now() - hit.at < ttl) return withCors(json(hit.body, 200), req, env);
     }
 
-    const stub = env.LIVE.get(env.LIVE.idFromName("main"));
+    // (d29 batch333) LIVE_OBJECT names the object that serves (wrangler.toml; "main" until d29); /v1/debug* with
+    // ?do=NAME goes to that object instead (the move off the failing one)
+    const other = path.startsWith("/v1/debug") && OBJECT_NAME.test(url.searchParams.get("do") || "") ? url.searchParams.get("do") : null;
+    const stub = env.LIVE.get(env.LIVE.idFromName(other || env.LIVE_OBJECT || "main"));
     const fwd = new Request(req);
     fwd.headers.set("x-client-ip", req.headers.get("CF-Connecting-IP") || "");
     const resp = await stub.fetch(fwd);
@@ -458,7 +468,9 @@ export class Live {
     try {
       // Read the body before any early return: answering first and leaving the body unread breaks the response.
       const text = req.method === "POST" ? await req.text() : "";
-      if (route === "GET /v1/debug") return this.debug(req);
+      if (route === "GET /v1/debug") return await this.debug(req);
+      if (route === "GET /v1/debug/export") return this.exportRows(req, url);
+      if (route === "POST /v1/debug/import" && NEW_OBJECT.test(url.searchParams.get("do") || "")) return this.importRows(req, text);
       if (!this.ready && !this.start()) return json({ error: "storage unavailable", detail: this.initError }, 503);
       switch (route) {
         case "GET /v1/state": return this.getState();
@@ -497,9 +509,45 @@ export class Live {
     }
   }
 
+  // (d29 batch333) GET /v1/debug/export?table=T&after=K&limit=N: a page of one COPY table's rows by its key
+  exportRows(req, url) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const table = url.searchParams.get("table") || "";
+    const key = COPY[table];
+    if (!key) return json({ error: "table must be one of " + Object.keys(COPY).join(", ") }, 400);
+    const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") || "100", 10) || 100));
+    const after = url.searchParams.get("after");
+    const skip = table === "kv" ? " AND k NOT IN ('state', 'board')" : "";
+    const where = after == null ? "1 = 1" : `${key} > ?`;
+    const args = after == null ? [] : [key === "k" || key === "who" ? after : Number(after)];
+    const rows = this.sql.exec(`SELECT * FROM ${table} WHERE ${where}${skip} ORDER BY ${key} LIMIT ?`, ...args, limit).toArray();
+    return json({ table, key, rows });
+  }
+
+  // (d29 batch333) POST /v1/debug/import?do=main-NAME {table, rows}: rows as exported, stored by their key (a new object)
+  importRows(req, text) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const { table, rows } = JSON.parse(text);
+    if (!COPY[table] || !Array.isArray(rows)) return json({ error: "table and rows, please" }, 400);
+    let n = 0;
+    for (const r of rows) {
+      const cols = Object.keys(r);
+      if (!cols.length || !cols.every((c) => /^[a-z_]+$/.test(c))) return json({ error: "bad column" }, 400);
+      if (table === "kv" && (r.k === "state" || r.k === "board")) continue;
+      this.sql.exec(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, ...cols.map((c) => r[c]));
+      n++;
+    }
+    if (table === "kv") {
+      const salt = this.get("salt");
+      if (salt) this.salt = salt;
+      this.received = 0;
+    }
+    return json({ ok: true, stored: n });
+  }
+
   // (d29 batch333) GET /v1/debug (Authorization: Bearer PUBLISH_TOKEN): the start's error and the store's sizes, each
   // read on its own so one failing read leaves the others
-  debug(req) {
+  async debug(req) {
     if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
     const out = { ready: this.ready, init_error: this.initError, reads: {} };
     const read = (k, f) => { try { out.reads[k] = f(); } catch (e) { out.reads[k] = { error: String((e && e.message) || e) }; } };
@@ -517,6 +565,8 @@ export class Live {
     read("poll_ideas", () => one("SELECT COUNT(*) AS n FROM poll_ideas"));
     read("bans", () => one("SELECT COUNT(*) AS n FROM bans"));
     read("here", () => this.here.size);
+    // the data centre this object's requests leave from
+    try { out.trace = (await (await fetch("https://www.cloudflare.com/cdn-cgi/trace")).text()).split("\n").filter((l) => /^(colo|loc)=/.test(l)); } catch (e) { out.trace = String(e); }
     return json(out);
   }
 

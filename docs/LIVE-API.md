@@ -797,3 +797,11 @@ characters a row (a 128 KB value failed on that object, 16-64 KB passed; a new o
 "state" and "board" rows. A start that fails answers `503 {"error": "storage unavailable", "detail"}` and the next
 request tries again. `GET /v1/debug` with the publish token gives the start's error and the store's sizes (tables, rows
 and characters per document, chat, replies, blueprints, votes), each read on its own.
+
+The documents in small rows were not enough: the object "main" kept failing small reads too (a 33-row table), while a
+new object took 12 MB of 1 MB rows. Its tables were copied to a new object, "main-d29", and `LIVE_OBJECT` in
+`site/worker/wrangler.toml` names the one that serves; "main" is left as it was. A move: `GET /v1/debug/export?table=T&after=K&limit=N`
+(one table's rows by its key, a page at a time; kv's "state" and "board" rows stay behind) from the old object, `POST
+/v1/debug/import?do=main-NAME {table, rows}` into the new one (only a probe-NAME or main-NAME object takes an import), then
+`LIVE_OBJECT` set and the Worker deployed. Both need the publish token; `?do=NAME` on any /v1/debug path reads another
+object (main, probe-NAME, main-NAME).
