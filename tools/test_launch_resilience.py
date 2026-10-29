@@ -16,6 +16,9 @@ import os, re, stat, subprocess, sys, tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "tools"))
+import testsafe  # noqa: E402  (POG_TEST=1 and no live credentials in the scripts' environment)
+
 SPAWN = REPO / "tools" / "ai-session-spawn.sh"
 
 HERDR = r'''#!/usr/bin/env bash
@@ -58,8 +61,8 @@ def write_exec(path, text):
 def spawn(d, mode, **env):
     for f in ("herdr.log", "screen.txt", "runs", "ai.log"):
         (d / f).unlink(missing_ok=True)
-    e = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}", STUB_DIR=str(d), STUB_MODE=mode, POG_AI_SESSION=str(d / "ai-session"),
-             POG_SHELL_WAIT_S="6", POG_SHELL_RETRY_S="1", **env)
+    e = testsafe.env(PATH=f"{d}:{os.environ['PATH']}", STUB_DIR=str(d), STUB_MODE=mode, POG_AI_SESSION=str(d / "ai-session"),
+                     POG_SHELL_WAIT_S="6", POG_SHELL_RETRY_S="1", **env)
     r = subprocess.run([str(SPAWN), "--route", "codex-b", "-C", "/tmp/x", "--start"], capture_output=True, text=True, env=e, timeout=30)
     log = (d / "herdr.log").read_text() if (d / "herdr.log").exists() else ""
     return r, log
@@ -125,7 +128,7 @@ def start_team_loop(d):
     rundir.mkdir()
     script = (f"set -euo pipefail\nrundir={rundir}\nrun=shift99\nworld=n\nminutes=240\nteam={d}/team.tsv\nenemies=on\nseed=1\n"
               "log() { echo \"LOG $*\"; }\n" + loop + "\n" + started + "\necho END\n")
-    e = dict(os.environ, STUB_DIR=str(d), FAIL_NAME="sol", POG_LAUNCH_AGENT=str(d / "launch"))
+    e = testsafe.env(STUB_DIR=str(d), FAIL_NAME="sol", POG_LAUNCH_AGENT=str(d / "launch"))
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=e, timeout=30)
     assert r.returncode == 0 and "END" in r.stdout, (r.stdout, r.stderr)
     assert (d / "launches").read_text().split("\n")[:4] == ["astra tab=new", "sol tab=w1:t1", "opus tab=w1:t1", "luna tab=w1:t1"], (d / "launches").read_text()
