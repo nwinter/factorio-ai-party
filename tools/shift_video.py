@@ -3,6 +3,9 @@
 
   python3 tools/shift_video.py RUN [--runs-dir DIR] [--recordings LIST] [--out DIR] [--frame IMG] [--no-thumb]
   python3 tools/shift_video.py --list-cmd          # the command that makes LIST on the box
+  python3 tools/shift_video.py --titles 85-99 [--write]  # (d29 batch338) each shift's title by today's rules, old -> new,
+                                                   # in order (each the next one's previous); --write puts them in
+                                                   # runs/shiftN/video/video.json (title, highlight), nothing else
 
 RUN is a shift folder (runs/RUN). Writes into --out (default runs/RUN/video/):
   video.json       title, description, chapters, tags, the recording segments, the box plan (tools/yt_upload.py reads it)
@@ -16,7 +19,8 @@ D:\\pog\\recordings\\2026-10-12 17-36-12.mkv for a recording started at 18:36:12
 optionally followed by ",SECONDS" (ffprobe's csv). Without LIST the recording is estimated from start.log (one file from
 when start-team's helpers came up to the shift's end) and video.json says "estimated": true.
 
-Sources (all read-only): scores.jsonl (research, rockets, platforms, planets), chronicle.jsonl (platforms built, lost
+Sources (all read-only): scores.jsonl (research, rockets, platforms, planets; from d29 batch338 each platform's km
+along the connection it flies, the earlier shifts' too for the farthest-yet records), chronicle.jsonl (platforms built, lost
 or deleted, each arrival and departure, the agents' chronicle entries; the earlier shifts' for what the run did before),
 stream-service.log (the director's deaths and loss alerts), caster.log (the hosts' segment calls), chat.jsonl (viewers'
 questions and the agents' answers), stream.json and start.log (times only). Nothing from journals, notes or the
@@ -307,12 +311,45 @@ def chronicle_rows(path, kinds=None):
     return out
 
 
+def far_reach(p):
+    """A score row's platform in flight on a connection with a far end (tools/pog.py score's route, km and len, since
+    d29 batch338): (far end, other end, km from the other end, the connection's km), else None."""
+    route, km, length = p.get("route"), p.get("km"), p.get("len")
+    if not isinstance(route, str) or "->" not in route or not isinstance(km, (int, float)) or not isinstance(length, (int, float)):
+        return None
+    a, b = route.split("->", 1)
+    return (b, a, km, length) if b in FAR else (a, b, length - km, length) if a in FAR else None
+
+
+def reach_rows(path):
+    """[(score row time, platform, far end, other end, km toward the far end, connection km)] from a scores.jsonl."""
+    out = []
+    if path.exists():
+        for line in path.read_text().splitlines():
+            if '"km"' not in line:
+                continue
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            for p in (r.get("score") or {}).get("platforms") or []:
+                f = far_reach(p) if isinstance(p, dict) else None
+                if f and r.get("t"):
+                    out.append((iso_local(r["t"]), p.get("name") or "?") + f)
+    return out
+
+
 def run_history(d):
     """What the run did before shift d, from its world's earlier shifts' chronicles (the resumed-from chain): the places a
-    platform reached, each platform's (platform, place) visits (arrived, left or built there), and the far destinations (the edge, the
-    Shattered Planet) set out for."""
-    h = {"places": {"nauvis"}, "visits": set(), "far_left": set(), "told": False}
+    platform reached, each platform's (platform, place) visits (arrived, left or built there), the far destinations (the
+    edge, the Shattered Planet) set out for, each platform's (platform, far place) departures (far_by), and from their
+    score logs the farthest any platform got toward each far place on each connection (best: {(far, other): (km,
+    platform)}; score logs before d29 batch338 have no distance)."""
+    h = {"places": {"nauvis"}, "visits": set(), "far_left": set(), "far_by": set(), "best": {}, "told": False}
     for run in shift_times.earlier_runs(str(d)):
+        for _, name, far, other, km, _ in reach_rows(d.parent / run / "scores.jsonl"):
+            if km > h["best"].get((far, other), (-1, None))[0]:
+                h["best"][(far, other)] = (km, name)
         rows = chronicle_rows(d.parent / run / "chronicle.jsonl", ("platform_arrived", "platform_left", "platform_created"))
         h["told"] = h["told"] or bool(rows)
         for r in rows:
@@ -326,6 +363,7 @@ def run_history(d):
                     h["visits"].add((r.get("platform"), r["at"]))
                 if r.get("to") in FAR:
                     h["far_left"].add(r["to"])
+                    h["far_by"].add((r.get("platform"), r["to"]))
     return h
 
 
@@ -334,9 +372,13 @@ def chronicle_events(rows, start, end, history, planets=()):
     planets the shift's first score already lists, reached before the chronicle began):
     - the first arrival at the solar system edge (the Space Age victory) or the Shattered Planet; the first platform to
       reach a planet; a departure for a far place the run never set out for before;
-    - platforms built or lost; a far trip again (the first of the shift for that platform and place); a platform's
-      first visit to a place; the agents' chronicle entries; platforms deleted;
-    - every other arrival and departure is a routine trip (weight under 10: summed by route in the description)."""
+    - platforms built or lost; a platform's first departure for a far place and its first arrival there (the first of
+      the shift when no earlier chronicle says); a platform's first visit to a place; the agents' chronicle entries;
+      platforms deleted;
+    - every other arrival and departure is a routine trip (weight under 10: summed by route in the description). (d29
+      batch338 VT, Nick: shifts 91-94 were all "Resolute leaves the solar system edge for the Shattered Planet", a
+      trial it flies and turns back from every shift) A far departure or arrival the platform made in an earlier
+      shift is routine too: what is new in such a shift is a farthest-yet distance (reach_events) or its arrival."""
     places, visits, far_left = set(history["places"]) | set(planets), set(history["visits"]), set(history["far_left"])
     # (a platform's first visit needs an earlier shift's chronicle: before the chronicle began nothing says where it went)
     out, again = [], set()
@@ -351,8 +393,10 @@ def chronicle_events(rows, start, end, history, planets=()):
                 title, w = ((f"{name} reaches the solar system edge: the Space Age victory", 100) if at == "solar-system-edge"
                             else (f"{name} reaches {place(at)}, the first platform there", 99 if at in FAR else 96))
                 out.append(ev(t, "first", title, w, name=name, at=at))
-            elif at in FAR and (name, "at", at) not in again:
-                again.add((name, "at", at))
+            elif at in FAR and history.get("told", True) and (name, at) not in visits:
+                out.append(ev(t, "far", f"{name} reaches {place(at)} for the first time", 64, name=name, at=at))
+            elif at in FAR and not history.get("told", True) and (name, "at", at) not in again:
+                again.add((name, "at", at))  # no earlier chronicle: what it did before is not known
                 out.append(ev(t, "far", f"{name} reaches {place(at)} again", 64, name=name, at=at))
             elif (name, at) not in visits and history.get("told", True):  # no earlier chronicle: no visit known
                 out.append(ev(t, "visit", f"{name} reaches {place(at)} for the first time", 48, name=name, at=at))
@@ -365,7 +409,7 @@ def chronicle_events(rows, start, end, history, planets=()):
             title = f"{name} leaves {place(frm)} for {place(to)}" if to else f"{name} leaves {place(frm)}"
             if to in FAR and to not in far_left:
                 out.append(ev(t, "far", title + ", the first time", 90, name=name, at=frm, to=to))
-            elif to in FAR and (name, "for", to) not in again:
+            elif to in FAR and (name, to) not in history.get("far_by", ()) and (name, "for", to) not in again:
                 again.add((name, "for", to))
                 out.append(ev(t, "far", title, 66 if to == "shattered-planet" else 60, name=name, at=frm, to=to))
             else:
@@ -391,6 +435,28 @@ def chronicle_events(rows, start, end, history, planets=()):
         elif r.get("type") == "entry" and r.get("title"):
             who = (r.get("agent") or "").capitalize()
             out.append(ev(t, "note", f"{who}: {r['title']}" if who else r["title"], 33, agent=r.get("agent")))
+    return out
+
+
+def reach_events(rows, start, end, best):
+    """(d29 batch338 VT) The farthest a platform got toward a far place in the shift (rows: reach_rows, every 2 minutes),
+    on each connection: "38,000 km toward the Shattered Planet", a farthest-yet record (weight 66 toward the
+    Shattered Planet, else 60) when, rounded to 1,000 km, it beats the run's record before the shift (best: run_history's)
+    and that record exists (else a lesser moment, 24); none once it got there (the arrival tells it)."""
+    top = {}
+    for t, name, far, other, km, length in rows:
+        if start <= t <= end and km < length - 1 and km > top.get((far, other), (None, None, -1))[2]:
+            top[(far, other)] = (t, name, km)
+    out = []
+    for (far, other), (t, name, km) in sorted(top.items(), key=lambda r: r[1][0]):
+        km_text = f"{int(round(km, -3)) or int(round(km)):,} km toward {place(far)}"
+        rec = best.get((far, other))
+        if rec and round(km, -3) > round(rec[0], -3):
+            # "Resolute: 38,000 km toward the Shattered Planet, its farthest yet" (a title's words stop at 70)
+            out.append(ev(t, "far", f"{name}: {km_text}, {'its' if rec[1] == name else 'the'} farthest yet",
+                          66 if far == "shattered-planet" else 60, name=name, to=far, km=round(km)))
+        else:
+            out.append(ev(t, "reach", f"{name} reaches {km_text}", 24, name=name, to=far, km=round(km)))
     return out
 
 
@@ -633,12 +699,21 @@ def agent_names(d):
 NOTABLE = ("first", "far", "planet", "arrive", "depart", "platform", "lost", "visit", "deleted")
 
 
-def highlight(events, row, biggest):
+def wording(text):
+    """A title's words with the numbers taken out: "918 more rockets" reads as "1478 more rockets" does."""
+    return re.sub(r"\d[\d,]*", "#", (text or "").lower()).strip()
+
+
+def highlight(events, row, biggest, previous=None):
     """The title's few words: the shift's biggest moment, and a second one when it is big too (weight 60 or more,
-    another platform or kind) and both fit."""
+    another platform or kind) and both fit. (d29 batch338 VT) previous: the shift before's highlight. A moment whose
+    words (numbers aside) are in it does not lead or join: the next-heaviest leads (a big moment, else the heaviest
+    research, an agent's chronicle entry, a big breach); only when nothing else is left does the repeat lead."""
+    def fresh(text):
+        return not previous or wording(text) not in wording(previous)
     ranked = sorted([e for e in events if e["kind"] in NOTABLE or e["kind"] in ("research", "rocket", "fight")
                      and e["weight"] >= 50], key=lambda e: (-e["weight"], e["t"]))
-    bits = []
+    bits, more = [], None
     rockets = [e for e in events if e["kind"] == "rocket"]
     if rockets:  # the rockets as one phrase, weighed by the first of them
         n = sum(e["count"] for e in rockets)
@@ -647,9 +722,13 @@ def highlight(events, row, biggest):
                   ("one more rocket" if n == 1 else f"{n} more rockets"))
         ranked = [e for e in ranked if e["kind"] != "rocket"]
         w = max(e["weight"] for e in rockets)
-        if w >= 50:
+        if w >= 50 and first:
             ranked.append(dict(rockets[0], title=phrase, weight=w))
             ranked.sort(key=lambda e: (-e["weight"], e["t"]))
+        elif w >= 50:  # (batch338) a thousandth rocket: every shift has one, so after research, visits and entries
+            more = dict(rockets[0], title=phrase, weight=w)
+    stale = [e for e in ranked if not fresh(e["title"])]
+    ranked = [e for e in ranked if fresh(e["title"])]
     for e in ranked:
         if not bits:
             bits.append(e)
@@ -659,11 +738,21 @@ def highlight(events, row, biggest):
             break
     words = [b["title"] if i == 0 or b["kind"] in ("first", "far", "arrive", "depart", "visit") else lower(b["title"])
              for i, b in enumerate(bits)]
-    techs = sorted([e for e in events if e["kind"] == "research"], key=lambda e: -e["weight"])
+    techs = [t for t in sorted([e for e in events if e["kind"] == "research"], key=lambda e: -e["weight"])
+             if fresh(t["title"])]
     if not words and techs:
         words.append(f"{techs[0]['label']} researched" if not techs[0]["label"].endswith("discovered") else techs[0]["label"])
+    notes = [e for e in events if e["kind"] == "note" and fresh(e["title"])]
+    if not words and notes:
+        words.append(notes[0]["title"])
+    if not words and more and fresh(more["title"]):
+        words.append(more["title"])
+    elif more and not fresh(more["title"]):
+        stale.append(more)
     if biggest >= 50 and len(words) < 2 and sum(len(w) for w in words) < 30:
         words.append(f"a {biggest}-building biter breach")
+    if not words and stale:  # nothing new to lead: the repeat after all
+        words.append(stale[0]["title"])
     if not words:
         words.append(f"{row.get('research_new', 0)} new technologies")
     text = " and ".join(words[:2])
@@ -708,7 +797,16 @@ def describe(n, row, start, end, events, chapters, team, deaths, biggest, moment
         for e in events:
             if e["kind"] in NOTABLE and e["weight"] >= 30:
                 items.append((e["weight"], f"• {e['title']}"))
-        routes = trip_routes(events)
+        tries = {}  # (batch338) a far place set out for again: one line each, with the farthest it got
+        for e in events:
+            if e["kind"] == "trip" and e.get("to") in FAR:
+                tries[(e["name"], e["to"])] = tries.get((e["name"], e["to"]), 0) + 1
+        for (name, to), k in tries.items():
+            got = max([e["km"] for e in events if e["kind"] in ("reach", "far") and e.get("km") is not None
+                       and e.get("name") == name and e.get("to") == to], default=None)
+            items.append((28, f"• {name} set out for {place(to)} again" + (f" ({k} times)" if k > 1 else "")
+                          + (f", {int(round(got, -3)) or got:,} km at the farthest" if got is not None else "")))
+        routes = trip_routes([e for e in events if not (e["kind"] == "trip" and e.get("to") in FAR)])
         if routes:
             k = sum(r[0] for r in routes)
             parts = [f"{c} between {pair}" + (f" ({', '.join(names[:3])}{' and others' if len(names) > 3 else ''})" if names else "")
@@ -903,7 +1001,24 @@ def render(page, out, w=1280, h=720):
 
 # ---------------------------------------------------------------- main
 
-def build(run, runs_dir, listing=None, utc_offset=-8, frame=None):
+def previous_highlight(d):
+    """The highlight of the shift before d: the nearest earlier run with a score log (one stopped while setting up has
+    none), its video.json's, else built now (rotate builds the newest first); None when there is none."""
+    before = next((r for r in shift_times.earlier_runs(str(d)) if (d.parent / r / "scores.jsonl").exists()), None)
+    if not before:
+        return None
+    try:
+        return json.loads((d.parent / before / "video" / "video.json").read_text()).get("highlight")
+    except (OSError, ValueError):
+        pass
+    try:
+        return build(before, d.parent, previous="")["highlight"]
+    except (SystemExit, KeyError, ValueError, IndexError):
+        return None
+
+
+def build(run, runs_dir, listing=None, utc_offset=-8, frame=None, previous=None):
+    """previous: the shift before's highlight (default: its video/video.json's; "" for none)."""
     d = Path(runs_dir) / run
     if not d.is_dir():
         raise SystemExit(f"no shift folder {d}")
@@ -937,8 +1052,10 @@ def build(run, runs_dir, listing=None, utc_offset=-8, frame=None):
     told = any(r.get("kind") in ("platform_arrived", "platform_left", "platform_created") for r in chron)
     events = score_events(sc, n == 1, prev_rockets, platforms=not told,
                           research=not any(r.get("kind") == "research" for r in chron))
+    history = run_history(d)
     if chron:
-        events += chronicle_events(chron, start, end, run_history(d), planets=sc[0]["planets"] if sc else ())
+        events += chronicle_events(chron, start, end, history, planets=sc[0]["planets"] if sc else ())
+    events += reach_events(reach_rows(d / "scores.jsonl"), start, end, history["best"])
     fights, deaths, biggest = fight_events(d, start)
     events += fights
     events += segment_events(d, start)
@@ -950,7 +1067,7 @@ def build(run, runs_dir, listing=None, utc_offset=-8, frame=None):
 
     first = "Nine AIs, one empty map" if n == 1 else f"Shift {n} picks up at game time {row['game0']}" if row else f"Shift {n} begins"
     chapters = pick_chapters(events, segs, first, total)
-    line = highlight(events, row or {}, biggest)
+    line = highlight(events, row or {}, biggest, previous_highlight(d) if previous is None else previous)
     title = f"{SERIES} · Shift {n}: {line}"
     if len(title) > 100:
         title = title[:99].rsplit(" ", 1)[0] + "…"
@@ -1010,6 +1127,26 @@ LIST_CMD = ('ssh pogwin "for %f in (D:\\pog\\recordings\\20*.mkv C:\\pog\\record
             'ssh pogwin "dir /b /s D:\\pog\\recordings\\20*.mkv C:\\pog\\recordings\\20*.mkv" > recordings.txt')
 
 
+def retitle(first, last, runs_dir, write=False):
+    """[(run, old title or None, new title)] for shifts first..last in order, each built with the one before's new
+    highlight as its previous (the first: the shift before's video.json). write: each new title and highlight into the
+    run's video/video.json when it has one (its description, chapters and the rest kept)."""
+    out, previous = [], None
+    for n in range(first, last + 1):
+        run = f"shift{n}"
+        if not (Path(runs_dir) / run / "scores.jsonl").exists():  # stopped while setting up: no shift, no video
+            continue
+        v = build(run, runs_dir, previous=previous)
+        path = Path(runs_dir) / run / "video" / "video.json"
+        old = json.loads(path.read_text()) if path.exists() else None
+        out.append((run, old and old.get("title"), v["title"]))
+        if write and old is not None and (old.get("title"), old.get("highlight")) != (v["title"], v["highlight"]):
+            old.update(title=v["title"], highlight=v["highlight"])
+            path.write_text(json.dumps(old, indent=1, ensure_ascii=False) + "\n")
+        previous = v["highlight"]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", nargs="?")
@@ -1021,9 +1158,16 @@ def main():
     ap.add_argument("--frame", help="a frame from the recording for the thumbnail (video.json's box.frame makes one)")
     ap.add_argument("--no-thumb", action="store_true")
     ap.add_argument("--list-cmd", action="store_true")
+    ap.add_argument("--titles", metavar="FIRST-LAST", help="shift numbers: each title by today's rules, old -> new")
+    ap.add_argument("--write", action="store_true", help="with --titles: into each video.json")
     a = ap.parse_args()
     if a.list_cmd:
         print(LIST_CMD)
+        return
+    if a.titles:
+        first, _, last = a.titles.partition("-")
+        for run, old, new in retitle(int(first), int(last or first), a.runs_dir, a.write):
+            print(f"{run}: {old or '(no video yet)'}\n  -> {new}{'' if old != new else ' (same)'}")
         return
     if not a.run:
         ap.error("RUN is required")

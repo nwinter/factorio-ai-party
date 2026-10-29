@@ -62,6 +62,8 @@ class Rcon:
 # (infinite levels completed per technology), planets (surfaces with our entities), platforms.
 # SCORE_LUA is sent as one line, so it must hold no "--" comments (one cut the score in shake8).
 # A platform row's hub is false while its record waits for a starter pack (the New platform button).
+# (d29 batch338 VT) A platform in flight adds route ("from->to", the space connection's ends however it flies), km (its
+# distance from `from` along it) and len (the connection's km): tools/shift_video.py's farthest-yet records.
 # Building counts use LuaForce.get_entity_count, kept by the engine: the earlier per-surface count_entities_filtered
 # for ~45 names cost ~0.8 s a read on world n (2026-10-14 21:45: the game stalled ~450 ms every 3 s, the score read).
 SCORE_LUA = r"""
@@ -116,8 +118,10 @@ end
 for _, p in pairs(f.platforms or {}) do
   if p.valid then
     local ok, to = pcall(function() local s = p.schedule; local r = s and s.records and s.records[s.current]; return r and r.station end)
+    local okc, route, km, len = pcall(function() local c = p.space_connection; if c and p.distance then return c.from.name .. "->" .. c.to.name, math.floor(p.distance * c.length + 0.5), c.length end end)
     platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit",
-      hub = (p.hub ~= nil and p.hub.valid) or false, to = ok and type(to) == "string" and to or nil}
+      hub = (p.hub ~= nil and p.hub.valid) or false, to = ok and type(to) == "string" and to or nil,
+      route = okc and route or nil, km = okc and km or nil, len = okc and len or nil}
   end
 end
 local cur = f.current_research
