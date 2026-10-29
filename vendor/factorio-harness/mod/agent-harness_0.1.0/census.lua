@@ -60,11 +60,30 @@ return function(api)
   -- The live map read as the stream service sends it (harness.py basemap_lua defaults).
   local CELL, MAXC, CMAX = 4, 128, 160
   local function try(fn) local ok, v = pcall(fn) if ok then return v end end
-  local function store()
+  -- (mt276 C) a pass per team force: the player force's at state().census (as before), another's at
+  -- state().census_teams[name]; the steps go round the team forces a tick each (api.team_names; a one-team world steps
+  -- the player force every tick, as before). A read takes the asking force's pass.
+  local function store(fname)
     local s = api.state()
-    s.census = s.census or {}
-    return s.census
+    if fname == nil or fname == 'player' then
+      s.census = s.census or {}
+      return s.census
+    end
+    s.census_teams = s.census_teams or {}
+    s.census_teams[fname] = s.census_teams[fname] or {}
+    return s.census_teams[fname]
   end
+  -- filtered: the reader keeps only the force's entities, so a force with no pass of its own (no team) reads the player
+  -- force's pass as before; an unfiltered reader gets nil for it (its caller reads live)
+  local function done_for(fname, filtered)
+    local s = api.state()
+    if fname == nil or fname == 'player' then return (s.census or {}).done end
+    local t = s.census_teams and s.census_teams[fname]
+    if t then return t.done end
+    return filtered and (s.census or {}).done or nil
+  end
+  -- the force a read with no force argument is for: the team the call runs as
+  local function team() return api.team_now and api.team_now() or 'player' end
   local function timed(label, fn, ...)
     if api.timed then return api.timed(label, fn, ...) end
     return fn(...)
@@ -132,10 +151,10 @@ return function(api)
 
   -- Where the bots stand on a surface: a bot is no player, so the walk's box takes them as it takes the players
   -- (an outpost a bot builds far from the rest is walked).
-  local function bot_spots(s)
+  local function bot_spots(s, fname)
     local out = {}
     for _, b in pairs(((api.state().bots or {}).by_index) or {}) do
-      local c = b.character
+      local c = (b.force or 'player') == (fname or 'player') and b.character
       local ok, here = pcall(function() return c and c.valid and c.surface.index == s.index and c.position end)
       if ok and here then out[#out+1] = here end
     end
@@ -540,12 +559,7 @@ return function(api)
   -- each step; each lookup a new table only when the last step put something in it, so each step starts with none),
   -- the band's filter, and the positions the band's find read (band_pos[i] for band_list[i]; never in storage, so after
   -- a load each entity's position is read again)
-  local FORCE, SURFACE = nil, {}
-  local function player_force()
-    if FORCE and FORCE.valid then return FORCE end
-    FORCE = game.forces.player
-    return FORCE
-  end
+  local SURFACE = {}
   local function surface_at(i)
     local s = SURFACE[i]
     if s and s.valid then return s end
@@ -566,8 +580,14 @@ return function(api)
     if next(CTX.belt) then CTX.belt = {} end
     return CTX
   end
-  local BANDF, band_pos, band_list = {}, {}, nil
-  function M.step(st, tick)
+  -- (mt276 C) the band positions per force: the steps of the forces' passes come in turn
+  local BANDF, BAND = {}, {}
+  local function band_of(fname)
+    local b = BAND[fname]
+    if not b then b = {pos={}}; BAND[fname] = b end
+    return b
+  end
+  function M.step(st, tick, f)
     local job = st.job
     if not job then
       if st.done and tick - snapfail.since(st.done.start, st.done.refresh_failed) < PERIOD then return end
@@ -580,8 +600,8 @@ return function(api)
     job.paced = tick
     if job.credit <= 0 then return end
     job.steps = job.steps + 1
-    local f = player_force()
-    if not f then st.job = nil return end
+    f = f or game.forces.player
+    if not (f and f.valid ~= false) then st.job = nil return end
     -- each stage a part of its own in the operator profiler (census.walk, census.fine, census.planets, ...)
     local label = job.stage == 'done' and job.planets and next(job.planets) and not job.planets_done and 'census.planets' or STAGE[job.stage] or 'census.other'
     return timed(label, stage, st, job, f)
@@ -598,19 +618,21 @@ return function(api)
         local last = math.min(#job.list, job.at + math.min(SLICE, math.max(1, math.floor(job.credit))) - 1)
         local ctx = ctx_of(f, s)
         local list = job.list
-        local known = band_list == list
-        for i = job.at, last do read_entity(job, s, list[i], ctx, known and band_pos[i] or nil) end
+        local bc = band_of(f.name)
+        local known = bc.list == list
+        for i = job.at, last do read_entity(job, s, list[i], ctx, known and bc.pos[i] or nil) end
         job.credit = job.credit - (last - job.at + 1)
         job.at = last + 1
-        if job.at > #list then job.list = nil; band_list = nil end
+        if job.at > #list then job.list = nil; bc.list = nil end
         return
       end
       -- (d21 batch73 AI) one chunk a band: a band grown over sparse chunks to 32 found about 30,000 entities in one tick
       -- on the private copy of world n (460 ms of census.step in that second)
-      job.walk = job.walk or walk.start(s, bot_spots(s), {max_chunks=1})
+      job.walk = job.walk or walk.start(s, bot_spots(s, f.name), {max_chunks=1, force=f.name})
       BANDF.force, BANDF.type = f, types()
-      local list, pos = walk.band(job.walk, s, BANDF, band_pos)
-      band_list = pos == band_pos and list or nil
+      local bc = band_of(f.name)
+      local list, pos = walk.band(job.walk, s, BANDF, bc.pos)
+      bc.list = pos == bc.pos and list or nil
       if list then job.list, job.at = list, 1; job.credit = job.credit - 1 - #list * FIND_COST
       else job.walk = nil; if job.walked then job.walked[s.index] = true end; job.si = job.si + 1 end
       return
@@ -771,8 +793,10 @@ return function(api)
     end
   end
   function M.tick(tick)
-    local st = store()
-    local ok, err = pcall(timed, 'census.step', M.step, st, tick)
+    local teams = api.team_names and api.team_names() or nil
+    local fname = teams and teams[tick % #teams + 1] or 'player'
+    local st = store(fname)
+    local ok, err = pcall(timed, 'census.step', M.step, st, tick, game.forces[fname])
     if not ok then
       st.job = nil
       st.errors = {count=((st.errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
@@ -781,11 +805,11 @@ return function(api)
     end
   end
 
-  -- (d19 batch44 A1-A2) the last pass's entities of these types on a surface, still valid (the pass reads the player force
-  -- only), and the tick it started; nil before a pass that keeps them, for another force, or a surface it did not walk.
+  -- (d19 batch44 A1-A2) the last pass's entities of these types on a surface, still valid (the force's own pass), and
+  -- the tick it started; nil before a pass that keeps them, or a surface it did not walk.
   function M.typed(force, surface, types)
-    local d = (api.state().census or {}).done
-    if not (d and d.by_type and d.walked and d.walked[surface.index]) or force.name ~= 'player' then return nil end
+    local d = done_for(force.name)
+    if not (d and d.by_type and d.walked and d.walked[surface.index]) then return nil end
     local by = d.by_type[surface.index] or {}
     local out = {}
     for _, t in ipairs(type(types) == 'table' and types or {types}) do
@@ -801,7 +825,7 @@ return function(api)
   function M.where_index(force, surface)
     local out, as_of, capped = M.typed(force, surface, WHERE_LIST)
     if not out or #out == 0 then return nil end
-    local d = api.state().census.done
+    local d = done_for(force.name)
     return {holders=out, belts=(d.belt_items or {})[surface.index] or {}, hands=(d.hand_items or {})[surface.index] or {}, as_of=as_of,
       capped=capped or nil, refresh_failed=snapfail.line('the census pass', d.start, d.refresh_failed)}
   end
@@ -812,7 +836,7 @@ return function(api)
   end
   -- (d18 batch37 B1) the chests of a force on a surface the last pass found (nil before a pass lists them).
   function M.chests_on(force, surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(force.name, true)
     if not (d and d.chests) then return nil end
     local out = {}
     -- (d25 batch206 QS) by force_index: e.force == force made a LuaForce an entity (9 ms of Nauvis's 3716 chests, 3.8 so)
@@ -822,7 +846,7 @@ return function(api)
   end
   -- Only entity references are cached; preflight reads their current rocket/cargo state.
   function M.silos(p)
-    local d = (api.state().census or {}).done
+    local d = done_for(p.force.name, true)
     local out = {}
     for _, e in ipairs(d and d.silos and d.silos[p.surface.index] or {}) do
       if e.valid and e.surface == p.surface and e.force == p.force then out[#out+1] = e end
@@ -832,7 +856,7 @@ return function(api)
 
   -- (d18 batch36 A2, D1) the silos of a force on any surface the last pass found (nil before a pass).
   function M.silos_on(force, surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(force.name, true)
     if not (d and d.silos) then return nil end
     local out = {}
     for _, e in ipairs(d.silos[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
@@ -840,7 +864,7 @@ return function(api)
   end
   -- The entities of ours with a control behavior the last pass found on a surface (gates.lua), and its tick.
   function M.gated(force, surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(force.name, true)
     local out = {}
     for _, e in ipairs(d and d.gated and d.gated[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
     return out, d and d.gated and d.start or nil
@@ -848,13 +872,13 @@ return function(api)
   -- Our crafters, drills and pumps by recipe, resource or fluid the last pass found on a surface ({n, craft, mine, pump}),
   -- and its tick (chain.lua).
   function M.makers(surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(team())
     return d and d.makers and d.makers[surface.index] or nil, d and d.makers and d.start or nil
   end
   -- Our assemblers and furnaces the last pass found on a surface (supply requesters), still valid, and its tick; nil
   -- before a pass that kept them.
   function M.crafters(force, surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(force.name, true)
     if not (d and d.crafters) then return nil end
     local out = {}
     local fi = force.index
@@ -864,32 +888,32 @@ return function(api)
   -- (d21 batch68 AD3) our poles the last pass found on a surface, still valid, its tick and whether it hit POLES_MAX; nil
   -- before a pass that kept them or for a surface it did not walk.
   function M.poles(force, surface)
-    local d = (api.state().census or {}).done
-    if not (d and d.poles and d.walked and d.walked[surface.index]) or force.name ~= 'player' then return nil end
+    local d = done_for(force.name)
+    if not (d and d.poles and d.walked and d.walked[surface.index]) then return nil end
     local out = {}
     for _, e in ipairs(d.poles[surface.index] or {}) do if e.valid then out[#out+1] = e end end
     return out, d.start, #(d.poles[surface.index] or {}) >= POLES_MAX
   end
   function M.towers(force, surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(force.name)
     return d and d.towers and d.towers[surface.index] or {}, d and d.towers and d.start or nil
   end
 
   -- The fuel users the last pass found on a surface (entity references; fuelbudget.lua reads their state now).
   function M.fuel_users(surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(team())
     return d and d.fuel and d.fuel[surface.index] or nil, d and d.fuel and d.start or nil
   end
   -- (d26 batch230) the last pass's count of the snapshot's building types of ours on a surface, and its tick; nil
   -- before a pass or for a surface it has not counted (supply stock's size limit)
   function M.surface_buildings(surface)
-    local d = (api.state().census or {}).done
+    local d = done_for(team())
     local n = d and d.where and d.where[surface.name]
     return n, n and d.start or nil
   end
   function M.buildings(force)
-    local d=(api.state().census or {}).done
-    if force.name~='player' or not d then return nil end
+    local d=done_for(force.name)
+    if not d then return nil end
     return d.building_counts,d.building_counts_as_of
   end
 
@@ -904,11 +928,12 @@ return function(api)
   local VEHICLE_TYPES, VEHICLES_MAX = {'spider-vehicle', 'car'}, 64
   M.VEHICLE_TYPES, M.VEHICLES_MAX = VEHICLE_TYPES, VEHICLES_MAX
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
-  local function vehicles(d)
-    local st = store()
+  local function vehicles(d, fname)
+    fname = fname or team()
+    local st = store(fname)
     st.vehicles_seen = st.vehicles_seen or {}
     local seen = st.vehicles_seen
-    local f = game.forces.player
+    local f = game.forces[fname]
     local people = api.vehicle_people and try(api.vehicle_people) or {}
     local by_char, remote = people.by_character or {}, people.remote or {}
     local routes = (api.state().spiderroute or {}).spiders or {}
@@ -965,7 +990,8 @@ return function(api)
   local SNAP_NAMES
   function M.read(args)
     args = type(args) == 'table' and args or {}
-    local st = store()
+    local fname = team()
+    local st = store(fname)
     local d = st.done
     local part = args.part
     assert(part == 'extras' or part == 'snapshot' or part == 'machines' or part == 'basemap' or part == 'planets' or part == 'vehicles', 'part must be extras, snapshot, machines, basemap, planets or vehicles')
@@ -983,7 +1009,7 @@ return function(api)
         for name, p in pairs(prototypes.entity) do if want[p.type] then SNAP_NAMES[#SNAP_NAMES+1] = name end end
         table.sort(SNAP_NAMES)
       end
-      local f, counts = game.forces.player, {}
+      local f, counts = game.forces[fname], {}
       for _, name in ipairs(SNAP_NAMES) do
         local c = f.get_entity_count(name)
         if c > 0 then counts[name] = c end
@@ -992,7 +1018,7 @@ return function(api)
     elseif part == 'machines' then
       out.machines = d.machines
     elseif part == 'vehicles' then
-      out.vehicles, out.vehicles_total = vehicles(d)
+      out.vehicles, out.vehicles_total = vehicles(d, fname)
       out.tick = game.tick
     elseif part == 'planets' then
       -- The other planets with a coarse map: name, building count, cell, size (the maps themselves: basemap surface=).

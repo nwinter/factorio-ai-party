@@ -19809,7 +19809,7 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end,
   fog_note_seen=function(e,t,pos,cx,cy,status,ctx) return M.fogmem.note_seen(e,t,pos,cx,cy,status,ctx) end,
   belt_observe_seen=function(e,t,pos,cx,cy,ctx) return M.beltgaps.observe_seen(e,t,pos,cx,cy,ctx) end}
-M.census=require('census'){state=state,timed=M.timed,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end,
+M.census=require('census'){state=state,timed=M.timed,team_names=function() return M.team_names() end,team_now=function() return M.team_now() end,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end,
   -- (d26 batch233 VM) census part vehicles: the agents by their character's unit_number, and the vehicles they drive by
   -- remote view now (vehicle {drive, remote}) with the drive's target
   vehicle_people=function()
