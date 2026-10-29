@@ -805,6 +805,10 @@ def main():
                     host.sync(now, snap.get("connected_players"))
                 with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
                     snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
+                    # (d28 batch324 SF) every line playing now (hosts, agents, the Operator, the narrator): onecam's
+                    # speech-linked framing (its verified subjects, held while the line plays)
+                    snap["speech"] = [dict(v, id=k) for k, v in audio.playing.items()
+                                      if v.get("channel") in ("caster", "agent", "operator", "narrator")]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 cams = director.step(snap, now, segments.camera())
                 if follow:

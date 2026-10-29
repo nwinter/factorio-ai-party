@@ -485,6 +485,23 @@ ONECAM = {
     "cue_agent_gap": 180.0,  # one shown cue per agent this often
     "cue_gap": 45.0,        # shown cues together at most this often
     "cue_late": 3.0,        # a line that started playing longer ago than this is no cue (missed tick, a restart)
+    # (d28 batch324 SF, viewer Aurora 16:46, site:5415: "improve speech-linked framing for engineers, hosts and Operator
+    # updates. Favor the main verified subject as audio plays, preserving urgent action and manual/tour holds. For
+    # multiple topics, use a few timed shots or comparison insets, not a cut per noun. Keep readable dwell, limit cut
+    # frequency and merge repeated references to the same subject. Use insets when the main view is busy, skip uncertain
+    # targets and end cues with playback.") A line playing now (snapshot speech: hosts, agents, the Operator) names its
+    # subjects: a host line its event's agents and platforms (caster.subjects_of), an agent line its speaker, an
+    # Operator line the agents and platforms its text names; only those the director knows count. The first is the
+    # line's subject: on air already, it is held while the line plays; else a cut to it when the story on air has been
+    # up speech_min, no speech cut came within speech_gap and nothing holds the camera (urgent shots, battles, looks,
+    # follows, tours, segments, a fight or big action on air), else the inset (a free panel), else nothing. A second
+    # subject goes in a free inset beside it (a comparison), the rest are not shown: one cut a line at most. A subject a
+    # line put on air within speech_merge is not cut to again. Everything ends with the line's playback (+speech_after).
+    "speech": True,
+    "speech_min": 12.0,
+    "speech_gap": 40.0,
+    "speech_merge": 120.0,
+    "speech_after": 2.0,
     # Artillery impacts (viewer Foobator, 2026-10-17 12:48: "if there is only one arty shell in flight and nothing else
     # interesting has happened, can you show the impact on screen"): the harness's artillery_live shells (serve.py
     # reads it every half second while a piece is loaded with targets in range) -> a cut to the target before the shell
@@ -533,6 +550,14 @@ ONECAM = {
     "attn_same": 12.0,      # tiles: a request this close to the inset's spot is the same job
     "attn_move": 8.0,       # the inset moves to a new spot at most this often
     "attn_zoom": 1.2,       # a single spot; an area is fitted (no closer than this)
+    # (d28 batch324 SF, viewer Aurora 16:46, site:5414: "check the remaining long shots of engineers with little visible
+    # change, including remote work that could be shown instead") With one client: the attention inset up for the agent
+    # on air, its character still swap_still s (and no fight, big action or news on air), the inset up swap_min s: the
+    # work goes on the main view (the agent's attention spot, "@work", held swap_hold s, at most to the inset's
+    # attn_max) and the agent waits in the panel (away_inset); back to the agent after, or at once when it acts again.
+    "swap_still": 20.0,     # 0: off
+    "swap_min": 4.0,
+    "swap_hold": 20.0,
     # Surface balance (viewer awoo3391, 19:34: "the camera feed needs a real priority system"; 8 of 9 agents on Nauvis,
     # so rotation by agent showed Nauvis while Gemini landed on Fulgora and Sol worked Vulcanus): on-air seconds per
     # surface over the last surface_window; a surface other than Nauvis with an agent on it is due surface_share of
@@ -802,6 +827,12 @@ class OneCam(Director):
         self.visits = 0        # (batch318) one-client visits so far: their framings start in turn
         self.aways = []        # (batch318) (t, agent, shot): the story's agent in a panel while one client is away
         self.ship_aired = {}   # (batch318) platform -> when its departure or edge shot last went on air
+        self.swaps = []        # (batch324) (t, agent, work): the attention spot on the main view, the agent in a panel
+        self.speech = None     # (batch324) the line now framed: {id, key, until, subject, inset}
+        self.speech_seen = set()
+        self.speech_cut_t = -1e9
+        self.speech_shown = {}  # (batch324) subject key -> when a line last put it on air
+        self.speeches = []     # (batch324) (t, channel, decision, why, label)
         self.map_same = (None, 0)  # (batch318) (the base map's rows at the last map shot, maps in a row showing them)
         self.repeats = []      # (batch318) (t, platform, kind, why): one client's repeats not shown or made routine
         self.follow = None    # an operator follow: {agent, until, label, by, since} (set_follow)
@@ -1926,6 +1957,7 @@ class OneCam(Director):
             self.maybe_work(snapshot, by_name, scores, now, segment)
             self.maybe_story(snapshot, by_name, scores, now, segment)
             self.maybe_attention(by_name, scores, now, segment)
+            self.maybe_swap(by_name, scores, now, segment)
             self.maybe_launch(snapshot, by_name, scores, now, segment)  # (batch257) before a quiet view
             self.maybe_quiet(by_name, scores, now, segment)
             self.maybe_tour(scores, now, segment)
@@ -1934,6 +1966,7 @@ class OneCam(Director):
             self.maybe_platform(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
         self.maybe_cue(snapshot, by_name, scores, now, segment)
+        self.maybe_speech(snapshot, by_name, scores, now, segment)
         self.maybe_artillery(snapshot, by_name, scores, now, segment)
         self.maybe_enemy_pip(snapshot, by_name, scores, now)
         self.maybe_group_pip(snapshot, by_name, scores, now)
@@ -2774,6 +2807,160 @@ class OneCam(Director):
             return "drop", f"{busy}; no client free for an inset"
         return "inset", busy
 
+    def speech_subjects(self, v, by_name):
+        """(batch324 SF) The verified subjects of a playing line, in order: [("agent", name) | ("platform", name)]."""
+        agents = {}
+        for n, a in by_name.items():
+            agents[n.casefold()] = n
+            if a.get("display_name"):
+                agents[str(a["display_name"]).casefold()] = n
+        plats = {n.casefold(): n for n, p in self.plat_rows.items() if (p.get("view") or {}).get("surface")}
+        out = []
+        ch = v.get("channel")
+        if ch == "agent":
+            raw = [("agent", v.get("agent"))]
+        elif ch == "operator":
+            text = str(v.get("text") or "")
+            raw = [(k, m.group(0)) for k, names in (("agent", agents), ("platform", plats))
+                   for m in [re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", text, re.I) for x in names] if m]
+            raw.sort(key=lambda kv: text.casefold().find(kv[1].casefold()))
+        else:
+            raw = [(k, x) for d in v.get("subjects") or [] if isinstance(d, dict) for k, x in d.items()]
+        for kind, name in raw:
+            got = (agents if kind == "agent" else plats if kind == "platform" else {}).get(str(name or "").casefold())
+            if got and (kind, got) not in out:
+                out.append((kind, got))
+        return out
+
+    def speech_busy(self, by_name, now, segment):
+        """(batch324 SF) What keeps the camera from a line's subject now (urgent action, manual and tour holds), or None."""
+        cur = self.state.get(self.onair) or {}
+        subj = cur.get("subject")
+        busy = ("an operator look" if self.look else "an operator platform hold" if self.plat else
+                "an operator follow" if self.fol else "a battle" if self.battle else "an incoming group" if self.incoming
+                else "a segment" if segment else "a replay or a trio" if self.hold_layout or self.mode == "trio"
+                else "an urgent shot being framed" if self.pending else
+                f"{subj[1:]} held" if subj in HOLDS and now < cur.get("until", 0) else None)
+        if not busy and subj in by_name and (self.fighting(subj, by_name, now) or big_plan(by_name[subj])):
+            busy = f"{subj} {'fighting' if self.fighting(subj, by_name, now) else plan_kind(by_name[subj])} on air"
+        return busy
+
+    def speech_target(self, kind, name, until, by_name, now):
+        if kind == "agent":
+            z = self.zoom_for(by_name[name], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+            return self.body_shot(name, by_name, z, now)
+        return self.platform_target(name, "cue", until)
+
+    def on_air_is(self, kind, name):
+        cur = self.state.get(self.onair) or {}
+        if kind == "agent":
+            return cur.get("subject") == name or (name in (cur.get("agents") or []) and not cur.get("platform"))
+        return (cur.get("platform") or {}).get("name") == name
+
+    def maybe_speech(self, snapshot, by_name, scores, now, segment=None):
+        """(batch324 SF) Speech-linked framing (module doc, speech_*): each line once when it starts, ended with its
+        playback; every decision logged ("speech hold|cut|inset|drop: ...")."""
+        cfg = self.cfg
+        if not cfg["speech"]:
+            return
+        lines = [v for v in snapshot.get("speech") or [] if v.get("id")]
+        playing = {v["id"] for v in lines}
+        sp = self.speech
+        if sp and (sp["id"] not in playing or now >= sp["until"]):  # the line ended: so does what it put up
+            if sp.get("inset") is not None and self.inset and self.inset.get("why") == "speech":
+                self.inset = None
+            cur = self.state.get(self.onair) or {}
+            if cur.get("speech") == sp["id"] and now < cur.get("until", 0):
+                cur["until"] = now
+            self.speech = None
+        for v in sorted(lines, key=lambda v: float(v.get("started") or now)):
+            if v["id"] in self.speech_seen:
+                continue
+            self.speech_seen.add(v["id"])
+            if v.get("channel") == "agent" and (v.get("look") or infer_look(v.get("said") or v.get("text") or "",
+                                                 [n for n, p in self.plat_rows.items() if (p.get("view") or {}).get("surface")])):
+                continue  # a cue (maybe_cue) frames what it looks at
+            started = float(v.get("started") or now)
+            until = started + min(float(v.get("duration") or v.get("audio_s") or 6.0), cfg["cue_max"]) + cfg["speech_after"]
+            subs = self.speech_subjects(v, by_name)
+            who = v.get("speaker") or v.get("channel")
+            if now - started > cfg["cue_late"] or now >= until:
+                self.speech_log(v, "drop", f"started {int(now - started)} s ago", subs, now)
+                continue
+            if not subs:
+                continue  # nothing verified to frame: the camera stays as it is
+            (kind, name), extra = subs[0], subs[1:]
+            label = f"{who}: {name}"
+            if self.speech and self.speech.get("inset") is None and self.speech["id"] != v["id"] and \
+                    self.speech.get("key") == (kind, name):
+                self.speech.update(id=v["id"], until=until)  # the same subject again: merged, held longer
+                self.speech_log(v, "hold", f"merged with the line before ({name})", subs, now)
+                continue
+            if self.on_air_is(kind, name):
+                cur = self.state.get(self.onair) or {}
+                if kind == "platform" and cur.get("until"):
+                    cur["until"] = max(cur["until"], until)
+                self.speech = {"id": v["id"], "key": (kind, name), "until": until,
+                               "hold": name if kind == "agent" else None, "inset": None}
+                self.speech_log(v, "hold", f"{name} on air: held while the line plays", subs, now)
+                self.speech_extra(v, extra, until, by_name, scores, now)
+                continue
+            busy = self.speech_busy(by_name, now, segment)
+            if not busy and now - self.speech_shown.get((kind, name), -1e9) < cfg["speech_merge"]:
+                busy = f"{name} was on air for a line {int(now - self.speech_shown[(kind, name)])} s ago"
+            if not busy and (now - self.speech_cut_t < cfg["speech_gap"] or now - self.onair_since < cfg["speech_min"] or
+                             now - self.last_program_cut < cfg["cut_spacing"]):
+                busy = "a cut a moment ago"
+            if not busy:
+                t = self.speech_target(kind, name, until, by_name, now)
+                if t:
+                    t["speech"] = v["id"]
+                    self.urgent(t, f"speech: {label}", scores, now)
+                    self.resume = None  # the story goes on from the subject, under the usual rules
+                    self.speech_cut_t = now
+                    self.speech_shown[(kind, name)] = now
+                    self.speech = {"id": v["id"], "key": (kind, name), "until": until,
+                                   "hold": name if kind == "agent" else None, "inset": None}
+                    self.speech_log(v, "cut", "nothing holds the camera", subs, now)
+                    self.speech_extra(v, extra, until, by_name, scores, now)
+                    continue
+            if self.speech_inset(kind, name, until, by_name, scores, now, label):
+                self.speech = {"id": v["id"], "key": (kind, name), "until": until, "hold": None, "inset": True}
+                self.speech_log(v, "inset", busy or "no view of it", subs, now)
+            else:
+                self.speech_log(v, "drop", f"{busy}; no panel free", subs, now)
+
+    def speech_inset(self, kind, name, until, by_name, scores, now, label):
+        """(batch324 SF) A line's subject in a free inset until the line ends; False when none is free."""
+        if self.inset or self.mode != "onecam" or self.hold_layout:
+            return False
+        slot = self.inset_free([s for s in self.standbys() if not (self.pending and s["slot"] == self.pending["slot"])])
+        t = self.speech_target(kind, name, until, by_name, now) if slot else None
+        if not t:
+            return False
+        self.frame_on(slot, dict(t, until=until), f"inset speech: {label}", scores, now)
+        self.inset = {"slot": slot["slot"], "until": until, "why": "speech", "t": now}
+        return True
+
+    def speech_extra(self, v, extra, until, by_name, scores, now):
+        """(batch324 SF) A line's second subject beside the first: a comparison inset while the line plays."""
+        for kind, name in extra[:1]:
+            if not self.on_air_is(kind, name) and self.speech_inset(kind, name, until, by_name, scores, now,
+                                                                     f"{v.get('speaker')}: {name} (beside)"):
+                if self.speech:
+                    self.speech["inset"] = False  # (the main subject's hold stands; the inset ends with the line too)
+                self.speech_log(v, "inset", f"the line's second subject, {name}, beside", [(kind, name)], now)
+
+    def speech_log(self, v, decision, why, subs, now):
+        label = ", ".join(n for _, n in subs) or "-"
+        self.speeches.append((now, v.get("channel"), decision, why, label))
+        if self.log_path:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                    "slot": "program", "reason": f"speech {decision}: {why}",
+                                    "speech": {"id": v.get("id"), "channel": v.get("channel"), "speaker": v.get("speaker"),
+                                               "subjects": [list(x) for x in subs], "decision": decision}}) + "\n")
+
     def maybe_cue(self, snapshot, by_name, scores, now, segment=None):
         """An agent's line that starts playing (snapshot voiced: the page's start report) with a look (say look=, or
         inferred: a platform named in it, one "(x, y)") is a cue: a cut to the look for the line plus cue_after if
@@ -3211,6 +3398,40 @@ class OneCam(Director):
         if not att or self.inset_free(sb) is None:
             return  # (the first standby frames the next subject; the last one takes insets)
         self.show_attention(self.inset_free(sb)["slot"], subj, by_name[subj], att, scores, now)
+
+    def maybe_swap(self, by_name, scores, now, segment=None):
+        """(batch324 SF) One client: the agent on air standing still while its attention inset shows where it works:
+        the work on the main view, the agent in the panel (module doc, swap_*). A swapped view ends at its `until`, or
+        when the agent moves or acts again (its story resumes: urgent's resume)."""
+        cfg = self.cfg
+        if not cfg["swap_still"] or self.n_clients() >= 2 or self.mode != "onecam":
+            return
+        cur = self.state.get(self.onair) or {}
+        if cur.get("swap"):
+            if now < cur.get("until", 0) and self.stale_s(cur["swap"], now) < cfg["still_moved"] + 1:
+                cur["until"] = now  # acting again: back to the agent (out of its panel first)
+                if self.inset and self.inset.get("why") == "away" and self.inset.get("agent") == cur["swap"]:
+                    self.inset = None
+            return
+        ins = self.inset
+        if not ins or ins.get("why") != "attention" or segment or self.hold_layout or self.pending:
+            return
+        name = ins["agent"]
+        if cur.get("subject") != name or now - ins.get("moved", now) < cfg["swap_min"]:
+            return
+        still = self.stale_s(name, now)
+        if still < cfg["swap_still"] or self.story_action(now):
+            return
+        t = self.state.get(ins["slot"]) or {}
+        if not t.get("position"):
+            return
+        until = min(now + cfg["swap_hold"], ins["since"] + cfg["attn_max"] + cfg["swap_hold"])
+        shot = {k: v for k, v in t.items() if k in ("position", "surface", "zoom", "solo_zoom", "exact_zoom", "work",
+                                                      "attention")}
+        shot.update(agents=[], subject="@work", until=until, swap=name, away=True, exact_zoom=True)
+        self.inset, self.last_attn = None, now
+        self.swaps.append((now, name, t.get("work")))
+        self.urgent(shot, f"work: {t.get('work')} ({name} still {int(still)} s)", scores, now)
 
     def show_attention(self, slot, name, a, att, scores, now, since=None):
         cfg = self.cfg
@@ -4653,6 +4874,10 @@ class OneCam(Director):
         cur = self.state.get(self.onair)
         if self.pending:
             return  # an urgent shot is being framed; the cut comes within ready_s
+        sp = self.speech  # (batch324 SF) the agent a line is about, on air: held while the line plays
+        if sp and cur and sp.get("hold") == cur.get("subject") and cur.get("subject") in scores and now < sp["until"]:
+            self.keep(cur, by_name, now)
+            return
         if self.trio_pending:  # the standbys are being framed for a trio: hold the story
             if cur and cur.get("subject") in scores:
                 self.keep(cur, by_name, now)
