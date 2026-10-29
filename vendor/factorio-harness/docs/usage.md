@@ -17686,6 +17686,40 @@ turrets1s."
   arrival at the pickup, each with its start tick; each read once a tick; runs cut at the start or end; a gone turret
   ends it; the bounds.
 
+## d29 batch359 (AS, Sol #2770: aim-watch statistics over all shots)
+
+`platform_defense {platform, aim: true, seconds: 10..120, positions?}` keeps its existing targeting/hit attribution
+and 24-record `recent` cap. Each railgun now also returns `statistics`, accumulated independently of `recent`:
+
+- `shots`, `since_tick`, `prior_shots`: coverage. A running watch from an older runtime starts these counters at its
+  next read and says how many earlier shots are excluded; an already finished old watch has no statistics.
+- `intervals`: `count`, `sum_ticks`, `min_ticks`, `max_ticks`, `mean_ticks`. No interval before the first detected
+  shot; min/max/mean absent until there is an interval. Timestamps are the existing detector's read tick minus 1.
+- `intervals.histogram`: `ticks` maps decimal tick strings to counts through `exact_through_ticks` (prototype
+  cooldown rounded up, plus 1; at most the watch limit of 7200 ticks). Missing counts are zero. Three `wider` buckets
+  cover the next range through twice that threshold, then four times it, then everything greater, with inclusive
+  `min_ticks`/`max_ticks`; the final bucket has no maximum. Their sum plus `ticks` equals the interval count.
+- `shots_by_second`: 120 entries at most, including zero counts; entry 1 covers `start_tick..start_tick+59`.
+  `shots_by_target_size`: small/medium/big/huge/other/unknown, over all detected shots, including uncertain aims.
+  These are the targets retained from the previous tick, not a count of exact aimed hits or collateral hits.
+- `nominal_cooldown`: prototype name, `ticks`, and source `LuaEntityPrototype.attack_parameters.cooldown` (170 in
+  2.0.77). This base value excludes ammunition/force modifiers, turning, aiming and power limits. It is distinct from
+  observed intervals. If unavailable, the histogram's exact threshold is 1 and the nominal ticks are absent.
+- `samples`: valid-turret tick `count`; `energy_ready_ticks/share`, `target_present_ticks/share`,
+  `ammo_present_ticks/share`, and `energy_threshold_j`. Full-buffer means `energy >= electric_buffer_size`:
+  the 2.0.77 railgun data has a 10 MJ buffer and 10 MJ per shot. The target is `shooting_target`; ammo is the turret's
+  inventory count. These shares are independent observations, not causal diagnoses or a ready-to-fire flag. 2.0.77
+  exposes no remaining turret cooldown or ready-to-fire state. No additional entity reads per tick are needed.
+
+The existing detector counts an ammo decrease or a buffer drop over half capacity. If several ammo items disappear
+in one read, their precise individual firing times are unknown: `multi_shot_observations` marks that read, all are
+assigned its detected tick, with zero intervals inside it. Inventory removal can therefore imitate shots. Samples
+are counted only once when a paused tick resumes, and stop for a removed turret. All replies describe facts only.
+
+Regression `tests/d29_batch359.lua`: 120 s of saturated fire (43 shots, 42 intervals of 171 ticks), early extrema
+outside `recent`, exact arithmetic mean, all histogram boundaries and sums, second/target counts, independent
+sample shares, ambiguous multi-item reads, removed turrets and old-watch coverage.
+
 ## d29 batch332 (RT, Sol #2734: what each railgun shot was aimed at)
 
 Sol's report: "Native hit_by classes cannot identify which asteroid a round was aimed at; medium58%hits does not

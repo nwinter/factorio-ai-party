@@ -276,7 +276,14 @@
   and each shot's aimed target, the one it read the tick before the shot: `exact` when that shot hit it (killed or
   survived, by size), else `uncertain` (no target read, or it was not hit: `aimed_not_hit_alive` when it lived on);
   the shot's other hits as collateral by size (a railgun's line hits everything on it at once); `unattributed`: its
-  hits on no seen shot; `recent`: the last 24 shots. Not given: the game's reason for a target choice.
+  hits on no seen shot; `recent`: the last 24 shots. Each railgun's `statistics` covers all detected shots:
+  `intervals` count/min_ticks/max_ticks/mean_ticks and a bounded histogram, `shots_by_second` (entry 1 is the first
+  watch second), `shots_by_target_size` (the previous tick's target, including uncertain; unknown if none).
+  `nominal_cooldown` names the prototype's ticks and source; it excludes force/ammo modifiers, turning and recharge.
+  `samples` gives independent full-buffer, target-present and ammo-present counts/shares, not reasons for delays.
+  Ready-to-fire/remaining cooldown is not exposed. `since_tick`/`prior_shots` mark partial coverage after a runtime
+  update; multiple ammo items lost in one read are marked ambiguous and assigned that tick. Not given: the game's
+  reason for a target choice.
   Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
   legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
   restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
