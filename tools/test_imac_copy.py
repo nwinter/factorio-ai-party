@@ -55,14 +55,15 @@ def script():
 case "$args" in
   *"cat '/Users/owner/pog-copy/holder.json'"*) [ -f {d}/free ] || echo '{held}' ;;
   *"kill -0 4242"*) exit 0 ;;
-  *"kill -0 5151"*) exit 1 ;;
+  *"kill -0 5151"*) [ -f {d}/alive ] ;;
+  *"test -s"*) exit 1 ;;
   *"for f in"*) echo /Applications/x/factorio ;;
   *nohup*) echo 5151 ;;
   *"cat > "*) cat > /dev/null ;;
 esac''')
     stub(d, "rsync", f'echo "rsync $*" >> {log}')
     stub(d, "scp", f'echo "scp $*" >> {log}')
-    stub(d, "python3", f'case "$*" in *pog.py*) echo "pog.py $*" >> {log}; exit 1 ;; esac; exec /usr/bin/env -u PATH {sys.executable} "$@"')
+    stub(d, "python3", f'case "$*" in *pog.py*) echo "pog.py host=$POG_RCON_HOST $*" >> {log}; exit 1 ;; esac; exec /usr/bin/env -u PATH {sys.executable} "$@"')
     sh = os.path.join(HERE, "imac-copy.sh")
     run = lambda *a: subprocess.run([sh, *a], env=env_with(d), capture_output=True, text=True)
     r = run("status")
@@ -84,6 +85,19 @@ esac''')
     assert "cp '/Users/owner/pog-copy/ref/x.zip' '/Users/owner/pog-copy/saves/copy.zip'" in sent, sent
     assert not re.search(r"scp .*copy\.zip", sent) and "--start-server '/Users/owner/pog-copy/saves/copy.zip'" in sent, sent
     assert r.returncode == 1 and "the server exited" in r.stderr, r
+    # A macOS exec held by a GUI dialog never writes Factorio's first log line. Bound the wait and signal only
+    # the PID from this start. Custom readiness/stop ports must never hit the shared copy on 27400.
+    open(os.path.join(d, "alive"), "w").close()
+    open(log, "w").close()
+    stub(d, "sleep", 'exit 0')
+    r = subprocess.run([sh, "start", "port21/p1", "imac:/private/reference.zip"],
+                       env=env_with(d, IMAC_HOST="private-imac", IMAC_RCON_PORT="27478", IMAC_GAME_PORT="34478"),
+                       capture_output=True, text=True)
+    sent = open(log).read()
+    assert r.returncode == 1 and "no Factorio startup output after 10 s" in r.stderr, r
+    assert "kill 5151" in sent and "kill 4242" not in sent, sent
+    commands = [line for line in sent.splitlines() if line.startswith("pog.py")]
+    assert commands and all("host=private-imac" in line and "--port 27478" in line for line in commands), commands
     src = open(sh).read()
     assert "pkill" not in src and "killall" not in src and 'remote "kill $pid"' in src, "its own PID only"
     print("2. imac-copy.sh: who holds it; a second holder refused; stop only by its holder: ok")
