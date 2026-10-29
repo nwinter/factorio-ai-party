@@ -1086,6 +1086,12 @@ return function(api)
   end
   function M.handlers.queue_status(p,a)
     a=a or {}
+    -- (d29 batch344 GS) the snapshots taken when an ammo_below guard on a platform fired: a page, or one in full
+    if a.snapshots~=nil or a.snapshot~=nil then
+      assert(a.snapshots==nil or a.snapshots==true,'snapshots is true')
+      assert(api.snapshots,'no snapshots here')
+      return api.snapshots(p,a)
+    end
     local q=queue(p.index)
     assert(a.orders==nil or type(a.orders)=='boolean','orders must be true or false')
     assert(a.args==nil or type(a.args)=='boolean','args must be true or false')
@@ -1757,7 +1763,7 @@ return function(api)
   -- A direct wait while the queue runs would pause it (runtime.lua dispatch_request refuses it).
   local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait while your queue runs runs as a sleep (as_sleep): the queue keeps going'
   M.schema={
-    queue_status={args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
+    queue_status={snapshots='(d29 batch344) true: the snapshots taken when an ammo_below guard on a platform fired (on that tick: the lowest turret, its ammo and rounds, each inserter feeding it with status, held stack, hand settings, pickup and drop, its pickup belt\'s lane counts, power and circuit; the platform\'s leg and speed), newest first, 8 a page (from: next_from); the newest 32 a force kept',snapshot='a snapshot\'s id: that one in full',from='with snapshots: the first row (next_from of the page before)',args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',
       returns='active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
     queue_repeat={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',

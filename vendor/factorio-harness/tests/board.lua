@@ -119,7 +119,7 @@ fails(function() grok('board_update',{id=1,status='finished'}) end,'status must 
 -- A bad argument changes nothing, even with a valid owner beside it.
 fails(function() sol('board_update',{id=1,owner='astra',note=''}) end,'note is required')
 eq(grok('board',{id=1}).item.owner,'grok')
-fails(function() grok('board_update',{id=1}) end,'give status, owner, note, evidence, allow, title, needs or (a claim) surface')
+fails(function() grok('board_update',{id=1}) end,'give status, owner, note, evidence, review, allow, title, needs or (a claim) surface')
 fails(function() grok('board_update',{id=4,owner='sol'}) end,'stays with its poster')
 -- The requester may reassign; the owner may release.
 r=sol('board_update',{id=1,owner='astra'}); eq(r.item.owner,'astra'); eq(r.changed[1],'assigned')
@@ -773,7 +773,7 @@ fails(function() sol('board_post',{kind='task',title='x',steps={'a'}}) end,'goal
 fails(function() grok('board_update',{id=t.id,done=1}) end,'done is for a project (#'..t.id..' is a task); status "done" finishes an item')
 fails(function() astra('board_update',{id=pj.id,done=true}) end,'done takes step numbers: a number or an array of them (status "done" finishes the project)')
 fails(function() astra('board_update',{id=pj.id,done=9}) end,'project #'..pj.id..' has no step 9; its steps: 1, 2, 3')
-fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, evidence, allow, title, needs or (a claim) surface; for a project also step, done, undone')
+fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, evidence, review, allow, title, needs or (a claim) surface; for a project also step, done, undone')
 fails(function() astra('board_update',{id=pj.id,done={1,9}}) end,'has no step 9')
 eq(astra('board',{id=pj.id}).item.progress,'0 of 3 steps') -- a bad argument changes nothing
 -- anyone adds steps and marks them done; who did each shows

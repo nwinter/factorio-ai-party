@@ -157,6 +157,13 @@
   whose entity an earlier one names: `same_as`. `by_status` counts them.
   Example: `./fh call deconstruct --args '{"area":{"left_top":{"x":180,"y":50},"right_bottom":{"x":200,"y":70}},"tiles":["landfill"]}'`
   Example: `./fh call deconstruct --args '{"surface":"nauvis","positions":[{"x":58.5,"y":111.5,"unit_number":4767244}],"entity_names":["medium-electric-pole"]}'`
+- `deconstruct`, power left: when what deconstruct marks (or its dry run would mark), a forced paste marks, or `mine`
+  takes includes a generator, `power_left` gives each electric network it leaves short, as facts: with no generation,
+  or with less than its consumers drew over the last minute. It names the generators going, those staying idle (of
+  kinds that made no power there in the last 10 minutes, as a fusion generator with no plasma), what is left (a
+  generator at its rating; on a platform a solar panel in that place's sunlight; on a planet a panel at what its kind
+  made over the last minute), the consumers' draw with the largest, and the accumulators' charge left with how long it
+  lasts at the shortfall. Nothing is refused.
 - `upgrade {area | position, to, from?, quality?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
   planner; a ghost changes in place (wires and settings kept), a built one is marked for robots (their replacement
   keeps recipe, modules and circuit settings). `quality` is the target quality (unlocked ones); with it `to` may be

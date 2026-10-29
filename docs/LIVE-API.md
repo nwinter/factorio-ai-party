@@ -570,6 +570,8 @@ reloads? Preserve all parts and late answers. Test a restart with over 40 replie
 {"action": "ban", "seq": 41}      {"action": "unban", "seq": 41}
 {"action": "close"}               {"action": "open"}
 {"action": "clear"}
+{"action": "hide_idea", "id": 7}  {"action": "unhide_idea", "id": 7}  {"action": "ban_idea", "id": 7}
+{"action": "ideas_close"}         {"action": "ideas_open"}
 ```
 
 `ban` blocks the client that wrote message 41 and hides all its messages; `close` stops new messages; `clear` hides
@@ -775,6 +777,37 @@ push_live.py; it is off with `POG_PUSH_LIVE=0` or `POG_POLLS=0`. It does three j
   minutes while a poll is open, and the result for 60 s when it closes. The casters get the open poll as
   `site_poll` on non-urgent beats, and not again for 20 minutes after a line of theirs mentions a poll or votes.
   Nothing about polls goes into game chat.
+
+## Viewers' ideas (d29 batch340)
+
+Viewer Aurora (site:5470) asked for "a persistent viewer Ideas page with two sections" for host review only, "with no
+automatic AI relay or tasks". The site's /ideas/ page (`site/static/ideas.js`) uses these endpoints:
+
+- `GET /v1/ideas`: `{schema, open, sections: {next_run: [idea], general: [idea]}, stored, cap}`. Each idea is
+  `{id, t, name, text, section, pinned, highlight, priority, status, reply?, reply_t?, edited_t?, host?}`. A section is
+  pinned ideas first, then the host's order, at most 500. Hidden ideas and banned posters' ideas are left out. With the
+  host link (`X-Host-Token`) the hidden ones come too, each with `hidden` and `banned`, plus `host: true`; that view is
+  never cached. A wrong token is 403.
+- `POST /v1/ideas {name, text, section, cid?}`: section `next_run` ("What would you like to see in the next run?") or
+  `general` ("General ideas": the harness, site, stream or whole project). Chat's rules apply: names (a blank name is
+  the guest name), bans, no links, one message every 4 s and 8 a minute (an idea counts as a chat message), and at most
+  6 ideas a client an hour. An idea is at most 1,000 characters. The same cid again returns the first one. With the
+  host link it posts as NickWinter.
+- `POST /v1/ideas/ID` with the host link (or the publish token): any of `section` (moves it to that section's end),
+  `move: "up" | "down"` (past its neighbour in the order shown), `text` (sets `edited_t`), `hidden` (the host's remove),
+  `pinned`, `highlight`, `priority` ("", low, medium, high), `status` (new, considering, planned, doing, done,
+  not_planned), `reply` (shown under the idea; "" takes it away). At most 120 changes a minute.
+- `POST /v1/mod` with the publish token: `{"action": "hide_idea" | "unhide_idea" | "ban_idea", "id": N}` (ban_idea is
+  chat's ban of whoever posted it), and `{"action": "ideas_close" | "ideas_open"}`.
+
+Storage: the `ideas` table in the serving object (`LIVE_OBJECT`, main-d29), kept across runs and restarts. Nothing is
+ever deleted: a removed idea is hidden and stays in storage. The cap is 2,000 ideas (`IDEAS.keep`), each at most 1,000
+characters plus a 1,000-character reply, so about 4 MB at most. Once it is full, new ideas are refused with `507 {"error":
+"the ideas page is full for now"}`. Export: `GET /v1/debug/export?table=ideas&after=ID&limit=N` with the publish token
+(batch333's move covers the table too).
+
+Nothing on the Mac reads `/v1/ideas`: no relay, no operator-inbox row, no task, and no agent, caster or other AI sees an
+idea. `site/test_ideas.py` checks that no tool or stream code names the endpoint.
 
 ## Limits
 

@@ -762,7 +762,29 @@ return function(api)
     return {freight={item=f.item, amount=n, mode=f.mode, from=f.from}, stops=stops, warnings=warn[1] and warn or nil,
       line=string.format('%s %s %d %s: %d stops, %d mismatches', pl.name, f.mode, n, f.item, #stops, #warn)}
   end
+  -- (d29 batch336 FL4) totals: each platform's pods up (rockets to it) and down (its hub's pods) over the run, with cargo
+  -- by item and windows (podlog.lua totals); platform: that one.
+  M.TOTAL_LINES = 24
+  local function totals(a)
+    assert(a.totals == true, 'totals is true')
+    for k in pairs(a) do assert(k == 'totals' or k == 'platform', 'totals takes platform only (' .. tostring(k) .. ')') end
+    assert(a.platform == nil or type(a.platform) == 'string', 'platform is a platform name')
+    local rows = api.pod_totals and api.pod_totals(a.platform) or {}
+    local lines = {}
+    for i, r in ipairs(rows) do
+      if i > M.TOTAL_LINES then lines[#lines+1] = string.format('+%d more platforms (platform: NAME reads one)', #rows - M.TOTAL_LINES); break end
+      local w = {}
+      for _, x in ipairs(r.windows) do w[#w+1] = string.format('%s %d up/%d down', x.window, x.up_pods, x.down_pods) end
+      lines[#lines+1] = string.format('%s since tick %d: up %d pod%s%s%s; down %d pod%s%s%s; %s', r.platform, r.since_tick,
+        r.up_pods, r.up_pods == 1 and '' or 's', r.from and ' (from ' .. r.from .. ')' or '', r.up_items and ': ' .. r.up_items or '',
+        r.down_pods, r.down_pods == 1 and '' or 's', r.to and ' (to ' .. r.to .. ')' or '', r.down_items and ': ' .. r.down_items or '',
+        table.concat(w, ', '))
+    end
+    return {totals=rows, lines=#lines > 0 and lines or {a.platform and 'no pod counted for ' .. a.platform or 'no pod counted yet'},
+      note='every cargo pod up to a platform (a rocket) and down from its hub (landing pad requests, hub trash, drops), counted once its cargo is read, since this runtime counted them (since_tick); cargo by item over every pod, at most 48 names a platform (the rest as other); windows 1h, 10h, 50h, 250h add 10-minute, 1-hour and 10-hour buckets that start inside them, so each covers its length less up to one bucket (from_tick); launches before the count are not in it'}
+  end
   function M.read(p, a)
+    if a.totals ~= nil then return totals(a) end
     if a.freight ~= nil then return M.freight(p, a) end
     -- (d20 batch62 X2, Sol #1529) surface is the ledger's: without ledger it is refused, never dropped
     assert(a.surface == nil or a.ledger ~= nil, 'surface goes with ledger: true (that surface\'s launches and drops)')
@@ -921,7 +943,7 @@ return function(api)
     h.shipment_seen = st.seq
     return #out > 0 and out or nil
   end
-  M.schema = {shipment = {ledger='optional true, alone or with surface (default yours): the surface\'s cargo ledger in time order: each rocket launched up (up #id: the silo, the cargo, the platform and what its hub asked of the planet then, by automatic requests or by whom) and each drop down (drop #id: from which platform, the items, what the pad asked for them then, where the pod landed, what the pad held and what robots took from it in the 20 s after, the verdict); lines, note (what it cannot know). And pods (d24 batch179): the pod ledger, every cargo pod sent up (a rocket) or down (a hub\'s pod for landing pad requests or hub trash, and drops) on that planet, the last 1000 a planet, kept after the platform leaves, oldest first: [{id, pod (unit number), direction, silo (a rocket\'s: {unit_number, surface, position} as the game names it; unknown: sent before the ledger kept silos; not read), platform, stop, surface, sent_tick, landed_tick, destination (landing pad (x,y), hub, ground (x,y)), items (name@quality*count), by (a drop\'s sender), pad_free_before and pad_free_after (main and trash slots), ground (items the full pad did not take, on the ground beside it), line}], pods_total, pods_line; filters direction, platform, item, from_tick, to_tick, limit (lines only without them)', surface='with ledger: a surface name (default yours; with platform and no surface: every planet)',
+  M.schema = {shipment = {totals='optional true, alone or with platform (d29 batch336): each platform\'s pods over the run, since this runtime counted: up (rockets to it) and down (its hub\'s pods), each with cargo by item and the planets, and windows 1h, 10h, 50h, 250h (up_pods, down_pods, up_items, down_items, from_tick): totals, lines, note', ledger='optional true, alone or with surface (default yours): the surface\'s cargo ledger in time order: each rocket launched up (up #id: the silo, the cargo, the platform and what its hub asked of the planet then, by automatic requests or by whom) and each drop down (drop #id: from which platform, the items, what the pad asked for them then, where the pod landed, what the pad held and what robots took from it in the 20 s after, the verdict); lines, note (what it cannot know). And pods (d24 batch179): the pod ledger, every cargo pod sent up (a rocket) or down (a hub\'s pod for landing pad requests or hub trash, and drops) on that planet, the last 1000 a planet, kept after the platform leaves, oldest first: [{id, pod (unit number), direction, silo (a rocket\'s: {unit_number, surface, position} as the game names it; unknown: sent before the ledger kept silos; not read), platform, stop, surface, sent_tick, landed_tick, destination (landing pad (x,y), hub, ground (x,y)), items (name@quality*count), by (a drop\'s sender), pad_free_before and pad_free_after (main and trash slots), ground (items the full pad did not take, on the ground beside it), line}], pods_total, pods_line; filters direction, platform, item, from_tick, to_tick, limit (lines only without them)', surface='with ledger: a surface name (default yours; with platform and no surface: every planet)',
     direction='with ledger: up or down', silo='with ledger: a silo\'s unit number: the rockets it launched (pods[].silo gives each rocket\'s silo {unit_number, surface, position}, or unknown for rockets sent before the ledger kept silos)', from_tick='with ledger: journeys sent at or after this tick', to_tick='with ledger: journeys sent at or before this tick', limit='with ledger: 1..128 (default 32): the newest that many journeys',
     platform='a platform name (with ledger: its journeys)', item='or an item name: that item on every platform (with ledger: journeys carrying it; name@quality for one quality)',
     freight='optional {item (name@quality), amount, mode: full (waits until amount is aboard) or partial (takes what is there, comes back), from (planet; default the stops it imports item from)}, with platform: {freight, stops [{stop, planet, waits_for, other_waits, joined_by_or, requests_min, requests_max}], warnings, line}; changes nothing',

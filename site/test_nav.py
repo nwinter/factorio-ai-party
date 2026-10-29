@@ -39,7 +39,7 @@ def main():
         main_part, more = nav.split('<details class="nav-more">')
         assert re.findall(r">([^<]+)</a>", main_part) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat",
                                                           "Search", "About"], main_part
-        assert re.findall(r">([^<]+)</a>", more) == ["Polls", "Updates", "How it was made", "GitHub"], more
+        assert re.findall(r">([^<]+)</a>", more) == ["Polls", "Ideas", "Updates", "How it was made", "GitHub"], more
         assert '<summary>More<span class="nav-dot" hidden></span></summary>' in more
         assert '<button class="nav-toggle fx-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menu' in home
         assert "document.documentElement.classList.add('js')" in home
@@ -54,7 +54,7 @@ def main():
     assert "window.PogNav = { polls: polls }" in js and "sessionStorage.getItem('pollsOpen')" in js and "600000" in js
     assert "!document.getElementById('polls')" in js, "no second poll call where polls.js runs"
     assert "window.PogNav.polls(open.length)" in (SITE / "static" / "polls.js").read_text()
-    print("test_nav: ok (More holds Polls, Updates, How it was made, GitHub; Menu on phones; the poll card under the "
+    print("test_nav: ok (More holds Polls, Ideas, Updates, How it was made, GitHub; Menu on phones; the poll card under the "
           "player; an open poll marks the nav)")
 
 

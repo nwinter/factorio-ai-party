@@ -14,7 +14,7 @@ director, tools/stream/segments.py), /audio/clip/ID, POST /audio/played and /aud
 tools/stream/logs/director-<start>.jsonl. Only read actions, the operator `camera` function and the operator
 `highlights` drawing (seen by the camera clients alone, highlights.py; --no-highlights turns it off) are ever sent.
 """
-import argparse, json, mimetypes, os, sys, threading, time, traceback
+import argparse, json, mimetypes, os, re, sys, threading, time, traceback
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -114,6 +114,10 @@ class AudioHub:
         self.log_path = log_path
         self.ended = deque()  # (t, row) of the last hour's ends: {id, channel, speaker, agent, state, played, duration, early, reason}
         self.loads = deque()  # times the page loaded
+        # (d29 batch347 OR) each page's event streams by its name (/events?page=main|portrait): open now, the last
+        # connect and the last write, for tools/overlay_check.py (shift100: the main overlay blank 26 min after a start)
+        self.pages = {}
+        self.up = time.time()
         self._reload_log()
 
     def _reload_log(self):
@@ -298,6 +302,25 @@ class AudioHub:
                     self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 
+    def page_event(self, page, what, now=None):
+        """A page's event stream: what = open (it connected), seen (a write went out to it) or close."""
+        now = now or time.time()
+        with self.cond:
+            r = self.pages.setdefault(page, {"open": 0, "connects": 0, "connected": None, "seen": None, "closed": None})
+            if what == "open":
+                r["open"] += 1; r["connects"] += 1; r["connected"] = r["seen"] = now
+            elif what == "seen":
+                r["seen"] = now
+            elif what == "close":
+                r["open"] = max(0, r["open"] - 1); r["closed"] = now
+
+    def pages_status(self, now=None):
+        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed}}}
+        (epoch seconds)."""
+        with self.cond:
+            return {"now": round(now or time.time(), 2), "up": round(self.up, 2),
+                    "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+
     def status(self):
         now = time.time()
         with self.cond:
@@ -384,6 +407,8 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, json.dumps(segments.types()).encode(), "application/json")
             if path == "/audio/status":
                 return self.send(200, json.dumps(audio.status()).encode(), "application/json")
+            if path == "/overlay/status":  # (batch347) which overlay pages hold their event stream, since when
+                return self.send(200, json.dumps(audio.pages_status()).encode(), "application/json")
             if path == "/analyst.json":
                 return self.send(200, json.dumps(analyst.full(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
             if path.startswith("/audio/clip/"):
@@ -532,9 +557,13 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             stream. A browser keeps at most 6 connections per host, and every open SSE holds one: in shake7 the
             overlay, portrait and audio-test pages each held /events and /audio-events, all 6 were taken and the
             voice clips never downloaded (the hosts were silent). One stream per page leaves room for the clips."""
-            want_audio = "audio=1" in (self.path.split("?", 1)[1] if "?" in self.path else "")
+            query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            want_audio = "audio=1" in query
+            m = re.search(r"(?:^|&)page=([A-Za-z0-9_-]{1,24})(?:&|$)", query)
+            page = m.group(1) if m else "unnamed"  # (batch347) a page from before names itself unnamed
             self.sse_head()
             version, seq, quiet = -1, audio.seq, time.time()
+            audio.page_event(page, "open")
             if want_audio:
                 with audio.cond:
                     audio.listeners += 1
@@ -562,10 +591,14 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     elif time.time() - quiet >= 15:
                         self.wfile.write(b": keepalive\n\n")
                         quiet = time.time()
+                        wrote = True
                     self.wfile.flush()
+                    if wrote:
+                        audio.page_event(page, "seen")
             except (BrokenPipeError, ConnectionResetError, OSError):
                 return
             finally:
+                audio.page_event(page, "close")
                 if want_audio:
                     with audio.cond:
                         audio.listeners -= 1

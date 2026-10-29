@@ -12,6 +12,8 @@
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
   tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients), then cropped
   tools/.venv/bin/python tools/obs.py cams                # read only: each camera's hole, crop and the crop it takes
+  tools/.venv/bin/python tools/obs.py toggle-overlay      # the "stream overlay" scene item off and on (d29 batch347: a
+      blank overlay a refreshnocache did not bring back came back at once; tools/overlay_check.py calls it)
   tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
   tools/.venv/bin/python tools/obs.py audio-test --url URL [--game-url URL]        # scratch scene, same mix
   tools/.venv/bin/python tools/obs.py meter --seconds 20 [--inputs a,b]           # peak dBFS per input per second
@@ -248,6 +250,21 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
         c.set_scene_item_index(scene, item, idx)
     c.press_input_properties_button("stream overlay", "refreshnocache")  # the page reads its layout once, at load
     return scene
+
+
+def toggle_overlay(c, scene="stream", name="stream overlay", sleep=None):
+    """(d29 batch347 OR) The overlay's scene item off, then on: shift100's overlay stayed blank for 26 min after its
+    start, a refreshnocache did not bring it back, and this (by hand, 09:32) did at once. An item that was off is left
+    off (said so)."""
+    import time
+    sleep = sleep or time.sleep
+    item = c.get_scene_item_id(scene, name).scene_item_id
+    if not c.get_scene_item_enabled(scene, item).scene_item_enabled:
+        return f"{name}: off in {scene}, left off"
+    c.set_scene_item_enabled(scene, item, False)
+    sleep(1.0)
+    c.set_scene_item_enabled(scene, item, True)
+    return f"{name}: toggled off and on (item {item})"
 
 
 # ---- audio (docs/AUDIO-NOTES.md) ------------------------------------------------------------------------------------
@@ -503,7 +520,7 @@ def main():
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
                                     "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams", "cams",
-                                    "host-view-source", "stats"])
+                                    "host-view-source", "stats", "toggle-overlay"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
@@ -542,6 +559,8 @@ def main():
         c.set_current_program_scene(a.out); print("program scene", a.out)
     elif a.cmd == "reload-overlay":
         c.press_input_properties_button("stream overlay", "refreshnocache"); print("reloaded")
+    elif a.cmd == "toggle-overlay":
+        print(toggle_overlay(c))
     elif a.cmd == "start":
         c.start_record(); print("recording")
     elif a.cmd == "stop":

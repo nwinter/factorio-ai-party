@@ -3295,6 +3295,17 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   name@quality) and `held_count`, as the exact inspect gives them. A crafting machine's row adds `in_progress` ("one
   craft 40% done (its products are in no slot yet)") beside `holds` (its slots). Belts' `holds` are their lanes, a
   turret's its ammo slots, robots' their cargo, as before.
+- (d29 batch343 MD, Luna #2749: "Read-only inspect of Gleba biochambers reports recipe, inputs and status but omits
+  installed module names/counts") Each `inspect` area or radius row of an entity with module slots (assemblers,
+  furnaces, biochambers, labs, beacons, drills, silos ..., built or ghost) adds `modules` (`{"productivity-module-3@rare":
+  2, "speed-module@normal": 1}`, normal quality named too; absent when none is installed), `module_slots` ("3/4": used of
+  the total) and, while an item request or a ghost's insert plan moves some, `modules_requested` and `modules_removing`
+  ("efficiency-module*1"). Compact lines add `modules productivity-module-3@rare*2 speed-module*1 (3/4 slots)`, or
+  `modules none (0/4 slots)`, with `, speed-module*1 requested` and `, ... coming out`. The exact inspect's `modules`
+  adds `installed`, `used` and `line` beside `slots`, `contents` and `by_slot`. It is a read: nothing changes. Cost
+  (iMac copy, 45 Gleba biochambers and beacons): about 14 µs a row (one module inventory read, about 0.6 µs; the slots
+  and their qualities, the item request, the text); a 33-row radius page read 14.1 ms before and 14.8 ms after
+  (compact 26.1 and 27.5 ms), medians of 5, within the noise of about 1 ms.
 - (d28 batch328 SC, Astra #2725) An entity whose surface conditions the surface does not meet is refused naming the
   condition, before any footprint check, in `build`, `place_ghosts`, `paste` and `blueprint_place` and their dry runs:
   `placement blocked: iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0` (the
@@ -17715,6 +17726,49 @@ world or the targeting.
   tick; a shot with no target read; a refill hiding the item; an unattributed hit; other turrets' hits ignored; a
   railgun removed; freed after its keep time).
 
+## d29 batch336 (FL: the facts the agents named as missing, batch321 section 4)
+
+batch321 found that the agents compared factory and research against the ship only when a viewer asked, and named the
+facts they lacked; and that dated checks lived in note text and never came due. Facts only: nothing here advises.
+
+- **1. Effects.** `technologies` entries carry `effects` as the research screen lists them (research.lua unlocks,
+  cached per name), and for a technology with levels `next_level` ("level 8 adds ...; N units"). A recipe
+  productivity research carries `change`, not `modifier`: it read no effect before (low-density-structure
+  productivity).
+- **2. Time and packs.** Each technology not researched: `progress`, `takes` (its units left x unit time over the
+  research work a tick the labs did in the last minute, research.lua rate, as the queue's done_in; one technology
+  alone), `packs_needed` (each pack for its units left, with the count where the labs are) and `packs_short`;
+  `lab_rate`. The packs where the labs are come from the census pass's lab lists, on surfaces with labs only; the
+  queue's waits_for keeps its search.
+- **3. Long windows.** `platform_production {long: true, platform | surface, item?}`: made and used over the game's
+  1 h, 10 h, 50 h and 250 h windows, the 16 items most made and used in all. Imports are not production.
+- **4. Pod totals.** podlog.lua counts every pod once its cargo is read, per platform: up (rockets) and down (hub
+  pods), cargo by item (48 names, the rest as other), planets, and 10-minute (6), 1-hour (10) and 10-hour (25)
+  buckets for the windows; at most 128 platforms. `shipment {totals: true, platform?}` reads them. They start at the
+  deploy (`since_tick`); earlier journeys stay in the pod ledger (1000 a planet).
+- **5. Producers.** `rates {item}` adds `producers`: one row a machine making it (48), `full_per_min` (craftrate,
+  as inspect) beside `measured_per_min` from its own products_finished over 10-20 min: efficiency.lua keeps two
+  counter anchors a machine, renewed every 10 min by its walk; crafts x per_craft / (1 + productivity).
+- **6. Review times.** `review` on board_post and board_update (owner, requester, operator): a tick, a game time
+  ("376h30m") or a wall time with its zone. The game has no wall clock: fh puts `wall` (ms) in the request envelope,
+  once per id (a resend must match), and the runtime compares a wall time with it; a call without it cannot set one.
+  Past it, the owner's next reply carries `team.review_due` once, `status` lists it in `overdue_reviews`, and the
+  shift block lists it (`past_review`). An index (board reviews) keeps the reply's check to items with one.
+- **7. Expedition clock.** `shift_start` returns `expedition` (the tick, the edge-to-Shattered-Planet length, our
+  platforms at either or on a connection to either, with km left); tools/start-team.sh saves it
+  (runs/RUN/expedition.json, tools/expedition.py) and tools/brief.py puts one line after the deadline paragraph
+  (`{{EXPEDITION}}` in agent/PLAYBOOK.md), read at the shift's start, with the run's target from target.json.
+- **Measured** on the iMac copy of world n (shift99.zip, tick 81.18 M), dispatch as a bot with a profiler, after the
+  first call:
+  - technologies one name 3.5-4.2 ms (main 2.7), three names 4.1-5.5, available 6.7-7.5 (main 5.4), all 64
+    7.8-8.3 (main 6.5-6.7). The first version took 34-47 ms: the lab searches (Nauvis 12.6, Vulcanus 6.4, Fulgora
+    3.3, Gleba 3.0, Aquilo 0.9, 22 platforms 4.9 ms).
+  - rates {item: electronic-circuit} on Nauvis, 43 producers: 4.3-4.6 ms (main 4.3-4.9).
+  - platform_production long: Resolute 3.9-4.8 ms, Nauvis 4.9-5.0 (the plain read 5.4-5.8).
+  - shipment totals 4.6-4.8 ms; board_post with or without review 1.7-1.9 ms; shift_start 1.27 ms.
+- **Tests:** tests/d29_batch336.lua (effects, next level, takes, packs; producers; review times by tick, game time and
+  wall time in three zones, once, status, shift block, refusals), d29_batch336_long.lua, d29_batch336_pods.lua,
+  d29_batch336_eff.lua; tools/test_expedition.py.
 ## d29 batch329 (PR, Astra #2727: a partial-return endurance budget for deep flights)
 
 Astra's report: "Resolute21 earlyturned~29k because deep phase railNET28.63/min invalidated older10min17.4 rate;
@@ -17814,3 +17868,118 @@ next queued flight_watch refused done and not read."
 - Another agent's start is refused and nothing is read.
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
+
+## d29 batch342 (HI, Opus #2748: the hub delivering ingredients into a platform machine)
+
+Opus's report: "Priming a new fusion core on a platform needs cold fluoroketone; deliver refuses barrels into the
+barrel-emptying AM3 (only fuel/ammo/modules)."
+
+**Survival-fair** (a private 2.0.77 copy of world n's newest autosave, Kestrel IVa's barrel-emptying assembling
+machine 3 at (0.5,21.5)):
+- **What a player can do:** paste a blueprint over the machine whose entity carries an item request into its input
+  inventory (inventory 2, the crafter input). This is a blueprint string, or a copy of an entity with a pending request.
+  - The blueprint keeps the insert plan (`get_blueprint_entities`), and the paste makes the item request.
+  - The platform hub fills it from its own main inventory: all 10 asked within 10 ticks while it held 20.
+  - With 6 held, it delivered what reached the request (2; an inserter took the rest for the belt line) and left the
+    rest requested.
+  - A request for 25 in one slot was taken: the hub moved the 10 it had, and 15 stayed requested.
+- **What a player cannot do:**
+  - Request an item the recipe does not take: the game drops such a request at once and moves nothing (iron plate into
+    the barrel-emptying machine).
+  - Request a fluid: item requests carry items, and the hub holds no fluids. The fluid alternatives are a barrel with
+    an emptying recipe, or a pump from a tank.
+
+**deliver now** (`deliver {platform?, position, items}`):
+- **On a platform:** an ingredient of a crafting machine's current recipe gets an insert plan into the input slot of
+  that ingredient (the recipe's item ingredients in order), at most the slot's room (a stack).
+- **The reply:** the row names what the hub holds and says the hub fills it.
+- **Refusals:** an item the recipe does not take, a machine with no recipe, ingredients off a platform (no hub there;
+  this was checked on platforms only), and a fluid, naming the barrel or pump instead.
+- **Unchanged:** fuel and ammunition.
+- **On the copy:** Opus's call on Kestrel IVc asked for 10 barrels with the hub holding 8. 30 ticks later the hub had
+  moved all 8 (4 in the input, 4 crafted) and 2 stayed requested.
+
+**Test:** tests/d29_batch342.lua.
+## d29 batch341 (PW: a removal that leaves consumers without power says so; viewer Aurora)
+
+At 376h48 (shift99, tick 81382616) Opus pasted Resolute-W45-99-strip3 on Asterion in superforced mode; the paste marked
+533 of Asterion's entities, among them its 9 solar panels, 143 accumulators, 5 fusion generators and 2 fusion reactors
+(its fusion made no power). The reply listed them in marked_by_name and said nothing about what generated after.
+
+- **powerleft.lua.** A removal that takes a generator (generator, fusion-generator, solar-panel, burner-generator,
+  electric-energy-interface, lightning-attractor) reads each electric network it takes one from: what generates there
+  after it, leaving out what the removal takes and what is already marked. A generator left counts when its kind made
+  power on that network in the last 10 minutes; the rest are named as staying idle. What is left gives: a generator
+  its rating (get_max_power_output, else get_max_energy_production: a fusion generator 50 MW); on a platform a solar
+  panel its rating in the place's sunlight (solar_power_in_space: Aquilo 60, Vulcanus 600; in flight between the
+  ends by distance); on a planet a panel or attractor its kind's last-minute output, its share. With nothing left, or
+  less than its consumers drew over the last minute (consumers that drew in the last 10 minutes): `power_left`, one
+  line a network.
+- **Where:** deconstruct (live and dry run), a forced or superforced paste's marks (paste and blueprint_place), mine
+  (live and dry run).
+- **Measured on 2.0.77 (iMac copy of world n):** an electric network's statistics count what consumers use as input
+  and what generators make as output; LuaEntity.electric_network_statistics reads only on poles (a platform's are its
+  surface's global ones, networks.lua stats_of).
+- **Cost** (iMac copy, dry runs as a bot): Resolute's 16 fusion generators 7.6-8.4 ms (a lamp-filtered dry run of the
+  same area 5.9-8.6); 5 of Asterion's solar panels 4.8-8.4 ms (lamp 3.1-4.2): about 3 ms for the platform's
+  generators and accumulators. A dry run over a 120x255 area of Asterion took 60-65 ms with or without it.
+- **Tests:** tests/d29_batch341.lua (the strip paste case; a bridge kept; an undersized bridge; accumulators left; a
+  quiet network; a planet with steam engines, an idle and a working fusion generator).
+## d29 batch344 (GS, Sol #2750: a snapshot of the turret and its feeders when an ammo guard fires)
+
+Sol's report: "Trial31 guard477 fired 81734480 railgun (19.5,-75.5) at 4 ammo; by next readonly inspect gun recovered 10,
+so cannot distinguish sparse belt, pickup batch latency, control or power."
+
+**When it is taken:** when `ammo_below` on a platform is met (a guard firing, a wait ending), its check reads the
+lowest turret and what feeds it on that tick (turretsnap.lua).
+
+**What it holds:**
+- **The turret:** unit number, name, position, its ammo stacks (item, quality, count), items and rounds (a magazine:
+  the first stack's ammo left plus a full magazine for each other item).
+- **Each feeding inserter:** every inserter whose drop target is the turret, at most 8 (`feeders_more` counts the
+  rest), found within 3 tiles of the turret's box. For each:
+  - unit number, name, position, status;
+  - the held stack;
+  - hand settings: stack size override, filter mode and filters;
+  - pickup and drop targets;
+  - energy, and whether it is connected to an electric network;
+  - circuit control: disabled, enable/disable, the condition;
+  - for a belt pickup, each transport line's count of the turret's ammo and of all items.
+- **The platform:** its leg (from, to, km flown and left) or stop, and its speed.
+
+**Where it is kept and read:**
+- The condition's evidence names it (snapshot id and line). A fired guard's evidence and saw carry it into the queue
+  history.
+- The newest 32 a force are kept.
+- `queue_status {snapshots: true, from?}` lists them, newest first, 8 a page (`next_from`).
+- `queue_status {snapshot: id}` reads one in full. Read only.
+- batch327's triple reads (signalwatch.lua) count every tick into histograms; these are one-tick reads written apart
+  for this shape.
+
+**Measured** (iMac copy of world n's newest autosave):
+- One snapshot of a Resolute railgun with its feeder: 0.13-0.14 ms (3 turrets x 3).
+- `wait_until ammo_below {platform: Resolute, count: 1000}` was met with snapshot #1. A queue guard fired with snapshot
+  #2 as its evidence (tick 81822980: the railgun at 9, its feeder waiting for source items with an empty hand, both
+  belt lanes 0).
+
+**Test:** tests/d29_batch344.lua.
+## d29 batch345 (BP, Astra #2753: assembler_batch stages ingredients for base crafts)
+
+Astra's foundry at Vulcanus (26.5,47.5), +50% productivity on turbo underground belts (2 a craft, 2 express underground
+belts and 40 tungsten plates an ingredient set): a batch of 228 staged 4560 tungsten and 228 belts, the ingredients of
+114 crafts, and was refused on the requester's 48 slots (96 needed); 114 completions on its counter need 76 base
+crafts at +50% (opus-ugbatch-228-refused.txt, tick 81798147).
+
+- **Base crafts.** Each base craft fills the machine's productivity bar (bonus_progress) by its productivity (its own
+  and the recipe's research, capped at the recipe's maximum); a full bar is one more completion with no ingredients.
+  base = the fewest b with b + floor(bar + b x productivity) >= the completions the batch needs (crafts, unchanged: the
+  stop on the counter). The ingredients, the slot check and the plan use base; `base_crafts`, `bonus_crafts` and
+  `bonus_progress` are in the reply, and a plan line gives them with the stop. A product with an amount productivity
+  leaves out (ignored_by_productivity) is staged in full, as before. A craft in progress is not counted (its
+  completion only adds to what the batch makes).
+- **On the copy** (iMac, world n's autosave, tick 81.86 M, as Sol at Vulcanus): the bar 0.50; 228 belts: 114 completions,
+  76 base crafts, 38 bonus; 3032 tungsten and 152 belts to hold, 65 slots against 48: refused. The largest count that
+  fits is 168 (56 base crafts, 48 slots); before, the staging of every completion fit about 112. A dry run took 3.9-4.3 ms.
+- **Tests:** tests/d29_batch345.lua (Astra's 228 and a count that fits; two adjacent batches with the bar carried;
+  every even count 2..60 at five bars: the fewest base crafts, never short; no productivity, and a product productivity
+  leaves out, staged in full).

@@ -976,6 +976,35 @@ html { scroll-padding-top: 76px; }
 .poll-idea { display: grid; gap: 6px; }
 .poll-idea-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .poll-idea .fx-btn { justify-self: start; }
+/* the Ideas page (d29 batch340, viewer Aurora site:5470): two sections, the idea box, the host's tools under each idea */
+.ideas-page { max-width: 46rem; }
+.idea-box { margin: 18px 0 8px; }
+.idea-form { display: grid; gap: 6px; }
+.idea-form .fx-btn { justify-self: start; }
+.idea-form textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.idea-secs { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; min-width: 0; }
+.idea-sec-pick { display: inline-flex; gap: 6px; align-items: baseline; }
+.idea-section { margin-top: 22px; }
+.idea-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.idea { background: var(--surface); border: 1px solid var(--panel-border); padding: 8px 12px; margin: 0 0 8px; min-width: 0; }
+.idea.is-highlight { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.idea.is-hidden { opacity: .6; border-style: dashed; }
+.idea-head { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.idea-name { font-weight: 700; overflow-wrap: anywhere; }
+.idea-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.idea-badge { font-size: .78rem; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 3px; white-space: nowrap; }
+.idea-badge.is-host, .idea-badge.is-pin { border-color: var(--accent); color: var(--accent); }
+.idea-badge.pr-high, .idea-badge.is-off { border-color: var(--bad); color: var(--bad); }
+.idea-badge.st-done, .idea-badge.st-doing { border-color: var(--good); color: var(--good); }
+.idea-reply { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--hl); }
+.idea-reply p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.idea-reply-by { font-weight: 700; }
+.idea-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.idea-tools select { max-width: 100%; min-height: 26px; font-size: .9rem; }
+.idea-edit { display: grid; gap: 4px; margin-top: 6px; }
+.idea-edit textarea { width: 100%; box-sizing: border-box; }
+.idea-edit .fx-btn { justify-self: start; }
+.idea-host { margin: 8px 0; }
 @media (max-width: 520px) { .poll-idea-opts { grid-template-columns: 1fr; } .poll-opts { grid-template-columns: 1fr; } }
 
 /* (d19 batch43 A2) a long text whole: one line with an ellipsis, open for all of it; evidence lines under an item */

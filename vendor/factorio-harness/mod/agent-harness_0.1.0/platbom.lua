@@ -584,7 +584,76 @@ return function(api)
     end
     return rows, math.floor(sum * 10 + 0.5) / 10, words
   end
+  -- (d29 batch336 FL3, batch321: what a ship's time has cost, over long windows) long: true: made and used over the
+  -- game's 1 h, 10 h, 50 h and 250 h windows, for a platform or a planet (surface), the LONG_ROWS items most made and
+  -- used in all (or item); totals, not rates. Imports are not production: what cargo pods and rockets bring or take is
+  -- in neither made nor used.
+  M.LONG_ROWS = 16
+  local LONG = {{'one_hour', '1h'}, {'ten_hours', '10h'}, {'fifty_hours', '50h'}, {'two_hundred_fifty_hours', '250h'}}
+  local function short(n)
+    if n >= 1e6 then return string.format('%.3gM', n / 1e6) end
+    if n >= 1e4 then return string.format('%.3gk', n / 1e3) end
+    return string.format('%d', math.floor(n + 0.5))
+  end
+  function M.long(p, a)
+    local surface, label
+    if a.surface ~= nil then
+      assert(a.platform == nil, 'platform or surface, not both')
+      assert(type(a.surface) == 'string', 'surface is a planet name')
+      surface = game.get_surface(a.surface)
+      assert(surface and not surface.platform, 'no planet surface ' .. a.surface .. ' (a platform goes as platform)')
+      label = surface.name
+    else
+      local pl = api.platform(p, a.platform)
+      assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
+      surface, label = pl.surface, pl.name
+    end
+    local cands = {}
+    for _, kind in ipairs({'item', 'fluid'}) do
+      local stats = try(function() return kind == 'item' and p.force.get_item_production_statistics(surface) or p.force.get_fluid_production_statistics(surface) end)
+      if stats then
+        local tin, tout = stats.input_counts or {}, stats.output_counts or {}
+        local seen = {}
+        for _, t in ipairs({tin, tout}) do
+          for name in pairs(t) do
+            if not seen[name] and (a.item == nil or a.item == name) then
+              seen[name] = true
+              cands[#cands+1] = {name=name, kind=kind, stats=stats, all=(tin[name] or 0) + (tout[name] or 0)}
+            end
+          end
+        end
+      end
+    end
+    table.sort(cands, function(x, y) if x.all ~= y.all then return x.all > y.all end return x.name < y.name end)
+    local rows, lines = {}, {}
+    for i = 1, math.min(#cands, M.LONG_ROWS) do
+      local c = cands[i]
+      local r, made, used = {name=c.name, kind=c.kind}, {}, {}
+      for _, w in ipairs(LONG) do
+        local pi = defines.flow_precision_index[w[1]]
+        local function flow(cat)
+          if c.kind == 'item' then return try(function() return qflow.flow(c.stats, c.name, cat, pi, true) end) or 0 end
+          return try(function() return c.stats.get_flow_count{name=c.name, category=cat, precision_index=pi, count=true} end) or 0
+        end
+        local m, u = flow('input'), flow('output')
+        r['made_' .. w[2]], r['used_' .. w[2]] = math.floor(m + 0.5), math.floor(u + 0.5)
+        made[#made+1] = w[2] .. ' ' .. short(m); used[#used+1] = w[2] .. ' ' .. short(u)
+      end
+      rows[i] = r
+      lines[i] = string.format('%s: made %s; used %s', c.name, table.concat(made, ', '), table.concat(used, ', '))
+    end
+    if #cands > M.LONG_ROWS then lines[#lines+1] = string.format('+%d more names in its statistics (item: NAME reads one)', #cands - M.LONG_ROWS) end
+    return {surface=surface.name, platform=surface.platform and label or nil, items=rows,
+      lines=#lines > 0 and lines or {'nothing made or used on ' .. label .. (a.item and ' of ' .. a.item or '') .. ' in its statistics'},
+      note='the game\'s production statistics for ' .. label .. ' over its 1 h, 10 h, 50 h and 250 h windows (game time; totals, not rates; an item over every quality): made is what its machines, drills and collectors made, used what its machines, labs, turrets and rockets used up. Imports are not production: items cargo pods or rockets bring in, or take away, are in neither. The items most made and used in all first, at most ' .. M.LONG_ROWS}
+  end
   function M.production(p, a)
+    if a.long ~= nil then
+      assert(a.long == true, 'long is true')
+      assert(a.leg == nil, 'long and leg go apart')
+      return M.long(p, a)
+    end
+    assert(a.surface == nil, 'surface goes with long: true (a planet\'s statistics)')
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
     assert(a.item == nil or type(a.item) == 'string', 'item is an item or fluid name')
@@ -646,7 +715,9 @@ return function(api)
       lines=#lines > 0 and lines or {'nothing made or used on ' .. pl.name .. (a.item and ' of ' .. a.item or '') .. ' in its statistics'},
       note='the platform\'s own production statistics (its surface), as the production GUI shows them: made counts what every machine on it made, productivity included; with item, makers lists the crafting machines whose recipe makes it, each at full speed as inspect gives it (inspect\'s rate is one machine alone); wait_until {until: produced, platform, item, at_least} waits for what it makes from now'}
   end
-  M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
+  M.schema = {platform_production = {platform='platform name (or, with long, surface)', item='optional item or fluid name: that one only',
+    long='optional true (d29 batch336): made and used over the game\'s 1 h, 10 h, 50 h and 250 h windows (totals; game time), the 16 items most made and used in all first: lines, items [{name, kind, made_1h, used_1h, made_10h, used_10h, made_50h, used_50h, made_250h, used_250h}], note. Imports are not production: what cargo pods and rockets bring or take is in neither',
+    surface='with long: a planet instead of a platform (nauvis, vulcanus, ...)',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
     returns='lines (the most made first), items [{name, kind, made, used (totals; an item\'s over every quality, made_by_quality and used_by_quality when not all normal), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; with item, makers [{entity, quality, position, recipe, speed, productivity, per_min (at full speed, as inspect), status, crafts (products_finished)}] and makers_full_per_min, and a makers line; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, quality, asks, holds (at that quality), short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',

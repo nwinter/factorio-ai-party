@@ -43,7 +43,8 @@ def static_check():
         n, shared = page_streams(page)
         assert n == 1, f"{name} ({page}) opens {n} event streams"
         total += n
-    assert page_streams("index.html")[1] == {"/events?audio=1"}, page_streams("index.html")
+    # (batch347) the page names itself after it: /events?audio=1&page=main (body data-page)
+    assert page_streams("index.html")[1] == {"/events?audio=1&page="}, page_streams("index.html")
     assert total <= LIMIT - 2, f"{total} streams on one host leave {LIMIT - total} connections for clips"
     return total
 
