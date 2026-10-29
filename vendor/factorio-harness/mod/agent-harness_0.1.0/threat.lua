@@ -1153,7 +1153,15 @@ return function(api)
     local s,out=api.state(),{}
     local groups={}
     for _,g in ipairs(s.attack_groups or {}) do
-      if g.tick>since and (not fname or (g.seen and g.seen[fname]) or (not g.seen and fname=='player')) then groups[#groups+1]=g end
+      if g.tick>since and (not fname or (g.seen and g.seen[fname]) or (not g.seen and fname=='player')) then
+        -- (mt279 L2) the group as read, without the forces that saw it gather (their names say which teams exist)
+        if g.seen then
+          local c={}
+          for k,v in pairs(g) do if k~='seen' then c[k]=v end end
+          g=c
+        end
+        groups[#groups+1]=g
+      end
     end
     local areas={}
     for key,v in pairs(s.damage or {}) do

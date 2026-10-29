@@ -85,3 +85,15 @@ do
   assert(not ok); assert(not tostring(err):find('force red',1,true),tostring(err))
   print('mt279 L2 reply forces: ok')
 end
+
+-- an attack group as status alerts read it: never the set of forces that saw it gather (red and blue would say both
+-- teams exist); the stored group keeps it
+do
+  local st={attack_groups={{seq=2,tick=500,size=4,position={x=5,y=5},seen={red=true,blue=true}}}}
+  game={tick=600}
+  local T=dofile('mod/agent-harness_0.1.0/threat.lua'){state=function() return st end,distance=function() return 0 end}
+  local red=T.alerts(0,'nauvis','red')
+  eq(#red.attack_groups,1); eq(red.attack_groups[1].size,4); eq(red.attack_groups[1].seen,nil)
+  assert(st.attack_groups[1].seen.blue,'the stored group keeps the forces that saw it')
+  print('mt279 L2 attack groups without the forces that saw them: ok')
+end
