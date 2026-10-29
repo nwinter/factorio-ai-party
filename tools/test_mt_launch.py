@@ -357,6 +357,18 @@ def team_views():
         assert "iron &lt;b&gt;" in text and "<b>force player</b>" in text and text.count("<section>") == 2, text[:300]
     finally:
         shutil.rmtree(tmp)
+    # the camera's copy: a shot's folder name is the workspace, found in RUN/TEAM/WS (or RUN/WS), the one with ./shot
+    import imac_cam
+    tmp = tempfile.mkdtemp()
+    try:
+        for d in ("r/red/astra", "r/blue/haiku", "r/op"):
+            os.makedirs(os.path.join(tmp, d))
+        for d in ("r/red/astra", "r/blue/haiku"):
+            open(os.path.join(tmp, d, "shot"), "w").close()
+        assert imac_cam.workspace(os.path.join(tmp, "r"), "haiku") == os.path.join(tmp, "r", "blue", "haiku")
+        assert imac_cam.workspace(os.path.join(tmp, "r"), "op") is None and imac_cam.workspace(os.path.join(tmp, "r"), "luna") is None
+    finally:
+        shutil.rmtree(tmp)
     print("team views: ok")
 
 

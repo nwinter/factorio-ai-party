@@ -15,9 +15,10 @@
 #     POG_MT_TREE=here launches from this checkout (no tree: the agents' tools can read tools/mt and agent/mt).
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
 #   POG_SEED (default 274274), POG_ENEMIES (default normal), POG_IDLE_NUDGE (default 0: until mt276 part B the board
-#   it names is every team's), POG_SCORE_EVERY (default 120 s).
+#   it names is every team's: B is in now), POG_SCORE_EVERY (default 120 s), POG_MT_CAM (default 1: the camera client
+#   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
-# sandbox would not). No stream, cameras, site, polls, casters, analyst or viewer relay: nothing of this run is public.
+# sandbox would not). No stream, site, polls, casters, analyst or viewer relay: nothing of this run is public.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
 # harness what that does), POG_DENY_READ (this checkout, every mt/ worktree, the operator's folder) for the Claude Code
 # and Grok sandboxes, which also deny the other teams' folders (tools/launch-agent.sh). The operator's files (this log,
@@ -92,6 +93,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
       python3 tools/full_tools.py carry --dry-run "$tree/runs/$run/$t" "$tree/runs/$resume/$t" $(members "$tmp/$t/team.tsv") 2>&1 | sed "s/^/   $t carry: /" || true
     fi
   done
+  echo "2c. camera: $([ "${POG_MT_CAM:-1}" = 1 ] && echo 'pog-cam1 joins on the iMac (tools/mt/imac_cam.py, about 5 GB there) and renders ./shot; copied into shots/' || echo 'off (POG_MT_CAM=0): ./shot fails')"
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   exit 0
 fi
@@ -131,6 +133,9 @@ case $deploy_status in ok*) ;; *) exit 1 ;; esac
 python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
 log "world: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>&1)"
 # The game's join and leave lines of the setup's team accounts (mt-red, ...) out of the harness chat (multiteam.lua)
+# A character of the player force with no player (mt277: one at red's spawn in mt275-final, left when a setup account
+# became a spectator) is no team's: every agent near it would see another force's body. Removed before agents start.
+log "stray bodies: $(python3 tools/pog.py --world "$world" rcon "/silent-command local n=0 for _,s in pairs(game.surfaces) do for _,e in ipairs(s.find_entities_filtered{type='character',force='player'}) do if not e.player then e.destroy() n=n+1 end end end rcon.print(n..' removed')" 2>&1 | cut -c1-120)"
 # the player force's chat (an older save's) and each team's own (mt276 B: an operator request runs as its team field)
 for t in "" $teams; do
   log "chat${t:+ $t}: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"dispatch\",[[{\"id\":\"start-mt-scrub$t\",\"operator\":true${t:+,\"team\":\"$t\"},\"action\":\"mt_chat_scrub\",\"args\":{}}]]))" 2>&1 | cut -c1-200)"
@@ -166,6 +171,15 @@ if [ "$has_agy" = 1 ]; then
     nohup python3 tools/agy_memguard.py --log "$op/agy-memguard.log" >/dev/null 2>&1 &
     log "agy memory guard started: pid $!, log $op/agy-memguard.log (it runs across shifts)"
   fi
+fi
+
+# 2c. The camera client (pog-cam1, a director: spectator in the player force) for ./shot, and its copy into shots/.
+if [ "${POG_MT_CAM:-1}" = 1 ]; then
+  python3 tools/mt/imac_cam.py start 2>&1 | while read -r line; do log "camera: $line"; done
+  nohup python3 tools/mt/imac_cam.py sync "$run" --tree "$tree" >"$op/cam-sync.log" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+else
+  log "camera: off (POG_MT_CAM=0): ./shot fails"
 fi
 
 # 3. Agents: one Herdr tab per team, from the launch tree.
