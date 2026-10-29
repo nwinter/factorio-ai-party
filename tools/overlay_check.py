@@ -176,6 +176,41 @@ def toggle():
     return obs("toggle-overlay")
 
 
+BLANK_S = 60  # (batch349 cp2, Aurora site:5516) connected with no render report this long: blank, as not connected
+
+
+def drew(st, since=None, name="main"):
+    """The page reported a drawn frame (POST /overlay/render): at or after since, or in the last BLANK_S s."""
+    p, now = page(st, name), st.get("now") or time.time()
+    r = p.get("rendered")
+    if since is not None:
+        return bool(r) and r >= since
+    # a render from before this stream's connect is another page's (the page posts every 30 s while it draws)
+    return bool(r) and now - r <= BLANK_S and r >= (p.get("connected") or 0) - 1
+
+
+def live(st, since=None, name="main"):
+    """Connected (with since: connected at or after it) and drawing."""
+    return connected(st, since, name) and drew(st, since, name)
+
+
+def blank_for(st, name="main"):
+    """Seconds a connected page has drawn nothing (since its connect or its last render), or None (not connected, or
+    drawing, or connected under BLANK_S s ago: still loading)."""
+    if not connected(st, name=name) or drew(st, name=name):
+        return None
+    p, now = page(st, name), st.get("now") or time.time()
+    since = max(p.get("connected") or 0, p.get("rendered") or 0)
+    return round(now - since) if now - (p.get("connected") or now) >= BLANK_S else None
+
+
+def ensure_enabled():
+    """(d29 batch349 cp2, Aurora site:5516) the scene item read each pass and switched on when off: the line, or None
+    when it was on (or OBS did not answer: said by the steps after)."""
+    ok, out = obs("enable-overlay")
+    return f"the scene item was off: enabled ({out})" if ok and "was off" in out else None
+
+
 # (d29 batch349 cp2) what brings the page back has differed: shift100's start (09:06) a toggle did and a refreshnocache
 # did not; shift101's (13:14) neither the start's toggle nor a second one did, a refreshnocache did in 5 s. A recovery
 # round: toggle, then reload (refreshnocache), then toggle once more, each followed by up to --wait s for a connect.
@@ -209,7 +244,7 @@ def wait_for(service, since, wait, step, clock=time.time, sleep=time.sleep):
     end = clock() + wait
     while True:
         st = read(service)
-        if connected(st, since):
+        if live(st, since):  # (cp2) connected and drawing
             return max(0, round(page(st).get("connected") - since))
         if clock() >= end:
             return None
@@ -218,6 +253,9 @@ def wait_for(service, since, wait, step, clock=time.time, sleep=time.sleep):
 
 def start(a, clock=time.time, sleep=time.sleep):
     step = float(os.environ.get("POG_OC_SLEEP", "2"))
+    enabled = ensure_enabled()
+    if enabled:
+        print(f"overlay: {enabled}")
     try:
         got = wait_for(a.service, a.since, a.wait, step, clock, sleep)
     except NoStatus:
@@ -229,11 +267,16 @@ def start(a, clock=time.time, sleep=time.sleep):
     if got is not None:
         print(f"overlay: connected {got} s after the reload")
         return 0
+    try:
+        st = read(a.service)
+        how = "connected but drew nothing" if connected(st, a.since) else "not connected"
+    except (NoStatus, Down):
+        how = "not connected"
     ok, words = recover(a, clock, sleep)
     if ok:
-        print(f"overlay: not connected {a.wait:g} s after the reload; " + "; ".join(words))
+        print(f"overlay: {how} {a.wait:g} s after the reload; " + "; ".join(words))
         return 0
-    print(f"overlay: FAILED: not connected {a.wait:g} s after the reload; " + "; ".join(words))
+    print(f"overlay: FAILED: {how} {a.wait:g} s after the reload; " + "; ".join(words))
     return 1
 
 
@@ -290,24 +333,39 @@ def watch_more(a, st, clock=time.time):
 
 
 def watch_overlay(a, st, clock=time.time, sleep=time.sleep):
-    if connected(st):
-        return 0
+    stamp = time.strftime("%H:%M")
+    rc = 0
+    enabled = ensure_enabled()  # (cp2) each pass: the scene item on
+    if enabled:
+        print(f"{stamp} OVERLAY: {enabled}")
+        rc = 1
+    if live(st):
+        return rc
     now = st.get("now") or clock()
     p = page(st)
-    since = p.get("closed") or p.get("seen") or st.get("up") or now
-    gone = round(now - since)
-    if gone < a.stale:
-        return 0
+    blank = blank_for(st)
+    if connected(st) and blank is None:
+        return rc  # connected under BLANK_S s ago: still loading its first frame
+    if blank is not None:
+        what, gone = f"the main page is connected but has drawn nothing for {blank} s", blank
+    else:
+        since = p.get("closed") or p.get("seen") or st.get("up") or now
+        gone = round(now - since)
+        what = f"no main overlay stream for {gone} s"
+        if gone < a.stale:
+            return rc
     state = load_state(a.state)
-    stamp = time.strftime("%H:%M")
     if state.get("toggled") and now - state["toggled"] < a.again:
-        print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; still not connected (toggled {round(now - state['toggled'])} s ago)")
+        print(f"{stamp} OVERLAY: {what}; still not connected (toggled {round(now - state['toggled'])} s ago)")
         return 1
     state["toggled"] = clock()  # the round's start: --again s before the next round
     save_state(a.state, state)
     ok, words = recover(a, clock, sleep)
-    print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; " + "; ".join(words) + ("" if ok else "; still not connected"))
-    return 0 if ok else 1
+    print(f"{stamp} OVERLAY: {what}; " + "; ".join(words) + ("" if ok else "; still not connected"))
+    state = load_state(a.state)
+    state["failed"] = None if ok else f"{time.strftime('%H:%M')} {what}; " + "; ".join(words)  # (cp2) for the health line
+    save_state(a.state, state)
+    return max(rc, 0 if ok else 1)
 
 
 def status(a):
@@ -322,6 +380,10 @@ def status(a):
     p = page(st)
     more = [x for x in (speech(st), panel(st), cams_line(cameras(a.world))) if x[0]]
     tail = "".join("; " + t for t, _ in more)
+    blank = blank_for(st)
+    if blank is not None:
+        print(f"overlay connected but blank (nothing drawn for {blank} s){tail}")
+        return 1
     if connected(st):
         print(f"overlay connected ({p.get('open')} stream{'s' if p.get('open') != 1 else ''}, since {round(st['now'] - p['connected'])} s){tail}")
         return 1 if any(b for _, b in more) else 0

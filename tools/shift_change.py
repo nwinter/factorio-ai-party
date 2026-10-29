@@ -252,7 +252,8 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
             parts.append(ov)
             if ov.startswith("overlay NOT"):
                 bad.append("overlay")
-            for word, what in (("speech NOT", "speech"), ("panel NOT", "overlay panel"), ("cutscene", "camera"), (" character", "camera")):
+            for word, what in (("speech NOT", "speech"), ("panel NOT", "overlay panel"), ("cutscene", "camera"), (" character", "camera"),
+                               ("recovery FAILED", "overlay recovery")):
                 if word in ov and what not in bad:
                     bad.append(what)
     # the OBS restart before the shift (shift-change.sh / start-team.sh: obs-restart.sh's last line); a failure is
@@ -293,6 +294,13 @@ def overlay_status(state_url):
     # (d29 batch349 SP) the voices played whole, the panel's own render report, the camera clients' controllers
     more = [x for x in (overlay_check.speech(st), overlay_check.panel(st), overlay_check.cams_line(overlay_check.cameras())) if x[0]]
     tail = "".join("; " + t for t, _ in more)
+    # (batch349 cp2, Aurora site:5516) the watchdog's last recovery round, when it failed, stays here until one works
+    failed = overlay_check.load_state(os.environ.get("POG_OC_STATE", "/tmp/claude-501/overlay-check.json")).get("failed")
+    if failed:
+        tail += "; the last recovery FAILED: " + failed
+    blank = overlay_check.blank_for(st)
+    if blank is not None:
+        return f"overlay NOT drawing: connected but blank, nothing drawn for {blank} s" + tail
     if overlay_check.connected(st):
         return "overlay connected" + tail
     p = overlay_check.page(st)

@@ -19,7 +19,7 @@ connects after it when told to):
 - the pages: index.html is data-page main, portrait.html portrait, and overlay.js and audio.js put the name in the
   one shared event stream.
 """
-import http.server, json, os, socket, subprocess, sys, tempfile, threading, time
+import http.server, json, os, socket, subprocess, sys, tempfile, threading, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -32,13 +32,18 @@ import shift_change  # noqa: E402
 class Page:
     """A stand-in overlay page: one event stream held open until closed."""
 
-    def __init__(self, port, name="main"):
+    def __init__(self, port, name="main", draws=True):
         self.s = socket.create_connection(("127.0.0.1", port), timeout=5)
         q = "" if name is None else f"&page={name}"
         self.s.sendall(f"GET /events?audio=1{q} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: text/event-stream\r\n\r\n".encode())
         self.f = self.s.makefile("rb")
         assert b"200" in self.f.readline()
         threading.Thread(target=self.drain, daemon=True).start()
+        if draws and name:  # (batch349 cp2) as overlay.js: a render report after its first state frame
+            time.sleep(0.05)
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/overlay/render", data=json.dumps({"page": name, "height": 900}).encode(),
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=5).read()
 
     def drain(self):
         try:
@@ -86,16 +91,20 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         log, mode = os.path.join(d, "toggles.log"), {"connect_on_toggle": False, "connect_on": ("toggle-overlay", "reload-overlay")}
         stub = os.path.join(d, "obs")
-        open(stub, "w").write(f"#!{sys.executable}\nimport sys\nopen({log!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
-                              "print('stream overlay: toggled off and on (item 5)')\n")
+        off = os.path.join(d, "item-off")  # (batch349 cp2) the stub's scene item is off while this file exists
+        open(stub, "w").write(f"#!{sys.executable}\nimport os, sys\nopen({log!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                              f"if sys.argv[1:] == ['enable-overlay']:\n"
+                              f"    if os.path.exists({off!r}):\n        os.remove({off!r}); print('stream overlay: was off in stream, enabled (item 5)')\n"
+                              f"    else:\n        print('stream overlay: on in stream (item 5)')\n"
+                              f"else:\n    print('stream overlay: toggled off and on (item 5)')\n")
         os.chmod(stub, 0o755)
         srv, audio = service()
         port = srv.server_address[1]
         url = f"http://127.0.0.1:{port}"
         pages = []
 
-        def toggles():
-            return open(log).read().splitlines() if os.path.exists(log) else []
+        def toggles():  # the recovery's steps (the enable check each pass apart)
+            return [l for l in (open(log).read().splitlines() if os.path.exists(log) else []) if l != "enable-overlay"]
 
         def on_toggle():  # the page comes back once its source is toggled
             seen = 0

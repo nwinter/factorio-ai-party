@@ -2745,3 +2745,21 @@ a connect; the round stops at the first that brings the page back, and the line 
 keeps --again (600 s) between rounds. The health line says "(after a reload at the start)" or "(after a toggle at the
 start)" by the step that did. The "unnamed" page in /overlay/status is tools/stream/caster.py following /events with
 no page= (and replay.html when open): no overlay, which is why it stayed connected throughout.
+
+### cp2 item 3: a disabled scene item, and a page connected but blank (viewer Aurora site:5516)
+
+- **The scene item.** start and each watch pass run `tools/obs.py enable-overlay`: the "stream overlay" item in the
+  stream scene read, and switched on when it is off ("stream overlay: was off in stream, enabled (item N)"); the check
+  says so ("the scene item was off: enabled"). A toggle leaves an item that was off as it was, so a disabled item was
+  never brought back before.
+- **Connected but blank.** The page's render report (overlay.js reportRender, every 30 s while it draws) is part of the
+  test: start waits for a connect and a render at or after the reload; while running, a page connected for 60 s
+  (BLANK_S) with no render since its connect counts as not connected, and gets the same round (toggle, reload, toggle):
+  "the main page is connected but has drawn nothing for N s". A render from before the stream's connect is another
+  page's and does not count. status and the health line say "overlay NOT drawing: connected but blank, nothing drawn
+  for N s".
+- **A failed round stays in the health line.** watch keeps it in its state (`failed`), and the health line adds "the last
+  recovery FAILED: ..." (bad: "overlay recovery") until a later round brings the page back. POG_OC_STATE names the
+  state file (default /tmp/claude-501/overlay-check.json).
+- **Tests:** tools/test_overlay_blank.py (the item off at start and in watch; a blank page brought back by a reload at
+  start; a blank page in watch, a failed round kept in the health line, and cleared by one that works).
