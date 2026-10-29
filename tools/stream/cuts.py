@@ -92,9 +92,20 @@ class Cuts:
         if start:
             threading.Thread(target=self.run, daemon=True).start()
 
+    @staticmethod
+    def program_key(program):
+        if not program:
+            return None
+        # Labels, ship progress and other snapshot facts can change each second without a new camera command.
+        # They must neither reset a pending capture's backoff nor trigger another OBS scene update.
+        key = {k: v for k, v in program.items() if k not in ("frames", "layout_info", "cameras")}
+        key["cameras"] = {s: (r.get("pending"), (r.get("shot") or {}).get("sent"))
+                          for s, r in (program.get("cameras") or {}).items()}
+        return key
+
     def set(self, program):
         with self.lock:
-            if program != self.want:
+            if self.program_key(program) != self.program_key(self.want):
                 self.retry_at, self.attempts = 0, 0
             self.want = copy.deepcopy(program)
 
@@ -136,7 +147,12 @@ class Cuts:
         now = time.time() if now is None else now
         with self.lock:
             want = self.want
-        if not want or (want == self.applied and not self.incomplete) or now < self.retry_at:
+        if not want:
+            return
+        if self.program_key(want) == self.program_key(self.applied) and not self.incomplete:
+            self.applied = copy.deepcopy(want)  # fresh labels for the same confirmed frames
+            return
+        if now < self.retry_at:
             return
         self.attempts += 1
         self.retry_at = now + min(8.0, 0.5 * 2 ** min(self.attempts - 1, 5))
@@ -146,7 +162,7 @@ class Cuts:
         if want.get("layout") == "trio":
             visible.update((want.get("tiles") or {}).values())
         cameras = want.get("cameras") or {}
-        if any(cameras.get(s, {}).get("pending") for s in visible):
+        if any(s in cameras and (cameras[s].get("pending") or not cameras[s].get("shot")) for s in visible):
             self.status["error"] = "camera send pending"
             return
         self.acknowledged = copy.deepcopy(want)
