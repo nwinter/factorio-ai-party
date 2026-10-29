@@ -938,6 +938,7 @@ class Model:
         self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.silos = None  # (d26 batch257) launches.SiloFeed's last read (live.py, every poll): the launch shot
+        self.speaker_alarms = None  # (d28 batch326 RA2) harness ALARMS_LUA's last read: alarmquiet.py
         self.vehicles = None  # (d26 batch233 VM) the census's vehicles read {tick, rows, total, t} (live.py, every 10 s)
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
@@ -1057,6 +1058,8 @@ class Model:
             self.vehicles = obs["vehicles"]
         if isinstance(obs.get("silos"), dict):  # (d26 batch257) the rocket silos' states: the launch shot (onecam)
             self.silos = obs["silos"]
+        if isinstance(obs.get("alarms"), dict):  # (d28 batch326 RA2) the speaker alarms the camera client hears
+            self.speaker_alarms = obs["alarms"]
         if isinstance(obs.get("turret_state"), dict):  # (d20 batch50 G1) each turret's readiness (turretstate.py)
             self.turret_state = obs["turret_state"]
         if obs.get("basemap"):
@@ -3104,5 +3107,6 @@ class Model:
             "board": self.board_snapshot(),
             "reminders": self.reminders_snapshot(),
             "cameras": cameras or {},
+            "speaker_alarms": self.speaker_alarms,
             "errors": self.errors,
         }

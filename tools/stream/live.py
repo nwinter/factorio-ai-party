@@ -208,6 +208,9 @@ class LiveSource:
         self.planet_turn = 0
         # (d26 batch233 VM) our vehicles where our force last saw them (census.lua vehicles), the live map's vehicles layer
         self.vehicles_every = 10.0
+        # (d28 batch326 RA2) the speaker alarms the camera client hears (harness ALARMS_LUA: one player's alerts):
+        # alarmquiet.py keeps a held one from droning on air
+        self.alarms_every, self.next_alarms = 2.0, 0.0
         self.next_vehicles = 0
         self.platform_detail = {}
         self.platform_views = {}
@@ -382,6 +385,12 @@ class LiveSource:
                         obs["planet_map"] = m
             except Exception as e:
                 errors["planet_map"] = str(e)
+        if time.time() >= self.next_alarms:
+            self.next_alarms = time.time() + self.alarms_every
+            try:
+                obs["alarms"] = dict(self.h.alarms(1), t=time.time())
+            except Exception as e:
+                errors["alarms"] = str(e)
         if time.time() >= self.next_vehicles:
             self.next_vehicles = time.time() + self.vehicles_every
             try:
