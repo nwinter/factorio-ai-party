@@ -265,7 +265,7 @@ return function(api)
     if try(function() return proto.result_is_always_fresh end) or try(function() return proto.reset_freshness_on_craft end) then
       return string.format('%s start fresh (recipe %s resets freshness)', what, recipe.name)
     end
-    input = input or try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end)
+    input = input or try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
     local sum, n, parts, missing = 0, 0, {}, {}
     for _, ing in ipairs(recipe.ingredients or {}) do
       if ing.type == 'item' and M.spoils(ing.name) then
@@ -316,7 +316,11 @@ return function(api)
   end
   local function held_stack(e) return e.held_stack end
   local function ground_stack(e) return e.stack end
-  local function inventory_named(e, inv_name) return e.get_inventory(defines.inventory[inv_name]) end
+  local CRAFTER = {assembling_machine_input='crafter_input',furnace_source='crafter_input',
+    assembling_machine_output='crafter_output',furnace_result='crafter_output'}
+  local function inventory_named(e, inv_name)
+    return e.get_inventory(defines.inventory[CRAFTER[inv_name] or inv_name] or defines.inventory[inv_name])
+  end
   -- the items that hatch as a set (M.hatching: spoilable, and hatching when they spoil), made once
   local hatch_set
   local function hatching_stack(s)

@@ -48,7 +48,7 @@ return function(api)
   -- A miner's output of name a minute at full speed, or nil when it is not counted (a pumpjack).
   local function miner_rate(e, name)
     if e.type == 'offshore-pump' then
-      return try(function() return e.prototype.pumping_speed * 3600 end)
+      return try(function() return e.prototype.get_pumping_speed(e.quality) * 3600 end)
     end
     return try(function()
       local res = e.mining_target

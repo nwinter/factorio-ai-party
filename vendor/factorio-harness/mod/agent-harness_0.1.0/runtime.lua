@@ -740,7 +740,7 @@ local function finish(index, outcome)
     local main=okp and p0 and p0.valid and p0.get_main_inventory()
     local took={}
     if e and e.valid and main and p0.can_reach_entity(e) then
-      for _,id in ipairs({defines.inventory.assembling_machine_input,defines.inventory.fuel,defines.inventory.furnace_source}) do
+      for _,id in ipairs({(defines.inventory.crafter_input or defines.inventory.assembling_machine_input),defines.inventory.fuel,(defines.inventory.crafter_input or defines.inventory.furnace_source)}) do
         local inv=id and (function() local ok,x=pcall(e.get_inventory,id); return ok and x end)()
         for i=1,inv and #inv or 0 do
           local st=inv[i]
@@ -2014,7 +2014,18 @@ local kind_order={
 -- Inventory names by what they hold, per entity type (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead
 -- of the recipe input): a silo's parts are the rocket-part recipe's input, its cargo the rocket's (silo.lua M.ALIASES).
 M.INVENTORY_ALIASES={['rocket-silo']={parts='assembling_machine_input',cargo='rocket_silo_rocket'}}
+-- Common engine IDs exist in both 2.0.77 and 2.1. Keep old agent inventory names as aliases.
+M.CRAFTER_INVENTORY={assembling_machine_input='crafter_input',furnace_source='crafter_input',rocket_silo_input='crafter_input',
+  assembling_machine_output='crafter_output',furnace_result='crafter_output',rocket_silo_output='crafter_output',
+  assembling_machine_modules='crafter_modules',furnace_modules='crafter_modules',rocket_silo_modules='crafter_modules',
+  assembling_machine_trash='crafter_trash',furnace_trash='crafter_trash'}
+function M.inventory_id(name)
+  return defines.inventory[M.CRAFTER_INVENTORY[name] or name] or defines.inventory[name]
+end
 function M.inventory_name(e,name)
+  if name=='crafter_input' then name=e.type=='furnace' and 'furnace_source' or 'assembling_machine_input'
+  elseif name=='crafter_output' then name=e.type=='furnace' and 'furnace_result' or 'assembling_machine_output'
+  elseif name=='crafter_modules' then name=e.type=='furnace' and 'furnace_modules' or 'assembling_machine_modules' end
   local by=M.INVENTORY_ALIASES[e.type]
   return by and by[name] or name
 end
@@ -2022,7 +2033,7 @@ end
 function M.inventory_names(e)
   local list={}
   for name,allowed in pairs(inventories) do
-    for _,kind in ipairs(allowed) do if e.type==kind and defines.inventory[name] then list[#list+1]=name end end
+    for _,kind in ipairs(allowed) do if e.type==kind and M.inventory_id(name) then list[#list+1]=name end end
   end
   local aliases={}
   for alias,name in pairs(M.INVENTORY_ALIASES[e.type] or {}) do aliases[#aliases+1]=alias..' (= '..name..')' end
@@ -2037,8 +2048,8 @@ local function inventory(e, name)
   local matches = false
   for _, kind in ipairs(allowed) do if e.type == kind then matches=true end end
   assert(matches, 'inventory is not applicable to this entity type')
-  assert(defines.inventory[name], 'inventory unavailable')
-  local inv = e.get_inventory(defines.inventory[name])
+  assert(M.inventory_id(name), 'inventory unavailable')
+  local inv = e.get_inventory(M.inventory_id(name))
   assert(inv and inv.valid, 'inventory unavailable')
   return inv
 end
@@ -3356,7 +3367,7 @@ function M.scan_inventories(e)
   for _,name in ipairs(take_order) do
     local real=name~='fuel' and M.inventory_name(e,name)
     local allowed=real and inventories[real]
-    if allowed and defines.inventory[real] then
+    if allowed and M.inventory_id(real) then
       for _,kind in ipairs(allowed) do if kind==t then list[#list+1]=real; break end end
     end
   end
@@ -3374,7 +3385,7 @@ local scan_fields={
     -- (d23 batch123 CF4) only the inventories its type takes, in take order: the same reads without a refused pcall
     -- for each of the other names (Asterion's 669-belt band: 29 refusals a belt)
     for _,name in ipairs(M.scan_inventories(e)) do
-      local ok,inv=pcall(e.get_inventory,defines.inventory[name])
+      local ok,inv=pcall(e.get_inventory,M.inventory_id(name))
       if ok and inv and inv.valid then any=true; for _,s in ipairs(inv.get_contents()) do all[#all+1]=s end end
     end
     -- (d17 batch14 A10, Astra: tracing Meridian's western rocket feed took an inspect per belt) a belt's items per lane
@@ -12950,7 +12961,7 @@ function M.machine_room(e,item,quality)
     if okn and inv_name~=input then return nil end
     return {room=0,why=string.format('its recipe %s does not use %s',name,item)}
   end
-  local inv=e.get_inventory(defines.inventory[input])
+  local inv=e.get_inventory(M.inventory_id(input))
   local held=inv and inv.get_item_count{name=item,quality=quality or 'normal'} or 0
   local cap=(prototypes.item[item] and prototypes.item[item].stack_size or 1)+M.INPUT_OVER_STACK
   local room=math.max(0,cap-held)

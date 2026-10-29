@@ -31,7 +31,7 @@ return function(api)
     if not recipe then return {position=e.position, name=e.name, line=string.format('%s %s: no recipe', e.name, at(e.position))}, false end
     local q = qname(rq) or 'normal'
     local function key(name) return q == 'normal' and name or name .. '@' .. q end
-    local inv = try(function() return e.get_inventory(e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input) end)
+    local inv = try(function() return e.get_inventory(e.type == 'furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input) end)
     local rows, short, parts = {}, false, {}
     local sp = api.spoil and api.spoil()
     local acc = sp and inv and sp.inventory(inv, {}, 'input') or {}

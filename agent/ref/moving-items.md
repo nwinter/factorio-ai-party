@@ -17,6 +17,7 @@
   quality (transfer, collect, feed, stock, build and its entries, use_item, wait_until; entries of requests `set`,
   drop and load_silo `items`); an action without quality refuses it, naming quality. transfer refuses a name that is
   no item.
+- `transfer` inventory names: `crafter_input`, `crafter_output`, `crafter_modules` work for furnaces, assemblers and silos; the older entity-specific names still work.
 - `transfer`, two places: `{position, to, item, from_inventory, to_inventory}` takes at `position` and gives at `to`,
   each end its own inventory (a machine's `assembling_machine_output` into another's `assembling_machine_input`); a
   take not reached ends `unreached`, nothing given. `{from: {x,y}, to: {x,y}, item, count}` too, `inventory` going

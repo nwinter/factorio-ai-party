@@ -487,7 +487,7 @@ return function(api)
     -- Cargo against a rocket's lift and slots.
     local rocket_inv = defines.inventory.rocket_silo_rocket and try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
     -- (B2) a spoilable item in the silo's input (the parts' ingredients) with its spread
-    row.input_spoil = M.spoil_lines(try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end))
+    row.input_spoil = M.spoil_lines(try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end))
     local loaded = {}
     for _, s in ipairs(contents(rocket_inv)) do loaded[#loaded+1] = {name=s.name, count=s.count, quality=s.quality ~= 'normal' and s.quality or nil} end
     local lift, slots = api.cargo.limits(e)

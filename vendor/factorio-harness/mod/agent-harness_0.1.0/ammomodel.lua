@@ -127,7 +127,7 @@ return function(api)
         local e, r, made_here = mk.e, mk.r, mk.made[name] or 0
         if made_here > 0 then
           rec, per = r, made_here
-          local inv = try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end)
+          local inv = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
           for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do inputs[c.name] = (inputs[c.name] or 0) + c.count end
           for i = 1, try(function() return #e.fluidbox end) or 0 do
             local f = try(function() return e.fluidbox[i] end)

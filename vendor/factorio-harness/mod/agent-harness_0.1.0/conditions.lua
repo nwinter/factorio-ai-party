@@ -1018,7 +1018,7 @@ return function(api)
         if x.valid and (x.type=='assembling-machine' or x.type=='furnace') then e=x; break end
       end
       if not e then return false,string.format('no assembler or furnace of ours at (%g,%g)',pos.x,pos.y) end
-      local ok,inv=pcall(function() return e.get_inventory(e.type=='furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input) end)
+      local ok,inv=pcall(function() return e.get_inventory(e.type=='furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input) end)
       local best,item
       for i=1,ok and inv and #inv or 0 do
         local st=inv[i]

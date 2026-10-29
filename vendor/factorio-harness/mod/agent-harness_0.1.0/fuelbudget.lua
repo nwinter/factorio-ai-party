@@ -95,7 +95,7 @@ return function(api)
           else
             local speed = try(function() return e.crafting_speed end) or 1
             local energy = try(function() return recipe.energy end) or 1
-            local input = try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end)
+            local input = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
             local held = inv_counts(input, true)
             for _, ing in ipairs(try(function() return recipe.ingredients end) or {}) do
               if (ing.type == nil or ing.type == 'item') and fuel_value(ing.name) > 0 then

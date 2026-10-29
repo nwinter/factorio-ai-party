@@ -364,7 +364,7 @@ return function(api)
         by_machine[e.unit_number]={entity=e,recipe=recipe,demand=0,supply=0,output=0,take=0,group=g}
         -- Missing ingredients read from the machine's input slots, as its GUI shows.
         if status=='item_ingredient_shortage' or status=='fluid_ingredient_shortage' then
-          local inv=e.get_inventory(e.type=='furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input)
+          local inv=e.get_inventory(e.type=='furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input)
           for _,ingredient in pairs(recipe.ingredients) do
             local have=ingredient.type=='item' and inv and inv.get_item_count({name=ingredient.name,quality=rq}) or nil
             if have and have<ingredient.amount then g.short=g.short or {}; g.short[ingredient.name]=(g.short[ingredient.name] or 0)+1 end
