@@ -18059,3 +18059,25 @@ crafts at +50% (opus-ugbatch-228-refused.txt, tick 81798147).
 - **Tests:** tests/d29_batch345.lua (Astra's 228 and a count that fits; two adjacent batches with the bar carried;
   every even count 2..60 at five bars: the fewest base crafts, never short; no productivity, and a product productivity
   leaves out, staged in full).
+
+## d29 batch351 (RA, Astra #2762: an opt-in return allowance for the turnaround budget)
+
+Resolute's 36th deep turn (shift100, Astra's read at tick 82449670): turnaround {km 10000, back_to aquilo, speed_floor
+35, margin 0.2, reserve rail 1500}: 11646 km flown on solar-system-edge->shattered-planet, back 21646 km to the edge,
+then 100000 km to Aquilo; railgun ammunition net 35/min (the last 1 min, the worse); 1356 usable, out_km_max -15148,
+the planned turn 25148 km too far. The Aquilo leg alone at 35 km/s is 2857 s, 47.6 min x 35 = 1666.7 rails; Astra's
+whole Aquilo return measured rail made 2522, used 2432.
+
+- **The argument.** turnaround.return_allowance {legs, items, label, evidence_ticks?}: the caller's count of each item
+  over the named legs back after the connection's start, in place of net x time there. Checked (endurance.lua
+  check_allowance): a table of those keys; label 1..200 characters; 1..8 legs, each "from->to", none twice; items known,
+  counts 0..1e9 (no production credit); evidence ticks up to now. Matched (match_allowance) against the turnaround's
+  legs with turn "on": each named leg exactly one of them, else refused naming those there are; none when back_to is
+  the connection's start.
+- **The arithmetic** (return_budget, o.allowance = {items, km}): x = ((usable - count) / net x v - flown - (back - km)) /
+  2; left_at_return = stock - net x (2 out + flown + back - km) / v - count. An item made at least as fast as used
+  with a count over its usable stock: allowance_over_usable. The read without it: unadjusted, binds_unadjusted.
+- **Default:** no allowance, replies unchanged (no new fields).
+- **budget_below** passes its turnaround to the read, allowance and all.
+- **Tests:** tests/d29_batch351.lua (Astra's numbers with 0 and 300 over the Aquilo leg; the unadjusted kept; an item not
+  named; legs absent, ambiguous, none after the start; argument refusals; budget_below with and without).
