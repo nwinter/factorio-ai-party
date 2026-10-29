@@ -367,7 +367,7 @@
 
   function connect() {
     // the page's one event stream (overlay.js opens it first; /events?audio=1 sends new clips as `audio` events)
-    const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1"));
+    const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1&page=" + encodeURIComponent((new URLSearchParams((typeof location !== "undefined" && location.search) || "").get("page") || (document.body && document.body.dataset && document.body.dataset.page) || "main"))));
     es.addEventListener("audio", (e) => {
       try { arrive(JSON.parse(e.data)); } catch (err) { console.error(err); }
     });
