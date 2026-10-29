@@ -208,4 +208,53 @@ do
   runtime.PRODUCERS=48
   eq(runtime.rates_producers({},'copper-cable'),nil)   -- none: no rows, no lines
 end
+
+-- 4. (FL6) board review times: a game tick, a game time or a wall time; the owner's next reply says so once; status and
+-- the shift block list it
+do
+  local function req(args,wall,action) local r=runtime.dispatch{action=action or 'board_post',args=args,bot='astra',wall=wall}; if r.item and not r.id then r.id=r.item.id end; return r end
+  local W=1793293200000   -- 2026-10-29 10:00 PDT (17:00 UTC) in ms
+  game.tick=200000; tick=200000
+  local r=req({kind='task',title='Dated design decision',review='2026-10-29 10:00 PDT'},W-3600000)
+  local id=r.id or r.item and r.item.id
+  assert(id,'posted')
+  local item=storage.agent_harness.board.items[id]
+  eq(item.review.wall,W); eq(item.review.text,'2026-10-29 10:00 PDT'); eq(item.review.by,'astra')
+  -- the same instant in other zones
+  local i2=storage.agent_harness.board.items[req({kind='task',title='utc',review='2026-10-29T17:00 UTC'},W-60000).id]
+  eq(i2.review.wall,W)
+  local i3=storage.agent_harness.board.items[req({kind='task',title='offset',review='2026-10-29 09:00 -08:00'},W-60000).id]
+  eq(i3.review.wall,W)
+  req({id=i2.id,review=false},W-60000,'board_update'); eq(i2.review,nil)
+  req({id=i3.id,status='done'},W-60000,'board_update')
+  -- before it: nothing; after: once in the reply's team block, then not again
+  local before=req({},W-60000,'status')
+  assert(not (before.team and before.team.review_due),'not due yet')
+  local after=req({},W+180000,'status')
+  local due=after.team and after.team.review_due
+  assert(due and due[1]:find('#'..id..' Dated design decision: your review time 2026-10-29 10:00 PDT (set by astra) passed 3m00s ago',1,true),tostring(due and due[1]))
+  local again=req({},W+240000,'status')
+  assert(not (again.team and again.team.review_due),'said once')
+  local rows=runtime.board.overdue_reviews('astra')
+  local found for _,x in ipairs(rows) do if x.line:find('review 2026-10-29 10:00 PDT',1,true) then found=x end end
+  assert(found,'status lists it')
+  eq(runtime.board.plan_for('astra').past_review[1]:find('#'..id,1,true),1)
+  -- a call with no wall clock cannot set a wall time, nor see it pass
+  local ok,err=pcall(runtime.dispatch,{action='board_post',args={kind='task',title='x',review='2026-10-29 10:00 PDT'},bot='astra'})
+  assert(not ok and tostring(err):find('wall clock',1,true),tostring(err))
+  -- game time and ticks
+  local i4=storage.agent_harness.board.items[req({kind='task',title='by game time',review='0h56m'},W).id]
+  eq(i4.review.tick,201600)
+  local i5=storage.agent_harness.board.items[req({kind='task',title='by tick',review=250000},W).id]
+  eq(i5.review.tick,250000)
+  game.tick=202000; tick=202000
+  due=req({},nil,'status').team.review_due
+  assert(due and #due==1 and due[1]:find('by game time',1,true),tostring(due and due[1]))
+  ok,err=pcall(req,{kind='task',title='bad',review='tomorrow'},W)
+  assert(not ok and tostring(err):find('review is a game tick',1,true),tostring(err))
+  -- only its owner or requester sets it
+  runtime.operator.bot_create('sol')
+  ok,err=pcall(runtime.dispatch,{action='board_update',args={id=id,review='1h00m'},bot='sol',wall=W})
+  assert(not ok and tostring(err):find('sets the review time',1,true),tostring(err))
+end
 print('d29_batch336: ok')

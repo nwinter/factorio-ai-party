@@ -101,7 +101,8 @@ export class Harness {
     let first: unknown;
     for (let attempt = 0; ; attempt++) {
       try {
-        const reply = await this.requestOnce(action, args, id);
+        // (d29 batch336 FL6) the wall clock goes in the envelope, once per ID: a resend must match the first send
+        const reply = await this.requestOnce(action, args, id, started);
         if (attempt > 0) reply.retried = {attempts:attempt + 1, waited_s:Math.round((Date.now() - started) / 100) / 10, first_error:String(first instanceof Error ? first.message : first)};
         return reply;
       } catch (error) {
@@ -115,11 +116,12 @@ export class Harness {
     }
   }
 
-  async requestOnce(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {
+  /** wall: the request's wall clock (ms since 1970) for the runtime, which has none (board review times). */
+  async requestOnce(action: string, args: Record<string, unknown> = {}, id: string = randomUUID(), wall: number = Date.now()): Promise<Reply> {
     // Reuse the bootstrap's stable read-only operation. New observation views
     // must not be treated as mutations by a bootstrap already loaded in-game.
     if (OBSERVE_SCOPES.has(action)) { args = {...args, scope:action}; action = 'observe'; }
-    const request = this.bot === undefined ? { id, action, player: this.player, args } : { id, action, bot: this.bot, args };
+    const request = this.bot === undefined ? { id, action, player: this.player, args, wall } : { id, action, bot: this.bot, args, wall };
     const json = JSON.stringify(request);
     if (Buffer.byteLength(json) > 1048576) throw new Error('Request exceeds 1 MiB limit');
     await this.record({ event: 'request', request });

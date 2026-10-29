@@ -482,6 +482,56 @@ return function(api)
   -- A project as read: progress, the goal, its steps ([x] done, by whom and
   -- when; [ ] not yet), areas and the handoff. A list row has the first 3
   -- steps not done (next_steps) and the goal and handoff cut to 160.
+  -- (d29 batch336 FL6, batch321: dated checks lived in note text, never came due) a review time the owner sets: a game
+  -- tick, a game time ("376h30m") or a wall time with its zone ("2026-10-29 10:00 PDT"; the game has no wall clock, so a
+  -- wall time is compared with the request's own, which fh adds). Past it, the owner's next reply says so once
+  -- (review_due), status lists it with the overdue checks, and the owner's first reply of a shift lists it (past_review).
+  local REVIEW_FORMS = 'review is a game tick, a game time ("376h30m") or a wall time with its zone ("2026-10-29 10:00 PDT", PST, UTC or +HH:MM); false or "" clears it'
+  local ZONES = {PDT=-7, PST=-8, UTC=0, GMT=0, Z=0}
+  local function days_from_civil(y, m, d)
+    if m <= 2 then y = y - 1 end
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local doy = math.floor((153 * ((m + 9) % 12) + 2) / 5) + d - 1
+    return era * 146097 + yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy - 719468
+  end
+  local function review_arg(v)
+    if v == false or v == '' then return false end
+    if type(v) == 'number' then
+      assert(v == math.floor(v) and v >= 0, REVIEW_FORMS)
+      return {tick=v}
+    end
+    assert(type(v) == 'string', REVIEW_FORMS)
+    local h, mi = v:match('^%s*(%d+)h(%d%d)m%s*$')
+    if h then return {tick=(tonumber(h) * 60 + tonumber(mi)) * 3600, text=h .. 'h' .. mi .. 'm'} end
+    local y, mo, d, hh, mm, zone = v:match('^%s*(%d%d%d%d)%-(%d%d)%-(%d%d)[ T](%d%d?):(%d%d)%s*(%S*)%s*$')
+    assert(y, REVIEW_FORMS)
+    local off = ZONES[zone:upper()]
+    if not off then
+      local sign, oh, om = zone:match('^([+-])(%d%d):?(%d%d)$')
+      assert(sign, REVIEW_FORMS)
+      off = (tonumber(oh) + tonumber(om) / 60) * (sign == '-' and -1 or 1)
+    end
+    y, mo, d, hh, mm = tonumber(y), tonumber(mo), tonumber(d), tonumber(hh), tonumber(mm)
+    assert(mo >= 1 and mo <= 12 and d >= 1 and d <= 31 and hh <= 23 and mm <= 59, REVIEW_FORMS)
+    assert(api.wall and api.wall(), 'a wall time is checked against the request\'s wall clock, which this call lacks (fh adds it); give a game tick or a game time (376h30m)')
+    local ms = ((days_from_civil(y, mo, d) * 86400 + hh * 3600 + mm * 60) - off * 3600) * 1000
+    return {wall=ms, text=string.format('%04d-%02d-%02d %02d:%02d %s', y, mo, d, hh, mm, zone)}
+  end
+  -- How far past its review an item is, in ticks (a wall time: by the request's wall clock), or nil.
+  local function review_past(i)
+    local r = i.review
+    if not r then return nil end
+    if r.tick then return game.tick >= r.tick and game.tick - r.tick or nil end
+    local now = api.wall and api.wall()
+    if not now or now < r.wall then return nil end
+    return math.floor((now - r.wall) / 1000 * 60)
+  end
+  local function review_text(r) return r.text or ('tick ' .. r.tick) end
+  local function set_review(item, r, by)
+    if r then r.by, r.set = by, game.tick end
+    item.review = r or nil
+  end
   local function project_view(i, full)
     local notes = i.notes
     if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
@@ -498,6 +548,7 @@ return function(api)
       areas=#i.areas > 0 and i.areas or nil,
       handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
       needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
+      review=i.review and string.format('%s (set by %s)%s', review_text(i.review), tostring(i.review.by), review_past(i) and ', passed ' .. ago(review_past(i)) .. ' ago' or '') or nil,
       checks=full and api.check_lines and api.check_lines(i.id) or nil,
       blocked_by=i.blocked_by, parent=i.parent, open_steps=i.open_steps, supersedes=i.supersedes, superseded_by=i.superseded_by,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
@@ -648,6 +699,7 @@ return function(api)
       requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent, supersedes=i.supersedes, superseded_by=i.superseded_by,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
+      review=i.review and string.format('%s (set by %s)%s', review_text(i.review), tostring(i.review.by), review_past(i) and ', passed ' .. ago(review_past(i)) .. ' ago' or '') or nil,
       checks=full and api.check_lines and api.check_lines(i.id) or nil,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
@@ -662,8 +714,31 @@ return function(api)
         rows[#rows+1] = {age=game.tick - e.next_check, line=string.format('board #%d %s: next check at tick %d, %s ago (evidence by %s %s ago)', i.id, clip(i.title, 60),
           e.next_check, ago(game.tick - e.next_check), tostring(e.by), ago(game.tick - (e.at or game.tick)))}
       end
+      local past = mine and ACTIVE[i.status] and review_past(i)
+      if past then
+        rows[#rows+1] = {age=past, line=string.format('board #%d %s: review %s (set by %s), passed %s ago', i.id, clip(i.title, 60),
+          review_text(i.review), tostring(i.review.by), ago(past))}
+      end
     end
     return rows
+  end
+  -- (FL6) name's active items past their review time, the longest past first: lines; told: only those not said yet in
+  -- a reply (each then marked said).
+  function M.review_lines(name, told)
+    local rows = {}
+    for _, i in pairs(store().items) do
+      local mine = i.owner == name or (not i.owner and i.requested_by == name)
+      local past = mine and ACTIVE[i.status] and i.review and (not told or not i.review.told) and review_past(i)
+      if past then
+        if told then i.review.told = true end
+        rows[#rows+1] = {age=past, line=string.format('#%d %s: your review time %s (set by %s) passed %s ago', i.id, clip(i.title, 60),
+          review_text(i.review), tostring(i.review.by), ago(past))}
+      end
+    end
+    table.sort(rows, function(x, y) return x.age > y.age end)
+    local out = {}
+    for k, r in ipairs(rows) do out[k] = r.line end
+    return #out > 0 and out or nil
   end
   -- (d20 batch50 B1) `name`'s active items (owned, or posted with no owner) whose newest evidence names a next check at a
   -- game tick from t0 to t1 (a rest's span: rests.lua). Rows {id, title, next_check}, the soonest first.
@@ -732,6 +807,7 @@ return function(api)
     -- A first note (shake4: agents carried update's note over to posts).
     if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', LONG)} end
     if a.evidence ~= nil then item.evidence = Ev().add(nil, Ev().check(a.evidence, by)) end
+    if a.review ~= nil then set_review(item, review_arg(a.review), by) end
     local warnings, over = {}, nil
     if kind == 'claim' then
       assert(item.area, 'a claim needs area {left_top, right_bottom}')
@@ -795,8 +871,9 @@ return function(api)
     if not item then error(missing(a.id), 0) end
     local project = item.kind == 'project'
     local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
-      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil or a.evidence ~= nil or a.cover ~= nil
+      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil or a.evidence ~= nil or a.cover ~= nil or a.review ~= nil
     local evidence = a.evidence ~= nil and Ev().check(a.evidence, by) or nil
+    local review = a.review ~= nil and review_arg(a.review)
     assert((a.blocked_by == nil and a.parent == nil and a.supersedes == nil) or LINK_KINDS[item.kind], 'blocked_by, parent and supersedes are for a task, request or project')
     local links = a.blocked_by ~= nil and links_arg(a.blocked_by, item.id) or nil
     local sup = a.supersedes ~= nil and supersedes_arg(a.supersedes, item.id) or nil
@@ -806,7 +883,7 @@ return function(api)
         .. (k == 'done' and '; status "done" finishes an item' or ''))
       given = given or a[k] ~= nil
     end
-    assert(given, 'give status, owner, note, evidence, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ' or cover'))
+    assert(given, 'give status, owner, note, evidence, review, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ' or cover'))
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
@@ -979,6 +1056,12 @@ return function(api)
         if a.status ~= 'open' and not item.owner then item.owner = by end
         changes[#changes+1] = a.status
       end
+    end
+    if a.review ~= nil then
+      assert(boss, string.format('only the owner (%s), the requester (%s) or the operator sets the review time of #%d',
+        tostring(item.owner or 'none'), tostring(item.requested_by), item.id))
+      set_review(item, review, by)
+      changes[#changes+1] = review and 'review ' .. review_text(review) or 'review cleared'
     end
     -- (d23 batch123 CF1) what this update takes away, for the focus and plan lines that name it (progress.lua on_update)
     local removed, ST = {}, staletext
@@ -1237,12 +1320,12 @@ return function(api)
   function M.plan_for(name)
     local i = plan_item()
     local projects = M.project_lines(name)
-    if not i and not projects then return nil end
+    if not i and not projects and not M.review_lines(name) then return nil end
     local mine
     for _, l in ipairs(i and i.lines or {}) do
       if l.agent == name then mine = l.text .. (l.stale and ' [' .. staletext.text(l.stale, ago(game.tick - l.stale.tick)) .. ']' or '') end
     end
-    return {goals=i and i.goals, mine=mine, projects=projects}
+    return {goals=i and i.goals, mine=mine, projects=projects, past_review=M.review_lines(name)}
   end
   -- The look-ahead block (lookahead.lua): agent `name`'s plan line with the tick it was set, the goals, and the
   -- items it owns that are open, newest first.
@@ -1447,6 +1530,7 @@ return function(api)
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
       surface='claim only: the surface its area is on (default yours; nauvis, gleba, platform-1, ...); positions on other surfaces are never in it',
       tags='up to 8 short strings', note='optional first note, 1..1000 characters (longer is refused)',
+      review='optional (d29 batch336): a review time: a game tick, a game time ("376h30m") or a wall time with its zone ("2026-10-29 10:00 PDT", PST, UTC or +HH:MM). Past it, your next reply says so once (review_due), status lists it with overdue_reviews, and your first reply of a shift lists it (past_review); shown with the item',
       evidence='optional {metric?, tick?, decision?, result?, owner?, next_check?}: what was measured (with tick, default now), the decision it changed, the downstream result, who owns what is open and the next check (text, or a game tick: past it, status lists the item as overdue for review); shown with the item (the newest 5 kept)',
       allow='claim only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (array or "luna,sol"), or "everyone"; the harness enforces nothing else',
       goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40), or of {text, owner? (that step\'s own owner), parallel? (true: no order between it and the parallel steps next to it)}',
@@ -1459,6 +1543,7 @@ return function(api)
       owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min (a project: 30 min); another name reassigns (owner or requester only); "" releases it',
       note='1..1000 characters (longer is refused), anyone may add (last 10 kept; 20 on a project)',
       evidence='as board_post evidence, anyone may add (the newest 5 kept)',
+      review='as board_post review, its owner, requester or the operator; false or "" clears it',
       allow='claim owner only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (names or "everyone"; [] or "" clears it)',
       surface='claim owner only: the surface its area is on',
       cover='claim: true marks you as covering a teammate\'s claim: you hear its alerts (and wakes for losses in it) with its owner until you set false; your requests in its area and updates on it keep it open as its owner\'s do (at most 4 coverers)',
@@ -2628,6 +2713,7 @@ return function(api)
       out.mentions, out.tells = mentions(p)
     end
     out.board = board_lines(p, h)
+    if not helper then out.review_due = M.review_lines(M.who(p), true) end
     out.research = api.research_lines and api.research_lines(p, h) or nil
     if api.watch then pcall(api.watch, p) end
     out.alerts = alert_lines(p, h, losses)

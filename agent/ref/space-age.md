@@ -242,6 +242,9 @@
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
+  `long: true` (with `platform`, or `surface` for a planet): made and used over the game's 1 h, 10 h, 50 h and 250 h
+  windows (game time; totals), the 16 items most made and used in all (or `item`). Imports are not production: what
+  cargo pods and rockets bring in or take away is in neither.
 - `platform_defense {platform, asteroids: true, seconds: N}` (10..1800) starts a watch of the asteroids in view of the
   platform (its foundation's chunks, 32 tiles out) and its turrets; the same without `seconds` reads it. Each asteroid:
   its approach (the platform faces north: front, side or rear by where its straight line enters the box round the
@@ -358,6 +361,9 @@
   Each territory's `state`, from what the team saw: `has a demolisher` (in sight or last seen), `killed` (`its
   small-demolisher was killed at tick T (game 22h37m) by sol; none seen since`), or `not seen` (`no demolisher seen in
   it`).
+- `shipment {totals: true, platform?}`: each platform's pods since the harness began counting them (`since_tick`): up
+  (rockets to it) and down (its hub's pods), each with cargo by item and the planets, and the same over 1h, 10h, 50h and
+  250h (each window covers its length less up to one 10-minute, 1-hour or 10-hour bucket; `from_tick`).
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills, and the platform's last 2 drops

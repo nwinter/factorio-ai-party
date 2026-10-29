@@ -349,6 +349,8 @@ return function(api)
     if plan and plan.mine then out.your_plan_line = plan.mine end
     -- Open projects, the agent's own first: "#12 nuclear plant: 3 of 7 steps; owner sol (...); next 4. ...; handoff: ...".
     if plan and plan.projects then out.projects = plan.projects end
+    -- (d29 batch336 FL6) its board items past the review time their owner set
+    if plan and plan.past_review then out.past_review = plan.past_review end
     local since = last_call or shift.prev_tick or 0
     local names = finished_since(s, p.force, since)
     if #names > 0 then
