@@ -26,6 +26,12 @@
 //   POST /v1/polls/suggest    a viewer's poll idea {name, question, options, hours?, cid?}: seen by the operator only
 //   POST /v1/polls, POST /v1/polls/ID/close, GET /v1/polls/ID/voters, GET /v1/polls/suggestions?after=ID
 //                             the operator's (Authorization: PUBLISH_TOKEN): create, close early, the voter log, ideas
+//   GET  /v1/ideas            (d29 batch340, viewer Aurora site:5470) viewers' ideas in two sections, pinned first, then in
+//                             the host's order (public); with the host link (X-Host-Token) the hidden ones too
+//   POST /v1/ideas            a viewer's idea {name, text, section, cid?}: chat's limits and bans; kept for the host only:
+//                             nothing on the Mac reads them (no relay, no inbox row, no task, no agent or AI sees them)
+//   POST /v1/ideas/ID         the host's change {section, move: up|down, text, hidden, pinned, highlight, priority, status,
+//                             reply} (X-Host-Token, or Authorization: Bearer PUBLISH_TOKEN); nothing is ever deleted
 //   GET  /v1/debug            the start's error and the store's sizes (Authorization: Bearer PUBLISH_TOKEN; batch333)
 //   GET  /v1/debug/export?table=T&after=K, POST /v1/debug/import?do=main-NAME   a move to a new object (the same token)
 //
@@ -70,6 +76,21 @@ const BP = {
   keep: 300,                    // blueprints kept
   keepBytes: 64 * 1024 * 1024,  // and at most this many string bytes
   pageMax: 20,
+};
+// (d29 batch340 ID, viewer Aurora site:5470: "a persistent viewer Ideas page with two sections ... for human/host review
+// only, with no automatic AI relay or tasks") Viewers' ideas, kept across runs in this object's own table. Bounded: at
+// most `keep` ideas, each at most maxLen characters (about 3 MB in all); past `keep` new ones are refused, since none is
+// ever deleted (the host hides one instead, and it stays in storage and in the export).
+export const IDEAS = {
+  sections: ["next_run", "general"],   // "What would you like to see in the next run?" and "General ideas"
+  maxLen: 1000,          // characters an idea
+  maxReply: 1000,        // characters of the host's reply
+  perClientHour: 6,      // a client's ideas an hour, besides chat's limits (each idea counts as a chat message)
+  keep: 2000,            // ideas stored
+  shown: 500,            // per section in GET /v1/ideas (pinned first, then the host's order)
+  statuses: ["new", "considering", "planned", "doing", "done", "not_planned"],
+  priorities: ["", "low", "medium", "high"],
+  hostPerMinute: 120,    // the host's changes a minute (a runaway page)
 };
 // Reserved names (Nick 17:11 on d16: "a host link so I can have verified comments and disallow similar nicks"). The
 // same rule as tools/stream/names.py (the relay), with the same tables; tools/stream/test_names.py runs both on one set
@@ -183,14 +204,14 @@ function withCors(resp, req, env) {
 // Per-isolate micro-cache for the two public GETs, so many viewers polling don't each wake the Durable Object.
 // (The Cache API is not available on workers.dev.)
 const micro = new Map();
-const MICRO_TTL = { "/v1/state": 3000, "/v1/chat": 2000, "/v1/polls": 3000, "/v1/board": 10000 };
+const MICRO_TTL = { "/v1/state": 3000, "/v1/chat": 2000, "/v1/polls": 3000, "/v1/board": 10000, "/v1/ideas": 5000 };
 // /v1/debug* ?do=NAME: the old "main" (reads), or a new object (probe-NAME, main-NAME; import only into these)
 const NEW_OBJECT = /^(probe|main)-[a-z0-9-]{1,40}$/;
 const OBJECT_NAME = /^(main|(probe|main)-[a-z0-9-]{1,40})$/;
 // (d29 batch333) the tables a move copies, each by its key; kv's "state" and "board" rows stay behind (unreadable on the
 // old object; the Mac sends both again within seconds)
-const COPY = { kv: "k", chat: "seq", replies: "seq", polls: "id", votes: "id", poll_ideas: "id", bans: "who", blueprints: "id" };
-const PUBLIC_POST = /^\/v1\/(chat|here|blueprints|polls\/\d+\/vote|polls\/suggest)$/;
+const COPY = { kv: "k", chat: "seq", replies: "seq", polls: "id", votes: "id", poll_ideas: "id", bans: "who", blueprints: "id", ideas: "id" };
+const PUBLIC_POST = /^\/v1\/(chat|here|blueprints|polls\/\d+\/vote|polls\/suggest|ideas|ideas\/\d+)$/;
 
 export default {
   async fetch(req, env) {
@@ -227,7 +248,8 @@ export default {
       return json({ error: "origin not allowed" }, 403);
     }
 
-    const ttl = req.method === "GET" ? MICRO_TTL[path] : 0;
+    // the host's own view (hidden ideas too) is never cached or served from the cache
+    const ttl = req.method === "GET" && req.headers.get("X-Host-Token") == null ? MICRO_TTL[path] : 0;
     const key = path + url.search;
     if (ttl) {
       const hit = micro.get(key);
@@ -249,6 +271,7 @@ export default {
     }
     if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/announce" || path === "/v1/replies")) for (const k of micro.keys()) if (k.startsWith("/v1/chat")) micro.delete(k);
     if (req.method === "POST" && path.startsWith("/v1/polls")) for (const k of micro.keys()) if (k.startsWith("/v1/polls")) micro.delete(k);
+    if (req.method === "POST" && (path.startsWith("/v1/ideas") || path === "/v1/mod")) micro.delete("/v1/ideas");
     return withCors(resp, req, env);
   },
 };
@@ -361,6 +384,8 @@ export class Live {
     this.hostTimes = [];
     this.ideaTimes = new Map(); // who -> [ms] suggestions in the last hour
     this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
+    this.ideasTimes = new Map(); // who -> [ms] ideas (batch340) in the last hour
+    this.hostEdits = [];
     // (d29 batch333) a failing start (SQLITE_NOMEM from 01:40) no longer throws out of the constructor, which reset the
     // object on every request: the error is kept, each request tries again, GET /v1/debug reports it
     this.ready = false;
@@ -422,6 +447,14 @@ export class Live {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
       name TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, hours REAL, who TEXT NOT NULL, cid TEXT,
       intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
+    // (d29 batch340) viewers' ideas: section (IDEAS.sections), pos (the host's order within it; a new one goes last),
+    // hidden (the host's remove: kept), pinned, highlight, priority, status, the host's reply, host (posted with the link)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL, name TEXT NOT NULL,
+      text TEXT NOT NULL, who TEXT NOT NULL, cid TEXT, section TEXT NOT NULL, pos REAL NOT NULL,
+      hidden INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0, highlight INTEGER NOT NULL DEFAULT 0,
+      priority TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new', reply TEXT NOT NULL DEFAULT '',
+      reply_t REAL, edited_t REAL, host INTEGER NOT NULL DEFAULT 0)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS ideas_cid ON ideas (cid)`);
     this.state = this.getDoc("state");
     this.received = this.state ? Number(this.get("received") || 0) : 0;
     this.board = this.getDoc("board");
@@ -489,7 +522,11 @@ export class Live {
         case "POST /v1/polls": return this.createPoll(req, text);
         case "POST /v1/polls/suggest": return await this.suggestPoll(req, text);
         case "GET /v1/polls/suggestions": return this.listIdeas(req, url);
+        case "GET /v1/ideas": return this.getIdeas(req);
+        case "POST /v1/ideas": return await this.postIdea(req, text);
         default: {
+          const idea = /^\/v1\/ideas\/(\d+)$/.exec(url.pathname);
+          if (idea && req.method === "POST") return this.editIdea(req, text, parseInt(idea[1], 10));
           if (req.method === "GET" && /^\/v1\/blueprints\/\d+$/.test(url.pathname)) return this.getBlueprint(req, url);
           const m = /^\/v1\/polls\/(\d+)\/(vote|close|voters)$/.exec(url.pathname);
           if (m && req.method === "POST" && m[2] === "vote") return await this.vote(req, text, parseInt(m[1], 10));
@@ -563,6 +600,7 @@ export class Live {
     read("votes", () => one("SELECT COUNT(*) AS n, SUM(length(comment)) AS bytes FROM votes"));
     read("polls", () => one("SELECT COUNT(*) AS n FROM polls"));
     read("poll_ideas", () => one("SELECT COUNT(*) AS n FROM poll_ideas"));
+    read("ideas", () => one("SELECT COUNT(*) AS n, SUM(hidden) AS hidden, SUM(length(text) + length(reply)) AS chars FROM ideas"));
     read("bans", () => one("SELECT COUNT(*) AS n FROM bans"));
     read("here", () => this.here.size);
     // the data centre this object's requests leave from
@@ -1155,6 +1193,144 @@ export class Live {
     return json({ schema: SCHEMA, ideas, last_id: maxRow.m });
   }
 
+  // ---------------------------------------------------------------- ideas (d29 batch340)
+
+  // An idea as the page shows it; the host's view adds hidden and banned.
+  ideaRow(r, hostView) {
+    const out = { id: r.id, t: r.t, name: r.name, text: r.text, section: r.section, pinned: !!r.pinned,
+      highlight: !!r.highlight, priority: r.priority, status: r.status };
+    if (r.reply) { out.reply = r.reply; out.reply_t = r.reply_t; }
+    if (r.edited_t) out.edited_t = r.edited_t;
+    if (r.host) out.host = true;
+    if (hostView) { out.hidden = !!r.hidden; out.banned = !!r.banned; }
+    return out;
+  }
+
+  // GET /v1/ideas: both sections, pinned first, then the host's order; the hidden ones and banned posters' ideas left
+  // out, unless the host link asks (X-Host-Token: a wrong one is refused).
+  getIdeas(req) {
+    const h = this.hostOf(req);
+    if (h.error) return json(h, 403);
+    const sections = {};
+    for (const sec of IDEAS.sections) {
+      const rows = this.sql.exec(`SELECT i.*, (i.who IN (SELECT who FROM bans)) AS banned FROM ideas i WHERE i.section = ?
+        ${h.host ? "" : "AND i.hidden = 0 AND i.who NOT IN (SELECT who FROM bans)"} ORDER BY i.pinned DESC, i.pos, i.id LIMIT ?`,
+        sec, IDEAS.shown).toArray();
+      sections[sec] = rows.map((r) => this.ideaRow(r, h.host));
+    }
+    const n = this.sql.exec("SELECT COUNT(*) AS n FROM ideas").toArray()[0].n;
+    return json({ schema: SCHEMA, open: this.get("ideas_open") !== "0", sections, stored: n, cap: IDEAS.keep,
+      ...(h.host ? { host: true } : {}) });
+  }
+
+  // POST /v1/ideas {name, text, section, cid?}: chat's limits, bans and name rules, and IDEAS.perClientHour.
+  async postIdea(req, text) {
+    if (this.get("ideas_open") === "0") return json({ error: "ideas are closed for now" }, 403);
+    if (text.length > 8192) return json({ error: "too large" }, 413);
+    const body = JSON.parse(text || "{}");
+    const who = await this.who(req);
+    const h = this.hostOf(req);
+    if (h.error) return json(h, 403);
+    if (!h.host && this.sql.exec("SELECT 1 FROM bans WHERE who = ?", who).toArray().length) {
+      return json({ error: "you can't post right now" }, 403);
+    }
+    const cid = body.cid == null ? null : String(body.cid);
+    if (cid !== null && !/^[0-9a-f]{16,32}$/.test(cid)) return json({ error: "cid must be 16-32 hex digits" }, 400);
+    if (cid) {
+      const had = this.sql.exec("SELECT * FROM ideas WHERE cid = ? AND who = ?", cid, who).toArray();
+      if (had.length) return json({ ok: true, repeat: true, idea: this.ideaRow(had[0], false) });
+    }
+    const section = String(body.section || "");
+    if (!IDEAS.sections.includes(section)) return json({ error: "section must be " + IDEAS.sections.join(" or ") }, 400);
+    const msg = tidy(body.text);
+    if (!msg) return json({ error: "empty idea" }, 400);
+    if ([...msg].length > IDEAS.maxLen) return json({ error: `ideas are at most ${IDEAS.maxLen} characters` }, 400);
+    if (LINK.test(msg)) return json({ error: "links are not allowed" }, 400);
+    if (this.sql.exec("SELECT COUNT(*) AS n FROM ideas").toArray()[0].n >= IDEAS.keep) {
+      return json({ error: "the ideas page is full for now" }, 507);
+    }
+    const now = Date.now();
+    let name;
+    if (h.host) {
+      name = { name: HOST.name };
+      const limited = this.hostLimit(now);
+      if (limited) return limited;
+    } else {
+      name = this.viewerName(body.name, who);
+      if (name.error) return json(name, 400);
+      const limited = this.limit(who, now);
+      if (limited) return limited;
+      const hour = (this.ideasTimes.get(who) || []).filter((t) => now - t < 3600000);
+      if (hour.length >= IDEAS.perClientHour) return json({ error: "slow down", retry_after_s: 600 }, 429);
+      this.count(who, now);
+      hour.push(now);
+      this.ideasTimes.set(who, hour);
+      if (this.ideasTimes.size > 5000) this.ideasTimes.clear();
+    }
+    const row = this.sql.exec(`INSERT INTO ideas (t, name, text, who, cid, section, pos, host)
+      VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(pos), 0) + 1 FROM ideas WHERE section = ?), ?) RETURNING *`,
+      now / 1000, name.name, msg, who, cid, section, section, h.host ? 1 : 0).toArray()[0];
+    const out = { ok: true, idea: this.ideaRow(row, false) };
+    return json(name.guest ? { ...out, guest_name: name.name } : out);
+  }
+
+  // POST /v1/ideas/ID: the host's change, any of {section (to its end), move ("up" | "down": past its neighbour in the
+  // section's order, pinned first), text, hidden, pinned, highlight, priority, status, reply ("" takes it away)}.
+  editIdea(req, text, id) {
+    const h = this.hostOf(req);
+    if (h.error) return json(h, 403);
+    if (!h.host && !tokenOk(req, this.env)) return json({ error: "the host link, please" }, 401);
+    if (text.length > 8192) return json({ error: "too large" }, 413);
+    const body = JSON.parse(text || "{}");
+    const now = Date.now();
+    this.hostEdits = this.hostEdits.filter((t) => now - t < 60000);
+    if (this.hostEdits.length >= IDEAS.hostPerMinute) return json({ error: "slow down", retry_after_s: 10 }, 429);
+    const had = this.sql.exec("SELECT * FROM ideas WHERE id = ?", id).toArray();
+    if (!had.length) return json({ error: "no such idea" }, 404);
+    const set = {};
+    const flag = (k) => { if (body[k] != null) set[k] = body[k] ? 1 : 0; };
+    flag("hidden"); flag("pinned"); flag("highlight");
+    if (body.priority != null) {
+      if (!IDEAS.priorities.includes(String(body.priority))) return json({ error: "priority must be one of " + IDEAS.priorities.map((p) => p || '""').join(", ") }, 400);
+      set.priority = String(body.priority);
+    }
+    if (body.status != null) {
+      if (!IDEAS.statuses.includes(String(body.status))) return json({ error: "status must be one of " + IDEAS.statuses.join(", ") }, 400);
+      set.status = String(body.status);
+    }
+    if (body.text != null) {
+      const msg = tidy(body.text);
+      if (!msg || [...msg].length > IDEAS.maxLen) return json({ error: `an idea is 1 to ${IDEAS.maxLen} characters` }, 400);
+      if (msg !== had[0].text) { set.text = msg; set.edited_t = now / 1000; }
+    }
+    if (body.reply != null) {
+      const msg = tidy(body.reply);
+      if ([...msg].length > IDEAS.maxReply) return json({ error: `replies are at most ${IDEAS.maxReply} characters` }, 400);
+      set.reply = msg;
+      set.reply_t = msg ? now / 1000 : null;
+    }
+    let section = had[0].section;
+    if (body.section != null && String(body.section) !== section) {
+      if (!IDEAS.sections.includes(String(body.section))) return json({ error: "section must be " + IDEAS.sections.join(" or ") }, 400);
+      section = String(body.section);
+      set.section = section;
+      set.pos = this.sql.exec("SELECT COALESCE(MAX(pos), 0) + 1 AS p FROM ideas WHERE section = ?", section).toArray()[0].p;
+    }
+    if (body.move != null && body.move !== "up" && body.move !== "down") return json({ error: "move must be up or down" }, 400);
+    const cols = Object.keys(set);
+    if (cols.length) this.sql.exec(`UPDATE ideas SET ${cols.map((c) => c + " = ?").join(", ")} WHERE id = ?`, ...cols.map((c) => set[c]), id);
+    if (body.move) {
+      // the section's order as the page shows it (pinned first), numbered again, this one past its neighbour
+      const ids = this.sql.exec("SELECT id FROM ideas WHERE section = ? ORDER BY pinned DESC, pos, id", section).toArray().map((r) => r.id);
+      const i = ids.indexOf(id), j = body.move === "up" ? i - 1 : i + 1;
+      if (j >= 0 && j < ids.length) [ids[i], ids[j]] = [ids[j], ids[i]];
+      ids.forEach((x, k) => this.sql.exec("UPDATE ideas SET pos = ? WHERE id = ?", k + 1, x));
+    }
+    this.hostEdits.push(now);
+    const row = this.sql.exec("SELECT i.*, (i.who IN (SELECT who FROM bans)) AS banned FROM ideas i WHERE i.id = ?", id).toArray()[0];
+    return json({ ok: true, idea: this.ideaRow(row, true) });
+  }
+
   mod(req, text) {
     if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
     const body = JSON.parse(text || "{}");
@@ -1175,6 +1351,21 @@ export class Live {
         this.sql.exec("UPDATE votes SET hidden = 1 WHERE voter = ?", w);
         break;
       }
+      // (batch340) an idea: hide it (kept), or ban whoever posted it (chat's ban: their ideas leave the page while it lasts)
+      case "hide_idea": this.sql.exec("UPDATE ideas SET hidden = 1 WHERE id = ?", parseInt(body.id, 10)); break;
+      case "unhide_idea": this.sql.exec("UPDATE ideas SET hidden = 0 WHERE id = ?", parseInt(body.id, 10)); break;
+      case "ban_idea": {
+        const r = this.sql.exec("SELECT who, host FROM ideas WHERE id = ?", parseInt(body.id, 10)).toArray();
+        if (!r.length) return json({ error: "no such idea" }, 404);
+        if (r[0].host) return json({ error: "the host's own idea" }, 400);
+        this.sql.exec("INSERT OR REPLACE INTO bans (who, t) VALUES (?, ?)", r[0].who, Date.now() / 1000);
+        this.sql.exec("UPDATE chat SET hidden = 1 WHERE who = ?", r[0].who);
+        this.sql.exec("UPDATE blueprints SET hidden = 1 WHERE who = ?", r[0].who);
+        this.sql.exec("UPDATE votes SET hidden = 1 WHERE voter = ?", r[0].who);
+        break;
+      }
+      case "ideas_close": this.put("ideas_open", "0"); break;
+      case "ideas_open": this.put("ideas_open", "1"); break;
       case "unban": {
         const w = rowWho();
         if (w) this.sql.exec("DELETE FROM bans WHERE who = ?", w);
@@ -1219,7 +1410,7 @@ export class Live {
       // a fresh start (the public run): hide every message so far; seq keeps counting, so pollers lose nothing new
       case "clear": this.sql.exec("UPDATE chat SET hidden = 1"); break;
       default: return json({ error: "action must be hide, unhide, ban, unban, open, close, bp_open, bp_close, clear, hide_blueprint, " +
-        "unhide_blueprint, ban_blueprint, hide_comment, unhide_comment or ban_voter" }, 400);
+        "unhide_blueprint, ban_blueprint, hide_comment, unhide_comment, ban_voter, hide_idea, unhide_idea, ban_idea, ideas_open or ideas_close" }, 400);
     }
     return json({ ok: true });
   }

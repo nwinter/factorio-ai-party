@@ -59,6 +59,52 @@ return function(api)
     if r.silo or not (silo and try(function() return silo.valid and silo.type == 'rocket-silo' and silo.unit_number end)) then return end
     r.silo, r.sx, r.sy = silo.unit_number, silo.position.x, silo.position.y
   end
+  -- (d29 batch336 FL4, batch321: an import and launch ledger over the run; the journeys above keep the last KEEP a planet)
+  -- Running totals per platform, counted once a journey's cargo is known: pods up to it (rockets) and down from its hub,
+  -- with cargo by item (name@quality past normal; at most TOTAL_ITEMS names each, the rest summed as other) and the
+  -- planets they came from or went to, since this runtime counted; and buckets for the windows: 10 game minutes (6
+  -- kept), a game hour (10) and 10 game hours (25), each made when a pod comes in it. Bounded: at most TOTAL_PLATFORMS,
+  -- the one quiet longest dropped.
+  M.TOTAL_ITEMS, M.TOTAL_PLATFORMS = 48, 128
+  local BUCKETS = {{size=36000, keep=6}, {size=216000, keep=10}, {size=2160000, keep=25}}
+  local function add(side, items)
+    side.pods = side.pods + 1
+    for key, n in pairs(items) do
+      if side.items[key] then side.items[key] = side.items[key] + n
+      elseif side.n < M.TOTAL_ITEMS then side.items[key] = n; side.n = side.n + 1
+      else side.other = side.other + n end
+    end
+  end
+  local function new_side() return {pods=0, items={}, n=0, other=0} end
+  local function count(r, planet, tick)
+    if r.counted or not r.platform or not r.items then return end
+    r.counted = true
+    local st = store()
+    st.totals = st.totals or {}
+    local T = st.totals[r.platform]
+    if not T then
+      local n, quiet, qname = 0, nil, nil
+      for name, t in pairs(st.totals) do n = n + 1; if not quiet or t.last < quiet then quiet, qname = t.last, name end end
+      if n >= M.TOTAL_PLATFORMS and qname then st.totals[qname] = nil end
+      T = {since=tick, last=tick, up=new_side(), down=new_side(), places={}, b={{}, {}, {}}}
+      st.totals[r.platform] = T
+    end
+    T.last = tick
+    local dir = r.up and 'up' or 'down'
+    add(T[dir], r.items)
+    T.places[dir .. ':' .. planet] = (T.places[dir .. ':' .. planet] or 0) + 1
+    for i, spec in ipairs(BUCKETS) do
+      local list = T.b[i]
+      local start = tick - tick % spec.size
+      local last = list[#list]
+      if not (last and last.t == start) then
+        last = {t=start, up=new_side(), down=new_side()}
+        list[#list+1] = last
+        while #list > spec.keep do table.remove(list, 1) end
+      end
+      add(last[dir], r.items)
+    end
+  end
   -- A pod leaving: its journey (once per pod; a later call adds what it knows). info: kind, by, drop, seen.
   function M.sent(pod, info, tick, silo)
     local unit = pod and pod.valid and pod.unit_number
@@ -73,6 +119,7 @@ return function(api)
       for k, v in pairs(info or {}) do if r[k] == nil then r[k] = v end end
       if not r.items then r.items = contents(pod) end
       if r.up then set_silo(r, silo or try(function() return pod.cargo_pod_origin end)) end
+      count(r, open.planet, r.sent or tick or game.tick)
       return r.id
     end
     local origin = try(function() return pod.cargo_pod_origin end)
@@ -102,6 +149,7 @@ return function(api)
       sent=tick or game.tick, items=contents(pod), starter=starter, orbit=orbit}
     for k, v in pairs(info or {}) do r[k] = v end
     if up then set_silo(r, silo or origin) end
+    count(r, planet, r.sent)
     local list = st.by[planet] or {}
     st.by[planet] = list
     list[#list+1] = r
@@ -272,6 +320,26 @@ return function(api)
     end
   end
 
+  -- (d29 batch346 LC, Astra #2754) the rockets' pods sent up to a platform at or after since (origin: one planet, else
+  -- every one): {sent, landed, gone, planet} each, newest first, and whether the log reaches back to since (complete).
+  -- The lists are in send order: read from the newest, stopped SLACK ticks before since (a sampled send can be early).
+  M.SLACK = 600
+  function M.ups(platform, since, origin)
+    local out, complete = {}, true
+    for planet, list in pairs(store().by) do
+      if not origin or planet == origin then
+        if #list >= M.KEEP and list[1] and list[1].sent > since then complete = false end
+        for i = #list, 1, -1 do
+          local r = list[i]
+          if r.sent <= since - M.SLACK then break end
+          if r.up and r.platform == platform and r.sent >= since then out[#out+1] = {sent=r.sent, landed=r.landed, gone=r.gone, planet=planet} end
+        end
+      end
+    end
+    table.sort(out, function(x, y) return x.sent > y.sent end)
+    return out, complete
+  end
+
   -- (d28 batch320 LP) what is on the way up to a platform now: each rocket pod sent to it from a silo and not landed yet
   -- (in flight or rising), counted by item key (name or name@quality); with item, that item's count only.
   function M.on_the_way(platform, item)
@@ -381,6 +449,56 @@ return function(api)
   local function slots(f) return f and string.format('main %d, trash %d', f.main, f.trash) or nil end
   -- Journeys on planet surfaces (surfaces: a set, nil for all), oldest first, filtered: up (true: up, false: down, nil:
   -- both), platform, item (a name, any quality, or name@quality), from and to (send ticks); the newest limit of them.
+  -- The totals for one platform or all (most pods first): {platform, since_tick, up, down, from, to, windows}. A window
+  -- adds the buckets that start inside it, so it covers its length less up to one bucket (from_tick says where it starts).
+  local WINDOWS = {{'1h', 1, 216000}, {'10h', 2, 2160000}, {'50h', 3, 10800000}, {'250h', 3, 54000000}}
+  local function side_text(side, max)
+    local list = {}
+    for key, n in pairs(side.items) do list[#list+1] = {key, n} end
+    table.sort(list, function(x, y) if x[2] ~= y[2] then return x[2] > y[2] end return x[1] < y[1] end)
+    local out = {}
+    for i = 1, math.min(#list, max) do out[i] = list[i][1] .. '*' .. list[i][2] end
+    if #list > max then out[#out+1] = string.format('+%d more names', #list - max) end
+    if side.other > 0 then out[#out+1] = string.format('other %d (past %d names)', side.other, M.TOTAL_ITEMS) end
+    return table.concat(out, ', ')
+  end
+  function M.totals(platform, now)
+    now = now or game.tick
+    local out = {}
+    for name, T in pairs(store().totals or {}) do
+      if not platform or name == platform then
+        local places = {from={}, to={}}
+        for k, n in pairs(T.places) do
+          local dir, planet = k:match('^(%a+):(.*)$')
+          local t = dir == 'up' and places.from or places.to
+          t[#t+1] = planet .. ' ' .. n
+        end
+        table.sort(places.from); table.sort(places.to)
+        local windows = {}
+        for _, w in ipairs(WINDOWS) do
+          local up, down, from = new_side(), new_side(), nil
+          for _, b in ipairs(T.b[w[2]]) do
+            if b.t >= now - w[3] then
+              from = from or b.t
+              up.pods = up.pods + b.up.pods; down.pods = down.pods + b.down.pods
+              for _, pair in ipairs({{up, b.up}, {down, b.down}}) do
+                for key, n in pairs(pair[2].items) do pair[1].items[key] = (pair[1].items[key] or 0) + n end
+                pair[1].other = pair[1].other + pair[2].other
+              end
+            end
+          end
+          windows[#windows+1] = {window=w[1], from_tick=from, up_pods=up.pods, down_pods=down.pods,
+            up_items=up.pods > 0 and side_text(up, 12) or nil, down_items=down.pods > 0 and side_text(down, 12) or nil}
+        end
+        out[#out+1] = {platform=name, since_tick=T.since, last_tick=T.last, up_pods=T.up.pods, down_pods=T.down.pods,
+          up_items=T.up.pods > 0 and side_text(T.up, 24) or nil, down_items=T.down.pods > 0 and side_text(T.down, 24) or nil,
+          from=#places.from > 0 and table.concat(places.from, ', ') or nil, to=#places.to > 0 and table.concat(places.to, ', ') or nil,
+          windows=windows}
+      end
+    end
+    table.sort(out, function(x, y) local a, b = x.up_pods + x.down_pods, y.up_pods + y.down_pods; if a ~= b then return a > b end return x.platform < y.platform end)
+    return out
+  end
   function M.read(f)
     local rows, total = {}, 0
     local planets = {}

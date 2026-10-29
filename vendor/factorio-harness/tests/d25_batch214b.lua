@@ -128,7 +128,7 @@ print('d25_batch214b QZ2 lists: ok')
 local ranges={
   {'scan','limit',1,1024},{'scan','radius',1,64},{'scan','page',1,4},{'nearest','limit',1,64},{'nearest','radius',1,128},
   {'inspect','radius',1,64},{'stock','limit',1,64},{'stock','radius',1,1024},{'map','radius',32,1024},{'map','limit',1,256},
-  {'recipes','limit',1,256},{'technologies','limit',1,256},{'shipment','limit',1,128,{ledger=true}},{'damage_log','radius',1,64},
+  {'recipes','limit',1,256},{'technologies','limit',1,32},{'technologies','from',1,4096},{'recipes','from',1,4096},{'shipment','limit',1,128,{ledger=true}},{'damage_log','radius',1,64},
   {'grid','radius',1,64},{'artillery','radius',1,4096},{'alerts_digest','limit',1,64},{'danger','radius',8,128},{'danger','quiet_s',10,3600},
   {'power','radius',1,64},{'power','radius',8,512,{fragile=true}},{'power','limit',1,256},{'belt_upgrade','tiles',1,512},
   {'blueprint_list','limit',1,256},{'blueprint_list','from',1,256},{'sleep','seconds',1,900},{'flight_watch','minutes',1,480},

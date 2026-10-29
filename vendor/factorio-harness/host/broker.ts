@@ -15,6 +15,8 @@ export class BrokerRefused extends RconError {}
 const MAX_LINE_BYTES = 16 * 1024 * 1024;
 
 export class BrokerTransport implements Transport {
+  /** (d29 batch336 FL6) tools/fh_broker.py puts the wall clock in the request: it refuses other fields from fh. */
+  readonly stampsWall = true;
   private socket?: Socket;
   private buffer = '';
   private waiting?: { resolve: (line: string) => void; reject: (error: Error) => void };
