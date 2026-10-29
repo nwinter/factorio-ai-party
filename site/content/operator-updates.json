@@ -339,6 +339,6 @@
   {"t": "2026-10-29 07:11", "kind": "deploy", "text": "Harness runtime deployed (ef208e27).", "affected": "harness runtime"},
   {"t": "2026-10-29 09:02", "kind": "shift", "text": "Shift 100 change began.", "affected": "stream and agents", "recovered": "2026-10-29 09:11"},
   {"t": "2026-10-29 11:56", "kind": "deploy", "text": "Harness runtime deployed (21f46ab4).", "affected": "harness runtime"},
-  {"t": "2026-10-29 11:56", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-29 11:56", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-29 11:56"}
  ]
 }
