@@ -145,7 +145,7 @@ def main():
         # status and the health line: connected
         r = cli("status")
         assert r.returncode == 0 and r.stdout.startswith("overlay connected (1 stream"), r.stdout
-        assert shift_change.overlay_status(url + "/state.json") == "overlay connected"
+        assert shift_change.overlay_status(url + "/state.json").startswith("overlay connected")  # (batch349: then speech, panel, cams)
         # the health line: connected, and which way the start's check went (start.log)
         rd = os.path.join(d, "run")
         os.makedirs(rd)

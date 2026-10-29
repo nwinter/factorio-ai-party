@@ -2708,3 +2708,29 @@ plays the first).
   hint at the bottom centre, and the overlay's bottom bar on each view covers it (test_trio's hint_bars). It showed on
   shift100's program only because the overlay was blank.
 - **Tests:** tools/test_overlay_check.py and tools/test_obs_restart.py (obs-steps).
+
+## Speech, the panel and the cameras in the overlay checks (2026-10-29, d29 batch349 SP, viewer Aurora site:5491)
+
+Aurora (09:29, during shift100's blank overlay): "Add recovery checks for panel rendering, camera state and a
+completed speech clip so 'live' alone cannot pass next shift." batch347's checks saw only whether the main page's event
+stream was open.
+
+- **Speech.** The stream service keeps a summary of the page's clip reports, in GET /overlay/status as `speech`: the
+  last clip played whole (state end, played >= its length - 0.5 s, not early) and how many in 30 min, and of the clips
+  posted in the last 15 min (not control) whose time is up (ended, skipped or expired), how many played whole and how
+  many were skipped. Bad: some, and none played whole (shift100: none reported at all). The health line says it;
+  tools/overlay_check.py watch prints it only when bad, at most once per --again s, and once when it is good again. No
+  toggle for speech alone: a page that is not connected is batch347's toggle.
+- **The panel.** The page posts POST /overlay/render {page, height} after a state frame, at most every 30 s, with its
+  right panel's height (overlay.js reportRender); the service keeps `rendered` and `panel_px` per page. Bad: a report
+  over 90 s old, or 0 px high. A page from before this says nothing. It is not in the connected test: a page cached
+  from before would never report, and the connected test decides the toggle.
+- **Cameras.** One RCON line (overlay_check.CAMS_LINE): the harness's camera list (remote.call cameras) and each
+  client's controller and whether it is connected. 0.68 ms on world n (d29, the one read: pog-cam1 spectator
+  connected, cam2 and cam3 spectator not connected). Bad: a connected camera in a cutscene or a character controller.
+  The health line says "cams: pog-cam1 spectator"; watch prints a change. The recovery is the runtime's own:
+  cameras.lua's tick runs make_director for a connected camera client that is not a spectator (exit_remote_view,
+  exit_cutscene, then the spectator controller), every tick, so a cutscene lasts a tick; the check reports.
+- **Tests:** tools/test_speech_cams.py (clips whole, cut short, all expired, none reported, none posted; render reports
+  fresh, stale, 0 px; a camera in a cutscene in status, watch and the health line); tools/test_overlay_check.py's
+  health line now reads the overlay part first.

@@ -24,6 +24,20 @@ overlay stream for N s; toggled the source: connected again" or "OVERLAY: ... st
 toggle it waits --again s (default 600) before toggling again, and says each pass that it is still down. The state
 (last toggle) is kept in --state (default /tmp/claude-501/overlay-check.json).
 
+(d29 batch349 SP, viewer Aurora: "so 'live' alone cannot pass next shift") status and watch also read:
+- speech: the service's summary of the page's clip reports (/overlay/status speech): the last clip played whole (state
+  end, played >= its length - 0.5 s, not early) and how many in 30 min; bad when clips posted in the last 15 min whose
+  time is up (ended, skipped or expired) include none played whole (shift100's blank overlay: none reported at all).
+  watch says it only when bad, at most once per --again s; no toggle for speech alone (a page not connected is the
+  toggle above);
+- the panel: the page's own report that it drew (POST /overlay/render after a state frame, at most every 30 s, with its
+  right panel's height): bad when the last is over 90 s old or 0 px high; a page from before batch349 says nothing;
+- cams: each camera client's controller by one RCON line on --world (POG_WORLD, else n; 0.68 ms on n, d29): bad for a
+  connected one in a cutscene or a character controller. The runtime puts such a client back itself (cameras.lua's
+  tick: make_director, exit_cutscene then spectator, every tick while it is not a spectator), so this is a report.
+watch prints the panel and cams lines once per change (and when they are good again). Stubs: POG_OC_CAMS (a command
+printing the cams JSON); under POG_TEST no world is read without it.
+
 A service from before batch347 has no /overlay/status: "overlay check: skipped (the service has no /overlay/status)",
 exit 0, no toggle. Stubs for tests: POG_OC_OBS (the toggle command, split on spaces), POG_OC_SLEEP (seconds between
 polls, default 2).
@@ -72,6 +86,75 @@ def connected(st, since=None, name="main"):
     if not p.get("open") or not p.get("seen") or now - p["seen"] > FRESH_S:
         return False
     return since is None or (p.get("connected") or 0) >= since
+
+
+CAMS_LINE = ("/silent-command local ok,r=pcall(remote.call,'agent_harness','cameras') local names={} "
+             "for k,v in pairs(defines.controllers) do names[v]=k end local out={} if ok and type(r)=='string' then "
+             "local t=helpers.json_to_table(r) for _,c in ipairs(t and t.cameras or {}) do local p=game.get_player(c.player) "
+             "if p then out[#out+1]={name=p.name,controller=names[p.controller_type] or tostring(p.controller_type),"
+             "connected=p.connected} end end end rcon.print(helpers.table_to_json(out))")
+BAD_CONTROLLERS = ("cutscene", "character")
+PANEL_FRESH_S = 90  # a page that drew reports every 30 s
+
+
+def speech(st, now=None):
+    """(d29 batch349 SP) (line, bad) from the service's speech summary, or (None, False) from a service without it."""
+    sp = st.get("speech")
+    if not isinstance(sp, dict):
+        return None, False
+    now = now or st.get("now") or time.time()
+    due, whole = sp.get("due_15m") or 0, sp.get("due_15m_whole") or 0
+    if due and not whole:
+        skipped = sp.get("due_15m_skipped") or 0
+        return (f"speech NOT playing: {due} clip{'s' if due != 1 else ''} posted in the last 15 min, none played whole"
+                f" ({skipped} skipped, {due - skipped} with no end reported)"), True
+    last = sp.get("last_whole")
+    if not last:
+        return "speech: no clip played whole since the service started", False
+    ago = max(0, round((now - last) / 60))
+    return f"speech: last clip played whole {ago} min ago, {sp.get('whole_30m') or 0} in 30 min", False
+
+
+def panel(st, name="main"):
+    """(d29 batch349) (line, bad) for the page's own report that it drew (POST /overlay/render), or (None, False) from a
+    page or service without it."""
+    p, now = page(st, name), st.get("now") or time.time()
+    if not p.get("rendered"):
+        return None, False
+    ago, px = round(now - p["rendered"]), p.get("panel_px")
+    if ago > PANEL_FRESH_S:
+        return f"panel NOT drawn (its last report {ago} s ago)", True
+    if not px:
+        return f"panel NOT drawn ({px or 0} px high {ago} s ago)", True
+    return f"panel drew {px} px {ago} s ago", False
+
+
+def cameras(world=None):
+    """(d29 batch349) [{name, controller, connected}] of the camera clients, by one RCON line (0.68 ms on world n,
+    d29), or None when it cannot be read. POG_OC_CAMS: a stub command printing that JSON."""
+    cmd = os.environ.get("POG_OC_CAMS")
+    if not cmd and os.environ.get("POG_TEST"):
+        return None  # a test reads no world without a stub
+    words = cmd.split() if cmd else [sys.executable, os.path.join(HERE, "pog.py"), "--world", world or os.environ.get("POG_WORLD", "n"), "rcon", CAMS_LINE]
+    try:
+        r = subprocess.run(words, capture_output=True, text=True, timeout=20)
+        out = r.stdout.strip().splitlines()
+        return json.loads(out[-1]) if out else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def cams_line(cams):
+    """(line, bad): "cams: pog-cam1 spectator" (the connected ones; bad: one in a cutscene or a character controller)."""
+    if cams is None:
+        return None, False
+    if isinstance(cams, dict):
+        cams = []
+    on = [c for c in cams if c.get("connected")]
+    if not on:
+        return "cams: none connected", False
+    bad = [c for c in on if c.get("controller") in BAD_CONTROLLERS]
+    return "cams: " + ", ".join(f"{c.get('name')} {c.get('controller')}" for c in on), bool(bad)
 
 
 def toggle():
@@ -132,6 +215,14 @@ def load_state(path):
         return {}
 
 
+def save_state(path, state):
+    try:
+        with open(path, "w") as f:
+            json.dump(state, f)
+    except OSError:
+        pass
+
+
 def watch(a, clock=time.time, sleep=time.sleep):
     try:
         st = read(a.service)
@@ -140,6 +231,36 @@ def watch(a, clock=time.time, sleep=time.sleep):
     except Down as e:
         print(f"{time.strftime('%H:%M')} OVERLAY: the stream service does not answer ({e})")
         return 1
+    rc = watch_overlay(a, st, clock, sleep)
+    return max(rc, watch_more(a, st, clock))
+
+
+def watch_more(a, st, clock=time.time):
+    """(d29 batch349 SP) speech, the panel's own report and the cameras: speech only when it is bad (at most once per
+    --again s), the panel and the cameras once per change of their line."""
+    state = load_state(a.state)
+    stamp, now, rc = time.strftime("%H:%M"), st.get("now") or clock(), 0
+    line, bad = speech(st, now)
+    if bad:
+        rc = 1
+        if not state.get("speech_said") or now - state["speech_said"] >= a.again:
+            print(f"{stamp} SPEECH: {line}")
+            state["speech_said"] = now
+    elif line and state.get("speech_said"):
+        print(f"{stamp} speech again: {line}")
+        state["speech_said"] = None
+    for key, (text, worse) in (("panel", panel(st)), ("cams", cams_line(cameras(getattr(a, "world", None))))):
+        if text is None:
+            continue
+        rc = max(rc, 1 if worse else 0)
+        if state.get(key) != text and (worse or state.get(key + "_bad")):
+            print(f"{stamp} {key.upper() if worse else key}: {text}")
+        state[key], state[key + "_bad"] = text, worse
+    save_state(a.state, state)
+    return rc
+
+
+def watch_overlay(a, st, clock=time.time, sleep=time.sleep):
     if connected(st):
         return 0
     now = st.get("now") or clock()
@@ -155,11 +276,7 @@ def watch(a, clock=time.time, sleep=time.sleep):
         return 1
     ok, out = toggle()
     state["toggled"] = clock()
-    try:
-        with open(a.state, "w") as f:
-            json.dump(state, f)
-    except OSError:
-        pass
+    save_state(a.state, state)
     if not ok:
         print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; the toggle failed: {out}")
         return 1
@@ -184,10 +301,12 @@ def status(a):
         print(f"overlay NOT connected (the service does not answer: {e})")
         return 1
     p = page(st)
+    more = [x for x in (speech(st), panel(st), cams_line(cameras(a.world))) if x[0]]
+    tail = "".join("; " + t for t, _ in more)
     if connected(st):
-        print(f"overlay connected ({p.get('open')} stream{'s' if p.get('open') != 1 else ''}, since {round(st['now'] - p['connected'])} s)")
-        return 0
-    print("overlay NOT connected" + (f" (closed {round(st['now'] - p['closed'])} s ago)" if p.get("closed") else " (never since the service started)"))
+        print(f"overlay connected ({p.get('open')} stream{'s' if p.get('open') != 1 else ''}, since {round(st['now'] - p['connected'])} s){tail}")
+        return 1 if any(b for _, b in more) else 0
+    print("overlay NOT connected" + (f" (closed {round(st['now'] - p['closed'])} s ago)" if p.get("closed") else " (never since the service started)") + tail)
     return 1
 
 
@@ -200,6 +319,7 @@ def main(argv=None):
     ap.add_argument("--stale", type=float, default=120)
     ap.add_argument("--again", type=float, default=600)
     ap.add_argument("--state", default="/tmp/claude-501/overlay-check.json")
+    ap.add_argument("--world", default=None, help="the world the camera clients are on (default POG_WORLD, else n)")
     a = ap.parse_args(argv)
     if a.cmd == "start":
         if a.since is None:

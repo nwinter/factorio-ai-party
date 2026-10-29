@@ -241,13 +241,18 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
         if ov is not None:
             # which way the start's check went (obs-steps.sh's overlay line in start.log)
             began = [l for l in read(os.path.join(rundir, "start.log")).splitlines() if "obs-steps: overlay:" in l]
+            head, sep, rest = ov.partition("; ")  # (batch349) the start's note goes with the overlay part
             if began and "toggled the source" in began[-1]:
-                ov += " (after a toggle at the start)"
+                head += " (after a toggle at the start)"
             elif began and "FAILED" in began[-1]:
-                ov += " (the start's check failed)"
+                head += " (the start's check failed)"
+            ov = head + sep + rest
             parts.append(ov)
             if ov.startswith("overlay NOT"):
                 bad.append("overlay")
+            for word, what in (("speech NOT", "speech"), ("panel NOT", "overlay panel"), ("cutscene", "camera"), (" character", "camera")):
+                if word in ov and what not in bad:
+                    bad.append(what)
     # the OBS restart before the shift (shift-change.sh / start-team.sh: obs-restart.sh's last line); a failure is
     # reported, the shift went on with the OBS that ran
     restart = read(os.path.join(rundir, "obs-restart.txt")).strip()
@@ -283,11 +288,14 @@ def overlay_status(state_url):
         return None
     except overlay_check.Down as e:
         return f"overlay NOT connected (no status: {e})"
+    # (d29 batch349 SP) the voices played whole, the panel's own render report, the camera clients' controllers
+    more = [x for x in (overlay_check.speech(st), overlay_check.panel(st), overlay_check.cams_line(overlay_check.cameras())) if x[0]]
+    tail = "".join("; " + t for t, _ in more)
     if overlay_check.connected(st):
-        return "overlay connected"
+        return "overlay connected" + tail
     p = overlay_check.page(st)
     return "overlay NOT connected" + (f" (its stream closed {round(st['now'] - p['closed'])} s ago)" if p.get("closed")
-                                      else " (no main overlay stream since the service started)")
+                                      else " (no main overlay stream since the service started)") + tail
 
 
 def run_words(words):
