@@ -71,6 +71,7 @@ return function(api)
   remote_api.deadline_while_paused=true
   remote_api.check_step=check
   remote_api.player=function(index) return api.base.player(index,true) end
+  remote_api.player_check=api.base.player_check and function(index) return api.base.player_check(index,true) end
   remote_api.stop=function() end
   remote_api.stop_index=function() end
   remote_api.claim=nil

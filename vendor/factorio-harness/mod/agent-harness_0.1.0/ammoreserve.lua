@@ -29,6 +29,14 @@ return function(api)
   local TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'lane-splitter', 'linked-belt', 'inserter', 'ammo-turret',
     'assembling-machine', 'furnace', 'container'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d29 batch334) the entity reads with no closure made (networks.lua's helpers): o[k] and o[k](...), each nil when the
+  -- read or call fails, as try gives; a pass reads 100 entities a tick
+  local function get(o, k) return o[k] end
+  local function tget(o, k) local ok, v = pcall(get, o, k); if ok then return v end end
+  local function call(o, k, ...) return o[k](...) end
+  local function tcall(o, k, ...) local ok, v = pcall(call, o, k, ...); if ok then return v end end
+  local function line_equals(line, partner, i) return line.line_equals(partner.get_transport_line(i)) end
+  local function tline_equals(line, partner, i) local ok, v = pcall(line_equals, line, partner, i); if ok then return v end end
   local function secs(t)
     local s = math.max(0, math.floor(t / 60 + 0.5))
     if s >= 3600 then return string.format('%dh%02dm%02ds', math.floor(s / 3600), math.floor(s % 3600 / 60), s % 60) end
@@ -69,8 +77,9 @@ return function(api)
       row[place] = (row[place] or 0) + n
     end
   end
+  local EMPTY = {}  -- never written
   local function contents(sinks, place, inv)
-    for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do put(sinks, place, r.name, r.quality, r.count) end
+    for _, r in ipairs(inv and tcall(inv, 'get_contents') or EMPTY) do put(sinks, place, r.name, r.quality, r.count) end
   end
   local function inside(box, pos) return pos.x >= box[1] and pos.x <= box[3] and pos.y >= box[2] and pos.y <= box[4] end
   local function unit(e) return e.unit_number end  -- a valid entity's (2.0: every one of these types has one)
@@ -102,12 +111,12 @@ return function(api)
     local sinks = sinks_of(job, e, t)
     if BELTS[t] then
       tally(sinks, 'belts')
-      local lines = try(function() return e.get_max_transport_line_index() end) or 0
-      local partner = t == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output'
-        and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
+      local lines = tcall(e, 'get_max_transport_line_index') or 0
+      local partner = t == 'underground-belt' and tget(e, 'belt_to_ground_type') == 'output' and tget(e, 'neighbours')
+      if partner and not partner.valid then partner = nil end
       for i = 1, lines do
-        local line = try(function() return e.get_transport_line(i) end)
-        local same = partner and i > 2 and try(function() return line.line_equals(partner.get_transport_line(i)) end)
+        local line = tcall(e, 'get_transport_line', i)
+        local same = partner and i > 2 and tline_equals(line, partner, i)
         if line and not same then contents(sinks, 'belts', line) end
       end
     elseif t == 'inserter' then
@@ -126,22 +135,22 @@ return function(api)
         end
       end
       tally(sinks, 'inserters')
-      local h = try(function() return e.held_stack end)
-      if h and try(function() return h.valid_for_read end) then put(sinks, 'hands', h.name, h.quality, h.count) end
+      local h = tget(e, 'held_stack')
+      if h and tget(h, 'valid_for_read') then put(sinks, 'hands', h.name, h.quality, h.count) end
     elseif t == 'ammo-turret' then
       tally(sinks, 'turrets')
-      local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
+      local inv = tcall(e, 'get_inventory', defines.inventory.turret_ammo)
       contents(sinks, 'turrets', inv)
       if job.loops then  -- kept for the loops: which turret is a loop's is known once the pass has read the inserters
         local u = unit(e)
-        if u then job.turret_rows[u] = inv and try(function() return inv.get_contents() end) or {} end
+        if u then job.turret_rows[u] = inv and tcall(inv, 'get_contents') or {} end
       end
     elseif t == 'container' then
       tally(sinks, 'chests')
-      contents(sinks, 'chests', try(function() return e.get_inventory(defines.inventory.chest) end))
+      contents(sinks, 'chests', tcall(e, 'get_inventory', defines.inventory.chest))
     else
       tally(sinks, 'machines')
-      contents(sinks, 'machines', try(function() return e.get_output_inventory() end))
+      contents(sinks, 'machines', tcall(e, 'get_output_inventory'))
     end
   end
   -- A scope's key and its parts from a condition: area {left_top, right_bottom} (or [[x,y],[x,y]]) or loop {x,y}.
@@ -177,6 +186,7 @@ return function(api)
     links[fu] = links[fu] or {}; links[fu][#links[fu]+1] = to
     links[tu] = links[tu] or {}; links[tu][#links[tu]+1] = from
   end
+  local SIDES, NEXT = {'inputs', 'outputs'}, {}  -- NEXT: one list for every belt read (used before the next)
   local function loop_step(f, links)
     -- the queue's end is kept apart: its read slots are cleared, so # would not find it
     local last = math.min(f.tail, f.qi + M.LOOP_STEP - 1)
@@ -184,15 +194,16 @@ return function(api)
       local e = f.queue[i]
       f.queue[i] = nil
       if e.valid then
-        local next_ = {}
-        local nb = try(function() return e.belt_neighbours end)
-        for _, side in ipairs({'inputs', 'outputs'}) do for _, n in ipairs(nb and nb[side] or {}) do next_[#next_+1] = n end end
-        local partner = e.type == 'underground-belt' and try(function() return e.neighbours end)
+        local next_ = NEXT
+        for k = #next_, 1, -1 do next_[k] = nil end
+        local nb = tget(e, 'belt_neighbours')
+        for _, side in ipairs(SIDES) do for _, n in ipairs(nb and nb[side] or EMPTY) do next_[#next_+1] = n end end
+        local partner = e.type == 'underground-belt' and tget(e, 'neighbours')
         if partner then next_[#next_+1] = partner end
-        local linked = e.type == 'linked-belt' and try(function() return e.linked_belt_neighbour end)
+        local linked = e.type == 'linked-belt' and tget(e, 'linked_belt_neighbour')
         if linked then next_[#next_+1] = linked end
         local eu = links and unit(e)
-        for _, n in ipairs(eu and links[eu] or {}) do next_[#next_+1] = n end
+        for _, n in ipairs(eu and links[eu] or EMPTY) do next_[#next_+1] = n end
         for _, n in ipairs(next_) do
           local u = n.valid and BELTS[n.type] and unit(n)
           if u and not f.members[u] and f.n < M.LOOP_MAX then
@@ -282,6 +293,8 @@ return function(api)
     rec.done = {start=job.start, finish=tick, counts=job.counts, ents=job.ents, scopes=scopes}
     rec.job = nil
   end
+  -- A band's filter (walk.band copies it), its force set for each band.
+  local INSERTERS_F, TYPES_F = {type={'inserter'}}, {type=TYPES}
   function M.tick(tick)
     local st = api.state().ammo_reserve
     if not st then return end
@@ -300,7 +313,8 @@ return function(api)
       job.links = job.links or {}
       job.iwalk = job.iwalk or (job.walk and {surface=job.walk.surface, box=job.walk.box, x=job.walk.box.left, y=job.walk.box.top, rows=1, band_rows=1, cols=1, max=1})
       for _ = 1, M.BANDS do
-        local band = job.iwalk and walk().band(job.iwalk, s, {force=job.force, type={'inserter'}})
+        INSERTERS_F.force = job.force
+        local band = job.iwalk and walk().band(job.iwalk, s, INSERTERS_F)
         if not band then job.linked = true; job.iwalk = nil; break end
         for _, e in ipairs(band) do if e.valid then link(job.links, e) end end
         if #band > 0 then break end
@@ -324,7 +338,8 @@ return function(api)
     if job.qi > #job.queue then
       job.queue, job.qi = {}, 1
       for _ = 1, M.BANDS do
-        local band = job.walk and walk().band(job.walk, s, {force=job.force, type=TYPES})
+        TYPES_F.force = job.force
+        local band = job.walk and walk().band(job.walk, s, TYPES_F)
         if not band then job.walked = true; break end
         for _, e in ipairs(band) do job.queue[#job.queue+1] = e end
         if #job.queue > 0 then break end
