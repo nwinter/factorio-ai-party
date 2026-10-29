@@ -417,7 +417,7 @@ return function(api)
   -- What there is of a pack that nobody made lately (Grok, shift17 20:40: "chemical science missing" with 5571 in chests
   -- and labs consuming them): used in the last 10 minutes on any surface, held in our labs, and in our logistic
   -- networks (their providers, storage and buffers), as the game counts them.
-  local function packs_stock(force, names)
+  local function packs_stock(force, names, census)
     -- Per surface too (Sol 05:19: from Aquilo, cryogenic packs 2288 "in stock" counted Aquilo's networks while the labs
     -- on Nauvis held none): labs use what is on their own surface; the rest is elsewhere.
     local out = {}
@@ -427,10 +427,17 @@ return function(api)
     for _, surface in pairs(game.surfaces or {}) do surfaces[#surfaces+1] = surface end
     table.sort(surfaces, function(x, y) return tostring(x.name) < tostring(y.name) end)
     for _, surface in ipairs(surfaces) do
+      -- (d29 batch336 FL2) census: the census pass's labs where it walked the surface (the searches over the five planets
+      -- took 26 ms of 30 on a copy of world n), a search where it has not; only surfaces with labs, and no use statistics
+      -- (the technologies read needs neither). The queue's waits_for keeps searching every surface.
+      local labs = census and api.labs_of and api.labs_of(force, surface)
+      if type(labs) ~= 'table' then
+        local okl, found = pcall(function() return surface.find_entities_filtered{type='lab', force=force} end)
+        labs = okl and type(found) == 'table' and found or {}
+      end
+      if census and #labs == 0 then goto next_surface end
       local okp, stats = pcall(function() return force.get_item_production_statistics(surface) end)
-      if not okp then stats = nil end
-      local okl, labs = pcall(function() return surface.find_entities_filtered{type='lab', force=force} end)
-      if not okl or type(labs) ~= 'table' then labs = {} end
+      if not okp or census then stats = nil end
       local nets = {}
       pcall(function() nets = force.logistic_networks[surface.name] or {} end)
       for _, name in ipairs(names) do
@@ -458,6 +465,7 @@ return function(api)
           s.by_surface[#s.by_surface+1] = row
         end
       end
+      ::next_surface::
     end
     return out
   end
