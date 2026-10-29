@@ -18150,3 +18150,28 @@ degree arcs; `rotate` refused northeast and northwest.
 **Tests:** tests/round1520d.lua: no item held (the refusal with the facts and routes), the footprint refused, plain R,
 and the fast replace (the item spent, the old one back, the new unit).
 
+
+### d29 batch362: completed flight production
+
+`platform_production {platform, legs: N}` (integer 1..16, with platform alone) returns the last N completed
+flights, oldest first, retained while the next flight is underway. The separate ring keeps 16 completed flights
+per platform, independent of freight's eight stop/leg segments. `leg: true` retains its existing current-window
+behavior; it is not a completed-history selector.
+
+Each row has `from/to` ticks, `from_location/to_location/heading` (the directed connection ends), actual
+`start_position/end_position` (location, or connection and distance), `ended_by` (arrival, reversal, station_passed),
+`start_source/end_source`, `partial`, `status`, `ammo/fuel {name: {made, used}}`, and `loaded/dropped` cargo maps.
+Native cumulative production counters are snapshotted on platform state events and, for changes without an event,
+on the tick freight's existing once-a-second watch observes them. A location on the path closes the incoming leg
+without needing a station wait. Counter reads happen at boundaries, never on unchanged watch samples or reads.
+A reversal closes the outgoing interval and starts the return interval with the same snapshot; fluid deltas retain
+native precision. Ammo sums every quality at each boundary, including qualities first made during that leg.
+
+Cargo counts rockets launched to the platform and hub pods sent down at their engine event ticks, not delivery at
+the other end. Keys include `@quality` past normal, with 64 keys per direction per interval. Cargo caps/failures,
+missing/reset native counters, and first observation during flight make the row `incomplete`; unknown counters
+are absent, with `counter_status`. Deleted platforms are pruned by the existing freight watch. No pre-install
+history is reconstructed. Without a state event, two changes wholly between watch samples cannot be reconstructed.
+
+The state event is forwarded by control.lua; installing this change's control.lua requires a mod reload/server
+restart. The once-a-second fallback operates on a runtime-only deploy, but does not give state-event boundaries.

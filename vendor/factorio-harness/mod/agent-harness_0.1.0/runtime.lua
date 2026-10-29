@@ -20009,7 +20009,7 @@ function handlers.platform_delete(p,a) return M.platdelete.handler(p,a) end
 M.minpayload=require('minpayload'){editlog=function() return M.editlog end,made=function(t) return M.made.mark(t) end}
 function handlers.min_payload(p,a) return M.minpayload.handler(p,a) end
 -- A platform's remaining bill of materials (platbom.lua; B3, Sol 22:50).
-M.platbom=require('platbom'){craftrate=function(e) return M.craftrate.machine(e) end,status_name=function(e) return M.machine_status(e) end,leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
+M.platbom=require('platbom'){legs=function(pl,n) return M.freight.productionlegs.read(pl,n) end,craftrate=function(e) return M.craftrate.machine(e) end,status_name=function(e) return M.machine_status(e) end,leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
   state=state,who=function(p) return M.board.who(p) end}
 function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end
@@ -21769,6 +21769,15 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  if event.name~=nil and event.name==(defines.events or {}).on_space_platform_changed_state then
+    local pl=event.platform
+    local ok,err=pcall(function() M.timed('productionlegs.event',M.freight.productionlegs.observe,pl,event.tick,'event',M.freight.where(pl)) end)
+    if not ok then state().production_legs_error={tick=event.tick,error=tostring(err)} end
+    return
+  end
+  if event.name~=nil and event.name==(defines.events or {}).on_cargo_pod_started_ascending then
+    pcall(M.freight.productionlegs.on_pod,event)
+  end
   -- (d28 batch317) the force's first research, attack, loss, death, enemies of a kind, freight (disclosure.lua)
   if M.disclosure then pcall(M.disclosure.on_event,event) end
   -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record
@@ -21831,7 +21840,7 @@ function M.on_event(event)
     local okl,lid=pcall(M.ledger.on_launch,event)
     event.harness_up=okl and lid or nil
     pcall(M.podlog.on_launch,event)
-    if M.freight then pcall(M.freight.on_launch,event) end
+    if M.freight then pcall(M.freight.productionlegs.on_launch,event); pcall(M.freight.on_launch,event) end
     local ok,err=pcall(M.silo.on_launch_ordered,event)
     if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     return
