@@ -353,7 +353,9 @@ def team_views():
     try:
         op = os.path.join(tmp, "op")
         os.makedirs(os.path.join(op, "red"))
-        open(os.path.join(op, "teams.tsv"), "w").write("# t\nred\tastra\tcodex\nblue\thaiku\tclaude\n")
+        os.makedirs(os.path.join(op, "blue"))
+        open(os.path.join(op, "streams.txt"), "w").write("red http://127.0.0.1:8791/\n")
+        open(os.path.join(op, "teams.tsv"), "w").write("# t\nred\tastra\tcodex\nblue\thaiku\tclaude\ngreen\tgemini\tagy\n")
         open(os.path.join(op, "red", "chat.jsonl"), "w").write(json.dumps({"from": "astra", "message": "iron <b>"}) + "\n")
 
         class Fake:
@@ -371,6 +373,7 @@ def team_views():
         assert [c["team"] for c in view["teams"]] == ["red", "blue"]
         assert view["teams"][0]["board"][0]["title"] == "red item" and view["teams"][1]["board"][0]["title"] == "blue item"
         text = tv.page(view)
+        assert 'href="http://127.0.0.1:8791/">stream</a>' in text and text.count(">stream</a>") == 1
         assert "iron &lt;b&gt;" in text and "<b>force player</b>" in text and text.count("<section>") == 2, text[:300]
     finally:
         shutil.rmtree(tmp)

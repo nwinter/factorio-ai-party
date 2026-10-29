@@ -49,11 +49,12 @@ class Reader:
 
 
 def teams_of(op):
-    """[(team, [names])] from op/teams.tsv (start-mt.sh's copy of the teams file), in file order."""
+    """[(team, [names])] from op/teams.tsv (start-mt.sh's copy of the teams file), in file order: the teams this run
+    launched (an op/TEAM/ folder each; POG_MT_TEAMS can leave some out)."""
     out = {}
     for line in open(os.path.join(op, "teams.tsv")):
         f = line.rstrip("\n").split("\t")
-        if line.strip() and not line.startswith("#") and len(f) >= 2:
+        if line.strip() and not line.startswith("#") and len(f) >= 2 and os.path.isdir(os.path.join(op, f[0])):
             out.setdefault(f[0], []).append(f[1])
     return list(out.items())
 
@@ -70,6 +71,14 @@ def tail_jsonl(path, n):
         except ValueError:
             pass
     return out
+
+
+def streams(op):
+    """{team: overlay URL} from op/streams.txt (start-mt.sh, POG_MT_STREAM=1)."""
+    try:
+        return dict(l.split(None, 1) for l in open(os.path.join(op, "streams.txt")).read().split("\n") if l.strip())
+    except (OSError, ValueError):
+        return {}
 
 
 def collect(r, op):
@@ -107,6 +116,7 @@ def collect(r, op):
         except Exception as e:
             col["errors"]["tells"] = str(e)
         col["chat"] = tail_jsonl(os.path.join(op, team, "chat.jsonl"), 8)
+        col["stream"] = streams(op).get(team)
         view["teams"].append(col)
     return view
 
@@ -131,7 +141,8 @@ def page(view):
                         f"{e(text_of(t)[:200])}</li>" for t in c.get("tells") or [])
         chat = "".join(f"<li>{e(str(m.get('from') or m.get('player')))}: {e(text_of(m)[:200])}</li>" for m in c.get("chat") or [])
         errs = "".join(f"<li class=err>{e(k)}: {e(v[:200])}</li>" for k, v in c["errors"].items())
-        cols.append(f"""<section><h2>{e(c['team'])}</h2><ul>{agents}</ul>
+        link = f" <a class=small href=\"{e(c['stream'].strip())}\">stream</a>" if c.get("stream") else ""
+        cols.append(f"""<section><h2>{e(c['team'])}{link}</h2><ul>{agents}</ul>
 <h3>Score</h3><p>tick {e(str(s.get('tick')))}; research {len(s.get('research') or [])}{'; researching ' + e(str(s['researching'])) if s.get('researching') else ''};
 rockets {e(str(s.get('rockets') or 0))}; platforms {e(str(s.get('platforms') or 0))}</p><p class=small>{e(ents)}</p><p class=small>{e(prod)}</p>
 <h3>Board (open)</h3><ul class=small>{board or '<li>none</li>'}</ul>

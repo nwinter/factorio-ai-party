@@ -16,9 +16,10 @@
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
 #   POG_SEED (default 274274), POG_ENEMIES (default normal), POG_IDLE_NUDGE (default 0: until mt276 part B the board
 #   it names is every team's: B is in now), POG_SCORE_EVERY (default 120 s), POG_MT_CAM (default 1: the camera client
-#   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails).
+#   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails),
+#   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
-# sandbox would not). No stream, site, polls, casters, analyst or viewer relay: nothing of this run is public.
+# sandbox would not). Nothing of this run is public: no public stream, site, polls, casters, analyst or viewer relay.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
 # harness what that does), POG_DENY_READ (this checkout, every mt/ worktree, the operator's folder) for the Claude Code
 # and Grok sandboxes, which also deny the other teams' folders (tools/launch-agent.sh). The operator's files (this log,
@@ -241,6 +242,32 @@ for t in $teams; do
 done
 nohup python3 tools/mt/team_views.py "$run" --every "${POG_VIEWS_EVERY:-60}" >"$op/team-views.err" 2>&1 &
 echo $! >> "$op/helpers.pid"
+# POG_MT_STREAM=1: the stream service per team (tools/stream/serve.py --team), its overlay at 127.0.0.1:879N (red
+# 8791, then in teams-file order; 8788 is world n's): no camera calls or highlights (pog-cam1 renders the agents'
+# ./shot), no OBS, replays, night lift or image show, no viewer chat or relay. Its run config and state sit in the
+# team's folder (its journals, token logs and its own force's facts); the director logs in op/TEAM/.
+if [ "${POG_MT_STREAM:-0}" = 1 ]; then
+  port=8791
+  for t in $teams; do
+    td=$rundir/$t
+    python3 - "$td/team.tsv" "$td/stream.json" <<'EOF'
+import json, sys
+agents = {}
+for line in open(sys.argv[1]):
+    if line.strip() and not line.startswith("#"):
+        name, kind, route, model, effort, label, harness = line.rstrip("\n").split("\t")
+        agents[name] = {"model": label, "harness": harness}
+json.dump({"title": "Factorio: Space Age", "subtitle": "real time", "space_age": True, "agents": agents, "cameras": [],
+           "show": False, "cuts": False, "highlights": False, "replays": False, "night": False}, open(sys.argv[2], "w"), indent=1)
+EOF
+    nohup python3 tools/stream/serve.py --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
+      --no-camera --no-highlights --no-replays --no-night --no-cuts --log-dir "$op/$t/stream-logs" >"$op/$t/stream-service.log" 2>&1 &
+    echo $! >> "$op/helpers.pid"
+    echo "$t http://127.0.0.1:$port/" >> "$op/streams.txt"
+    log "$t stream: http://127.0.0.1:$port/ (pid $!)"
+    port=$((port + 1))
+  done
+fi
 if [ "${POG_IDLE_NUDGE:-0}" = 1 ]; then
   for t in $teams; do
     nohup python3 tools/idle_nudge.py --run "$rundir/$t" --world "$world" >"$rundir/$t/idle-nudge.log" 2>&1 &
