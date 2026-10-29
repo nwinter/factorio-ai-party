@@ -201,8 +201,11 @@ return function(api)
     else
       local rails = s.find_entities_filtered{name='railgun-turret', force=p.force}
       assert(#rails > 0, string.format('%s has no railgun turrets', pl.name))
-      table.sort(rails, function(x, y) if x.position.y ~= y.position.y then return x.position.y < y.position.y end return x.position.x < y.position.x end)
-      for i = 1, math.min(M.MAX, #rails) do picked[i] = rails[i] end
+      -- each position read once (a comparator reading .position took 0.3-1.0 ms for 32 railguns on the copy)
+      local keyed = {}
+      for i, e in ipairs(rails) do local q = e.position; keyed[i] = {e=e, x=q.x, y=q.y} end
+      table.sort(keyed, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+      for i = 1, math.min(M.MAX, #keyed) do picked[i] = keyed[i].e end
       total = #rails
     end
     local job = {platform=pl.name, surface=s.index, start=game.tick, until_tick=game.tick + seconds * 60 - 1, seconds=seconds, samples=0,

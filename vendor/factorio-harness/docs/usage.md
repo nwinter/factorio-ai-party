@@ -17702,8 +17702,13 @@ world or the targeting.
 - **Measured** on the copy:
   - 8 railguns for 55 s: `rail_aim.tick` 0.044 ms a tick on average, the worst game second 3.19 ms (0.053 ms a tick);
     the damage hook is one table lookup a railgun hit;
-  - in dispatch as the bot, after the first call (13.5 ms, a fresh deploy): a start 4.6-4.9 ms (railguns found by
-    name), with two positions 2.8 ms, a read 2.5 ms, against 17.7 ms for `status`;
+  - the start's own work, profiled part by part over 25 starts: 0.9-2.0 ms (the platform 0.04-0.09 ms, the find by
+    name 0.4-0.9 ms, the sort 0.3-1.0 ms before its positions were read once, the rows and first read under 0.2 ms);
+  - in dispatch as the bot, 30 of each alternating (cp2): a start median 4.4 ms (90% within 7.8, longest 15.2), a read
+    median 4.5 ms (90% within 9.0, longest 92.2), `signal_watch {}` median 5.9 ms (longest 16.1); `status` 18.9-21.4
+    ms. The long ones come in every kind of call, a read and signal_watch included, with the start's own parts at their
+    usual 0.95 ms in the one profiled (12.6 ms): they are the dispatch path's, not this watch's; no first-call warm-up
+    (a start as the first call after a fresh deploy: 4.8 ms);
   - a 20 s watch of the first 8 railguns: 32 shots, all exact (medium 25, big 6, huge 1, all killed), and 101 hits:
     69 collateral (small 32, medium 32, big 4, huge 1), all killed; 0 unattributed.
 - **Tests:** tests/d29_batch332.lua (bounds; picks; an exact hit with collateral and a survivor; a retarget within the
