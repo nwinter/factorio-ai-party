@@ -9,6 +9,8 @@
   python3 tools/mt/mt_map.py chart-test --dir DIR --port P --password-file F [--seconds 60]
   python3 tools/mt/mt_map.py report --dir DIR --port P --password-file F [--corridor]
   python3 tools/mt/mt_map.py contacts --port P --password-file F
+  python3 tools/mt/mt_map.py add-humans --port P --password-file F [--human-factor 1.75]   # a human team on a map without one
+  (layout and create take --humans: the human team in the layout, its start a starting point)
 
 create writes DIR/layout.json and DIR/map-gen-settings.json and, with --docker, makes DIR/saves/mt.zip with the
 headless build in DIR/factorio (factorio --create, mods from DIR/mods). Every start is a starting point (a biter-free
@@ -80,6 +82,10 @@ SHIFT_PLANET = 96
 # (mt275) setup --close-corridors: no pair of starts keeps a path this far from every nest
 CLOSE_MARGIN = 64
 PLANET_RING = 600  # each team's spawn on the other planets: this far from (0,0), on the team's bearing
+# (mt278, part H) a human team: one more force, farther out than the AI teams (its nearest AI start HUMAN_FACTOR x their
+# distance away), on the bearing between the first two AI starts, with the same primary patches; nests within
+# HUMAN_NEST_CLEAR of its start are removed on a map made without it (add-humans)
+HUMAN_TEAM, HUMAN_FACTOR, HUMAN_NEST_CLEAR = "white", 1.75, 400
 
 
 def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING):
@@ -156,6 +162,54 @@ def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING):
     return out
 
 
+def human_part(lay, factor=HUMAN_FACTOR):
+    """The human team for a layout: its spawns (Nauvis and the planets, factor x the AI ring's spacing out), the natural
+    resources cleared round its start and its primary patches (as an AI team's, rotated with its bearing)."""
+    n, d, ring = len(lay["teams"]), lay["distance"], lay["ring"]
+    th = math.pi / n if n > 2 else math.pi / 2
+    a0 = math.radians(lay["teams"][0]["bearing_deg"])
+    ang = a0 + th
+    want = factor * d
+    # the distance from the nearest AI start (ring, th away in angle) is want: R^2 - 2 R ring cos(th) + ring^2 = want^2
+    rad = ring * math.cos(th) + math.sqrt(max(0.0, want ** 2 - (ring * math.sin(th)) ** 2))
+    ux, uy = math.cos(ang), math.sin(ang)
+    sx, sy = round(rad * ux) + 0.5, round(rad * uy) + 0.5
+    t = {"name": HUMAN_TEAM, "bearing_deg": round(math.degrees(ang), 1), "spawns": {"nauvis": [sx, sy]}, "humans": True}
+    out = {"team": t, "clear": [{"x": sx, "y": sy, "r": CLEAR_START}], "patches": [], "planets": {}, "radius": round(rad, 1),
+           "nearest_ai": round(min(math.dist((sx, sy), u["spawns"]["nauvis"]) for u in lay["teams"]), 1)}
+    for q in PRIMARY:
+        x, y = sx + q["u"] * ux - q["v"] * uy, sy + q["u"] * uy + q["v"] * ux
+        out["patches"].append(dict({k: v for k, v in q.items() if k not in ("u", "v")}, x=round(x) + 0.5, y=round(y) + 0.5,
+                                   site="start " + HUMAN_TEAM, max_shift=SHIFT_START))
+    pr = PLANET_RING * factor
+    for p in PLANETS:
+        px, py = round(pr * ux) + 0.5, round(pr * uy) + 0.5
+        t["spawns"][p] = [px, py]
+        spec = PLANET_PATCHES.get(p)
+        out["planets"][p] = {"clear": [], "patches": []}
+        if spec:
+            out["planets"][p]["clear"].append({"x": px, "y": py, "r": PLANET_CLEAR, "names": spec["clear"]})
+            for q in spec["patches"]:
+                x, y = px + q["u"] * ux - q["v"] * uy, py + q["u"] * uy + q["v"] * ux
+                out["planets"][p]["patches"].append(dict({k: v for k, v in q.items() if k not in ("u", "v")}, x=round(x) + 0.5,
+                                                         y=round(y) + 0.5, site=f"{p} {HUMAN_TEAM}", max_shift=SHIFT_PLANET))
+    return out
+
+
+def with_humans(lay, factor=HUMAN_FACTOR):
+    """The layout with the human team in it (create --humans: its start a starting point of the map from tick 0)."""
+    h = human_part(lay, factor)
+    lay = json.loads(json.dumps(lay))
+    lay["teams"].append(h["team"])
+    lay["clear"] += h["clear"]
+    lay["patches"] += h["patches"]
+    for p, spec in h["planets"].items():
+        lay["planets"][p]["clear"] += spec["clear"]
+        lay["planets"][p]["patches"] += spec["patches"]
+    lay["humans"] = {"team": HUMAN_TEAM, "factor": factor, "radius": h["radius"], "nearest_ai": h["nearest_ai"]}
+    return lay
+
+
 def map_gen_settings(lay, base, seed, enemy_frequency=1.0, enemy_size=1.0):
     mgs = json.loads(json.dumps(base))
     mgs = {k: v for k, v in mgs.items() if not k.startswith("_")}
@@ -206,12 +260,15 @@ def op_from(a):
 
 
 def cmd_layout(a):
-    print(json.dumps(layout(a.teams, a.distance, a.planet_ring), indent=1))
+    lay = layout(a.teams, a.distance, a.planet_ring)
+    print(json.dumps(with_humans(lay, a.human_factor) if a.humans else lay, indent=1))
 
 
 def cmd_create(a):
     os.makedirs(a.dir, exist_ok=True)
     lay = layout(a.teams, a.distance, a.planet_ring)
+    if a.humans:
+        lay = with_humans(lay, a.human_factor)
     lay["seed"] = a.seed
     base = json.load(open(os.path.join(a.dir, "factorio/data/map-gen-settings.example.json")))
     lay["enemy"] = {"frequency": a.enemy_frequency, "size": a.enemy_size}
@@ -331,7 +388,10 @@ def start_client(a, name):
            "graphics-quality=medium\nvideo-memory-usage=low\ntexture-streaming=true\n")
     ssh(a.client_host, f"mkdir -p '{d}/config' && rm -rf '{d}/mods' && cp -R '{a.mt_dir}/mods' '{d}/mods' && "
                        f"printf '{cfg}' > '{d}/config/config.ini' && printf '{{\"service-username\": \"{name}\"}}' > '{d}/player-data.json'")
-    ssh(a.client_host, f"open -n -a '{a.client_app}' --args --config '{d}/config/config.ini' --mp-connect 127.0.0.1:{a.game_port} --disable-audio")
+    # (mt278) a server with a game password (imac_mt.sh POG_MT_HUMANS=1): the client gives it
+    pwf = os.path.expanduser("~/.config/pog/mt-humans.pw")
+    pw = f" --password '{open(pwf).read().strip()}'" if os.environ.get("POG_MT_HUMANS") == "1" and os.path.exists(pwf) else ""
+    ssh(a.client_host, f"open -n -a '{a.client_app}' --args --config '{d}/config/config.ini' --mp-connect 127.0.0.1:{a.game_port}{pw} --disable-audio")
     for _ in range(20):
         rows = ssh(a.client_host, f"pgrep -lf '{d}/config/config.ini'", check=False).strip().splitlines()
         rows = [r for r in rows if "factorio" in r and f"{d}/config/config.ini" in r]
@@ -482,6 +542,37 @@ def cmd_seed_search(a):
     json.dump(rows, open(os.path.join(a.dir, "seeds", "search.json"), "w"), indent=1)
 
 
+def cmd_add_humans(a):
+    """The human team on a map made without it (mt275-final): mt_setup again with every team (the AI teams' forces and
+    spawns as they are, contacts kept), its start's chunks made, natural resources cleared and its patches placed, the
+    nests within HUMAN_NEST_CLEAR of its start removed, and its planet spawns' patches."""
+    lay = layout(a.teams, a.distance, a.planet_ring)
+    h = human_part(lay, a.human_factor)
+    op = op_from(a)
+    teams = [{"name": t["name"], "spawns": t["spawns"]} for t in lay["teams"]] + [{"name": h["team"]["name"], "spawns": h["team"]["spawns"]}]
+    res, _ = op.call("mt_setup", {"teams": teams})
+    print("mt_setup", json.dumps(res))
+    x, y = h["team"]["spawns"]["nauvis"]
+    t0 = time.time()
+    op.call("mt_generate", {"surface": "nauvis", "position": [x, y], "radius": math.ceil((max(CLEAR_START + SHIFT_START, HUMAN_NEST_CLEAR) + 32) / 32)})
+    r, _ = op.call("mt_resources", {"surface": "nauvis", "clear": h["clear"], "patches": h["patches"], "sites": []})
+    print(f"nauvis: start ({x},{y}), {h['radius']} from (0,0), nearest AI start {h['nearest_ai']}; cleared {r['cleared']}; placed",
+          [f"{p['name']} {p['amount']} at ({p['x']},{p['y']})" + (f" moved {p['shifted']}" if p.get("shifted") else "") for p in r["placed"]])
+    gone = op.lua(f"/silent-command local n=0 for _,e in ipairs(game.surfaces.nauvis.find_entities_filtered{{position={{{x},{y}}},radius={HUMAN_NEST_CLEAR},"
+                  f"force='enemy'}}) do if e.valid then e.destroy() n=n+1 end end rcon.print(n)")
+    print(f"enemies removed within {HUMAN_NEST_CLEAR} of the start: {gone.strip()}")
+    for p in PLANETS:
+        spec = h["planets"][p]
+        surface_made = op.lua(f"/silent-command rcon.print(game.get_surface('{p}') and 'yes' or 'no')").strip() == "yes"
+        if not (spec["patches"] and surface_made):
+            continue
+        px, py = h["team"]["spawns"][p]
+        op.call("mt_generate", {"surface": p, "position": [px, py], "radius": math.ceil((PLANET_CLEAR + SHIFT_PLANET + 32) / 32)})
+        r2, _ = op.call("mt_resources", {"surface": p, "clear": spec["clear"], "patches": spec["patches"]})
+        print(f"{p}: spawn ({px},{py}); cleared {r2['cleared']}; placed {len(r2['placed'])}")
+    print(f"(in {time.time() - t0:.0f} s)")
+
+
 def cmd_contacts(a):
     res, _ = op_from(a).call("mt_contacts", {})
     print(json.dumps(res, indent=1))
@@ -490,7 +581,7 @@ def cmd_contacts(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("layout", "create", "setup", "assign", "join", "chart-test", "report", "contacts", "seed-search"):
+    for name in ("layout", "create", "setup", "assign", "join", "chart-test", "report", "contacts", "seed-search", "add-humans"):
         p = sub.add_parser(name)
         p.add_argument("--teams", type=int, default=4)
         p.add_argument("--distance", type=float, default=DISTANCE)
@@ -517,9 +608,12 @@ def main():
         p.add_argument("--game-port", type=int, default=34475)
         p.add_argument("--join-timeout", type=int, default=240)
         p.add_argument("--seconds", type=int, default=60)
+        p.add_argument("--humans", action="store_true", help="layout, create: with the human team (HUMAN_TEAM)")
+        p.add_argument("--human-factor", type=float, default=HUMAN_FACTOR)
     a = ap.parse_args()
     {"layout": cmd_layout, "create": cmd_create, "setup": cmd_setup, "assign": cmd_assign, "join": cmd_join,
-     "chart-test": cmd_chart_test, "report": cmd_report, "contacts": cmd_contacts, "seed-search": cmd_seed_search}[a.cmd](a)
+     "chart-test": cmd_chart_test, "report": cmd_report, "contacts": cmd_contacts, "seed-search": cmd_seed_search,
+     "add-humans": cmd_add_humans}[a.cmd](a)
 
 
 if __name__ == "__main__":

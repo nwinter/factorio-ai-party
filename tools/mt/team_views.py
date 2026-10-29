@@ -91,6 +91,10 @@ def collect(r, op):
         view["contacts"] = r.op("mt_contacts").get("contacts") or []
     except Exception as e:
         view["contacts"], view["errors"]["contacts"] = [], str(e)
+    try:
+        view["freeze"] = r.op("mt_freeze")
+    except Exception:
+        view["freeze"] = None   # no human team (mt_humans not set up)
     for team, names in teams_of(op):
         col = {"team": team, "agents": [], "errors": {}}
         for n in names:
@@ -149,6 +153,10 @@ rockets {e(str(s.get('rockets') or 0))}; platforms {e(str(s.get('platforms') or 
 <h3>Tells</h3><ul class=small>{tells or '<li>none</li>'}</ul>
 <h3>Chat</h3><ul class=small>{chat or '<li>none</li>'}</ul><ul>{errs}</ul></section>""")
     contacts = "".join(f"<li>{e(json.dumps(c))}</li>" for c in view.get("contacts") or []) or "<li>none yet</li>"
+    fz = view.get("freeze")
+    if fz:
+        contacts += (f"<li>human team {e(str(fz.get('team')))}: freeze {e(str(fz.get('state')))}, {fz.get('used_h', 0):.1f} of "
+                     f"{fz.get('budget_h', 0):.0f} h used today, a player online: {e(str(fz.get('online')))}</li>")
     return f"""<!doctype html><html><head><meta charset=utf-8><meta http-equiv=refresh content=60>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Team views</title><style>
 :root{{--bg:#fff;--fg:#1b1b1b;--muted:#666;--line:#ddd;--err:#b00020}}

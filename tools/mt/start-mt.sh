@@ -17,7 +17,8 @@
 #   POG_SEED (default 274274), POG_ENEMIES (default normal), POG_IDLE_NUDGE (default 0: until mt276 part B the board
 #   it names is every team's: B is in now), POG_SCORE_EVERY (default 120 s), POG_MT_CAM (default 1: the camera client
 #   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails),
-#   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...).
+#   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...),
+#   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
 # sandbox would not). Nothing of this run is public: no public stream, site, polls, casters, analyst or viewer relay.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
@@ -98,6 +99,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
       python3 tools/full_tools.py carry --dry-run "$tree/runs/$run/$t" "$tree/runs/$resume/$t" $(members "$tmp/$t/team.tsv") 2>&1 | sed "s/^/   $t carry: /" || true
     fi
   done
+  echo "2b. humans: $([ "${POG_MT_HUMANS:-0}" = 1 ] && echo "on: team white, players $(grep -v '^#' agent/mt/humans.tsv | cut -f1 | tr '\n' ' ')(game password and whitelist on the server)" || echo 'off (POG_MT_HUMANS=0)')"
   echo "2c. camera: $([ "${POG_MT_CAM:-1}" = 1 ] && echo 'pog-cam1 joins on the iMac (tools/mt/imac_cam.py, about 5 GB there) and renders ./shot; copied into shots/' || echo 'off (POG_MT_CAM=0): ./shot fails')"
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   exit 0
@@ -180,6 +182,22 @@ if [ "$has_agy" = 1 ]; then
     nohup python3 tools/agy_memguard.py --log "$op/agy-memguard.log" >/dev/null 2>&1 &
     log "agy memory guard started: pid $!, log $op/agy-memguard.log (it runs across shifts)"
   fi
+fi
+
+# 2b'. (mt278) POG_MT_HUMANS=1: the human team (humans.lua) set up: its roster from agent/mt/humans.tsv into its force
+# when they join; the server was started with its game password and whitelist (imac_mt.sh). The team must be on the
+# map (tools/mt/mt_map.py add-humans, once). POG_MT_HUMANS_ARGS: more mt_humans arguments (JSON fields, e.g.
+# '"budget_h":10,"block_h":1').
+if [ "${POG_MT_HUMANS:-0}" = 1 ]; then
+  hreq=$(python3 - "${POG_MT_HUMANS_ARGS:-}" <<'EOF'
+import json, sys
+names = [l.split("\t")[0].strip() for l in open("agent/mt/humans.tsv") if l.strip() and not l.startswith("#")]
+args = dict({"team": "white", "players": names}, **json.loads("{" + sys.argv[1] + "}"))
+print(json.dumps({"id": "start-mt-humans", "operator": True, "action": "mt_humans", "args": args}))
+EOF
+)
+  humans_lua="/silent-command rcon.print(remote.call('agent_harness','dispatch',[[$hreq]]))"
+  log "humans: $(python3 tools/pog.py --world "$world" rcon "$humans_lua" 2>&1 | cut -c1-300)"
 fi
 
 # 2c. The camera client (pog-cam1, a director: spectator in the player force) for ./shot, and its copy into shots/.

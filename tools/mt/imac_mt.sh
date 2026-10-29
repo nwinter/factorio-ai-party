@@ -33,9 +33,28 @@ start)
   rsync -a --delete --exclude tests "$mod/" "$host:$dir/mods/agent-harness_0.1.0/"
   scp -q "$root/tools/imac-mod-list.json" "$host:$dir/mods/mod-list.json"
   printf '[path]\nread-data=__PATH__system-read-data__\nwrite-data=%s/data\n' "$dir" | remote "cat > '$dir/config/config.ini'"
-  python3 -c 'import json; print(json.dumps({"name": "pog mt", "description": "tools/mt/imac_mt.sh", "visibility": {"public": False, "lan": False},
-    "require_user_verification": False, "max_players": 0, "allow_commands": "admins-only", "autosave_interval": 0, "autosave_slots": 1,
-    "auto_pause": False, "only_admins_can_pause_the_game": True, "autosave_only_on_server": True}))' | remote "cat > '$dir/server-settings.json'"
+  # (mt278) POG_MT_HUMANS=1: a game password (~/.config/pog/mt-humans.pw, made once) and the server whitelist: the human
+  # roster (agent/mt/humans.tsv), the camera client and the setup accounts. No admin list: the console stays RCON's.
+  # require_user_verification stays off (our iMac clients have no factorio.com token), so the password guards the names.
+  humans=${POG_MT_HUMANS:-0} hpw=$HOME/.config/pog/mt-humans.pw extra=""
+  if [ "$humans" = 1 ]; then
+    [ -s "$hpw" ] || { python3 -c 'import secrets; print(secrets.token_urlsafe(12))' > "$hpw"; chmod 600 "$hpw"; }
+    python3 - "$root/agent/mt/humans.tsv" <<'EOF' | remote "cat > '$dir/server-whitelist.json'"
+import json, sys
+names = [l.split("\t")[0].strip() for l in open(sys.argv[1]) if l.strip() and not l.startswith("#")]
+print(json.dumps(names + ["pog-cam1"] + ["mt-" + t for t in ("red", "blue", "green", "yellow", "white")]))
+EOF
+    extra="--use-server-whitelist --server-whitelist '$dir/server-whitelist.json'"
+  fi
+  python3 - "$humans" "$hpw" <<'EOF' | remote "cat > '$dir/server-settings.json'"
+import json, sys
+s = {"name": "pog mt", "description": "tools/mt/imac_mt.sh", "visibility": {"public": False, "lan": False},
+     "require_user_verification": False, "max_players": 0, "allow_commands": "admins-only", "autosave_interval": 0, "autosave_slots": 1,
+     "auto_pause": False, "only_admins_can_pause_the_game": True, "autosave_only_on_server": True}
+if sys.argv[1] == "1":
+    s["game_password"] = open(sys.argv[2]).read().strip()
+print(json.dumps(s))
+EOF
   case $save in
     imac:$dir/saves/mt.zip) ;;   # (mt277) the server's own save as its last /quit left it (tools/mt/start-mt.sh, POG_RESUME)
     imac:*) remote "cp '${save#imac:}' '$dir/saves/mt.zip'" ;;   # a save already on the iMac (mt_map.py seed-search)
@@ -43,7 +62,7 @@ start)
   esac
   pw=$(cat "$pwfile")
   pid=$(remote "cd '$dir' && nohup '$bin' --config '$dir/config/config.ini' --start-server '$dir/saves/mt.zip' --mod-directory '$dir/mods' \
-    --server-settings '$dir/server-settings.json' --rcon-bind 0.0.0.0:$rcon_port --rcon-password '$pw' --port $game_port \
+    --server-settings '$dir/server-settings.json' $extra --rcon-bind 0.0.0.0:$rcon_port --rcon-password '$pw' --port $game_port \
     > '$dir/server.out' 2>&1 < /dev/null & echo \$!")
   echo "$pid" | remote "cat > '$dir/server.pid'"
   echo "started pid $pid on $host ($save); waiting for RCON $host:$rcon_port"

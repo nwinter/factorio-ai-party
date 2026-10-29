@@ -17947,6 +17947,8 @@ M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) 
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
+-- (mt278, private) a team of human players and its freeze (humans.lua); nothing runs without mt_humans
+M.humans=require('humans'){state=state}
 -- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
 M.multiteam=require('multiteam'){state=state,
   -- (mt276 G) the rules of contact: an operator tell to the whole team, as that team
@@ -19137,7 +19139,7 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action]
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action]
       relay=relay or (M.disclosure and M.disclosure.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -21483,6 +21485,8 @@ function M.tick_body(event)
   if M.itemcount and event.tick%M.itemcount.EVERY==0 then pcall(M.timed,'itemcount.step',M.itemcount.tick,event.tick) end
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
+  -- (mt278) a human team's freeze: its checks every second, its destructible steps every tick while queued (humans.lua)
+  do local mt=state().mt; if mt and mt.humans then pcall(M.timed,'humans.tick',M.humans.tick,event.tick) end end
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team_holding,'owed',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
@@ -21678,6 +21682,9 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (mt278) a human team's joins, chat commands and builds while frozen (humans.lua)
+  local mt=state().mt
+  if mt and mt.humans then pcall(M.humans.on_event,event) end
   -- (d28 batch317) the force's first research, attack, loss, death, enemies of a kind, freight (disclosure.lua)
   if M.disclosure then pcall(M.disclosure.on_event,event) end
   -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record
@@ -21784,6 +21791,8 @@ function M.on_event(event)
   elseif event.name==defines.events.on_entity_damaged then
     -- (mt274) the first hit between two teams (multiteam.lua)
     if state().mt then pcall(M.multiteam.on_damaged,event) end
+    -- (mt278) a hit between a human team and another team: no freeze within quiet_min of it (humans.lua)
+    if state().mt and state().mt.humans then pcall(M.humans.on_damaged,event) end
     -- (AR1) an asteroid shot, or an asteroid's hit on us, on a platform an asteroid_watch watches (asteroidwatch.lua)
     if state().asteroid_watch then
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
