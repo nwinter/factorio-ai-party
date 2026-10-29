@@ -139,10 +139,14 @@ log "world: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.p
 # The game's join and leave lines of the setup's team accounts (mt-red, ...) out of the harness chat (multiteam.lua)
 # A character of the player force with no player (mt277: one at red's spawn in mt275-final, left when a setup account
 # became a spectator) is no team's: every agent near it would see another force's body. Removed before agents start.
-log "stray bodies: $(python3 tools/pog.py --world "$world" rcon "/silent-command local n=0 for _,s in pairs(game.surfaces) do for _,e in ipairs(s.find_entities_filtered{type='character',force='player'}) do if not e.player then e.destroy() n=n+1 end end end rcon.print(n..' removed')" 2>&1 | cut -c1-120)"
+# (in a variable: bash brace-expands {a,b} in a command substitution inside double quotes, mt-net1)
+stray_lua='/silent-command local n=0 for _,s in pairs(game.surfaces) do for _,e in ipairs(s.find_entities_filtered{type="character",force="player"}) do if not e.player then e.destroy() n=n+1 end end end rcon.print(n.." removed")'
+log "stray bodies: $(python3 tools/pog.py --world "$world" rcon "$stray_lua" 2>&1 | cut -c1-120)"
 # the player force's chat (an older save's) and each team's own (mt276 B: an operator request runs as its team field)
 for t in "" $teams; do
-  log "chat${t:+ $t}: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"dispatch\",[[{\"id\":\"start-mt-scrub$t\",\"operator\":true${t:+,\"team\":\"$t\"},\"action\":\"mt_chat_scrub\",\"args\":{}}]]))" 2>&1 | cut -c1-200)"
+  req="{\"id\":\"start-mt-scrub$t\",\"operator\":true${t:+,\"team\":\"$t\"},\"action\":\"mt_chat_scrub\",\"args\":{}}"
+  scrub_lua="/silent-command rcon.print(remote.call('agent_harness','dispatch',[[$req]]))"
+  log "chat${t:+ $t}: $(python3 tools/pog.py --world "$world" rcon "$scrub_lua" 2>&1 | cut -c1-200)"
 done
 mkdir -p "$rundir"
 [ -n "$resume" ] && echo "$resume" > "$rundir/resumed-from"
