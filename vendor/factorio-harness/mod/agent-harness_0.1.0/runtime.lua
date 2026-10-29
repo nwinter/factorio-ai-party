@@ -15404,7 +15404,7 @@ M.groundstack=require('groundstack')
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
 M.modules=require('modules'){out_of_reach=function(p,e) return M.out_of_reach(p,e) end}
 -- Fuel and ammunition by item request, filled by robots (deliver.lua; backlog #653, Sol).
-M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w) end,remote_entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
+M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w) end,remote_entity=remote_entity,on_platform=function(p,name) return M.on_platform(p,name) end,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.deliver(p,a) return M.deliver.handler(p,a) end
 -- An item and its recipe's ingredients joined: rates, stock, freight on the way, rocket loads (dependency.lua; #818).
 -- (d20 batch122 CE2, viewer Aurora 10:13) what the production statistics leave out for an item that spoils (spoilflow.lua)
@@ -16626,6 +16626,7 @@ do local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
+M.on_platform=on_platform  -- (d29 batch342) deliver's platform= (bound late: deliver is made before this block)
 -- Whether entity e takes item as a hand move would put it (Luna, d15: timed walks to a machine that did not use the item):
 -- the inventory infer_inventory picks (or the one named), the recipe, the slots and filters, read now.
 function M.accepts_text(e,a)
