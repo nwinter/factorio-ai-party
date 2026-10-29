@@ -713,3 +713,8 @@
   first hatch (into what, when), how many within 5 min, and the turrets of ours ready in range (`limit` holders, default
   64); a head line with the eggs due within 5 min by 64-tile area and the sweep's age. Example: `./fh call eggs --args
   '{"surface":"gleba"}'`
+- Surface conditions: an entity the surface's properties refuse (chests need gravity >= 0.1; stone and steel furnaces
+  and the heating tower pressure >= 10; the rocket silo pressure >= 1) is refused naming it: `placement blocked:
+  iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0`; dry runs say the same, and
+  `load_silo` with `platform` lists such items in `unplaceable`. `gamedata/entities.json` has each entity's
+  `surface_conditions`, `gamedata/locations.json` each planet's and the platform's `surface_properties`.

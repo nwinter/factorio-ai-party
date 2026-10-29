@@ -3290,6 +3290,14 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
   chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+- (d28 batch328 SC, Astra #2725) An entity whose surface conditions the surface does not meet is refused naming the
+  condition, before any footprint check, in `build`, `place_ghosts`, `paste` and `blueprint_place` and their dry runs:
+  `placement blocked: iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0` (the
+  prototype's surface_conditions against LuaSurface.get_property; each prototype's conditions read once, each
+  surface's properties once a game minute). `load_silo` with `platform` names the listed items that platform refuses
+  (`unplaceable`, and on its line: "(it goes up as cargo)"). gamedata's entities.json gives each entity's
+  `surface_conditions` and locations.json the planets' and the platform surface's `surface_properties`
+  (tools/analyst/dump_prototypes.py `--only surface_conditions`).
   An entity with tile buildability rules (an asteroid collector: its rear rows on foundation, its front row and the
   tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
   north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
