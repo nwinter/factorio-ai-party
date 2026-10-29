@@ -4,7 +4,8 @@
 
 - obs-restart.sh: outputs stopped first (stream, recording, replay buffer), then the box's obs-restart.ps1, then it
   waits for the websocket; exit 0 once OBS answers, 1 when it never does; --dry-run touches nothing.
-- obs-steps.sh: scene, overlay, recording, stream, and last a read of the cameras' crops (obs.py cams); the vertical started only when its status says it is not
+- obs-steps.sh: scene, overlay, recording, stream, the overlay check (batch347: FAILED said, the exit code the outputs'),
+  and last a read of the cameras' crops (obs.py cams); the vertical started only when its status says it is not
   streaming; a failed recording or stream start is exit 1, the rest is reported only.
 - obs-recover.sh: an active stream is left alone; one plain retry that works means no restart; an encoder failure
   (outputs never come up) restarts OBS and runs the OBS steps; one at a time.
@@ -60,6 +61,11 @@ esac
 echo "10:59:48 done"
 exit "${BOX_FAILS:-0}"
 """
+OVERLAY = r"""#!/usr/bin/env bash
+echo "overlay $1 obs=$POG_OC_OBS" >> "$STUB_LOG"
+if [ "${OVERLAY_DOWN:-0}" = 1 ]; then echo "overlay: FAILED: not connected 30 s after the reload nor 30 s after a toggle"; exit 1; fi
+echo "overlay: connected 3 s after the reload"
+"""
 VERTICAL = r"""#!/usr/bin/env bash
 echo "vertical $*" >> "$STUB_LOG"
 case $1 in
@@ -74,7 +80,7 @@ def setup():
     bin_, state = os.path.join(tmp, "bin"), os.path.join(tmp, "state")
     os.makedirs(bin_)
     os.makedirs(state)
-    for name, body in (("obs", OBS), ("winps", WINPS), ("vertical", VERTICAL)):
+    for name, body in (("obs", OBS), ("winps", WINPS), ("vertical", VERTICAL), ("overlay", OVERLAY)):
         p = os.path.join(bin_, name)
         open(p, "w").write(body)
         os.chmod(p, 0o755)
@@ -91,7 +97,7 @@ def run(tmp, bin_, state, script, *args, **env):
     open(log, "w").close()
     e = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
     e.update(STUB_LOG=log, STATE=state, POG_OR_OBS=f"{bin_}/obs", POG_OR_WINPS=f"{bin_}/winps", POG_OR_SLEEP="0",
-             POG_OS_OBS=f"{bin_}/obs", POG_OS_VERTICAL=f"{bin_}/vertical", POG_OS_SLEEP="0",
+             POG_OS_OBS=f"{bin_}/obs", POG_OS_VERTICAL=f"{bin_}/vertical", POG_OS_OVERLAY=f"{bin_}/overlay", POG_OS_SLEEP="0",
              POG_OS_POLL="0", POG_OS_ACTIVE_WAIT="2",
              POG_REC_OBS=f"{bin_}/obs", POG_REC_SETTLE="0",
              # (d24 batch186) a test run: the recovery lock in the temp folder, never the live checkout's runs/ (the
@@ -146,9 +152,13 @@ def steps():
         assert r.returncode == 0, r.stdout + r.stderr
         assert [l for l in calls.splitlines()] == ["obs stream-scene", "obs scene stream", "obs reload-overlay", "obs start",
                                                    "obs status", "obs stream-start", "obs stream-status",
-                                                   "vertical status", "obs cams"], calls
+                                                   "vertical status", f"overlay start obs={bin_}/obs", "obs cams"], calls
         assert "recording: active" in r.stdout and "stream: active" in r.stdout, r.stdout
         assert "vertical: streaming (started with the main stream)" in r.stdout, r.stdout
+        assert "overlay: connected 3 s after the reload" in r.stdout, r.stdout
+        # (batch347) the overlay not back after the reload nor a toggle: said FAILED, the exit code the outputs' only
+        r, _ = run(tmp, bin_, state, "obs-steps.sh", "--stream", OVERLAY_DOWN="1")
+        assert r.returncode == 0 and "overlay: FAILED: not connected 30 s after the reload nor 30 s after a toggle" in r.stdout, r.stdout
         put(state, stream=0, record=0)
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream", VERTICAL_ON="False")
         assert "vertical start --yes" in calls and "vertical start: " in r.stdout, (calls, r.stdout)
