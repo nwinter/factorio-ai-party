@@ -109,6 +109,26 @@ return function(api)
     end
     return sz
   end
+  -- (cp4, item 1) one number for a building's category, width and height (k), or the c, w, h lists of a pass from before
+  local CHAR = {}
+  local function put_kind(b, i, cat, w, h)
+    if b.k then b.k[i] = string.byte(cat) * 4096 + math.min(w, 63) * 64 + math.min(h, 63)
+    else b.c[i], b.w[i], b.h[i] = cat, w, h end
+  end
+  local function cat_of(b, i)
+    local k = b.k and b.k[i]
+    if not k then return b.c[i] end
+    local code = math.floor(k / 4096)
+    local c = CHAR[code]
+    if not c then c = string.char(code); CHAR[code] = c end
+    return c
+  end
+  local function wh_of(b, i)
+    local k = b.k and b.k[i]
+    if not k then return b.w[i], b.h[i] end
+    local v = k % 4096
+    return math.floor(v / 64), v % 64
+  end
   local function range(name)
     local r = RANGE[name]
     if r == nil then
@@ -348,22 +368,25 @@ return function(api)
       job.mach[key] = row
       row[st] = (row[st] or 0) + 1
     end
+    -- (d29 batch334 cp4, item 1) a building's category, width and height in one number (k: byte of the category x 4096 +
+    -- w x 64 + h; w and h under 64): 3 lists a building instead of 5 (47,518 Nauvis buildings: 3.52 MB a list). A pass
+    -- begun before this runtime keeps its c, w and h lists (cat_of, wh_of read both).
     -- Another planet's buildings, for its coarse map (viewers craigNZ830 and Foobator, d15 07:05: the live map showed
     -- Nauvis only): each one's centre and category, at most PLANET_MAX a planet. (d21 batch68 AD1, viewer Aurora:
     -- "Could Aquilo get a detailed base map using the Nauvis approach?") and its footprint and 32-tile block, for a
     -- dense core as Nauvis's
     if sn ~= 'nauvis' and CAT[t] and job.planets and is_planet(s, si) then
       local P = job.planets[sn]
-      if not P then P = {x={}, y={}, c={}, w={}, h={}, blocks={}, top=0, n=0, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[sn] = P end
+      if not P then P = {x={}, y={}, k={}, blocks={}, top=0, n=0, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[sn] = P end
       if #P.x < PLANET_MAX then
         local p = pos
         local i = #P.x + 1
         local cat = OIL[name] and 'O' or CAT[t]
-        P.x[i], P.y[i], P.c[i] = p.x, p.y, cat
+        P.x[i], P.y[i] = p.x, p.y
         local sz = size(name)
         local w, h = sz[1], sz[2]
         if w ~= h and (e.direction == 4 or e.direction == 12) then w, h = h, w end
-        P.w[i], P.h[i] = w, h
+        put_kind(P, i, cat, w, h)
         if not LINE[cat] then
           local k = pair(math.floor(p.x / 32), math.floor(p.y / 32))
           P.blocks[k] = (P.blocks[k] or 0) + 1
@@ -381,7 +404,7 @@ return function(api)
       local cat = OIL[name] and 'O' or CAT[t]
       local b = job.base
       local i = #b.x + 1
-      b.x[i], b.y[i], b.c[i] = p.x, p.y, cat
+      b.x[i], b.y[i] = p.x, p.y
       if b.box then
         if p.x < b.minx then b.minx = p.x end
         if p.x > b.maxx then b.maxx = p.x end
@@ -391,7 +414,7 @@ return function(api)
       local sz = size(name)
       local w, h = sz[1], sz[2]
       if w ~= h and (e.direction == 4 or e.direction == 12) then w, h = h, w end
-      b.w[i], b.h[i] = w, h
+      put_kind(b, i, cat, w, h)
       if cat == 'D' and RANGED[t] and #b.turrets < 600 then
         local r = range(name)
         if r > 0 then b.turrets[#b.turrets+1] = {math.floor(p.x), math.floor(p.y), r} end
@@ -482,14 +505,15 @@ return function(api)
     for i = i0, i1 do
       local x, y = b.x[i], b.y[i]
       if x >= k.bx0 - 8 and x <= k.bx1 + 8 and y >= k.by0 - 8 and y <= k.by1 + 8 then
-        local w, h = b.w[i], b.h[i]
+        local w, h = wh_of(b, i)
         local tx, ty = math.floor(x - w / 2 + 0.01), math.floor(y - h / 2 + 0.01)
         for cy = math.max(k.cy0, math.floor(ty / CC)), math.min(k.cy1, math.floor((ty + h - 1) / CC)) do
           local row = fine[cy]
           if not row then row = {} fine[cy] = row end
           for cx = math.max(k.cx0, math.floor(tx / CC)), math.min(k.cx1, math.floor((tx + w - 1) / CC)) do
             local old = row[cx]
-            if not old or RANK[b.c[i]] > RANK[old] then row[cx] = b.c[i] end
+            local c = cat_of(b, i)
+            if not old or RANK[c] > RANK[old] then row[cx] = c end
           end
         end
       end
@@ -505,7 +529,7 @@ return function(api)
     return {start=tick, surfaces=list, si=1, steps=0,
       machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, chests={}, makers={}, building_counts={}, fuel={}, planets={},
       by_type={}, walked={}, belt_items={}, hand_items={}, poles={},
-      base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0, box=true, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge},
+      base={x={}, y={}, k={}, turrets={}, blocks={}, top=0, n=0, box=true, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge},
       want_ore=want_ore or nil, stage='walk', credit=0, paced=tick}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -629,7 +653,8 @@ return function(api)
         local row = cells[cy]
         if not row then row = {} cells[cy] = row end
         local old = row[cx]
-        if not old or RANK[b.c[i]] > RANK[old] then row[cx] = b.c[i] end
+        local c = cat_of(b, i)
+        if not old or RANK[c] > RANK[old] then row[cx] = c end
       end
       b.i = last + 1
       if b.i > #b.x then job.stage = 'rows' end
@@ -736,7 +761,8 @@ return function(api)
           local row = grid[cy]
           if not row then row = {} grid[cy] = row end
           local old = row[cx]
-          if not old or RANK[P.c[i]] > RANK[old] then row[cx] = P.c[i] end
+          local c = cat_of(P, i)
+          if not old or RANK[c] > RANK[old] then row[cx] = c end
         end
         P.i = last + 1
         if P.i > #P.x then

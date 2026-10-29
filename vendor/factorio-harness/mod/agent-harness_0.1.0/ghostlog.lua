@@ -21,6 +21,18 @@ return function(api)
     if not L.tmap then L.tmap, L.tring, L.tnext, L.tsince = {}, {}, 1, game.tick end
     -- (d24 batch144 cp2) a record log from before the position index: the index is built in slices (M.index_tick)
     if not L.pidx then L.pidx, L.pidx_slot, L.pidx_done = {}, 1, nil end
+    -- (cp4) once, the slots left behind before this runtime: a key with no record, or a record that lives in another slot
+    -- (flagged in storage: every peer at once; 16,384 slots)
+    if not L.ring_clean then
+      L.ring_clean = true
+      for _, mr in ipairs({{L.map, L.ring}, {L.tmap, L.tring}}) do
+        local map, ring = mr[1], mr[2]
+        for i = 1, MAX do
+          local k = ring[i]
+          if k ~= nil and not (map[k] and map[k].i == i) then ring[i] = nil end
+        end
+      end
+    end
     return L
   end
   local function is_tile(e) return e.type == 'tile-ghost' end
@@ -98,7 +110,9 @@ return function(api)
     local slot = tile and L.tnext or L.next
     local old = ring[slot]
     if old and map[old] and map[old].i == slot then unindex(L, map[old]); map[old] = nil end
-    if map[k] then unindex(L, map[k]) end
+    -- (d29 batch334 cp4, item 10) a record put again leaves no key in its old slot (6,722 + 892 such dead slots held
+    -- key strings with no record behind them)
+    if map[k] then unindex(L, map[k]); if map[k].i and map[k].i ~= slot and ring[map[k].i] == k then ring[map[k].i] = nil end end
     count(L, rec)
     rec.i = slot
     ring[slot] = k
@@ -131,8 +145,11 @@ return function(api)
     local k = try(function() return key_of(e) end)
     if k then
       local L = st()
-      local map = is_tile(e) and L.tmap or L.map
-      unindex(L, map[k]); map[k] = nil
+      local map, ring = L.map, L.ring
+      if is_tile(e) then map, ring = L.tmap, L.tring end
+      local r = map[k]
+      if r and r.i and ring[r.i] == k then ring[r.i] = nil end  -- (cp4) its slot freed too
+      unindex(L, r); map[k] = nil
     end
   end
   local function user_name(e) local u = e.last_user; return u and u.name end
@@ -213,7 +230,10 @@ return function(api)
     local L = st()
     local k = surface_name .. '|' .. name .. '|' .. pos.x .. ',' .. pos.y
     local r = L.tmap[k]
-    if r then unindex(L, r); L.tmap[k] = nil; return true end
+    if r then
+      if r.i and L.tring[r.i] == k then L.tring[r.i] = nil end  -- (cp4) its slot freed too
+      unindex(L, r); L.tmap[k] = nil; return true
+    end
     return false
   end
   function M.stats()
