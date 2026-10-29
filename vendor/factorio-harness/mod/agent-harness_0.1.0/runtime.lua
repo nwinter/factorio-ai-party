@@ -8949,8 +8949,9 @@ M.step_ranges={
   uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},  -- (d25 batch214 QZ1) read's page and page_size: step_checks (uptime.check_read)
   turret_tally={{'seconds',watch_range('turrettally'),when=starts('turrettally')}},
   belt_flow={{'seconds',watch_range('beltsample'),when=function(a) return a.position~=nil end}},
-  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.entities==nil and (a.position~=nil or a.seconds~=nil) end},
-    {'seconds',function() return M.signalwatch.DUTY_MIN_S,M.signalwatch.DUTY_MAX_S end,when=function(a) return a.entities~=nil end}},  -- (d28 batch316 SW) a duty watch
+  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.entities==nil and a.triples==nil and (a.position~=nil or a.seconds~=nil) end},
+    {'seconds',function() return M.signalwatch.DUTY_MIN_S,M.signalwatch.DUTY_MAX_S end,when=function(a) return a.entities~=nil and a.triples==nil end},  -- (d28 batch316 SW) a duty watch
+    {'seconds',function() return M.signalwatch.AMMO_MIN_S,M.signalwatch.AMMO_MAX_S end,when=function(a) return a.triples~=nil end}},  -- (d28 batch327 AG) an ammo gap watch
   feed={{'count',1,1000},{'fuel_count',1,1000},{'crafts',1,1000},{'radius',1,256},{'ticks',1,36000}},
   refuel={{'count',1,1000},{'radius',1,256},{'ticks',1,36000}},
   rearm={{'count',1,1000},{'below',1,1000},{'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
@@ -9047,8 +9048,8 @@ M.step_lengths={
     {'items',1,of('uptime','ITEMS'),list=true,when=starts('uptime')}},  -- (d25 batch214 QZ2, Astra #2380: 9 items passed dry_run)
   turret_tally={{'reason',check=reason_check,when=starts('turrettally')},{'positions',1,of('turrettally','MAX'),list=true}},
   belt_flow={{'reason',check=reason_check,when=function(a) return a.position~=nil end}},
-  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil or a.entities~=nil end},
-    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true},{'entities',1,of('signalwatch','DUTY_MAX'),list=true}},
+  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil or a.entities~=nil or a.triples~=nil end},
+    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true},{'entities',1,of('signalwatch','DUTY_MAX'),list=true},{'triples',1,of('signalwatch','AMMO_MAX'),list=true}},
   scan={{'positions',1,own('POSITIONS_MAX'),list=true},{'name',0,own('NAMES_MAX'),list=true},{'type',0,own('NAMES_MAX'),list=true},
     {'fields',0,own('NAMES_MAX'),list=true}},
   nearest={{'name',1,own('NAMES_MAX'),list=true},{'type',1,own('NAMES_MAX'),list=true}},
@@ -19357,7 +19358,9 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
+-- (d28 batch325 IC) one item's complete count on belts and in robots' cargo, in the background (supply count_all)
+M.itemcount=require('itemcount'){state=state}
+M.supply=require('supply'){count_all=function(...) return M.itemcount.read(...) end,scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -21226,6 +21229,8 @@ function M.tick_body(event)
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
   -- (d22 batch96 BF1) the platforms read lately: their belts and inserter hands, a band every few ticks (freight.lua)
   if M.freight and M.freight.belt_tick and event.tick%M.freight.BELT_STEP==0 then pcall(M.timed,'freight.belts',M.freight.belt_tick,event.tick) end
+  -- (d28 batch325 IC) supply count_all's job: a page of belts or robots every few ticks (itemcount.lua)
+  if M.itemcount and event.tick%M.itemcount.EVERY==0 then pcall(M.timed,'itemcount.step',M.itemcount.tick,event.tick) end
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)

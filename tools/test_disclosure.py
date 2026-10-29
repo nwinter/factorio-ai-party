@@ -182,7 +182,7 @@ def brief_filtered():
             full = brief.core("astra", "TIME", "")
             open_ = brief.disclosure_open()
             small = brief.core("astra", "TIME", "", open_=open_)
-            assert "- Plans: `./fh queue submit" in full and "- Plans: `./fh queue submit" not in small
+            assert "- More detail: `../../../vendor" in full and "- More detail:" not in small, "the never item goes"
             assert "`belt_route`" in full and "`belt_route`" not in small and "`transfer`" in small
             assert "## Compact instructions" in small and "{{" not in small and len(small) < len(full)
             assert "Your team's tools grow with it" in small and "Your team's tools grow" not in full

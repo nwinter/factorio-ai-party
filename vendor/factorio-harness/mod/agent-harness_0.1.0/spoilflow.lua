@@ -13,6 +13,11 @@
 -- or carried off the surface") the residual is signed and each sign says what it can be; cargo pods counted by the
 -- pod log over the same interval (landed, sent up in rockets) are set beside and taken out of it. Spoiling has no count
 -- in the game's statistics (on neither side), so no residual is named spoiling.
+-- (d28 batch325 IC, Astra #2717: Nauvis agricultural science, the census at its caps, 10000 of 19304 belts and 4096 of
+-- 7523 robots read, gave residual +208 read "spoiling ... or what left uncounted") a count whose census stopped at a
+-- cap, then or now, misses what the holders it left out hold: such a measure has no residual and no uncounted, only
+-- "indeterminate (N of M holders counted)", and names no cause. cover: {complete, counted, of, text} from supply
+-- (supply.lua M.coverage); none: complete (callers before it).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
@@ -46,7 +51,9 @@ return function(api)
   M.NOTE = 'the production statistics leave spoiling out: made counts crafts (a productivity bonus\'s extra among them), used counts ingredients and fuel burned'
   -- A whole-surface count of a spoilable item now (stock: every place counted): kept, and against the one kept 1 to 60
   -- minutes before, what left uncounted. nil for an item that does not spoil; {} with no count to measure against yet.
-  function M.sample(force, surface, item, stock)
+  local function cover_text(c) return c and c.complete == false and (c.text or (c.counted .. ' of ' .. c.of .. ' holders counted')) or nil end
+  M.cover_text = cover_text
+  function M.sample(force, surface, item, stock, cover)
     if not M.spoils(item) then return nil end
     local made, used = M.totals(force, surface, item)
     local b, k = book(), key(force, surface, item)
@@ -54,7 +61,17 @@ return function(api)
     if prev and not prev.q then b[k], prev = nil, nil end   -- (PX1) a count kept before every quality was summed
     local dt = prev and game.tick - prev.tick
     local out = {}
-    if prev and dt >= M.MIN_TICKS and dt <= M.MAX_TICKS then
+    local short_now = cover_text(cover)
+    if prev and dt >= M.MIN_TICKS and dt <= M.MAX_TICKS and (short_now or prev.short) then
+      local m, u = made - prev.made, used - prev.used
+      local mins = dt / 3600
+      local which = short_now and prev.short and string.format('then %s; now %s', prev.short, short_now)
+        or short_now and ('now ' .. short_now) or ('then ' .. prev.short)
+      out = {minutes=r1(mins), since_tick=prev.tick, made=m, used=u, stock_then=prev.stock, stock_now=stock, tick=game.tick,
+        indeterminate=string.format('indeterminate (%s)', which)}
+      out.line = string.format('over the last %g min (whole-surface counts at tick %d and now): made %d, used %d; held %s%d then, %s%d now; residual indeterminate (%s): the census stopped at its caps, so the held counts leave out what the holders it did not read hold; supply {item, count_all: true} counts every belt and robot of it',
+        out.minutes, prev.tick, m, u, prev.short and 'at least ' or '', prev.stock, short_now and 'at least ' or '', stock, which)
+    elseif prev and dt >= M.MIN_TICKS and dt <= M.MAX_TICKS then
       local m, u = made - prev.made, used - prev.used
       local gone = prev.stock + m - u - stock
       local mins = dt / 3600
@@ -86,20 +103,25 @@ return function(api)
         for kk, r in pairs(b) do n = n + 1; if not oldest or r.tick < oldest then oldest, ok = r.tick, kk end end
         if n >= M.KEEP and ok then b[ok] = nil end
       end
-      b[k] = {tick=game.tick, made=made, used=used, stock=stock, last=last, q=true}
+      b[k] = {tick=game.tick, made=made, used=used, stock=stock, last=last, q=true, short=short_now}
     end
     return out
   end
-  -- The last measure for a surface and item, at most 30 minutes old, for reads that count part of a surface.
-  function M.last(force, surface, item)
+  -- The last measure for a surface and item, at most 30 minutes old, for reads that count part of a surface; an
+  -- indeterminate one only with any (its rates are not measured: dependency.lua reads none).
+  function M.last(force, surface, item, any)
     local r = book()[key(force, surface, item)]
     local m = r and r.last
-    if m and game.tick - m.tick <= M.QUOTE_TICKS then return m end
+    if m and game.tick - m.tick <= M.QUOTE_TICKS and (any or not m.indeterminate) then return m end
   end
   -- For a made/used line of a spoilable item: the measure quoted, or the note. nil for an item that does not spoil.
   function M.text(force, surface, item)
     if not M.spoils(item) then return nil end
-    local m = M.last(force, surface, item)
+    local m = M.last(force, surface, item, true)
+    if m and m.indeterminate then
+      return string.format('%s; residual %s, measured by supply over %g min to %s ago', M.NOTE, m.indeterminate, m.minutes,
+        api.secs and api.secs(game.tick - m.tick) or (game.tick - m.tick) .. ' ticks')
+    end
     if m then
       local res = m.residual_per_min or m.uncounted_per_min
       return string.format('%s; residual %+g a minute (%s), measured by supply over %g min to %s ago',

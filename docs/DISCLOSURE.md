@@ -7,6 +7,26 @@ Status:
 - Waiting for Nick (choices 5 and 6 below): splitting reference entries, rewriting PLAYBOOK.md and team.md. Alerts
   still fire as before. Their `self` conditions are inventoried, but nothing gates them yet (see "Not built yet").
 
+## cp4 (Nick d28 15:47: items 5 and 6)
+
+- **The core is rewritten small:** PLAYBOOK.md 8.2 KB to 5.2 KB, and team.md 4.9 KB to 1.8 KB. A Claude agent's
+  assembled core goes from 20.9 KB to 14.9 KB with everything open, and to 12.2 KB at tick 0.
+  - What left the core is in topic entries, word for word or nearly. Every old sentence was checked to be in the core
+    or a topic file.
+  - The moves: waiting, `--wait`, sleep, wait, urgent alerts and queue pausing to waits-queues; poles and inserters to
+    building; the hand-crafted science pack to moving-items; fog and remote reads to analysis; posting, owners,
+    claims, the plan, chat and tell to team; talking, `@name` and `--aloud` to stream-people.
+  - This applies to world n too: its agents get the short core at their next launch.
+- **Large entries are split into a simple entry plus parts:** transfer, build, configure, inspect, move_to and
+  collect.
+  - Each part is a top-level entry led "- `ACTION`, FEATURE:" and keyed ACTION-FEATURE (`building#build-fast-replace`).
+  - Each opens with its feature: quality, robots and logistics, spoilage, couriers, circuits, modules, filters,
+    turrets, rails, railguns, inserters, silos, Gleba, fusion, gates, mech armor.
+  - Open at tick 0: transfer 6.6 KB to 1.6 KB, build 7.0 to 2.2, configure 7.2 to 2.1, inspect 6.9 to 4.0, move_to 4.8
+    to 3.5, collect 3.4 to 2.3.
+- **A rule fixed:** the doc rule for platform entries matched any lead containing "platform", including configure,
+  inspect, requests and circuit_set signatures that take `platform?`. It now matches entries about platforms only.
+
 ## What agents get without it, and the goal
 
 Every agent gets the whole kit from tick 0, wherever its team stands:
@@ -189,18 +209,18 @@ The replay's finding:
 
 ## Sizes
 
-Each row adds that milestone's conditions to the one before. The core is today's assembled core for a Claude agent
-less the closed brief items, with the index cut to open commands. Today's core is 20,931 bytes. The disclosure line
-adds about 330 bytes.
+Each row adds that milestone's conditions to the one before. The core is the assembled core for a Claude agent less
+the closed brief items, with the index cut to open commands. After cp4 the whole core is 14,871 bytes (20,931 before);
+the disclosure line adds about 330 bytes. Doc entries count the cp4 split parts.
 
 | Milestone | Actions | Arguments | describe.json bytes | Doc entries | Doc bytes | Core bytes |
 |---|---|---|---|---|---|---|
-| tick 0 | 54 | 350 | 95,643 | 56 | 67,917 | 16,768 |
-| first hour: power, labs, a few drills and belts | 82 | 591 | 165,545 | 88 | 119,326 | 18,608 |
-| mid game: oil, robots, circuits, trains, defense | 188 | 1236 | 281,368 | 181 | 191,682 | 19,978 |
-| rocket and first platform | 224 | 1613 | 370,389 | 249 | 320,505 | 20,520 |
-| every planet | 228 | 1637 | 374,776 | 260 | 326,323 | 20,567 |
-| all (agent-facing) | 230 | 1652 | 375,908 | 262 | 327,590 | 20,931 |
+| tick 0 | 54 | 350 | 95,643 | 73 | 67,306 | 12,217 |
+| first hour: power, labs, a few drills and belts | 82 | 591 | 165,545 | 123 | 132,557 | 12,548 |
+| mid game: oil, robots, circuits, trains, defense | 188 | 1237 | 281,889 | 247 | 244,092 | 13,918 |
+| rocket and first platform | 224 | 1614 | 370,910 | 297 | 324,498 | 14,460 |
+| every planet | 228 | 1638 | 375,297 | 313 | 332,561 | 14,507 |
+| all (agent-facing) | 230 | 1653 | 376,429 | 319 | 335,711 | 14,871 |
 
 ## Costs (measured on the iMac copy)
 
