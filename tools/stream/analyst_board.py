@@ -15,6 +15,7 @@ The point's text is written for a voice and its facts hold every name and number
 it passes the caster's fact check.
 """
 import re, threading, time
+from freshness import TTL, current_analyst
 
 MAX_POINTS = 60
 MAX_ANSWERS = 6
@@ -43,6 +44,12 @@ class AnalystBoard:
 
     def post(self, cycle, now=None):
         now = now or time.time()
+        source_t = cycle.get("source_t", cycle.get("t", now))
+        provenance = {"source_t": source_t, "source_tick": cycle.get("source_tick", cycle.get("tick")),
+                      "subject_revision": cycle.get("subject_revision") or {},
+                      "expires": min(cycle.get("expires", source_t + TTL), source_t + TTL)}
+        if "news" in cycle:
+            provenance["news"] = cycle["news"]
         with self.lock:
             self.cycles += 1
             topics = {(p.get("topic") or "") for p in cycle.get("talking_points") or []}
@@ -50,13 +57,15 @@ class AnalystBoard:
             self.points = [p for p in self.points if not p.get("topic") or p.get("topic") not in topics]
             for p in cycle.get("talking_points") or []:
                 self.seq += 1
-                q = dict(p, id=f"tp{self.seq}", t=now, expires=now + float(p.get("ttl_s") or 300),
+                q = dict(p, **provenance, id=f"tp{int(now)}-{self.seq}", t=now,
                          game_minute=cycle.get("game_minute"))
+                q["expires"] = min(provenance["expires"], source_t + float(p.get("ttl_s") or TTL))
                 self.points.append(q)
             self.points = self.points[-MAX_POINTS:]
             self.latest = {k: cycle.get(k) for k in ("headline", "judgement", "storylines", "next", "segments",
                                                      "corrections", "game_minute", "meta", "viewer_questions")}
             self.latest["t"] = now
+            self.latest.update(provenance)
             return {"ok": True, "cycle": self.cycles, "points": len(cycle.get("talking_points") or [])}
 
     def mark_used(self, pid):
@@ -76,9 +85,9 @@ class AnalystBoard:
             if not self.latest:
                 return {"answers": answers} if answers else None
             pts = sorted(self.fresh(now), key=lambda p: (-int(p.get("priority") or 2), -p["t"]))[:10]
-            return dict(self.latest, age_s=round(now - self.latest["t"]), answers=answers,
+            return dict(current_analyst(self.latest, now=now), age_s=round(now - self.latest["source_t"]), answers=answers,
                         talking_points=[{k: p.get(k) for k in ("id", "kind", "topic", "text", "facts", "priority", "agents",
-                                                                "game_minute", "expires")} for p in pts])
+                                                                "game_minute", "expires", "source_t", "source_tick", "subject_revision", "news") if k in p} for p in pts])
 
     def full(self, now=None):
         with self.lock:

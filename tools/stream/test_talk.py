@@ -124,7 +124,7 @@ dec = [r for r in rec if r.get("type") == "chat_decision"]
 agent = [r for r in rec if r.get("type") == "agent"]
 check("chat_tick: the good line is voiced, the soup is not", [r["voiced"] for r in dec] == [True, False] and
       len(agent) == 1 and agent[0]["line"].startswith("Fuel is the bottleneck"), rec)
-check("chat_tick: the hosts yield to it", c2.yielding and c2.yielding["until"] > c2.agent_free)
+check("chat_tick: a generated voice has no heard reaction before a capture receipt", not c2.yielding)
 check("chat_tick: typed chat no longer reaches the hosts' events before it airs",
       'self.events.append(dict(e, prio=2 if not e["aloud"] else 4))' not in open(caster.__file__).read())
 
