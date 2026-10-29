@@ -224,9 +224,9 @@ case $kind in
     python3 "$root/tools/clean-profile.py" "$kind" "$dir"
     # ai-session passes no environment: the wait cap goes in the workspace config's shell environment.
     python3 "$root/tools/sleepcap/setup.py" codex "$dir"
-    out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start 2>&1)
-    pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
-    test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
+    # (d29 batch331 LS) through tools/ai-session-spawn.sh: a pane whose shell missed ai-session's 20 s is waited for
+    # and the manifest run there (shift96 and shift97 failed on it); it prints the pane, or exits 1 with the output
+    pane=$("$root/tools/ai-session-spawn.sh" "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start)
     tab=$(herdr pane get "$pane" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(d.get('pane',d)['tab_id'])")
     if [ -n "${POG_TAB:-}" ]; then
       anchor=$(herdr pane list --workspace "${POG_TAB%%:*}" | python3 -c "import json,sys; t=sys.argv[1]; print([p['pane_id'] for p in json.load(sys.stdin)['result']['panes'] if p['tab_id']==t][-1])" "$POG_TAB")
