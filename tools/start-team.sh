@@ -512,18 +512,31 @@ fi
 POG_TEAM="$rundir/team.txt"
 awk -F'\t' '!/^#/ && NF {print $1 "|" $6 " (" $7 ")"}' "$team" > "$POG_TEAM"
 export POG_TEAM POG_TIME_MODE=realtime POG_ENEMIES=$enemies POG_SEED=$seed
-n=0 tab=""
+n=0 tab="" wanted=0 missing=""
+: >> "$rundir/panes.txt"
 while IFS=$'\t' read -r name kind route model effort label harness; do
   [ -z "$name" ] || [[ $name == \#* ]] && continue
+  wanted=$((wanted + 1))
   [ $((n % 3)) -eq 0 ] && tab=""
   # POG_NO_WAIT: start every pane now and clear the trust prompts of all of them in one pass below (shake3: the
   # per-pane 40 s wait ran out for five agents and the launch took 4.5 minutes).
-  out=$(POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
-        tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort")
-  pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
-  log "agent $name ($label, $kind) in pane $pane tab $tab"
-  echo "$name $pane $kind" >> "$rundir/panes.txt"
-  n=$((n + 1))
+  # (d29 batch331 LS) one agent's launch failing no longer ends the start (shift96 and shift97 ran ~30 min with no
+  # agents): it is logged as not started, with launch-agent.sh's last lines, left out of panes.txt and listed in
+  # not-started.txt, and the others go on; the watchdog or the operator can relaunch it.
+  # POG_LAUNCH_AGENT: the launch script (tests: a stub).
+  if out=$(POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
+        "${POG_LAUNCH_AGENT:-tools/launch-agent.sh}" "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
+        2> >(tee "$rundir/launch-$name.err" >&2)); then
+    pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
+    log "agent $name ($label, $kind) in pane $pane tab $tab"
+    echo "$name $pane $kind" >> "$rundir/panes.txt"
+    n=$((n + 1))
+  else
+    sleep 0.2   # the stderr copy's last lines
+    log "agent $name ($label, $kind) NOT STARTED: launch failed: $(tail -3 "$rundir/launch-$name.err" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+    printf '%s\t%s\t%s\n' "$name" "$kind" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$rundir/not-started.txt"
+    missing="$missing $name"
+  fi
 done < "$team"
 # (d22 batch108 BR1, Grok's weekly limit at 20:04, reset Sat 15:59) A new run has no resting.json of the last one: an
 # agent whose account the quota check above read at its limit (a window at 99% or more, its reset ahead) gets a quota
@@ -538,8 +551,8 @@ rest_carry=(); [ -n "${carry_from:-}" ] && rest_carry=(--carry "$carry_from")
   | while read -r line; do log "$line"; done
 prompt_args=()
 while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
-tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
-log "started: $(wc -l < "$rundir/panes.txt") agents; deadline $(cat "$rundir"/*/deadline.txt | head -1)"
+[ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
+log "started: $(wc -l < "$rundir/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; runs/$run/not-started.txt)}; deadline $(cat "$rundir"/*/deadline.txt 2>/dev/null | head -1)"
 
 # 6. Supervisors (agy runs its own loop until the deadline).
 while read -r name pane kind; do
