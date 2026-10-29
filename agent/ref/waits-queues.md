@@ -36,6 +36,8 @@
   between reads, and when it was rebuilt; a fired guard keeps them in its queue history; remote and platform lanes,
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
+  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: met once the item that binds first can go out
+  less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed);
   `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
   in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
   guard keeps the progress and leg; remote and platform lanes);

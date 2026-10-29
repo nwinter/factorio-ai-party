@@ -2662,3 +2662,21 @@ If any of 3-6 is missing, the service logs it and carries on: without "replay ga
 track airs silent under the voices (as today), and without the gain filters no alarm is quieted. Recordings get a
 second audio track: the archive tools take audio track 1 (`-map 0:a:0`), and the joined uploads keep both (YouTube
 plays the first).
+
+## Alarm gains confirmed and retried (2026-10-29, d29 batch335 AQ, viewer Aurora site:5438)
+
+- **The fault (batch326's alarmquiet.py):** `apply` recorded the wanted gain as applied even when its OBS writes
+  failed, so a failed hold or clear was never tried again while the alarm state stayed the same. One source could fail
+  while the others worked.
+- **Now, per source and filter** (3 sources x "alarm cue", "alarm hold"), each with a desired and a confirmed state:
+  - **Confirmation:** every write is read back (`GetSourceFilter`), and only a read that matches confirms it.
+  - **Retries:** a failed or unconfirmed write stays pending and is tried again after 2 s, doubling to 120 s, with no
+    alarm change or restart needed.
+  - **Re-reads:** every 60 s each filter is read again. One found changed (by hand, or an OBS restart) is written back in
+    the same pass.
+  - **Missing filters:** said once a run and tried with backoff.
+- **Status:** `/state.json` `replays.alarm` holds `gain`, `confirmed` (all filters as wanted), `pending`, and per filter
+  `source`, `filter`, `desired`, `confirmed`, `pending`, `attempts`, `next_try_in`, `error`, `checked_ago`.
+- **On pogwin, read d29 05:xx:** all six filters exist (gain -6 and -24 dB), disabled (no alarm sounding);
+  `GetSourceFilter` gives `filterEnabled`.
+- **Test:** tools/stream/test_alarmapply.py.
