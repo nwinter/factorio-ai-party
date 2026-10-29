@@ -179,4 +179,32 @@ eq(by['physical-projectile-damage-7'].takes,'2h13m') -- 2000 x 1800 / 7.5 = 4800
 eq(by['planet-discovery-fulgora'].takes,nil); eq(by['planet-discovery-fulgora'].packs_needed,nil)  -- a trigger technology
 assert(r.lab_rate:find('7.5 research work a tick',1,true),r.lab_rate)
 assert(runtime.dispatch{action='describe',args={},player=1}.actions.technologies.returns:find('packs_short',1,true))
+
+-- 3. (FL5) rates {item}: one row a producer, full speed beside what its crafts counter made over the efficiency anchor
+do
+  local cable={name='copper-cable',energy=0.5,productivity_bonus=0,prototype={maximum_productivity=3},ingredients={{type='item',name='copper-plate',amount=1}},
+    products={{type='item',name='copper-cable',amount=2}}}
+  local function crafter(x,unit,pf)
+    return {valid=true,name='assembling-machine-2',type='assembling-machine',force=force,surface=surface,position={x=x,y=0},unit_number=unit,
+      prototype={},crafting_speed=1,productivity_bonus=0,products_finished=pf,status=1,get_recipe=function() return cable end}
+  end
+  -- 120 crafts/min full speed = 240 cable/min; the first made 900 crafts in 15 min (60/min = 120 cable/min)
+  local a,b=crafter(1,901,5000),crafter(4,902,10)
+  game.tick=100000; tick=100000
+  storage.agent_harness.efficiency={machines={[901]={t1=100000-54000,p1=4100,t0=100000-1000,p0=4990}}}
+  local rows,lines=runtime.rates_producers({a,b},'copper-cable')
+  eq(#rows,2); eq(rows[1].full_per_min,240); eq(rows[1].measured_per_min,120); eq(rows[1].measured_over,'15m00s')
+  eq(rows[2].measured_per_min,nil)
+  assert(lines[1]:find('assembling-machine-2 (1,0) copper-cable: made 120/min over the last 15m00s, full speed 240/min',1,true),lines[1])
+  assert(lines[2]:find('not counted yet',1,true),lines[2])
+  eq(lines[3],'these 2: made 120/min (1 counted) against 480/min at full speed')
+  -- only the newer anchor, at least a minute back: used; under a minute: not counted
+  storage.agent_harness.efficiency.machines[901]={t0=100000-7200,p0=4880}
+  rows=runtime.rates_producers({a},'copper-cable'); eq(rows[1].measured_per_min,120); eq(rows[1].measured_over,'2m00s')  -- 120 crafts in 2 min
+  storage.agent_harness.efficiency.machines[901]={t0=100000-600,p0=4990}
+  rows=runtime.rates_producers({a},'copper-cable'); eq(rows[1].measured_per_min,nil)
+  runtime.PRODUCERS=1
+  rows,lines=runtime.rates_producers({a,b},'copper-cable'); eq(#rows,1); assert(lines[2]:find('+1 more producers not read',1,true),lines[2])
+  runtime.PRODUCERS=48
+end
 print('d29_batch336: ok')
