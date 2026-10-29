@@ -20188,7 +20188,7 @@ M.shipment=require('shipment'){integer=integer,freight=function() return M.freig
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
   launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,
-  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end,podlog=function(f) return M.podlog.read(f) end}
+  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end,podlog=function(f) return M.podlog.read(f) end,pod_totals=function(pl) return M.podlog.totals(pl) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- (d21 batch66 AB5, viewer Aurora) delivery_watch: a count of an item followed to a named consumer (delivwatch.lua)
 M.delivwatch=require('delivwatch'){state=state,who=function(p) return M.board.who(p) end,freight=M.freight,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
