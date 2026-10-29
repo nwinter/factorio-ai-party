@@ -13,15 +13,20 @@ service keeps each page's open streams, last connect and last write (GET /overla
 main page is connected when a stream of it is open and had a write in the last 60 s (the service writes at least every
 15 s).
 
-start: connected with a connect at or after --since within --wait s: "overlay: connected N s after the reload". Else
-the scene item is turned off and on (tools/obs.py toggle-overlay) and checked again for --wait s: "overlay: not
-connected N s after the reload; toggled the source: connected N s later", exit 0; or "overlay: FAILED: not connected
-after the reload nor after a toggle", exit 1 (the health line then says overlay NOT connected).
+start: connected with a connect at or after --since within --wait s: "overlay: connected N s after the reload". Else a
+recovery round (d29 batch349 cp2): the scene item off and on (tools/obs.py toggle-overlay), then the browser source's
+refreshnocache (reload-overlay), then the toggle once more, each followed by up to --wait s for a connect; the round
+stops at the first that brings it back, and the line names each step tried and what followed: "overlay: not connected
+30 s after the reload; toggled the source: not connected in 30 s; reloaded the page (refreshnocache): connected 5 s
+later", exit 0; none did: "overlay: FAILED: ...", exit 1 (the health line then says overlay NOT connected). (shift100's
+start: a toggle brought it back and a refreshnocache had not; shift101's: two toggles did not, a refreshnocache did.)
+The "unnamed" page in /overlay/status is no overlay: an event stream with no page=, which is tools/stream/caster.py
+following the snapshots (and replay.html when it is open).
 
 watch: nothing printed while it is connected. Not connected for --stale s (default 120; since its stream closed, or
-since the service started when it never connected): one toggle, then up to --wait s (default 30) for a connect: "OVERLAY: no main
-overlay stream for N s; toggled the source: connected again" or "OVERLAY: ... still not connected" (exit 1). After a
-toggle it waits --again s (default 600) before toggling again, and says each pass that it is still down. The state
+since the service started when it never connected): a recovery round as start's, its line "OVERLAY: no main overlay
+stream for N s; " and the steps, or "...; still not connected" (exit 1). After a round it waits --again s (default
+600) before the next, and says each pass that it is still down. The state
 (last toggle) is kept in --state (default /tmp/claude-501/overlay-check.json).
 
 (d29 batch349 SP, viewer Aurora: "so 'live' alone cannot pass next shift") status and watch also read:
@@ -157,13 +162,46 @@ def cams_line(cams):
     return "cams: " + ", ".join(f"{c.get('name')} {c.get('controller')}" for c in on), bool(bad)
 
 
-def toggle():
-    cmd = os.environ.get("POG_OC_OBS")
-    words = cmd.split() if cmd else [os.path.join(HERE, ".venv", "bin", "python") if os.path.exists(os.path.join(HERE, ".venv", "bin", "python"))
-                                     else os.path.expanduser("~/code/player-of-games/tools/.venv/bin/python"), os.path.join(HERE, "obs.py")]
-    r = subprocess.run(words + ["toggle-overlay"], capture_output=True, text=True, timeout=60)
+def obs(cmd):
+    """tools/obs.py CMD (toggle-overlay: the scene item off and on; reload-overlay: the browser source's refreshnocache)."""
+    stub = os.environ.get("POG_OC_OBS")
+    words = stub.split() if stub else [os.path.join(HERE, ".venv", "bin", "python") if os.path.exists(os.path.join(HERE, ".venv", "bin", "python"))
+                                       else os.path.expanduser("~/code/player-of-games/tools/.venv/bin/python"), os.path.join(HERE, "obs.py")]
+    r = subprocess.run(words + [cmd], capture_output=True, text=True, timeout=60)
     out = (r.stdout.strip().splitlines() or [r.stderr.strip()[-160:]])[-1] if (r.stdout or r.stderr) else ""
     return r.returncode == 0, out
+
+
+def toggle():
+    return obs("toggle-overlay")
+
+
+# (d29 batch349 cp2) what brings the page back has differed: shift100's start (09:06) a toggle did and a refreshnocache
+# did not; shift101's (13:14) neither the start's toggle nor a second one did, a refreshnocache did in 5 s. A recovery
+# round: toggle, then reload (refreshnocache), then toggle once more, each followed by up to --wait s for a connect.
+STEPS = (("toggle-overlay", "toggled the source"), ("reload-overlay", "reloaded the page (refreshnocache)"), ("toggle-overlay", "toggled the source again"))
+
+
+def recover(a, clock=time.time, sleep=time.sleep):
+    """One round of STEPS: (connected, words): the steps tried, each with what followed ("connected N s later" or "not
+    connected in W s"), and the one that brought it back last; at the first step that does, the round stops."""
+    words, step = [], float(os.environ.get("POG_OC_SLEEP", "2"))
+    for cmd, what in STEPS:
+        ok, out = obs(cmd)
+        if not ok:
+            words.append(f"{what}: failed ({out})")
+            continue
+        t = clock()
+        try:
+            got = wait_for(a.service, t, a.wait, step, clock, sleep)
+        except (NoStatus, Down) as e:
+            got = None
+            what += f" (then the service did not answer: {e})"
+        if got is not None:
+            words.append(f"{what}: connected {got} s later")
+            return True, words
+        words.append(f"{what}: not connected in {a.wait:g} s")
+    return False, words
 
 
 def wait_for(service, since, wait, step, clock=time.time, sleep=time.sleep):
@@ -191,20 +229,11 @@ def start(a, clock=time.time, sleep=time.sleep):
     if got is not None:
         print(f"overlay: connected {got} s after the reload")
         return 0
-    ok, out = toggle()
-    if not ok:
-        print(f"overlay: FAILED: not connected {a.wait:g} s after the reload, and the toggle failed: {out}")
-        return 1
-    t = clock()
-    try:
-        again = wait_for(a.service, t, a.wait, step, clock, sleep)
-    except (NoStatus, Down) as e:
-        again = None
-        out = f"{out}; then the service did not answer ({e})"
-    if again is not None:
-        print(f"overlay: not connected {a.wait:g} s after the reload; toggled the source: connected {again} s later")
+    ok, words = recover(a, clock, sleep)
+    if ok:
+        print(f"overlay: not connected {a.wait:g} s after the reload; " + "; ".join(words))
         return 0
-    print(f"overlay: FAILED: not connected {a.wait:g} s after the reload nor {a.wait:g} s after a toggle ({out})")
+    print(f"overlay: FAILED: not connected {a.wait:g} s after the reload; " + "; ".join(words))
     return 1
 
 
@@ -274,21 +303,11 @@ def watch_overlay(a, st, clock=time.time, sleep=time.sleep):
     if state.get("toggled") and now - state["toggled"] < a.again:
         print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; still not connected (toggled {round(now - state['toggled'])} s ago)")
         return 1
-    ok, out = toggle()
-    state["toggled"] = clock()
+    state["toggled"] = clock()  # the round's start: --again s before the next round
     save_state(a.state, state)
-    if not ok:
-        print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; the toggle failed: {out}")
-        return 1
-    try:
-        got = wait_for(a.service, state["toggled"], a.wait, float(os.environ.get("POG_OC_SLEEP", "2")), clock, sleep)
-    except (NoStatus, Down):
-        got = None
-    if got is not None:
-        print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; toggled the source: connected again ({got} s)")
-        return 0
-    print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; toggled the source: still not connected")
-    return 1
+    ok, words = recover(a, clock, sleep)
+    print(f"{stamp} OVERLAY: no main overlay stream for {gone} s; " + "; ".join(words) + ("" if ok else "; still not connected"))
+    return 0 if ok else 1
 
 
 def status(a):

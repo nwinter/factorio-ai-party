@@ -2734,3 +2734,14 @@ stream was open.
 - **Tests:** tools/test_speech_cams.py (clips whole, cut short, all expired, none reported, none posted; render reports
   fresh, stale, 0 px; a camera in a cutscene in status, watch and the health line); tools/test_overlay_check.py's
   health line now reads the overlay part first.
+
+### cp2: a reload when a toggle does not bring the page back (d29 13:20, shift101)
+
+Shift101's start (13:14:53 reload) left the overlay blank again: "overlay: FAILED: not connected 30 s after the reload
+nor 30 s after a toggle"; the operator's second toggle (13:17) did not help either; `tools/obs.py reload-overlay`
+(refreshnocache, 13:18:46) brought it back in 5 s. At shift100's start (09:06) it was the other way round. So start and
+watch now run a recovery round: toggle, then reload-overlay, then toggle once more, each followed by up to --wait s for
+a connect; the round stops at the first that brings the page back, and the line names each step and what followed. watch
+keeps --again (600 s) between rounds. The health line says "(after a reload at the start)" or "(after a toggle at the
+start)" by the step that did. The "unnamed" page in /overlay/status is tools/stream/caster.py following /events with
+no page= (and replay.html when open): no overlay, which is why it stayed connected throughout.

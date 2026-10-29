@@ -242,7 +242,9 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
             # which way the start's check went (obs-steps.sh's overlay line in start.log)
             began = [l for l in read(os.path.join(rundir, "start.log")).splitlines() if "obs-steps: overlay:" in l]
             head, sep, rest = ov.partition("; ")  # (batch349) the start's note goes with the overlay part
-            if began and "toggled the source" in began[-1]:
+            if began and "(refreshnocache): connected" in began[-1]:  # (batch349 cp2) which step brought it back
+                head += " (after a reload at the start)"
+            elif began and "connected" in began[-1] and "toggled the source" in began[-1] and "FAILED" not in began[-1]:
                 head += " (after a toggle at the start)"
             elif began and "FAILED" in began[-1]:
                 head += " (the start's check failed)"

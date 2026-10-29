@@ -8,7 +8,9 @@ connects after it when told to):
 - the service keeps each page's streams by name: main and portrait apart, a page from before as unnamed; open,
   connects, connected, seen, closed in GET /overlay/status;
 - start: a page that connects after the reload: "connected N s after the reload", no toggle; a page that never
-  connects until a toggle: one toggle, "toggled the source: connected"; one that never connects: FAILED, exit 1; a
+  connects until a toggle: one toggle, "toggled the source: connected"; (batch349 cp2) one that comes back only after
+  a reload: a toggle, then reload-overlay, "reloaded the page (refreshnocache): connected"; one that never connects:
+  toggle, reload, toggle, FAILED, exit 1; a
   page connected before the reload (the old one) does not count; only a portrait page connected: not the main one;
 - watch: silent while connected; a stream closed past --stale: one toggle and "connected again"; none after it:
   "still not connected", and the next pass within --again says so without a second toggle;
@@ -82,7 +84,7 @@ def until(fn, timeout=5):
 
 def main():
     with tempfile.TemporaryDirectory() as d:
-        log, mode = os.path.join(d, "toggles.log"), {"connect_on_toggle": False}
+        log, mode = os.path.join(d, "toggles.log"), {"connect_on_toggle": False, "connect_on": ("toggle-overlay", "reload-overlay")}
         stub = os.path.join(d, "obs")
         open(stub, "w").write(f"#!{sys.executable}\nimport sys\nopen({log!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
                               "print('stream overlay: toggled off and on (item 5)')\n")
@@ -101,7 +103,7 @@ def main():
                 n = len(toggles())
                 if n > seen:
                     seen = n
-                    if mode["connect_on_toggle"]:
+                    if mode["connect_on_toggle"] and toggles()[-1] in mode["connect_on"]:  # (cp2) which command brings it back
                         time.sleep(0.3)
                         pages.append(Page(port))
                 time.sleep(0.05)
@@ -125,14 +127,15 @@ def main():
         # start: only the portrait page: not connected; with no toggle effect: FAILED, one toggle
         t0 = time.time()
         r = cli("start", "--since", str(t0), "--wait", "1")
-        assert r.returncode == 1 and "overlay: FAILED: not connected 1 s after the reload nor 1 s after a toggle" in r.stdout, r.stdout + r.stderr
-        assert toggles() == ["toggle-overlay"], toggles()
+        assert r.returncode == 1 and ("overlay: FAILED: not connected 1 s after the reload; toggled the source: not connected in 1 s; reloaded the page "
+                                      "(refreshnocache): not connected in 1 s; toggled the source again: not connected in 1 s") in r.stdout, r.stdout + r.stderr
+        assert toggles() == ["toggle-overlay", "reload-overlay", "toggle-overlay"], toggles()
         # a page that connects after the reload: no toggle
         t1 = time.time()
         threading.Timer(0.4, lambda: pages.append(Page(port))).start()
         r = cli("start", "--since", str(t1), "--wait", "3")
         assert r.returncode == 0 and "overlay: connected 0 s after the reload" in r.stdout, r.stdout + r.stderr
-        assert len(toggles()) == 1, "no toggle when it connected"
+        assert len(toggles()) == 3, "no toggle when it connected"
         # that page (connected before) does not count for a new reload; the page comes back after a toggle
         for p in pages:
             p.close()
@@ -141,7 +144,18 @@ def main():
         t2 = time.time() + 0.01
         r = cli("start", "--since", str(t2), "--wait", "1")
         assert r.returncode == 0 and "not connected 1 s after the reload; toggled the source: connected 0 s later" in r.stdout, r.stdout + r.stderr
-        assert len(toggles()) == 2, toggles()
+        assert len(toggles()) == 4, toggles()
+        # (cp2, shift101) a page that comes back only after a reload (refreshnocache): toggle, then reload
+        for p in pages:
+            p.close()
+        pages.clear()
+        mode["connect_on"] = ("reload-overlay",)
+        t3 = time.time() + 0.01
+        r = cli("start", "--since", str(t3), "--wait", "1")
+        assert r.returncode == 0 and ("not connected 1 s after the reload; toggled the source: not connected in 1 s; reloaded the page (refreshnocache): "
+                                      "connected 0 s later") in r.stdout, r.stdout + r.stderr
+        assert toggles()[-2:] == ["toggle-overlay", "reload-overlay"] and len(toggles()) == 6, toggles()
+        mode["connect_on"] = ("toggle-overlay", "reload-overlay")
         # status and the health line: connected
         r = cli("status")
         assert r.returncode == 0 and r.stdout.startswith("overlay connected (1 stream"), r.stdout
@@ -153,6 +167,9 @@ def main():
         open(os.path.join(rd, "start.log"), "w").write("09:06:52 obs-steps: overlay: not connected 30 s after the reload; toggled the source: connected 2 s later\n")
         ok, line = shift_change.health(rd, os.path.join(rd, "team.txt"), time.time(), obs=["true"], state_url=url + "/state.json")
         assert "overlay connected (after a toggle at the start)" in line, line
+        open(os.path.join(rd, "start.log"), "w").write("13:15:53 obs-steps: overlay: not connected 30 s after the reload; toggled the source: not connected in 30 s; reloaded the page (refreshnocache): connected 5 s later\n")
+        ok, line = shift_change.health(rd, os.path.join(rd, "team.txt"), time.time(), obs=["true"], state_url=url + "/state.json")
+        assert "overlay connected (after a reload at the start)" in line, line
 
         # watch: silent while connected
         r = cli("watch", "--stale", "0.5")
@@ -167,8 +184,8 @@ def main():
         ok, line = shift_change.health(rd, os.path.join(rd, "team.txt"), time.time(), obs=["true"], state_url=url + "/state.json")
         assert not ok and "overlay NOT connected" in line, line
         r = cli("watch", "--stale", "1", "--wait", "1")
-        assert r.returncode == 0 and "OVERLAY: no main overlay stream for 1 s; toggled the source: connected again" in r.stdout, r.stdout + r.stderr
-        assert len(toggles()) == 3, toggles()
+        assert r.returncode == 0 and "OVERLAY: no main overlay stream for 1 s; toggled the source: connected 0 s later" in r.stdout, r.stdout + r.stderr
+        assert len(toggles()) == 7, toggles()
         # no page after a toggle: still not connected, then the next pass within --again: no second toggle
         for p in pages:
             p.close()
@@ -178,13 +195,13 @@ def main():
         time.sleep(1.1)
         os.remove(os.path.join(d, "state.json"))
         r = cli("watch", "--stale", "1", "--wait", "1")
-        assert r.returncode == 1 and "toggled the source: still not connected" in r.stdout, r.stdout + r.stderr
-        assert len(toggles()) == 4, toggles()
+        assert r.returncode == 1 and "toggled the source again: not connected in 1 s; still not connected" in r.stdout, r.stdout + r.stderr
+        assert len(toggles()) == 10, toggles()
         r = cli("watch", "--stale", "1", "--again", "600")
-        assert r.returncode == 1 and "still not connected (toggled" in r.stdout and len(toggles()) == 4, (r.stdout, toggles())
+        assert r.returncode == 1 and "still not connected (toggled" in r.stdout and len(toggles()) == 10, (r.stdout, toggles())
         # past --again: a toggle again
         r = cli("watch", "--stale", "1", "--again", "0", "--wait", "1")
-        assert len(toggles()) == 5, toggles()
+        assert len(toggles()) == 13, toggles()
         portrait.close()
         srv.shutdown()
 
