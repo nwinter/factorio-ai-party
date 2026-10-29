@@ -647,7 +647,7 @@ class Harness:
                         raise
 
     def lua(self, lua):
-        out = self.command("/silent-command " + one_line(pog.for_force(lua, self.team)))
+        out = self.command("/silent-command " + one_line(pog.for_force(lua, getattr(self, "team", None))))
         return json.loads(out)
 
     def dispatch(self, action, args=None, player=None, bot=None):
@@ -678,7 +678,7 @@ class Harness:
         if action not in OPERATOR_READS:
             raise ValueError(f"{action} is not an operator read")
         req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}, "operator": True}
-        if self.team:
+        if getattr(self, "team", None):
             req["team"] = self.team
         raw = self.command(f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(json.dumps(req))}))')
         reply = json.loads(raw)
@@ -691,7 +691,7 @@ class Harness:
         if action not in OPERATOR_DRAWS:
             raise ValueError(f"{action} is not an operator draw")
         req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}, "operator": True}
-        if self.team:
+        if getattr(self, "team", None):
             req["team"] = self.team
         return json.loads(self.command(f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(json.dumps(req))}))'))
 
