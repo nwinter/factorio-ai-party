@@ -101,7 +101,7 @@ class AudioHub:
     EARLY_S = 0.5
     WINDOW = 3600.0
 
-    def __init__(self, log_path=None):
+    def __init__(self, log_path=None, require_capture=False):
         self.cond = threading.Condition()
         self.clips = {}  # id -> (bytes, ctype, meta)
         self.order = []
@@ -118,6 +118,8 @@ class AudioHub:
         self.receipts = deque(maxlen=2000)
         self.completed = set()
         self.capture_session = None
+        self.require_capture = require_capture
+        self.capture_receipt = False
         # (d29 batch347 OR) each page's event streams by its name (/events?page=main|portrait): open now, the last
         # connect and the last write, for tools/overlay_check.py (shift100: the main overlay blank 26 min after a start)
         self.pages = {}
@@ -152,7 +154,7 @@ class AudioHub:
 
     def _log(self, row):
         if row.get("id"):
-            row.update(page="main", session=self.capture_session)
+            row.update(page="main", session=self.capture_session, capture=self.capture_receipt)
             self.receipts.append(dict(row))
         if not self.log_path:
             return
@@ -275,6 +277,8 @@ class AudioHub:
         # interrupt its speech; late reports from an old capture session cannot complete a resumed line.
         if report.get("page", "main") != "main":
             return
+        if self.require_capture and report.get("capture") is not True:
+            return
 
         def num(k):
             v = report.get(k)
@@ -285,6 +289,7 @@ class AudioHub:
                 return
             if st == "load" and session:
                 self.capture_session = session
+            self.capture_receipt = report.get("capture") is True
             self.last_report = now
             if st == "load":  # the page (re)loaded: what it was playing ended there
                 self.loads.append(now)
@@ -815,7 +820,8 @@ def main():
     tour = TourOverlay()  # (CK3) the tour's overlay entries (tourlay.py)
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
-    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
+    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None,
+                     require_capture=not a.mock)
     follow = platform = look = host = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl

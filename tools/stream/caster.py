@@ -3126,7 +3126,7 @@ class Caster:
             e["_analyst_source"] = {k: an[k] for k in ("source_tick", "source_t", "subject_revision", "expires", "news") if k in an}
             e["_analyst_source"]["correction_revision"] = fingerprint(an.get("corrections"))
         if e.get("history"):
-            tick = e.get("source_tick") or e.get("tick")
+            tick = e.get("source_tick", e.get("tick"))
             if not isinstance(tick, (int, float)):
                 return  # history needs its own date, never today's snapshot date
             minute = int(tick // 3600)

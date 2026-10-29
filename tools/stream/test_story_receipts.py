@@ -37,7 +37,7 @@ def host(clock, memory=None):
     c.caster_free = c.agent_free = c.next_gap = 0
     c.tts, c.tts_fallback = SimpleNamespace(backend='stub'), None
     c.breakers = {'tts': SimpleNamespace(ok=lambda: True, good=lambda: None, fail=lambda: None)}
-    hub = AudioHub(); hub.listeners = 1
+    hub = AudioHub(require_capture=True); hub.listeners = 1
     c.status = hub.status
     c.record = lambda **kw: c.records.append(kw)
     c.push = hub.push
@@ -59,7 +59,7 @@ def speak(c, e, clock, lines=None):
 
 
 def played(hub, cid, state, clock, **kw):
-    hub.played(dict(id=cid, state=state, page='main', session='capture', duration=2, **kw), now=clock.t)
+    hub.played(dict(id=cid, state=state, page='main', session='capture', capture=True, duration=2, **kw), now=clock.t)
 
 
 def lifecycle(clock):
@@ -68,12 +68,14 @@ def lifecycle(clock):
     rows = c.playback().groups[gid]['lines']
     assert [r['state'] for r in rows] == ['queued', 'queued']
     assert not c.history and not c.used_points and c.playback().held_points() == {'p1'}
-    hub.played({'state': 'load', 'page': 'main', 'session': 'capture'}, now=clock.t)
+    hub.played({'state': 'load', 'page': 'main', 'session': 'capture', 'capture': True}, now=clock.t)
     played(hub, rows[0]['cid'], 'start', clock)
     c.playback_receipts(hub.status())
     assert rows[0]['state'] == 'started' and not c.history
     hub.played({'id': rows[0]['cid'], 'state': 'end', 'played': 2, 'page': 'portrait'}, now=clock.t)
     c.playback_receipts(hub.status()); assert not c.history
+    hub.played({'id': rows[0]['cid'], 'state': 'end', 'played': 2, 'page': 'main', 'capture': False}, now=clock.t)
+    c.playback_receipts(hub.status()); assert not c.history, 'a browser preview is not the capture'
     played(hub, rows[0]['cid'], 'end', clock, played=2)
     c.playback_receipts(hub.status())
     assert len(c.history) == 1 and not c.used_points
@@ -119,7 +121,7 @@ def unheard(clock):
         elif outcome in ('reload', 'no end'):
             played(hub, row['cid'], 'start', clock)
             if outcome == 'reload':
-                hub.played({'state': 'load', 'page': 'main', 'session': 'next'}, now=clock.t)
+                hub.played({'state': 'load', 'page': 'main', 'session': 'next', 'capture': True}, now=clock.t)
                 played(hub, row['cid'], 'end', clock, played=2)  # stale capture session cannot complete it
             else: clock.t += 40
         c.playback_receipts(hub.status())

@@ -31,6 +31,9 @@
   const CAPTIONS = params.get("captions") !== "0";
   const receiptPage = params.get("page") || (document.body && document.body.dataset && document.body.dataset.page) || "main";
   const receiptSession = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  // OBS supplies this binding; an ordinary browser preview must not establish the stream's heard history.
+  // https://github.com/obsproject/obs-browser#js-bindings
+  const receiptCapture = !!window.obsstudio;
 
   const style = document.createElement("style");
   style.textContent = `
@@ -122,7 +125,8 @@
   // that ended early (viewer syndesis, shift14 23:04: "spoken lines cut off abruptly") from one that played whole.
   function report(id, state, extra) {
     fetch("/audio/played", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ id, state, page: receiptPage, session: receiptSession }, extra || {})) }).catch(() => {});
+      body: JSON.stringify(Object.assign({ id, state, page: receiptPage, session: receiptSession,
+        capture: receiptCapture }, extra || {})) }).catch(() => {});
   }
   // The page (re)loaded: a clip the service thinks is playing ended here (an OBS refresh, a page-file reload).
   report(null, "load");
