@@ -2114,7 +2114,7 @@
 {"id":"doc:analysis#scan-2","kind":"doc","topic":"analysis","lead":"- `scan {type","condition":{"world":[],"any":["scale:machines:20"]},"bytes":469},
 {"id":"doc:analysis#out-of-sight-reads","kind":"doc","topic":"analysis","lead":"- Out of sight, reads add `fog`","condition":{"world":[],"any":["event:loss","research:radar"]},"bytes":245},
 {"id":"doc:analysis#remote-reads-inspect-belt","kind":"doc","topic":"analysis","lead":"- Remote reads","condition":{"world":[],"any":["start"]},"bytes":153},
-{"id":"doc:waits-queues#wait_until","kind":"doc","topic":"waits-queues","lead":"- `wait_until {until, ..., timeout?}`","condition":{"world":[],"any":["with:action:wait_until"]},"bytes":9973},
+{"id":"doc:waits-queues#wait_until","kind":"doc","topic":"waits-queues","lead":"- `wait_until {until, ..., timeout?}`","condition":{"world":[],"any":["with:action:wait_until"]},"bytes":10198},
 {"id":"doc:waits-queues#sleep","kind":"doc","topic":"waits-queues","lead":"- `./fh sleep SECONDS --until COND` and `./fh wait --until COND`","condition":{"world":[],"any":["with:action:sleep"]},"bytes":2837},
 {"id":"doc:waits-queues#wait_ticks","kind":"doc","topic":"waits-queues","lead":"- `wait_ticks {ticks, pause_queue?}`","condition":{"world":[],"any":["with:action:wait_ticks"]},"bytes":397},
 {"id":"doc:waits-queues#sleep_check","kind":"doc","topic":"waits-queues","lead":"- `sleep_check`","condition":{"world":[],"any":["with:action:sleep_check"]},"bytes":442},
