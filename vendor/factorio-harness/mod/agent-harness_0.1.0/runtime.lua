@@ -8162,6 +8162,19 @@ do
       if ok then r.unit_number=rr.unit_number; r.holds=M.robotread.holds(e); r.cargo=rr.cargo; r.heading=rr.heading end
       return r
     end
+    -- (d28 batch330 IH, Astra #2728: "radius inspect reported bulk holds empty while exactinspect79536978 held_count4
+    -- rocket ... This can falsely certify drained state") An inserter has no inventory: its hand as the exact inspect
+    -- gives it, `held` ("4 rocket" or "nothing", quality as name@quality) and `held_count`, and no `holds`.
+    if e.type=='inserter' then
+      local okhs,hs=pcall(function() return e.held_stack end)
+      local has=okhs and hs and hs.valid_for_read
+      -- (a LuaQualityPrototype is userdata, not a table: its name whatever its type)
+      local q=has and (type(hs.quality)=='string' and hs.quality or (hs.quality and hs.quality.name)) or nil
+      r.held_count=has and hs.count or 0
+      r.held=has and string.format('%d %s%s',hs.count,hs.name,q and q~='normal' and '@'..q or '') or 'nothing'
+      r.status_name=entity_status_names[e.status]
+      return r
+    end
     -- A chest, wagon, trunk, landing pad or hub: holds as inspect writes it (details.lua), and a requester's asks.
     local held={inventories={}}
     for _,name in ipairs(STORES) do
@@ -8192,6 +8205,9 @@ do
       -- (d28 batch303 RQ) with its quality, normal too; an idle furnace its last (its input decides the quality)
       local rn,rq,prev=M.recipe_quality_of(e,true)
       if prev then r.previous_recipe,r.previous_recipe_quality=rn,rq else r.recipe,r.recipe_quality=rn,rq end
+      -- (batch330) a craft under way: its products are in no slot until it finishes (holds lists the slots only)
+      local okc,busy=pcall(function() return e.is_crafting() and e.crafting_progress end)
+      if okc and busy then r.in_progress=string.format('one craft %d%% done (its products are in no slot yet)',math.floor(busy*100)) end
     end
     if not CHESTS[e.type] then r.status_name=entity_status_names[e.status] end
     local okk,kd=pcall(M.turrettally.read,e)
@@ -8238,6 +8254,7 @@ do
       parts[#parts+1]=h
     end
     if r.requests and r.requests~='none' then parts[#parts+1]='requests '..r.requests end
+    if r.in_progress then parts[#parts+1]=r.in_progress end  -- (batch330)
     if r.fluid then parts[#parts+1]='fluid '..r.fluid end
     if r.direction then table.insert(parts,1,'facing '..r.direction) end
     if r.pickup then parts[#parts+1]='picks at '..r.pickup..', drops at '..tostring(r.drop) end
@@ -14226,7 +14243,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){surface_block=function(s,pr) return M.surface_block(s,pr) end,railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
