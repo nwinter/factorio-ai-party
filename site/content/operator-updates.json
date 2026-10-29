@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-29 06:30",
+ "notices_checked": "2026-10-29 07:11",
  "backlog_reviewed": "2026-10-26 20:36",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
@@ -222,7 +222,7 @@
   {"id": "lua-heap", "title": "Less garbage from the harness each tick and call; long collection pauses measured", "area": "harness", "requested_by": [{"name": "Operator"}], "status": "in progress", "dates": {"in progress": "2026-10-29 05:05"}, "work": "batch334", "note": "cp2 live d29 05:52 (allocation -14% a tick, -33% a call). Next: cp3, bounds for the largest stored lists (a proposal first); check at the 09:01 shift change.", "note_at": "2026-10-29 06:20", "note_status": "in progress", "history": [{"until": "2026-10-29 06:20", "note": "batch334 cp2 deployed d29 05:52: tick allocation -14%, per-call -33%; the long collection steps follow the live data, so bounds for the largest stored lists are next (cp3 proposal).", "status": "in progress", "from": "2026-10-29 05:56"}], "owner": "engineer batch334", "next_review": "2026-10-29 09:30"},
   {"id": "alarm-retries", "title": "Alarm quieting retries an OBS write that failed and shows what took effect", "area": "stream", "requested_by": [{"name": "Aurora", "ref": "site:5438"}], "status": "live", "dates": {"live": "2026-10-29 06:17"}, "work": "batch335", "note": "batch335 live d29 06:17 (stream service restart): every alarm filter write read back from OBS; failed ones retried 2-120 s; per-filter desired/confirmed in /state.json replay.alarm.", "note_at": "2026-10-29 06:17", "note_status": "live"},
   {"id": "expedition-facts", "title": "Facts the agents named as missing: research effects and times, long-window statistics, launch totals, review times, the expedition clock", "area": "harness", "requested_by": [{"name": "Aurora", "ref": "site:5407"}, {"name": "Aurora", "ref": "site:5437"}], "status": "in progress", "dates": {"in progress": "2026-10-29 06:20"}, "work": "batch336", "owner": "engineer batch336", "next_review": "2026-10-29 10:00"},
-  {"id": "queued-watch-read", "title": "A queued flight_watch read marks the watch read, as a direct read does", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2741"}], "status": "in progress", "dates": {"in progress": "2026-10-29 06:20"}, "work": "batch337", "owner": "engineer batch337", "next_review": "2026-10-29 09:00"}
+  {"id": "queued-watch-read", "title": "A queued flight_watch read marks the watch read, as a direct read does", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2741"}], "status": "live", "dates": {"in progress": "2026-10-29 06:20", "live": "2026-10-29 07:07"}, "work": "batch337", "owner": "engineer batch337", "next_review": "2026-10-29 09:00", "note": "batch337: the setter's own start reads its done, unread watch first (previous_watch).", "note_at": "2026-10-29 07:07", "note_status": "live"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
@@ -335,6 +335,7 @@
   {"t": "2026-10-29 03:13", "kind": "deploy", "text": "Harness runtime deployed (b99aaf5a).", "affected": "harness runtime"},
   {"t": "2026-10-29 04:54", "kind": "shift", "text": "Shift 99 change began.", "affected": "stream and agents", "recovered": "2026-10-29 05:02"},
   {"t": "2026-10-29 05:55", "kind": "deploy", "text": "Harness runtime deployed (13174bd5).", "affected": "harness runtime"},
-  {"t": "2026-10-29 06:16", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-29 06:16"}
+  {"t": "2026-10-29 06:16", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-29 06:16"},
+  {"t": "2026-10-29 07:11", "kind": "deploy", "text": "Harness runtime deployed (ef208e27).", "affected": "harness runtime"}
  ]
 }

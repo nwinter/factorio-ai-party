@@ -17789,3 +17789,28 @@ binds ... Clean179s leg: held853fuel/558oxid vs fuel_outlook7208aboard; fuel7190
   - Railgun ammunition binds (165,696 km), its second rate over the last 1 min since the 10 would hold the leg's
     startup.
   - The read takes 10.8-10.9 ms with a turnaround and 9.9-11.6 ms without, at that state of Resolute.
+## d29 batch337 (WR, Sol #2741: a queued flight_watch start refused after a queued read)
+
+Sol's report: "Cinder queued flight_watch read:true and queued explicit id1660 both returned archived donewatch, but
+next queued flight_watch refused done and not read."
+
+**What Sol's journal shows (shift99):**
+- The queued read (job 67, tick 81243368) read #1660 while it was still **watching**. A running watch has no result to
+  acknowledge, so nothing was marked.
+- The watch ended at Cinder's arrival, which the queue then waited for. The start after it (job 71, tick 81248280)
+  found #1660 done and unread and was refused.
+- The earlier refusal (job 61, #1659) came with no read before it: that queue's read steps came after the start.
+- Every direct read of a done watch marked it. Queue and plan steps call the same handler (runtime.lua
+  `handlers.flight_watch` -> `flightwatch.call`), so a read of a done watch marks it wherever it runs.
+
+**The change:**
+- A start by the setter of the platform's done, unread watch reads it first: its read tick is set, and its full row
+  is returned in `previous_watch` and `previous_line`. The start then goes on.
+- Another agent's unread watch still refuses a start. `replace: true` is unchanged.
+
+**Test:** tests/d29_batch337.lua.
+- Sol's sequence: a read while watching marks nothing, the watch ends at the arrival, and the setter's start reads it
+  and goes on. On main's flightwatch.lua that start is refused.
+- Another agent's start is refused and nothing is read.
+- Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
+- `replace: true` is unchanged.
