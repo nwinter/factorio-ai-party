@@ -125,8 +125,8 @@ fi
 # A run in parts is RUN/PART: the part's folder runs/RUN/PART holds its prompt, roster, keys or sockets and team-tools;
 # names and labels use RUN-PART
 label=${run//\//-}
-# POG_PROXY (http://127.0.0.1:PORT, start-mt.sh POG_NETGATE=1): this agent's shell and CLI through the run's network
-# gate (tools/mt/netgate.py: only the CLI's own hosts), set in the launch's own environment only (Grok, Muse, agy)
+# POG_PROXY (http://127.0.0.1:PORT, POG_NETGATE=1): this agent's shell and CLI through the run's network
+# gate (only the CLI's own hosts), set in the launch's own environment only (Grok, Muse, agy)
 proxy_env=""
 if [ -n "${POG_PROXY:-}" ]; then
   proxy_env="HTTPS_PROXY=$POG_PROXY HTTP_PROXY=$POG_PROXY ALL_PROXY=$POG_PROXY https_proxy=$POG_PROXY http_proxy=$POG_PROXY all_proxy=$POG_PROXY NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1"

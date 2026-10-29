@@ -575,7 +575,7 @@ AGY_WEB_OFF = json.dumps({"permissions": {"deny": ["read_url(*)", "execute_url(*
 # `tools:` allowlist is agy's default tool set less search_web, read_url_content and browser_subagent (checked with agy
 # 1.x in a throwaway workspace: "No web search tool available", "No URL tool available", the shell as before; the
 # frontmatter's disabledTools and enabledTools had no effect). The settings above stay: they hold if the file is edited.
-# (mt284 X) The run's network gate (tools/mt/netgate.py, start-mt.sh POG_NETGATE=1): each CLI's own API, auth and
+# (mt284 X) The run's network gate (netgate.py, POG_NETGATE=1): each CLI's own API, auth and
 # telemetry hosts, as its traffic showed through the gate in a throwaway session (d29: Grok 1.0.70, Muse 1.4.14, agy
 # 1.x); everything else a shell asks for is refused. npm's registry and the owner's MCP servers are left out.
 NETGATE_ALLOW = {
