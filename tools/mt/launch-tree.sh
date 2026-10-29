@@ -2,7 +2,7 @@
 # (mt277, private: part E) The tree a multi-team run's agents run from: this branch's HEAD as files (git archive, no
 # .git, so no branch or commit of it is readable there), without what names the teams or this mode, plus the built
 # host. Agents' workspaces live in its runs/ (kept across updates); the operator's files stay in this checkout.
-#   tools/mt/launch-tree.sh [DIR]     make or update it (default worktrees/pog-mt-launch); prints DIR
+#   tools/mt/launch-tree.sh [DIR]     make or update it (default worktrees/pog-p); prints DIR
 #   tools/mt/launch-tree.sh --scan DIR   the words that would name the mode, with the files they are in (none: exit 0)
 # Left out: tools/mt (the operator's tools), agent/mt (the teams files), the Python tests, the public repo export (its
 # scan names the mode), tools/imac-copy.sh, docs/DISCLOSURE.md (its per-force notes name line 1's part), the harness mod (only install and deploy read it: runtime.lua names the
@@ -18,7 +18,7 @@ if [ "${1:-}" = --scan ]; then
   hits=$(scan "$2"); [ -z "$hits" ] && { echo "scan: clean"; exit 0; }
   echo "scan: $(echo "$hits" | wc -l | tr -d ' ') files: $(echo "$hits" | head -20 | tr '\n' ' ')"; exit 1
 fi
-tree=${1:-/Users/owner/code/personal/player-of-games/worktrees/pog-mt-launch}
+tree=${1:-/Users/owner/code/personal/player-of-games/worktrees/pog-p}
 case $tree in "$root"|"$root"/*) echo "the launch tree must be outside this checkout" >&2; exit 64 ;; esac
 [ -e "$tree" ] && [ ! -f "$tree/.launch-tree" ] && { echo "$tree exists and is not a launch tree" >&2; exit 1; }
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT

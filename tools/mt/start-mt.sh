@@ -11,7 +11,7 @@
 #     used as it is. POG_RESUME=PREVIOUS_RUN: a later shift: each team's notes, tools/ and team-tools/ from
 #     runs/PREVIOUS_RUN/TEAM (with no POG_MT_SAVE and no server running, the server starts on its own saves/mt.zip,
 #     which tools/mt/stop-mt.sh's /quit left).
-#   POG_MT_TREE: the launch tree (default worktrees/pog-mt-launch, made or updated from HEAD at each start);
+#   POG_MT_TREE: the launch tree (default worktrees/pog-p, made or updated from HEAD at each start);
 #     POG_MT_TREE=here launches from this checkout (no tree: the agents' tools can read tools/mt and agent/mt).
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
 #   POG_SEED (default 274274), POG_ENEMIES (default normal), POG_IDLE_NUDGE (default 0: until mt276 part B the board
@@ -50,8 +50,16 @@ bad=$(awk -F'\t' '!/^#/ && NF && NF != 8' "$teams_file")
 [ -z "$bad" ] || { echo "$teams_file: lines without 8 fields: $bad" >&2; exit 1; }
 dup=$(awk -F'\t' '!/^#/ && NF {print $2}' "$teams_file" | sort | uniq -d)
 [ -z "$dup" ] || { echo "$teams_file: a name in two lines: $dup" >&2; exit 1; }
-tree=${POG_MT_TREE:-/Users/owner/code/personal/player-of-games/worktrees/pog-mt-launch}
+tree=${POG_MT_TREE:-/Users/owner/code/personal/player-of-games/worktrees/pog-p}
 [ "$tree" = here ] && tree=$root
+# Each bot's broker socket, TREE/runs/RUN/TEAM/.sock/NAME.sock: macOS takes 103 bytes at most (mt-smoke1's first start
+# stopped at blue's broker, 104 bytes under worktrees/pog-mt-launch).
+while IFS=$'\t' read -r t name _; do
+  [ -z "$t" ] || [[ $t == \#* ]] && continue
+  case " $(echo $teams) " in *" $t "*) ;; *) continue ;; esac
+  sock="$tree/runs/$run/$t/.sock/$name.sock"
+  [ ${#sock} -le 103 ] || { echo "$name's broker socket would be ${#sock} bytes (macOS allows 103): $sock; use a shorter RUN_ID or POG_MT_TREE" >&2; exit 1; }
+done < "$teams_file"
 if [ -n "$resume" ]; then
   [ "$resume" != "$run" ] || { echo "POG_RESUME names this run ($run)" >&2; exit 1; }
   [ -d "$tree/runs/$resume" ] || { echo "POG_RESUME=$resume: no $tree/runs/$resume" >&2; exit 1; }
