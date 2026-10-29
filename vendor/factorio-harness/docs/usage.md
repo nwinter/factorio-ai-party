@@ -17753,3 +17753,29 @@ ship ..."
   - The read takes 9.3-9.5 ms with a turnaround and the same without one, so the budget adds nothing measurable; the
     plain read is 7.07 ms on n (tools/read_cost.py).
   - `budget_below` on Kestrel IVa was met under 30,000,000 km and held under 10 km.
+
+## d29 batch337 (WR, Sol #2741: a queued flight_watch start refused after a queued read)
+
+Sol's report: "Cinder queued flight_watch read:true and queued explicit id1660 both returned archived donewatch, but
+next queued flight_watch refused done and not read."
+
+**What Sol's journal shows (shift99):**
+- The queued read (job 67, tick 81243368) read #1660 while it was still **watching**. A running watch has no result to
+  acknowledge, so nothing was marked.
+- The watch ended at Cinder's arrival, which the queue then waited for. The start after it (job 71, tick 81248280)
+  found #1660 done and unread and was refused.
+- The earlier refusal (job 61, #1659) came with no read before it: that queue's read steps came after the start.
+- Every direct read of a done watch marked it. Queue and plan steps call the same handler (runtime.lua
+  `handlers.flight_watch` -> `flightwatch.call`), so a read of a done watch marks it wherever it runs.
+
+**The change:**
+- A start by the setter of the platform's done, unread watch reads it first: its read tick is set, and its full row
+  is returned in `previous_watch` and `previous_line`. The start then goes on.
+- Another agent's unread watch still refuses a start. `replace: true` is unchanged.
+
+**Test:** tests/d29_batch337.lua.
+- Sol's sequence: a read while watching marks nothing, the watch ends at the arrival, and the setter's start reads it
+  and goes on. On main's flightwatch.lua that start is refused.
+- Another agent's start is refused and nothing is read.
+- Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
+- `replace: true` is unchanged.
