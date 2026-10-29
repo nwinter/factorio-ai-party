@@ -439,6 +439,7 @@ return {
   ["building#who-placed-it-inspect"]={g={},a={"research:construction-robotics","research:logistic-robotics","built:roboport"}},
   ["building#remove_ghosts"]={g={},a={"research:construction-robotics","research:logistic-robotics","built:roboport"}},
   ["building#deconstruct"]={g={},a={"start"}},
+  ["building#deconstruct-power-left"]={g={},a={"start"}},
   ["building#upgrade"]={g={},a={"research:construction-robotics","research:logistic-robotics","built:roboport"}},
   ["building#paste"]={g={},a={"research:construction-robotics","research:logistic-robotics","built:roboport"}},
   ["building#placements"]={g={},a={"habit:refused_builds:3","scale:machines:10"}},

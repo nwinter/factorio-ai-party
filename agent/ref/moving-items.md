@@ -175,9 +175,13 @@
   Example: `./fh call craft --args '{"recipe":"iron-gear-wheel","count":10}'`
 - `cancel_craft {recipe | index, count?}`: cancels queued hand crafts, the latest first (`all: true`: every one); the
   ingredients come back.
-- `deliver {position | positions, items, surface?}`: fuel or ammunition into a burner or turret by item request, as a
-  blueprint's: the construction robots of the network covering it bring it (the row names that network's stock and
-  free robots). Modules: `configure`; ingredients: inserters or a requester chest.
+- `deliver {position | positions, items, surface? | platform?}`: fuel or ammunition into a burner or turret by item
+  request, as a blueprint's: the construction robots of the network covering it bring it (the row names that network's
+  stock and free robots). On a platform also an ingredient of a crafting machine's current recipe, into its input slot
+  (a stack at most): the hub fills it from its own inventory (the row says what the hub holds; the rest stays
+  requested until it has them). An item the recipe does not take is refused (the game drops such a request). Fluids are
+  not items: deliver the barrels to a machine set to the emptying recipe, or pump from a tank. Modules: `configure`;
+  ingredients off a platform: inserters or a requester chest.
   Example: `./fh call deliver --args '{"position":{"x":12.5,"y":-40.5},"items":{"firearm-magazine":20}}'`
 - Game rule, ghosts: a ghost is no logistic request. The construction robots of the network covering it take its item
   from active and passive provider, storage and buffer chests there (never from requester chests); with none held it
