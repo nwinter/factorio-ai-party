@@ -221,3 +221,25 @@
 - A heating tower out of fuel (`heat_no_fuel`) is told by its heat network: one that feeds heat exchangers under their
   working temperature (the prototype's, 500 C); a heating-only one when its coldest part is under 30 C or cools at a
   rate that reaches 30 C within 10 minutes (measured between two alert reads, at least 30 s apart), naming that part.
+- Board posts: the board is the team's shared list in the game save: `./fh board`
+  (active items). Post with `./fh board post --args '{"kind":"request","title":"...","owner":"grok"}'`; kinds are
+  `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`), `note` and `project`. A post may
+  add `"needs":{"iron-plate":200}` and a first `"note":"..."`. Put structured things on the board (requests, claims,
+  handoffs) and shared infrastructure (power poles, main belts) too.
+- Owners: name an owner in a request when you know who should do it. A request without an owner is shown to everyone
+  until someone takes it; take one with `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items
+  current (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
+  20 minutes can be taken the same way; the owner hears it.
+- A claim (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`) shows teammates
+  who works where, sends that area's alerts to you, and keeps teammates' `stock` sweeps out of its chests.
+- The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
+  shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
+  doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
+  clears.
+- Chat messages: a reply carries `chat: unread=N latest=...` when a new message arrived; `./fh chat` shows your unread
+  messages (every one that mentions you, the newest 30, and a one-line digest of the rest) and only those count as
+  read. While some are left, `team: chat_remaining=K` repeats on every reply: run `./fh chat` again.
+- `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only them,
+  outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
+- A harness request (`./fh board request`): you can't change the harness yourself; answers come as board notes and a
+  `server: harness vN` chat line.

@@ -83,6 +83,13 @@ class AudioHub:
     is ducked under it). The page's start report carries `started_at`, the moment it started, which /audio/status and
     the log keep. /audio/status lists `queued`: clips posted, not started or ended yet and not expired. POST
     /audio/cancel {id} takes a clip back before it plays (the page drops it).
+
+    (d28 batch319 SU, viewer Aurora site:5401) A narrator clip may carry `segment` {id, part, parts}: the page holds
+    routine clips from the segment's first part until its last has played (audio.js). POST /audio/release {segment}
+    ends a hold at once (the tour's end, its early stop): a `release` event. A page that connects (a reload, a
+    reconnect) is sent the clips still queued (not started, not done, not expired; a timed clip only while its moment
+    is under 2 s past), and the page drops an id it has seen, so a reload loses no waiting line and plays none twice.
+    A skip report's reason (expired, late, cancelled) is logged.
     """
 
     MAX_CLIPS = 120
@@ -101,6 +108,7 @@ class AudioHub:
         self.seq = 0
         self.playing = {}  # id -> {meta, started}
         self.done = set()  # ids started, ended, skipped or cancelled (not queued any more)
+        self.skipped = set()  # ids whose skip was logged (two pages report each)
         self.listeners = 0
         self.last_report = None
         self.log_path = log_path
@@ -200,6 +208,7 @@ class AudioHub:
                 gone = self.order.pop(0)
                 self.clips.pop(gone, None)
                 self.done.discard(gone)
+                self.skipped.discard(gone)
             self.cond.notify_all()
             return meta
 
@@ -211,6 +220,30 @@ class AudioHub:
             self.done.add(cid)
         self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
         return True
+
+    def release(self, segment):
+        """POST /audio/release {segment}: the page ends that segment's hold now (a `release` event)."""
+        if not segment:
+            return False
+        self.push({"channel": "control", "release": str(segment), "expires_in": 30}, b"", "text/plain")
+        return True
+
+    def pending(self, now=None):
+        """The clips a page that connects now still needs: not started, done or expired, not control events, a timed
+        one only while its moment is less than 2 s past (the page plays none late)."""
+        now = now or time.time()
+        with self.cond:
+            out = []
+            for c in self.order:
+                if c not in self.clips or c in self.done:
+                    continue
+                m = self.clips[c][2]
+                if m.get("channel") == "control" or m["expires"] <= now:
+                    continue
+                if isinstance(m.get("at"), (int, float)) and m["at"] < now - 2:
+                    continue
+                out.append(m)
+            return out
 
     def wait(self, seq, timeout):
         with self.cond:
@@ -246,12 +279,17 @@ class AudioHub:
                 if v:
                     self._end(cid, v, st, now, num("played"), num("duration"))
             elif st == "skip":  # expired in the page's queue: never played
+                if cid in self.skipped:
+                    return  # (batch319) a second page's report of the same skip: logged once
+                self.skipped.add(cid)
                 self.done.add(cid)
                 self.playing.pop(cid, None)
                 meta = self.clips.get(cid, (None, None, {}))[2]
+                why = report.get("reason")  # (batch319) the page's why: expired, late, cancelled
                 row = {"t": round(now, 2), "id": cid, "ended": True, "state": "skip", "channel": meta.get("channel"),
                        "speaker": meta.get("speaker"), "agent": meta.get("agent"), "played": 0.0,
-                       "duration": meta.get("duration"), "early": False, "reason": None}
+                       "duration": meta.get("duration"), "early": False,
+                       "reason": why if why in ("expired", "late", "cancelled") else None}
                 self.ended.append((now, row))
                 self._log(row)
             # a page that goes away mid-clip never reports the end; forget clips well past their length
@@ -296,7 +334,7 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None, board_all=None, tour=None):
+                 platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None):
     audio = audio or AudioHub()
     tour = tour or TourOverlay()
     segments = segments or Segments()
@@ -329,6 +367,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, hub.payload, "application/json; charset=utf-8")
             if path == "/board.json":  # (d22 batch99 BI3) every task, request, claim, project and reminder (push_live)
                 body = board_all() if board_all else None
+                return self.send(200, json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+            if path == "/replies.json":  # (d28 batch309) every reply kept (push_live: the site's reply store)
+                body = replies_all() if replies_all else []
                 return self.send(200, json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8")
             if path == "/director.json":
                 return self.send(200, json.dumps(list(decisions())).encode(), "application/json")
@@ -382,6 +423,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             if path == "/audio/played":
                 audio.played(body)
                 return self.send(200, b"{}", "application/json")
+            if path == "/audio/release":  # (batch319 SU) the tour ends its segment's hold
+                ok = audio.release(body.get("segment"))
+                return self.send(200 if ok else 400, json.dumps({"released": ok}).encode(), "application/json")
             if path == "/audio/cancel":  # (CK1) the tour takes back a narration it scheduled
                 ok = audio.cancel(str(body.get("id") or ""))
                 return self.send(200 if ok else 404, json.dumps({"cancelled": ok}).encode(), "application/json")
@@ -495,6 +539,10 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 with audio.cond:
                     audio.listeners += 1
             try:
+                if want_audio:  # (batch319 SU) the clips still queued, for a page that (re)connects
+                    for c in audio.pending():
+                        self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                    self.wfile.flush()
                 while True:
                     # with audio, wake often so a clip goes out within ~0.25 s (snapshots come once a second)
                     new, payload = hub.wait(version, 0.25 if want_audio else 15)
@@ -627,7 +675,10 @@ def main():
     if (a.replays if a.replays is not None else not a.mock) and run.get("replays", True) is not False:
         from obsws import OBS
         host, _, port = a.obs.partition(":")
-        replays = Replays(segments, obs=OBS(host, int(port or 4455)), **(run.get("replays") or {}))
+        from alarmquiet import AlarmQuiet  # (d28 batch326 RA2) its state beside stream.json: kept across restarts
+        alarm = AlarmQuiet(os.path.join(os.path.dirname(os.path.abspath(a.run)), "alarm-quiet.json") if a.run else None)
+        replays = Replays(segments, obs=OBS(host, int(port or 4455)), alarm=alarm, remux="box",
+                          **(run.get("replays") or {}))
     show = None
     if not a.mock and run.get("show", True) is not False:  # an image over the main camera (POST /show)
         from obsws import OBS
@@ -671,6 +722,11 @@ def main():
     # (d20 batch65 AA2) the line each Operator reply sent with tools/opreply.py answers, beside the inbox
     import viewer_replies
     model.set_reply_links(os.path.join(os.path.dirname(inbox), viewer_replies.LINKS_NAME) if inbox else None)
+    # (d28 batch309) the replies kept beside them, read back from this run and the runs before (a restart, a new shift)
+    if inbox:
+        model.set_reply_store(os.path.join(os.path.dirname(inbox), viewer_replies.ROWS_NAME))
+        # (d28 batch312 B) the operation stories followed (stories.py), kept across a restart
+        model.set_story_store(os.path.join(os.path.dirname(inbox), "stories.json"))
     if a.run and not a.mock:  # chat read again at a restart keeps its time (chat-log.py's logged_at)
         model.set_chat_log(os.path.join(os.path.dirname(os.path.abspath(a.run)), "chat.jsonl"))
     # YouTube deletions, with what they remove, beside it: the site leaves those lines out (site/moderation.py)
@@ -797,6 +853,10 @@ def main():
                     host.sync(now, snap.get("connected_players"))
                 with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
                     snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
+                    # (d28 batch324 SF) every line playing now (hosts, agents, the Operator, the narrator): onecam's
+                    # speech-linked framing (its verified subjects, held while the line plays)
+                    snap["speech"] = [dict(v, id=k) for k, v in audio.playing.items()
+                                      if v.get("channel") in ("caster", "agent", "operator", "narrator")]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 cams = director.step(snap, now, segments.camera())
                 if follow:
@@ -882,12 +942,16 @@ def main():
         with lock:
             return model.board_all_snapshot()
 
+    def replies_all():
+        with lock:
+            return model.replies_all()
+
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
                                                                     show=show, host=host,
-                                                                    board_all=board_all, tour=tour))
+                                                                    board_all=board_all, tour=tour, replies_all=replies_all))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

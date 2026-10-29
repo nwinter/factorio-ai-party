@@ -235,6 +235,7 @@ HEADLINE_EXTRA = {
 PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "research": 7, "space": 10, "viewer": 6,
             "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
+            "story": 7,  # (d28 batch312 B) an operation story's question or result (stories.py)
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5, "chronicle": 6,
             "analyst": 5,  # (d23 batch130 CM2) an analyst point as its own beat (analyst_event)
@@ -253,6 +254,37 @@ def digest(s):
     res, sc, board = s.get("research") or {}, s.get("science") or {}, s.get("board") or {}
     return (res.get("done_count"), res.get("label"), int((sc.get("spm") or 0) // 5), sc.get("stage_label"),
             board.get("claims_total"), board.get("in_progress"), len(s.get("alerts") or []))
+
+
+SUBJECT_KEYS = {"agent": "agent", "agents": "agent", "platform": "platform", "ship": "platform"}
+
+
+def subjects_of(facts, e=None):
+    """(d28 batch324 SF, viewer Aurora 16:46, site:5415: "Favor the main verified subject as audio plays ... skip
+    uncertain targets") The agents and platforms a host line's own event names: its facts' and event's "agent",
+    "agents", "platform" and "ship" fields (up to two levels down, as "arrival": {"platform": ...}), never words of the
+    line. [{"agent": name} | {"platform": name}], in the order named, each once; the director keeps only those it
+    knows (onecam.speech_subjects)."""
+    out = []
+
+    def add(kind, v):
+        for x in (v if isinstance(v, list) else [v]):
+            if isinstance(x, dict):
+                x = x.get("name")
+            if isinstance(x, str) and x.strip() and {kind: x.strip()} not in out:
+                out.append({kind: x.strip()})
+
+    def walk(d, depth):
+        if not isinstance(d, dict) or depth > 2:
+            return
+        for k, v in d.items():
+            if k in SUBJECT_KEYS:
+                add(SUBJECT_KEYS[k], v)
+            elif isinstance(v, dict):
+                walk(v, depth + 1)
+    walk(e or {}, 1)
+    walk(facts or {}, 1)
+    return out[:4]
 
 
 def clip_rank(e):
@@ -1043,6 +1075,10 @@ def card_facts(seg):
     if seg.get("type") in CARD_CALLS:
         # not "muted" or "banner" for a replay: the first version read those production notes out on air
         f["how_to_call_it"] = CARD_CALLS[seg["type"]]
+    if seg.get("type") == "attack_replay" and (seg.get("facts") or {}).get("kind") == "highlight":
+        # (d28 batch312 C) an engineering highlight: earlier footage of a build, and the result it led to
+        f["how_to_call_it"] = ("a highlight replay: this is earlier footage of the work in `highlight`; say who did it and "
+                               "where, then the payoff, the result in `payoff`, as the facts give it. Briefly, facts only")
     return f
 
 
@@ -1109,6 +1145,15 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None, target=None):
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
+    if e["kind"] == "story":  # (d28 batch312 B) a ship trial: its question and handoff, then its result (stories.py)
+        fa = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
+        f["story"] = fa
+        f["how_to_call_it"] = (
+            "a ship trial starts: Rook says which ship and who set the watch; Vale says the question it answers and the "
+            "team's handoff, if the facts say; we will come back for the result. Briefly, facts only"
+            if fa.get("beat") == "open" else
+            "a ship trial's result: say the ship and the result as the facts give it (passed, failed or still pending) "
+            "with its reason; if it revisits a spot, say what was done there. Briefly, facts only, no verdict of your own")
     if e["kind"] == "arrival":  # a platform's later arrival: another trip done, not a headline
         f["arrival"] = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
         f["how_to_call_it"] = ("a space platform finished another trip (it has been here before): one line, where it "
@@ -2202,6 +2247,21 @@ def talk_kind(spoken_text):
 
 
 ALOUD_LIMIT = 500  # fh say's own cap: an aloud line is voiced whole
+OP_CLIP_CHARS = 600  # (batch319 SU2) an operator reply part (500 bytes at most) is one clip; past this, more clips
+OP_HEAD = re.compile(r"^\s*@?[\w.-]+\s+(?:\(\d{1,2}/\d{1,2}\)\s*)?Operator\s*:\s*")
+SAY_PART = re.compile(r"^\s*(?:@\w+[\s,:]*)*\((\d{1,2})/(\d{1,2})\)")
+
+
+def op_text(text):
+    """An operator reply part as heard: "@Aurora (1/2) Operator: Aurora: ..." -> "Aurora: ..." (the caption and the
+    voice say who speaks; the reply itself names who it answers)."""
+    return OP_HEAD.sub("", str(text or ""), count=1)
+
+
+def say_part(text):
+    """(k, n) of a long say's part ("(2/3) ..."; host/saysplit.ts), else None."""
+    m = SAY_PART.match(str(text or ""))
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 def talk_pick(m, label=None, limit=200, aloud_limit=ALOUD_LIMIT):
@@ -2237,9 +2297,12 @@ class TalkPicker:
     `dup_window` seconds, or like another waiting line, is dropped."""
     RANK = {"aloud": 5, "emotion": 4, "reaction": 4, "banter": 3, "strategy": 3, "plan": 3, "request": 2}
 
+    SAY_OPEN_S = 300  # (batch319 SU2) the later parts of an aloud say wait this long for the ones before
+
     def __init__(self, gap=12, cooldown=50, stale=30, dup_window=600, limit=200, aloud_limit=ALOUD_LIMIT):
         self.gap, self.cooldown, self.stale, self.dup_window, self.limit = gap, cooldown, stale, dup_window, limit
         self.aloud_limit = aloud_limit
+        self.say_open = {}  # agent -> (part aired, parts, t): an aloud say whose later parts are still to come
         self.last, self.agent_last = 0.0, {}
         self.aired = deque(maxlen=60)  # (t, agent, text)
         self.waiting = []  # [(m, label, text)]
@@ -2250,17 +2313,31 @@ class TalkPicker:
         for m in msgs:
             v = (verdict or {}).get(m.get("seq"))
             ok, label, text = talk_pick(m, v[1] if v else None, self.limit, self.aloud_limit)
-            if ok and any(near_same(text, x) for t, _, x in self.aired if now - t < self.dup_window) or \
-                    ok and any(near_same(text, w[2]) for w in self.waiting):
+            if ok and not (label == "aloud" and say_part(m.get("text"))) and (  # (SU2) a say's parts are all heard
+                    any(near_same(text, x) for t, _, x in self.aired if now - t < self.dup_window) or
+                    any(near_same(text, w[2]) for w in self.waiting)):
                 ok, label = False, "repeat"
             out.append({"agent": m["agent"], "text": m["text"], "voiced": ok, "label": label})
             if ok:
                 self.waiting.append((m, label, text))
         return out
 
+    def continues(self, w, now):
+        """Whether waiting line w is the next part of an aloud say its agent has begun (said whole, in order)."""
+        o = self.say_open.get(w[0]["agent"])
+        k = say_part(w[0].get("text")) if w[1] == "aloud" else None
+        return bool(o and k and k[1] == o[1] and k[0] == o[0] + 1 and now - o[2] < self.SAY_OPEN_S)
+
     def next(self, now):
-        """The line to voice now, as (m, label, text), or None (nothing waiting, or the gap or cooldowns hold)."""
-        self.waiting = [w for w in self.waiting if now - w[0]["t"] < self.stale]
+        """The line to voice now, as (m, label, text), or None (nothing waiting, or the gap or cooldowns hold). (SU2)
+        The next part of an aloud say already begun goes first, past the gap and its agent's cooldown, and waits up
+        to SAY_OPEN_S, not `stale`: a say of six 500-byte parts is heard whole."""
+        self.waiting = [w for w in self.waiting if now - w[0]["t"] < self.stale or
+                        (w[1] == "aloud" and say_part(w[0].get("text")) and now - w[0]["t"] < self.SAY_OPEN_S)]
+        cont = [w for w in self.waiting if self.continues(w, now)]
+        if cont:
+            self.waiting.remove(cont[0])
+            return cont[0]
         if not self.waiting or now - self.last < self.gap:
             return None
         free = [w for w in self.waiting if now - self.agent_last.get(w[0]["agent"], 0) >= self.cooldown]
@@ -2273,8 +2350,15 @@ class TalkPicker:
     def aired_now(self, now, m, text):
         self.last = self.agent_last[m["agent"]] = now
         self.aired.append((now, m["agent"], text))
+        k = say_part(m.get("text")) if m.get("aloud") else None
+        if k and k[0] < k[1]:  # (SU2) a long aloud say: its later parts stay and go next
+            self.say_open[m["agent"]] = (k[0], k[1], now)
+        else:
+            self.say_open.pop(m["agent"], None)
         # the agent's other waiting lines would only queue behind its cooldown and arrive stale
-        self.waiting = [w for w in self.waiting if w[0]["agent"] != m["agent"]]
+        self.waiting = [w for w in self.waiting if w[0]["agent"] != m["agent"] or
+                        (k and k[0] < k[1] and w[1] == "aloud" and (say_part(w[0].get("text")) or (0, 0))[1] == k[1]
+                         and (say_part(w[0].get("text")) or (0, 0))[0] > k[0])]
 
     def talkative(self, now, window=300):
         """Agent lines aired in the last `window` seconds."""
@@ -3100,7 +3184,8 @@ class Caster:
             # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
             self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
                        "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
-                       "rank": clip_rank(e), "exchange": base.get("exchange")}, audio, ctype)
+                       "rank": clip_rank(e), "exchange": base.get("exchange"),
+                       "subjects": subjects_of(facts, e)}, audio, ctype)  # (batch324 SF) for the camera
             self.caster_free = time.time() + dur
             self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
                         **({"delivery": direction[i]} if direction.get(i) else {}),
@@ -3150,12 +3235,18 @@ class Caster:
             self.stats["agent_lines"] += 1
             log(f"[voice:{names.get(m['agent'])}/{vmap.get(m['agent'])}] ({label}) {text}")
             mood = agent_mood(self.__dict__.get("moments"), m["agent"], ag.get("surface"), time.time())
+            # (batch319 SU2) a chat line voiced in part (near --max-chars; aloud lines are whole) says so: the clip and
+            # the caption are an excerpt, and the record keeps how much was left out
+            whole = talk_text(m["text"], 10 ** 6, m.get("agent"))
+            excerpt = {"said": len(text), "of": len(whole)} if len(whole) > len(text.rstrip(".")) + 3 else None
             dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
                              {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
                               "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20,
                               # the line as said and its say look= (the director's cue when it starts playing)
-                              "seq": m.get("seq"), "said": m.get("text"), "look": m.get("look")},
-                             {"type": "agent", "agent": m["agent"], "label": label, "line": text},
+                              "seq": m.get("seq"), "said": m.get("text"), "look": m.get("look"),
+                              **({"excerpt": excerpt} if excerpt else {})},
+                             {"type": "agent", "agent": m["agent"], "label": label, "line": text,
+                              **({"excerpt": excerpt, "left_out": whole[len(text.rstrip('.')):].strip()[:600]} if excerpt else {})},
                              hold=lambda: self.caster_free, mood=mood)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4
             if dur:  # the hosts may call back to it: shake4 rejected Grok 19 s after Grok spoke aloud (04:42:22)
@@ -3268,25 +3359,31 @@ class Caster:
                 q.clear()
             s = self.snap or {}
         for e in lines:
-            text = voices.speakable(e.get("text") or "", 300)
-            if not text:
-                continue
-            self.stats["operator_lines"] = self.stats.get("operator_lines", 0) + 1
-            log(f"[voice:Operator/{voices.OPERATOR_VOICE}] {text}")
-            self.agent_free = time.time() + len(text) / 15.0 + 8.0  # the hosts hold off while it is synthesised
-            dur = self.voice(text, voices.OPERATOR_VOICE, None,
-                             {"channel": "operator", "speaker": "Operator", "rank": "agent", "text": text,
-                              "expires_in": 60},
-                             {"type": "operator", "line": text}, hold=lambda: self.caster_free)
-            self.agent_free = time.time() + dur + 0.4
-            if dur:
-                self.history.append(f"operator at {spoken_time(s.get('game_time'))}: Operator - {text}")
-                with self.lock:
-                    react = self.rng.random() < getattr(self.a, "react", 0.5)
-                    self.yielding = {"until": self.agent_free + getattr(self.a, "yield_s", 30),
-                                     "event": {"kind": "chat", "operator": True, "text": text, "label": "operator",
-                                               "react": True, "prio": PRIORITY["chat"], "t": time.time()}
-                                     if react else None}
+            # (d28 batch319 SU2, viewer Aurora site:5412: "Operator speech is cut to 300 characters, versus 500 for
+            # engineer aloud") each reply part (tools/opreply.py: at most 500 bytes) is said whole, without its
+            # "@Name (k/n) Operator:" heading; a longer line goes as consecutive clips, nothing left out
+            parts = voices.speakable_parts(op_text(e.get("text") or ""), OP_CLIP_CHARS)
+            for k, text in enumerate(parts):
+                self.voice_operator(text, s, k + 1, len(parts))
+
+    def voice_operator(self, text, s, part, parts):
+        """One operator clip (part of parts of a reply part too long for one clip)."""
+        self.stats["operator_lines"] = self.stats.get("operator_lines", 0) + 1
+        log(f"[voice:Operator/{voices.OPERATOR_VOICE}] {text}")
+        self.agent_free = time.time() + len(text) / 15.0 + 8.0  # the hosts hold off while it is synthesised
+        dur = self.voice(text, voices.OPERATOR_VOICE, None,
+                         {"channel": "operator", "speaker": "Operator", "rank": "agent", "text": text,
+                          "expires_in": 60, **({"part": part, "parts": parts} if parts > 1 else {})},
+                         {"type": "operator", "line": text, "chars": len(text)}, hold=lambda: self.caster_free)
+        self.agent_free = time.time() + dur + 0.4
+        if dur:
+            self.history.append(f"operator at {spoken_time(s.get('game_time'))}: Operator - {text}")
+            with self.lock:
+                react = self.rng.random() < getattr(self.a, "react", 0.5)
+                self.yielding = {"until": self.agent_free + getattr(self.a, "yield_s", 30),
+                                 "event": {"kind": "chat", "operator": True, "text": text, "label": "operator",
+                                           "react": True, "prio": PRIORITY["chat"], "t": time.time()}
+                                 if react else None}
 
     def chat_loop(self):
         while True:  # --no-chat silences the agents' lines, not the operator's

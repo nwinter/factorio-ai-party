@@ -272,6 +272,22 @@ return function(api)
     end
   end
 
+  -- (d28 batch320 LP) what is on the way up to a platform now: each rocket pod sent to it from a silo and not landed yet
+  -- (in flight or rising), counted by item key (name or name@quality); with item, that item's count only.
+  function M.on_the_way(platform, item)
+    local st = store()
+    local n, rockets = 0, 0
+    for _, open in pairs(st.open) do
+      local r = find(st, open)
+      if r and r.up and r.platform == platform and not r.landed and r.items then
+        local c = item and (r.items[item] or 0) or 0
+        if not item then for _, v in pairs(r.items) do c = c + v end end
+        if c > 0 then n, rockets = n + c, rockets + 1 end
+      end
+    end
+    return n, rockets
+  end
+
   -- (d25 batch201 QN3, Sol #2328) an item's counted arrivals and departures on a planet over (from, to]: what pods
   -- landed (by land tick) and what rockets' pods took up (by send tick), every quality; complete false when the log's
   -- oldest kept journey is after from (the list keeps the last KEEP).

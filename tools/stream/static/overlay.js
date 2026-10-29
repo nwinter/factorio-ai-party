@@ -196,10 +196,12 @@
     else go(null);
   });
 
+  // (d28 batch324 SF2) a panel trio (one client, two camera panels) names its own holes in the program
+  let trioHoles = null, curHoles = "";
   function applyLayout(mode) {
     if (!layout) return;
     curMode = mode;
-    const l = layout, cams = mode === "trio" ? trioCams : l.cams;
+    const l = layout, cams = mode === "trio" ? (trioHoles || trioCams) : l.cams;
     document.body.classList.toggle("trio", mode === "trio");
     for (const [slot, [x, y, w, h]] of Object.entries(cams)) {
       const c = $("cam-" + slot);
@@ -1660,8 +1662,10 @@
   function render(s) {
     if (staleCheck(s)) return;
     state = s;
-    const mode = onecam && trioCams && s.program && s.program.layout === "trio" ? "trio" : "onecam";
-    if (layout && mode !== curMode) applyLayout(mode);
+    const holes = (s.program && s.program.layout === "trio" && s.program.holes) || null;
+    const mode = onecam && (trioCams || holes) && s.program && s.program.layout === "trio" ? "trio" : "onecam";
+    const hk = holes ? JSON.stringify(holes) : "";
+    if (layout && (mode !== curMode || hk !== curHoles)) { trioHoles = holes; curHoles = hk; applyLayout(mode); }
     window.pogState = s; // audio.js finds speaking agents' avatars here
     renderHead(s);
     renderCards(s);

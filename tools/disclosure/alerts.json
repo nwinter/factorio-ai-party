@@ -1,0 +1,1906 @@
+[
+ {
+  "id": "alert-digest-team-alerts",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:2250",
+  "channel": "push",
+  "trigger": "team.alerts digest: new or worsening alert groups addressed to the agent, max 1 per 150 s, max 5 lines",
+  "sample": "+3 more alert groups: fh call game_alerts",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-no-power",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:84",
+  "channel": "push",
+  "trigger": "entity status no_power, grouped per 64-tile area",
+  "sample": "12 assembling-machine-2 no power near (40,12); fh call power",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-unconnected",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:941",
+  "channel": "push",
+  "trigger": "machines no pole reaches (no electric network)",
+  "sample": "4 assembling-machine-1 not connected to power (no pole reaches them) near (..); fh call power",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-low-power",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:84",
+  "channel": "push",
+  "trigger": "entity status low_power",
+  "sample": "8 electric-mining-drill low power near (..); more power: fh call power",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-no-fuel",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:84",
+  "channel": "push",
+  "trigger": "burners out of fuel; adds nearest fuel and a refuel call, spoiling fuel",
+  "sample": "6 stone-furnace out of fuel near (..); refuel {area: .., from: \"nearest\", fuel: \"coal\"}",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-burnt-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:952",
+  "channel": "push",
+  "trigger": "burner stopped by a full burnt-result slot (biochamber spoilage)",
+  "sample": "2 biochamber stopped by a full burnt-result slot near (57,61): ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-out-of-ore",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:959",
+  "channel": "push",
+  "trigger": "drills whose patch is used up (out_of_ore.<ore>), with nearest untapped patch and free drill site",
+  "sample": "6 electric-mining-drill out of ore near (40,-60): iron-ore; 4 still mining there; nearest untapped iron-ore (180,-20) 145 tiles",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-mine-depleting",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1318",
+  "channel": "push",
+  "trigger": "half the drills of a mine stop within 30 min at the current rate",
+  "sample": "mines where half the drills stop within 30 min at the rate they take ore now",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-output-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:963",
+  "channel": "push",
+  "trigger": "drills stopped by a full chest they drop into",
+  "sample": "2 big-mining-drill stopped by a full chest near (130,120): ... 32/32 slots used",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-output-chest-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1021",
+  "channel": "push",
+  "trigger": "maker stopped: its output inserter drops into a chest with no free slot",
+  "sample": "stopped: the chest their output goes into has no free slot",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-off-by-condition",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1029",
+  "channel": "push",
+  "trigger": "machine off by its own circuit or logistic condition",
+  "sample": "1 biochamber stopped by its own circuit or logistic condition near (57,61): off by its logistic condition bioflux > 200",
+  "game_feature": "circuits"
+ },
+ {
+  "id": "alert-input-spoilage",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1013",
+  "channel": "push",
+  "trigger": "machine short of ingredients with spoilage its recipe does not take in its input",
+  "sample": "2 biochamber short of ingredients with spoilage in their input near (40,12): ...",
+  "game_feature": "spoilage"
+ },
+ {
+  "id": "alert-seed-spoiling",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1034",
+  "channel": "push",
+  "trigger": "machine taking pentapod eggs/bacteria not crafting while the seed spoils within 3 min",
+  "sample": "not crafting while the seed in their input (pentapod eggs, bacteria) spoils within 3 min",
+  "game_feature": "spoilage"
+ },
+ {
+  "id": "alert-catalyst-gone",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1017",
+  "channel": "push",
+  "trigger": "starved machine whose recipe needs an item it makes, none left in input",
+  "sample": "short of an ingredient their own recipe makes (none left in the input to start the next craft)",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-no-ammo",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:282",
+  "channel": "push",
+  "trigger": "gun turrets out of ammo (entity status)",
+  "sample": "4 gun-turret out of ammo near (..); rearm {alert: \"no_ammo|nauvis|..\"}",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-ammo-low",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:982",
+  "channel": "push",
+  "trigger": "hand-fed turrets (no inserter) under 10 magazines",
+  "sample": "2 gun-turret hand-fed (no inserter drops into them) under 10 magazines near (-180,73): ...; rearm {alert: \"..\"}",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-rebuilt-empty",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:277",
+  "channel": "push",
+  "trigger": "turret built with no ammo, still empty 60 s on",
+  "sample": "2 gun-turret rebuilt empty near (61,15): no ammo since built, 60+ s: gun-turret (60,14) requests 10 firearm-magazine; rearm",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-outpost-ammo-low",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:976",
+  "channel": "push",
+  "trigger": "turrets no construction robot reaches under 20% of ammo slots",
+  "sample": "turrets no construction robots reach, under 20% of their ammo slots",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-outpost-turret-lost",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1666",
+  "channel": "push",
+  "trigger": "unreached-by-robots turret destroyed in last 10 min",
+  "sample": "gun-turret (120,40) destroyed 45s ago",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-flamer-dry",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1009",
+  "channel": "push",
+  "trigger": "flamethrower turret with no oil",
+  "sample": "3 flamethrower-turret out of flamer oil near (..); fh call flamers",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-artillery-empty",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:334",
+  "channel": "push",
+  "trigger": "artillery turret with no shell 5+ min, with feeding inserters/requests",
+  "sample": "1 artillery-turret with no shell for 5+ min near (150.5,-134.5): empty for 7 min; ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-captive-starving",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:672",
+  "channel": "push",
+  "trigger": "captive biter spawner losing health",
+  "sample": "captive spawner losing health: ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-captive-urgent",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:2403",
+  "channel": "push",
+  "trigger": "captive spawner dies within 2 min; urgent part of team block, wakes sleep",
+  "sample": "captive spawner dies within 2 min: ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-captive-died",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:741",
+  "channel": "push",
+  "trigger": "captive spawner died (and what stands in its place)",
+  "sample": "captive spawner died: captive-biter-spawner (..) died 30s ago; nothing stands in its place now",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-frozen",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1165",
+  "channel": "push",
+  "trigger": "entities on a heating planet (Aquilo) frozen, nearest heater",
+  "sample": "frozen (no heat reaches them)",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-heat-no-fuel",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:383",
+  "channel": "push",
+  "trigger": "heating tower out of fuel near its heat network threshold",
+  "sample": "1 heating-tower out of fuel near (40,12): heating-tower (40.5,12.5): 412 C, fuel slot empty; ...; refuel",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-silo-spoils",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:505",
+  "channel": "push",
+  "trigger": "staged silo cargo spoils before its platform returns",
+  "sample": "staged cargo spoils before its platform is back here: ...",
+  "game_feature": "spoilage"
+ },
+ {
+  "id": "alert-silo-short",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:622",
+  "channel": "push",
+  "trigger": "rocket silo short of an ingredient (silo_short.<item>) for minutes",
+  "sample": "rocket silo short of rocket-fuel here: rocket-silo (..): parts 40/50, no new part for 6 min; ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-silo-ready-idle",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:609",
+  "channel": "push",
+  "trigger": "built rocket not launched for a while",
+  "sample": "rocket ready and not launched here: rocket-silo (..): rocket ready 12 min, not launched; cargo ..; platforms above: ..",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-lost-inserter-target",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:235",
+  "channel": "push",
+  "trigger": "inserter lost its pickup/drop target (lost_source.<fed>/lost_target.<fed>)",
+  "sample": "2 inserters feeding boiler lost their pickup target near (60,14): burner-inserter (60,14) read wooden-chest (41,13), ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-speaker",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:2449",
+  "channel": "push",
+  "trigger": "programmable speaker custom alert active (builder or same surface); wakes waits on kind speaker",
+  "sample": "speaker alert at (12,40) (built by sol): \"iron low\" [item:iron-plate], 2m05s ago",
+  "game_feature": "circuits"
+ },
+ {
+  "id": "alert-line-cut",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/linecut.lua:330",
+  "channel": "push",
+  "trigger": "long belt/pipe line (8+ tiles) cut where ours died, until rebuilt",
+  "sample": "belt line cut at (10,4): 2 tiles gone, 30s ago, none rebuilt; the line runs 40 tiles to (..) on one side, ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-belt-line-blocked",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/linecut.lua:285",
+  "channel": "push",
+  "trigger": "a build leaves a belt facing into another entity with belt past it, 30 s",
+  "sample": "belt line blocked at (12,5): ...; the belt runs 6 tiles from (..) to (..) and stops there; seen 40s ago",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-belt-cut",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/beltgaps.lua:369",
+  "channel": "push",
+  "trigger": "missing formerly carrying belt tiles per chunk, cleared when replaced",
+  "sample": "belt_cut: missing belt tiles at (..), what stands there now",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-science-idle",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/scienceline.lua:98",
+  "channel": "push",
+  "trigger": "no maker of a needed science pack working 5+ min, with first short chain step",
+  "sample": "no logistic-science-pack maker working for 6+ min (4 makers: ...); 2 of 5 labs have none; first short step copper-ore",
+  "game_feature": "research"
+ },
+ {
+  "id": "alert-lightning-unconnected",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/lightning.lua:102",
+  "channel": "push",
+  "trigger": "Fulgora lightning attractors no pole reaches",
+  "sample": "lightning-collector in no electric network (no pole reaches it) near (..): a strike charges only its own buffer",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-lightning-unused",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/lightning.lua:119",
+  "channel": "push",
+  "trigger": "attractors in a network with no accumulator and no draw last minute",
+  "sample": "electric #4: 3 lightning-rod near (..) in a network with no accumulator and nothing drawing power in the last minute",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-lightning-storage-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/lightning.lua:130",
+  "channel": "push",
+  "trigger": "attractor network accumulators >= 99%",
+  "sample": "electric #4: its 20 accumulators are full (..) with 6 lightning-collector in the network near (..)",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-power-high",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2464",
+  "channel": "push",
+  "trigger": "electric network draw >= 85% of capacity for 2 min",
+  "sample": "electric #3 draw at or above 85% of capacity for 2 min: 9.6MW of 10.8MW now; 12 machines on low power",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-boiler-fuel",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2322",
+  "channel": "push",
+  "trigger": "boilers under 20 min of own fuel (again at 10, 5), not refilled",
+  "sample": "3 boilers under 20 min of their own fuel at this draw, ..., not refilled, near (..); fuel within 64 tiles: ...",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-feed-chest-low",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2476",
+  "channel": "push",
+  "trigger": "boiler's feed chest under 20 fuel, nothing added for 5 min",
+  "sample": "boiler (..): its feed chest wooden-chest (..) holds coal 12, nothing put into it for 5+ min (feeder ..)",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-accumulators-draining",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2440",
+  "channel": "push",
+  "trigger": "accumulators empty within 10 min at net flow (again 5, 2); Fulgora storm timing",
+  "sample": "electric #2 near (..): its 40 accumulators at 30% (..) fall 2MW net over the last 30 s: empty in about 6m",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-no-power-network",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2492",
+  "channel": "push",
+  "trigger": "machines reporting no_power grouped per electric network with supply sample",
+  "sample": "electric #5 near (..): 14 machines report no_power (..); 22 poles; supplied 0W (5 s average), no generation in that sample",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-construction-wait",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2505",
+  "channel": "push",
+  "trigger": "ghosts waiting 5+ min while their items are in the network",
+  "sample": "ghosts waiting on robots: 12 in network 1 near (..), oldest 7 min, ...; the items are in the network",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-deliveries-wait",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2514",
+  "channel": "push",
+  "trigger": "logistic requests unfilled 5+ min while items are free in providers/storage",
+  "sample": "deliveries waiting on robots: iron-plate unfilled 5+ min in network 1 near (..) while providers or storage hold the item free",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-requester-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2529",
+  "channel": "push",
+  "trigger": "requester chest every slot taken while a request short 60+ s",
+  "sample": "requester chests with every slot taken while a request is short 60+ s: 2 in network 1: ...",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-robots-busy",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/networks.lua:2536",
+  "channel": "push",
+  "trigger": "no idle logistic robot for 10 min",
+  "sample": "logistic #1: no idle logistic robot for 10 min (120 robots; 14 requests unfilled 60+ s)",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-game-no-material",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert no_material_for_construction relayed",
+  "sample": "ghosts waiting for materials (no robot can bring them) near (..); craft or bring the items for the ghosts",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-game-not-enough-robots",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert not_enough_construction_robots relayed",
+  "sample": "not enough construction robots near (..); more construction robots in the roboports",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-game-no-repair-packs",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert not_enough_repair_packs relayed",
+  "sample": "robots out of repair packs; repair packs into a roboport or storage chest",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-game-no-storage",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert no_storage / no_roboport_storage relayed, with robots carrying",
+  "sample": "robots have no storage for what they carry; a storage chest in the network",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-game-train-out-of-fuel",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert train_out_of_fuel relayed",
+  "sample": "train out of fuel near (..); refuel the locomotive",
+  "game_feature": "trains"
+ },
+ {
+  "id": "alert-game-train-no-path",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert train_no_path relayed",
+  "sample": "train has no path near (..)",
+  "game_feature": "trains"
+ },
+ {
+  "id": "alert-game-unclaimed-cargo",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert unclaimed_cargo relayed",
+  "sample": "unclaimed cargo near (..)",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-game-collector-blocked",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert collector_path_blocked relayed",
+  "sample": "asteroid collector path blocked near (..)",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "alert-game-pipeline-overextended",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert pipeline_overextended relayed",
+  "sample": "pipeline overextended (flow stops) near (..)",
+  "game_feature": "fluids"
+ },
+ {
+  "id": "alert-game-platform-storage-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert no_platform_storage relayed",
+  "sample": "platform hub storage full near (..)",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "alert-game-platform-tile-blocked",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:1220",
+  "channel": "push",
+  "trigger": "game alert platform_tile_building_blocked relayed",
+  "sample": "platform tile building blocked near (..)",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "alert-game-other",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:53",
+  "channel": "push",
+  "trigger": "any other game alert type not skipped, read as its name",
+  "sample": "<n> <alert type name> near (..)",
+  "game_feature": "none"
+ },
+ {
+  "id": "team-out-of-sight-hourly",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:2301",
+  "channel": "reply-block",
+  "trigger": "hourly team line: our drills/machines/turrets out of radar sight, radars not working",
+  "sample": "out of radar sight on nauvis: 4 drills, 2 machines, 1 turrets in 2 areas (64 tiles): ...; radars not working: radar (..) no power",
+  "game_feature": "none"
+ },
+ {
+  "id": "team-outside-coverage-hourly",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/pushalerts.lua:2350",
+  "channel": "reply-block",
+  "trigger": "hourly team line: buildings outside every roboport construction area; requesters outside logistic areas",
+  "sample": "outside every roboport's construction area on nauvis (robots do not build, repair or rebuild there): 40 (3 of them ghosts) in 2 areas",
+  "game_feature": "robots"
+ },
+ {
+  "id": "urgent-attack-near",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:253",
+  "channel": "wake",
+  "trigger": "our structures hit within 40 tiles of the sleeper",
+  "sample": "attack on our structures %d tiles from you: attack #N at (x,y): ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-enemy-group",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:269",
+  "channel": "wake",
+  "trigger": "enemy group gathering, target within 40 tiles of sleeper",
+  "sample": "enemy group of 12 (small-biter) gathered at (x,y), 80 tiles from you, heading for (x,y), 20 tiles from you",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-captive-spawner",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:283",
+  "channel": "wake",
+  "trigger": "captive spawner of the agent dying within 2 min or dead (pushalerts line)",
+  "sample": "captive spawners dying within 2 min ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-outpost-output-zero",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:303",
+  "channel": "wake",
+  "trigger": "outpost drills' ore output fell to 0/min after enemy losses",
+  "sample": "outpost output: iron-ore from drills at (x,y) is 0/min now, was about 60/min (4 drills destroyed by ...; loss incident #N)",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-buildings-lost",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:339",
+  "channel": "wake",
+  "trigger": "buildings destroyed by enemies in agent's claim or within 40 tiles",
+  "sample": "buildings destroyed in your claim #12 \"...\": loss #N at (x,y): 3 destroyed (...) by medium-biter",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-platform-lost-buildings",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:339",
+  "channel": "wake",
+  "trigger": "a platform the agent hears about lost buildings",
+  "sample": "platform Kestrel lost buildings: loss #N at (x,y): 2 destroyed (...)",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "urgent-platform-hub-damage",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:363",
+  "channel": "wake",
+  "trigger": "platform hub took damage",
+  "sample": "platform Kestrel: its hub took 120 damage, health 880 of 1000; hits by medium-carbonic-asteroid",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "urgent-teammate-death",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:381",
+  "channel": "wake",
+  "trigger": "teammate's character died on sleeper's surface",
+  "sample": "sol died at (x,y), killed by big-worm-turret, 30 tiles from you",
+  "game_feature": "team"
+ },
+ {
+  "id": "urgent-power-cut",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:218",
+  "channel": "wake",
+  "trigger": "pole loss left 3+ machines with no power on sleeper's surface (powercut.lua)",
+  "sample": "power cut #N: 5 machines left with no power",
+  "game_feature": "power"
+ },
+ {
+  "id": "urgent-power-collapse",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:397",
+  "channel": "wake",
+  "trigger": "network with 20+ machines newly half on low/no power",
+  "sample": "power collapse: electric #N near (x,y) has 30 of 40 machines on low or no power (10 low, 20 none)",
+  "game_feature": "power"
+ },
+ {
+  "id": "urgent-direct-wait-end",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:406",
+  "channel": "wake",
+  "trigger": "an urgent alert ends a direct wait_ticks/wait_until (last.why)",
+  "sample": "urgent: attack on our structures 20 tiles from you: ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-wait-poll",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18991",
+  "channel": "wake",
+  "trigger": "urgent alert since a body action's fh --wait began (status poll result.urgent)",
+  "sample": "(same urgent line; ends the CLI --wait)",
+  "game_feature": "biters"
+ },
+ {
+  "id": "urgent-held-alerts",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:582",
+  "channel": "other",
+  "trigger": "urgent alerts a wake {near}/radius filter held instead of waking (shown on wake)",
+  "sample": "held_alerts: [...] held_alerts_count",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-held-repeats",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:453",
+  "channel": "other",
+  "trigger": "repeats of known attacks held during an until=alert sleep, said on wake",
+  "sample": "held the repeats of attack #8793 (hit 6 more times) (known when the wait began; no new attackers or losses there)",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-respawned",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:456",
+  "channel": "wake",
+  "trigger": "dead sleeper's character respawned",
+  "sample": "woke=respawned",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-died",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:459",
+  "channel": "wake",
+  "trigger": "sleeper's character died (not traveling in pod/platform)",
+  "sample": "woke=died",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-damaged",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:479",
+  "channel": "wake",
+  "trigger": "sleeper's character took damage (health, lost, by)",
+  "sample": "woke=damaged; by=small-spitter, health=180, lost=70",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-fled",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:474",
+  "channel": "other",
+  "trigger": "character auto-walked away when hit while idle (runtime M.idle_hit), shown with the damaged wake",
+  "sample": "hit by small-biter at (x,y): walking away to (x,y)",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-spidertron-retreated",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:485",
+  "channel": "wake",
+  "trigger": "spidertron the agent sent/rides retreated by its guard (spiderroute.lua)",
+  "sample": "woke=spidertron_retreated; retreated 10s ago (guard: ...) from (x,y), health ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-urgent",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:490",
+  "channel": "wake",
+  "trigger": "an urgent.lua alert (default on; --no-urgent, --urgent-radius)",
+  "sample": "woke=urgent; urgent=attack on our structures ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-told",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:496",
+  "channel": "wake",
+  "trigger": "a tell (teammate, operator, reminder, harness alert with wake) arrived",
+  "sample": "woke=told; tell='sol: ...'; woke_by={kind=tell,seq,from}",
+  "game_feature": "team"
+ },
+ {
+  "id": "wake-told-already-unread",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:359",
+  "channel": "wake",
+  "trigger": "sleep started with tells already unread: ends at once",
+  "sample": "woke=told; already_unread=2",
+  "game_feature": "team"
+ },
+ {
+  "id": "wake-mentioned",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:508",
+  "channel": "wake",
+  "trigger": "@mention in game chat (or viewer @mention with wake_on_viewers)",
+  "sample": "woke=mentioned; mention='astra: @sol ...'; woke_by={kind=mention,...}",
+  "game_feature": "team"
+ },
+ {
+  "id": "wake-board",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:520",
+  "channel": "wake",
+  "trigger": "board item of the sleeper's assigned or changed by someone else (wake_on_board)",
+  "sample": "woke=board; board=<news line>",
+  "game_feature": "team"
+ },
+ {
+  "id": "wake-board-held",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:583",
+  "channel": "other",
+  "trigger": "board news held by --no-board-wake, listed on wake",
+  "sample": "board_held: [...], board_held_count",
+  "game_feature": "team"
+ },
+ {
+  "id": "wake-eggs",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:523",
+  "channel": "wake",
+  "trigger": "eggs on surface or built by sleeper hatch within 5 min (spoil.lua)",
+  "sample": "woke=eggs; eggs=<hatch line>",
+  "game_feature": "spoilage"
+ },
+ {
+  "id": "wake-alert-until-alert",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:530",
+  "channel": "wake",
+  "trigger": "fh sleep --until alert: new attack, group or enemy-base news (optional area/min_size filter)",
+  "sample": "a new attack, enemy group or enemy base alert (your next reply's team alerts)",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-alert-nest-news",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/urgent.lua:493",
+  "channel": "wake",
+  "trigger": "until=alert matched a nest charted / pollution reached nest",
+  "sample": "pollution reached nest (x,y), 3 spawners",
+  "game_feature": "biters"
+ },
+ {
+  "id": "wake-alert-kinds",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:538",
+  "channel": "wake",
+  "trigger": "sleep --until alert kinds: a chosen pushalerts kind group new or grown",
+  "sample": "woke=alert; alert=<pushalerts group text>",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-starved",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:550",
+  "channel": "wake",
+  "trigger": "until starved: machine in claims newly lacking ingredients (checked 10 s)",
+  "sample": "woke=alert; alert=<starved machine line>; its feeder off by its condition while its source holds the item",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-condition",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:557",
+  "channel": "wake",
+  "trigger": "sleep --until condition met",
+  "sample": "woke=condition; saw=...; met=...",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-queue-done",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:432",
+  "channel": "wake",
+  "trigger": "agent's queue (or remote lane) finished",
+  "sample": "woke=queue_done; queue='finished; 1 guard still armed ...'",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-queue-stalled",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:422",
+  "channel": "wake",
+  "trigger": "queue paused/failed or a moving step didn't move the character",
+  "sample": "woke=queue_stalled; queue='move_to has not moved your character for 30 s (at x,y)'",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-elapsed",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:567",
+  "channel": "wake",
+  "trigger": "sleep's time ran out",
+  "sample": "woke=elapsed",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-waited-now",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:587",
+  "channel": "other",
+  "trigger": "woken by something other than its condition: each waited condition re-read",
+  "sample": "waited_now: ['platform X at nauvis: not met now (...)']",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-watch-flags",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:576",
+  "channel": "other",
+  "trigger": "late, stalled, invalid or unread watches listed on any wake",
+  "sample": "watches: [...]",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-open-line",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:628",
+  "channel": "other",
+  "trigger": "on reading a wake: open items line (open.lua)",
+  "sample": "open=<what is open near you>",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-personal-requests",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua:634",
+  "channel": "other",
+  "trigger": "sleep ended early: personal logistic requests still unfilled",
+  "sample": "personal_requests: [item held, on the way, why]",
+  "game_feature": "robots"
+ },
+ {
+  "id": "clock-line",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18727",
+  "channel": "reply-block",
+  "trigger": "every reply: game time, time since last request, character idle share",
+  "sample": "game 12h03m; +2m10s since your last request, character idle 1m50s of it (85%, ...); hand crafting 0s queued",
+  "game_feature": "none"
+ },
+ {
+  "id": "replaced-action",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18944",
+  "channel": "reply-block",
+  "trigger": "this call replaced a running action",
+  "sample": "replaced=<what the replaced action had done>",
+  "game_feature": "none"
+ },
+ {
+  "id": "repeated-empty-move",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18691",
+  "channel": "reply-block",
+  "trigger": "same item move moved nothing 3+ times in 7 min",
+  "sample": "transfer 3 times in 7 min with nothing moved (same target and item)",
+  "game_feature": "none"
+ },
+ {
+  "id": "corrected-call",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18916",
+  "channel": "reply-block",
+  "trigger": "known wrong argument names auto-corrected (aliases.lua)",
+  "sample": "corrected=craft {item...} (count was n)",
+  "game_feature": "none"
+ },
+ {
+  "id": "lessons-matched",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:1797",
+  "channel": "reply-block",
+  "trigger": "board lessons whose keys match the call (2, or 1 'before this:' for consequential calls)",
+  "sample": "before this: lesson #12 ...; check met 2h ago (resolved) (matched: load_silo)",
+  "game_feature": "none"
+ },
+ {
+  "id": "ground-rule-applies",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/lessonbook.lua:315",
+  "channel": "reply-block",
+  "trigger": "call places/crafts/requests/configures an entity a ground rule applies_to (once per RULE_EVERY)",
+  "sample": "rule 8 (by sol) applies to electric-mining-drill: Use big mining drills by default for new ore outposts",
+  "game_feature": "none"
+ },
+ {
+  "id": "operator-lines",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18960 (printed as OPERATOR: by host/cli.ts:447)",
+  "channel": "reply-block",
+  "trigger": "operator tells ride every reply until next game action/message (fh prints OPERATOR:)",
+  "sample": "operator: [{seq, ago_s, text}]",
+  "game_feature": "stream"
+ },
+ {
+  "id": "inbox-wait-poll",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18969",
+  "channel": "wake",
+  "trigger": "fh --wait status poll learns a tell/mention/viewer @ arrived (ends the CLI wait)",
+  "sample": "inbox={tick,woke='told',from}; inbox_wake; inbox_viewer",
+  "game_feature": "team"
+ },
+ {
+  "id": "standing-orders-line",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/orders.lua:292",
+  "channel": "reply-block",
+  "trigger": "every reply: which standing order runs/why or what it waits for",
+  "sample": "orders='refuel running (fuel under 5), step 2/3' / 'paused (orders_resume)'",
+  "game_feature": "none"
+ },
+ {
+  "id": "board-focus",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:19014",
+  "channel": "reply-block",
+  "trigger": "agent's board focus, in team block once per 10 game min (status always)",
+  "sample": "team.focus=<focus item progress line>",
+  "game_feature": "team"
+ },
+ {
+  "id": "unanswered-owed",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/owed.lua:149",
+  "channel": "reply-block",
+  "trigger": "every reply: oldest message owed an answer",
+  "sample": "2 unanswered (oldest 4m ago: astra (tell) #812: \"...?\"); reply_to: 812 answers it ..., chat_ack {seq: 812} closes it",
+  "game_feature": "team"
+ },
+ {
+  "id": "moved-by",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:19026",
+  "channel": "reply-block",
+  "trigger": "queue steps/standing orders walked the character since last reply",
+  "sample": "moved_by=<where queue steps took you>",
+  "game_feature": "none"
+ },
+ {
+  "id": "chat-remaining",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:19049",
+  "channel": "reply-block",
+  "trigger": "a chat read left messages unread: repeated until read",
+  "sample": "team.chat_remaining=...",
+  "game_feature": "team"
+ },
+ {
+  "id": "harness-updated",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/carry.lua:270",
+  "channel": "reply-block",
+  "trigger": "hot runtime install: what was running and how it was carried over",
+  "sample": "<action> and ended <outcome> at tick N; this runtime could not report the rest (...)",
+  "game_feature": "none"
+ },
+ {
+  "id": "queue-rounds",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/scheduler.lua:635",
+  "channel": "reply-block",
+  "trigger": "repeating plan's rounds with short steps changed",
+  "sample": "team.queue=<round news>",
+  "game_feature": "none"
+ },
+ {
+  "id": "queue-paused-failed-call",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/scheduler.lua:870",
+  "channel": "reply-block",
+  "trigger": "a failed direct call keeps the queue paused",
+  "sample": "your queue is paused since your craft failed 40s ago (...): queue_resume resumes it",
+  "game_feature": "none"
+ },
+ {
+  "id": "shift-block",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/research.lua:336",
+  "channel": "reply-block",
+  "trigger": "first reply of a shift: plan goals, projects, research since last shift, researched none built, networks, retro, teammates, ground rules",
+  "sample": "team.shift={plan_goals, projects, research..., networks, retro, teammates, ground_rules}",
+  "game_feature": "research"
+ },
+ {
+  "id": "shift-out-of-ore",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:19066",
+  "channel": "reply-block",
+  "trigger": "shift block: drills out of ore per surface (pushalerts.out_of_ore_line)",
+  "sample": "(networks list) + drills out of ore line",
+  "game_feature": "none"
+ },
+ {
+  "id": "self-review-due",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/selfview.lua:372",
+  "channel": "reply-block",
+  "trigger": "agent's own review every 2 game hours",
+  "sample": "team.review=<review prompt>",
+  "game_feature": "none"
+ },
+ {
+  "id": "chat-unread-trailer",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/chat.lua:306",
+  "channel": "reply-block",
+  "trigger": "newer unread game-chat message (status always)",
+  "sample": "chat={unread, to_you, latest='astra: ...', read_with='chat (chat_ack does not mark chat lines read)'}",
+  "game_feature": "team"
+ },
+ {
+  "id": "missed-wakes",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/missed.lua:1",
+  "channel": "reply-block",
+  "trigger": "a sleep/wait started too soon after a wake reply: what it showed is repeated once",
+  "sample": "missed=<tells/mentions/board/eggs the agent skipped>",
+  "game_feature": "team"
+ },
+ {
+  "id": "team-mentions-tells",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2625",
+  "channel": "reply-block",
+  "trigger": "unread @mentions and tells in the team block",
+  "sample": "team.mentions / team.tells",
+  "game_feature": "team"
+ },
+ {
+  "id": "team-held-for-main",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2623",
+  "channel": "reply-block",
+  "trigger": "helper subagent call: tells wait for the main session",
+  "sample": "3 tells or mentions wait for your main session (shown to it, not to a helper)",
+  "game_feature": "team"
+ },
+ {
+  "id": "team-board-lines",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2362",
+  "channel": "reply-block",
+  "trigger": "board news: own items, unowned requests passing 2 min",
+  "sample": "2 open requests nobody owns (oldest 3m: #41 ...); take one with board_update {id, owner: \"sol\"}",
+  "game_feature": "team"
+ },
+ {
+  "id": "team-research-done",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/research.lua:130",
+  "channel": "reply-block",
+  "trigger": "research finished since last reply",
+  "sample": "research done: logistic-robotics (2m ago)",
+  "game_feature": "research"
+ },
+ {
+  "id": "team-science-line",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/scienceline.lua:294",
+  "channel": "reply-block",
+  "trigger": "labs, limiting pack and its first short step (every 5 min when changed)",
+  "sample": "team.science=<labs and limiting pack line>",
+  "game_feature": "research"
+ },
+ {
+  "id": "team-reminder-stream-note",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2590",
+  "channel": "reply-block",
+  "trigger": "once per agent/version: who hears what on the stream",
+  "sample": "stream: viewers hear your say --aloud lines and confessions, spoken in your voice, ...",
+  "game_feature": "stream"
+ },
+ {
+  "id": "team-reminder-operator-note",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2594",
+  "channel": "reply-block",
+  "trigger": "once per agent: how to reach the operator",
+  "sample": "operator: ./fh operator \"text\" files a request with the operator, the people running the harness and the stream ...",
+  "game_feature": "stream"
+ },
+ {
+  "id": "team-reminder-profile",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2610",
+  "channel": "reply-block",
+  "trigger": "profile display_name/glyph/color not set (repeats every REMIND_EVERY)",
+  "sample": "profile: viewers see you by display_name, glyph and color; set them once with profile {display_name, glyph, color, motto}",
+  "game_feature": "stream"
+ },
+ {
+  "id": "team-spidertron-retreated",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/spiderroute.lua:488",
+  "channel": "reply-block",
+  "trigger": "spidertron's guard sent it back",
+  "sample": "retreated 1m ago (guard: health under 50%) from (x,y), health 400; its route became ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-character-hit",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2420",
+  "channel": "push",
+  "trigger": "agent's own character hit by enemies",
+  "sample": "you were hit 4 times (120 damage) by small-spitter, 20s ago; health 130",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-eggs-hatching",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/spoil.lua:620",
+  "channel": "push",
+  "trigger": "eggs on agent's surface or built by it hatch within 5 min",
+  "sample": "eggs hatching on gleba: 40 within 5 min in 3 holders; the first: ...; eggs {surface: \"gleba\"} lists each holder",
+  "game_feature": "spoilage"
+ },
+ {
+  "id": "alert-death-corpse",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:1161",
+  "channel": "push",
+  "trigger": "a death of ours left a corpse with items",
+  "sample": "sol died at (x,y) on nauvis 30s ago: the corpse holds 120 items ...",
+  "game_feature": "team"
+ },
+ {
+  "id": "alert-landed-pods",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/landed.lua:178",
+  "channel": "push",
+  "trigger": "landed cargo pods on the ground, once an hour",
+  "sample": "Nauvis: 3 landed cargo pods hold 1,200 items (...)",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-attack-incident",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/threat.lua:1136",
+  "channel": "push",
+  "trigger": "enemy attack incident on our structures (repeats as 'continues')",
+  "sample": "attack #6942 at (x,y): a group of 12 that gathered at (x,y) from nest (x,y) 90 tiles NE hit 14 times, 800 damage, ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-pollution-reached-nest",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/threat.lua:743",
+  "channel": "push",
+  "trigger": "pollution reached an enemy nest",
+  "sample": "pollution reached nest (x,y), 3 spawners: 400 tiles NE of base centre (0,0), 120 tiles NE of our nearest building",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-enemy-group",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2478",
+  "channel": "push",
+  "trigger": "enemy group gathered with a target (max 2)",
+  "sample": "enemy group of 20 gathered at (x,y) heading for (x,y), 30s ago",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-losses",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:2782",
+  "channel": "push",
+  "trigger": "buildings lost (loss incidents) unseen by this agent",
+  "sample": "losses #N at (x,y): 5 destroyed (stone-wall x4, gun-turret) by medium-biter",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-ground-pad-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/ground.lua:294",
+  "channel": "push",
+  "trigger": "cargo landing pad full and pods spill nearby (grows 1.5x to repeat)",
+  "sample": "cargo landing pad at (x,y) on nauvis is full (80/80 slots) and pods spill within 10 tiles: ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-ground-piles",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/ground.lua:308",
+  "channel": "push",
+  "trigger": "100+ item stacks on the ground near our buildings",
+  "sample": "items on the ground at (x,y)-(x,y) on nauvis, near our buildings: ...",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-power-cut-lines",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/powercut.lua:339",
+  "channel": "push",
+  "trigger": "pole death cut machines off from power (each cut once, max 3 lines)",
+  "sample": "power cut #245: ... machines no other pole reached ...; the missing link: small-electric-pole (x,y) (ghost there)",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-launch-platform-left",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/launchwatch.lua:86",
+  "channel": "push",
+  "trigger": "platform left (or leaves by time wait) while a launch to it waits for its rocket",
+  "sample": "launch: platform Wren left gleba while sol's launch to it waits at the rocket silo (x,y) ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-turret-targeting",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/turretwatch.lua:44",
+  "channel": "push",
+  "trigger": "turret built from a ghost read other targeting than the ghost; harness resets it",
+  "sample": "turret targeting: rocket-turret built at (x,y) on Kestrel read default; set to the ghost's: big asteroids",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "alert-board-progress",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/progress.lua:198",
+  "channel": "push",
+  "trigger": "owner's 10-minute line on each owned board item (stale/no progress)",
+  "sample": "board #41 iron outpost (doing): progress seen: ...; the focused item shows no progress across 3 checks",
+  "game_feature": "team"
+ },
+ {
+  "id": "alert-board-item-takeable",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/progress.lua:256",
+  "channel": "push",
+  "trigger": "owned item idle: anyone may take it",
+  "sample": "anyone may take it once sol has made no request for 30 min (...)",
+  "game_feature": "team"
+ },
+ {
+  "id": "alert-mixed-watch",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/mixed.lua:167",
+  "channel": "push",
+  "trigger": "a watch split by an edit inside what it measures",
+  "sample": "mixed: 2 edits during the window, the first at tick N (...); ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-shipment",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/shipment.lua:875",
+  "channel": "push",
+  "trigger": "shipment delivered, waiting on gate, or landed with no pad",
+  "sample": "shipment: thruster-fuel from nauvis delivered to Kestrel (the hub holds 200 of 200 asked)",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-delivery-watch",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/delivwatch.lua:502",
+  "channel": "push",
+  "trigger": "delivery watch blocked/at risk/diverted/arrived/deadline passed (to setter)",
+  "sample": "delivery watch #7 (200 iron-plate to cargo-landing-pad (x,y) on nauvis): blocked: ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-spidertron-route",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/spiderroute.lua:714",
+  "channel": "push",
+  "trigger": "spidertron sent by go_to makes no progress or moves again",
+  "sample": "spidertron #N at (x,y): <route line>; stalled ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "alert-flight-watch",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/flightwatch.lua:1103",
+  "channel": "push",
+  "trigger": "flight watch began at departure or ended (to setter)",
+  "sample": "flight watch #3 on Kestrel began: it left for nauvis->gleba; watching ...",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "alert-burner-fuel",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/burnerfuel.lua:160",
+  "channel": "push",
+  "trigger": "hand-fed burner machines run dry within 10 min",
+  "sample": "stone-furnace near (x,y), fed by hand or by order (no inserter brings them fuel): 3 run dry within 10 min ...",
+  "game_feature": "power"
+ },
+ {
+  "id": "alert-personal-no-robots",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/personal.lua:144",
+  "channel": "push",
+  "trigger": "personal request unfilled in a network with no logistic robots",
+  "sample": "your personal requests iron-plate 0 of 100 are unfilled: logistic network #4 where you stand has no logistic robots",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-queue-paused-at-submit",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:5406",
+  "channel": "push",
+  "trigger": "plan paused on a step failing in its first seconds",
+  "sample": "your queue paused 2s after plan 391 was submitted: step 3 requests failed: ...; queue_resume runs the rest",
+  "game_feature": "none"
+ },
+ {
+  "id": "alert-robots-built-unpowered",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:5348",
+  "channel": "push",
+  "trigger": "entity robots built from agent's ghost has no power/pole or no logistic network",
+  "sample": "assembling-machine-2 (x,y) your robots built has no pole reaching it: no power",
+  "game_feature": "robots"
+ },
+ {
+  "id": "alert-drops",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/drops.lua:386",
+  "channel": "push",
+  "trigger": "drops agent sent: still descending, landed or lost",
+  "sample": "drop #4 from Kestrel to nauvis: still descending (20s ago, aimed near (x,y)); pods scatter ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "alert-platform-stopped-left",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/freight.lua:1468",
+  "channel": "push",
+  "trigger": "platform stopped at or left agent's planet",
+  "sample": "platform Kestrel stopped at nauvis, your planet, 30s ago",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-hits",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:689",
+  "channel": "push",
+  "trigger": "hits on platform entities (once a minute per reader)",
+  "sample": "platform Kestrel hit 12 times, 340 damage, last 5s ago: ...",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-hits-rising",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:702",
+  "channel": "push",
+  "trigger": "hits per minute rising",
+  "sample": "platform Kestrel: hits per minute rising, 20 in the last minute, 4 a minute over the 5 before",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-turrets-empty-low",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:712",
+  "channel": "push",
+  "trigger": "platform gun turrets empty or under 10 ammo",
+  "sample": "platform Kestrel: 4 of 5 gun-turrets empty, 1 low (...); turrets hold 3 magazines, the hub 920 ...",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-turrets-starving-feed",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:743",
+  "channel": "push",
+  "trigger": "turrets under 20 ammo with nothing coming while 20+ stranded aboard",
+  "sample": "platform Kestrel: 2 turrets in (..) can reach under 20 magazines and nothing more comes ...; platform_defense traces each feed",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-slow-thrust",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:759",
+  "channel": "push",
+  "trigger": "platform flying under 5 km/s (or backwards) on two scans",
+  "sample": "platform Kestrel flies at 2 km/s (under 5) on nauvis->gleba: thruster lacks oxidizer ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "plat-fuel-urgent",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:777",
+  "channel": "push",
+  "trigger": "thruster fuel/oxidizer runs out before the leg ends (urgent)",
+  "sample": "platform Kestrel: urgent: thruster-fuel runs out before the leg ends (...)",
+  "game_feature": "space"
+ },
+ {
+  "id": "plat-fuel-advisory",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:780",
+  "channel": "push",
+  "trigger": "projected thruster fluid shortage (advisory)",
+  "sample": "platform Kestrel: advisory: thruster-oxidizer projected to run out before the leg ends at the rates over the last 60 s ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "plat-no-repair-packs",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:790",
+  "channel": "push",
+  "trigger": "no repair packs in hub while hit or damaged",
+  "sample": "platform Kestrel: no repair packs in the hub (the game repairs platform entities only with hub repair packs), and it was hit 1m ago",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-hub-health-falling",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/platalerts.lua:802",
+  "channel": "push",
+  "trigger": "platform hub health falling",
+  "sample": "platform Kestrel hub health 700/1000, down 120 in 2m00s",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "plat-own-fire-loss",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:2577",
+  "channel": "wake",
+  "trigger": "our own turret destroyed a platform entity (tell with wake to platform listeners)",
+  "sample": "platform Wayfarer: our own railgun-turret at (x,y) destroyed cargo-bay at (x,y) (loss #N); platform_defense gives its line of fire",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "tell-hub-full",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/hubfull.lua:44",
+  "channel": "wake",
+  "trigger": "platform hub too full for the payload a silo rocket waits for",
+  "sample": "hub full: Spindle waits at vulcanus with 2 free hub slots; the science payload a rocket from rocket-silo (x,y) waits for takes 4; the hub holds ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "tell-belt-cut",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:1281",
+  "channel": "wake",
+  "trigger": "belts carrying items destroyed (to claim owner or nearest)",
+  "sample": "4 belts carrying items destroyed (4 by small-biter) in your claim #12: ... (they carried iron-plate); a ghost stands where each was ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "tell-burner-stopped",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/seeds.lua:163",
+  "channel": "wake",
+  "trigger": "burner machine stopped by full burnt-result slot (to builder)",
+  "sample": "burner alert: biochamber (x,y) on gleba making nutrients stopped: ...",
+  "game_feature": "fluids"
+ },
+ {
+  "id": "tell-seed-state",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/seeds.lua:199",
+  "channel": "wake",
+  "trigger": "seed (eggs/bacteria) state change in machines (to builders)",
+  "sample": "seed alert: <seed state line>",
+  "game_feature": "spoilage"
+ },
+ {
+  "id": "tell-artillery-flare",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/artillery.lua:313",
+  "channel": "push",
+  "trigger": "artillery flare result after CONFIRM seconds (to flare setter)",
+  "sample": "artillery flare at (x,y), 10 s on: the flare is gone (its shots were taken); shells gone from artillery-turret ...",
+  "game_feature": "biters"
+ },
+ {
+  "id": "tell-owed-reminder",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/owed.lua:161",
+  "channel": "wake",
+  "trigger": "a question to the agent unanswered for 10 game min",
+  "sample": "reminder: unanswered: astra asked you 10m ago and has no answer yet: \"...?\" (say naming them, or chat_ack {seq: 812})",
+  "game_feature": "team"
+ },
+ {
+  "id": "tell-edit-changed",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/editlog.lua:114",
+  "channel": "push",
+  "trigger": "a teammate changed a setting this agent set last",
+  "sample": "changed what you set last: <key old -> new>",
+  "game_feature": "team"
+ },
+ {
+  "id": "tell-supply-left",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/freightpath.lua:196",
+  "channel": "push",
+  "trigger": "another agent's call left supply without an active delivery path (to the link's last editor)",
+  "sample": "sol's configure left supply without an active delivery path: ...",
+  "game_feature": "space"
+ },
+ {
+  "id": "tell-platform-schedule-recheck",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/space.lua:2329",
+  "channel": "push",
+  "trigger": "platform_schedule recheck result after a delay",
+  "sample": "<schedule recheck line or error> (from platform_schedule)",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "tell-lane-closed",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/queue_lanes.lua:220",
+  "channel": "push",
+  "trigger": "platform queue lane closed: no platform with that name (fyi, no wake)",
+  "sample": "your platform lane platform:Kestrel is closed: no platform of ours is named Kestrel (read since tick N). It held ...",
+  "game_feature": "platforms"
+ },
+ {
+  "id": "tell-reminder-run",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/reminders.lua:660",
+  "channel": "wake",
+  "trigger": "agent's reminder/checklist job due (tell from reminder #N)",
+  "sample": "review (sol, every 30 min): check ammo; reminder_ack {id: 7, result} records the result",
+  "game_feature": "none"
+ },
+ {
+  "id": "tell-reminder-backup-missed",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/reminders.lua:685",
+  "channel": "wake",
+  "trigger": "recipient missed a reminder run: told to the backup/owner",
+  "sample": "sol missed a run of reminder #7 review (...; you are its backup): not acknowledged since tick N ...",
+  "game_feature": "team"
+ },
+ {
+  "id": "tell-teammate",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/tells.lua:1",
+  "channel": "wake",
+  "trigger": "teammate's tell (wake unless fyi)",
+  "sample": "team.tells: sol: ...",
+  "game_feature": "team"
+ },
+ {
+  "id": "tell-operator",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/tells.lua:212",
+  "channel": "wake",
+  "trigger": "operator tell (tools/idle_nudge.py etc.) - also rides every reply as operator lines",
+  "sample": "from operator: <text>",
+  "game_feature": "stream"
+ },
+ {
+  "id": "mention-chat",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2028",
+  "channel": "wake",
+  "trigger": "game chat line naming the agent (@name, @everyone, or name)",
+  "sample": "team.mentions: astra: @sol can you ...",
+  "game_feature": "team"
+ },
+ {
+  "id": "mention-viewer",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:2045",
+  "channel": "wake",
+  "trigger": "viewer chat line @-naming the agent (relayed by stream; wakes only wake_on_viewers)",
+  "sample": "viewer @mention: ...",
+  "game_feature": "stream"
+ },
+ {
+  "id": "alert-robots-lost",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/robotloss.lua:175",
+  "channel": "push",
+  "trigger": "our robots killed by enemies on their routes (pushalerts group robots_lost)",
+  "sample": "robots lost to enemies on their routes",
+  "game_feature": "robots"
+ },
+ {
+  "id": "refusal-example-call",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18336",
+  "channel": "refusal-hint",
+  "trigger": "argument refusal: appends a call that works",
+  "sample": "...; e.g. fh call launch --args '{\"position\":{...}}'",
+  "game_feature": "none"
+ },
+ {
+  "id": "refusal-unknown-argument",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18279",
+  "channel": "refusal-hint",
+  "trigger": "unknown argument: names the valid ones",
+  "sample": "unknown argument cnt for craft: ...; valid: item, count, ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "refusal-configure-takes",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18469",
+  "channel": "refusal-hint",
+  "trigger": "configure/circuit_set unknown arg: what the entity at the position takes",
+  "sample": "; inserter at (x,y) takes: filters, filter_mode ...; and position, name, unit_number, platform, surface",
+  "game_feature": "circuits"
+ },
+ {
+  "id": "refusal-silo-list",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18436",
+  "channel": "refusal-hint",
+  "trigger": "launch/load_silo refusal lists silos on the surface",
+  "sample": "launch takes the silo: position (or unit_number); e.g. fh call launch --args '...'; silos on nauvis: rocket-silo (x,y) rocket ready",
+  "game_feature": "space"
+ },
+ {
+  "id": "refusal-surface-list",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18485",
+  "channel": "refusal-hint",
+  "trigger": "bad/unknown surface arg: lists surfaces",
+  "sample": "...; surfaces: nauvis, vulcanus, or a platform's (platform-N, or its name ...)",
+  "game_feature": "none"
+ },
+ {
+  "id": "refusal-ran-as",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:18903",
+  "channel": "refusal-hint",
+  "trigger": "a corrected call that still fails says how it ran",
+  "sample": "... [ran as craft {...}: count was n]",
+  "game_feature": "none"
+ },
+ {
+  "id": "refusal-argshapes",
+  "source": "vendor/factorio-harness/mod/agent-harness_0.1.0/argshapes.lua:1",
+  "channel": "refusal-hint",
+  "trigger": "list-of-record args checked field by field; refusal names fields and per-field hints",
+  "sample": "field count: min is how much it asks for, max caps it",
+  "game_feature": "none"
+ },
+ {
+  "id": "clock-deadline",
+  "source": "vendor/factorio-harness/host/cli.ts:410 (deadline.ts:34)",
+  "channel": "reply-block",
+  "trigger": "workspace has a deadline file; appended to the runtime's clock line on every reply",
+  "sample": "clock: ...; deadline in 1h20m",
+  "game_feature": "none"
+ },
+ {
+  "id": "clock-slow-game",
+  "source": "vendor/factorio-harness/host/pace.ts:75 (cli.ts:565)",
+  "channel": "reply-block",
+  "trigger": "game measured under the slow tick rate in the last 3 min; appended to clock line",
+  "sample": "game speed 18 ticks/s, 30% of normal",
+  "game_feature": "none"
+ },
+ {
+  "id": "wait-slow-game",
+  "source": "vendor/factorio-harness/host/cli.ts:1302",
+  "channel": "reply-block",
+  "trigger": "a sleep/--wait ran while the game was slow; slow_game field on the wait reply",
+  "sample": "slow_game: 18 ticks/s, 30% of normal",
+  "game_feature": "none"
+ },
+ {
+  "id": "outage-ended",
+  "source": "vendor/factorio-harness/host/pace.ts:50",
+  "channel": "reply-block",
+  "trigger": "first reply after the game was unreachable (once)",
+  "sample": "the game was unreachable from 13:35 to about 13:41 (6m02s; the last failed call at 13:40: ...)",
+  "game_feature": "none"
+ },
+ {
+  "id": "rollback-redo",
+  "source": "vendor/factorio-harness/host/cli.ts:549",
+  "channel": "reply-block",
+  "trigger": "reply tick far below last seen (server restarted from a save); lists journal calls to redo",
+  "sample": "the game rolled back from tick X to tick Y or earlier (the server restarted from a save): what you did after 13:35 is gone; redo lists ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "game-unreachable",
+  "source": "vendor/factorio-harness/host/cli.ts:553",
+  "channel": "refusal-hint",
+  "trigger": "RCON unavailable; error names since when, nothing sent",
+  "sample": "game unreachable since 13:35 (2m10s): ...; the request was not sent (nothing was done)",
+  "game_feature": "none"
+ },
+ {
+  "id": "outcome-unknown-recovery",
+  "source": "vendor/factorio-harness/host/cli.ts:558",
+  "channel": "refusal-hint",
+  "trigger": "request sent but no answer within retry budget; recovery advice",
+  "sample": "fh sent it again with the same ID for 60 s without an answer. Inspect status/state. Retry only the same action, args, player and ID (--id) ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "retried-note",
+  "source": "vendor/factorio-harness/host/cli.ts:2075",
+  "channel": "reply-block",
+  "trigger": "game answered only after same-ID resends",
+  "sample": "retried: the game did not answer at first (...); sent again with the same ID 2 times over 9 s: this is the game's one answer to it",
+  "game_feature": "none"
+ },
+ {
+  "id": "poll-open",
+  "source": "vendor/factorio-harness/host/polls.ts:20 (cli.ts:600)",
+  "channel": "reply-block",
+  "trigger": "a stream-site poll opens; team.poll line once per poll",
+  "sample": "poll #12 open on the stream's site, closes in 45 min: <question> Options: 0 ...; 1 .... Vote: ./fh poll vote --args ...",
+  "game_feature": "stream"
+ },
+ {
+  "id": "run-target",
+  "source": "vendor/factorio-harness/host/target.ts:36 (cli.ts:592)",
+  "channel": "reply-block",
+  "trigger": "runs/RUN/target.json set; first line of every status reply",
+  "sample": "Target (Nick, soft): the Shattered Planet by Fri Oct 30 23:59 PDT, 81 h 30 m from now; the run's end is not fixed.",
+  "game_feature": "space"
+ },
+ {
+  "id": "lookahead-block",
+  "source": "vendor/factorio-harness/host/cli.ts:1222 (lookahead.ts)",
+  "channel": "reply-block",
+  "trigger": "about every 45 real min per agent (not first 20 min); runtime lookahead read + time left in shift",
+  "sample": "lookahead: [...lines]; time left in the shift: 1h20m",
+  "game_feature": "none"
+ },
+ {
+  "id": "corrected-cli",
+  "source": "vendor/factorio-harness/host/cli.ts:1114,677",
+  "channel": "reply-block",
+  "trigger": "fh ACTION typed without call, or sleep/wait asked over 900 s; corrected field",
+  "sample": "corrected: fh transfer runs as fh call transfer; asked 1150 s; capped at the 900 s maximum",
+  "game_feature": "none"
+ },
+ {
+  "id": "warning-line",
+  "source": "vendor/factorio-harness/host/format.ts:169",
+  "channel": "reply-block",
+  "trigger": "partial results (short, awaiting_craft, tiles_refused, corrected ...) moved to a final warning: line",
+  "sample": "warning: none held; tiles refused 3",
+  "game_feature": "none"
+ },
+ {
+  "id": "paged-more",
+  "source": "vendor/factorio-harness/host/format.ts:233",
+  "channel": "reply-block",
+  "trigger": "compact reply over FH_PAGE_BYTES (8000)",
+  "sample": "[42 more lines, 6 KB: ./fh more]",
+  "game_feature": "none"
+ },
+ {
+  "id": "reference-hint",
+  "source": "vendor/factorio-harness/host/reference.ts:80",
+  "channel": "refusal-hint",
+  "trigger": "argument refusal or unknown action; appends ref topic / similar names",
+  "sample": "unknown argument foo (reference: ./fh help analysis)",
+  "game_feature": "none"
+ },
+ {
+  "id": "flag-refusal",
+  "source": "vendor/factorio-harness/host/cli.ts:794",
+  "channel": "refusal-hint",
+  "trigger": "unknown or misplaced CLI flag; names the command's flags and where the flag belongs",
+  "sample": "fh sleep does not take --fyi (--fyi is for fh tell); nothing was sent. fh sleep takes --until, ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "wake-line",
+  "source": "vendor/factorio-harness/host/cli.ts:374",
+  "channel": "wake",
+  "trigger": "fh wait --until / sleep ends; formats the runtime's woke reason, detail and woke_by",
+  "sample": "woke: told after 42 s (...); woke_by: tell #92032 from astra; your next reply's team block has the rest",
+  "game_feature": "team"
+ },
+ {
+  "id": "require-met-line",
+  "source": "vendor/factorio-harness/host/cli.ts:396",
+  "channel": "wake",
+  "trigger": "--require-met wait woke on something other than its condition",
+  "sample": "condition not met: woke told after 30 s",
+  "game_feature": "none"
+ },
+ {
+  "id": "wait-interrupted",
+  "source": "vendor/factorio-harness/host/cli.ts:1531",
+  "channel": "wake",
+  "trigger": "an action's --wait ended early by an urgent alert, a tell/mention or inbox item",
+  "sample": "interrupted: {inbox: {woke: urgent, from: ...}, active}",
+  "game_feature": "team"
+ },
+ {
+  "id": "told-during-wait",
+  "source": "vendor/factorio-harness/host/cli.ts:1607",
+  "channel": "reply-block",
+  "trigger": "--wait-through-tells: tells that arrived during the wait listed at the end",
+  "sample": "told_during_wait: [...]",
+  "game_feature": "team"
+ },
+ {
+  "id": "still-running-exit3",
+  "source": "vendor/factorio-harness/host/cli.ts:660",
+  "channel": "other",
+  "trigger": "wait ended (tell/timeout) while the action still runs; stderr note, exit 3",
+  "sample": "still running (exit 3): move_to goes on after this wait ended (a walk keeps walking); fh wait resumes waiting for it ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "wait-timeout-still-running",
+  "source": "vendor/factorio-harness/host/cli.ts:1291",
+  "channel": "refusal-hint",
+  "trigger": "--wait budget elapsed before action finished",
+  "sample": "collect is STILL RUNNING: the wait gave up after 62 s but the action has not finished. A new character action would interrupt it. Keep waiting with 'fh wait' ..",
+  "game_feature": "none"
+ },
+ {
+  "id": "sleep-replaced",
+  "source": "vendor/factorio-harness/host/cli.ts:1798",
+  "channel": "wake",
+  "trigger": "a newer sleep/wait from the same agent replaced this one",
+  "sample": "replaced: a newer sleep began 3 s after this one (tick N), for 60 s ...; that call reports its own wake",
+  "game_feature": "none"
+ },
+ {
+  "id": "sleep-deadline-cut",
+  "source": "vendor/factorio-harness/host/cli.ts:1810",
+  "channel": "wake",
+  "trigger": "sleep capped at the workspace deadline",
+  "sample": "woke: deadline; note: this sleep was cut to end at the deadline",
+  "game_feature": "none"
+ },
+ {
+  "id": "sleep-paused",
+  "source": "vendor/factorio-harness/host/cli.ts:1815",
+  "channel": "wake",
+  "trigger": "no game tick for 20 s during a sleep (game paused/stopped)",
+  "sample": "sleep ended: no game tick passed for 20 s (the game is paused or stopped); the game advanced 12 of the 60 s asked ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "sleep-slow-timeout",
+  "source": "vendor/factorio-harness/host/cli.ts:1817",
+  "channel": "wake",
+  "trigger": "sleep exceeded 3x SECONDS+60 s real time with the game slow",
+  "sample": "sleep timed_out: the game advanced 40 of the 60 s asked in 240 s of real time (slow_game: ...)",
+  "game_feature": "none"
+ },
+ {
+  "id": "board-held",
+  "source": "vendor/factorio-harness/host/cli.ts:1700",
+  "channel": "reply-block",
+  "trigger": "--no-board-wake: board changes held during a sleep listed (stderr on old runtimes)",
+  "sample": "board_held: [...]",
+  "game_feature": "team"
+ },
+ {
+  "id": "repeats-trim",
+  "source": "vendor/factorio-harness/host/repeats.ts:33",
+  "channel": "other",
+  "trigger": "host suppresses unchanged orders:/lessons lines shown <10 min ago (gates the runtime's lesson and orders blocks)",
+  "sample": "(no text: decides when 'orders: ...' and 'lesson #N ...' reappear)",
+  "game_feature": "none"
+ },
+ {
+  "id": "ground-rules-agents-md",
+  "source": "vendor/factorio-harness/host/rules.ts:6",
+  "channel": "other",
+  "trigger": "reply carries ground rules; host rewrites AGENTS.md ground-rules section (Codex/Claude reinject after compaction)",
+  "sample": "- rule 27 (by sol): ...",
+  "game_feature": "team"
+ },
+ {
+  "id": "hook-operator-reshow",
+  "source": "tools/context.py:445",
+  "channel": "push",
+  "trigger": "post-tool hook: operator tell an fh reply carried but output filter may have hidden; injected once",
+  "sample": "OPERATOR: <text>\n(From the operator, in your last fh reply; shown here once in case your output filter hid it.)",
+  "game_feature": "team"
+ },
+ {
+  "id": "hook-inbox-reshow",
+  "source": "tools/context.py:575",
+  "channel": "push",
+  "trigger": "post-tool hook: tells/mentions fh replies carried since last tool call, not seen in output",
+  "sample": "TELL (reply 13:02): ... (From your fh replies' team block since your last tool call, newest first; ... Shown here once.)",
+  "game_feature": "team"
+ },
+ {
+  "id": "hook-compaction-warning",
+  "source": "tools/context.py:690",
+  "channel": "push",
+  "trigger": "Claude transcript nears auto-compaction threshold, once per context window",
+  "sample": "Context is at 140000 tokens; automatic compaction happens at about 150000 ... Update notes.md now ... then continue.",
+  "game_feature": "none"
+ },
+ {
+  "id": "hook-post-compact-brief",
+  "source": "tools/context.py:645",
+  "channel": "push",
+  "trigger": "after a context compaction: <=3 KB brief (rules, commitments, live checks, reminders, measured lines)",
+  "sample": "Your context was just compacted. A brief of at most 3 KB follows; notes.md has the rest ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "idle-nudge",
+  "source": "tools/idle_nudge.py:245",
+  "channel": "nudge",
+  "trigger": "character standing >= idle-min (10) with no work/orders/watch; operator tell, backs off when unanswered",
+  "sample": "Operator (automatic, facts only): your character idle for 12 min (no action, no body queue step). Unread for you: 2 tells. Body queue: empty.",
+  "game_feature": "none"
+ },
+ {
+  "id": "idle-cover-handoff",
+  "source": "tools/idle_nudge.py:814",
+  "channel": "nudge",
+  "trigger": "an agent rests or does not answer; one cover request tell to an active lead per episode",
+  "sample": "Operator (automatic, facts only): cover request. luna owns #12, #15 and does not answer (...). Asked of you until luna makes a request of its own: cover ...",
+  "game_feature": "team"
+ },
+ {
+  "id": "factory-digest",
+  "source": "tools/factory_digest.py:421 (PREFIX line 18)",
+  "channel": "push",
+  "trigger": "idle_nudge supervisor at deadline - 2 h (or --digest-now); delta of blockers, failed checks, hauls, per owner",
+  "sample": "Factory digest (cached): ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "rest-ended-resume",
+  "source": "tools/pane_resume.py:135",
+  "channel": "nudge",
+  "trigger": "a quota/pace rest's until passed; message typed into the CLI pane (Grok: Try Again)",
+  "sample": "Operator (automatic): your quota rest ended at Sun 17:00, when your usage limit was due to reset. Continue the shift from notes.md and your inbox (./fh tells).",
+  "game_feature": "none"
+ },
+ {
+  "id": "provider-stop-resume",
+  "source": "tools/pane_resume.py:139",
+  "channel": "nudge",
+  "trigger": "pane shows a provider error and no turn for idle-min; typed continue (up to 4 tries)",
+  "sample": "Operator (automatic): your last turn stopped on a provider error: Selected model is at capacity...; <END>",
+  "game_feature": "none"
+ },
+ {
+  "id": "provider-stop-cover-alert",
+  "source": "tools/pane_resume.py:153",
+  "channel": "push",
+  "trigger": "an agent still stopped on a provider error 20 min; tell to its cover",
+  "sample": "Operator (automatic, facts only): sol's pane has shown a provider error since 23:25 (...); 2 resumes tried; no request of its own since 23:25.",
+  "game_feature": "team"
+ },
+ {
+  "id": "provider-stop-back",
+  "source": "tools/pane_resume.py:161",
+  "channel": "push",
+  "trigger": "stopped agent makes its own request again; told once to the cover",
+  "sample": "Operator (automatic, facts only): sol is back: a request of its own (status) at 23:56, after a provider error ... (31 min; 2 resumes tried).",
+  "game_feature": "team"
+ },
+ {
+  "id": "supervise-continue",
+  "source": "tools/supervise.sh:78",
+  "channel": "nudge",
+  "trigger": "agent pane idle before deadline, no journal request in 2 min, not resting",
+  "sample": "The deadline in deadline.txt is 95 minutes away (the clock: line shows it) and it is the only stop condition. Run ./fh call status, ./fh call chat and ./fh boar",
+  "game_feature": "none"
+ },
+ {
+  "id": "supervise-permission-refused",
+  "source": "tools/supervise.sh:83",
+  "channel": "refusal-hint",
+  "trigger": "turn ended on a shell-permission refusal; appended to the continue nudge",
+  "sample": "Your last command was refused by the shell's permissions; only that command was refused. Write it as separate commands joined with && ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "agy-loop-continue",
+  "source": "tools/launch-agent.sh:89",
+  "channel": "nudge",
+  "trigger": "agy (Gemini) loop: each new turn after one ends before deadline",
+  "sample": "Continue: the deadline in deadline.txt is 95 minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "agy-loop-fresh-conversation",
+  "source": "tools/launch-agent.sh:77",
+  "channel": "nudge",
+  "trigger": "agy conversation closed at its token limit; fresh turn prompt",
+  "sample": "This is a fresh conversation: your previous one was closed at 900000 tokens to keep your context small. notes.md is your memory from it ...",
+  "game_feature": "none"
+ },
+ {
+  "id": "agy-loop-context-pause",
+  "source": "tools/launch-agent.sh:85",
+  "channel": "nudge",
+  "trigger": "agy turn paused by harness to check context size",
+  "sample": "Continue where you were: the harness paused this turn to check your context size; nothing else changed. The deadline is 80 minutes away.",
+  "game_feature": "none"
+ },
+ {
+  "id": "resume-shift-sentence",
+  "source": "tools/launch-agent.sh:12",
+  "channel": "other",
+  "trigger": "later shift of the same world (POG_RESUME); appended to the launch prompt",
+  "sample": "This is a later shift of the same world: your bot and the factory are as the last shift left them, and notes.md is where you left off.",
+  "game_feature": "none"
+ },
+ {
+  "id": "viewer-chat-relay",
+  "source": "tools/stream/viewers.py:994",
+  "channel": "push",
+  "trigger": "viewer line passes the relay; posted in game chat as viewer NAME (wakes a sleeper only on @mention/--wake-on-viewers)",
+  "sample": "viewer Aurora: @luna could the belts ...",
+  "game_feature": "stream"
+ },
+ {
+  "id": "operator-viewer-reply",
+  "source": "tools/opreply.py (header)",
+  "channel": "push",
+  "trigger": "operator answers a viewer line; posted to game chat in parts",
+  "sample": "@Aurora Operator: the artillery remote's reply has used manual range since Oct 18 ...",
+  "game_feature": "stream"
+ },
+ {
+  "id": "quota-rest-push",
+  "source": "tools/quota_rest.py (header)",
+  "channel": "other",
+  "trigger": "agent marked resting (quota/pace); pushed to runtime so teammates' lines and tell replies show it",
+  "sample": "resting until Sat 15:59 (quota)",
+  "game_feature": "team"
+ }
+]

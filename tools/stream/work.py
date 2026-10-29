@@ -206,6 +206,47 @@ class DidFeed:
         return dict(row) if row and now - row["t"] <= DID_KEEP else None
 
 
+WATCH_LINE = re.compile(r"^flight watch #(\d+) on ([^,:]+)")
+
+
+class WatchReads:
+    """(d28 batch312 B) The agents' reads of their flight watches (flight_watch {id} or {platform, read}), from their
+    journals: each reply's watch as the agent saw it, {agent, id ("flight#N"), platform, ended_by, lost_count, line}, for
+    stories.py (the team's own read of a trial's result). take() returns those read since the last take."""
+
+    def __init__(self):
+        self.pending = {}  # request id -> agent
+        self.rows = []
+
+    def ingest(self, agent, r, live=True):
+        if not isinstance(r, dict):
+            return
+        if r.get("event") == "request":
+            q = r.get("request") or {}
+            if q.get("action") == "flight_watch":
+                self.pending[q.get("id")] = agent
+                if len(self.pending) > 256:
+                    self.pending.pop(next(iter(self.pending)))
+            return
+        if r.get("event") != "response":
+            return
+        resp = r.get("response") or {}
+        if self.pending.pop(resp.get("id"), None) is None or not resp.get("ok") or not live:
+            return
+        res = resp.get("result") if isinstance(resp.get("result"), dict) else {}
+        w = res.get("watch") if isinstance(res.get("watch"), dict) else res
+        m = WATCH_LINE.match(str(w.get("line") or ""))
+        if not m:
+            return
+        self.rows.append({"agent": agent, "id": f"flight#{m.group(1)}", "platform": m.group(2).strip(),
+                          "ended_by": w.get("ended_by"), "lost_count": w.get("lost_count"), "line": str(w["line"])[:300]})
+        del self.rows[:-64]
+
+    def take(self):
+        out, self.rows = self.rows, []
+        return out
+
+
 CLOCK_RE = re.compile(r"\+((?:\d+h)?(?:\d+m)?\d+s) since your last request, character idle ((?:\d+h)?(?:\d+m)?\d+s) of it")
 IDLE_FRAC = 0.9     # a reply's clock this idle (character idle / time since the last request): the character stood
 CLOCK_KEEP = 900.0  # seconds a clock stands with no newer reply (an agent silent longer: not known)
@@ -289,6 +330,36 @@ def target_of(args):
     return plat, None
 
 
+def extent_of(args):
+    """(d28 batch312) The box a request's work covers, {left, top, right, bottom} in tiles, or None: its area, or its
+    entries' positions (each a tile wide), or its position (one tile)."""
+    area = args.get("area")
+    if isinstance(area, dict):
+        lt, rb = area.get("left_top") or {}, area.get("right_bottom") or {}
+        try:
+            return {"left": float(lt["x"]), "top": float(lt["y"]), "right": float(rb["x"]), "bottom": float(rb["y"])}
+        except (KeyError, TypeError, ValueError):
+            pass
+    pts = [e.get("position") for e in args.get("entities") or [] if isinstance(e, dict)]
+    pts = [p for p in pts if isinstance(p, dict) and isinstance(p.get("x"), (int, float)) and isinstance(p.get("y"), (int, float))]
+    pos = args.get("position")
+    if not pts and isinstance(pos, dict) and isinstance(pos.get("x"), (int, float)) and isinstance(pos.get("y"), (int, float)):
+        pts = [pos]
+    if not pts:
+        return None
+    return {"left": min(p["x"] for p in pts) - 0.5, "top": min(p["y"] for p in pts) - 0.5,
+            "right": max(p["x"] for p in pts) + 0.5, "bottom": max(p["y"] for p in pts) + 0.5}
+
+
+def what_of(args):
+    """(d28 batch312) The entities a request names, most first: [[name, count]] (place_ghosts' entries), or None."""
+    n = {}
+    for e in args.get("entities") or []:
+        if isinstance(e, dict) and isinstance(e.get("name"), str) and e["name"]:
+            n[e["name"]] = n.get(e["name"], 0) + 1
+    return [[k, c] for k, c in sorted(n.items(), key=lambda kv: -kv[1])] or None
+
+
 class WorkFeed:
     def __init__(self, run_dir, agents):
         self.run_dir = run_dir
@@ -300,6 +371,7 @@ class WorkFeed:
         self.vehicles = VehicleFeed()  # (batch222) each agent's vehicle by remote view: where it is (onecam)
         self.did = DidFeed()  # (batch240) each agent's latest build, paste, deconstruction or silo load (onecam)
         self.clocks = ClockFeed()  # (batch240) how long each agent's character has stood idle, by its clocks (onecam)
+        self.watch_reads = WatchReads()  # (d28 batch312 B) the agents' reads of their flight watches (stories.py)
         # (d26 batch257) the rocket silos the agents' replies list (launches.py: the launch shot reads their states)
         self.silos = launches.SiloFeed(os.path.join(run_dir, "silos.json") if run_dir else None)
         self.attention = []  # every request with an attention point (attention.py) since take_attention()
@@ -350,6 +422,7 @@ class WorkFeed:
                 self.did.ingest(agent, r)  # (a restart's tail too: DID_KEEP drops old rows)
                 self.clocks.ingest(agent, r)
                 self.silos.ingest(agent, r)  # (a restart's tail too: silos stay where they are)
+                self.watch_reads.ingest(agent, r, live=not bootstrap)  # (not a restart's tail: those are old reads)
                 if not isinstance(r, dict):
                     continue
                 q = r.get("request") or {}
@@ -368,5 +441,5 @@ class WorkFeed:
                     continue  # inspect, configure, launch ... on the body's own surface: its camera shows them
                 out.append({"agent": agent, "action": q["action"], "verb": REMOTE.get(q["action"]) or
                             ON_PLATFORM[q["action"]], "platform": plat, "position": pos, "at": r.get("at"),
-                            "surface": surface_named(args)})
+                            "surface": surface_named(args), "extent": extent_of(args), "what": what_of(args)})
         return out

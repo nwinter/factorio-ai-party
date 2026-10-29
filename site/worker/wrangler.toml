@@ -11,6 +11,10 @@ preview_urls = false
 # Origins allowed to call the API from a browser. "*." entries match any subdomain (preview deployments).
 ALLOWED_ORIGINS = "https://factorio.nickwinter.net,https://player-of-games.pages.dev,https://*.player-of-games.pages.dev,http://127.0.0.1:8765,http://localhost:8765"
 
+# The object that serves (d29 batch333): "main" failed every SQLite call with SQLITE_NOMEM from d29 01:40 (colo SEA; a
+# new object takes 12 MB), so its tables were copied to "main-d29" (/v1/debug/export and import). "main" is left as it was.
+LIVE_OBJECT = "main-d29"
+
 [[durable_objects.bindings]]
 name = "LIVE"
 class_name = "Live"

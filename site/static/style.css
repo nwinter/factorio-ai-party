@@ -156,11 +156,17 @@ a.fx-btn { text-decoration: none; }
 .hero h1 { max-width: 18em; }
 
 /* stats */
-.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin: 1rem 0; }
+/* (batch314 A, viewer Aurora) value tiles (stats, records, key times) size to their number: a tile is as wide as its
+   value (never under the minimum, never over the row), a row takes as many as fit and they grow to fill it, so a larger
+   count makes fewer columns; a value wider than the whole row wraps at its group commas (build.py breakable), never
+   clipped. The label and sub lines do not widen a tile (width 0, min-width 100%): they wrap within it. */
+.stats, .records, .keytimes { display: flex; flex-wrap: wrap; gap: 10px; margin: 1rem 0; }
+.stat, .record, .keytime { flex: 1 1 auto; min-width: min(100%, 9rem); box-sizing: border-box; }
 .stat { padding: 10px 14px; }
 .stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.2; color: var(--heading); font-variant-numeric: tabular-nums; }
 .stat-label { color: var(--ink-2); font-size: .88rem; }
 .stat-sub { color: var(--muted); font-size: .8rem; }
+.stat-label, .stat-sub, .r-label, .r-shift, .k-label, .k-sub { width: 0; min-width: 100%; overflow-wrap: break-word; }
 .hero-stats { margin-top: 2rem; }
 h3.who { margin-bottom: .2rem; }
 
@@ -211,6 +217,16 @@ table.long-run tr.empty td, table.long-run tr.empty th { opacity: .7; }
 table.long-run .moments { margin: 0; padding-left: 1.1em; min-width: 16em; font-size: .9rem; }
 table.long-run th[scope=row] .fx-chip { margin-left: 4px; }
 td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* (batch314 C) the made/consumed and repeatable tables: on a phone each row is a card of label / value lines, a value
+   that does not fit beside its label going under it */
+@media (max-width: 720px) {
+  table.stack-table, table.stack-table tbody, table.stack-table tr, table.stack-table td, table.stack-table th { display: block; }
+  table.stack-table thead { display: none; }
+  table.stack-table tr { border: 1px solid var(--line); border-radius: var(--fx-r-1); padding: 8px 10px; margin-bottom: 10px; }
+  table.stack-table th[scope=row] { padding: 0 0 4px; border: 0; }
+  table.stack-table td { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; padding: 2px 0; border: 0; white-space: normal; }
+  table.stack-table td::before { content: attr(data-l); color: var(--muted); font-size: .85rem; }
+}
 /* phones: each shift is a card of label / value lines */
 @media (max-width: 720px) {
   table.long-run, table.long-run tbody, table.long-run tr, table.long-run td, table.long-run th { display: block; }
@@ -223,11 +239,11 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   table.long-run .moments { min-width: 0; }
 }
 .meta { color: var(--muted); margin: -.2rem 0 1rem; }
-.stats-compact { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.stats-compact { gap: 8px; }
 .stats-compact .stat { padding: 8px 12px; }
 .stats-compact .stat-value { font-size: 1.35rem; }
 /* records: the best shift for each, linked */
-.records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.records { gap: 8px; margin: .6rem 0 1rem; }
 .record { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
 .record:hover { background: var(--hl); }
 .r-val { font-size: 1.35rem; font-weight: 700; color: var(--heading); font-variant-numeric: tabular-nums; }
@@ -235,7 +251,7 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r-shift { color: var(--muted); font-size: .8rem; }
 /* the run page's jump links, key times, live banner */
 .jump { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 .6rem; font-size: .92rem; }
-.keytimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.keytimes { gap: 8px; margin: .6rem 0 1rem; }
 @media (max-width: 600px) { .r-val, .k-val { font-size: 1.2rem; } }
 .keytime { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
 .keytime:hover { background: var(--hl); }
@@ -311,6 +327,24 @@ table.milestones.wide th[scope=row] { white-space: nowrap; }
 
 /* charts */
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+/* (batch314 B) the long run's charts: one a row (larger plots), a range bar every chart shares, notes on the data */
+.chart-grid-wide { grid-template-columns: minmax(0, 1fr); }
+.chart-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: .4rem 0 .6rem; }
+.chart-range[hidden] { display: none; }
+.chart-range select { font: inherit; padding: 2px 6px; min-height: 30px; border: 1px solid var(--line); border-radius: var(--fx-r-1); background: var(--surface); color: var(--ink); }
+.chart-range label { display: inline-flex; align-items: center; gap: 6px; font-size: .92rem; }
+.chart-notes { margin: .2rem 0 1rem; padding-left: 1.2rem; }
+.chart-notes li { margin: .15rem 0; }
+.chart-svg .gap { fill: var(--grid); opacity: .7; }
+.chart-svg .mark-tick { stroke: var(--line-strong); stroke-width: 1; }
+.chart-svg .line.sampled { opacity: .45; stroke-width: 1.5; }
+.chart-svg .line.avg { stroke-width: 3; }
+.legend-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: var(--fx-r-1); padding: 2px 6px; min-height: 28px; cursor: pointer; }
+.legend-btn[hidden] { display: none; }
+.legend-btn:hover { border-color: var(--line); }
+.legend-btn[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.legend-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tip .t-avg span { color: #cfcfcf; font-style: italic; }
 .chart { margin: 0; padding: 12px 14px 8px; min-width: 0; }
 .chart figcaption { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .chart figcaption strong { color: var(--heading); }
@@ -386,10 +420,14 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 /* bar list */
 .bars { margin: 1rem 0; padding: 14px; max-width: 640px; }
 .bars ul { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: 6px; }
-.bars li { display: grid; grid-template-columns: 7.5em 1fr 2.5em; gap: 10px; align-items: center; font-size: .9rem; }
+/* (batch314 A) a bar row: label, track, value; the value takes the width it needs (packs made run to billions), and
+   when the row is too narrow (a phone, enlarged text) it wraps under the track, right-aligned */
+.bars li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: .9rem; }
+.bars li > .bar-label { flex: 0 0 7.5em; min-width: 0; overflow-wrap: anywhere; }
+.bars li > .bar-track { flex: 1 1 6rem; }
+.bars li > .bar-val { flex: 0 0 auto; margin-left: auto; min-width: 2.5em; }
 .bar-track { height: 12px; background: var(--well); box-shadow: var(--well-shadow); border-radius: var(--fx-r-1); padding: 2px; }
 .bar { display: block; height: 100%; background: var(--s1); border-radius: 1px; min-width: 2px; }
-.packs-bars li { grid-template-columns: 7.5em 1fr 4.5em; }
 .packs-bars .bar-val { text-align: right; font-variant-numeric: tabular-nums; }
 .bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 
@@ -868,6 +906,7 @@ html { scroll-padding-top: 76px; }
      scrolling inside its own box, with the direct labels left to the legend and the hover */
   .chart .plot { overflow-x: auto; overscroll-behavior-x: contain; }
   .chart .plot .chart-svg { min-width: 520px; }
+  .chart .plot .chart-svg.drawn { min-width: 0; }  /* (batch314 B) site.js draws it at the phone's own width */
   .chart-svg .tick, .chart-svg .axis-label { font-size: 16px; }
   .chart-svg .mark-label { font-size: 15px; }
   .chart-svg .dlabel { display: none; }
@@ -975,6 +1014,11 @@ html { scroll-padding-top: 76px; }
 /* (d26 batch235 UR, viewer Aurora site:5022) an open row's priority, owner and next review; the backlog line */
 .upd-review { color: var(--muted); }
 .upd-backlog { margin: .25rem 0 0; }
+/* (d28 batch322 UL, viewer Aurora site:5411) a row's follow-ups, whatever its status */
+.upd-follow-head { margin: 4px 0 0; color: var(--heading); }
+.upd-follow { list-style: none; padding: 0 0 0 10px; margin: 2px 0 0; border-left: 3px solid var(--accent); }
+.upd-follow li { margin: 2px 0; overflow-wrap: anywhere; }
+.upd-fwhat { font-weight: 600; }
 .upd-history { margin-top: 2px; font-size: .9rem; }
 .upd-history > summary { cursor: pointer; color: var(--muted); }
 .upd-history ul { list-style: none; padding: 0 0 0 10px; margin: 4px 0 0; border-left: 3px solid var(--line-strong); }
@@ -1153,8 +1197,9 @@ body.watch.pl-tight .site-nav { flex-wrap: nowrap; overflow-x: auto; }
 .hv-title:hover { color: var(--accent); }
 @media (max-width: 800px) { .hv-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* batch270: the game's icons on the run's pages */
-.stat-icon .stat-value, .r-val { display: flex; align-items: center; gap: 6px; }
-.stat-value .gi, .r-val .gi { width: 1.05em; height: 1.05em; }
+/* (batch314 A) the icon beside the label, apart from the number */
+.stat-icon .stat-label, .r-label { display: flex; align-items: center; gap: 6px; }
+.stat-label .gi, .r-label .gi { width: 1.4em; height: 1.4em; flex: none; }
 .planet-ico { display: inline-flex; margin: 2px 3px 0 0; }
 .planet-ico .gi { vertical-align: middle; }
 .k-label { display: flex; align-items: center; gap: 6px; }
@@ -1183,4 +1228,4 @@ ol.techs li { display: flex; align-items: center; gap: 6px; }
   .v-links a, .pl-meta a, .pl-pn a, .v-body h3 a, .hv-head a { min-height: 36px; display: inline-flex; align-items: center; }
   .pl-card h2 .muted { font-size: 1em; }
 }
-@media (max-width: 480px) { .stats-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .stat, .record, .keytime { min-width: min(100%, 7.5rem); } }

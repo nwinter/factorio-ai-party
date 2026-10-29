@@ -15,66 +15,32 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
 
 ## Your interface: `./fh`
 
-- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json` (written
-  at launch and after each harness update). `./fh help ACTION` prints one action's arguments from the running harness
-  (`./fh help transfer` shows calls that work).
-- Reference: every command's details are in `ref/`, one file per topic (listed at the end of this file with their
-  commands). An argument refusal or an unknown action names the call's topic.
-- Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
-  `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`. Remote reads:
-  `inspect`, `belt_flow`, `trace` where we see now; `scan`, `observe`, `nearest` at a charted centre; `surface=`,
-  `platform=` elsewhere.
-- Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take `--wait`,
-  which lasts until the action's own end tick (`--wait-timeout MS` cuts it shorter). `build` accepts a batch of up to
-  64 placements.
-- Plans: `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no round trips.
+- Act: `./fh call ACTION --args '{...}'`. `./fh help ACTION` prints its arguments from the running harness (`./fh help
+  transfer` shows calls that work); `describe.json` lists every action, one a line (written at launch and after each
+  harness update): `grep '"build"' describe.json`.
+- Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`, `./fh call rates`,
+  `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
+- Reference: every command's details are in `ref/`, one file per topic (listed at the end of this file); `./fh help
+  TOPIC` prints one. An argument refusal or an unknown action names the call's topic.
+- Read every failure: a nonzero exit means the action failed, with an `error:` line (on stderr with `--format json`);
+  a partial result (`short`, `awaiting_craft`, a refused craft) ends with a `warning:` line. Don't send `./fh` output
+  to `/dev/null` or through `head`/`tail`: a pipe hides the exit status and can cut off the error. Join an action and
+  the `say` about it with `&&`, not `;`.
+- If your shell refuses a command (permission denied, not pre-approved), only that command was refused: write it as
+  separate commands joined with `&&` (no loop, no shell variables) or as a short `python3` script, and carry on.
+- An `OPERATOR:` line (first on stdout) is a message from the operator. Use `--format json` when you need exact
+  fields; the default output is a compact table.
 - Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot centred on
   your character (`at=X,Y`: remote view) to `shots/NAME.png` that you can open and look at.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace
 
-Your character stands still while you think, and the clock does not.
-
-- Before a step that needs real thought, leave a queue plan or a long timed action running.
-- `wait_until` and a queue plan check a condition inside the game, with no call per check; your character can work
-  while a queue or another condition runs. One `status` carries the clock and the research progress (`factory`).
-- `a && b` runs b only after a succeeded, in one round trip; one `build` takes many placements.
-- Read every failure. A nonzero exit means the action failed. Don't send `./fh` output to `/dev/null` or through
-  `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it: join
-  the action and the `say` about it with `&&`, not `;`.
-- If your shell refuses a command (permission denied, not pre-approved), only that command was refused: write it as
-  separate commands joined with `&&` (no loop, no shell variables) or as a short `python3` script, and carry on.
-- A hand-crafted science pack takes your character's crafting time; an assembler making it does not.
-
-## Harness notes
-
-- After `--wait`, a nonzero exit means it failed or is still running: read
-  `error.code`. On `wait_timeout`, run `./fh wait` (never a new move/mine/build, which would interrupt it) until it
-  reports `idle`.
-- `./fh sleep 120` waits up to 120 s; the game runs in real time either way. Your current action and queue keep going,
-  and nothing new starts. It returns early when you are hit, mentioned or told something, when someone
-  changes your board item, when your running queue finishes or stalls, and with `--until` when a condition holds:
-  `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
-  `--until "item_count iron-plate>=200"` (your inventory). It does not return when a machine starves, and never runs past your deadline. With no queue running, no
-  action running and no `--until` it lasts at most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s
-  otherwise. A tell or mention wakes it once.
-- `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
-  ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
-  after `--max` seconds; the team block comes with your next
-  reply, and the line ends with `open for you: ...`.
-- A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)
-  pauses your running queue at once; `./fh queue resume` continues it. A direct `wait_ticks` or `wait_until` while
-  your queue runs runs as a sleep and the queue keeps going (`as_sleep`; `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue running.
-- An `OPERATOR:` line (first on stdout) is a message from the operator.
-- Small electric poles supply only a 5x5 area. Inserters pick up from the tile behind and drop on the tile in front;
-  check the edge tiles of 3x3 machines. An inserter's `direction` is the side it picks up from (`direction: east` takes
-  from the east, drops west; a belt's is where items go); `build` replies say it in words.
-- Every sleep and wait ends on an urgent alert (`woke: urgent`, naming it): our structures attacked within 40 tiles of
-  you, an enemy group heading within 40 tiles of you, enemies destroying buildings in your fresh claims or near you, a
-  platform you hear about losing a building or its hub hit, a teammate dying on your surface, a network on your surface
-  half on low or no power; `--no-urgent` opts out.
-- Use `--format json` when you need exact fields; the default output is a compact table.
+Your character stands still while you think, and the clock does not. Timed actions (move_to, mine, build_path,
+construct, ...) take `--wait`; `a && b` runs b only after a succeeded, in one round trip; one `build` takes many
+placements. `./fh sleep 120` waits up to 120 s and returns early when you are hit, mentioned or told something;
+`wait_until` and queue plans (`./fh queue submit --file plan.json`, `./fh queue resume`) check conditions inside the
+game. Waits, `--wait`, queues and what ends them: `./fh help waits-queues`.
 
 ## Rules
 

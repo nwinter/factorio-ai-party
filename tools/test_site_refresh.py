@@ -12,7 +12,9 @@
   files, committed) with a merge in progress, a tracked file changed and an untracked one builds and deploys main's
   files, with runs/ and the other paths it writes linked to the source's; DIST.last-deploy stays through later
   builds; a folder at the copy's path that is not a worktree is left alone (FAILED, nothing deployed). The other
-  cases build in place (a test run without POG_SITE_WORKTREE).
+  cases build in place (a test run without POG_SITE_WORKTREE);
+- (d28 batch315) the YouTube list tools/yt_archive.py's follower writes in video-work (POG_SITE_YT_VIDEOS here) is the
+  one the build reads; without it, site/content/videos.json.
 """
 import json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -30,8 +32,8 @@ case " $* " in *" --branch ${WRANGLER_FAIL:-none} "*) echo "deploy failed" >&2; 
 def run(tmp, *args, **env):
     e = dict(os.environ, POG_TEST="1", POG_WRANGLER=str(tmp / "wrangler"), POG_SITE_RUNS=str(tmp / "runs"), POG_SITE_OUT=str(tmp / "dist"),
              POG_SITE_STATUS=str(tmp / "status.json"), POG_SITE_CONTENT=str(tmp / "site.json"), POG_SITE_CARDS="0", POG_SITE_VIDEOS="0",
-             WRANGLER_LOG=str(tmp / "wrangler.log"), POG_SITE_REFRESH_LOCK=str(tmp / "lock"),
-             **env)
+             WRANGLER_LOG=str(tmp / "wrangler.log"), POG_SITE_REFRESH_LOCK=str(tmp / "lock"))
+    e.update(env)
     (tmp / "wrangler.log").write_text("")
     r = subprocess.run([str(ROOT / "tools" / "site-refresh.sh"), *args], cwd=ROOT, env=e, capture_output=True, text=True,
                        timeout=300)
@@ -85,6 +87,17 @@ def main():
         r, calls = run(tmp, "--no-deploy")
         assert r.returncode == 0 and "done (--no-deploy)" in r.stdout, "a lock whose pid is gone is taken over: " + r.stdout
         assert (tmp / "dist.last-deploy").is_file(), "the last production deploy stays through a --no-deploy build"
+        # (d28 batch315) the YouTube list the follower writes outside any checkout reaches the build
+        (tmp / "videos-site.json").write_text(json.dumps({"s3": {"id": "VIDs3abcdef", "shift": 2, "title": "Shift 2",
+                                                                  "description": "d", "chapters": [], "privacy": "public"}}))
+        r, calls = run(tmp, "--no-deploy", POG_SITE_VIDEOS="1", POG_SITE_R2_REFRESH="0",
+                       POG_SITE_YT_VIDEOS=str(tmp / "videos-site.json"))
+        assert r.returncode == 0 and "YouTube videos from the follower's list (1)" in r.stdout, r.stdout + r.stderr
+        assert "VIDs3abcdef" in (tmp / "dist" / "runs" / "long" / "index.html").read_text()
+        r, calls = run(tmp, "--no-deploy", POG_SITE_VIDEOS="1", POG_SITE_R2_REFRESH="0",
+                       POG_SITE_YT_VIDEOS=str(tmp / "none.json"))
+        assert r.returncode == 0 and "YouTube videos from site/content/videos.json" in r.stdout, r.stdout + r.stderr
+        assert "VIDs3abcdef" not in (tmp / "dist" / "runs" / "long" / "index.html").read_text()
         # a merge in progress in the source checkout: built from the clean copy of main
         src, wt = tmp / "src", tmp / "wt"
         git = lambda repo, *a: subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",

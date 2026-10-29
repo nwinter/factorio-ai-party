@@ -34,10 +34,29 @@ The clip plays as an `attack_replay` segment (segments.py), so the casters see i
 program scene switches to the "replay" scene (the clip, muted, under a REPLAY banner page; the stream overlay rides
 along off-canvas so the casters' voices keep playing), and when the segment ends or is cut the program goes back to
 "stream". A watchdog returns to "stream" whenever "replay" is on air without a replay playing.
+
+(d28 batch326 RA, viewer Aurora site:5417: "game-only replay audio, recorded separately from speech, ... duck it
+gently under current voices. For old or missing clean tracks, retain quiet live game ambience with the mixed clip
+muted. Preserve the full archive mix and keep replay playback out of the clean track.") OBS records two tracks (the
+operator's settings, docs/STREAM-NOTES.md): track 1 the full mix (stream, archive, unchanged), track 2 the game audio
+alone, from its own capture of the camera client ("stream game clean": not ducked under the voices, so the track has no
+dips where a voice spoke). A saved clip gets a game-only companion (`clean`): its video and second audio track
+copied, not re-encoded, by ffmpeg on the box (`remux`), "...-game.mkv" beside it. On air:
+  - a clip with its clean companion, at full speed, with no speaker alarm audible in its window (alarmquiet.py): the
+    companion plays with its sound ("replay clip" unmuted; its "duck under voices" filter keeps it under the live
+    voices), the ambience off;
+  - otherwise (an old clip, no second track, a slow-motion clip, an alarm in its window): the mixed clip plays muted
+    over "replay game ambience" (a live capture of the game at a quiet level, ducked too), so nothing is doubled and
+    no recorded voice or siren comes back;
+  - back on "stream" (the segment's end, a cut, the watchdog, a restart): the clip muted and the ambience off again;
+    the live game audio itself is never touched, so its level is as it was.
+Only "stream game clean" is on track 2; "replay clip" and "replay game ambience" are on track 1 alone: replay playback
+never feeds the clean track.
 """
-import itertools, json, re, threading, time, traceback
+import itertools, json, re, subprocess, threading, time, traceback
 from collections import deque
 
+from alarmquiet import AlarmQuiet
 from director import in_frame
 from obsws import OBS, OBSError
 from segments import STARTING_S
@@ -70,6 +89,11 @@ DEFAULTS = {
     "max_age": 120.0,              # a clip not played within this long is dropped
     "stats_every": 30.0,
     "play_timeout": 8.0,           # a replay segment live this long with the clip not on air is ended
+    # (d28 batch326 RA) game-only replay audio (module doc)
+    "clean_audio": True,
+    "clean_track": 1,              # the file's second audio stream (OBS track 2: game audio only)
+    "ambience": "replay game ambience",  # a quiet live game capture in the replay scene, for clips without one
+    "remux_host": "pogwin",        # ffmpeg runs where OBS wrote the clip
     # key battles (onecam.py watch_battle; Nick on the 12:58 Demolisher replay: "a few seconds on Nauvis, several
     # seconds of an empty field ... replay wasn't long enough and had irrelevant camera shots"): module doc
     "buffer_s": 45.0,              # the OBS replay buffer's length (the pog profile's setting, not changed here)
@@ -95,11 +119,27 @@ DEFAULTS = {
     "slow_min_pieces": 5,          # ... and at least this many
     "slow_cover": 0.7,             # on-air footage of the battle must cover this share of the window
     "battle_gap": 2.5,             # seconds: footage samples further apart than this are separate runs
+    # (d28 batch312 C, viewer Aurora 10:50: "Could highlights also celebrate clever repairs, successful deliveries and
+    # funny real team exchanges? Save short clips from footage actually captured, link them to the later result, and
+    # let the hosts explain the payoff. ... clear REPLAY labels, limited repetition and urgent-event interruption.
+    # Please start with one engineering highlight using the current one-client setup.") An engineering highlight: a
+    # build's close-up on the main camera (onecam work_close, batch312 A) on air highlight_min_s is saved from the
+    # buffer (highlight_len from its start, less if the shot ended sooner) and kept; when a later story result on that
+    # ship passes (stories.py, batch312 B) within highlight_keep, it airs as a replay labelled "Highlight", with the
+    # result as its payoff for the hosts. At most one highlight per highlight_gap, each once; a replay's urgent cut,
+    # spacing and news gates as for any replay.
+    "highlight": True,
+    "highlight_min_s": 6.0,
+    "highlight_before": 1.0,
+    "highlight_len": 12.0,
+    "highlight_keep": 10800.0,
+    "highlight_gap": 1200.0,
 }
 
 
 class Replays:
-    def __init__(self, segments, overlay_url="http://127.0.0.1:8787/replay", obs=None, log=print, start=True, **cfg):
+    def __init__(self, segments, overlay_url="http://127.0.0.1:8787/replay", obs=None, log=print, start=True, remux=None,
+                 alarm=None, **cfg):
         self.cfg = dict(DEFAULTS, **{k: v for k, v in cfg.items() if v is not None})
         self.segments = segments
         segments.replays = self
@@ -129,6 +169,11 @@ class Replays:
                        "replays": 0, "last": None, "program": None}
         self.prev_stats = None
         self.next_stats = 0
+        # (batch326 RA) clip path -> its game-only companion, or (None, why): "box" (serve.py) runs ffmpeg on the box;
+        # by default none (a test's stand-in OBS never reaches the box)
+        self.remux = self.remux_on_box if remux == "box" else remux or (lambda path: (None, "no remux here"))
+        self.alarm = alarm or AlarmQuiet(log=log)  # (batch326 RA2) speaker alarms quiet on air
+        self.audio_reset = False  # (RA) the replay scene's audio set back once after a start (a restart mid-replay)
         self.next_buffer_try = 0
         self.scene_ready = False
         self.next_watch = 0
@@ -138,6 +183,10 @@ class Replays:
         self.battle = None     # the key battle being covered: {key, info, shown: [t], parts: {part: score}, ...}
         self.battle_keep = {}  # battle key -> the part to air ("start" / "end"), or "none", once it is over
         self.battle_areas = deque(maxlen=8)  # (until, position+surface, extent): losses there are the battle's
+        self.hl_on = None                    # (batch312 C) the build close-up on air: {key, platform, ..., pending}
+        self.hl_saved = deque(maxlen=4)      # saved build clips waiting for their ship's result
+        self.hl_results = set()              # story result keys looked at
+        self.hl_aired = -1e9                 # when the last highlight was queued to air
         if start:  # selftest drives work() by hand
             threading.Thread(target=self.run, daemon=True).start()
 
@@ -148,13 +197,15 @@ class Replays:
             return "OBS not connected" + (f" ({self.status['error']})" if self.status["error"] else "")
         if not self.status["buffer_active"]:
             return "OBS replay buffer not running"
-        if not self.clip or now - self.clip["show_to"] > self.max_age(self.clip):
+        if not self.clip or now - self.clip.get("queued_t", self.clip["show_to"]) > self.max_age(self.clip):
             return "no fresh clip (one is saved after a death on the main camera, a loss, or a fight a side camera showed)"
         if self.waiting(self.clip, now):
             return "the fight is still going on (a replay airs once it has been quiet 20 s)"
         return None
 
     def max_age(self, c):
+        if c.get("kind") == "highlight":
+            return 600.0  # from when its result queued it: a free moment within 10 min
         if c.get("battle"):
             return 1200.0  # saved at its start, aired after a battle that may last minutes
         return self.cfg["fight_max_age"] if c.get("fight") or c.get("position") else self.cfg["max_age"]
@@ -176,9 +227,12 @@ class Replays:
 
     def facts(self, now):
         c = self.clip
-        return {"event": c["label"], "kind": c["kind"], "agent": c.get("agent_name"),
-                "seconds": round(c["show_to"] - c["show_from"]), "ago_s": round(now - c["show_to"]),
-                "speed": c.get("speed") or 100}, c["id"]  # (the banner: "Replay · slow motion" under 100)
+        out = {"event": c["label"], "kind": c["kind"], "agent": c.get("agent_name"),
+               "seconds": round(c["show_to"] - c["show_from"]), "ago_s": round(now - c["show_to"]),
+               "speed": c.get("speed") or 100}  # (the banner: "Replay · slow motion" under 100)
+        if c.get("kind") == "highlight":  # (batch312 C) what the clip shows, and the result it led to
+            out.update(highlight=c.get("built"), payoff=c.get("payoff"), result=c.get("verdict"), platform=c.get("platform"))
+        return out, c["id"]
 
     # ---- hooks from serve.py's ticker ---------------------------------------------------------------------------
     def tick(self, snap, cams, now):
@@ -190,9 +244,65 @@ class Replays:
         if not self.playing:  # while a replay is on air the program is the replay, not the cameras
             by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
             self.frames.append((now, {s: dict(c) for s, c in (cams or {}).items()}, by_name))
+        self.alarm.decide(snap.get("speaker_alarms"), now)
         self.watch_fights(snap, cams or {}, now)
         self.watch_battle(snap.get("battle"), snap, cams or {}, now)
         self.judge_losses(now)
+        if self.cfg["highlight"]:
+            self.watch_highlights(snap, cams or {}, now)
+
+    def watch_highlights(self, snap, cams, now):
+        """(d28 batch312 C) A build's close-up on air highlight_min_s: its clip is saved and kept (save: hl_saved). A
+        story result that passed on that ship later (snapshot `stories`) puts the latest such clip on air as a
+        highlight, at most once per highlight_gap; each clip and each result once."""
+        cfg = self.cfg
+        wc = ((cams or {}).get("main") or {}).get("work_close")
+        on = self.hl_on
+        if on and (not wc or (wc["platform"], wc["since"]) != on["key"]):
+            p = on.get("pending")
+            if p and now < p["show_to"]:  # the shot ended sooner: the clip ends with it
+                p["show_to"], p["save_at"] = now, now + 1.0
+            self.hl_on = on = None
+        if wc and not self.playing:
+            if on is None:
+                self.hl_on = on = {"key": (wc["platform"], wc["since"]), "platform": wc["platform"], "agent": wc.get("agent"),
+                                   "since": wc["since"], "label": ((cams.get("main") or {}).get("work") or wc["platform"])}
+            if not on.get("pending") and now - on["since"] >= cfg["highlight_min_s"]:
+                start = on["since"] - cfg["highlight_before"]
+                p = {"kind": "highlight", "label": on["label"], "agent": on["agent"], "platform": on["platform"],
+                     "show_from": start, "show_to": start + cfg["highlight_len"], "save_at": start + cfg["highlight_len"] + 1.0}
+                on["pending"] = p
+                with self.lock:  # saved when its time comes, kept (not aired) until its result
+                    if self.pending is None:
+                        self.pending = p
+                    else:
+                        self.more_pending.append(p)
+                self.log(f"[replays] highlight footage: {on['label']} (saved, kept for its ship's result)")
+        for b in snap.get("stories") or []:
+            if b.get("beat") != "result" or b.get("key") in self.hl_results:
+                continue
+            self.hl_results.add(b["key"])
+            if b.get("verdict") != "passed":
+                continue
+            ready = [c for c in self.hl_saved if c.get("platform") == b.get("platform") and c["saved_t"] <= b.get("t", now)
+                     and now - c["saved_t"] <= cfg["highlight_keep"]]
+            if not ready:
+                continue
+            if now - self.hl_aired < cfg["highlight_gap"]:
+                self.log(f"[replays] highlight not aired ({b.get('caption')}): one aired less than "
+                         f"{cfg['highlight_gap'] / 60:g} min ago")
+                continue
+            c = ready[-1]
+            self.hl_saved.remove(c)
+            clip = dict(c, built=c["label"], payoff=b.get("caption"), verdict=b.get("verdict"), queued_t=now,
+                        label=f"Highlight: {c['label']}, then {b.get('caption')}")
+            with self.lock:
+                if self.clip:
+                    self.more_clips.append(clip)
+                else:
+                    self.clip = clip
+            self.hl_aired = now
+            self.log(f"[replays] highlight queued: {clip['label']}")
 
     def shows(self, slot, cam, fight, by_name):
         """Does this camera show the fight now: its position inside the camera's frame; without a frame (older
@@ -725,6 +835,13 @@ class Replays:
                     self.log("[replays] started the OBS replay buffer")
                 except OBSError as e:
                     self.status["error"] = str(e)[:200]
+        try:
+            self.alarm.apply(o.call, now)  # (RA2) the alarm gains on the game audio, as decided (AQ: confirmed, retried)
+        except Exception as e:
+            self.status["error"] = f"alarm gains: {str(e)[:160]}"
+        if not self.audio_reset and not self.playing:
+            self.audio_reset = True
+            self.replay_audio(None)  # (RA) a start: the clip muted and the ambience off, whatever a crash left
         with self.lock:
             p = self.pending
         if p and now >= p["save_at"] and self.status["buffer_active"]:
@@ -756,6 +873,12 @@ class Replays:
                 self.status["error"] = "SaveReplayBuffer produced no new file"
                 return
             clip = dict(p, id=f"clip-{next(self.ids)}", path=path, saved_t=saved_t)
+        with self.lock:
+            if clip.get("kind") == "highlight":  # (batch312 C) kept until its ship's result (watch_highlights)
+                self.hl_saved.append(clip)
+                self.status["replays"] += 1
+                self.log(f"[replays] saved {path} for {p['label']} (a highlight: waits for its result)")
+                return
             if self.clip:
                 self.more_clips.append(clip)  # plays after the one already waiting
             else:
@@ -768,7 +891,7 @@ class Replays:
         c = self.clip
         if not c or self.playing:
             return
-        if now - c["show_to"] > self.max_age(c):
+        if now - c.get("queued_t", c["show_to"]) > self.max_age(c):  # (a highlight: from its result)
             self.log(f"[replays] dropped {c['id']} (never got a free moment, or its fight never ended)")
             self.next_clip()
             return
@@ -809,6 +932,9 @@ class Replays:
                 o.call("PressInputPropertiesButton", {"inputName": self.cfg["banner"], "propertyName": "refreshnocache"})
             except OBSError as e:
                 self.log(f"[replays] banner refresh failed: {e}")
+            c = self.clip
+            if c and c["id"] == live.get("clip"):
+                self.prepare_audio(c)  # (RA) its game-only companion while the segment starts
         elif live and not self.playing and live["state"] == "live":
             c = self.clip
             # Nothing would air: its clip was dropped while the segment started (too old, or skipped for the one
@@ -827,9 +953,12 @@ class Replays:
                     m["state"] = "aired"
             self.last_replay = now
             self.next_clip()
-            self.status["last"] = {"id": c["id"], "label": c["label"], "t": now, "path": c["path"]}
+            self.status["last"] = {"id": c["id"], "label": c["label"], "t": now, "path": c["path"], "clean": c.get("clean"),
+                                   "audio": c.get("audio")}
         elif self.playing and not live:
             self.to_stream("replay over")
+            last = self.status.get("last") or {}
+            self.drop_companion(last.get("clean"))  # (RA) after the scene left it
             self.playing = None
         elif not self.playing and now >= self.next_watch:  # watchdog: never leave the replay scene on air by itself
             self.next_watch = now + 5
@@ -838,10 +967,104 @@ class Replays:
             if prog == self.cfg["scene"]:
                 self.to_stream("watchdog")
 
+    def remux_on_box(self, path, run=subprocess.run):
+        """(RA) The clip's video and game-only track (audio stream clean_track) copied into "<clip>-game.mkv" beside it
+        by ffmpeg on the box: (path, None), or (None, why): an old clip with one track, or ffmpeg failing."""
+        out = re.sub(r"\.(mkv|mp4|mov|flv)$", "", path) + "-game.mkv"
+        cmd = (f'ffmpeg -v error -y -i "{path}" -map 0:v:0 -map 0:a:{int(self.cfg["clean_track"])} -c copy "{out}"')
+        r = run(["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", self.cfg["remux_host"], cmd],
+                capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "").strip().splitlines()
+            why = err[-1][:160] if err else f"ffmpeg exit {r.returncode}"
+            if "matches no streams" in why or "Stream map" in why:
+                why = "the clip has one audio track (recorded before track 2)"
+            return None, why
+        return out, None
+
+    def prepare_audio(self, c):
+        """(RA) The clip's game-only companion, made once as its replay starts (only clips that air get one; it is
+        deleted when the replay ends): c["clean"] is its path, or None with c["clean_why"]."""
+        if "clean" in c or not self.cfg["clean_audio"]:
+            return
+        # (cp2) before tools/obs_setup_326.py has run, OBS records no game-only track: nothing is tried or changed
+        try:
+            names = {i.get("inputName") for i in self.obs.call("GetInputList").get("inputs") or []}
+        except OBSError:
+            names = set()
+        if "stream game clean" not in names:
+            c["clean"], c["clean_why"] = None, 'no "stream game clean" in OBS yet (tools/obs_setup_326.py)'
+            self.once("noclean", f"[replays] {c['clean_why']}: replays air muted, as before")
+            return
+        try:
+            c["clean"], why = self.remux(c["path"])
+        except Exception as e:
+            c["clean"], why = None, f"{type(e).__name__}: {str(e)[:120]}"
+        if not c["clean"]:
+            c["clean_why"] = why
+            self.log(f"[replays] {c['path']}: no game-only track ({why}); it airs muted over the live ambience")
+
+    def drop_companion(self, path, run=subprocess.run):
+        """(RA) The companion of a replay that ended, deleted on the box (only a "-game.mkv" this module made)."""
+        if not path or not path.endswith("-game.mkv") or self.remux != self.remux_on_box:
+            return
+        try:
+            run(["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", self.cfg["remux_host"],
+                 f'del /q "{path.replace("/", chr(92))}"'], capture_output=True, text=True, timeout=15)
+        except Exception as e:
+            self.log(f"[replays] deleting {path}: {type(e).__name__}: {e}")
+
+    def once(self, key, line):
+        """(cp2) A line about OBS setup said once a service run."""
+        said = self.__dict__.setdefault("said_once", set())
+        if key not in said:
+            said.add(key)
+            self.log(line)
+
+    def audio_for(self, c):
+        """(RA) ("clean", None) when the clip airs its game-only track, else ("ambience", why)."""
+        if not self.cfg["clean_audio"]:
+            return "ambience", "clean audio off"
+        if not c.get("clean"):
+            return "ambience", c.get("clean_why") or "no game-only track"
+        if int(c.get("speed") or 100) != 100:
+            return "ambience", "slow motion (its sound would be slowed too)"
+        if self.alarm.overlaps(c["show_from"], c["show_to"]):
+            return "ambience", "a speaker alarm sounded in its window"
+        return "clean", None
+
+    def replay_audio(self, track):
+        """(RA) The replay scene's sound: "clean" (the clip's own game-only sound, no ambience), "ambience" (the clip
+        muted, the live ambience on), None (both off: off the air). A missing ambience source is said, not fatal."""
+        o, c = self.obs, self.cfg
+
+        def mute():
+            try:
+                o.call("SetInputMute", {"inputName": c["media"], "inputMuted": track != "clean"})
+            except OBSError as e:
+                self.log(f"[replays] the clip's mute: {e}")
+
+        def ambience():
+            try:
+                item = o.call("GetSceneItemId", {"sceneName": c["scene"], "sourceName": c["ambience"]}).get("sceneItemId")
+                o.call("SetSceneItemEnabled", {"sceneName": c["scene"], "sceneItemId": item,
+                                               "sceneItemEnabled": track == "ambience"})
+            except OBSError as e:
+                if track == "ambience":
+                    self.once("noambience", f"[replays] no {c['ambience']!r} in the {c['scene']!r} scene ({e}): replays without "
+                                            f"their own sound air silent under the voices, as before")
+        # what is turned off goes first: never the clip's sound and the ambience at once, even between two calls
+        for step in ((ambience, mute) if track == "clean" else (mute, ambience)):
+            step()
+
     def play(self, c):
         o, m = self.obs, self.cfg["media"]
+        self.prepare_audio(c)  # (RA) made in the segment's start; here if that was missed
+        track, why = self.audio_for(c)
+        c["audio"] = track if not why else f"{track}: {why}"
+        self.replay_audio(track)
         # speed_percent every time (a slow-motion clip at slow_speed, every other at 100: OBS keeps the last setting)
-        o.call("SetInputSettings", {"inputName": m, "inputSettings": {"local_file": c["path"],
+        o.call("SetInputSettings", {"inputName": m, "inputSettings": {"local_file": c["clean"] if track == "clean" else c["path"],
                                                                      "speed_percent": int(c.get("speed") or 100)},
                                     "overlay": True})
         dur = None
@@ -857,13 +1080,14 @@ class Replays:
             o.call("SetMediaInputCursor", {"inputName": m, "mediaCursor": start})
         o.call("TriggerMediaInputAction", {"inputName": m, "mediaAction": "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY"})
         o.call("SetCurrentProgramScene", {"sceneName": self.cfg["scene"]})
-        self.log(f"[replays] on air: {c['label']} ({c['path']}, from {start if dur else 0} ms of {dur} ms)")
+        self.log(f"[replays] on air: {c['label']} ({c['path']}, from {start if dur else 0} ms of {dur} ms; sound: {c['audio']})")
 
     def to_stream(self, why):
         try:
             self.obs.call("SetCurrentProgramScene", {"sceneName": self.cfg["stream_scene"]})
             self.obs.call("TriggerMediaInputAction", {"inputName": self.cfg["media"],
                                                       "mediaAction": "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP"})
+            self.replay_audio(None)  # (RA) the clip muted, the ambience off: nothing of the replay stays in the mix
         finally:
             self.log(f"[replays] back to {self.cfg['stream_scene']} ({why})")
 
@@ -920,7 +1144,9 @@ class Replays:
 
     def public(self):
         s = dict(self.status)
-        s.update(pending=self.pending and {k: self.pending[k] for k in ("kind", "label")},
+        s["alarm"] = self.alarm.public()  # (d29 batch335 AQ) each alarm gain filter: desired, confirmed, pending, last error
+        s.update(highlights_saved=[c["label"] for c in self.hl_saved],
+                 pending=self.pending and {k: self.pending[k] for k in ("kind", "label")},
                  clip=self.clip and {k: self.clip[k] for k in ("id", "label", "path")}, playing=self.playing,
                  waiting=[c["label"] for c in list(self.more_pending) + list(self.more_clips)])
         return s

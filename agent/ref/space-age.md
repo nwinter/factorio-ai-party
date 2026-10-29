@@ -260,6 +260,12 @@
   asteroids once each. Each ammo turret's rounds (read every 15-60 ticks): `rounds_used` exact for gun turrets
   (`exact`); rocket turrets' a load and a shot can offset: `unsure_reads`, `rounds_used_most`. `platform_consumed`:
   the platform's consumed count per ammo item (item production statistics) beside the turrets' `turrets_used`.
+- `platform_defense`, aim watch: `{platform, aim: true, seconds: N}` (10..120; `positions`: 1..8 railguns, else the
+  first 8 by position) reads those railguns every tick; the same without `seconds` reads it. Per railgun: shots and ammo used,
+  and each shot's aimed target, the one it read the tick before the shot: `exact` when that shot hit it (killed or
+  survived, by size), else `uncertain` (no target read, or it was not hit: `aimed_not_hit_alive` when it lived on);
+  the shot's other hits as collateral by size (a railgun's line hits everything on it at once); `unattributed`: its
+  hits on no seen shot; `recent`: the last 24 shots. Not given: the game's reason for a target choice.
   Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
   legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
   restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
@@ -382,6 +388,12 @@
   {unit_number, surface, position} is the silo the game names for that launch (native launches for platform requests
   too); `unknown` for rockets sent before the ledger kept silos (d25), never taken from nearby entities. `silo: N`
   (a unit number) lists that silo's rockets.
+  `launches` (with a surface; with `platform` that platform's; the newest 16): who ordered each rocket (`harness
+  launch by NAME`, `player NAME`, or `automatic`: the game's event does not tell a script's launch from the silo's
+  own) and per cargo item the request then: `min`, `max`, `payload` (the custom minimum payload), `holds`,
+  `on_the_way` (rockets sent and not landed), `this` (the rocket's count). Measured (2.0.77): a hub lacking
+  min - (holds + on the way) gets max(lacking, payload), cut into rockets of up to a rocket's lift; the last carries
+  the rest, which can be under the payload (Lark: lacking 2683, payload 1000: 1000, 1000, 683).
 - `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
@@ -707,3 +719,8 @@
   first hatch (into what, when), how many within 5 min, and the turrets of ours ready in range (`limit` holders, default
   64); a head line with the eggs due within 5 min by 64-tile area and the sweep's age. Example: `./fh call eggs --args
   '{"surface":"gleba"}'`
+- Surface conditions: an entity the surface's properties refuse (chests need gravity >= 0.1; stone and steel furnaces
+  and the heating tower pressure >= 10; the rocket silo pressure >= 1) is refused naming it: `placement blocked:
+  iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0`; dry runs say the same, and
+  `load_silo` with `platform` lists such items in `unplaceable`. `gamedata/entities.json` has each entity's
+  `surface_conditions`, `gamedata/locations.json` each planet's and the platform's `surface_properties`.

@@ -12,6 +12,8 @@
 # POG_VIEWER_ROUTE (default 0; 1: a viewer line that names no agent goes by what it is about, tools/stream/router.py).
 # POG_CODEX_HOOKS (default 0; 1: Codex agents' tool hooks record each call for the busy notice, tools/codex_hooks.py;
 # it writes trust entries into the Codex routes' config.toml).
+# POG_DISCLOSURE (unset: as the save has it, off by default; 1: each team's kit grows with it, docs/DISCLOSURE.md;
+# observe: kept, not filtered; 0: off).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
 # starts on the previous run's stop save (its stopped.json, written by tools/stop-team.sh), else the newest save
 # written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
@@ -131,6 +133,9 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
     echo "4e. public repo push loop (one per Mac, across shifts): $(tools/public-push.sh --check-loop 2>&1 | tail -1); started if not, its lines also in runs/$run/public-push.log"
   fi
+  if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_YT_FOLLOW:-1}" != 0 ]; then
+    echo "4f. YouTube rotation follower (one per Mac, across shifts): $(python3 tools/yt_archive.py follow --check 2>&1 | tail -1); started if not"
+  fi
   if [ "$has_agy" = 1 ]; then
     echo "4d. agy memory guard (an agy agent in the team): $(python3 tools/agy_memguard.py --check || true); started if not, log runs/$run/agy-memguard.log"
   fi
@@ -242,6 +247,15 @@ if [ -n "$resume" ]; then
   progress=$(python3 tools/progress.py --shift-lines 2>/dev/null | tr -d '\n' || true)
   closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n,[==[$progress]==]))" 2>&1)
   log "world $world: shift_start $closed"
+fi
+# (d28 batch317) Progressive disclosure (docs/DISCLOSURE.md): POG_DISCLOSURE=1 filters each team's kit by what it has
+# researched, built, met and done; observe keeps that state without filtering; 0 turns it off. Unset leaves the world as
+# its save has it (off unless set: world n as before). The team's open set is saved once for the briefs (tools/brief.py).
+if [ -n "${POG_DISCLOSURE:-}" ]; then
+  dteam=$(awk -F'\t' '!/^#/ && NF' "$team" | wc -l | tr -d ' ')
+  dflags=(--stream); [ "$dteam" -gt 1 ] && dflags+=(--team)
+  log "world $world: disclosure $(python3 tools/disclosure/set.py --world "$world" --mode "$POG_DISCLOSURE" ${dflags[@]+"${dflags[@]}"} --open "$rundir/disclosure-open.json" 2>&1 | tr '\n' ' ')"
+  export POG_DISCLOSURE_OPEN="$rundir/disclosure-open.json"
 fi
 
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.
@@ -368,6 +382,14 @@ fi
 if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_PUBLIC_HOURLY:-1}" != 0 ]; then
   log "$(tools/public-push.sh --start-loop "$rundir" 2>&1 | tail -1)"
 fi
+# (d28 batch315) the YouTube rotation (tools/yt_archive.py follow: each finished shift's video up, the newest public, the
+# one before it unlisted). One follower per Mac, not a helper of the shift: stop-team leaves it running (an upload can
+# take an hour) and this starts it only when its pid file (the operator's video-work) names no live one. The d27
+# rotation was a one-shot rotate started by hand; it ended with the day's quota and nothing started the follower.
+# POG_YT_FOLLOW=0 does not start it; nor does POG_PUSH_LIVE=0.
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_YT_FOLLOW:-1}" != 0 ]; then
+  log "$(python3 tools/yt_archive.py follow --start 2>&1 | tail -1)"
+fi
 # (d26 batch241) the chart alone, within minutes: site/chart_deploy.py deploys the run's changed cells into the build
 # production has, every 5 minutes (POG_CHART_DEPLOY_EVERY seconds; shift80's site map was 25-50 min behind the
 # stream's). POG_CHART_DEPLOY=0 turns it off; off with POG_PUSH_LIVE=0.
@@ -490,18 +512,31 @@ fi
 POG_TEAM="$rundir/team.txt"
 awk -F'\t' '!/^#/ && NF {print $1 "|" $6 " (" $7 ")"}' "$team" > "$POG_TEAM"
 export POG_TEAM POG_TIME_MODE=realtime POG_ENEMIES=$enemies POG_SEED=$seed
-n=0 tab=""
+n=0 tab="" wanted=0 missing=""
+: >> "$rundir/panes.txt"
 while IFS=$'\t' read -r name kind route model effort label harness; do
   [ -z "$name" ] || [[ $name == \#* ]] && continue
+  wanted=$((wanted + 1))
   [ $((n % 3)) -eq 0 ] && tab=""
   # POG_NO_WAIT: start every pane now and clear the trust prompts of all of them in one pass below (shake3: the
   # per-pane 40 s wait ran out for five agents and the launch took 4.5 minutes).
-  out=$(POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
-        tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort")
-  pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
-  log "agent $name ($label, $kind) in pane $pane tab $tab"
-  echo "$name $pane $kind" >> "$rundir/panes.txt"
-  n=$((n + 1))
+  # (d29 batch331 LS) one agent's launch failing no longer ends the start (shift96 and shift97 ran ~30 min with no
+  # agents): it is logged as not started, with launch-agent.sh's last lines, left out of panes.txt and listed in
+  # not-started.txt, and the others go on; the watchdog or the operator can relaunch it.
+  # POG_LAUNCH_AGENT: the launch script (tests: a stub).
+  if out=$(POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
+        "${POG_LAUNCH_AGENT:-tools/launch-agent.sh}" "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
+        2> >(tee "$rundir/launch-$name.err" >&2)); then
+    pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
+    log "agent $name ($label, $kind) in pane $pane tab $tab"
+    echo "$name $pane $kind" >> "$rundir/panes.txt"
+    n=$((n + 1))
+  else
+    sleep 0.2   # the stderr copy's last lines
+    log "agent $name ($label, $kind) NOT STARTED: launch failed: $(tail -3 "$rundir/launch-$name.err" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+    printf '%s\t%s\t%s\n' "$name" "$kind" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$rundir/not-started.txt"
+    missing="$missing $name"
+  fi
 done < "$team"
 # (d22 batch108 BR1, Grok's weekly limit at 20:04, reset Sat 15:59) A new run has no resting.json of the last one: an
 # agent whose account the quota check above read at its limit (a window at 99% or more, its reset ahead) gets a quota
@@ -516,8 +551,8 @@ rest_carry=(); [ -n "${carry_from:-}" ] && rest_carry=(--carry "$carry_from")
   | while read -r line; do log "$line"; done
 prompt_args=()
 while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
-tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
-log "started: $(wc -l < "$rundir/panes.txt") agents; deadline $(cat "$rundir"/*/deadline.txt | head -1)"
+[ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
+log "started: $(wc -l < "$rundir/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; runs/$run/not-started.txt)}; deadline $(cat "$rundir"/*/deadline.txt 2>/dev/null | head -1)"
 
 # 6. Supervisors (agy runs its own loop until the deadline).
 while read -r name pane kind; do

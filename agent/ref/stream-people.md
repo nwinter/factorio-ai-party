@@ -71,3 +71,10 @@
 - A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
   library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket
   launches.
+- Talking: `./fh say "..."` posts in the game chat and in a bubble above your
+  character; text with an apostrophe or quote goes on stdin: `./fh say - <<'EOF'`, the text, then `EOF` on its own
+  line. Viewers are watching the stream and enjoy hearing your plans, opinions, frustrations and banter, so talk as you
+  play. What you `say` is read and heard by people: write it as you would speak to them, in plain words and whole
+  sentences with spaces, concrete about what happened and why, without hype, filler or strings of exclamation marks.
+  Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
+  own voice (a plan, a win, a complaint, a joke); viewers like hearing from each of you every few minutes.

@@ -637,7 +637,7 @@ return function(api)
       for _, w in ipairs(st.list) do
         if w.force == p.force.name then local r = a.full and M.row(w) or M.brief(w); rows[#rows+1] = r; lines[#lines+1] = r.line end
       end
-      return {watches=rows, lines=lines, note=#rows == 0 and 'no delivery watch; set one with item, count, to {position, surface | platform}, deadline_min'
+      return {watches=rows, lines=lines, note=#rows == 0 and 'no delivery watch; set one with item, count, to {position, surface | platform}, deadline_min (a watch counts from when it is set; pods sent before it are in shipment {ledger: true, platform, surface})'
         or not a.full and 'each watch in brief; delivery_watch {id: N} gives its whole row (stages with their texts, received by source, arrivals, diversions, the stock test, blockers and risks in words), {full: true} every whole row' or nil}
     end
     assert(type(a.item) == 'string' and prototypes.item[a.item], 'unknown item: ' .. tostring(a.item))

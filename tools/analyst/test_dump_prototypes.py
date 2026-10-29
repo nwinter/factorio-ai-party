@@ -222,3 +222,23 @@ check(ents["electromagnetic-plant"]["effects"]["crafting_speed_by_quality"]["leg
 qs = {q["name"]: q for q in json.load(open(os.path.join(kb, "qualities.json")))}
 check(qs["legendary"]["default_multiplier"] == 2.5 and qs["rare"]["next"] == "epic", qs.get("legendary"))
 print("test_dump_prototypes: BL1 ok (fractions, module effects by quality, machine effects, qualities)")
+# (d28 batch328 SC, Astra #2725) surface conditions: merged into entities.json and locations.json; the kb as dumped
+# from the iMac copy of world n (d28 21:15)
+import tempfile  # noqa: E402
+with tempfile.TemporaryDirectory() as d:
+    with open(os.path.join(d, "entities.json"), "w") as f:
+        json.dump([{"name": "iron-chest", "type": "container"}, {"name": "inserter", "type": "inserter", "surface_conditions": [{"property": "x"}]}], f)
+    with open(os.path.join(d, "locations.json"), "w") as f:
+        json.dump({"planets": []}, f)
+    line = dp.merge_surface_conditions(d, [{"name": "iron-chest", "conditions": [{"property": "gravity", "min": 0.1}]},
+                                          {"name": "straight-rail", "conditions": [{"property": "gravity", "min": 0.1}]},
+                                          {"name": "", "surfaces": {"space-platform": {"gravity": 0}}, "defaults": {"gravity": 10}}])
+    ents = {e["name"]: e for e in json.load(open(os.path.join(d, "entities.json")))}
+    check(ents["iron-chest"]["surface_conditions"] == [{"property": "gravity", "min": 0.1}] and "surface_conditions" not in ents["inserter"]
+          and ents["straight-rail"]["type"] is None, ents)
+    check(json.load(open(os.path.join(d, "locations.json")))["surface_properties"] == {"surfaces": {"space-platform": {"gravity": 0}}, "defaults": {"gravity": 10}}, line)
+    check(dp.command("surface_conditions", 1).startswith("/silent-command "), "one-line command")
+ents = {e["name"]: e for e in json.load(open(os.path.join(kb, "entities.json")))}
+check(ents["iron-chest"]["surface_conditions"] == [{"min": 0.1, "property": "gravity"}], ents["iron-chest"])
+check(json.load(open(os.path.join(kb, "locations.json")))["surface_properties"]["surfaces"]["space-platform"]["gravity"] == 0, "platform gravity 0")
+print("test_dump_prototypes: SC ok (surface conditions and properties merged; iron-chest needs gravity >= 0.1, the platform has 0)")

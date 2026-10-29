@@ -25,14 +25,25 @@ the status's date; the reply shows under the row (the build finds it by that ref
 reply goes: a row that would go backwards, a status past planned with no --work (the row's or this one), or a new row
 with no --title refuses the whole call and sends nothing. The file is written under its lock after the reply is sent.
 
+(d28 batch323 DR, viewer Aurora 16:19, site:5413: "Could delivery receipts require a successful durable inbox write? ...
+The reply helper also sends before saving an optional ledger update. Keep request IDs through durable pending delivery
+and safe retries") Each reply has a request id (`rid`: its line and parts, so the same reply run again is the same
+request). The order is: the record with its rid, flushed and fsynced (pending); the Updates row (--update), written
+under its lock; the lines sent; then RUN/operator-replies-sent.jsonl gets {rid, t} (sent). A crash or a failed send
+leaves the record pending: the next opreply call in that run (or --resume) sends it, once: a part the game chat
+already has after the record (RUN/chat.jsonl, newer than its `chat_seq`) is not sent again, and one already marked
+sent is never sent again (the same reply run again says so and sends nothing; --again sends it as a new request).
+The Updates page shows a reply once it is marked sent (records from before have no rid and count as sent).
+
 --world: POG_WORLD, else n. --run: the run folder (default: the runs/shift* folder whose chat.jsonl changed last, the
 live one); an inbox line from the 2 runs before it is found too, and the record still goes to this run (d22 batch89 AY4).
 """
-import argparse, datetime, glob, json, os, re, sys, time, urllib.request
+import argparse, datetime, fcntl, glob, hashlib, json, os, re, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "stream"))
+import operator_inbox  # noqa: E402
 import viewer_replies  # noqa: E402
 
 SITE_API = "https://player-of-games-live.your-subdomain.workers.dev"
@@ -169,6 +180,116 @@ def send(lines, world, port=None):
         r.command(line)
 
 
+SENT_NAME = "operator-replies-sent.jsonl"  # (batch323) {rid, t}: the replies whose lines all went to the game chat
+CHAT_SETTLE_S = 20.0  # (batch323) a pending reply is judged only this long after its record: chat-log.py reads every 5 s
+
+
+def rid_of(rec):
+    """(batch323) A reply's request id: the line it answers and its parts (and `again`'s time when given)."""
+    return "op-" + hashlib.sha1(json.dumps([rec.get("to"), rec.get("parts"), rec.get("again")]).encode()).hexdigest()[:16]
+
+
+def chat_rows(run):
+    out = []
+    try:
+        with open(os.path.join(run, "chat.jsonl"), errors="replace") as f:
+            for raw in f:
+                try:
+                    r = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and isinstance(r.get("seq"), int):
+                    out.append(r)
+    except OSError:
+        pass
+    return out
+
+
+def chat_seq(run):
+    return max((r["seq"] for r in chat_rows(run)), default=0)
+
+
+def ledger(run):
+    """(batch323) ({rid: record} of RUN/operator-replies.jsonl, {rids marked sent})."""
+    recs = {}
+    for r in read_rows(os.path.join(run, viewer_replies.LINKS_NAME)):
+        if r.get("rid"):
+            recs.setdefault(r["rid"], r)
+    return recs, operator_inbox.values_in(os.path.join(run, SENT_NAME), "rid")
+
+
+def read_rows(path):
+    out = []
+    try:
+        with open(path, errors="replace") as f:
+            for raw in f:
+                try:
+                    r = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(r, dict):
+                    out.append(r)
+    except OSError:
+        pass
+    return out
+
+
+def to_send(run, rec):
+    """(batch323) The parts of a pending record not yet in the game chat after its chat_seq, in order (a part sent
+    before a crash is not sent again)."""
+    have = [str(r.get("text")) for r in chat_rows(run) if r["seq"] > int(rec.get("chat_seq") or 0) and r.get("from") == "server"]
+    out = []
+    for p in rec.get("parts") or []:
+        if p in have:
+            have.remove(p)
+        else:
+            out.append(p)
+    return out
+
+
+def finish(run, rec, world, port, clock=time.time, wait=time.sleep):
+    """(batch323) Send what a pending record still lacks, then mark it sent. Waits until CHAT_SETTLE_S after the record
+    so the chat log holds whatever went out before a crash."""
+    left = rec.get("t", 0) + CHAT_SETTLE_S - clock()
+    if left > 0 and rec.get("resumed"):
+        wait(left)
+    lines = to_send(run, rec)
+    if lines:
+        send(lines, world, port)
+    operator_inbox.write_rows(os.path.join(run, SENT_NAME), [{"rid": rec["rid"], "t": round(clock(), 1),
+                                                              "sent": len(lines), "parts": len(rec.get("parts") or [])}])
+    return lines
+
+
+def resume(run, world, port=None, clock=time.time, wait=time.sleep, skip=None):
+    """(batch323) Every pending reply of this run (a record with a rid and no sent mark), oldest first: sent once."""
+    recs, sent = ledger(run)
+    done = []
+    for rid, rec in sorted(recs.items(), key=lambda kv: kv[1].get("t", 0)):
+        if rid in sent or rid == skip:
+            continue
+        lines = finish(run, dict(rec, resumed=True), rec.get("world") or world, port, clock, wait)
+        print(f"resumed {rid} ({rec.get('to')}): sent {len(lines)} of {len(rec.get('parts') or [])} part(s), the rest "
+              f"were in the game chat already")
+        done.append(rid)
+    return done
+
+
+class locked:
+    """(batch323) One opreply at a time per run (RUN/.opreply.lock)."""
+    def __init__(self, run):
+        self.path = os.path.join(run, ".opreply.lock")
+
+    def __enter__(self):
+        self.f = open(self.path, "a")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.f, fcntl.LOCK_UN)
+        self.f.close()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("text", nargs="?", help="the reply (leading @NAME and Operator: are added)")
@@ -186,10 +307,20 @@ def main(argv=None):
     ap.add_argument("--work", help="--update: the batch doing it (needed past planned)")
     ap.add_argument("--status", default="planned", choices=("planned", "in progress"), help="--update: planned (default) or in progress")
     ap.add_argument("--updates-file", help=argparse.SUPPRESS)  # tests: another JSON
+    ap.add_argument("--resume", action="store_true", help="(batch323) send this run's pending replies (a crash or failed "
+                    "send left them), each once, and nothing else")
+    ap.add_argument("--again", action="store_true", help="(batch323) send a reply already sent, as a new request")
     a = ap.parse_args(argv)
     if (a.title or a.area or a.work or a.status != "planned") and not a.update:
         ap.error("--title, --area, --work and --status go with --update ID")
     run = a.run or latest_run(os.path.join(os.path.dirname(HERE), "runs"))
+    if a.resume:
+        if not run:
+            sys.exit("opreply: no run folder (--run)")
+        with locked(run):
+            done = resume(run, a.world, a.port)
+        print(f"{len(done)} pending repl{'y' if len(done) == 1 else 'ies'} sent" if done else "nothing pending")
+        return 0
     if a.list is not None:
         rows = [r for r in inbox_rows(run) if not a.list or r["agent"][7:].lower() == a.list.lower()][-12:]
         for r in rows:
@@ -203,6 +334,8 @@ def main(argv=None):
     found_in = question.pop("run", None)
     lines = sent_lines(run, a.sent) if a.sent else parts(name, a.text)
     rec = {"t": round(time.time(), 1), "to": ident, "name": name, "question": question, "parts": lines, "world": a.world}
+    if a.again:
+        rec["again"] = rec["t"]
     path = os.path.join(run, viewer_replies.LINKS_NAME) if run else None
     print(f"answers {ident} ({name}, {hm(question['t']) if isinstance(question.get('t'), (int, float)) else '?'}): {str(question.get('text'))[:100]}"
           + (f" (from {found_in}'s inbox; the record goes to {os.path.basename(run)})" if found_in and found_in != os.path.basename(run) else ""))
@@ -223,26 +356,46 @@ def main(argv=None):
         if a.dry_run:
             print(f"update (not written): {said}")
             return deliver(a, rec, lines, path)
-        code = deliver(a, rec, lines, path)
-        ou.write(upath, data)
+        # (batch323) the Updates row is saved after the pending record and before the send, so a reply never goes
+        # out without its row; the row shows the reply once it is marked sent
+        code = deliver(a, rec, lines, path, before_send=lambda: ou.write(upath, data))
     print(f"update {said} (the reply shows under it once the site is rebuilt)")
     return code
 
 
-def deliver(a, rec, lines, path):
-    """The record first (the stream service links each part as it arrives), then the lines to the game chat."""
+def deliver(a, rec, lines, path, before_send=None):
+    """The record first (the stream service links each part as it arrives), then the lines to the game chat.
+    (batch323) The record is the pending request, durable before anything is sent; the sent mark comes after."""
     if a.dry_run:
         print(f"dry run: nothing sent; the record would go to {path}")
         return 0
     if not path:
         sys.exit("opreply: no run folder (--run)")
-    with open(path, "a") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    if a.sent:
-        print(f"linked {len(lines)} sent line{'s' if len(lines) > 1 else ''} in {path} (the stream service reads them at its next chat read)")
-        return 0
-    send(lines, a.world, a.port)
-    print(f"sent {len(lines)} line{'s' if len(lines) > 1 else ''} to world {a.world}; linked in {path}")
+    run = os.path.dirname(path)
+    with locked(run):
+        rec["rid"] = rid = rid_of(rec)
+        if not a.sent:
+            resume(run, a.world, a.port, skip=rid)  # older pending replies first, each once
+        recs, sent = ledger(run)
+        if rid in sent:
+            if before_send:
+                before_send()
+            print(f"already sent as {rid} ({os.path.basename(run)}): nothing sent again (--again sends it anew)")
+            return 0
+        if rid in recs:
+            rec = dict(recs[rid], resumed=True)  # pending from an earlier call: finished now, once
+        else:
+            rec["chat_seq"] = chat_seq(run)
+            operator_inbox.write_rows(path, [rec])
+        if before_send:
+            before_send()
+        if a.sent:
+            operator_inbox.write_rows(os.path.join(run, SENT_NAME), [{"rid": rid, "t": round(time.time(), 1), "sent": 0,
+                                                                      "parts": len(lines), "linked": True}])
+            print(f"linked {len(lines)} sent line{'s' if len(lines) > 1 else ''} in {path} (the stream service reads them at its next chat read)")
+            return 0
+        out = finish(run, rec, a.world, a.port)
+    print(f"sent {len(out)} line{'s' if len(out) != 1 else ''} to world {a.world}; linked in {path} as {rid}")
     return 0
 
 

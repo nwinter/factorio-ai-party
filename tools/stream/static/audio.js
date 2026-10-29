@@ -12,6 +12,15 @@
 // started at that moment on the audio clock, outside the queue. Until it has played, no queued clip starts that would
 // still be playing at `at` (its duration, else 20 s, and GUARD); one that still plays then (a wrong length) is ducked
 // under it. A `cancel` event takes a timed or queued clip back. The start report says when it started (started_at).
+// (d28 batch319 SU, viewer Aurora site:5401: "routine spoken updates wait until a narrator overview or recap
+// finishes") A timed clip with `segment` {id, part, parts} (a narrated piece: tour.py, hourly.py) holds the queue from
+// its arrival until the segment's last part has played: no queued clip starts in between, but an urgent one (rank
+// urgent: attacks, deaths, losses) still may between two parts. The hold ends on the last part's end, cut, error or
+// skip, on a `release` event (the tour's end or early stop), HOLDGAP s after the last known part should have ended
+// (the next did not come) or HOLDMAX s after it opened: nothing stays muted. While held, an agent's, the operator's or
+// a viewer answer's clip keeps its place: the time held is added to its expiry (at most HOLDEXTEND s); host banter is
+// not, and drops when stale. A clip id seen once is never taken again (a reconnect's replay of the queued clips). A
+// skip report says why: expired, late or cancelled. URL knobs: ?holdgap=15, ?holdmax=240, ?holdextend=120.
 (() => {
   const params = new URLSearchParams(location.search);
   if (params.has("mute")) return;
@@ -79,6 +88,33 @@
   const nextAt = () => { let m = Infinity; for (const x of timed.values()) if (!x.done && x.clip.at < m) m = x.clip.at; return m; };
   const narrating = () => { for (const x of timed.values()) if (x.playing) return true; return false; };
   let lastExchange = null;  // the exchange of the last host line, to keep Rook and Vale together
+  const HOLD_GAP = num("holdgap", 15), HOLD_MAX = num("holdmax", 240), HOLD_EXTEND = num("holdextend", 120);
+  const holds = new Map();  // (SU) segment id -> {opened, until, parts}: a narrated piece holding the queue
+  const seen = new Set();   // (SU) clip ids taken: a reconnect sends the queued ones again
+  function holdOpen(clip) {
+    const sg = clip.segment;
+    if (!sg || sg.id == null) return;
+    const now = svcNow();
+    let h = holds.get(sg.id);
+    if (!h) { h = { opened: now, until: 0, parts: sg.parts || 1 }; holds.set(sg.id, h); }
+    const end = (typeof clip.at === "number" ? clip.at : now) + (clip.duration || 20) + HOLD_GAP;
+    if (end > h.until) h.until = end;
+  }
+  function holdEnd(clip, state) {
+    const sg = clip.segment;
+    if (!sg || sg.id == null || !holds.has(sg.id)) return;
+    if ((sg.part || 1) >= holds.get(sg.id).parts || state === "cut") holds.delete(sg.id);
+  }
+  function holding() {
+    const now = svcNow();
+    let on = false;
+    for (const [k, h] of holds) {
+      if (now > h.until || now - h.opened > HOLD_MAX) { holds.delete(k); continue; }
+      on = true;
+    }
+    return on;
+  }
+  window.pogVoiceHolding = holding;
 
   // extra: {played, duration} in seconds as this page measured them (the audio clock), so the service can tell a clip
   // that ended early (viewer syndesis, shift14 23:04: "spoken lines cut off abruptly") from one that played whole.
@@ -89,15 +125,24 @@
   // The page (re)loaded: a clip the service thinks is playing ended here (an OBS refresh, a page-file reload).
   report(null, "load");
   // Whether a clip is playing or loading now (overlay.js waits for it before reloading the page).
-  window.pogVoiceBusy = () => current != null;
+  window.pogVoiceBusy = () => current != null || narrating();
 
   const rankOf = (clip) => (clip.rank in RANK ? RANK[clip.rank] : clip.channel === "agent" ? RANK.agent : RANK.banter);
-  const expired = (clip) => clip.expires && Date.now() / 1000 > clip.expires;
+  const expired = (clip) => clip.expires && Date.now() / 1000 > clip.expires + Math.min(HOLD_EXTEND, clip.held || 0);
+  // (SU) a clip that matters (an agent's, the operator's, a viewer answer) gains the time a hold kept it waiting
+  function heldTick() {
+    const now = Date.now() / 1000, on = holding();
+    for (const c of queue) {
+      if (on && rankOf(c) >= RANK.viewer && rankOf(c) < RANK.urgent && c.lastSeen != null) c.held = (c.held || 0) + (now - c.lastSeen);
+      c.lastSeen = now;
+    }
+  }
 
   // the next clip: drop the expired, then the highest rank; among equals, the current exchange's next line, then
   // the oldest
   function pick() {
-    for (let i = queue.length - 1; i >= 0; i--) if (expired(queue[i])) { report(queue[i].id, "skip"); queue.splice(i, 1); }
+    heldTick();
+    for (let i = queue.length - 1; i >= 0; i--) if (expired(queue[i])) { report(queue[i].id, "skip", { reason: "expired" }); queue.splice(i, 1); }
     if (!queue.length) return null;
     let best = 0;
     for (let i = 1; i < queue.length; i++) {
@@ -126,16 +171,17 @@
     if (x && !x.done) {
       x.done = true;
       if (x.src) { try { x.src.stop(); } catch (err) { /* not started */ } }
-      if (!x.playing) report(id, "skip");
+      if (!x.playing) report(id, "skip", { reason: "cancelled" });
     }
     const i = queue.findIndex((c) => c.id === id);
-    if (i >= 0) { queue.splice(i, 1); report(id, "skip"); }
+    if (i >= 0) { queue.splice(i, 1); report(id, "skip", { reason: "cancelled" }); }
   }
 
   async function schedule(clip) {
     const x = { clip, done: false, playing: false };
     timed.set(clip.id, x);
-    let cap = null, t0 = null, length = null, state = null;  // null: nothing to report (cancelled before it started)
+    holdOpen(clip);
+    let cap = null, t0 = null, length = null, state = null, skipWhy = null;  // null: nothing to report (cancelled before it started)
     try {
       const c = audioCtx();
       if (c.state === "suspended") { await c.resume().catch(() => {}); if (c.state === "suspended") unlockButton(); }
@@ -143,7 +189,7 @@
       const buf = await c.decodeAudioData(data);
       let wait = clip.at - svcNow();
       if (x.done) return;
-      if (wait < -2) { x.done = true; state = "skip"; return; }  // the page came too late for it: never played late
+      if (wait < -2) { x.done = true; state = "skip"; skipWhy = "late"; return; }  // the page came too late for it: never played late
       const g = c.createGain();
       g.gain.value = VOL.caster;
       g.connect(c.destination);
@@ -176,20 +222,28 @@
     } finally {
       const extra = t0 != null && ctx ? { played: Math.round((ctx.currentTime - t0) * 100) / 100,
         duration: length != null ? Math.round(length * 100) / 100 : undefined } : undefined;
-      if (state) report(clip.id, state, extra);
+      if (state) report(clip.id, state, skipWhy ? Object.assign({ reason: skipWhy }, extra || {}) : extra);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
       x.done = true; x.playing = false;
+      holdEnd(clip, state || "skip");
       setTimeout(() => timed.delete(clip.id), 60000);
       setTimeout(playNext, 300);
     }
   }
 
   // a queued clip may start now when no timed clip plays and it ends before the next one (its length, else 20 s)
-  const fits = (clip, length) => !narrating() &&
+  // (SU) and no segment holds the queue, unless it is urgent
+  const fits = (clip, length) => !narrating() && (rankOf(clip) >= RANK.urgent || !holding()) &&
     svcNow() + (length != null ? length : (clip.duration || 20)) + GUARD <= nextAt();
 
   function arrive(clip) {
     if (clip.cancel) { cancel(clip.cancel); return; }
+    if (clip.release != null) { holds.delete(clip.release); playNext(); return; }  // (SU) the tour ended its segment
+    if (clip.id != null) {
+      if (seen.has(clip.id)) return;  // (SU) sent again on a reconnect: taken once
+      seen.add(clip.id);
+      if (seen.size > 2000) seen.delete(seen.values().next().value);
+    }
     const d = typeof clip.t === "number" ? clip.t - Date.now() / 1000 : 0;
     if (Math.abs(d) > 1) skew = d; else if (typeof clip.t === "number") skew = 0;
     if (typeof clip.at === "number") { schedule(clip); return; }
@@ -247,7 +301,7 @@
     line.append(mic, who);
     // No role label ("play-by-play", "colour") on captions: the hosts go by name only.
     const text = document.createElement("span");
-    text.textContent = clip.text || "";
+    text.textContent = (clip.text || "") + (clip.excerpt ? " (excerpt)" : "");  // (SU2) a chat line said in part
     body.append(line, text);
     if (clip.channel === "operator") {  // the operator: a plain OP badge, no avatar
       const badge = document.createElement("span");
@@ -274,14 +328,14 @@
       return;
     }
     const cur = current = { clip, rank: rankOf(clip), cut: false };
-    let cap = null, state = "end", t0 = null, length = null;
+    let cap = null, state = "end", t0 = null, length = null, skipWhy = null;
     try {
       const c = audioCtx();
       if (c.state === "suspended") { await c.resume().catch(() => {}); if (c.state === "suspended") unlockButton(); }
       const data = await fetch(clip.url, { cache: "no-store" }).then((r) => r.arrayBuffer());
       const buf = await c.decodeAudioData(data);
       if (cur.cut) { state = "cut"; return; }          // something that matters more arrived while it loaded
-      if (expired(clip)) { state = "skip"; return; }   // never late
+      if (expired(clip)) { state = "skip"; skipWhy = "expired"; return; }   // never late
       if (!fits(clip, buf.duration)) { queue.push(clip); state = null; return; }  // (CK1) back in the queue
       const g = c.createGain();
       g.gain.value = VOL[clip.channel === "agent" || clip.channel === "operator" ? "agent" : "caster"];
@@ -304,7 +358,7 @@
     } finally {
       const extra = t0 != null && ctx ? { played: Math.round((ctx.currentTime - t0) * 100) / 100,
         duration: length != null ? Math.round(length * 100) / 100 : undefined } : undefined;
-      if (state) report(clip.id, state, extra);
+      if (state) report(clip.id, state, skipWhy ? Object.assign({ reason: skipWhy }, extra || {}) : extra);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
       current = null;
       setTimeout(playNext, cur.cut ? 60 : state ? 300 : 500);

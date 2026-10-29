@@ -127,6 +127,8 @@ def dry_run():
         assert "agy memory guard" not in out, out  # no agy agent in the team (tools/test_agy_memguard.py)
         # (batch290) the public push loop: one per Mac; a test run's check refuses the live paths (tools/test_public_push.py)
         assert "4e. public repo push loop (one per Mac, across shifts): POG_TEST=1: no public push without" in out, out
+        # (batch315) the YouTube follower: one per Mac; a test run's check leaves the live video-work alone
+        assert "4f. YouTube rotation follower (one per Mac, across shifts): POG_TEST=1: no YouTube follower" in out, out
         assert "5. agents launch; 6." in out, out   # POG_FULL_TOOLS unset
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_FULL_TOOLS="1"), capture_output=True, text=True, cwd=ROOT)

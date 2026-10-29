@@ -36,6 +36,8 @@
   between reads, and when it was rebuilt; a fired guard keeps them in its queue history; remote and platform lanes,
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
+  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: met once the item that binds first can go out
+  less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed);
   `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
   in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
   guard keeps the progress and leg; remote and platform lanes);
@@ -64,7 +66,9 @@
   "fluid":"thruster-oxidizer","at_least":12000}]}`; `any` (`conditions`: 1..8 plain conditions, met when one holds;
   every one is read each check and validated on submit and dry run; the remote and platform lanes take it when they
   take each; `saw` names the first that holds as `#N` with its saw, then the others', and `matched` {index, until,
-  saw} is in `last` and the step's history), e.g. `{"until":"any","conditions":[{"until":"platform_progress",
+  saw} is in `last` and the step's history; a member that cannot be read, such as a removed turret, is named in `saw`
+  as `could not be read` and in `member_errors` [{index, until, error}], one that holds still meets it, and with
+  none holding the read fails naming them all), e.g. `{"until":"any","conditions":[{"until":"platform_progress",
   "platform":"Asterion","at_least":0.002},{"until":"item_count","platform":"Asterion","item":
   "promethium-asteroid-chunk","at_least":25}]}`; `tick_at_least` (`tick`: a whole game tick, up to 1296000 ticks
   ahead: met once the game reaches it, at the first check when it has passed; a pause, resume or requeue never moves
@@ -144,7 +148,11 @@
   still armed. `queue_status` `guards` give each one's `scope`, and with a `tick_at_least` its `deadline_tick` and
   `ticks_left`. Guards set before scopes are standing. A guard with `tick_at_least` in its `when` is checked every tick
   from that tick: on a remote or platform lane it fires then even while the lane is paused or held, and its steps or
-  goto run; on the body lane `queue_resume` fires it before any step. `dry_run: true` checks the plan and queues nothing;
+  goto run; on the body lane `queue_resume` fires it before any step. A guard whose read fails stays armed and is read
+  again at each check: a `guard_error` history row and one team block line say so once while its reads keep failing,
+  and `queue_status` `guards` give its `read_error` {error, first_tick, last_tick, checks, cleared_tick}. A wait_until
+  whose deadline is still ahead keeps waiting when its read fails (one `wait_error` row), and the deadline still ends
+  it. `dry_run: true` checks the plan and queues nothing;
   `world_checks` reads each `platform_schedule` step as the call reads it now (`refused if it ran now:` the call's own
   refusal, e.g. new waits holding now without `go: true`; `when it runs:` what a refusal then turns on) and the first 4
   `requests` steps on a platform as their dry run (`waits_unmet`, `sends_down`), with the steps before each not applied.
@@ -262,7 +270,7 @@
   acknowledged that stays open. `status` `overdue_reviews` lists
   your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
   `next_check` tick, oldest first.
-- What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
+- What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the urgent alerts below:
   a `./fh sleep` or `./fh wait` begun while teammates' tells have stayed unread 2 minutes or more ends at once on them
   (`woke: told`, `N unread tells from before this sleep began ...`, `woke_by` with `unread: true`), each tell once;
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
@@ -313,3 +321,33 @@
   slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`, also on the clock
   line) and end `paused` when it stops. After a server restart from a save, one reply says `rolled_back` and lists in
   `redo` what you changed since, which is gone.
+- Waiting and planning: before a step that needs real thought, leave a queue
+  plan or a long timed action running. `wait_until` and a queue plan check a condition inside the game, with no call
+  per check; your character can work while a queue or another condition runs. One `status` carries the clock and the
+  research progress (`factory`). `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no
+  round trips.
+- `--wait`: timed actions (move_to, mine, build_path, construct, ...) take
+  `--wait`, which lasts until the action's own end tick (`--wait-timeout MS` cuts it shorter). After `--wait`, a nonzero
+  exit means it failed or is still running: read `error.code`. On `wait_timeout`, run `./fh wait` (never a new
+  move/mine/build, which would interrupt it) until it reports `idle`. A `--wait` that a tell or mention ends while the
+  action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
+- `./fh sleep 120` waits up to 120 s; the game runs in real time either way.
+  Your current action and queue keep going, and nothing new starts. It returns early when you are hit, mentioned or
+  told something, when someone changes your board item, when your running queue finishes or stalls, and with
+  `--until` when a condition holds: `--until "researched"` (the research running now, or `researched TECH`),
+  `--until crafting_done`, `--until "item_count iron-plate>=200"` (your inventory). It does not return when a machine
+  starves, and never runs past your deadline. With no queue running, no action running and no `--until` it lasts at
+  most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s otherwise. A tell or mention wakes it once.
+- `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one
+  line out (`woke: told after 42 s (astra: ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a
+  `--until` condition as for sleep, or after `--max` seconds; the team block comes with your next reply, and the line
+  ends with `open for you: ...`.
+- Urgent alerts: every sleep and wait ends on an urgent alert (`woke: urgent`,
+  naming it): our structures attacked within 40 tiles of you, an enemy group heading within 40 tiles of you, enemies
+  destroying buildings in your fresh claims or near you, a platform you hear about losing a building or its hub hit,
+  a teammate dying on your surface, a network on your surface half on low or no power; `--no-urgent` opts out.
+- A direct action that drives your character (walk, `move_to`, build, mine,
+  transfer, collect, feed and the like) pauses your running queue at once; `./fh queue resume` continues it. A direct
+  `wait_ticks` or `wait_until` while your queue runs runs as a sleep and the queue keeps going (`as_sleep`;
+  `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue
+  running.

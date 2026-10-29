@@ -299,10 +299,10 @@ REPLY_MAX = 40  # agents' replies to viewers in the state (newest kept); the liv
 LINKS = ("reply_to", "name", "only_line", "only_to", "time", "none")  # name (AK6): the harness linked it by the name it says  # viewer_replies.classify's link
 
 
-def public_replies(rows, hidden=None):
+def public_replies(rows, hidden=None, keep=REPLY_MAX):
     """The agents' and the Operator's lines that answer a viewer or speak to the viewers (model.py viewer_replies,
-    tools/stream/viewer_replies.py), oldest first, the newest REPLY_MAX: {seq, t, tick, by, text, kind, to, link?,
-    answers?}.
+    tools/stream/viewer_replies.py), oldest first, the newest `keep` (None: all): {seq, t, tick, by, text, kind, to,
+    link?, answers?}.
     A reply to a line the site hides keeps its own words; that line and its viewer's name are left out."""
     out = []
     for r in rows or []:
@@ -337,7 +337,7 @@ def public_replies(rows, hidden=None):
             row["part"] = p
         out.append(row)
     out.sort(key=lambda r: r["t"])
-    return out[-REPLY_MAX:]
+    return out[-keep:] if keep else out
 
 
 BOARD_BYTES = 48 * 1024  # the board's share of the state (MAX_STATE_BYTES 256 KB in the worker)
@@ -987,6 +987,81 @@ def push_board(a, tok, board, now=None):
     return len(body)
 
 
+# (d28 batch309, viewer Aurora 09:38: "Could viewer chat retain replies as long as their prompts remain, across shifts and
+# reloads? Preserve all parts and late answers.") The state carries the newest REPLY_MAX replies; every reply the stream
+# service keeps (serve.py /replies.json, read back across restarts and shifts) goes to the worker's reply store
+# (POST /v1/replies, by game seq), which returns them with the lines they answer (GET /v1/chat?replies=1).
+REPLIES_EVERY = 10  # seconds between reads of /replies.json
+REPLIES_POST = 100  # rows per POST (the worker takes 200)
+
+
+def replies_url(source):
+    """serve.py's /replies.json beside its /state.json."""
+    return re.sub(r"/state\.json$", "", source.rstrip("/")) + "/replies.json"
+
+
+def reply_posts(rows, sent, hidden=None):
+    """The public rows (public_replies, scrubbed) of `rows` not yet sent as they are now (`sent`: seq -> hash, updated
+    by the caller once a post goes through), in POST bodies of at most REPLIES_POST: [(body, {seq: hash})]."""
+    new = []
+    for r in public_replies(rows, hidden, keep=None):
+        if not isinstance(r.get("seq"), int) or isinstance(r.get("seq"), bool):
+            continue
+        r = scrub(r)
+        h = hashlib.sha1(json.dumps(r, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        if sent.get(r["seq"]) != h:
+            new.append((r, h))
+    return [({"replies": [r for r, _ in new[i:i + REPLIES_POST]]}, {r["seq"]: h for r, h in new[i:i + REPLIES_POST]})
+            for i in range(0, len(new), REPLIES_POST)]
+
+
+def push_replies(a, tok, rs, now=None, post=None):
+    """(d28 batch309) The replies serve.py keeps that the worker does not have as they are now, every REPLIES_EVERY
+    seconds; a worker without the route (404) is asked again in 10 minutes. Returns the rows sent, or None."""
+    now = time.time() if now is None else now
+    if now < rs["off_until"] or now - rs["at"] < REPLIES_EVERY:
+        return None
+    rs["at"] = now
+    try:
+        with urllib.request.urlopen(replies_url(a.source), timeout=5) as r:
+            rows = json.load(r)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None  # an older serve.py: nothing to send
+    if not isinstance(rows, list):
+        return None
+    n = 0
+    for body, hashes in reply_posts(rows, rs["sent"], hidden_now()):
+        if a.print:
+            print(json.dumps({"replies_post": body}, indent=1))
+        else:
+            data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
+            try:
+                if post:
+                    post(data)
+                else:
+                    req = urllib.request.Request(a.api.rstrip("/") + "/v1/replies", data=data, method="POST",
+                                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + tok,
+                                                          "User-Agent": "pog-push-live/1"})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        r.read()
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    rs["off_until"] = now + 600
+                    print(f"[push] {time.strftime('%H:%M:%S')} the worker has no /v1/replies yet: asking again in 10 min", flush=True)
+                else:
+                    print(f"[push] {time.strftime('%H:%M:%S')} replies failed: {e.code}", flush=True)
+                return n or None
+            except (urllib.error.URLError, OSError) as e:
+                print(f"[push] {time.strftime('%H:%M:%S')} replies failed: {type(e).__name__}: {e}", flush=True)
+                return n or None
+        rs["sent"].update(hashes)
+        n += len(hashes)
+    rs["kept"] = len(rows)
+    seqs = {r.get("seq") for r in rows if isinstance(r, dict)}
+    rs["sent"] = {k: v for k, v in rs["sent"].items() if k in seqs}  # rows serve.py no longer keeps
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default="http://127.0.0.1:8787/state.json", help="serve.py state URL")
@@ -1010,6 +1085,7 @@ def main():
     # not tell pushes that went through from a process that never ran)
     window = {"ok": 0, "failed": 0, "bytes": 0, "tick": None, "agents": 0}
     board = {"hash": None, "at": 0.0, "bytes": 0, "off_until": 0.0}  # (BI3) the full board document's last push
+    replies = {"sent": {}, "at": 0.0, "off_until": 0.0, "kept": 0}  # (batch309) each reply's hash as the worker has it
     next_report = time.time() + a.report
     if not a.print:
         print(f"[push] {time.strftime('%H:%M:%S')} start: {a.source} -> {a.api} every {a.interval:g} s", flush=True)
@@ -1040,6 +1116,7 @@ def main():
             if fails in (1, 3) or fails % 30 == 0:
                 print(f"[push] {time.strftime('%H:%M:%S')} failed ({fails}): {type(e).__name__}: {e}", flush=True)
         push_board(a, tok, board)
+        push_replies(a, tok, replies)
         if a.once:
             return 1 if fails else 0
         if not a.print and time.time() >= next_report:
@@ -1047,7 +1124,7 @@ def main():
             print(f"[push] {time.strftime('%H:%M:%S')} {'ok' if window['ok'] else 'NO PUSHES'}: {window['ok']} pushed, "
                   f"{window['failed']} failed in the last {a.report:g} s, {window['bytes'] // max(1, window['ok'])} bytes each, "
                   f"tick {window['tick']}, {window['agents']} agents, terrain frames {len(_terrain['rows'])}, "
-                  f"board document {board['bytes']} bytes"
+                  f"board document {board['bytes']} bytes, replies {len(replies['sent'])} sent of {replies['kept']} kept"
                   + (f" (index read failed: {_terrain['error']})" if _terrain["error"] else "")
                   + f", chart v{_chart['v']}" + (f" (index read failed: {_chart['error']})" if _chart["error"] else ""), flush=True)
             window = dict(window, ok=0, failed=0, bytes=0)

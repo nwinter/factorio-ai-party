@@ -18,6 +18,18 @@ return function(api)
   local MAX_ITEMS, MAX_CHESTS, MAX_FROM = 20, 16, 16
   M.MAX_FROM = MAX_FROM  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d28 batch328 SC, Astra #2725) items whose built entity the platform's surface refuses (api.surface_block: its
+  -- surface_conditions, as "iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0"), or nil
+  function M.unplaceable(surface, list)
+    if not api.surface_block then return nil end
+    local out = {}
+    for _, r in ipairs(list or {}) do
+      local ent = try(function() return prototypes.item[r.name].place_result end)
+      local why = ent and api.surface_block(surface, ent)
+      if why then out[#out + 1] = why end
+    end
+    return #out > 0 and out or nil
+  end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function kg(g) return math.floor(g / 100 + 0.5) / 10 end
   local function label(r) return r.name .. (r.quality and r.quality ~= 'normal' and '@' .. r.quality or '') end
@@ -753,7 +765,7 @@ return function(api)
         split[i] = string.format('rocket %d: %s (%g kg)', i, table.concat(t, ', '), kg(g))
       end
     end
-    local hub_free, hub_room
+    local hub_free, hub_room, unplaceable
     if a.platform ~= nil then
       for _, pl in pairs(p.force.platforms) do
         if pl.valid and pl.name == a.platform and pl.hub and pl.hub.valid then
@@ -763,6 +775,7 @@ return function(api)
           for _, r in ipairs(contents(inv)) do all[#all+1] = r end
           for _, r in ipairs(list) do all[#all+1] = {name=r.name, quality=r.quality, count=a.to_total and math.max(0, r.count - aboard(inv, r)) or r.count} end
           hub_room = try(function() return M.hub_room(pl.hub, all) end)
+          unplaceable = M.unplaceable(pl.surface, list)
         end
       end
     end
@@ -775,7 +788,8 @@ return function(api)
     local trash = M.trash_note(p, list)
     if trash then line = line .. '; ' .. trash.line end
     if hub_room and not hub_room.fits then line = line .. '; ' .. hub_room.line end
-    return {dry_run=true, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
+    if unplaceable then line = line .. '; ' .. table.concat(unplaceable, '; ') .. ' (it goes up as cargo)' end
+    return {dry_run=true, unplaceable=unplaceable, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
       free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
       platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, personal_trash=trash and trash.line or nil, line=line}
   end

@@ -150,6 +150,7 @@ return function(api)
     out.idle_s=math.floor((record.idle_ticks or 0)/60)
     out.wait_estimates=record.wait_estimates
     out.matched=record.matched  -- (d23 batch127 CJ1) until=any: the member that held
+    out.member_errors=record.member_errors  -- (d28 batch311 GA) all or any: the members that could not be read
     local lines={}
     for _,row in ipairs(record.wait_estimates or {}) do lines[#lines+1]=row.line end
     lines[#lines+1]=string.format('character idle %ds in this wait',out.idle_s)

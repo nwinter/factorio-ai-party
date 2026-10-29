@@ -198,6 +198,29 @@ def links_files(path, back=LINKS_BACK):
     return out[::-1]
 
 
+# (d28 batch309) RUN/viewer-replies.jsonl: each reply row (row()) as model.py made it, one per game seq; read back at a
+# stream service start, and from the runs before (links_files), so a restart or a new shift keeps them
+ROWS_NAME = "viewer-replies.jsonl"
+
+
+def read_rows(path):
+    """The reply rows of a viewer-replies.jsonl file with a game seq and a time ([] when there is none)."""
+    out = []
+    try:
+        with open(path) as f:
+            for raw in f:
+                try:
+                    r = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and isinstance(r.get("seq"), int) and not isinstance(r.get("seq"), bool) \
+                        and isinstance(r.get("t"), (int, float)) and r.get("text") and r.get("by"):
+                    out.append(r)
+    except OSError:
+        pass
+    return out
+
+
 def link_line(line, links):
     """The Operator's game line that tools/opreply.py sent: its link (line["reply_link"]), else the line as it is."""
     if links and speaker(line) == "operator":

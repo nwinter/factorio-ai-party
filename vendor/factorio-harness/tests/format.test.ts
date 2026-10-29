@@ -175,3 +175,15 @@ test('fh help ALIAS prints the action an alias runs as (d17 lean D1)', () => {
   assert.equal(actionHelp(describe, 'silos'), "silos is silo: the call runs as silo\nsilo: fh call silo --args '{...}'\n  position: optional silo\nreturns: silos\n");
   assert.match(actionHelp(describe, 'gone'), /^unknown action gone/);
 });
+test('a paged reply leads with its one-line fields: page 1 says what the table holds (d28 batch313 HB)', () => {
+  const pods = Array.from({length: 47}, (_, i) => ({id: 57745 + i, direction: 'up', sent_tick: 76908515 + i * 5000, items: 'copper-plate*500',
+    line: `up #${57745 + i}, a long line about the pod, its silo and where it landed in the hub after 33s`.repeat(3)}));
+  const reply = {ok: true, result: {surface: 'nauvis', pods, pods_total: 47, pods_line: '47 pod journeys to and from nauvis recorded with Kestrel IVb; these sent from tick 76908515 (1h06m ago) to tick 77138515 (2m ago), oldest first'}};
+  const plain = formatCompact(reply);
+  assert.ok(plain.indexOf('pods_line') > plain.indexOf('pods[47]'), 'as before: after the table');
+  const led = formatCompact(reply, true);
+  assert.ok(led.indexOf('pods_line') < led.indexOf('pods[47]'), 'led: before the table');
+  const {shown} = paginate(led);
+  assert.match(shown, /pods_line: "47 pod journeys .* oldest first"/);
+  assert.match(shown, /more lines, \d+ KB: \.\/fh more\]/);
+});

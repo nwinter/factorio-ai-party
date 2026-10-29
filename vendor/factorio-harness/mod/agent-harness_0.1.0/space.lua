@@ -2978,6 +2978,12 @@ return function(api)
     seen[#seen+1]='destination '..tostring(invert(defines.cargo_destination)[destination.type])
     return 'the game refused the launch (launch_rocket returned false)'..(#odd>0 and ': '..table.concat(odd,'; ') or '')..' ['..table.concat(seen,', ')..']'
   end
+  -- (d28 batch320 LP, Sol #2711: the ledger lacked who ordered a launch) the game's launch event names a player only for a
+  -- player's own launch: an automatic one and a script's launch_rocket look the same (measured on the copy, 2.0.77). This
+  -- harness's launch marks the silo and tick for the ledger (ledger.lua on_launch reads it in the same tick).
+  function M.mark_launch(p,silo)
+    if api.state then pcall(function() api.state().launch_mark={tick=game.tick,unit=silo.unit_number,by=p and p.name or nil} end) end
+  end
   function M.launch(p,a)
     local silo=api.remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
     assert(silo.type=='rocket-silo','not a rocket silo')
@@ -3104,6 +3110,7 @@ return function(api)
       -- The rocket flies with its own cargo pod; the bot rides it (bots.lua).
       api.bots.can_board(bot)
       local pod=try(function() local r=silo.rocket; return r and r.valid and r.attached_cargo_pod or nil end)
+      M.mark_launch(p,silo)
       if not silo.launch_rocket(destination) then error(refused(silo,pl,destination),0) end
       api.bots.board(bot,pl,pod)
       return {launched=true,to=to,cargo='empty',riding='the bot rides the rocket\'s cargo pod (~40 s), then is aboard '..a.platform..' with remote view only: poll status (travel)'}
@@ -3120,6 +3127,7 @@ return function(api)
     if packs then
       packs=packs..(destination.space_platform and ' starts '..pl.name or destination.station and ' goes to '..pl.name..'\'s hub as cargo' or ' is lost in orbit')
     end
+    M.mark_launch(p,silo)
     if not silo.launch_rocket(destination,rider) then error(refused(silo,pl,destination),0) end
     return {launched=true,to=to,starter_pack=packs,cargo=cargo or 'empty',spoiled_percent=spoiled,went_up=went_up,freshness=fresh,hub_full=hub_note,riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
       auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}

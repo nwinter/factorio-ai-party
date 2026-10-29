@@ -31,7 +31,8 @@ return function(api)
       ticks='with drive (1..36000, default 3600), or with go_to and wait (60..54000, default 18000)',
       reuse='with drive or go_to: default true: a path found before by any agent (a stored route from near here to near the target, either way) is read again in the call (its tiles; a car\'s or tank\'s also what it collides with near each leg) and used, its changed legs asked again; the reply\'s shared_route (a drive: last.shared_route) says "reused route N (checked at tick T)" or why legs were asked again; false asks the pathfinder',
       route='with drive or go_to: a stored route\'s number: that one only (read again first), else the pathfinder, saying why',
-      routes='true: the stored routes on your surface, nearest first (with position: nearest to it): number, kind, ends, length, who asked for it and when, uses', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
+      routes='true: the stored routes on your surface, nearest first (with position: nearest to it): number, kind, ends, length, who asked for it and when, uses',
+      pair='{lead, follower, distance}: two spidertrons walk one route (lead and follower: unit_number or {x,y}, by remote view in a chunk our force sees; distance 6..40 tiles, default 10). A spidertron another agent rides, runs an action with or sent last pairs only once that agent makes the same call (within 10 min; asked in its alerts). Then a go_to on the lead moves both: the lead walks its route (paths round water, stored routes, recoveries, its guard as alone); the follower walks the lead\'s steps (spots it stood on every 4 tiles) once the lead is distance past them, so a water step or narrow pass the lead\'s legs took its legs take (one prototype, the same legs). The lead waits (its route kept aside) while the follower is over distance + 4 tiles behind (it joins first) and past each water step or narrow pass (dry ground no wider than 3 tiles) until the follower is past it, said once in team alerts. The reply\'s pair: join, gates (the water steps and narrow passes on the lead\'s route), rule. Ends: both arrived (said once); the follower without progress for 5 s splits the pair, said with where it stands and the gate (the lead goes on alone); a retreat of either, spider_kite on either, or a go_to or clear on the follower ends it at once, never waiting for or moving the partner (the lead gets its route back; after the lead\'s retreat or kite the follower stops where it stands). A waited go_to on the lead ends arrived when both have, stalled when the follower stalled (last.stalled_one, stalled_at), last.pair. false with vehicle (either one) ends the pair, or withdraws an ask', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
   local TYPES = {}
   for t in pairs(SEATED) do TYPES[#TYPES+1] = t end
@@ -242,6 +243,12 @@ return function(api)
     -- error(..., 0), not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
     local function refuse(ok, text) if not ok then error(text, 0) end end
     refuse(a.remote == nil or type(a.remote) == 'boolean', 'remote must be true or false')
+    -- (d28 batch310 PS) two spidertrons on one route (spiderpair.lua): pair, or pair: false with vehicle
+    if a.pair ~= nil then
+      for _, k in ipairs({'drive', 'go_to', 'clear', 'enter', 'exit', 'routes', 'position'}) do refuse(a[k] == nil, 'pair goes alone (pair: false with vehicle)') end
+      refuse(api.pair ~= nil, 'no pairing in this runtime')
+      return api.pair.call(a, api.who and api.who(p) or p.name, function(ref) return remote_spider(p, {vehicle=ref}) end)
+    end
     -- (d28 batch305 NR) the stored routes on this surface, nearest first (sharedroutes.lua)
     if a.routes ~= nil then
       refuse(a.routes == true, 'routes must be true')
@@ -344,9 +351,12 @@ return function(api)
           local action = {kind='spider_go', spider=spider, unit=spider.unit_number, set_tick=game.tick, start_tick=game.tick,
             until_tick=game.tick + ticks, target={x=route[#route].x, y=route[#route].y}, landed=out.landed, unlanded=unlanded,
             remote=a.remote or nil, set_seq=api.spider_seq and api.spider_seq(spider.unit_number) or nil}
+          -- (d28 batch310 PS) a pair's lead: arrived once both have (spiderpair.lua)
+          local pw = api.pair and api.pair.walk_of(spider.unit_number)
+          if pw then action.pair, action.walk = pw.id, pw.walk end
           api.start(p, action)
           out.until_tick = action.until_tick
-          out.waiting = 'until it arrives, stalls (after its recoveries), is unreachable, its route is set again, it retreats or ' .. math.floor(ticks / 60) .. ' s pass'
+          out.waiting = 'until it arrives' .. (action.pair and ' with its follower' or '') .. ', stalls (after its recoveries' .. (action.pair and ', or its follower stalls' or '') .. '), is unreachable, its route is set again, it retreats or ' .. math.floor(ticks / 60) .. ' s pass'
         end
       end
       return out
