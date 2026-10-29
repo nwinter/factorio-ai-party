@@ -85,8 +85,8 @@
   productivity +10%`) and, for one with levels, `next_level` ("level 8 adds ...; N units"). Each one not researched:
   `progress`, `takes` (the time it alone would take at the labs' rate measured over the last minute, as the research
   queue's `done_in`; `lab_rate` gives the rate), `packs_needed` (each pack for its units left, with the count where the
-  labs are: the labs the census pass listed and the logistic networks of their surfaces) and `packs_short`.
-  Example: `./fh call technologies --args '{"name":"physical-projectile-damage-7"}'`
+  labs are: the labs the census pass listed and the logistic networks of their surfaces) and `packs_short`. Example:
+  `./fh call technologies --args '{"name":"physical-projectile-damage-7"}'`
 - `bottleneck {item, per_min?, all_stopped?, surface?}` (or `area`, `positions`): follows a shortage down its ingredient
   chain to where it starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved
   maker, the nearest chest within 64 tiles holding what it lacks and one `transfer` call that carries it there.

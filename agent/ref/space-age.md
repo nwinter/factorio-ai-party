@@ -361,9 +361,6 @@
   Each territory's `state`, from what the team saw: `has a demolisher` (in sight or last seen), `killed` (`its
   small-demolisher was killed at tick T (game 22h37m) by sol; none seen since`), or `not seen` (`no demolisher seen in
   it`).
-- `shipment {totals: true, platform?}`: each platform's pods since the harness began counting them (`since_tick`): up
-  (rockets to it) and down (its hub's pods), each with cargo by item and the planets, and the same over 1h, 10h, 50h and
-  250h (each window covers its length less up to one 10-minute, 1-hour or 10-hour bucket; `from_tick`).
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills, and the platform's last 2 drops
@@ -400,6 +397,10 @@
   `on_the_way` (rockets sent and not landed), `this` (the rocket's count). Measured (2.0.77): a hub lacking
   min - (holds + on the way) gets max(lacking, payload), cut into rockets of up to a rocket's lift; the last carries
   the rest, which can be under the payload (Lark: lacking 2683, payload 1000: 1000, 1000, 683).
+- `shipment`, totals: `shipment {totals: true, platform?}` gives each platform's pods since the harness began counting
+  them (`since_tick`): up (rockets to it) and down (its hub's pods), each with cargo by item and the planets, and the
+  same over 1h, 10h, 50h and 250h (each window covers its length less up to one 10-minute, 1-hour or 10-hour bucket;
+  `from_tick`).
 - `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or

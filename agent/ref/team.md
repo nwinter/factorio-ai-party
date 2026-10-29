@@ -5,10 +5,10 @@
   or a game tick); the item shows the newest (all 5 kept in a full read). Notes take up to 1000 characters; longer is
   refused with its size. `requests`, `platform NAME` and `platform_gate` show each request section's and stop's last
   edit (who, when, old -> new); whoever set one last is told once when someone else changes it.
-- `review` on `board post` and `board update` (its owner, requester or the operator): a review time, as a game tick, a
-  game time (`"376h30m"`) or a wall time with its zone (`"2026-10-29 10:00 PDT"`, PST, UTC or +HH:MM; `false` or `""`
-  clears it). Past it, the owner's next reply says so once (`team.review_due`), `status` lists it with
-  `overdue_reviews`, and the owner's first reply of a shift lists it (`past_review`). The item shows it.
+- `board_update`, review time: `review` on `board post` and `board update` (its owner, requester or the operator) sets
+  one, as a game tick, a game time (`"376h30m"`) or a wall time with its zone (`"2026-10-29 10:00 PDT"`, PST, UTC or
+  +HH:MM; `false` or `""` clears it). Past it, the owner's next reply says so once (`team.review_due`), `status` lists
+  it with `overdue_reviews`, and the owner's first reply of a shift lists it (`past_review`). The item shows it.
 - `board_review {id?}`: flags board items naming gone platforms (whole names, longest first: "Kestrel II" is not
   "Kestrel"; each row's `platforms` gives the names matched and their index), stale handoffs, superseded items still active and
   conflicting needs. `board_review {ownership: true, surface?}`: per surface, each electric network's machines, each

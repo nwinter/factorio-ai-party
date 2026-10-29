@@ -17714,3 +17714,47 @@ world or the targeting.
 - **Tests:** tests/d29_batch332.lua (bounds; picks; an exact hit with collateral and a survivor; a retarget within the
   tick; a shot with no target read; a refill hiding the item; an unattributed hit; other turrets' hits ignored; a
   railgun removed; freed after its keep time).
+
+## d29 batch336 (FL: the facts the agents named as missing, batch321 section 4)
+
+batch321 found that the agents compared factory and research against the ship only when a viewer asked, and named the
+facts they lacked; and that dated checks lived in note text and never came due. Facts only: nothing here advises.
+
+- **1. Effects.** `technologies` entries carry `effects` as the research screen lists them (research.lua unlocks,
+  cached per name), and for a technology with levels `next_level` ("level 8 adds ...; N units"). A recipe
+  productivity research carries `change`, not `modifier`: it read no effect before (low-density-structure
+  productivity).
+- **2. Time and packs.** Each technology not researched: `progress`, `takes` (its units left x unit time over the
+  research work a tick the labs did in the last minute, research.lua rate, as the queue's done_in; one technology
+  alone), `packs_needed` (each pack for its units left, with the count where the labs are) and `packs_short`;
+  `lab_rate`. The packs where the labs are come from the census pass's lab lists, on surfaces with labs only; the
+  queue's waits_for keeps its search.
+- **3. Long windows.** `platform_production {long: true, platform | surface, item?}`: made and used over the game's
+  1 h, 10 h, 50 h and 250 h windows, the 16 items most made and used in all. Imports are not production.
+- **4. Pod totals.** podlog.lua counts every pod once its cargo is read, per platform: up (rockets) and down (hub
+  pods), cargo by item (48 names, the rest as other), planets, and 10-minute (6), 1-hour (10) and 10-hour (25)
+  buckets for the windows; at most 128 platforms. `shipment {totals: true, platform?}` reads them. They start at the
+  deploy (`since_tick`); earlier journeys stay in the pod ledger (1000 a planet).
+- **5. Producers.** `rates {item}` adds `producers`: one row a machine making it (48), `full_per_min` (craftrate,
+  as inspect) beside `measured_per_min` from its own products_finished over 10-20 min: efficiency.lua keeps two
+  counter anchors a machine, renewed every 10 min by its walk; crafts x per_craft / (1 + productivity).
+- **6. Review times.** `review` on board_post and board_update (owner, requester, operator): a tick, a game time
+  ("376h30m") or a wall time with its zone. The game has no wall clock: fh puts `wall` (ms) in the request envelope,
+  once per id (a resend must match), and the runtime compares a wall time with it; a call without it cannot set one.
+  Past it, the owner's next reply carries `team.review_due` once, `status` lists it in `overdue_reviews`, and the
+  shift block lists it (`past_review`). An index (board reviews) keeps the reply's check to items with one.
+- **7. Expedition clock.** `shift_start` returns `expedition` (the tick, the edge-to-Shattered-Planet length, our
+  platforms at either or on a connection to either, with km left); tools/start-team.sh saves it
+  (runs/RUN/expedition.json, tools/expedition.py) and tools/brief.py puts one line after the deadline paragraph
+  (`{{EXPEDITION}}` in agent/PLAYBOOK.md), read at the shift's start, with the run's target from target.json.
+- **Measured** on the iMac copy of world n (shift99.zip, tick 81.18 M), dispatch as a bot with a profiler, after the
+  first call:
+  - technologies one name 3.5-4.2 ms (main 2.7), three names 4.1-5.5, available 6.7-7.5 (main 5.4), all 64
+    7.8-8.3 (main 6.5-6.7). The first version took 34-47 ms: the lab searches (Nauvis 12.6, Vulcanus 6.4, Fulgora
+    3.3, Gleba 3.0, Aquilo 0.9, 22 platforms 4.9 ms).
+  - rates {item: electronic-circuit} on Nauvis, 43 producers: 4.3-4.6 ms (main 4.3-4.9).
+  - platform_production long: Resolute 3.9-4.8 ms, Nauvis 4.9-5.0 (the plain read 5.4-5.8).
+  - shipment totals 4.6-4.8 ms; board_post with or without review 1.7-1.9 ms; shift_start 1.27 ms.
+- **Tests:** tests/d29_batch336.lua (effects, next level, takes, packs; producers; review times by tick, game time and
+  wall time in three zones, once, status, shift block, refusals), d29_batch336_long.lua, d29_batch336_pods.lua,
+  d29_batch336_eff.lua; tools/test_expedition.py.
