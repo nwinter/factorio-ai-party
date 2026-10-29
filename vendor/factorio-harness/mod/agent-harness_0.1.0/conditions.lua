@@ -259,6 +259,9 @@ return function(api)
   local function ring_row(ring,size,s) local x=ring[(s-1)%size+1]; if x and x.s==s then return x end end
   local function tenth(v) return math.floor(v*10+0.5)/10 end
   local function location_name(pl) return pl.space_location and pl.space_location.name end
+  -- (batch329 PR) budget_below's last reading per condition (in memory: read again after a load)
+  local budget_kept=setmetatable({},{__mode='k'})
+  M.BUDGET_EVERY=600
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -818,6 +821,24 @@ return function(api)
       return met,string.format('platform %s: flying %s->%s, %g%% of %d km flown (met at %g%%)',c.platform,l.from,l.to,pct,math.floor((l.length or 0)+0.5),
         math.floor(c.at_least*1000+0.5)/10)
     end,
+    -- (d29 batch329 PR, Astra #2727) a flight's return budget (platform_endurance turnaround): met once the item that
+    -- binds first can go out less than km farther before the way back needs the rest. The read (about 7 ms on world n)
+    -- is made at most every BUDGET_EVERY ticks; between, the last reading stands (its tick said).
+    budget_below=function(p,c)
+      local now=game.tick
+      local kept=budget_kept[c]
+      if not kept or now-kept.tick>=M.BUDGET_EVERY then
+        local b=api.return_budget(p,c.platform,c.turnaround)
+        kept={tick=now,b=b}
+        budget_kept[c]=kept
+      end
+      local b=kept.b
+      if not (b and b.binds and b.binds.out_km_max) then
+        return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)
+      end
+      local x=b.binds.out_km_max
+      return x<c.km,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+    end,
     -- (d22 batch92 BB2, Astra #1886: a probe flight's retreat when its power reserve drops) a platform's accumulators
     -- together: the energy they hold over what they can hold, as each one's GUI shows them; met under fraction. Read
     -- at each check (a platform holds tens of them); (d22 batch110 BT1) the list kept while the same, as fluid_count's
@@ -1053,7 +1074,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|tick_at_least|all|any'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1141,7 +1162,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1328,6 +1349,11 @@ return function(api)
       for _,k in ipairs({'from','to'}) do
         assert(c[k]==nil or (type(c[k])=='string' and prototypes.space_location[c[k]]),'platform_progress '..k..': a planet or space location name')
       end
+    end
+    if kind=='budget_below' then
+      assert(type(c.platform)=='string' and #c.platform>0,'budget_below requires platform (a platform of ours in flight, by name)')
+      assert(type(c.turnaround)=='table','budget_below turnaround: as platform_endurance\'s ({km | fraction, back_to?, speed_floor?, margin?, reserve?})')
+      assert(type(c.km)=='number' and c.km>=0 and c.km<=1e8,'budget_below km: met once the binding item can go out less than this many km farther (0..100000000)')
     end
     if kind=='platform_energy_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'platform_energy_below requires platform (a platform of ours by name)')

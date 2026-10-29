@@ -17714,3 +17714,42 @@ world or the targeting.
 - **Tests:** tests/d29_batch332.lua (bounds; picks; an exact hit with collateral and a survivor; a retarget within the
   tick; a shot with no target read; a refill hiding the item; an unattributed hit; other turrets' hits ignored; a
   railgun removed; freed after its keep time).
+
+## d29 batch329 (PR, Astra #2727: a partial-return endurance budget for deep flights)
+
+Astra's report: "Resolute21 earlyturned~29k because deep phase railNET28.63/min invalidated older10min17.4 rate;
+manual Sol budget caught it. platform_endurance route [edge,Aquilo] while flying edge->SP rejects route starts behind
+ship ..."
+
+**`platform_endurance {platform, turnaround: {km | fraction, back_to?, speed_floor?, margin?, reserve?}}`**
+- **The turn:** a ship in flight read as a partial return. From where it is, it goes `km` farther along the connection
+  it flies (or to the turn point at `fraction` of the connection from its start), back along it to its start, then
+  on to `back_to` (default that start).
+- **The legs:** the turn's legs are the route: out, back, on. No route, design or forecast goes with it. A turn
+  behind the ship, or past the connection's end, is refused with the distances.
+- **return_budget, per item:**
+  - the stock that reaches it, as the read counts it (stranded ammunition apart);
+  - the net use: the worse of the current phase (this leg so far from freight's counts; for ammunition also its moving
+    phase) and the last 10 minutes, both given (`net_phase`, `net_10min`, `phase_from`);
+  - at the planning speed (`speed_floor` km/s when below the speed read), with `margin` (default 0.1) and `reserve`:
+    `out_km_max = ((stock - reserve) / (1 + margin) / net x speed - flown - back) / 2`, `lasts_min`, and for the planned
+    turn `spare_km` and `left_at_return`.
+  - `binds`: the item that binds first. An item made at least as fast as it is used binds nothing.
+- **Read only:** facts; no floor is lowered and nothing is changed.
+
+**`wait_until {until: "budget_below", platform, turnaround, km}`**
+- Met once the binding item's `out_km_max` is under `km`.
+- The budget is read at most every 600 ticks (`BUDGET_EVERY`); between reads the last reading stands, and its tick is
+  said.
+
+**Checked:**
+- **By hand** (tests/d29_batch329.lua). Resolute at 4969 km/min (4,000,000 km in 13h25m), 20,000 km flown,
+  railgun ammunition 1741 aboard, 1500 kept, margin 10%:
+  - 241 / 1.1 = 219.09 usable, lasting 219.09 / 28.63 = 7.65 min, so 38,025 km;
+  - the turn 9,012 km farther, at about 29,012 km, 488 km short of a planned 9,500;
+  - at the 10-minute 17.4/min alone it would read 21,283 km, more than twice as far.
+- **On the iMac copy of world n's newest autosave** (tick 80,958,348):
+  - Resolute returning edge->Aquilo, a 5,000 km turn: railgun ammunition binds first.
+  - The read takes 9.3-9.5 ms with a turnaround and the same without one, so the budget adds nothing measurable; the
+    plain read is 7.07 ms on n (tools/read_cost.py).
+  - `budget_below` on Kestrel IVa was met under 30,000,000 km and held under 10 km.
