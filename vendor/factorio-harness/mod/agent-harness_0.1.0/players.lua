@@ -352,14 +352,16 @@ return function(api)
   end
   local function humans()
     local out = {}
-    for _, p in pairs(game.players) do if api.is_human(p.index) then out[#out+1] = p end end
+    -- (mt276 B) the humans in the force of the team the call runs as
+    local team = api.team_now and api.team_now() or 'player'
+    for _, p in pairs(game.players) do if api.is_human(p.index) and p.force.name == team then out[#out+1] = p end end
     table.sort(out, function(a, b) return a.index < b.index end)
     return out
   end
   local function find(name)
     assert(type(name) == 'string' and #name > 0, 'player must be a player name')
     local p = game.get_player(name)
-    assert(p and p.valid and api.is_human(p.index), 'no human player named ' .. name .. ' (players lists them)')
+    assert(p and p.valid and api.is_human(p.index) and p.force.name == (api.team_now and api.team_now() or 'player'), 'no human player named ' .. name .. ' (players lists them)')
     return p
   end
   M.find, M.group = find, group

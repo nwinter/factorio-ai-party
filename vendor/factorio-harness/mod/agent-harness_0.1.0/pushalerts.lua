@@ -1706,14 +1706,16 @@ return function(api)
   -- The claims over a point on the group's surface.
   -- (d19 batch44 A2: push_lines read every board item twice for each of about 170 alert groups, 10 ms in each reply of
   -- an agent shown no new group on the private copy) the active claims with an area, built once a tick
-  local claims_tick, claims_list
+  -- (mt276 B) and of the board it was built from (each team's board sits at the key while that team's call runs)
+  local claims_tick, claims_list, claims_board
   local function active_claims()
-    if claims_tick == game.tick and claims_list then return claims_list end
-    local list, board = {}, api.state().board
+    local board = api.state().board
+    if claims_tick == game.tick and claims_list and claims_board == board then return claims_list end
+    local list = {}
     for _, i in pairs(board and board.items or {}) do
       if i.kind == 'claim' and ACTIVE[i.status] and i.owner and i.area then list[#list+1] = i end
     end
-    claims_tick, claims_list = game.tick, list
+    claims_tick, claims_list, claims_board = game.tick, list, board
     return list
   end
   local function claims_over(g, pos)

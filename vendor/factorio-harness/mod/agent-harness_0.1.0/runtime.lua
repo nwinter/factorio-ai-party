@@ -165,11 +165,11 @@ M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(in
   removes_text=function(list) return M.dryrun and M.dryrun.removes_text(list) end,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b,kind) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b)
     -- (d22 batch94 BD1) a respawn runs the reminders set on.respawn for that agent
-    if kind=='respawn' and M.reminders then pcall(M.reminders.trigger,'respawn',{name=b.name}) end
+    if kind=='respawn' and M.reminders then pcall(M.as_team,b.force or 'player',M.reminders.trigger,'respawn',{name=b.name}) end
   end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
-M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
+M.profiles=require('profiles'){state=state,team_now=function() return M.team_now() end,team_of=function(index) return M.team_of_index(index) end,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
   bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end,
   on_apply=function(p) if M.bots.is(p) then M.nametags.refresh(M.bots.record(p.index)) end end,bubble_y=function(index) return M.nametags.bubble_y(index) end}
 M.nametags=require('nametags'){state=state,bots=function() return M.bots.list() end,profile=function(index) return M.profiles.get(index) end,
@@ -200,6 +200,59 @@ function M.agent_force(name)
   local pl=type(name)=='string' and game.get_player(name)
   if pl and pl.valid then return pl.force end
   return game.forces.player
+end
+-- (mt276 B) A LuaPlayer mt_assign put in a team's force (multiteam.lua: a spectator that charts for it).
+function M.mt_assigned(index)
+  local mt=state().mt
+  if not (mt and mt.players) then return false end
+  local pl=game.get_player(index)
+  return pl and pl.valid and mt.players[pl.name]~=nil or false
+end
+-- (mt276 B) An agent's team by its index: a bot's force, else the player's force (player when it has neither).
+function M.team_of_index(index)
+  local b=M.bots.is_index(index) and M.bots.record(index)
+  if b then return b.force or 'player' end
+  local pl=type(index)=='number' and game.get_player(index)
+  return pl and pl.valid and pl.force.name or 'player'
+end
+-- (mt276 B) Team stores. Each team has its own board (items, plans, item checks, progress, mention boxes and
+-- reminders), tells, chat, votes, lessons and ground rules, blueprint library and drops. The player force's stay at
+-- their old keys of the state, so a one-team world and an old save read as before. Another team's are kept in
+-- state().team_stores[name] and sit at those keys only while a call, event or tick step of that team runs
+-- (M.as_team), then go back; saves fall between ticks, so a save holds the player force's at the keys.
+M.TEAM_KEYS={'board','plans','checks','progress','mentions','owed','tells','unseen','wakes','operator_requests','chat','votes','lessonbook','bplibrary','drops','reminders'}
+-- team_held: the player force's stores while another team's sit at the keys (empty between calls; never in storage)
+local team_now,team_held='player',{}
+function M.team_now() return team_now end
+local function team_in(t)
+  local s=state()
+  s.team_stores=s.team_stores or {}
+  local mine=s.team_stores[t] or {}
+  for _,k in ipairs(M.TEAM_KEYS) do team_held[k]=s[k]; s[k]=mine[k] end
+  team_now=t
+end
+local function team_out()
+  local s=state()
+  local mine=s.team_stores[team_now] or {}
+  s.team_stores[team_now]=mine
+  for _,k in ipairs(M.TEAM_KEYS) do mine[k]=s[k]; s[k]=team_held[k]; team_held[k]=nil end
+  team_now='player'
+end
+function M.as_team(t,fn,...)
+  t=t or 'player'
+  if t==team_now then return fn(...) end
+  local was=team_now
+  if was~='player' then team_out() end
+  if t~='player' then team_in(t) end
+  local r=table.pack(pcall(fn,...))
+  if team_now~='player' then team_out() end
+  if was~='player' then team_in(was) end
+  if not r[1] then error(r[2],0) end
+  return table.unpack(r,2,r.n)
+end
+-- Each team's turn, in name order (a one-team world: the player force once).
+function M.each_team(fn,...)
+  for _,t in ipairs(M.team_names()) do M.as_team(t,fn,...) end
 end
 -- Who a character belongs to: a player's name, else a bot's (nil if neither).
 function M.character_owner(e)
@@ -17760,8 +17813,8 @@ for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
 -- (d28 batch317) progressive disclosure: the kit each force sees grows with its research, buildings, encounters and
 -- habits (disclosure.lua, docs/DISCLOSURE.md); off by default. The player force until the per-force helpers are here.
 M.disclosure=require('disclosure'){state=state,units=require('disclosure_units'),
-  forces=function() return {game.forces.player} end,
-  is_team=function(force) return force.name=='player' end,
+  forces=function() return M.team_forces() end,
+  is_team=function(force) for _,t in ipairs(M.team_names()) do if t==force.name then return true end end; return false end,
   team_size=function(force)
     local n=0
     for _,b in ipairs(M.bots.list()) do if (b.force or 'player')==force.name then n=n+1 end end
@@ -17778,7 +17831,7 @@ M.disclosure=require('disclosure'){state=state,units=require('disclosure_units')
     return out
   end,
   push_groups=function(force) return (state().push_alerts or {})[force.name] end}
-handlers.disclosure=function(p,a) return M.disclosure.read(game.forces.player) end
+handlers.disclosure=function(p,a) return M.disclosure.read(p.force) end
 -- Queue writes answer briefly: the revision, state, the next steps by id and
 -- the last results; queue_status has steps in full (agent-minds study: each
 -- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
@@ -17883,7 +17936,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){state=state,team_now=function() return M.team_now() end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -17898,8 +17951,13 @@ M.board=require('board'){state=state,rest_label=function(name) local r=M.rests a
   power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,spider_lines=function(p,h) return M.spiderroute and M.spiderroute.lines(p,h) end,spider_retreats=function(p,h) return M.spiderroute and M.spiderroute.retreats(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,mixed_lines=function(p,h) return M.mixed and M.mixed.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
+-- (mt276 B) a line filed for an agent (alerts, reminders, tells) goes to the mention box of the agent's team
+do
+  local deliver=M.board.deliver
+  M.board.deliver=function(index,t) return M.as_team(M.team_of_index(index),deliver,index,t) end
+end
 -- Research news, who queued what, and the queue's times (research.lua).
-M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end,
+M.research=require('research'){state=state,board_event=function(by,item,change,text,force) return M.as_team(force or 'player',M.board.system_event,by,item,change,text) end,
   use_lines=function(force) return M.research_use.lines(force) end}
 function handlers.research_done(p,a) return M.research.done(p,a) end
 function handlers.research_options(p,a) return M.research.options(p.force,a) end
@@ -18143,7 +18201,9 @@ M.platalerts=require('platalerts'){state=state,leg=function(pl) return M.freight
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,ghost_placed=function(p,g) pcall(M.ghostlog.placed,M.board.who(p),g) end,teammates=function(p) return M.where.list(p) end,
-  is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index]) end,
+  -- (mt276 B) a LuaPlayer mt_assign put in a team's force charts for it (a spectator): no human of the game
+  is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index])
+    and not M.mt_assigned(index) end,team_now=function() return M.team_now() end,
   votes_on=function(target) return M.votes.on(target) end,
   notice=function(from,text) return M.chat.notice(from,text) end}
 -- The agents' votes on viewers (mute, unmute) and human players (kick, ban,
@@ -18155,10 +18215,11 @@ M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.no
   active_agents=function(window)
     local out,clocks={},state().clocks or {}
     local function recent(c) return c and ((not c.peeked and game.tick-c.call_tick<=window) or (c.wait_tick and game.tick-c.wait_tick<=window)) end
-    for _,b in ipairs(M.bots.list()) do if recent(clocks[b.index]) then out[#out+1]=b.name end end
+    -- (mt276 B) the agents of the team the call runs as: each team votes apart (its own votes store)
+    for _,b in ipairs(M.bots.list()) do if (b.force or 'player')==team_now and recent(clocks[b.index]) then out[#out+1]=b.name end end
     for index in pairs(state().controlled or {}) do
       local p=game.get_player(index)
-      if p and recent(clocks[index]) then out[#out+1]=p.name end
+      if p and p.force.name==team_now and recent(clocks[index]) then out[#out+1]=p.name end
     end
     return out
   end,
@@ -18379,7 +18440,7 @@ function check_args(action,args)
       and not (key=='helper' and type(args.helper)=='boolean') and not (key=='queue_resume_after' and type(args.queue_resume_after)=='boolean') then
       local valid={}
       for k in pairs(set) do
-        if not (M.disclosure and M.disclosure.arg_hidden(game.forces.player,action,k)) then valid[#valid+1]=k end
+        if not (M.disclosure and M.disclosure.arg_hidden(game.forces[team_now],action,k)) then valid[#valid+1]=k end
       end
       table.sort(valid)
       -- The valid name nearest the unknown one (Luna 06:20: filter on configure): a plural or singular, a name
@@ -18909,7 +18970,33 @@ function M.resolve_alias(request)
   request.action=real
   return called
 end
-function M.dispatch(request)
+-- (mt276 B) The team a request runs as: an operator request's team (a player force's name; default player), else the
+-- agent's (its bot's or player's force).
+function M.request_team(request)
+  if type(request)~='table' then return 'player' end
+  if request.operator==true then
+    local t=request.team
+    -- an operator tell with no team: the team of the first agent it names (tools/idle_nudge.py names one agent)
+    if t==nil and request.action=='tell' and type(request.args)=='table' then
+      local to=request.args.to
+      local first=type(to)=='table' and to[1] or type(to)=='string' and to:match('[^,%s]+') or nil
+      local b=type(first)=='string' and M.bots.named(first:gsub('^@',''):lower())
+      if b then return b.force or 'player' end
+    end
+    if t==nil then return 'player' end
+    if not (type(t)=='string' and t~='enemy' and t~='neutral' and game.forces[t]) then error('team: a player force\'s name (default player), not '..tostring(t),0) end
+    return t
+  end
+  if request.bot~=nil then
+    local b=type(request.bot)=='string' and M.bots.named(request.bot)
+    return b and (b.force or 'player') or 'player'
+  end
+  if type(request.player)=='number' then return M.team_of_index(request.player) end
+  return 'player'
+end
+local dispatch_team
+function M.dispatch(request) return M.as_team(M.request_team(request),dispatch_team,request) end
+function dispatch_team(request)
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   local called_as=M.resolve_alias(request)
@@ -18924,7 +19011,7 @@ function M.dispatch(request)
   end
   -- (d28 batch317) progressive disclosure (disclosure.lua): a unit not open yet for the caller's force is refused naming
   -- its condition; the call is counted for the force's habits; describe shows the open set
-  local disc=M.disclosure and M.disclosure.mode()~='off' and type(request)=='table' and request.operator~=true and game.forces.player or nil
+  local disc=M.disclosure and M.disclosure.mode()~='off' and type(request)=='table' and request.operator~=true and game.forces[team_now] or nil
   local refused,from
   if disc then
     refused=M.disclosure.gate(request,disc)
@@ -19119,7 +19206,7 @@ function M.dispatch_inner(request)
       if okr and gr then result.ground_rules=gr end
       -- (d28 batch317) what opened for the team since this agent's last line (disclosure.lua, filter mode)
       if M.disclosure and M.disclosure.mode()=='filter' then
-        local okn,nl=pcall(M.disclosure.reply_line,p.name,game.forces.player)
+        local okn,nl=pcall(M.disclosure.reply_line,p.name,p.force)
         if okn and nl then result.new=nl end
       end
     end
@@ -20159,7 +20246,7 @@ M.drops=require('drops'){state=state,podlog=function(pod,info) return M.podlog.s
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
-M.freight=require('freight'){delivered=function(info) if M.reminders then M.reminders.trigger('delivered',info) end end,
+M.freight=require('freight'){delivered=function(info) if M.reminders then M.as_team(info.force or 'player',M.reminders.trigger,'delivered',info) end end,
   leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,census_where=function(f,sf) return M.census and M.census.where_index(f,sf) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
@@ -21314,7 +21401,7 @@ function M.tick_body(event)
   idle_tick()
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
-  M.drops.tick(event.tick)
+  if event.tick%M.drops.SAMPLE==0 then M.each_team(M.drops.tick,event.tick) end  -- (mt276 B) each team's drops, a step every SAMPLE ticks
   M.drop_jobs_tick(event.tick)
   M.nametags.tick(event.tick)
   pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
@@ -21354,13 +21441,13 @@ function M.tick_body(event)
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
-  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
+  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team,M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
-  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
+  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.each_team,M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
   if event.tick%120==65 and M.turretwatch then pcall(M.timed,'turretwatch.tick',M.turretwatch.tick) end  -- turret ghosts' targeting once built
-  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.progress.tick) end  -- owned board items' checks (progress.lua)
+  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.each_team,M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%30==19 and M.spiderroute and state().spiderroute then pcall(M.timed,'spiderroute.guard_tick',M.spiderroute.guard_tick) end  -- their retreat guards (QAE1)
@@ -21398,11 +21485,14 @@ function M.tick_body(event)
     if not ok then local s=state(); s.spoil_errors={count=((s.spoil_errors or {}).count or 0)+1,last=tostring(err),tick=event.tick} end
   end
   M.seated_ok=nil
+  -- (mt276 B) with several teams, each agent's action runs as its team (its board, tells and chat at the keys)
+  local teams=#M.team_names()>1
   for index,action in pairs(state().active) do
     -- One carried over a harness update runs guarded: a shape this runtime does not expect ends it, never the tick (carry.lua).
     if action.carried then
-      local ok,err=pcall(M.tick_action,index,action,event)
+      local ok,err=pcall(M.as_team,teams and M.team_of_index(index) or 'player',M.tick_action,index,action,event)
       if not ok then M.carry_failed(index,action,err) end
+    elseif teams then M.as_team(M.team_of_index(index),M.tick_action,index,action,event)
     else M.tick_action(index,action,event) end
   end
   for index,action in pairs(state().combat or {}) do
@@ -21497,7 +21587,7 @@ function M.tick_body(event)
   end
   M.orders.tick()
   do local rs=state().robot_sweeps; if rs and rs.active then local ok,err=pcall(M.timed,'reservations.tick',M.reservations.tick); if not ok then rs.error={tick=event.tick,error=tostring(err)} end end end  -- (d25 batch217 QAB1) a sweep's step
-  local okr,errr=pcall(M.timed,'reminders.tick',M.reminders.tick)
+  local okr,errr=pcall(M.timed,'reminders.tick',M.each_team,M.reminders.tick)
   if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
   M.cameras.tick()
@@ -21595,7 +21685,7 @@ function M.on_event(event)
     -- (d22 batch94 BD1) the reminders set on.research
     if event.name==defines.events.on_research_finished and M.reminders and event.research and event.research.valid then
       local rf=event.research.force
-      pcall(M.reminders.trigger,'research',{name=event.research.name,gear=M.gapfacts.unlocks_gear(event.research),force=rf and rf.name or nil})
+      pcall(M.as_team,rf and rf.name or 'player',M.reminders.trigger,'research',{name=event.research.name,gear=M.gapfacts.unlocks_gear(event.research),force=rf and rf.name or nil})
     end
     return
   end
@@ -21637,7 +21727,10 @@ function M.on_event(event)
       if not fine then M.carry_failed(index,action,err) end
     elseif ok then M.pathing.on_finished(p,nav,event) elseif nav.path_id==event.id then nav.path_state='failed' end
   elseif event.name==defines.events.on_console_chat then
-    if M.chat then M.chat.on_console_chat(event) end
+    if M.chat then
+      local pl=event.player_index and game.get_player(event.player_index)
+      M.as_team(pl and pl.valid and pl.force.name or 'player',M.chat.on_console_chat,event)
+    end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
   elseif event.name==defines.events.on_chunk_charted then

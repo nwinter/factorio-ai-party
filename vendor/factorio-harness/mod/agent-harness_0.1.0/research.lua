@@ -74,7 +74,8 @@ return function(api)
       local shown = {}
       for i = 1, math.min(#unlocks, MAX_UNLOCKS) do shown[i] = unlocks[i] end
       api.board_event('research', {kind='research', title=t.name, status='done'}, 'done',
-        #shown > 0 and 'unlocks: ' .. table.concat(shown, ', ') .. (#unlocks > #shown and ', +' .. (#unlocks - #shown) .. ' more' or '') or nil)
+        #shown > 0 and 'unlocks: ' .. table.concat(shown, ', ') .. (#unlocks > #shown and ', +' .. (#unlocks - #shown) .. ' more' or '') or nil,
+        t.force.name)
     end
   end
 

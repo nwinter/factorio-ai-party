@@ -15,6 +15,12 @@ spectator "director" clients.
   `remote.call("agent_harness", "bot_create", name)` -> JSON `{ok, bot={name, unit_number, position, force}}`;
   `bot_create({name=NAME, force=FORCE})` makes it in that force (a player force; default player), at that force's spawn;
   `bot_remove(name)` drops it (character dies, corpse keeps items). Names: `[a-z][a-z0-9_-]{0,15}`, unique.
+- Teams: the bots of one force are a team. Each team has its own board (with lessons, plans and checks), mention
+  boxes, tells, chat, votes, ground rules, reminders, blueprint library and drops, and its roster (status teammates,
+  players, profiles, tell and mention names) is its own agents. A request runs as its agent's team; an operator
+  request (`operator: true`) runs as `team` (a player force's name, a field beside `operator`; default player), and
+  an operator `tell` with no `team` as the team of the first agent it names. The player force's stores keep their
+  old storage keys (a one-team world reads as before).
 - Addressing: dispatch requests gain an optional `bot` string. `{bot="astra"}` targets that bot; `player`
   keeps working for real players. A request may carry one of them, not both. CLI: `fh --bot NAME ...`
   (and `FH_BOT` env var), mutually exclusive with `--player`.

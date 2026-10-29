@@ -1587,7 +1587,8 @@ return function(api)
     table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, cargo_q=p.cargo_q, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest, asked=p.asked})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
     if kind == 'received' and api.delivered then
-      pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where})
+      pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where,
+        force=pl and try(function() return pl.force.name end)})
     end
   end
   local function pod_done(rec, p, tick, hub_dead, pl)
@@ -1651,7 +1652,7 @@ return function(api)
         if pl and api.delivered then
           local name = try(function() return pl.name end)
           pcall(api.delivered, {surface=try(function() return pl.surface.name end), platform=name, from=r.from, cargo=r.cargo,
-            where=string.format('%s\'s hub (a rocket from %s)', tostring(name), tostring(r.from))})
+            where=string.format('%s\'s hub (a rocket from %s)', tostring(name), tostring(r.from)), force=try(function() return pl.force.name end)})
         end
         rec.up_times = rec.up_times or {}
         rec.up_times[#rec.up_times+1] = tick - r.tick

@@ -99,17 +99,25 @@ return function(api)
   -- holder (shake3: Astra and Muse both had ✦, Sol and Sonnet both S). Case
   -- and an emoji variation selector (U+FE0F) do not make a different glyph.
   local function same_glyph(g) return (g:lower():gsub('\239\184\143', '')) end
+  -- (mt276 B) the team the call runs as, and an index's team: glyphs, colours and voices are kept apart within a team
+  -- (a refusal over another team's would tell a team others exist)
+  local function team_now() return api.team_now and api.team_now() or 'player' end
+  local function team_of(index) return api.team_of and api.team_of(index) or 'player' end
   local function holder(index)
+    if team_of(index) ~= team_now() then return nil end
     for _, b in ipairs(api.bots()) do if b.index == index then return b.name end end
     local pl = game.get_player(index)
     return pl and pl.valid and pl.name or nil
+  end
+  local function holder_text(other, pr, name)
+    return pr.display_name and pr.display_name ~= name and pr.display_name .. ' (' .. name .. ')' or name
   end
   local function check_glyph(index, glyph)
     local mine = same_glyph(glyph)
     for other, pr in pairs(store()) do
       local name = other ~= index and pr.glyph and same_glyph(pr.glyph) == mine and holder(other)
       if name then
-        local who = pr.display_name and pr.display_name ~= name and pr.display_name .. ' (' .. name .. ')' or name
+        local who = holder_text(other, pr, name)
         error(string.format('glyph %s is taken by %s; pick another (profiles lists every glyph in use)', pr.glyph, who), 0)
       end
     end
@@ -130,7 +138,7 @@ return function(api)
     local taken = {}
     for other, pr in pairs(store()) do
       local name = other ~= index and pr.color and holder(other)
-      if name then taken[#taken+1] = {color=pr.color, name=name, display=pr.display_name} end
+      if name then taken[#taken+1] = {color=pr.color, name=name, display=pr.display_name, other=other, pr=pr} end
     end
     for _, t in ipairs(taken) do
       local d = color_distance(color, t.color)
@@ -141,7 +149,7 @@ return function(api)
           for _, u in ipairs(taken) do if color_distance(c, u.color) < MIN_COLOR_DISTANCE then ok = false end end
           if ok and #free < 4 then free[#free+1] = c end
         end
-        local who = t.display and t.display ~= t.name and t.display .. ' (' .. t.name .. ')' or t.name
+        local who = holder_text(t.other, t.pr, t.name)
         error(string.format("color %s is too close to %s's %s (distance %d, at least %d apart); pick another%s (profiles lists every color in use)",
           color, who, t.color, math.floor(d), MIN_COLOR_DISTANCE, #free > 0 and ', e.g. ' .. table.concat(free, ' ') or ''), 0)
       end
@@ -164,7 +172,7 @@ return function(api)
       for other, opr in pairs(all) do
         local name = other ~= p.index and opr.voice == voice and holder(other)
         if name then
-          local who = opr.display_name and opr.display_name ~= name and opr.display_name .. ' (' .. name .. ')' or name
+          local who = holder_text(other, opr, name)
           error(string.format('voice %s is taken by %s; pick another (profiles lists every voice in use)', voice, who), 0)
         end
       end
@@ -221,19 +229,23 @@ return function(api)
   end
   function M.handlers.profiles()
     local out = {}
+    -- (mt276 B) the team's own agents (a LuaPlayer mt_assign put in a team's force is none)
+    local team = team_now()
+    local mt = api.state().mt
+    local assigned = mt and mt.players or {}
     for _, p in pairs(game.players) do
-      if not api.director(p.index) then
+      if not api.director(p.index) and not assigned[p.name] and team_of(p.index) == team then
         local r = row('player', p.name, p.index, p.character, p.position, p.surface)
         r.connected = p.connected
         out[#out+1] = r
       end
     end
-    for _, b in ipairs(api.bots()) do
+    for _, b in ipairs(api.bots()) do if (b.force or 'player') == team then
       local r = row('bot', b.name, b.index, b.character, b.position, game.get_surface(b.surface or 'nauvis'), b.travel)
       r.travel = b.travel and b.travel.state or nil
       r.dead_until_tick = b.dead_until_tick
       out[#out+1] = r
-    end
+    end end
     return {profiles=out, tick=game.tick}
   end
   -- Word wrap at WRAP characters (bytes; long words are cut).
