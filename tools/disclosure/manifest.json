@@ -26,7 +26,7 @@
    "low_power": "an electric network of the force on low or no power the first time (powercut.lua)",
    "second_surface": "the force has a platform, or a character on a second planet",
    "freight": "the force's first cargo pod landed on a surface from a platform",
-   "contact": "(mt281) the force's first contact with another team: its chart showing the other's entity, or a hit between them (multiteam.lua's record, a multi-team map only)"
+   "contact": "the force's first contact with another team: its chart showing the other's entity, or a hit between them (a map with teams only)"
   },
   "habit": {
    "hand_crafts": "hand crafts of one recipe (craft calls' counts summed per recipe)",
