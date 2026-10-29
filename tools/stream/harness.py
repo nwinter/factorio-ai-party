@@ -389,12 +389,14 @@ rcon.print(type(r) == "string" and r or helpers.table_to_json({ok = true, result
 # camera call takes surfaces, the `platforms` read gives none), the hub (the runtime builds remote work around it) and
 # the bounds of our entities there, so a fixed view fits the whole platform, and the hub's health in % (onecam.py's
 # platform label says it when the hub is hurt). A platform still waiting for its starter
-# pack has no surface and is skipped.
+# pack has no surface and is skipped. (d28 batch318 OC) machines: its assemblers and furnaces (at most 120), each
+# {x, y, w} with w 1 while its status is working (a one-client visit's machinery framing, onecam.machinery).
 PLATFORM_LUA = r"""
 local f = game.forces.player
 local out = {}
 local states = {}
 for k, v in pairs(defines.space_platform_state) do states[v] = k end
+local working = defines.entity_status.working
 for _, pl in pairs(f.platforms) do
   local ok, s = pcall(function() return pl.valid and pl.surface end)
   if ok and s and s.valid then
@@ -417,8 +419,13 @@ for _, pl in pairs(f.platforms) do
     for _, e in pairs(s.find_entities_filtered{force = f, type = {"ammo-turret", "electric-turret", "fluid-turret", "turret"}, limit = 300}) do
       guns[#guns + 1] = {n = e.name, q = e.quality and e.quality.name or "normal", x = e.position.x, y = e.position.y}
     end
+    local ms = {}
+    for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machine", "furnace"}, limit = 120}) do
+      local p = e.position
+      ms[#ms + 1] = {x = p.x, y = p.y, w = e.status == working and 1 or 0}
+    end
     out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
-      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns, where = w}
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns, machines = ms, where = w}
   end
 end
 rcon.print(helpers.table_to_json{platforms = out})
@@ -746,7 +753,7 @@ class Harness:
         return self.lua(PROBE_LUA)
 
     def platform_views(self):
-        """{platform name: {surface, hub, bounds, guns, where}} for the platforms that have a surface (PLATFORM_LUA). guns
+        """{platform name: {surface, hub, bounds, guns, machines, where}} for the platforms that have a surface (PLATFORM_LUA). guns
         (d20 batch50 A1): each turret's position and range, the range from turret_ranges. where (d22 batch75 AK2, viewer
         Foobator: only the first 2 in transit had a progress bar): {state, paused, speed, at} for every platform, `at` as
         the platforms read gives it ("from->to N%" on a space connection, N from `from`; a location; "in transit")."""
