@@ -5,7 +5,7 @@
 #   tools/mt/launch-tree.sh [DIR]     make or update it (default worktrees/pog-mt-launch); prints DIR
 #   tools/mt/launch-tree.sh --scan DIR   the words that would name the mode, with the files they are in (none: exit 0)
 # Left out: tools/mt (the operator's tools), agent/mt (the teams files), the Python tests, the public repo export (its
-# scan names the mode), tools/imac-copy.sh, the harness mod (only install and deploy read it: runtime.lua names the
+# scan names the mode), tools/imac-copy.sh, docs/DISCLOSURE.md (its per-force notes name line 1's part), the harness mod (only install and deploy read it: runtime.lua names the
 # teams module) and the harness's mt tests. Codex, agy and Muse read any
 # path on the Mac; this keeps incidental reads of the agents' own tree clean, not deliberate ones.
 set -euo pipefail
@@ -26,7 +26,7 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 rm -rf "$tmp/tools/mt" "$tmp/agent/mt" "$tmp"/tools/test_*.py "$tmp"/tools/stream/test_*.py "$tmp"/site/test_*.py \
   "$tmp/vendor/factorio-harness/mod" "$tmp"/vendor/factorio-harness/tests/mt27*.lua \
   "$tmp"/tools/public_export.py "$tmp"/tools/public_sync.py "$tmp"/tools/public-push.sh "$tmp"/tools/public-start.sh \
-  "$tmp"/tools/imac-copy.sh
+  "$tmp"/tools/imac-copy.sh "$tmp"/docs/DISCLOSURE.md
 (cd "$root/vendor/factorio-harness" && npm run build >/dev/null)
 mkdir -p "$tmp/vendor/factorio-harness/dist"
 cp -R "$root/vendor/factorio-harness/dist/." "$tmp/vendor/factorio-harness/dist/"
