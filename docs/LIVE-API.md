@@ -788,3 +788,20 @@ same way.
 Free-plan capacity: each page view polls state every 10 s and chat every 4 s; the Worker answers repeats from a
 per-edge cache for 2 to 3 s before waking the Durable Object. That is comfortable for a preview audience. For a
 public launch, put the API on a custom domain (so the Cache API works) or move to the paid plan.
+
+## Storage health (d29 batch333)
+
+From d29 01:40 the object's one 230 KB `kv` row "state" failed every read and write with `SQLITE_NOMEM`; the constructor
+read it, so every endpoint answered 500. The state and board documents are now kept in the `docs` table, 16384
+characters a row (a 128 KB value failed on that object, 16-64 KB passed; a new object took 1 MB). Nothing reads kv's old
+"state" and "board" rows. A start that fails answers `503 {"error": "storage unavailable", "detail"}` and the next
+request tries again. `GET /v1/debug` with the publish token gives the start's error and the store's sizes (tables, rows
+and characters per document, chat, replies, blueprints, votes), each read on its own.
+
+The documents in small rows were not enough: the object "main" kept failing small reads too (a 33-row table), while a
+new object took 12 MB of 1 MB rows. Its tables were copied to a new object, "main-d29", and `LIVE_OBJECT` in
+`site/worker/wrangler.toml` names the one that serves; "main" is left as it was. A move: `GET /v1/debug/export?table=T&after=K&limit=N`
+(one table's rows by its key, a page at a time; kv's "state" and "board" rows stay behind) from the old object, `POST
+/v1/debug/import?do=main-NAME {table, rows}` into the new one (only a probe-NAME or main-NAME object takes an import), then
+`LIVE_OBJECT` set and the Worker deployed. Both need the publish token; `?do=NAME` on any /v1/debug path reads another
+object (main, probe-NAME, main-NAME).
