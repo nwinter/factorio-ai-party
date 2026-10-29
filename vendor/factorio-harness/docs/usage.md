@@ -18006,6 +18006,26 @@ lowest turret and what feeds it on that tick (turretsnap.lua).
   belt lanes 0).
 
 **Test:** tests/d29_batch344.lua.
+
+## d29 batch348 (CS, Sol #2758: a queued circuit_set is checked as the live call checks it; red+green is both)
+
+Shift100: Sol's four-step Resolute clock draft passed queue_submit's dry run (ticks 82212119, 82212130) and Astra's
+(82261065) with decider rows and outputs `first_networks` / `networks` "red+green", the text inspect shows. Live,
+Astra's plan 113 ran its two actuator steps and stopped at the first clock step (alert at 18:01:33 UTC, tick
+82275474): "step job-2210 circuit_set failed: decider.conditions 1.first_networks is red, green or both". Astra
+resubmitted the clocks with "both" (82276082) and they applied.
+
+- **One validator.** circuits.lua check_args parses circuit_set's values with no entity, through the parsers the live
+  call uses (conditions, decider, arithmetic and selector parameters with their networks, a constant combinator's
+  signals, the switches' types); plan_set calls it too. It is circuit_set's queued-step check (runtime.lua
+  step_checks), which runs at submit, live and dry, so a value the live call would refuse refuses the plan before any
+  step runs. What depends on the entity (a decider on a decider combinator, an inserter's read switches) is still
+  checked when the step runs.
+- **Networks.** "red+green" (and "green+red", spaces and case aside) is both, in the one networks parser every
+  combinator field uses; the refusal says "red, green or both (red+green, as inspect shows it, is both)". inspect and
+  circuit reads keep saying red+green.
+- **Tests:** tests/d29_batch348.lua (each network spelling; each field's value refusals; queue_submit dry and live
+  refused before any step; Sol's red+green clock passes and parses as both).
 ## d29 batch345 (BP, Astra #2753: assembler_batch stages ingredients for base crafts)
 
 Astra's foundry at Vulcanus (26.5,47.5), +50% productivity on turbo underground belts (2 a craft, 2 express underground

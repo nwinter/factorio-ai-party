@@ -81,7 +81,7 @@ return function(api)
       description='an arithmetic, decider, selector or constant combinator (or its ghost): the description its GUI shows (LuaEntity.combinator_description), up to 500 bytes, newlines kept; "" or false clears it; reads show it as description; blueprints keep it',
       on='constant combinator: on/off',
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
-      decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}: conditions rows "carbon < 150" (a row after the first begins with and / or: "and sulfur < 100"), {signal, comparator, value|signal2, compare: and|or (compare_type too), first_networks, second_networks: red|green|both}, or the game\'s own rows {first_signal, comparator, constant|second_signal, compare_type}; a row after the first must say and or or; outputs {signal, copy_input: true (the input count) | constant N, networks}; the read shows each row\'s networks and each output as copy or constant',
+      decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}: conditions rows "carbon < 150" (a row after the first begins with and / or: "and sulfur < 100"), {signal, comparator, value|signal2, compare: and|or (compare_type too), first_networks, second_networks: red|green|both (red+green, as inspect shows it, is both)}, or the game\'s own rows {first_signal, comparator, constant|second_signal, compare_type}; a row after the first must say and or or; outputs {signal, copy_input: true (the input count) | constant N, networks}; the read shows each row\'s networks and each output as copy or constant',
       selector='{operation (select|count|random|stack-size|...), its fields}',
       returns='entity, by (reach|remote view), circuit: the readback inspect shows; unwired (a warning): a setting of this call that acts on a signal (an enable condition, set filters, set stack size, set recipe, set requests, set trains limit ...) on an entity or ghost no red or green wire connects, and what the game does then (in 2.0.77 an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'},
     wire = {from='{x,y} (or {position, name, unit_number}): in reach, or by remote view ours in a visible chunk',
@@ -212,15 +212,21 @@ return function(api)
     local right = c.second_signal and c.second_signal.name and signal_text(c.second_signal) or tostring(c.constant or 0)
     return string.format('%s %s %s', signal_text(c.first_signal), ASCII[c.comparator] or c.comparator or '<', right)
   end
-  -- red | green | both, or {red, green}: which input networks a combinator reads.
+  -- red | green | both, or {red, green}: which input networks a combinator reads. (d29 batch348 CS, Sol #2758: a
+  -- clock's first_networks "red+green", copied from inspect's [reads red+green], passed queue_submit's dry run and
+  -- refused live) the text inspect shows is both: "red+green" (and "green+red", spaces or case aside).
   local function networks(v, what)
     if v == nil then return nil end
+    if type(v) == 'string' then
+      local t = v:lower():gsub('%s', '')
+      if t == 'red+green' or t == 'green+red' then v = 'both' else v = t end
+    end
     if v == 'red' then return {red=true, green=false} elseif v == 'green' then return {red=false, green=true}
     elseif v == 'both' then return {red=true, green=true} end
     if type(v) == 'table' and (v.red == nil or type(v.red) == 'boolean') and (v.green == nil or type(v.green) == 'boolean') then
       return {red=v.red ~= false, green=v.green ~= false}
     end
-    error(what .. ' is red, green or both', 0)
+    error(what .. ' is red, green or both (red+green, as inspect shows it, is both)', 0)
   end
   local function networks_text(n)
     if type(n) ~= 'table' then return nil end
@@ -1315,6 +1321,7 @@ return function(api)
       a = b
     end
     a, chest_notes = chest_words(e, kind, a)
+    M.check_args(a)   -- (d29 batch348) the values, as a queued step's check reads them
     -- A ghost by what it builds (its own name is entity-ghost): it takes the same settings (Astra 12:20).
     local ghost = e.type == 'entity-ghost'
     local steps, out = {}, {entity=ghost and try(function() return e.ghost_name end) or e.name, ghost=ghost or nil, position=e.position, by=by}
@@ -1425,6 +1432,31 @@ return function(api)
       step('selector', function() cb.parameters = params end)
     end
     return steps, out, chest_notes, a
+  end
+  -- (d29 batch348 CS, Sol #2758) circuit_set's arguments as the live call parses them, with no entity: the values
+  -- each setting takes (conditions, the combinators' parameters with their networks, a constant combinator's signals,
+  -- the switches' types) through the same parsers plan_set uses. A queued step (queue_submit, its dry run too) is
+  -- checked with it, so what live would refuse for its values is refused before any step runs; what depends on the
+  -- entity (a decider on an arithmetic combinator, an inserter's read switches) is said when the step runs.
+  function M.check_args(a)
+    if type(a) ~= 'table' then return end
+    if a.clear ~= nil and a.clear ~= true then error('clear must be true', 0) end
+    if a.enable == false then error(M.ENABLE_FALSE, 0) end
+    local n_on = (a.enable ~= nil and 1 or 0) + (a.switch_off ~= nil and 1 or 0) + (a.remove_condition ~= nil and 1 or 0)
+    if n_on > 1 then error('enable, switch_off and remove_condition each set the enable condition: one at a time', 0) end
+    if a.switch_off ~= nil and a.switch_off ~= true then error('switch_off must be true (remove_condition: true clears the condition)', 0) end
+    if a.remove_condition ~= nil and a.remove_condition ~= true then error('remove_condition must be true', 0) end
+    if a.enable ~= nil then condition(a.enable, 'enable') end
+    if a.logistic ~= nil and a.logistic ~= false then condition(a.logistic, 'logistic') end
+    if a.read ~= nil and type(a.read) == 'table' then
+      for k, v in pairs(a.read) do if type(v) ~= 'boolean' then error('read.' .. tostring(k) .. ' must be boolean', 0) end end
+    end
+    if a.settings ~= nil and type(a.settings) ~= 'table' then error('settings is {name: value}', 0) end
+    if a.on ~= nil and type(a.on) ~= 'boolean' then error('on must be boolean', 0) end
+    if a.signals ~= nil then constant_filters(a.signals) end
+    if a.arithmetic ~= nil then arithmetic_params(a.arithmetic) end
+    if a.decider ~= nil then decider_params(a.decider) end
+    if a.selector ~= nil then selector_params(a.selector) end
   end
   -- The entity types whose control behavior kind is not the type's own name (read on a copy of world n: a ghost of
   -- each type with circuit wires, get_or_create_control_behavior; a pole has wires and no control behavior).
