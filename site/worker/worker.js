@@ -26,12 +26,16 @@
 //   POST /v1/polls/suggest    a viewer's poll idea {name, question, options, hours?, cid?}: seen by the operator only
 //   POST /v1/polls, POST /v1/polls/ID/close, GET /v1/polls/ID/voters, GET /v1/polls/suggestions?after=ID
 //                             the operator's (Authorization: PUBLISH_TOKEN): create, close early, the voter log, ideas
+//   GET  /v1/debug            the start's error and the store's sizes (Authorization: Bearer PUBLISH_TOKEN; batch333)
 //
 // Everything is unlisted: every response carries X-Robots-Tag noindex and /robots.txt disallows all.
 // Client addresses are never stored: rate limits and bans key on a salted hash.
 
 const SCHEMA = 1;
 const MAX_STATE_BYTES = 256 * 1024;
+// (d29 batch333) the state and board documents' rows: every value this object stores stays well under the size that
+// failed with SQLITE_NOMEM (on the main object on d29, a 128 KB value failed and 16-64 KB passed)
+const DOC = { chunk: 16 * 1024 };
 const CHAT = {
   maxLen: 500,          // characters per message (d27 batch263 VR, Nick 06:30: 200 before, so long messages came in parts)
   minGapS: 4,           // per client: seconds between messages
@@ -344,6 +348,9 @@ export class Live {
     this.global = [];
     this.lastText = new Map(); // who -> {text, at}
     this.here = new Map(); // page id -> {at, who}
+    this.hostTimes = [];
+    this.ideaTimes = new Map(); // who -> [ms] suggestions in the last hour
+    this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
     // (d29 batch333) a failing start (SQLITE_NOMEM from 01:40) no longer throws out of the constructor, which reset the
     // object on every request: the error is kept, each request tries again, GET /v1/debug reports it
     this.ready = false;
@@ -361,61 +368,59 @@ export class Live {
     return this.ready;
   }
   init() {
-    {
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
-        name TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`);
-      // cid: the page's id for one message (joonazan, d15 08:05: messages sent twice); a table from before it gains it
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN cid TEXT`); } catch (e) { /* already there */ }
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS chat_cid ON chat (cid)`);
-      // channel (viewer LimeLight555, d16 10:36): "viewers" lines stay on the site; GET /v1/chat leaves them out unless
-      // asked (channels=all), so the Mac's relay to the game never reads them
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
-      // host: a line posted with the host link (Nick, d16 17:11)
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      // op: the Operator's announcement (POST /v1/announce, batch293)
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN op INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      this.hostTimes = [];
-      // (d28 batch309) replies: seq = the game chat line's seq; prompt = the site line it answers (site:N), if any; rv =
-      // the store's version when it last changed (GET /v1/chat?replies_after=rv)
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS replies (seq INTEGER PRIMARY KEY, t REAL NOT NULL, prompt INTEGER,
-        rv INTEGER NOT NULL, row TEXT NOT NULL)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_rv ON replies (rv)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_t ON replies (t)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_prompt ON replies (prompt)`);
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
-        name TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, blueprints INTEGER NOT NULL,
-        entities INTEGER NOT NULL, bytes INTEGER NOT NULL, string TEXT NOT NULL, who TEXT NOT NULL, cid TEXT,
-        hidden INTEGER NOT NULL DEFAULT 0)`);
-      // polls: status "open" until closes (or the operator closes it early: status "closed", closes = then)
-      // options: a JSON list of labels; details: a JSON list of each option's details ("" for none)
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL,
-        options TEXT NOT NULL, opens REAL NOT NULL, closes REAL NOT NULL, created_by TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open', intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
-      // every vote is kept; current = 1 on each voter's latest one (the one that counts)
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS votes (id INTEGER PRIMARY KEY AUTOINCREMENT, poll INTEGER NOT NULL,
-        voter TEXT NOT NULL, name TEXT NOT NULL, option INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', t REAL NOT NULL,
-        cid TEXT, current INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, agent INTEGER NOT NULL DEFAULT 0)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS votes_poll ON votes (poll, current)`);
-      try { this.sql.exec(`ALTER TABLE votes ADD COLUMN voided INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      // host: a vote cast with the host link (shown as the host's on the comments)
-      try { this.sql.exec(`ALTER TABLE votes ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
-        name TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, hours REAL, who TEXT NOT NULL, cid TEXT,
-        intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
-      this.ideaTimes = new Map(); // who -> [ms] suggestions in the last hour
-      this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
-      this.state = this.get("state");
-      this.received = Number(this.get("received") || 0);
-      this.board = this.get("board");
-      this.boardReceived = Number(this.get("board_received") || 0);
-      this.salt = this.get("salt");
-      if (!this.salt) {
-        const b = crypto.getRandomValues(new Uint8Array(16));
-        this.salt = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-        this.put("salt", this.salt);
-      }
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+      name TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`);
+    // cid: the page's id for one message (joonazan, d15 08:05: messages sent twice); a table from before it gains it
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN cid TEXT`); } catch (e) { /* already there */ }
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS chat_cid ON chat (cid)`);
+    // channel (viewer LimeLight555, d16 10:36): "viewers" lines stay on the site; GET /v1/chat leaves them out unless
+    // asked (channels=all), so the Mac's relay to the game never reads them
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
+    // host: a line posted with the host link (Nick, d16 17:11)
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    // op: the Operator's announcement (POST /v1/announce, batch293)
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN op INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    // (d28 batch309) replies: seq = the game chat line's seq; prompt = the site line it answers (site:N), if any; rv =
+    // the store's version when it last changed (GET /v1/chat?replies_after=rv)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS replies (seq INTEGER PRIMARY KEY, t REAL NOT NULL, prompt INTEGER,
+      rv INTEGER NOT NULL, row TEXT NOT NULL)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_rv ON replies (rv)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_t ON replies (t)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_prompt ON replies (prompt)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
+    // (d29 batch333) the state and board documents, DOC.chunk characters a row (kv's one 230 KB "state" row failed every
+    // read and write with SQLITE_NOMEM from d29 01:40; nothing reads kv's "state" and "board" rows now)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS docs (k TEXT NOT NULL, i INTEGER NOT NULL, v TEXT NOT NULL, PRIMARY KEY (k, i))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+      name TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, blueprints INTEGER NOT NULL,
+      entities INTEGER NOT NULL, bytes INTEGER NOT NULL, string TEXT NOT NULL, who TEXT NOT NULL, cid TEXT,
+      hidden INTEGER NOT NULL DEFAULT 0)`);
+    // polls: status "open" until closes (or the operator closes it early: status "closed", closes = then)
+    // options: a JSON list of labels; details: a JSON list of each option's details ("" for none)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL,
+      options TEXT NOT NULL, opens REAL NOT NULL, closes REAL NOT NULL, created_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open', intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
+    // every vote is kept; current = 1 on each voter's latest one (the one that counts)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS votes (id INTEGER PRIMARY KEY AUTOINCREMENT, poll INTEGER NOT NULL,
+      voter TEXT NOT NULL, name TEXT NOT NULL, option INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', t REAL NOT NULL,
+      cid TEXT, current INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, agent INTEGER NOT NULL DEFAULT 0)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS votes_poll ON votes (poll, current)`);
+    try { this.sql.exec(`ALTER TABLE votes ADD COLUMN voided INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    // host: a vote cast with the host link (shown as the host's on the comments)
+    try { this.sql.exec(`ALTER TABLE votes ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+      name TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, hours REAL, who TEXT NOT NULL, cid TEXT,
+      intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
+    this.state = this.getDoc("state");
+    this.received = this.state ? Number(this.get("received") || 0) : 0;
+    this.board = this.getDoc("board");
+    this.boardReceived = this.board ? Number(this.get("board_received") || 0) : 0;
+    this.salt = this.get("salt");
+    if (!this.salt) {
+      const b = crypto.getRandomValues(new Uint8Array(16));
+      this.salt = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+      this.put("salt", this.salt);
     }
   }
   get(k) {
@@ -424,6 +429,22 @@ export class Live {
   }
   put(k, v) {
     this.sql.exec("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
+  }
+  getDoc(k) {
+    const rows = this.sql.exec("SELECT v FROM docs WHERE k = ? ORDER BY i", k).toArray();
+    return rows.length ? rows.map((r) => r.v).join("") : null;
+  }
+  // a document in rows of at most DOC.chunk characters (a cut never splits a surrogate pair), its old extra rows dropped
+  putDoc(k, v) {
+    let i = 0;
+    for (let at = 0; at < v.length || i === 0; i++) {
+      let end = Math.min(v.length, at + DOC.chunk);
+      const c = v.charCodeAt(end - 1);
+      if (end < v.length && c >= 0xd800 && c <= 0xdbff) end--;
+      this.sql.exec("INSERT INTO docs (k, i, v) VALUES (?, ?, ?) ON CONFLICT(k, i) DO UPDATE SET v = excluded.v", k, i, v.slice(at, end));
+      at = end;
+    }
+    this.sql.exec("DELETE FROM docs WHERE k = ? AND i >= ?", k, i);
   }
   async who(req) {
     const data = new TextEncoder().encode(this.salt + "|" + (req.headers.get("x-client-ip") || "unknown"));
@@ -466,6 +487,12 @@ export class Live {
         }
       }
     } catch (e) {
+      // (d29 batch333) a storage error is the object's, not the request's: 503, and in wrangler tail
+      const msg = String((e && e.message) || e);
+      if (/SQLITE_|internal error/.test(msg)) {
+        console.error(route, msg);
+        return json({ error: "storage unavailable", detail: msg }, 503);
+      }
       return json({ error: "bad request" }, 400);
     }
   }
@@ -479,14 +506,12 @@ export class Live {
     const one = (q) => this.sql.exec(q).toArray();
     read("database_size", () => this.ctx.storage.sql.databaseSize);
     read("tables", () => one("SELECT name, type FROM sqlite_master ORDER BY name"));
-    for (const p of ["page_size", "page_count", "freelist_count"]) read(p, () => one("PRAGMA " + p));
-    read("kv_keys", () => one("SELECT k FROM kv ORDER BY k"));
-    for (const k of ["salt", "received", "board_received", "chat_open", "board", "state"]) {
-      read("kv_" + k, () => this.sql.exec("SELECT length(CAST(v AS BLOB)) AS bytes FROM kv WHERE k = ?", k).toArray());
-    }
+    read("page_size", () => one("PRAGMA page_size"));
+    read("kv", () => one("SELECT k FROM kv ORDER BY k"));
+    read("docs", () => one("SELECT k, COUNT(*) AS rows, SUM(length(v)) AS chars, MAX(length(v)) AS longest FROM docs GROUP BY k ORDER BY k"));
     read("chat", () => one("SELECT COUNT(*) AS n, MIN(seq) AS lo, MAX(seq) AS hi, SUM(length(text)) AS bytes FROM chat"));
     read("replies", () => one("SELECT COUNT(*) AS n, MIN(rv) AS lo, MAX(rv) AS hi, SUM(length(row)) AS bytes FROM replies"));
-    read("blueprints", () => one("SELECT COUNT(*) AS n, SUM(length(string)) AS bytes FROM blueprints"));
+    read("blueprints", () => one("SELECT COUNT(*) AS n, SUM(bytes) AS bytes, MAX(bytes) AS longest FROM blueprints"));
     read("votes", () => one("SELECT COUNT(*) AS n, SUM(length(comment)) AS bytes FROM votes"));
     read("polls", () => one("SELECT COUNT(*) AS n FROM polls"));
     read("poll_ideas", () => one("SELECT COUNT(*) AS n FROM poll_ideas"));
@@ -535,7 +560,7 @@ export class Live {
     if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "state must be an object" }, 400);
     this.state = JSON.stringify(body);
     this.received = Date.now() / 1000;
-    this.put("state", this.state);
+    this.putDoc("state", this.state);
     this.put("received", this.received);
     return json({ ok: true, received: this.received });
   }
@@ -559,7 +584,7 @@ export class Live {
     if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "board must be an object" }, 400);
     this.board = JSON.stringify(body);
     this.boardReceived = Date.now() / 1000;
-    this.put("board", this.board);
+    this.putDoc("board", this.board);
     this.put("board_received", this.boardReceived);
     return json({ ok: true, received: this.boardReceived });
   }

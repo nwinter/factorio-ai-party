@@ -788,3 +788,12 @@ same way.
 Free-plan capacity: each page view polls state every 10 s and chat every 4 s; the Worker answers repeats from a
 per-edge cache for 2 to 3 s before waking the Durable Object. That is comfortable for a preview audience. For a
 public launch, put the API on a custom domain (so the Cache API works) or move to the paid plan.
+
+## Storage health (d29 batch333)
+
+From d29 01:40 the object's one 230 KB `kv` row "state" failed every read and write with `SQLITE_NOMEM`; the constructor
+read it, so every endpoint answered 500. The state and board documents are now kept in the `docs` table, 16384
+characters a row (a 128 KB value failed on that object, 16-64 KB passed; a new object took 1 MB). Nothing reads kv's old
+"state" and "board" rows. A start that fails answers `503 {"error": "storage unavailable", "detail"}` and the next
+request tries again. `GET /v1/debug` with the publish token gives the start's error and the store's sizes (tables, rows
+and characters per document, chat, replies, blueprints, votes), each read on its own.
