@@ -49,6 +49,8 @@ EVENTS = {
     "low_power": "an electric network of the force on low or no power the first time (powercut.lua)",
     "second_surface": "the force has a platform, or a character on a second planet",
     "freight": "the force's first cargo pod landed on a surface from a platform",
+    "contact": "(mt281) the force's first contact with another team: its chart showing the other's entity, or a hit "
+               "between them (multiteam.lua's record, a multi-team map only)",
 }
 
 # Each habit: counted where the harness already handles the call (no tick cost), per force, bounded.
@@ -179,6 +181,10 @@ ACTIONS = {
     "checks": ["scale:game_hours:2"], "lessons": ["scale:game_hours:4", "event:died", "event:loss"],
     "lesson_add": ["with:lessons"], "lesson_edit": ["with:lessons"], "lesson_verify": ["with:lessons"],
     "lesson_review": ["with:lessons"], "ground_rules": ["scale:game_hours:4"], "ground_rule_add": ["with:ground_rules"],
+    # (mt281) pacts between teams: from the first contact (pacts.lua also leaves them out of describe until then)
+    "pact_propose": ["event:contact"], "pact_accept": ["with:pact_propose"], "pact_decline": ["with:pact_propose"],
+    "pact_withdraw": ["with:pact_propose"], "pact_amend": ["with:pact_propose"], "pact_end": ["with:pact_propose"],
+    "pacts": ["with:pact_propose"],
     "ground_rule_edit": ["with:ground_rules"], "ground_rule_retire": ["with:ground_rules"],
     "review": ["scale:game_hours:2"], "lookahead": ["scale:game_hours:2"], "boilers": ["built:boiler"],
     "mention_counts": TEAM,

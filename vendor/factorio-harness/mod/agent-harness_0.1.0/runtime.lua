@@ -2555,6 +2555,8 @@ function handlers.describe(_,a)
   end
   description.runtime_fault=state().runtime_fault or false
   description.bundle=bundle
+  -- (mt281) the pact actions for a team with a contact (pacts.lua)
+  if M.pacts then M.pacts.describe_into(description.actions) end
   return description
 end
 function handlers.attach(p,a)
@@ -18121,6 +18123,12 @@ for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
 -- (mt278, private) a team of human players and its freeze (humans.lua); nothing runs without mt_humans
 M.humans=require('humans'){state=state}
+-- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
+M.pacts=require('pacts'){state=state,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+  as_team=function(t,fn,...) return M.as_team(t,fn,...) end,
+  fact=function(team,text,wake) M.as_team(team,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pact',tick=game.tick,from='pact',text=text,wake=wake or nil,fyi=not wake or nil}) end
+  end) end}
 -- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
 M.multiteam=require('multiteam'){state=state,
   -- (mt276 G) the rules of contact: an operator tell to the whole team, as that team
@@ -18143,6 +18151,21 @@ M.multiteam=require('multiteam'){state=state,
           M.board.deliver(ag.index,{seq='contact',tick=game.tick,from=l[2],text=l[3],wake=l[4] or nil,fyi=not l[4] or nil})
         end
       end)
+    end
+    -- (mt281) the pact actions open for both teams at their first contact (pacts.lua; disclosure's event:contact)
+    local mt=state().mt
+    mt.pacts_open=mt.pacts_open or {}
+    for _,t in ipairs({rec.team,rec.other}) do
+      if M.disclosure and game.forces[t] then pcall(M.disclosure.mark,game.forces[t],'event:contact') end
+      if not mt.pacts_open[t] then
+        mt.pacts_open[t]=game.tick
+        M.as_team(t,function()
+          for _,ag in ipairs(M.board.agents()) do
+            M.board.deliver(ag.index,{seq='contact',tick=game.tick,from='pact',fyi=true,
+              text='new: pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end and pacts (fh help pact_propose): agreements with a team you have had contact with'})
+          end
+        end)
+      end
     end
   end}
 M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
@@ -19370,7 +19393,7 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action]
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action] or M.pacts.operator[request.action]
       relay=relay or (M.disclosure and M.disclosure.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -20631,6 +20654,9 @@ M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.i
   QUIET=M.board.QUIET,owner_state=function(name) return M.board.owner_state(name) end,
   player_of=function(name) for _,ag in ipairs(M.board.agents()) do if ag.name==name then local pl=M.lookup(ag.index); return pl and pl.valid and pl or nil end end end}
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
+-- (mt281) the pact actions (pacts.lua; open per team at its first contact)
+for name,handler in pairs(M.pacts.handlers) do handlers[name]=handler end
+for name in pairs(M.pacts.reads) do reads[name]=true end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
@@ -21720,6 +21746,8 @@ function M.tick_body(event)
   -- platform_bom requests kept to the ghosts' need (A6)
   -- (mt278) a human team's freeze: its checks every second, its destructible steps every tick while queued (humans.lua)
   do local mt=state().mt; if mt and mt.humans then pcall(M.timed,'humans.tick',M.humans.tick,event.tick) end end
+  -- (mt281) pacts: proposals lapsing, cease-fires lifting after the notice, obligations, the depot's moves, departures
+  do local mt=state().mt; if mt and mt.pacts then pcall(M.timed,'pacts.tick',M.pacts.tick,event.tick) end end
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team_holding,'owed',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
@@ -22017,6 +22045,8 @@ function M.on_event(event)
     if M.chat then
       local pl=event.player_index and game.get_player(event.player_index)
       M.as_team(pl and pl.valid and pl.force.name or 'player',M.chat.on_console_chat,event)
+      -- (mt281) a human team's "!pact ..." line (pacts.lua)
+      if state().mt and state().mt.humans then pcall(M.pacts.on_console_chat,event) end
     end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
@@ -22028,6 +22058,8 @@ function M.on_event(event)
     if state().mt then pcall(M.multiteam.on_damaged,event) end
     -- (mt278) a hit between a human team and another team: no freeze within quiet_min of it (humans.lua)
     if state().mt and state().mt.humans then pcall(M.humans.on_damaged,event) end
+    -- (mt281) a hit between teams for the pacts' no_attack obligations (pacts.lua)
+    if state().mt and state().mt.pacts then pcall(M.pacts.on_damaged,event) end
     -- (AR1) an asteroid shot, or an asteroid's hit on us, on a platform an asteroid_watch watches (asteroidwatch.lua)
     if state().asteroid_watch then
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)

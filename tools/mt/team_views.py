@@ -92,6 +92,10 @@ def collect(r, op):
     except Exception as e:
         view["contacts"], view["errors"]["contacts"] = [], str(e)
     try:
+        view["pacts"] = r.op("mt_pacts").get("pacts") or []
+    except Exception:
+        view["pacts"] = []
+    try:
         view["freeze"] = r.op("mt_freeze")
     except Exception:
         view["freeze"] = None   # no human team (mt_humans not set up)
@@ -153,6 +157,9 @@ rockets {e(str(s.get('rockets') or 0))}; platforms {e(str(s.get('platforms') or 
 <h3>Tells</h3><ul class=small>{tells or '<li>none</li>'}</ul>
 <h3>Chat</h3><ul class=small>{chat or '<li>none</li>'}</ul><ul>{errs}</ul></section>""")
     contacts = "".join(f"<li>{e(json.dumps(c))}</li>" for c in view.get("contacts") or []) or "<li>none yet</li>"
+    for p in view.get("pacts") or []:
+        contacts += (f"<li>pact #{p.get('id')} {e(str(p.get('a')))}&ndash;{e(str(p.get('b')))}: {e(str(p.get('status')))}; "
+                     f"{e(str(p.get('terms')))}{'; cease-fire lifts at tick ' + str(p['lift_tick']) if p.get('lift_tick') else ''}</li>")
     fz = view.get("freeze")
     if fz:
         contacts += (f"<li>human team {e(str(fz.get('team')))}: freeze {e(str(fz.get('state')))}, {fz.get('used_h', 0):.1f} of "
