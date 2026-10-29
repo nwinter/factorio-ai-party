@@ -16,6 +16,12 @@ Aurora site:4349, site:4350): add a change, move it to its next status, add a st
   tools/operator_updates.py reviewed ID [--next +4h|+2d|"YYYY-MM-DD HH:MM"] [--note N] [--at ...]
   add and set also take --priority urgent|normal|later, --owner ROLE ("engineer batch233", "operator") and
   --next-review +4h|DATE.
+  tools/operator_updates.py follow ID --what T --next N --owner batch322|operator|nick --review +2d|DATE [--source S]
+  tools/operator_updates.py follow-set ID/N [--what T] [--next N] [--owner O] [--review +2d|DATE] [--done|--dropped] [--note N]
+  tools/operator_updates.py reviewed ID/N [--next +2d|DATE] [--note N]
+  tools/operator_updates.py defer ID|ID/N --reason T
+  tools/operator_updates.py follow-candidates [--runs DIR]
+  tools/operator_updates.py due [--now ...] [--ready-days 2]
 
 --at is Pacific time (the default: now). add records the status's date, and "asked" when --asked is given; set
 records the new status's date and keeps the earlier ones. A note is kept with when it was written and under which
@@ -50,8 +56,20 @@ progress) whose next review has passed at --now (default now) or that have none,
 who asked, priority, owner, status and how long since it last changed; reviewed stamps a review (the row's reviewed
 and the file's backlog_reviewed) and sets the next one: --next +4h / +2d / +30m from the review's time, or a date;
 without it, by priority: urgent 4 h, normal 24 h, later 72 h.
+
+(d28 batch322 UL, viewer Aurora site:5411: "Could unfinished promises remain actionable even when their parent batch
+is Live? ... Give remaining work a linked owner, next action and review point. ... Within priority, revisit older ready
+work and record why it is deferred.") A row of any status, Live included, holds follow-ups (ID/1, ID/2, ...): what is
+left, its owner (a batch such as batch322, which the page links to the row that batch works on; operator; nick, written
+as the stream's owner), the next action and a review time. follow adds one; follow-set changes it or closes it (--done,
+--dropped, with a --note); reviewed ID/N stamps a review and sets the next (--next, default +24h). due lists, after the
+open rows, every open follow-up past its review whatever its row's status, and then the ready work (planned rows and
+open follow-ups) waiting longer than --ready-days (default 2), by priority (a follow-up has its row's), oldest first,
+each with its newest deferred reason or "no reason"; defer records one (--reason). follow-candidates lists what Live
+rows promise in their own text (the note and the operator's replies to the row's messages) and the Live rows still
+carrying a next review, for the operator to confirm before any becomes a follow-up.
 """
-import argparse, contextlib, datetime, fcntl, json, os, re, sys
+import argparse, contextlib, datetime, fcntl, glob, json, os, re, sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -59,6 +77,7 @@ sys.path.insert(0, str(REPO / "site"))
 import updates  # noqa: E402  (site/updates.py: the statuses and the checks the build makes)
 
 DEFAULT = REPO / "site" / "content" / "operator-updates.json"
+
 
 
 def now_text():
@@ -242,6 +261,69 @@ def board_asker(ref, world=None, dispatch=None):
     return who
 
 
+def follow_owner(text):
+    """A follow-up's owner: a batch ("batch322", "engineer batch322"), "operator", or the stream's owner (nick, owner)."""
+    t = (text or "").strip()
+    if t.lower() in ("nick", "stream owner", "the stream's owner", "owner"):
+        return updates.STREAM_OWNER
+    return owner_of(t)
+
+
+def find_follow(data, ref):
+    """'ID/N' -> (row, follow-up)."""
+    uid, _, n = (ref or "").rpartition("/")
+    if not uid or not n.isdigit():
+        raise SystemExit(f"{ref!r}: write ID/N (follow-up N of row ID)")
+    u = find(data, uid)
+    f = next((f for f in u.get("followups") or [] if f["n"] == int(n)), None)
+    if f is None:
+        raise SystemExit(f"{uid} has no follow-up {n} (it has {', '.join(str(f['n']) for f in u.get('followups') or []) or 'none'})")
+    return u, f
+
+
+PROMISE = re.compile(r"(?i)\b(will|I'll|gets? a design|design first|waits? (for|until)|stays? open until|pending|expected|"
+                     r"to follow|later batch(es)?|go(es)? into later|not (yet|done|built|started)|next \(batch\d+\))\b")
+
+
+SCOPE = re.compile(r"(?i)(Taken (as|into|in)|Into batch|(Now )?(also )?in progress|Started|An engineer is on it)\b")  # the batch's own scope
+
+
+def candidates(data, runs_dir):
+    """(batch322) what Live rows promise in their text, one block a row: the note's and the operator's replies' sentences
+    that read as a promise (each sentence once, under the first row naming its message), and the row's next review when
+    it carries one. For the operator to confirm; nothing is written."""
+    replies = {}
+    for f in sorted(glob.glob(str(Path(runs_dir) / "*" / "operator-replies.jsonl"))):
+        for line in Path(f).read_text(errors="replace").splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and r.get("to"):
+                text = " ".join(x for x in r.get("parts") or [] if isinstance(x, str))
+                replies.setdefault(r["to"], []).append(text)
+    seen, out = set(), []
+    for u in data["updates"]:
+        if u["status"] != "live":
+            continue
+        found = []
+        srcs = [("note", u.get("note") or "")]
+        for ref in dict.fromkeys([r.get("ref") for r in u.get("requested_by") or []] + list(u.get("replies") or [])):
+            srcs += [(f"reply {ref}", t) for t in replies.get(ref) or []]
+        for where, text in srcs:
+            for sent in re.split(r"(?<=[.!?])\s+", text):
+                sent = re.sub(r"^@\S+ (\(\d/\d\) )?Operator: ", "", sent.strip())
+                if PROMISE.search(sent) and not SCOPE.match(sent) and sent not in seen:
+                    seen.add(sent)
+                    found.append(f"  {where}: {sent}")
+        if u.get("next_review"):
+            found.append(f"  next review {u['next_review']} (owner {u.get('owner') or 'not set'}): a Live row's review, which due skips")
+        if found:
+            out.append(f"{u['id']} (live, {u.get('work') or 'no work'}; open follow-ups {len(updates.open_follow(u))})")
+            out += found
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--file", default=str(DEFAULT))
@@ -295,8 +377,34 @@ def main(argv=None):
     rv.add_argument("--next", help="+4h, +2d, +30m or YYYY-MM-DD HH:MM (default by priority: urgent 4 h, normal 24 h, later 72 h)")
     rv.add_argument("--note")
     rv.add_argument("--at")
+    du.add_argument("--ready-days", type=float, default=2, help="ready work waiting longer than this many days (default 2)")
+    fo = sub.add_parser("follow")
+    fo.add_argument("id")
+    fo.add_argument("--what", required=True)
+    fo.add_argument("--next", required=True, help="the next action")
+    fo.add_argument("--owner", required=True, help="batch322, operator or nick (the stream's owner)")
+    fo.add_argument("--review", required=True, help="+4h, +2d or YYYY-MM-DD HH:MM")
+    fo.add_argument("--source", help="where it was promised: \"reply site:5293\", \"note\"")
+    fo.add_argument("--at")
+    fs = sub.add_parser("follow-set")
+    fs.add_argument("ref", help="ID/N")
+    fs.add_argument("--what")
+    fs.add_argument("--next")
+    fs.add_argument("--owner")
+    fs.add_argument("--review")
+    end = fs.add_mutually_exclusive_group()
+    end.add_argument("--done", action="store_true")
+    end.add_argument("--dropped", action="store_true")
+    fs.add_argument("--note")
+    fs.add_argument("--at")
+    de = sub.add_parser("defer")
+    de.add_argument("ref", help="ID (a planned row) or ID/N (an open follow-up)")
+    de.add_argument("--reason", required=True)
+    de.add_argument("--at")
+    fc = sub.add_parser("follow-candidates")
+    fc.add_argument("--runs", default=str(REPO / "runs"))
     args = ap.parse_args(argv)
-    if args.cmd in ("list", "due"):
+    if args.cmd in ("list", "due", "follow-candidates"):
         return run(args)
     with locked(args.file):  # one writer at a time: read, change and write under the lock
         return run(args)
@@ -401,7 +509,69 @@ def run(args, board=None):
         print(f"notices checked through {data['notices_checked']}")
     elif args.cmd == "due":
         now = updates.when(stamp(args.now))
-        print("\n".join(due_lines(data, now)))
+        print("\n".join(due_lines(data, now) + follow_lines(data, now) + ready_lines(data, now, args.ready_days)))
+    elif args.cmd == "reviewed" and "/" in args.id:
+        u, f = find_follow(data, args.id)
+        if f.get("state", "open") != "open":
+            raise SystemExit(f"{args.id} is {f['state']}: a review is of an open follow-up")
+        t = stamp(args.at)
+        f["reviewed"], f["review"] = t, review_at(args.next or "+24h", t)
+        if args.note:
+            f["note"] = args.note
+        write(args.file, data)
+        print(f"{args.id}: reviewed {t}; next review {f['review']}" + ("; note set" if args.note else ""))
+    elif args.cmd == "follow":
+        u = find(data, args.id)
+        t = stamp(args.at)
+        fl = u.setdefault("followups", [])
+        f = {"n": max([x["n"] for x in fl] or [0]) + 1, "what": args.what.strip(), "owner": follow_owner(args.owner),
+             "next": args.next.strip(), "review": review_at(args.review, t), "state": "open", "opened": t}
+        if args.source:
+            f["source"] = args.source
+        fl.append(f)
+        write(args.file, data)
+        print(f"{u['id']}/{f['n']}: open ({u['status']} row); owner {f['owner']}; review {f['review']}")
+    elif args.cmd == "follow-set":
+        u, f = find_follow(data, args.ref)
+        if not (args.what or args.next or args.owner or args.review or args.done or args.dropped or args.note):
+            raise SystemExit("follow-set: give --what, --next, --owner, --review, --done, --dropped or --note")
+        t = stamp(args.at)
+        said = []
+        for k in ("what", "next"):
+            if getattr(args, k):
+                f[k] = getattr(args, k).strip()
+                said.append(f"{k} set")
+        if args.owner:
+            f["owner"] = follow_owner(args.owner)
+            said.append(f"owner {f['owner']}")
+        if args.review:
+            f["review"] = review_at(args.review, t)
+            said.append(f"review {f['review']}")
+        if args.note:
+            f["note"] = args.note
+            said.append("note set")
+        if args.done or args.dropped:
+            if f.get("state", "open") != "open":
+                raise SystemExit(f"{args.ref} is {f['state']} already")
+            f["state"], f["closed"] = ("done" if args.done else "dropped"), t
+            said.append(f"{f['state']} {t}")
+        write(args.file, data)
+        print(f"{args.ref}: " + "; ".join(said))
+    elif args.cmd == "defer":
+        if "/" in args.ref:
+            u, x = find_follow(data, args.ref)
+            if x.get("state", "open") != "open":
+                raise SystemExit(f"{args.ref} is {x['state']}: only open follow-ups wait")
+        else:
+            x = find(data, args.ref)
+            if x["status"] != "planned":
+                raise SystemExit(f"{args.ref} is {x['status']}: a deferred reason is for a planned row (or an open follow-up, ID/N)")
+        t = stamp(args.at)
+        x.setdefault("deferred", []).append({"at": t, "reason": args.reason.strip()})
+        write(args.file, data)
+        print(f"{args.ref}: deferred {t}: {args.reason.strip()}")
+    elif args.cmd == "follow-candidates":
+        print("\n".join(candidates(data, args.runs) or ["no Live row promises anything in its text"]))
     elif args.cmd == "reviewed":
         u = find(data, args.id)
         if not updates.is_open(u):
@@ -440,6 +610,41 @@ def due_lines(data, now):
                    f"  changed {updates.ago(updates.last_change(u), now)} ago"
                    f"  review {'due since ' + nr if nr else 'never set'}"
                    + (f"  asked {a.strftime(updates.FMT)}" if a != datetime.datetime.max else ""))
+    return out
+
+
+def follow_lines(data, now):
+    """(batch322) the open follow-ups past their review at now, whatever their row's status, oldest review first."""
+    links = updates.batch_rows(data["updates"])
+    fl = [(u, f) for u in data["updates"] for f in updates.open_follow(u)]
+    due = sorted(((u, f) for u, f in fl if updates.follow_due(f, now)), key=lambda x: (updates.when(x[1]["review"]), x[0]["id"], x[1]["n"]))
+    out = [f"follow-ups: {len(due)} of {len(fl)} open past their review (rows of any status, Live included), oldest review first"]
+    for u, f in due:
+        to = updates.owner_link(f["owner"], links)
+        out.append(f"  {u['id']}/{f['n']}  ({u['status']} row)  owner {f['owner']}" + (f" (row {to})" if to and to != u["id"] else "")
+                   + f"  next: {f['next']}  review due since {f['review']}  open {updates.ago(updates.when(f['opened']), now)}"
+                   + f"  what: {f['what']}")
+    return out
+
+
+def ready_lines(data, now, days):
+    """(batch322) ready work waiting longer than days: planned rows (since planned, or planned again) and open follow-ups
+    (since opened), by priority (urgent, normal, later, not set; a follow-up has its row's), oldest first, each with its
+    newest deferred reason or "no reason"."""
+    order = {p: i for i, p in enumerate(updates.PRIORITIES)}
+    items = []
+    for u in data["updates"]:
+        if u["status"] == "planned":
+            items.append((u.get("priority"), updates.stage(u), u["id"], u))
+        for f in updates.open_follow(u):
+            items.append((u.get("priority"), updates.when(f["opened"]), f"{u['id']}/{f['n']}", f))
+    limit = datetime.timedelta(days=days)
+    old = sorted((x for x in items if x[1] and now - x[1] > limit), key=lambda x: (order.get(x[0], len(order)), x[1], x[2]))
+    out = [f"ready longer than {days:g} d: {len(old)} of {len(items)} (planned rows and open follow-ups), by priority, oldest first"]
+    for prio, since, label, x in old:
+        d = updates.deferred_reason(x)
+        out.append(f"  {label}  priority {prio or 'not set'}  waiting {updates.ago(since, now)}  "
+                   + (f"deferred {d['at']}: {d['reason']}" if d else "no reason"))
     return out
 
 

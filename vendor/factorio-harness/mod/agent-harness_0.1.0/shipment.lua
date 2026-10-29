@@ -790,7 +790,10 @@ return function(api)
       if api.podlog then rows, total = api.podlog({surfaces=surface and {[surface]=true} or nil, up=up, platform=a.platform, item=a.item, silo=silo, from=from, to=to, limit=limit}) end
       local out = {surface=surface, pods=#rows > 0 and rows or nil, pods_total=total,
         pods_line=string.format('%d pod journe%s%s recorded%s%s%s', total, total == 1 and 'y' or 'ys', surface and ' to and from ' .. surface or ' on every planet',
-          a.platform and ' with ' .. a.platform or '', silo and ' launched by silo ' .. silo or '', total > #rows and string.format('; the newest %d here (limit)', #rows) or ''),
+          a.platform and ' with ' .. a.platform or '', silo and ' launched by silo ' .. silo or '', total > #rows and string.format('; the newest %d here (limit)', #rows) or '')
+          -- (d28 batch313 HB) the span of the rows shown and their order (Haiku summed pods of two visits 54 min apart)
+          .. (#rows > 0 and string.format('; these sent from tick %d (%s ago) to tick %d (%s ago), oldest first', rows[1].sent_tick, ago(game.tick - rows[1].sent_tick),
+            rows[#rows].sent_tick, ago(game.tick - rows[#rows].sent_tick)) or ''),
         note='the pod ledger: every cargo pod sent up (a rocket) or down (a hub\'s pod: landing pad requests, hub trash, drops) since this runtime recorded them, '
           .. 'the last 1000 on each planet, kept after the platform leaves; landing pad free slots are read as the pod lands and once it has delivered; '
           .. 'a rocket\'s silo is the one the game names (the launch event\'s rocket_silo, else the pod\'s origin): unknown for rockets sent before the ledger kept silos, never taken from nearby entities'}
@@ -798,6 +801,24 @@ return function(api)
         local lines = api.ledger and api.ledger(surface) or {}
         out.lines = #lines > 0 and lines or {'no launch from ' .. surface .. ' and no drop to it recorded'}
         out.note = out.note .. '; lines: launches with what the platform asked (64 a surface) and the drops read\'s last 20 drops on every surface, with the pad\'s story'
+      end
+      if surface and api.ledger and (up ~= false) then
+        local _, launches = api.ledger(surface)
+        -- (d28 batch320 LP, Sol #2711) the launches as rows: who ordered each, and what its platform asked then (the
+        -- platform's only with platform; the newest 16)
+        if launches and #launches > 0 then
+          local keep = {}
+          for i = #launches, 1, -1 do
+            local r = launches[i]
+            if (a.platform == nil or r.to == a.platform) and #keep < 16 then table.insert(keep, 1, r) end
+          end
+          out.launches = #keep > 0 and keep or nil
+          out.launches_are = 'rockets up from ' .. surface .. ', oldest first: ordered (harness launch by an agent, a player, '
+            .. 'or automatic: the game\'s event does not tell a script\'s launch from the silo\'s own), and per cargo item its '
+            .. 'request then: min, max, payload (custom minimum payload), holds, on_the_way (rockets sent and not landed), this '
+            .. '(this rocket\'s count). Measured rule (2.0.77): a hub lacking min - (holds + on the way) gets max(lacking, payload), '
+            .. 'cut into rockets of up to a rocket\'s lift, the last carrying the rest'
+        end
       end
       return out
     end

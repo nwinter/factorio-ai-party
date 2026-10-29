@@ -5,10 +5,6 @@
   crosses (ground the character cannot cross, cliffs, buildings, trees or rocks, with where), and `last.route` gives
   the tiles walked against the straight line, the point farthest off it and what the walk went round (that, enemies'
   reach in `avoided_enemies`, a path off belts).
-  - `{"stand_off":{"target":{"x":425,"y":-410},"reach":36}}` walks to the spot within `reach` tiles of the target outside
-    every worm's range, spawner's reach and area under attack the map shows plus the `avoid_enemies` margin, the one
-    nearest you; with none clear of the margin, at their bare reach (said); with none at all, refused naming them.
-    `stand_off` in the reply: where, how far from the target, the nearest reach edge.
   - `{"target":{"position":{"x":-75.5,"y":-86.5}},"reach":"transfer"}` (reach `build` or tiles; a vehicle by
     `{"unit_number":N}`) walks until you are within reach of that entity (`last.reach`; transfer reach to its box,
     build reach to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does
@@ -35,14 +31,19 @@
     fewest to mine for one (never a rocket silo, landing pad or platform hub; a goal inside a building: the way to its
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
-  - Gates: our gate opens as the character comes, and walks route through it (one set across the wall line joins no
-    wall and leaves gaps beside it). A walk ending unreachable, blocked or near gives `last.across`: what stands across
-    the straight line from where it ended to the goal (48 tiles), each wall with how many, the box it spans and its gates
-    (ours, or another force's, which does not open for ours), or `no gate in it` (`last.across_walls`).
-  - Mech armor (armor that provides flight): the character takes off when it walks into something and lands when it
-    stops where it can stand; flying it crosses water, walls and buildings (only spidertrons and pentapods stop it), and
-    walks plan with that (status `flight` says flying or on the ground). A change to armor without flight while it
-    flies kills the character in 2.0.77: `equip` refuses it then.
+- `move_to`, stand off: `{"stand_off":{"target":{"x":425,"y":-410},"reach":36}}` walks to the spot within `reach`
+  tiles of the target outside every worm's range, spawner's reach and area under attack the map shows plus the
+  `avoid_enemies` margin, the one nearest you; with none clear of the margin, at their bare reach (said); with none at
+  all, refused naming them. `stand_off` in the reply: where, how far from the target, the nearest reach edge.
+- `move_to`, gates: our gate opens as the character comes, and walks route through it (one set across the wall line
+  joins no wall and leaves gaps beside it). A walk ending unreachable, blocked or near gives `last.across`: what
+  stands across the straight line from where it ended to the goal (48 tiles), each wall with how many, the box it
+  spans and its gates (ours, or another force's, which does not open for ours), or `no gate in it`
+  (`last.across_walls`).
+- `move_to`, mech armor: Mech armor (armor that provides flight): the character takes off when it walks into something
+  and lands when it stops where it can stand; flying it crosses water, walls and buildings (only spidertrons and
+  pentapods stop it), and walks plan with that (status `flight` says flying or on the ground). A change to armor
+  without flight while it flies kills the character in 2.0.77: `equip` refuses it then.
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
     of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
@@ -101,6 +102,8 @@
   path (up to 3 times; with no water ahead, turned 60 degrees once), then `stalled` (`last.recovery`). Outcomes `clear`, `low_health` (0.4), `low_shield`, `out_of_ammo` (rockets under `ammo_below`, 1),
   `stalled`, `route_changed`, `out_of_coverage`, `destroyed`, `timed_out` (3600). On a low end with `retreat` {x,y}
   (default your retreat_guard's `to`) its route goes there, guns on. Its go_to route is replaced at the start.
+  Another call's go_to (the same target too), append or clear on it, or its route emptied over 4 tiles short of its
+  target, ends it `route_changed` at its next read: its route, a path it asked and its switches stay as they stand.
   `--wait` reports `why`, kills, `kills_by`, `ammo_used`, `ammo_left`, `spidertron` (where, health, shield),
   `recovery`, `retreat`.
   Example: `./fh call spider_kite --args '{"vehicle":23036938,"retreat":{"x":-19,"y":-787}}' --wait`
@@ -243,6 +246,18 @@
   it at once: reply `shared_route` (a drive's `last.shared_route` too) "reused route N (checked at tick T)". Changed
   legs are asked again and spliced in, the line saying which and why; a route asked over 2 game hours ago is asked
   again in full. `"reuse":false` asks the pathfinder; `"route":N` takes that route only.
+  Pairs: `vehicle {"pair":{"lead":L,"follower":F,"distance":10}}` (unit_numbers or {x,y}; distance 6..40). A
+  spidertron another agent rides, runs an action with or sent last pairs once that agent makes the same call (within
+  10 min; the ask is in its alerts). A go_to on the lead then moves both: the lead walks its route as alone; the
+  follower walks the spots the lead stood on, about `distance` behind, so a water step or narrow pass the lead's legs
+  took its legs take (one prototype). The lead waits while the follower is over `distance` + 4 behind, and past a water
+  step or a narrow pass (dry ground 3 tiles wide or less) until the follower is past it, said once in alerts. Reply
+  `pair.gates` names those on the route before the move, `pair.join` the follower's way to the lead. Ends said in
+  alerts: both arrived; the follower without progress for 5 s (split: where it stands, the step; the lead goes on);
+  a retreat of either, spider_kite on either, or a go_to or clear on the follower (at once; the lead keeps its route,
+  and after the lead's retreat or kite the follower stops where it stands). A clear on the lead stops both. `--wait` on
+  the lead: `arrived` once both have, `stalled` when the follower stalled (`stalled_one`, `stalled_at`), `pair`.
+  `"pair":false` with `vehicle` ends a pair or an ask.
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.

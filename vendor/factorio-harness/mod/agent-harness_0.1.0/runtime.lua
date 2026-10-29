@@ -269,9 +269,11 @@ end
 local function main_inventory(p) local ok,inv=pcall(function() return p.get_main_inventory() end); return ok and inv or nil end
 -- seated: a character in a vehicle is allowed (reads, chat, crafting, research,
 -- remote-view actions and vehicle itself, set per request in M.seated_ok; a drive in progress).
-local function player(index,seated)
+-- check (d29 batch334): the same asserts, true instead of the player or proxy (the scheduler's idle queues: a bot's proxy
+-- is a table, a metatable and 2 closures, 344 B, each queue each tick)
+local function player(index,seated,check)
   seated=seated or M.seated_ok
-  if M.bots.is_index(index) then return M.bots.actor(index,seated) end
+  if M.bots.is_index(index) then return M.bots.actor(index,seated,check) end
   local p = game.get_player(index or 1)
   assert(p and p.valid, 'player does not exist')
   local controlled=state().controlled and state().controlled[p.index]
@@ -279,6 +281,7 @@ local function player(index,seated)
   assert(p.physical_controller_type == defines.controllers.character and p.character and p.character.valid, 'a living survival character is required')
   assert(not p.cheat_mode or (controlled and controlled.allow_cheat_mode), 'cheat mode requires explicit testing opt-in')
   assert(not p.driving or (seated and p.vehicle), 'the character is in a vehicle or riding a rocket/cargo pod: vehicle {exit: true} gets out of a vehicle (reads, chat, crafting, research and remote actions work seated); a ride ends by itself (poll status)')
+  if check then return true end
   return body(p)
 end
 local function stop(p)
@@ -2221,7 +2224,7 @@ function handlers.describe(_,a)
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={spoiling='optional true: a recipe with a spoilable ingredient queues every craft asked; without it only the crafts that finish before the first held stack of it spoils (the hand queue ahead, then each craft at your crafting speed), and spoil says how many; products_spoil: how long each spoilable product lasts fresh once it lands',force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',surface='optional planet or platform name: that surface by remote view, as inspect and supply (d18 batch40 A3)',
-        returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
+        returns='rows per item: produced, consumed, net at full speed (what the machines would make and use running without stop, not what they made: rows_are says so), basis "full speed", by/into machines x count, working (how many of them work now: "1 of 3 making it; 3 of 3 using it work now"); power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...); with item: actual {made, used, per, over, source} and statistics (what was made and used, the game\'s) and line (the full-speed figure beside them)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
       bottleneck={chain='with item: true: the recipe chain back from the item, a link per item: makers (the census pass\'s lists, up to 32 a link read now: states, speed), made and used a minute now, full (at full speed), asked (what the link it feeds takes at its full speed), stock (logistic networks); limit: the link the shortage comes down to, with its numbers and its makers\' states; at most 16 links',all_stopped='with item: true: stopped, per step of the line, every maker not working grouped by cluster (count, box, by name and state, every position)',shares='returned for a fluid (lubricant, heavy-oil, ...): its users by recipe on the surface: machines, how many work now, what they take at full speed and their share of all users\' take, against what the surface used and made in the last 10 min and its makers at full speed',item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack, spoilage its recipe does not take in its input; a maker stopped by its output: the chest its output waits on when every slot of it is used, slots used/total and what fills them), full_chests (those chests, with the machines whose output waits on each), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there; none for an item held by its feeder\'s condition), held_by_feeders (makers lacking an item their input inserter\'s source holds while that inserter is off by its condition: the condition, its wire values, the source\'s stock, what sets the signal), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
         per_min='with item: a target rate (items a minute): target {per_min, line, steps [{item, depth, need_per_min (for the target; an item two steps need adds up), made_per_min (now, last 10 min), recipe (the one most of its makers run), makers, machine, crafts_per_min_each (at their speed, modules and beacons in it), productivity_pct (theirs plus the recipe research), per_min_each, machines_for_target, full_speed_per_min (the makers there at full speed), miners, line}]}: mining drills by their mining speed on their resource, offshore pumps by pumping speed, a pumpjack\'s yield not counted; a step no maker on the surface makes is followed by its recipe of that name',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',
@@ -2311,6 +2314,7 @@ function handlers.describe(_,a)
   end
   description.aliases=M.ALIASES
   for name,schema in pairs(M.orders and M.orders.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.disclosure and M.disclosure.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(clock and clock.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
@@ -2373,6 +2377,8 @@ function handlers.describe(_,a)
   -- (d22 batch82 AR1) platform_defense's asteroid watch: its arguments and what it returns (asteroidwatch.lua)
   if description.actions.platform_defense and M.asteroidwatch then
     for k,v in pairs(M.asteroidwatch.ARGS) do description.actions.platform_defense[k]=v end
+    if M.railaim then for k,v in pairs(M.railaim.ARGS) do description.actions.platform_defense[k]=v end end
+    description.actions.platform_defense.seconds='with asteroids: 10..1800; with aim: 10..120; how long to watch'
   end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.logaudit and M.logaudit.schema or {}) do description.actions[name]=schema end
@@ -4276,11 +4282,16 @@ function handlers.rates(p,a)
       if hit then found=found+1; if #list<M.RATES_SURFACE then list[#list+1]=e end end
     end
     local out=rates.compute(p,list,a.per)
-    for _,row in ipairs(out.rows or {}) do row.raw_net=nil end
+    local mine
     if a.item then
       local keep={}
       for _,row in ipairs(out.rows or {}) do if row.name==a.item or row.item==a.item then keep[#keep+1]=row end end
       out.rows_other=#(out.rows or {})-#keep; out.rows=keep
+      local r1=keep[1]
+      mine=r1 and {max_made=r1.max_made,makers=r1.makers,makers_on=r1.makers_on} or nil
+    end
+    rates.strip(out.rows)
+    if a.item then
       local stats=p.force.get_item_production_statistics(p.surface)
       -- (PX1) every quality, the qualities found named
       local qs={}
@@ -4289,8 +4300,13 @@ function handlers.rates(p,a)
         if by then qs[#qs+1]=(c=='input' and 'made ' or 'used ')..M.qflow.label(by) end
         return math.floor(n/10*10+0.5)/10
       end
-      out.statistics=string.format('%s on %s, the game\'s statistics over 10 min (every quality): made %g/min, used %g/min%s',a.item,p.surface.name,per('input'),per('output'),
+      local made,used=per('input'),per('output')
+      out.statistics=string.format('%s on %s, the game\'s statistics over 10 min (every quality): made %g/min, used %g/min%s',a.item,p.surface.name,made,used,
         #qs>0 and ' (in 10 min by quality: '..table.concat(qs,'; ')..')' or '')
+      -- (d28 batch313 HB) the full-speed row beside what was made, in one line
+      -- (d28 batch313 HB, board #2694) what was made and used, apart from the rows' full-speed figures
+      out.actual={made=made,used=used,per='minute',over='10 min',source='the game\'s production statistics'}
+      out.line=rates.item_line(a.item,p.surface.name,mine,made,used,a.per)
     end
     out.machines=found; out.machines_read=#list<found and #list or nil; out.surface=p.surface.name; out.per=a.per or 'minute'
     out.scope=string.format('%d crafter%s on %s set to %s%s',found,found==1 and '' or 's',p.surface.name,a.recipe or ('a recipe making '..a.item),
@@ -6661,8 +6677,53 @@ function M.mask_meets(proto,e)
   return false
 end
 end
+-- (d28 batch328 SC, Astra #2725: "R12 iron-chest dryrun passed but actualplace79326730/79327131 failed vague placement
+-- blocked ... chest forbidden space"; "name gravity restriction instead of footprint") An entity prototype's
+-- surface_conditions (2.0.77: [{property, min, max}], an open end at +-1.8e308) against the surface's properties
+-- (LuaSurface.get_property): the first that fails, as "iron-chest cannot be placed on Resolute: needs gravity >= 0.1,
+-- this surface has 0", else nil. Prototype reads cost 40-200 us: each prototype's conditions are read once (a module
+-- table, not storage), each surface's properties once a game minute.
+local sc_conds,sc_props={},{}
+local function sc_num(v) return string.format('%g',math.floor(v*1000+0.5)/1000) end
+function M.surface_block(surface,proto)
+  if not (surface and surface.valid and proto) then return nil end
+  local name=proto.name
+  local conds=sc_conds[name]
+  if conds==nil then
+    conds=false
+    local ok,c=pcall(function() return proto.surface_conditions end)
+    if ok and type(c)=='table' and #c>0 then
+      conds={}
+      for _,x in pairs(c) do
+        conds[#conds+1]={property=x.property,min=x.min and x.min>-1e300 and x.min or nil,max=x.max and x.max<1e300 and x.max or nil}
+      end
+    end
+    sc_conds[name]=conds
+  end
+  if not conds then return nil end
+  local props=sc_props[surface.index]
+  if not props or game.tick-props.tick>=3600 then props={tick=game.tick}; sc_props[surface.index]=props end
+  for _,c in ipairs(conds) do
+    local v=props[c.property]
+    if v==nil then
+      local ok,got=pcall(surface.get_property,c.property)
+      v=ok and got or false
+      props[c.property]=v
+    end
+    if v and ((c.min and v<c.min) or (c.max and v>c.max)) then
+      local need=c.min and c.max and c.min==c.max and string.format('%s = %s',c.property,sc_num(c.min))
+        or c.min and c.max and string.format('%s between %s and %s',c.property,sc_num(c.min),sc_num(c.max))
+        or c.min and string.format('%s >= %s',c.property,sc_num(c.min)) or string.format('%s <= %s',c.property,sc_num(c.max))
+      local where=surface.platform and surface.platform.name or (surface.planet and surface.planet.name) or surface.name
+      return string.format('%s cannot be placed on %s: needs %s, this surface has %s',name,where,need,sc_num(v))
+    end
+  end
+  return nil
+end
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
+  local sc=M.surface_block(p.surface,proto)  -- (batch328) before the footprint: the surface's conditions
+  if sc then return ': '..sc end
   local pad=M.one_pad(p.surface,p.force,proto,pos)
   if pad then return ': '..pad end
   if proto.type=='rail-ramp' then
@@ -8133,6 +8194,19 @@ do
       if ok then r.unit_number=rr.unit_number; r.holds=M.robotread.holds(e); r.cargo=rr.cargo; r.heading=rr.heading end
       return r
     end
+    -- (d28 batch330 IH, Astra #2728: "radius inspect reported bulk holds empty while exactinspect79536978 held_count4
+    -- rocket ... This can falsely certify drained state") An inserter has no inventory: its hand as the exact inspect
+    -- gives it, `held` ("4 rocket" or "nothing", quality as name@quality) and `held_count`, and no `holds`.
+    if e.type=='inserter' then
+      local okhs,hs=pcall(function() return e.held_stack end)
+      local has=okhs and hs and hs.valid_for_read
+      -- (a LuaQualityPrototype is userdata, not a table: its name whatever its type)
+      local q=has and (type(hs.quality)=='string' and hs.quality or (hs.quality and hs.quality.name)) or nil
+      r.held_count=has and hs.count or 0
+      r.held=has and string.format('%d %s%s',hs.count,hs.name,q and q~='normal' and '@'..q or '') or 'nothing'
+      r.status_name=entity_status_names[e.status]
+      return r
+    end
     -- A chest, wagon, trunk, landing pad or hub: holds as inspect writes it (details.lua), and a requester's asks.
     local held={inventories={}}
     for _,name in ipairs(STORES) do
@@ -8163,6 +8237,9 @@ do
       -- (d28 batch303 RQ) with its quality, normal too; an idle furnace its last (its input decides the quality)
       local rn,rq,prev=M.recipe_quality_of(e,true)
       if prev then r.previous_recipe,r.previous_recipe_quality=rn,rq else r.recipe,r.recipe_quality=rn,rq end
+      -- (batch330) a craft under way: its products are in no slot until it finishes (holds lists the slots only)
+      local okc,busy=pcall(function() return e.is_crafting() and e.crafting_progress end)
+      if okc and busy then r.in_progress=string.format('one craft %d%% done (its products are in no slot yet)',math.floor(busy*100)) end
     end
     if not CHESTS[e.type] then r.status_name=entity_status_names[e.status] end
     local okk,kd=pcall(M.turrettally.read,e)
@@ -8209,6 +8286,7 @@ do
       parts[#parts+1]=h
     end
     if r.requests and r.requests~='none' then parts[#parts+1]='requests '..r.requests end
+    if r.in_progress then parts[#parts+1]=r.in_progress end  -- (batch330)
     if r.fluid then parts[#parts+1]='fluid '..r.fluid end
     if r.direction then table.insert(parts,1,'facing '..r.direction) end
     if r.pickup then parts[#parts+1]='picks at '..r.pickup..', drops at '..tostring(r.drop) end
@@ -8960,12 +9038,15 @@ local function starts(mod) return function(a) return M[mod].starts(a) end end
 local function retrying(a) return a.retry_when_clear==true end
 M.step_ranges={
   platform_defense={{'seconds',watch_range('asteroidwatch'),when=function(a) return a.asteroids==true end},
+    {'seconds',function() return M.railaim.MIN_S,M.railaim.MAX_S end,when=function(a) return a.aim==true end},
     {'trajectory_limit',1,100,when=function(a) return a.asteroids==true end}},
   platform_supply={{'seconds',watch_range('collectreach'),when=function(a) return a.collection==true end}},
   uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},  -- (d25 batch214 QZ1) read's page and page_size: step_checks (uptime.check_read)
   turret_tally={{'seconds',watch_range('turrettally'),when=starts('turrettally')}},
   belt_flow={{'seconds',watch_range('beltsample'),when=function(a) return a.position~=nil end}},
-  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.position~=nil or a.seconds~=nil end}},
+  signal_watch={{'seconds',function() return M.signalwatch.MIN_S,M.signalwatch.MAX_S end,when=function(a) return a.entities==nil and a.triples==nil and (a.position~=nil or a.seconds~=nil) end},
+    {'seconds',function() return M.signalwatch.DUTY_MIN_S,M.signalwatch.DUTY_MAX_S end,when=function(a) return a.entities~=nil and a.triples==nil end},  -- (d28 batch316 SW) a duty watch
+    {'seconds',function() return M.signalwatch.AMMO_MIN_S,M.signalwatch.AMMO_MAX_S end,when=function(a) return a.triples~=nil end}},  -- (d28 batch327 AG) an ammo gap watch
   feed={{'count',1,1000},{'fuel_count',1,1000},{'crafts',1,1000},{'radius',1,256},{'ticks',1,36000}},
   refuel={{'count',1,1000},{'radius',1,256},{'ticks',1,36000}},
   rearm={{'count',1,1000},{'below',1,1000},{'radius',1,256},{'ticks',1,36000},{'retries',0,6},{'retry_ticks',600,54000,when=retrying}},
@@ -9056,14 +9137,15 @@ M.step_lengths={
   platform_defense={{'reason',check=reason_check,when=function(a) return a.asteroids==true and a.seconds~=nil end},
     {'asteroid_names',1,of('asteroidwatch','NAMES_MAX'),list=true,one=true,each={1,of('asteroidwatch','NAME_LEN')},when=asteroids},
     {'names',1,of('platdefense','PICK_NAMES'),list=true,one=true,when=function(a) return not asteroids(a) end},
-    {'positions',1,of('platdefense','PICK_POSITIONS'),list=true,when=function(a) return not asteroids(a) end}},
+    {'positions',1,of('platdefense','PICK_POSITIONS'),list=true,when=function(a) return not asteroids(a) and a.aim~=true end},
+    {'positions',1,of('railaim','MAX'),list=true,when=function(a) return a.aim==true end}},
   platform_supply={{'reason',check=reason_check,when=function(a) return a.collection==true and a.seconds~=nil end}},
   uptime={{'reason',check=reason_check,when=starts('uptime')},{'positions',1,of('uptime','MAX'),list=true,when=function(a) return a.items==nil end},
     {'items',1,of('uptime','ITEMS'),list=true,when=starts('uptime')}},  -- (d25 batch214 QZ2, Astra #2380: 9 items passed dry_run)
   turret_tally={{'reason',check=reason_check,when=starts('turrettally')},{'positions',1,of('turrettally','MAX'),list=true}},
   belt_flow={{'reason',check=reason_check,when=function(a) return a.position~=nil end}},
-  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil end},
-    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true}},
+  signal_watch={{'reason',check=reason_check,when=function(a) return a.position~=nil or a.seconds~=nil or a.entities~=nil or a.triples~=nil end},
+    {'signals',0,of('signalwatch','MAX_SIGNALS'),list=true},{'entities',1,of('signalwatch','DUTY_MAX'),list=true},{'triples',1,of('signalwatch','AMMO_MAX'),list=true}},
   scan={{'positions',1,own('POSITIONS_MAX'),list=true},{'name',0,own('NAMES_MAX'),list=true},{'type',0,own('NAMES_MAX'),list=true},
     {'fields',0,own('NAMES_MAX'),list=true}},
   nearest={{'name',1,own('NAMES_MAX'),list=true},{'type',1,own('NAMES_MAX'),list=true}},
@@ -14171,7 +14253,7 @@ M.elsewhere=require('elsewhere'){chests=function(f,s) if M.census then return M.
   crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- what no network gives (d18 batch37 B1)
 M.makersall=require('makersall'){burnt_line=function(e) return M.burnt.line(e) end,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
-M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
+M.ledger=require('ledger'){state=state,on_the_way=function(platform,item) return M.podlog.on_the_way(platform,item) end}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 -- (d24 batch179 QV1) every cargo pod's journey, up and down, per planet: shipment {ledger} pods (podlog.lua)
 M.podlog=require('podlog'){state=state}
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
@@ -14195,7 +14277,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){surface_block=function(s,pr) return M.surface_block(s,pr) end,railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -14398,7 +14480,7 @@ M.launchbudget=require('launchbudget'){silo=M.silo,census_typed=function(f,sf,t)
 function handlers.launch_budget(p,a) return M.timed('launch_budget.read',M.launchbudget.read,p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){trash=M.trash,starter_line=function(e) return M.silo.starter_line(e) end,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){surface_block=function(s,pr) return M.surface_block(s,pr) end,trash=M.trash,starter_line=function(e) return M.silo.starter_line(e) end,spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -14903,19 +14985,59 @@ handlers.train=M.trains.handlers.train
 M.sharedroutes=require('sharedroutes'){state=state}
 M.spiderpath=require('spiderpath'){state=state,routes=M.sharedroutes}
 -- (d24 batch189 QAE1) a spidertron's retreat: the guard read as retreat.lua reads a vehicle's; the agent riding it.
+-- The agent riding a spidertron (driver, then passenger): its player index and name.
+function M.spiderroute_rider(e)
+  for _,get in ipairs({'get_driver','get_passenger'}) do
+    local ok,c=pcall(function() return e[get]() end)
+    if ok and c and c.valid then
+      local name=c.object_name=='LuaPlayer' and c.name or M.character_owner(c)
+      if name then for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index,name end end end
+    end
+  end
+end
 M.spiderroute=require('spiderroute'){state=state,position=position,who=function(p) return M.board.who(p) end,path=M.spiderpath,
   reading=function(e) return M.retreat.reading(e) end,retreat_check=function(e,cfg) return M.retreat.check_entity(e,cfg) end,
   retreat_line=function(cfg) return M.retreat.line(cfg) end,
-  rider=function(e)
-    for _,get in ipairs({'get_driver','get_passenger'}) do
-      local ok,c=pcall(function() return e[get]() end)
-      if ok and c and c.valid then
-        local name=c.object_name=='LuaPlayer' and c.name or M.character_owner(c)
-        if name then for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index,name end end end
+  rider=function(e) return M.spiderroute_rider(e) end}
+-- (d28 batch310 PS) two spidertrons on one route: the follower on the lead's steps; retreats independent (spiderpair.lua)
+M.spiderpair=require('spiderpair'){state=state,path=M.spiderpath,
+  say=function(text,to,unit) return M.spiderroute.say(text,to,unit) end,route=function(e) return M.spiderroute.route(e) end,
+  seq=function(unit) return M.spiderroute.seq(unit) end,set_of=function(unit) return M.spiderroute.set_of(unit) end,
+  held=function(e) return M.spiderroute.held(e) end,hold=function(e,why) return M.spiderroute.hold(e,why) end,
+  resume=function(e) return M.spiderroute.resume(e) end,retreated=function(e) return M.spiderroute.retreated(e) end,
+  ahead=function(e,q) return q and M.spiderroute.ahead(e,q) or nil end,
+  unadopt=function(e,clear) return M.spiderroute.unadopt(e,clear) end,
+  -- the follower's guard: the standing retreat_guard of the agent it is (else the first agent of the pair)
+  adopt=function(e,pr)
+    local by=M.spiderpair.owner(e) or pr.agents[1]
+    local index
+    for _,a in ipairs(M.board.agents()) do if a.name==by then index=a.index end end
+    return M.spiderroute.adopt(e,by,index,pr.id)
+  end,
+  rider=function(e) return M.spiderroute_rider(e) end,
+  actor=function(e)
+    for i,act in pairs(state().active) do
+      if (act.kind=='spider_kite' or act.kind=='spider_go') and act.spider==e then
+        local b=M.bots.record(i)
+        local pl=not b and game.get_player(i)
+        return b and b.name or pl and pl.name or nil
+      end
+    end
+  end,
+  sender=function(unit) local s=M.spiderroute.set_of(unit) return s and s.by or nil end,
+  busy=function(e)
+    local sr=state().spiderroute
+    local lock=sr and sr.locks and sr.locks[e.unit_number]
+    if lock then return 'it is held on its retreat ('..(lock.rec.why or 'retreat')..'): retreat_guard set or cleared re-arms it' end
+    for i,act in pairs(state().active) do
+      if act.kind=='spider_kite' and act.spider==e then
+        local b=M.bots.record(i)
+        return (b and b.name or 'an agent')..' runs spider_kite with it'
       end
     end
   end}
-M.vehicles=require('vehicles'){routes=M.sharedroutes,entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
+M.spiderroute.pair=M.spiderpair
+M.vehicles=require('vehicles'){routes=M.sharedroutes,pair=M.spiderpair,entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
   spider_set=function(e,a,by,index,own) return M.spiderroute.set(e,a,by,index,own) end,spider_seq=function(unit) return M.spiderroute.seq(unit) end,spider_facts=function(e,by,index) return M.spiderroute.facts(e,by,index) end,
   spider_retreat=function(p,a)
     local cfg=M.retreat.config(p,{retreat=a.retreat},'go_to')
@@ -14961,7 +15083,8 @@ do
 end
 -- (d24 batch191 QAG1) spider_kite: kite for a spidertron you ride or send by remote view (spiderkite.lua): its guns on
 -- auto by its targeting switches, its legs moved by route targets as its remote sets them, every 10 ticks.
-M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath}
+M.spiderkite=require('spiderkite'){position=position,integer=integer,path=M.spiderpath,
+  seq=function(unit) return M.spiderroute.seq(unit) end,set_of=function(unit) return M.spiderroute.set_of(unit) end}
 function handlers.spider_kite(p,a)
   local c=p.character
   assert(c and c.valid,'a living character is required')
@@ -14993,7 +15116,9 @@ function handlers.spider_kite(p,a)
   -- the fight owns its route now: a go_to's stall sampling (spiderroute.lua) ends, the route is cleared; (d28 batch300
   -- SR) a waited go_to on it ends route_changed, naming this call
   if sr then sr.spiders[spider.unit_number]=nil end
-  M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
+  -- (d28 batch310 item 5, Aurora 10:28) its claim's number: another call setting or clearing the route after it (a clear,
+  -- a same-target go_to, an append) moves it on, and the kite yields (spiderkite.lua)
+  action.set_seq=M.spiderroute.claim(spider,M.board.who(p),'spider_kite')
   if #route>0 then spider.autopilot_destination=nil end
   local targeting=M.spiderkite.start(action)
   state().active[p.index]=action
@@ -16770,6 +16895,8 @@ M.turrettally=require('turrettally'){state=state,reason=function(v) return M.mea
 function handlers.turret_tally(p,a) return M.turrettally.handler(p,a) end
 -- asteroid_watch (asteroidwatch.lua, d22 batch82 AR1, Astra #1855): a platform's asteroids, their straight-line paths
 -- against its foundation, and its turrets' fire by those classes, over a window.
+-- (d29 batch332 RT, Sol #2734) platform_defense {aim: true}: what each railgun shot was aimed at (railaim.lua)
+M.railaim=require('railaim'){state=state,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform}
 M.asteroidwatch=require('asteroidwatch'){state=state,count_by=function(st,n,c) return M.qflow.count_by(st,n,c) end,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform,timed=M.timed}
 -- signal_watch (signalwatch.lua, d24 batch140 PL1, Sol #2116): named signals on one circuit network over a window.
 M.signalwatch=require('signalwatch'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,
@@ -17504,7 +17631,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
@@ -17520,7 +17647,7 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   left_undone=function(index) return M.left_undone(index) end,
   guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,deadline=function(c) return conditions.deadline(c) end,
   recheck_read=function(rc) return space.recheck_read(rc) end,
-  state=state,player=player,handlers=handlers,timed=M.timed,
+  state=state,player=player,player_check=function(index,seated) return player(index,seated,true) end,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args); M.step_length_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,
@@ -17630,6 +17757,28 @@ M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=
     return math.max(not c.peeked and c.call_tick or 0,c.wait_tick or 0)
   end}
 for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
+-- (d28 batch317) progressive disclosure: the kit each force sees grows with its research, buildings, encounters and
+-- habits (disclosure.lua, docs/DISCLOSURE.md); off by default. The player force until the per-force helpers are here.
+M.disclosure=require('disclosure'){state=state,units=require('disclosure_units'),
+  forces=function() return {game.forces.player} end,
+  is_team=function(force) return force.name=='player' end,
+  team_size=function(force)
+    local n=0
+    for _,b in ipairs(M.bots.list()) do if (b.force or 'player')==force.name then n=n+1 end end
+    return n
+  end,
+  characters=function(force)
+    local out={}
+    for _,b in ipairs(M.bots.list()) do
+      if b.character and b.character.valid and b.character.force==force then out[#out+1]=b.character end
+    end
+    for _,pl in pairs(game.connected_players) do
+      if pl.character and pl.character.valid and pl.character.force==force then out[#out+1]=pl.character end
+    end
+    return out
+  end,
+  push_groups=function(force) return (state().push_alerts or {})[force.name] end}
+handlers.disclosure=function(p,a) return M.disclosure.read(game.forces.player) end
 -- Queue writes answer briefly: the revision, state, the next steps by id and
 -- the last results; queue_status has steps in full (agent-minds study: each
 -- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
@@ -18153,6 +18302,7 @@ passive.blueprint_import=true
 local reads={launch_budget=true,losses=true,platform=true,damage_log=true,shortages=true,reservations=true,nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
+reads.disclosure=true  -- disclosure.lua: the host's read of the force's open set
 reads.heat_budget=true
 reads.platform_bom=true
 reads.platform_production=true
@@ -18228,7 +18378,9 @@ function check_args(action,args)
     if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean')
       and not (key=='helper' and type(args.helper)=='boolean') and not (key=='queue_resume_after' and type(args.queue_resume_after)=='boolean') then
       local valid={}
-      for k in pairs(set) do valid[#valid+1]=k end
+      for k in pairs(set) do
+        if not (M.disclosure and M.disclosure.arg_hidden(game.forces.player,action,k)) then valid[#valid+1]=k end
+      end
       table.sort(valid)
       -- The valid name nearest the unknown one (Luna 06:20: filter on configure): a plural or singular, a name
       -- that starts with it, or at most 2 letters apart.
@@ -18770,7 +18922,27 @@ function M.dispatch(request)
     for k,v in pairs(request.args) do if k~='queue_resume_after' then c[k]=v end end
     request.args=c
   end
-  local ok,result=pcall(M.dispatch_inner,request)
+  -- (d28 batch317) progressive disclosure (disclosure.lua): a unit not open yet for the caller's force is refused naming
+  -- its condition; the call is counted for the force's habits; describe shows the open set
+  local disc=M.disclosure and M.disclosure.mode()~='off' and type(request)=='table' and request.operator~=true and game.forces.player or nil
+  local refused,from
+  if disc then
+    refused=M.disclosure.gate(request,disc)
+    if (request.action=='move_to' or request.action=='walk') then
+      local okp,pos=pcall(function() return M.lookup(request.player or M.bots.index_of(request.bot)).position end)
+      from=okp and pos or nil
+    end
+  end
+  local ok,result
+  if refused then ok,result=false,refused
+  elseif disc and request.action=='describe' and M.disclosure.mode()=='filter' and type(request.args)=='table'
+    and request.args.if_bundle~=nil and request.args.if_bundle==M.disclosure.describe_key(disc,BUNDLE_ID) then
+    ok,result=true,{bundle=request.args.if_bundle,unchanged=true}
+  else
+    ok,result=pcall(M.dispatch_inner,request)
+    if ok and disc and request.action=='describe' then result=M.disclosure.filter_describe(result,disc,BUNDLE_ID) end
+  end
+  if disc then pcall(M.disclosure.count,request,ok,result,disc,from) end
   M.ghost_via=nil
   local dp=M.direct_paused
   if dp and type(request)=='table' and dp.index==request.player and dp.tick==game.tick and (resume_after or scheduler.resume_after_direct(dp.index)) then
@@ -18836,6 +19008,7 @@ function M.dispatch_inner(request)
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action]
+      relay=relay or (M.disclosure and M.disclosure.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -18944,6 +19117,11 @@ function M.dispatch_inner(request)
       -- (d20 batch50 E1) the ground rules whose applies_to names the call's args name (lessonbook.lua applies)
       local okr,gr=pcall(M.lessonbook.applies,p.index,request.action,request.args,result)
       if okr and gr then result.ground_rules=gr end
+      -- (d28 batch317) what opened for the team since this agent's last line (disclosure.lua, filter mode)
+      if M.disclosure and M.disclosure.mode()=='filter' then
+        local okn,nl=pcall(M.disclosure.reply_line,p.name,game.forces.player)
+        if okn and nl then result.new=nl end
+      end
     end
     if p and p.valid and not M.is_director(p.index) then
       -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
@@ -19298,7 +19476,9 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
+-- (d28 batch325 IC) one item's complete count on belts and in robots' cargo, in the background (supply count_all)
+M.itemcount=require('itemcount'){state=state}
+M.supply=require('supply'){count_all=function(...) return M.itemcount.read(...) end,scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -19834,7 +20014,9 @@ end
 function handlers.platform_defense(p,a)
   -- (d22 batch82 AR1) asteroids: true: the asteroid watch (asteroidwatch.lua)
   if a.asteroids~=nil then return M.asteroidwatch.handler(p,a) end
-  assert(a.seconds==nil and a.reason==nil,'seconds and reason go with asteroids: true')
+  -- (d29 batch332 RT) aim: true: the railgun aim watch (railaim.lua)
+  if a.aim~=nil then return M.railaim.handler(p,a) end
+  assert(a.seconds==nil and a.reason==nil,'seconds and reason go with asteroids: true or aim: true')
   return M.platdefense.read(p,a)
 end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
@@ -21167,8 +21349,11 @@ function M.tick_body(event)
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
   -- (d22 batch96 BF1) the platforms read lately: their belts and inserter hands, a band every few ticks (freight.lua)
   if M.freight and M.freight.belt_tick and event.tick%M.freight.BELT_STEP==0 then pcall(M.timed,'freight.belts',M.freight.belt_tick,event.tick) end
+  -- (d28 batch325 IC) supply count_all's job: a page of belts or robots every few ticks (itemcount.lua)
+  if M.itemcount and event.tick%M.itemcount.EVERY==0 then pcall(M.timed,'itemcount.step',M.itemcount.tick,event.tick) end
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
+  if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
@@ -21179,6 +21364,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%30==19 and M.spiderroute and state().spiderroute then pcall(M.timed,'spiderroute.guard_tick',M.spiderroute.guard_tick) end  -- their retreat guards (QAE1)
+  if event.tick%10==3 and M.spiderpair and state().spiderpairs then pcall(M.timed,'spiderpair.tick',M.spiderpair.tick) end  -- (d28 batch310 PS) pairs walking
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
   if state().ammo_reserve then pcall(M.timed,'ammoreserve.tick',M.ammoreserve.tick,event.tick) end  -- platform_ammo_below's readings (ammoreserve.lua): a band a step while a pass runs
   if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)
@@ -21189,7 +21375,8 @@ function M.tick_body(event)
   if event.tick%60==17 and state().endurance_readings then pcall(M.timed,'endurance.refresh',M.endurance.tick,event.tick) end  -- (batch195) drops batch187's kept platform_endurance readings once; none are kept now
   if M.beltsample and state().belt_flow then pcall(M.timed,'beltsample.tick',M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
-  if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks
+  if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks; (batch316) a duty watch: a status per entity every tick
+  if state().rail_aim then pcall(M.timed,'rail_aim.tick',M.railaim.tick,event.tick) end  -- (batch332) railgun aim watch: 1..8 railguns every tick
   -- (d24 batch144 cp2) a ghost record log from before the position index: 512 ring slots a tick until it is whole
   if state().ghost_log and not state().ghost_log.pidx_done then pcall(M.timed,'ghostlog.index',M.ghostlog.index_tick,M.ghostlog.INDEX_SLICE) end
   if state().asteroid_watch then pcall(M.timed,'asteroid_watch.tick',M.asteroidwatch.tick,event.tick) end  -- (AR1) asteroid_watch: a read every 15 ticks
@@ -21356,6 +21543,8 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d28 batch317) the force's first research, attack, loss, death, enemies of a kind, freight (disclosure.lua)
+  if M.disclosure then pcall(M.disclosure.on_event,event) end
   -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record
   if event.name~=nil and event.name==(defines.events or {}).on_space_platform_built_tile then
     local ok,err=pcall(M.timed,'flightwatch.built_tile',M.flightwatch.on_built_tile,event)
@@ -21462,6 +21651,8 @@ function M.on_event(event)
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
       if not oka then local s=state(); s.asteroid_watch_errors={count=((s.asteroid_watch_errors or {}).count or 0)+1,last=tostring(erra),tick=game.tick} end
     end
+    -- (d29 batch332 RT) a watched railgun's hit (railaim.lua)
+    if state().rail_aim then pcall(M.railaim.on_damaged,event) end
     -- (BH1) a railgun's hit on a platform a flight_watch watches (flightwatch.lua)
     if state().flightwatch then pcall(M.flightwatch.on_damaged,event) end
     -- A unit a driving bot's vehicle hits counts as rammed (vehicles.lua).

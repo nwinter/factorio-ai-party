@@ -156,24 +156,36 @@ if [ "$has_agy" = 1 ]; then
 fi
 
 # 3. Agents: one Herdr tab per team, from the launch tree.
-prompt_args=()
+# A failed launch is logged as not started (op/not-started.txt, launch-agent.sh's last lines) and the others go on, as
+# in tools/start-team.sh (batch331).
+prompt_args=() wanted=0 missing=""
+: >> "$op/panes.txt"
 for t in $teams; do
   td=$rundir/$t tab=""
   if [ -n "$resume" ]; then export POG_RESUME=$resume POG_RESUME_DIR=$tree/runs/$resume/$t; fi
   while IFS=$'\t' read -r name kind route model effort label harness; do
     [ -z "$name" ] || [[ $name == \#* ]] && continue
-    out=$(POG_TEAM="$td/team.txt" POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" \
-          POG_MODEL="$label ($harness)" POG_ROUTE="$route" "$tree/tools/launch-agent.sh" "$run/$t" "$world" "$name" "$minutes" "$kind" "$model" "$effort")
-    pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
-    log "$t agent $name ($label, $kind) in pane $pane tab $tab; $(cat "$td/$name/.web-state" 2>/dev/null || echo 'no .web-state')"
-    echo "$name $pane $kind" >> "$td/panes.txt"
-    echo "$t $name $pane $kind" >> "$op/panes.txt"
-    prompt_args+=("$pane" "$td/$name")
+    wanted=$((wanted + 1))
+    if out=$(POG_TEAM="$td/team.txt" POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" \
+          POG_MODEL="$label ($harness)" POG_ROUTE="$route" "$tree/tools/launch-agent.sh" "$run/$t" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
+          2> >(tee "$op/launch-$t-$name.err" >&2)); then
+      pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
+      log "$t agent $name ($label, $kind) in pane $pane tab $tab; $(cat "$td/$name/.web-state" 2>/dev/null || echo 'no .web-state')"
+      echo "$name $pane $kind" >> "$td/panes.txt"
+      echo "$t $name $pane $kind" >> "$op/panes.txt"
+      prompt_args+=("$pane" "$td/$name")
+    else
+      sleep 0.2
+      log "$t agent $name ($label, $kind) NOT STARTED: launch failed: $(tail -3 "$op/launch-$t-$name.err" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+      printf '%s\t%s\t%s\t%s\n' "$t" "$name" "$kind" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$op/not-started.txt"
+      missing="$missing $t/$name"
+    fi
   done < "$td/team.tsv"
   { python3 tools/quota_rest.py --at-limit "$td" "$td/team.tsv" ${resume:+--carry "$tree/runs/$resume/$t"} 2>&1 || true; } | while read -r line; do log "$t $line"; done
 done
-tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
-log "started: $(wc -l < "$op/panes.txt" | tr -d ' ') agents; deadline $(cat "$rundir"/*/*/deadline.txt | head -1)"
+[ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
+log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; $op/not-started.txt)}; deadline $(cat "$rundir"/*/*/deadline.txt 2>/dev/null | head -1)"
+[ -s "$op/panes.txt" ] || { log "no agent started"; exit 1; }
 
 # 4. Supervisors (agy runs its own loop), scores, the shared chat log, idle nudges per team (POG_IDLE_NUDGE=1).
 while read -r t name pane kind; do

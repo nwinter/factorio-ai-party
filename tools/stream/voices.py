@@ -376,6 +376,24 @@ def speakable(text, limit=220):
     return text
 
 
+def speakable_parts(text, limit=600):
+    """(d28 batch319 SU2) The whole of a text as speakable() reads it, in clips of at most `limit` characters cut at
+    sentence ends (else at a word): nothing left out, as a spoken reply part must be said whole."""
+    whole = speakable(text, 10 ** 6)
+    out = []
+    while len(whole) > limit:
+        cut = max(whole.rfind(p, 0, limit) for p in (". ", "! ", "? "))
+        if cut <= limit // 3:
+            cut = whole.rfind(" ", 0, limit)
+        if cut <= 0:
+            cut = limit - 1
+        out.append(whole[:cut + 1].strip())
+        whole = whole[cut + 1:].strip()
+    if whole:
+        out.append(whole)
+    return out
+
+
 # ---- delivery: how a line should sound ----------------------------------------------------------------------------
 # (d22 batch99 BI1, viewer Aurora site:4295: "Routine words like still or broken can trigger frustration. Use a natural
 # default, infer emotion from context") A line's mood comes from what it is about, never from its words: the caller
@@ -961,7 +979,14 @@ class TTS:
         if prov in self.providers:
             p = self.providers[prov]
             style = p.phonemes if os.environ.get("POG_TTS_IPA", "1") != "0" else "respell"  # 0: respellings only
-            return p.synth(pronounce(text, style)[:p.max_chars], ref, m, instruction)
+            said = pronounce(text, style)
+            # (d28 batch319 SU2, viewer Aurora site:5412: "Preserve each full supported reply part") never a silent
+            # slice: past the provider's limit the shorter respellings, else an error, so the fallback says it whole
+            if len(said) > p.max_chars:
+                said = pronounce(text, "respell")
+            if len(said) > p.max_chars:
+                raise TTSError(f"{prov} takes at most {p.max_chars} characters; this line has {len(said)} (not cut)")
+            return p.synth(said, ref, m, instruction)
         said = pronounce(text)
         if prov == "aura2":
             return self.ai.run(MODEL["aura2"], {"text": said, "speaker": ref, "encoding": "mp3"}, raw=True)

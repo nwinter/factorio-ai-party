@@ -385,16 +385,42 @@ local r = remote.call("agent_harness", "camera", BODY)
 rcon.print(type(r) == "string" and r or helpers.table_to_json({ok = true, result = r}))
 """
 
+# (d28 batch326 RA2, viewer Aurora site:5423: the Gleba egg breeder's speaker alarm droned on air while pog-cam1 was
+# on Gleba) the speakers sounding an alarm the camera client can hear: its player's custom alerts whose target is a
+# programmable speaker (an alarm raises its alert while its condition holds), each with its playback volume and mode
+# and where it is, and where the client is. Operator level, read only: get_alerts of one player, no find.
+ALARMS_LUA = r"""
+local p = game.get_player(PLAYER)
+if not (p and p.valid and p.connected) then rcon.print('{"cam":null,"alarms":[]}') return end
+local out = {}
+local ok, al = pcall(function() return p.get_alerts{type = defines.alert_type.custom} end)
+for si, by in pairs(ok and al or {}) do
+  for _, list in pairs(by) do
+    for _, a in pairs(list) do
+      local t = a.target
+      if t and t.valid and t.type == "programmable-speaker" then
+        local par = t.parameters or {}
+        out[#out + 1] = {unit = t.unit_number, surface = t.surface.name, x = t.position.x, y = t.position.y,
+          volume = par.playback_volume, mode = par.playback_mode, message = string.sub(a.message or "", 1, 120)}
+      end
+    end
+  end
+end
+rcon.print(helpers.table_to_json({cam = {surface = p.surface.name, x = p.position.x, y = p.position.y}, alarms = out}))
+"""
+
 # Space Age: where a camera can show each platform (read-only, operator level like SCORE_LUA): its surface name (the
 # camera call takes surfaces, the `platforms` read gives none), the hub (the runtime builds remote work around it) and
 # the bounds of our entities there, so a fixed view fits the whole platform, and the hub's health in % (onecam.py's
 # platform label says it when the hub is hurt). A platform still waiting for its starter
-# pack has no surface and is skipped.
+# pack has no surface and is skipped. (d28 batch318 OC) machines: its assemblers and furnaces (at most 120), each
+# {x, y, w} with w 1 while its status is working (a one-client visit's machinery framing, onecam.machinery).
 PLATFORM_LUA = r"""
 local f = game.forces.player
 local out = {}
 local states = {}
 for k, v in pairs(defines.space_platform_state) do states[v] = k end
+local working = defines.entity_status.working
 for _, pl in pairs(f.platforms) do
   local ok, s = pcall(function() return pl.valid and pl.surface end)
   if ok and s and s.valid then
@@ -417,8 +443,13 @@ for _, pl in pairs(f.platforms) do
     for _, e in pairs(s.find_entities_filtered{force = f, type = {"ammo-turret", "electric-turret", "fluid-turret", "turret"}, limit = 300}) do
       guns[#guns + 1] = {n = e.name, q = e.quality and e.quality.name or "normal", x = e.position.x, y = e.position.y}
     end
+    local ms = {}
+    for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machine", "furnace"}, limit = 120}) do
+      local p = e.position
+      ms[#ms + 1] = {x = p.x, y = p.y, w = e.status == working and 1 or 0}
+    end
     out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
-      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns, where = w}
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns, machines = ms, where = w}
   end
 end
 rcon.print(helpers.table_to_json{platforms = out})
@@ -746,7 +777,7 @@ class Harness:
         return self.lua(PROBE_LUA)
 
     def platform_views(self):
-        """{platform name: {surface, hub, bounds, guns, where}} for the platforms that have a surface (PLATFORM_LUA). guns
+        """{platform name: {surface, hub, bounds, guns, machines, where}} for the platforms that have a surface (PLATFORM_LUA). guns
         (d20 batch50 A1): each turret's position and range, the range from turret_ranges. where (d22 batch75 AK2, viewer
         Foobator: only the first 2 in transit had a progress bar): {state, paused, speed, at} for every platform, `at` as
         the platforms read gives it ("from->to N%" on a space connection, N from `from`; a location; "in transit")."""
@@ -796,6 +827,10 @@ class Harness:
             for k in new:
                 cache.setdefault(k, None)
         return {k: cache.get(k) for k in keys}
+
+    def alarms(self, player=1):
+        """(batch326 RA2) {cam {surface, x, y} | None, alarms [{unit, surface, x, y, volume, mode, message}]}."""
+        return json.loads(self.command("/silent-command " + one_line(ALARMS_LUA.replace("PLAYER", str(int(player))))))
 
     def camera(self, body):
         return json.loads(self.command("/silent-command " + one_line(CAMERA_LUA.replace("BODY", lua_string(json.dumps(body))))))

@@ -109,7 +109,7 @@ has(refused(function() runtime.step_length_check('refuel',{positions=places(65)}
 runtime.step_length_check('refuel',{positions=places(128),from={x=0,y=0}})
 runtime.step_length_check('refuel',{positions=places(128),dry_run=true})
 -- every entry, from its own constants: one past the limit refused, the limit itself not
-local modes={{},{wait_ticks=60},{asteroids=true,seconds=600},{collection=true,seconds=600},{position={x=0,y=0}},{positions={{x=0,y=0}}},
+local modes={{},{wait_ticks=60},{asteroids=true,seconds=600},{aim=true,seconds=60},{collection=true,seconds=600},{position={x=0,y=0}},{positions={{x=0,y=0}}},
   {dry_run=true},{from={x=0,y=0}},{area={left_top={x=0,y=0},right_bottom={x=8,y=8}}},{tiles=true},{status='current'},{pick=true}}
 local function set(a,key,v)
   local parts={} for k in key:gmatch('[^.]+') do parts[#parts+1]=k end

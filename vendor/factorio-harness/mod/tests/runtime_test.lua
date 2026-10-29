@@ -2704,7 +2704,7 @@ do
 end
 -- radius alone: around the character (round1650d: Grok, twice in shift13).
 eq(call('observe',{scope='supply',item='transport-belt',radius=5}).item,'transport-belt')
-fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: all_stopped, belt_positions, belt_tiles, compact, consumers, from, item, makers, near, radius, requesters, split, stock, surface')
+fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: all_stopped, belt_positions, belt_tiles, compact, consumers, count_all, from, item, makers, near, radius, requesters, split, stock, surface')
 fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item or fluid name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
 p.position={x=0,y=0}

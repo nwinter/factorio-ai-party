@@ -148,6 +148,10 @@ return function(api)
   -- (d24 batch140 PL1) named signals on one circuit network: signalwatch.lua
   function DESCRIBE.signal_watch(job)
     local parts = {}
+    -- (d28 batch316 SW) a duty watch: each entity's enabled share so far
+    for _, d in ipairs(job.ents or {}) do
+      if d.ticks and d.ticks > 0 then parts[#parts+1] = string.format('%s %.1f%% enabled', d.name, d.on_ticks / d.ticks * 100) end
+    end
     for i, pk in ipairs(job.picks or {}) do
       local st = job.stats and job.stats[i]
       if st and st.c1 then parts[#parts+1] = string.format('%s %d (min %d)', pk.text, st.c1, st.mn) end

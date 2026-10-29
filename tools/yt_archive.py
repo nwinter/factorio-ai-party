@@ -6,6 +6,8 @@
   python3 tools/yt_archive.py apply [--refresh]    # make those changes, within today's quota, resumable
   python3 tools/yt_archive.py rotate [--dry-run]   # upload finished shifts not on YouTube yet, then apply
   python3 tools/yt_archive.py follow               # rotate after each "shiftN up" in the autopilot's log
+  python3 tools/yt_archive.py follow --start       # the follower in the background, unless one runs (start-team)
+  python3 tools/yt_archive.py follow --check | --stop
   python3 tools/yt_archive.py quota                # today's ledger
 
 The rule (selection): every shift video is unlisted and in one public playlist in shift order. Three are public:
@@ -33,9 +35,25 @@ tools/archive_upload.py --shifts N --limit 1 --privacy private, then apply (publ
 unlisted; the previous latest unlisted), while
 the day's quota has room for the upload and its follow-ups (thumbnail, playlist insert, the previous latest's
 demotion) and the SSD keeps --keep-free-gb free after the copy and join (the R2 encode needs about 35 GB). Then apply.
+
+follow (d28 batch315): one follower per Mac, across shifts. The d27 rotation was a one-shot `rotate` (pid 85368, from
+pog-d20-b207): it ended at 11:35 when the day's quota was spent, as rotate does, and the follower meant to come after
+it was never started, so shifts 86-93 waited. tools/start-team.sh now runs `follow --start` at every shift start: it
+starts a follower when video-work/yt-follow.pid names no live one (after a reboot, a kill or a crash) and leaves a
+running one alone; tools/stop-team.sh never stops it (an upload can take an hour). It runs the main checkout's tools
+with its state in video-work, and:
+- writes the site's list to video-work/videos-site.json, never into a checkout (tools/site-refresh.sh names that file
+  for the build in its clean copy of main);
+- starts no rotate and no upload while the checkout it runs from has MERGE_HEAD (the gate merges and tests there): it
+  waits up to --merge-wait seconds before each, then tries again at the next poll;
+- outlives a failed rotate (an error, a stopped upload): the error goes to its log, and the same rotate is tried again
+  --retry seconds later;
+- runs itself again (same pid) when yt_archive.py or yt_upload.py changes on disk, so a merged fix takes effect
+  without a restart.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -43,6 +61,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -58,7 +77,9 @@ EXTRA = WORK / "videos-test.json"
 STATE = WORK / "yt-archive-state.json"
 LEDGER = WORK / "yt-quota.json"
 AUTOPILOT_LOG = OPERATOR / "autopilot.log"
-SITE_VIDEOS = REPO / "site" / "content" / "videos.json"
+SITE_VIDEOS = WORK / "videos-site.json"  # (batch315) outside any checkout; tools/site-refresh.sh names it for the build
+FOLLOW_PID = WORK / "yt-follow.pid"
+FOLLOW_LOG = WORK / "yt-follow.log"
 RUNS = Path(os.environ.get("POG_SITE_RUNS") or Path.home() / "code" / "player-of-games" / "runs")
 SSD = Path("/Volumes/Extreme SSD")
 PLAYLIST = yt.PLAYLIST
@@ -75,6 +96,10 @@ UP_LINE = re.compile(r"^(\d\d-\d\d \d\d:\d\d:\d\d) shift(\d+) up\b")
 
 class QuotaExceeded(Exception):
     pass
+
+
+class Busy(Exception):
+    """A merge in the checkout the tool runs from outlasted --merge-wait: the rotate stops, follow tries again."""
 
 
 # ---------------------------------------------------------------- selection (pure)
@@ -355,7 +380,8 @@ def do_op(client, op, videos, state):
 
 
 def site_videos(videos, state, path=SITE_VIDEOS):
-    """site/content/videos.json: the videos YouTube shows (unlisted or public), as build.py reads them."""
+    """The site's list (video-work/videos-site.json; tools/site-refresh.sh names it for site/build.py --videos): the videos
+    YouTube shows (unlisted or public)."""
     sv = state.get("videos", {})
     pl = (state.get("playlist") or {}).get("id")
     out = {}
@@ -494,6 +520,30 @@ def rotate_lock(path):
     return None
 
 
+def merging(repo=REPO):
+    """True while repo's working tree is mid-merge (MERGE_HEAD): the gate merges a branch in the main checkout, runs the
+    tests, then commits or aborts, so its tools are not main's until then."""
+    git = Path(repo) / ".git"
+    if git.is_file():  # a worktree: "gitdir: PATH"
+        try:
+            git = (Path(repo) / git.read_text().split("gitdir:", 1)[1].strip()).resolve()
+        except (OSError, IndexError):
+            return False
+    return (git / "MERGE_HEAD").exists()
+
+
+def merge_wait(repo=REPO, wait=1800, step=15, sleep=time.sleep):
+    """Return once repo has no merge under way; Busy when one lasts past wait seconds."""
+    waited = 0
+    while merging(repo):
+        if waited >= wait:
+            raise Busy(f"a merge in {repo} for {waited} s")
+        if waited == 0:
+            print(f"waiting for the merge in {repo} to end (up to {wait} s)", flush=True)
+        sleep(step)
+        waited += step
+
+
 def rotate(a):
     if not a.dry_run:
         holder = rotate_lock(Path(a.state).with_name("yt-rotate.lock"))
@@ -533,6 +583,7 @@ def _rotate(a):
             have.add(n)
             sim += units
             continue
+        merge_wait(REPO, a.merge_wait)  # archive_upload.py and shift_video.py run from this checkout
         plan = shift_plan(n, a)
         if plan is None:
             print(f"shift{n:02d}: no recording to upload; skipped")
@@ -542,6 +593,7 @@ def _rotate(a):
             print(f"shift{n:02d}: needs {plan['need_gb']:.0f} GB on the SSD for the copy and join, {free:.0f} GB free "
                   f"(keep {a.keep_free_gb:.0f} GB): skipped")
             continue
+        merge_wait(REPO, a.merge_wait)
         print(f"shift{n:02d}: uploading private (then {priv}): {' '.join(cmd[1:])}", flush=True)
         r = subprocess.run(cmd)
         vid = (load(a.manifest).get(f"shift{n:02d}") or {}).get("id")
@@ -579,32 +631,122 @@ def shift_plan(n, a):
     return {"action": action, "size_gb": size, "need_gb": box + (size if action == "join" else 0)}
 
 
-def follow(a):
+def code_stamp():
+    """yt_archive.py and yt_upload.py as on disk: follow runs itself again when they change (a merged fix)."""
+    h = hashlib.sha1()
+    for f in ("yt_archive.py", "yt_upload.py"):
+        try:
+            h.update((HERE / f).read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()
+
+
+def follower_pid(pid_file=FOLLOW_PID):
+    """The live follower's pid from its pid file, else None (a pid gone or reused by another command)."""
+    try:
+        pid = int(Path(pid_file).read_text().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        pass
+    cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return pid if "yt_archive.py" in cmd and " follow" in cmd else None
+
+
+def follow(a, sleep=time.sleep, clock=time.time):
     """Rotate after each new "shiftN up" line in the autopilot's log, and once at each new Pacific day (the
     backlog's next share of the quota). Poll every --interval seconds."""
+    other = follower_pid(a.pid_file)
+    if other and other != os.getpid():
+        print(f"another follower runs (pid {other}): not started", flush=True)
+        return 0
+    if Path(a.pid_file).parent.is_dir():
+        Path(a.pid_file).write_text(str(os.getpid()))
+    stamp = code_stamp()
     state = load(a.state, {"videos": {}})
     last = state.get("follow", {}).get("up", 0)
     day = state.get("follow", {}).get("day")
-    print(f"following {a.log} (last handled: shift{last} up, day {day})", flush=True)
+    retry_at = 0
+    print(f"{datetime.datetime.now():%m-%d %H:%M:%S} following {a.log} (pid {os.getpid()}, code {stamp[:8]}, from "
+          f"{REPO}; last handled: shift{last} up, day {day})", flush=True)
     while True:
-        ups = [int(m.group(2)) for m in map(UP_LINE.match, Path(a.log).read_text(errors="replace").splitlines()) if m] \
-            if Path(a.log).exists() else []
-        top = max(ups) if ups else 0
-        today = pacific_day()
-        if top > last or today != day:
-            why = f"shift{top} up" if top > last else f"a new day ({today})"
-            print(f"{datetime.datetime.now():%m-%d %H:%M:%S} rotate: {why}", flush=True)
-            try:
+        try:
+            ups = [int(m.group(2)) for m in map(UP_LINE.match, Path(a.log).read_text(errors="replace").splitlines()) if m] \
+                if Path(a.log).exists() else []
+            top = max(ups) if ups else 0
+            today = pacific_day()
+            if (top > last or today != day) and clock() >= retry_at and not merging(REPO):
+                why = f"shift{top} up" if top > last else f"a new day ({today})"
+                print(f"{datetime.datetime.now():%m-%d %H:%M:%S} rotate: {why}", flush=True)
                 rotate(a)
-            except SystemExit as e:
-                print(f"rotate stopped: {e}", flush=True)
-            state = load(a.state, {"videos": {}})
-            last, day = max(top, last), today
-            state["follow"] = {"up": last, "day": day}
-            save(a.state, state)
+                state = load(a.state, {"videos": {}})
+                last, day = max(top, last), today
+                state["follow"] = {"up": last, "day": day, "at": datetime.datetime.now().isoformat(timespec="seconds")}
+                save(a.state, state)
+        except (Exception, SystemExit) as e:  # noqa: BLE001  (one bad rotate must not end the follower)
+            if not isinstance(e, (Busy, SystemExit)):
+                traceback.print_exc()
+            retry_at = clock() + a.retry
+            print(f"{datetime.datetime.now():%m-%d %H:%M:%S} rotate stopped: {e or type(e).__name__}; "
+                  f"tried again in {a.retry} s", flush=True)
         if a.once:
             return 0
-        time.sleep(a.interval)
+        if code_stamp() != stamp and not merging(REPO):
+            print(f"{datetime.datetime.now():%m-%d %H:%M:%S} yt_archive.py or yt_upload.py changed: running again",
+                  flush=True)
+            os.execv(sys.executable, [sys.executable, "-u", str(Path(__file__).resolve())] + a.argv)
+        sleep(a.interval)
+
+
+def follow_args(a):
+    """follow's command line with a's paths and limits (follow --start passes them on)."""
+    out = ["follow"]
+    for k in ("manifest", "extra", "state", "ledger", "site_videos", "runs_dir", "daily", "margin", "upload_units",
+              "from_shift", "keep_free_gb", "log", "interval", "retry", "merge_wait", "pid_file"):
+        out += ["--" + k.replace("_", "-"), str(getattr(a, k))]
+    return out
+
+
+def follow_start(a):
+    """The follower in the background (its own session: a shift's stop and a closed terminal leave it), unless the pid
+    file names a live one."""
+    pid = follower_pid(a.pid_file)
+    if pid:
+        print(f"youtube follower running (pid {pid}): kept; log {a.follow_log}")
+        return 0
+    if not Path(a.pid_file).parent.is_dir():
+        print(f"youtube follower: no folder {Path(a.pid_file).parent}: not started")
+        return 1
+    with open(a.follow_log, "a") as log:
+        p = subprocess.Popen([sys.executable, "-u", str(Path(__file__).resolve())] + follow_args(a), cwd=str(REPO),
+                             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    Path(a.pid_file).write_text(str(p.pid))
+    print(f"youtube follower started: pid {p.pid}, every {a.interval} s; log {a.follow_log}")
+    return 0
+
+
+def follow_cmd(a):
+    if os.environ.get("POG_TEST") == "1" and Path(a.pid_file) == FOLLOW_PID and (a.start or a.check or a.stop):
+        print("POG_TEST=1: no YouTube follower from the live video-work (pass --pid-file)")  # start-team's test runs
+        return 0
+    if a.start:
+        return follow_start(a)
+    pid = follower_pid(a.pid_file)
+    if a.check:
+        print(f"youtube follower running (pid {pid}, log {a.follow_log})" if pid else "youtube follower: not running")
+        return 0 if pid else 1
+    if a.stop:
+        if pid:
+            os.kill(pid, 15)
+        print(f"stopped the youtube follower (pid {pid})" if pid else "no youtube follower running")
+        return 0
+    a.argv = follow_args(a)
+    return follow(a)
 
 
 def quota(a):
@@ -642,6 +784,14 @@ def main(argv=None):
     ap.add_argument("--log", default=str(AUTOPILOT_LOG))
     ap.add_argument("--interval", type=int, default=120)
     ap.add_argument("--once", action="store_true", help="follow: one check, then exit")
+    ap.add_argument("--retry", type=int, default=1800, help="follow: seconds before a failed rotate is tried again")
+    ap.add_argument("--merge-wait", type=int, default=1800,
+                    help="rotate: seconds to wait for a merge in this checkout before an upload, then stop (Busy)")
+    ap.add_argument("--pid-file", default=str(FOLLOW_PID))
+    ap.add_argument("--follow-log", default=str(FOLLOW_LOG))
+    ap.add_argument("--start", action="store_true", help="follow: start it in the background unless one runs")
+    ap.add_argument("--check", action="store_true", help="follow: is one running (exit 1 when not)")
+    ap.add_argument("--stop", action="store_true", help="follow: stop the running one")
     a = ap.parse_args(argv)
     if a.cmd == "plan":
         return apply(a, dry=True)
@@ -651,7 +801,7 @@ def main(argv=None):
         rotate(a)
         return 0
     if a.cmd == "follow":
-        return follow(a)
+        return follow_cmd(a)
     return quota(a)
 
 

@@ -11,6 +11,12 @@
 "inventory_size": 48,
 "max_health": 350,
 "name": "active-provider-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "logistic-container"
 },
 {
@@ -22,6 +28,13 @@
 "max_energy_usage_kw": 100,
 "max_health": 500,
 "name": "agricultural-tower",
+"surface_conditions": [
+{
+"max": 2000,
+"min": 1000,
+"property": "pressure"
+}
+],
 "type": "agricultural-tower"
 },
 {
@@ -31,6 +44,16 @@
 "max_health": 2000,
 "name": "artillery-turret",
 "type": "artillery-turret"
+},
+{
+"name": "artillery-wagon",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
 },
 {
 "emissions_per_second": {
@@ -207,6 +230,13 @@
 "max_energy_usage_kw": 72,
 "max_health": 300,
 "name": "asteroid-collector",
+"surface_conditions": [
+{
+"max": 0,
+"min": 0,
+"property": "pressure"
+}
+],
 "type": "asteroid-collector"
 },
 {
@@ -640,6 +670,13 @@
 "module_slots": 4,
 "name": "biolab",
 "researching_speed": 2,
+"surface_conditions": [
+{
+"max": 1000,
+"min": 1000,
+"property": "pressure"
+}
+],
 "type": "lab"
 },
 {
@@ -744,6 +781,12 @@
 "max_energy_usage_kw": 1800,
 "max_health": 200,
 "name": "boiler",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "target_temperature": 165,
 "type": "boiler"
 },
@@ -780,6 +823,12 @@
 "inventory_size": 48,
 "max_health": 350,
 "name": "buffer-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "logistic-container"
 },
 {
@@ -823,6 +872,12 @@
 "max_energy_usage_kw": 144,
 "max_health": 100,
 "name": "burner-inserter",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "inserter"
 },
 {
@@ -857,6 +912,12 @@
 "resource_categories": {
 "basic-solid": true
 },
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "mining-drill"
 },
 {
@@ -911,6 +972,13 @@
 "max_energy_usage_kw": 100,
 "max_health": 350,
 "name": "captive-biter-spawner",
+"surface_conditions": [
+{
+"max": 1000,
+"min": 1000,
+"property": "pressure"
+}
+],
 "type": "assembling-machine"
 },
 {
@@ -932,18 +1000,36 @@
 "max_energy_usage_kw": 150,
 "max_health": 450,
 "name": "car",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "car"
 },
 {
 "inventory_size": 80,
 "max_health": 1000,
 "name": "cargo-landing-pad",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "cargo-landing-pad"
 },
 {
 "inventory_size": 40,
 "max_health": 600,
 "name": "cargo-wagon",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "cargo-wagon"
 },
 {
@@ -1188,6 +1274,13 @@
 "max_health": 350,
 "module_slots": 2,
 "name": "crusher",
+"surface_conditions": [
+{
+"max": 0,
+"min": 0,
+"property": "gravity"
+}
+],
 "type": "assembling-machine"
 },
 {
@@ -1227,6 +1320,26 @@
 "module_slots": 8,
 "name": "cryogenic-plant",
 "type": "assembling-machine"
+},
+{
+"name": "curved-rail-a",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "curved-rail-b",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
 },
 {
 "emissions_per_second": {
@@ -1455,6 +1568,46 @@
 "type": "assembling-machine"
 },
 {
+"name": "elevated-curved-rail-a",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "elevated-curved-rail-b",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "elevated-half-diagonal-rail",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "elevated-straight-rail",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
 "belt_speed_items_per_s": 45,
 "max_health": 190,
 "name": "express-splitter",
@@ -1524,11 +1677,23 @@
 "attack_range": 30,
 "max_health": 1400,
 "name": "flamethrower-turret",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "fluid-turret"
 },
 {
 "max_health": 600,
 "name": "fluid-wagon",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "fluid-wagon"
 },
 {
@@ -2281,6 +2446,16 @@
 "type": "tree"
 },
 {
+"name": "half-diagonal-rail",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
 "fluid": {
 "fluid_boxes": [
 {
@@ -2318,6 +2493,12 @@
 "max_energy_usage_kw": 40000,
 "max_health": 500,
 "name": "heating-tower",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "reactor"
 },
 {
@@ -2392,6 +2573,12 @@
 "inventory_size": 32,
 "max_health": 200,
 "name": "iron-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "container"
 },
 {
@@ -2474,6 +2661,26 @@
 "max_health": 1000,
 "name": "laser-turret",
 "type": "electric-turret"
+},
+{
+"name": "legacy-curved-rail",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "legacy-straight-rail",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
 },
 {
 "emissions_per_second": {
@@ -2588,6 +2795,12 @@
 "max_health": 1000,
 "movement_speed": 1.2,
 "name": "locomotive",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "locomotive"
 },
 {
@@ -2780,6 +2993,39 @@
 "type": "reactor"
 },
 {
+"name": "nuke-effects-aquilo",
+"surface_conditions": [
+{
+"max": 600,
+"min": 100,
+"property": "pressure"
+}
+],
+"type": null
+},
+{
+"name": "nuke-effects-space",
+"surface_conditions": [
+{
+"max": 0,
+"min": 0,
+"property": "pressure"
+}
+],
+"type": null
+},
+{
+"name": "nuke-effects-vulcanus",
+"surface_conditions": [
+{
+"max": 4000,
+"min": 4000,
+"property": "pressure"
+}
+],
+"type": null
+},
+{
 "energy_usage_kw": 60,
 "max_energy_usage_kw": 60,
 "max_health": 150,
@@ -2927,6 +3173,12 @@
 "inventory_size": 48,
 "max_health": 350,
 "name": "passive-provider-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "logistic-container"
 },
 {
@@ -2986,6 +3238,46 @@
 "type": "radar"
 },
 {
+"name": "rail-chain-signal",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "rail-ramp",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "rail-signal",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
+"name": "rail-support",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
+},
+{
 "attack_cooldown": 170,
 "attack_range": 40,
 "electric": true,
@@ -3042,6 +3334,12 @@
 "inventory_size": 48,
 "max_health": 350,
 "name": "requester-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "logistic-container"
 },
 {
@@ -3053,6 +3351,12 @@
 "max_energy_usage_kw": 2050.0000000000005,
 "max_health": 500,
 "name": "roboport",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "roboport"
 },
 {
@@ -3087,6 +3391,12 @@
 "module_slots": 4,
 "name": "rocket-silo",
 "rocket_parts_required": 50,
+"surface_conditions": [
+{
+"min": 1,
+"property": "pressure"
+}
+],
 "type": "rocket-silo"
 },
 {
@@ -3300,6 +3610,13 @@
 "inventory_size": 59,
 "max_health": 1000,
 "name": "space-platform-hub",
+"surface_conditions": [
+{
+"max": 0,
+"min": 0,
+"property": "pressure"
+}
+],
 "type": "space-platform-hub"
 },
 {
@@ -3308,6 +3625,12 @@
 "max_energy_usage_kw": 250.00000000000003,
 "max_health": 3000,
 "name": "spidertron",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "spider-vehicle"
 },
 {
@@ -3455,6 +3778,12 @@
 "inventory_size": 48,
 "max_health": 350,
 "name": "steel-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "container"
 },
 {
@@ -3495,6 +3824,12 @@
 "max_energy_usage_kw": 90,
 "max_health": 300,
 "name": "steel-furnace",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "furnace"
 },
 {
@@ -3570,6 +3905,12 @@
 "max_energy_usage_kw": 90,
 "max_health": 200,
 "name": "stone-furnace",
+"surface_conditions": [
+{
+"min": 10,
+"property": "pressure"
+}
+],
 "type": "furnace"
 },
 {
@@ -3581,12 +3922,28 @@
 "inventory_size": 48,
 "max_health": 350,
 "name": "storage-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "logistic-container"
 },
 {
 "max_health": 500,
 "name": "storage-tank",
 "type": "storage-tank"
+},
+{
+"name": "straight-rail",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
 },
 {
 "max_health": 200,
@@ -3639,6 +3996,12 @@
 "max_energy_usage_kw": 600,
 "max_health": 2000,
 "name": "tank",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
 "type": "car"
 },
 {
@@ -3675,7 +4038,24 @@
 {
 "max_health": 300,
 "name": "thruster",
+"surface_conditions": [
+{
+"max": 0,
+"min": 0,
+"property": "pressure"
+}
+],
 "type": "thruster"
+},
+{
+"name": "train-stop",
+"surface_conditions": [
+{
+"min": 1,
+"property": "gravity"
+}
+],
+"type": null
 },
 {
 "belt_speed_items_per_s": 15,
@@ -3939,6 +4319,17 @@
 "type": "tree"
 },
 {
+"name": "tree-plant",
+"surface_conditions": [
+{
+"max": 1000,
+"min": 1000,
+"property": "pressure"
+}
+],
+"type": null
+},
+{
 "category": "hard-solid",
 "mining_time": 5,
 "name": "tungsten-ore",
@@ -4119,6 +4510,12 @@
 "inventory_size": 16,
 "max_health": 100,
 "name": "wooden-chest",
+"surface_conditions": [
+{
+"min": 0.1,
+"property": "gravity"
+}
+],
 "type": "container"
 },
 {

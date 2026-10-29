@@ -209,6 +209,7 @@ test('vehicle drive --wait waits for its own drive, never the previous result (r
 test('vehicle go_to --wait sends wait: true and waits for arrived; a plain go_to replies at once (d26 batch247 NV1)',async()=>{
   let polls=0, sent:any[]=[];
   await engine(request=>{
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:0,y:0},health:250,max_health:250}}};
     if(request.action==='vehicle'){
       sent.push(request.args);polls=0;
       return request.args.wait ? {tick:100,ok:true,result:{route_line:'1 target: (30,4)',until_tick:18100,waiting:'until it arrives'}}
@@ -217,13 +218,19 @@ test('vehicle go_to --wait sends wait: true and waits for arrived; a plain go_to
     polls++;
     // the runtime: a call that replaced a running spider_go records it ended (replaced) in the same tick
     if(polls<3)return {tick:100+polls,ok:true,result:{active:{kind:'spider_go',until_tick:18100},last:{kind:'spider_go',outcome:'replaced',tick:100}}};
-    return {tick:200,ok:true,result:{active:false,last:{kind:'spider_go',outcome:'arrived',tick:150,why:'arrived at (29.6,4) (its route ended at (30,4))'}}};
+    return {tick:200,ok:true,result:{active:false,last:{kind:'spider_go',outcome:'arrived',tick:150,why:'arrived at (29.6,4) (its route ended at (30,4))',
+      spidertron:'spidertron #7001',position:{x:29.6,y:4},route_line:'no target: it stands',pair:'both arrived: #7001 at (29.6,4), its follower at (19.8,4) (10 tiles apart)'}}};
   },async port=>{
     const waited=JSON.parse((await cli(port,['call','vehicle','--args','{"remote":true,"vehicle":7001,"go_to":{"x":30,"y":4}}','--wait'])).stdout);
     assert.equal(sent[0].wait,true); assert.match(JSON.stringify(waited.result),/"outcome":"arrived"/);
+    // (d28 batch310 PS) the compact reply an agent reads: the spidertron's own facts and its pair's part
+    const compact=String((await exec(process.execPath,['dist/host/cli.js','--port',String(port),'call','vehicle','--args','{"remote":true,"vehicle":7001,"go_to":{"x":30,"y":4}}','--wait'],
+      {env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}})).stdout);
+    assert.match(compact,/pair: "both arrived: #7001 at \(29.6,4\), its follower at \(19.8,4\) \(10 tiles apart\)"/);
+    assert.match(compact,/spidertron: "spidertron #7001"/); assert.match(compact,/spidertron_at: 29.6,4/);
     assert.ok(polls>=3,'it waited for the action');
     const plain=JSON.parse((await cli(port,['call','vehicle','--args','{"remote":true,"vehicle":7001,"go_to":{"x":30,"y":4}}'])).stdout);
-    assert.equal(sent[1].wait,undefined); assert.equal(plain.result.route_line,'1 target: (30,4)'); assert.equal(polls,0,'no wait');
+    assert.equal(sent[2].wait,undefined); assert.equal(plain.result.route_line,'1 target: (30,4)'); assert.equal(polls,0,'no wait');
   });
 });
 test('--wait polls the brief status, then reads the full status once; a runtime without brief gets full polls',async()=>{

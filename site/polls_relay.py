@@ -17,10 +17,12 @@ them. start-team.sh runs it beside push_live.py:
   the relay files @operator lines (agent "viewer NAME", viewer: true, source "site", poll_idea: true). The cursor is
   runs/poll-ideas.json, so a new shift files only new ones.
 """
-import argparse, json, os, sys, time, urllib.error, urllib.request
+import argparse, hashlib, json, os, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
+sys.path.insert(0, str(SITE.parent / "tools" / "stream"))
+import operator_inbox  # noqa: E402  (batch323: durable, idempotent inbox rows)
 REQUESTS, REPLIES = ".poll-requests.jsonl", ".poll-replies.jsonl"
 SNAPSHOT_S, IDEAS_S = 30.0, 60.0
 SUGGEST_MAX = 500
@@ -101,9 +103,13 @@ class Relay:
         self.ideas_path = self.run.parent / "poll-ideas.json"
         self.next_snapshot = self.next_ideas = 0.0
 
-    def to_inbox(self, row):
-        with open(self.inbox, "a") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    def to_inbox(self, row, key):
+        """(d28 batch323 DR) One inbox row, durable (flushed and fsynced) and once by `key` (its "rid": an agent's
+        request id, or "idea:N" for a site idea): a retry after a failed or cut write adds nothing twice. An OSError
+        when the write fails; the caller then acknowledges nothing and keeps the request for the next pass."""
+        if key in operator_inbox.values_in(self.inbox, "rid"):
+            return
+        operator_inbox.write_rows(str(self.inbox), [dict(row, rid=key)])
 
     def snapshot(self):
         """RUN/polls.json from GET /v1/polls and the open polls' agent votes. False when the API did not answer."""
@@ -136,12 +142,15 @@ class Relay:
             return 0
         n = 0
         for x in d.get("ideas") or []:
-            self.to_inbox({"t": round(x.get("t") or self.clock(), 1), "agent": f"viewer {x.get('name', '')}", "text": idea_text(x),
-                           "viewer": True, "source": "site", "poll_idea": True})
+            try:  # (batch323) the cursor moves past an idea only once its row is durable; a failure: the rest next pass
+                self.to_inbox({"t": round(x.get("t") or self.clock(), 1), "agent": f"viewer {x.get('name', '')}", "text": idea_text(x),
+                               "viewer": True, "source": "site", "poll_idea": True}, f"idea:{x['id']}")
+            except OSError as e:
+                print(f"poll ideas: inbox: {e} (idea {x.get('id')} filed next pass)", file=sys.stderr)
+                break
             cur["after"] = max(int(cur.get("after") or 0), int(x["id"]))
-            n += 1
-        if n:
             write_json(self.ideas_path, cur)
+            n += 1
         return n
 
     def requests(self):
@@ -155,13 +164,21 @@ class Relay:
             except OSError:
                 continue
             done = int(state.get(agent) or 0)
+            answered = operator_inbox.values_in(str(req_file.parent / REPLIES), "rid")
             for line in lines[done:]:
-                reply = self.handle(agent, line)
+                # (d28 batch323 DR) one line at a time: handled, its reply durable, then the count saved; a suggestion
+                # whose inbox write failed gets no reply and stays for the next pass (the same rid: filed once); a
+                # crash between any two of these repeats only what is idempotent by rid
+                try:
+                    reply = self.handle(agent, line)
+                except OSError as e:
+                    print(f"polls relay: {agent}: inbox: {e} (its request is tried again next pass)", file=sys.stderr)
+                    break
                 voted = voted or (reply.get("ok") and reply.get("kind") == "vote")
-                with open(req_file.parent / REPLIES, "a") as f:
-                    f.write(json.dumps(reply, ensure_ascii=False) + "\n")
-            if len(lines) > done:
-                state[agent] = len(lines)
+                if reply.get("rid") is None or reply["rid"] not in answered:
+                    operator_inbox.write_rows(str(req_file.parent / REPLIES), [reply])
+                done += 1
+                state[agent] = done
                 write_json(self.state_path, state)
         if voted:
             self.next_snapshot = 0.0  # the new counts in polls.json on the next step
@@ -178,7 +195,9 @@ class Relay:
         if kind == "suggest":
             if len(line.encode()) > SUGGEST_MAX + 200:
                 return {**out, "ok": False, "error": f"over {SUGGEST_MAX} bytes"}
-            self.to_inbox({"t": out["t"], "agent": agent, "text": idea_text(r), "poll_idea": True})
+            # (batch323) ok only after the durable write; an OSError goes up (requests: no reply, tried again)
+            self.to_inbox({"t": out["t"], "agent": agent, "text": idea_text(r), "poll_idea": True},
+                          f"{agent}:{rid}" if rid is not None else f"{agent}:" + hashlib.sha1(line.encode()).hexdigest()[:12])
             return {**out, "ok": True}
         if kind == "vote":
             body = {"agent": agent, "name": self.names.get(agent, agent), "option": r.get("option"), "comment": r.get("comment") or ""}

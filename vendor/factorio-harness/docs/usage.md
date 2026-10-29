@@ -3290,6 +3290,19 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
   chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+- (d28 batch330 IH, Astra #2728: area inspect read a bulk inserter holding 4 rockets as `holds: empty`) In `inspect`'s
+  area rows an inserter has no `holds` (it has no inventory): its hand is `held` ("4 rocket", "nothing"; a quality as
+  name@quality) and `held_count`, as the exact inspect gives them. A crafting machine's row adds `in_progress` ("one
+  craft 40% done (its products are in no slot yet)") beside `holds` (its slots). Belts' `holds` are their lanes, a
+  turret's its ammo slots, robots' their cargo, as before.
+- (d28 batch328 SC, Astra #2725) An entity whose surface conditions the surface does not meet is refused naming the
+  condition, before any footprint check, in `build`, `place_ghosts`, `paste` and `blueprint_place` and their dry runs:
+  `placement blocked: iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0` (the
+  prototype's surface_conditions against LuaSurface.get_property; each prototype's conditions read once, each
+  surface's properties once a game minute). `load_silo` with `platform` names the listed items that platform refuses
+  (`unplaceable`, and on its line: "(it goes up as cargo)"). gamedata's entities.json gives each entity's
+  `surface_conditions` and locations.json the planets' and the platform surface's `surface_properties`
+  (tools/analyst/dump_prototypes.py `--only surface_conditions`).
   An entity with tile buildability rules (an asteroid collector: its rear rows on foundation, its front row and the
   tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
   north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
@@ -17392,3 +17405,351 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
 - Docs: agent/ref/team.md (`board_progress`, `board_update`), the schema texts. Test: tests/d28_batch308.lua (fails
   on main: no `follow_through`).
 - Bundle (compacted): 6,362,465 bytes on main (b59129f9), 6,364,920 with this branch (limit 8,388,608).
+## d28 batch311 (GA, viewer Aurora: an any guard lost its deadline when a sibling member errored)
+
+- Real. conditions.lua `any` (and `all`) called each member bare: a member that threw (ammo_below with positions on a
+  removed turret: `no ammo turret of ours at (3.5,-10.5) on Asterion`) threw the whole condition, whatever another
+  member read, and the members after it were not read that check. scheduler.lua `check_guards` read a guard under
+  pcall and dropped the error with no word; after a deadline tick it recomputed `guard_due` from deadlines still
+  ahead, so a paused remote or platform lane (checked only at `guard_due`) lost its only wake. On main
+  (tests/d28_batch311.lua's cases, the turret removed before the cutoff): the guard any {ammo_below turret,
+  tick_at_least cutoff} never fired in 5100 ticks past the cutoff, on the remote and a platform lane, both member
+  orders, running and paused (0 cleanups, `guard_due` nil, the guard still armed); with the turret kept every case fired
+  at the cutoff. An any {ammo_below removed turret, platform_left} never fired at the departure in either order. A
+  queued wait_until any {that turret, the cutoff} failed at its first check, pausing the plan.
+- Change:
+  - conditions.lua: `all` and `any` read each member under pcall, every member at every check (baselines such as
+    platform_left's first stop are read whatever another member does). `any`: a member that holds meets it; a member
+    that could not be read is named in saw (`#1 ammo_below: could not be read: ...`) and in `record.member_errors`;
+    with none holding and one erroring it raises `none yet, and a member could not be read: ...` naming every member.
+    `all` raises the first member error, as before, once every member is read. waiteta adds `member_errors` to a
+    wait's reply.
+  - scheduler.lua: a guard whose read fails stays armed and is read again at each check; the first failure of a run
+    of them adds a `guard_error` history row and a team block line (later ones only count, the text the latest); a
+    read that works again marks `cleared_tick`, and a later failure is said again. queue_status guards give
+    `read_error` {error, first_tick, last_tick, checks, cleared_tick}. The wake: a passed deadline whose guard is
+    still armed is read again `CHECK_TICKS` (10) on, so a paused lane keeps it. A wait_until step whose deadline is
+    ahead keeps waiting when its read fails (one `wait_error` row and line), and its deadline ends it.
+  - Each guard fires once (the guard is removed as it fires, as before); the test checks its cleanup runs once.
+- Sleep is not affected: waits.lua reads each member of a sleep's any under its own pcall.
+- Docs: agent/ref/waits-queues.md (any, guards), the guards usage text. Test: tests/d28_batch311.lua (the real
+  conditions.lua, scheduler.lua and queue_lanes.lua): the deadline guard on the remote and a platform lane, both member
+  orders, running and paused, fired at the cutoff with its cleanup once; a paused lane whose guard read failed at the
+  deadline fires 10 ticks after the read works again; the departure member keeps its baseline, both orders; a
+  wait_until any met at the cutoff and an all that still fails. Each of its four parts fails on main.
+
+## d28 batch310 (PS: paired spidertron routes, narrow passes and short water steps; retreats independent; Updates row paired-spiders, viewer Aurora site:4841)
+
+- `vehicle {pair: {lead, follower, distance}}` (spiderpair.lua): two spidertrons on one route. lead and follower by
+  unit_number or {x,y}, by remote view in a chunk our force sees; distance 6..40 tiles, default 10.
+  - One agent's two spidertrons pair at once. A spidertron another agent rides, runs an action with, or sent last
+    (go_to, clear, spider_kite) pairs only once that agent makes the same call within 10 game minutes; the ask is in
+    that agent's alerts. `pair: false` with `vehicle` (either one) ends a pair, or withdraws or declines an ask.
+  - A go_to on the lead moves both. The lead walks its own route as alone: paths round water, stored routes
+    (batch305), recoveries, its retreat guard. The follower walks the lead's steps: the dry spots it stood on, read
+    every 10 ticks, at least 1.5 tiles apart. It gets each once the lead is `distance` - 5 tiles past it while the lead
+    walks (a spidertron brakes toward its last point), and only those `distance` behind once the lead's route ends.
+  - Its way to the lead's start: a path round water when its line there crosses more than its legs step (asked as a
+    go_to's, stored routes included); no steps are given until it comes.
+  - The lead waits (its route kept aside, given back after) while the follower is over `distance` + 4 tiles behind
+    along the steps, until within `distance` + 2; and while a gate lies between them it is `distance` + 4 past. A
+    gate: a water step (water on the line between two steps, which its legs crossed) or a narrow pass (dry ground
+    across its line no wider than 3 tiles, read 4 tiles each side). A wait with a gate between them is said once in
+    team alerts: "#L waits past the water step at (x,y) (N tiles of water) for #F to cross it".
+  - The go_to's reply: `pair.join`, `pair.gates` (the water steps and narrow passes on the lead's route, up to 8; when
+    its paths are still asked, said in team alerts when they come), `pair.rule`, `pair.line`.
+  - The rule both take: one prototype has one set of legs (2.0.77 has one spider-vehicle prototype, spidertron), so a
+    step the lead's legs took the follower's take. For two prototypes the lead's route is planned for the shorter
+    reach; a prototype other than spidertron has no measured reach, so any water on its line counts.
+- Ends:
+  - both arrived: said once to the pair's agents, with where each stands and how often the lead waited;
+  - the follower without progress for 5 s (its route not empty): the pair splits, said with where it stands, how far
+    behind, the gate it stood at and what is on its line ahead; the lead goes on alone, the follower's route is cleared;
+  - a retreat of either (its own guard), spider_kite on either, or a go_to or clear on the follower: the pair ends at
+    once, never waiting for or moving the partner. The lead gets its route back; after the lead's retreat or kite the
+    follower stops where it stands. A lead waiting for its follower that retreats leaves at once (spiderroute.retreat
+    drops the kept route);
+  - a clear on the lead stops both and keeps the pair; a gone spidertron ends it.
+- A waited go_to on the lead ends `arrived` once both have, and `stalled` when the follower stalled (last.stalled_one,
+  stalled_at, why); last.pair says the pair's part. The compact waited reply now shows a spidertron go_to's own facts:
+  spidertron, spidertron_at, route_line, recovery, no_path, landed, pair, stalled_one, stalled_at (host/cli.ts).
+- The follower keeps a spiderroute entry while paired (`paired`), so its own guard (its agent's standing
+  retreat_guard, else the rider's) reads it; the pair samples its progress instead of the stall sampler. status lists
+  the agent's pairs and asks.
+- Measured on the iMac copy (world n's d28 09:50 save):
+  - a spidertron walks 13-13.6 tiles/s; route points 4 tiles apart, all at once or added one at a time, keep that
+    speed; a cleared route stops it within 3-4 tiles; its route given back has it at full speed in about 1 s;
+  - the game's own `follow_target` walked straight at the lead and closed to 2 tiles when the lead stopped;
+  - the first build gave steps only `distance` behind: gaps 6-19 tiles, 100 tiles in 18.3 s. With the 5 tiles ahead:
+    10.5-11.3 tiles walking, 9.5 at rest, 100 tiles in 8.2 s (alone about 7.7 s);
+  - across the lake by a stored route (sol asked, astra agreed): "reused route 1 ... its 28 legs unchanged", gates
+    named before the move, both arrived in 28.3 s and 28.5 s back, 8-14 tiles apart, the lead waiting 2-3 times;
+  - cost (profile_ticks): `spiderpair.tick` 0.05-0.1 ms a run every 10 ticks while a pair walks, worst second 1.15 ms
+    (before the lead's route read was cut to its first point); the gates read 1.0-1.1 ms for a 321-tile route; pair
+    go_to and clear calls 3.3-8.6 ms a second.
+- Item 5 (operator 10:32, viewer Aurora: the reverse takeover). spider_kite on main took an empty route as arrival and
+  wrote its route again after another caller's clear, kept control after a same-target go_to or an append, wrote its
+  late path round water over another's route, and put its switches back over what stood. Now (batch300's claim
+  number): the kite keeps its claim's number and ends `route_changed` at its next read once another call moves it on
+  ("sol set its route (clear) after this spider_kite began: it yields; ..."), before its health checks; an empty route
+  over 4 tiles short of its target ends it the same way; its late path is not written; its switches go back only when
+  they still read as it set them and no other call took over. A go_to's own plan carries the number too
+  (spiderpath.lua `plan.claim`): its path coming after another call's change is not written, said to its asker. On the
+  copy: astra's kite yielded to sol's clear, the spidertron stopped where the clear left it, the switches stayed on.
+  Test: tests/d28_batch310b.lua (fails on main: the kite still running after sol's clear).
+- Docs: agent/ref/movement-combat.md (Pairs; spider_kite yielding), the vehicle and spider_kite schema texts.
+- Test: tests/d28_batch310.lua (pairing and asks; open ground; a waited go_to; a slower follower; a stored route round
+  a lake; retreats of either, kite, a go_to on the follower, a clear on the lead; a water step the follower cannot
+  take; two prototypes; the follower's path to the lead's start). tests/waits.test.ts: the compact spider_go reply.
+
+## d28 batch313 (HB: Haiku's handbacks in the IVb/Fulgora copper check, viewer Aurora site:5364; board #2694)
+
+- The chain (shift92, 10:38-11:16 PDT, Haiku on Claude Haiku 5.5 at medium effort): Astra gave Haiku the IVb copper
+  evidence check. Haiku's corrected steps and what it had read:
+  - three "if you agree / say so" handbacks in 25 s after Astra said to proceed (model behaviour);
+  - an empty delivery_watch list read as "no harness record of a completed receipt" (the reply named no other record);
+  - ten Nauvis up pods summed as one 5000 cycle, two visits 54 game minutes apart: its ledger replies (40 and 47
+    rows, 20-25 KB) came in pages; page 1 held the oldest rows and the `./fh more` marker, and pods_line (how many,
+    which) came after the table on page 2; its own reasoning: "the output seems capped at 24 rows, so I'm missing the
+    newer entries"; it filled them in from an earlier 8-row read;
+  - `rates {item: copper-plate, surface: fulgora}`: row produced 1027 consumed 450 (10 idle recyclers' full-speed
+    figures) beside statistics made 0/min; Haiku called the made figure "crafters only", and Astra's correction called
+    the row an all-items aggregate (Astra, 11:21: that correction was wrong; the row is capacity);
+  - networks 96 and 840 swapped (north/south) with the right positions in front of it (model).
+- Fixes:
+  - rates rows: `basis: "full speed"`, `working` ("0 of 10 making it; 0 of 3 using it work now"); the reply's
+    `rows_are`; with item: `actual {made, used, per, over, source}` and `line` setting the full-speed figure beside
+    the statistics (rates.lua M.item_line). produced/consumed keep their names. Copy (world n 11:15 save): Fulgora
+    copper "would make 1027/min at full speed (0 of them working now); the game's statistics over 10 min: made 0/min,
+    used 75.6/min". Engine fact (copy, 721 ticks): recycler output is counted in the game's statistics (gears from scrap
+    +191); no copper-plate recycling ran.
+  - compact replies long enough to be paged lead with their one-line fields (host/format.ts lead, cli.ts): page 1 of
+    the same ledger read now starts "69 pod journeys ...; these sent from tick 76908515 (110m44s ago) to tick 77292844
+    (3m59s ago), oldest first". Shorter replies print as before.
+  - shipment pods_line names the span of the rows shown and their order.
+  - an empty delivery_watch list says a watch counts from when it is set and where earlier pods are (the ledger).
+- Docs: agent/ref/analysis.md (rates), the rates schema text. Tests: tests/d28_batch313.lua, tests/format.test.ts.
+
+## d28 batch317 PD: progressive disclosure (eng/d20-batch317; design and results in pog docs/DISCLOSURE.md)
+- disclosure.lua (with disclosure_units.lua, generated by pog tools/disclosure/build.py): per force, the atoms met
+  (research, buildings, places, first events), habit and scale counters, a revision and an unlock log in
+  storage.agent_harness.disclosure. Mode off (the default: everything open, nothing kept), observe (kept, nothing
+  filtered or said), filter.
+- Operator: `disclosure_set {mode, refuse?, world?, reset?}`, `disclosure {force?, ids?}`. Agents' host read:
+  `disclosure {}` (marked never: not listed, not gated).
+- Filter mode: a call to a shut action or argument runs, undocumented (the default, Nick d28 15:47; with
+  `refuse=true` M.dispatch refuses it naming its condition); M.dispatch counts each agent call for the habits, and
+  filters describe (open actions and arguments, `locked`
+  with conditions when refuse=true, bundle id `BUNDLE@dREV`); the unknown-argument list leaves shut arguments out; each agent's reply
+  carries `new` once per unlock. Operator, reader and host calls (describe, disclosure, sleep_check, lookahead,
+  bridge_status) and actions marked never are not gated.
+- The sweep (tick % 600 == 41) reads one of four parts per run (research, buildings, scale, places and events), only
+  atoms not met: 0.05-0.16 ms on a fresh map, 0.04 ms average on world n's save (iMac copy). on_event marks research,
+  attacks, losses, deaths, enemy kinds, asteroids, pollution attacks and landed pods; it skips damage events once
+  every fight atom is met.
+- Host: fh help TOPIC prints a disclosure workspace's entries less the shut ones (ref/.units/TOPIC.json, the
+  runtime's shut ids, keyed topic#key by each entry's own lead: an entry the table does not know stays open);
+  fh help ACTION names a locked action's condition; a reply with `new` makes fh write describe.json again.
+- Tests: tests/d28_batch317.lua, tests/disclosure.test.ts; pog tools/test_disclosure.py (the Lua and Python
+  evaluators open the same tick-0 set).
+## d28 batch316 (SW, Sol #2703: a bounded circuit duty read without 60-tick aliasing)
+
+- Sol: Resolute's adaptive pilot runs a clock and pulses its pumps 1 or 2 ticks a period; `signal_watch` samples every
+  60 ticks, a multiple of the period, so every sample reads the same phase (on the iMac copy of world n at tick
+  77719185 the clock ran C 0..4 and both pumps on `signal-C < 1` were enabled 1 tick in 5).
+- Choice (measured on the iMac copy, 28,800 reads each): an entity's `status` 0.22 us, a held control behavior's
+  `disabled` 0.19 us, `get_signal` on a held network 0.55 us, `get_circuit_network` + `get_signal` 1.1 us. Counting
+  each entity's status every tick is the cheaper read and gives the pumps' own enabled state, so that is the new mode;
+  signals every tick are not added.
+- Change (signalwatch.lua): `signal_watch {entities, surface | platform, seconds}` with 1..8 entities and 10..60 s, a
+  duty watch: each entity's status every tick, from the start tick (read at the call) for seconds x 60 ticks, then done
+  and its entity refs let go. Per entity: ticks by status, enabled (any status but disabled_by_control_behavior) ticks
+  and share, enabled and disabled runs by length and the ticks from one enable to the next (histograms of up to 24
+  lengths, the rest as other {count, min, max}), longest runs with their start, each whole 60-tick window's least and
+  most enabled ticks with its start, transitions (count, the first and last 8 with tick and direction), the runs cut by
+  the window (open_start, open_end), gone_tick. One watch an agent as before (it replaces a signal watch). The 60-tick
+  signal watch is unchanged. Checked at submit and in dry_run (seconds 10..60 with entities, entities 1..8).
+- On Resolute's copy (60 s, 3600 ticks): each pump enabled 720 of 3600 ticks (20.0%), enabled runs 1 tick x720,
+  disabled runs 4 ticks x719, enabled again after 5 ticks x719, 12 enabled ticks in every 60-tick window; status agrees
+  with the control behavior: a pump's condition was fulfilled at C=0 and the pump working at C=1.
+- Cost (profile_ticks on the iMac copy, 60 s): part signal_watch.tick 0.029 ms a tick with 8 entities, 0.017 ms with 2
+  (about 2 us an entity plus about 10 us a tick, the profiler's wrap included: its cheapest parts read 2-3 us); the
+  harness's whole tick 2.59 ms on average then.
+- Docs: agent/ref/circuits-settings.md, the schema's `entities`, `seconds` and `returns`. Test: tests/d28_batch316.lua (a
+  10-tick clock, pumps on C < 1 and C < 2 enabled the tick after, the clock stopped 100 ticks: 9.4% and 18.9%, runs,
+  the stop as a 109-tick disabled run and a window of 0, the 60-tick watch reading C = 0 at every sample, bounds,
+  capped histograms, an entity gone).
+
+## d28 batch325 (IC, Astra #2717: a complete item count across belts and robot cargo; an indeterminate residual)
+
+Astra's supply read of agricultural science on Nauvis counted 10000 of 19304 belts and 4096 of 7523 robots. Its
+residual of +208 was then given as "spoiling ... or what left uncounted", although the census had left out the
+holders past its caps.
+
+- **Why the caps exist.** supply reads a whole surface in one call, in one tick (supply.lua: 2048 crafters, 1024 labs,
+  5000 chests, 10000 belts, 8192 inserters, 4096 robots, and one find of at most 40000 entities); `counted` says
+  where a scan stopped. They stay as they are.
+- **The residual (spoilflow.lua).** supply passes its coverage (`supply.coverage`: holders counted of those the find
+  saw; "at least" where a platform's per-group find was itself capped) to the residual. A measure whose count then or
+  now left holders out has no residual and no uncounted, only `indeterminate (N of M holders counted: ...)`. Its held
+  counts read "at least", and it names no cause. dependency.lua reads no rate from it; fuel_budget's and pack_audit's
+  spoiling text quotes it as indeterminate.
+- **supply {item, count_all: true} (itemcount.lua).** One item's complete count on every belt of ours and in every
+  flying robot's cargo on a surface, read in the background a page every 5 ticks, one count at a time:
+  - Belts: walk.lua's bands over the box where we built (up to 4 band finds a step), each belt read with
+    get_item_count(item), up to 1500 a step. On the copy this equals the transport lines' counts, with an
+    underground's buried lines counted once.
+  - Robots: each logistic network's logistic_robots, then its construction_robots, one list a step. The list's size
+    is all less available robots, known before reading, and a list over 8000 is left out and said. Cargo is read
+    2000 a step.
+  - Replies: "started", "counting" (phase, progress), then "done" with total, belts, robots, complete, coverage,
+    line, and pages ("tick N belts|robots R read C") from first_tick to last_tick. Each page is read at its own tick.
+- **Measured** (iMac copy of world n's newest autosave, loaded at tick 78529013, and read-only probes on n):
+
+  | | Copy | n |
+  |---|---|---|
+  | Heaviest belt step (4 band finds, 1500 belts) | 4.5 ms | 5.6 ms |
+  | Network 243's robot list | 2.5 ms (4747 robots) | 5.9 ms (5677 robots) |
+  | 1000 cargo reads | 1.3 ms | 1.2 ms |
+
+  - A whole Nauvis count on the copy: 77 belt steps (64 ms in all, 222 bands over 6432 chunks, 19304 belts read,
+    which is every belt the engine counts) and 15 robot steps (7.7 ms). It took 390 ticks running.
+  - With every page read at one paused tick, it gave iron plate 4778 on belts and 1288 in robots, equal to a full
+    count of every belt and every listed robot at that tick.
+  - Running, the pages over ticks 78534020-78534390 read 4648 and 1274.
+- **Test:** tests/d28_batch325.lua:
+  - a truncated census marks the residual indeterminate, then or now, with no cause named;
+  - coverage counts holders counted of those the find saw;
+  - a paginated count equals the full one, with each step within its finds, belt reads, one list and cargo reads;
+  - a network past the list bound is left out (complete false);
+  - count_all is refused with other reads, and a surface with no box is said.
+## d28 batch320 LP: who ordered a launch, and the request then (Sol #2711)
+- Measured on the iMac copy (world n's save, a test platform T320 at Vulcanus, automation packs supplied from one
+  chest, a level-script recorder of on_rocket_launch_ordered): a hub lacking L = min - (holds + on the way) gets
+  max(L, payload) (payload: the custom minimum payload), cut into rockets of up to a rocket's lift; the last carries the
+  rest. Lacking 2683 with payload 1000: 1000, 1000, 683 (Lark's 683 and 583); lacking 1500: 500 then 1000; lacking 18
+  with payload 100: one rocket of 100 (the hub goes past its min). The max is not a cap (a 100 went with room for 50).
+  A rocket waits until it holds its share (a 976 waited with the network empty); removing the request unloads it; the
+  platform leaving unloads it. The game's launch event names a player only for a player's launch: the silo's own and a
+  script's launch_rocket both carry none.
+- ledger.lua: each launch records `ordered` (space.lua's launch marks the silo and tick: `harness launch by NAME`;
+  `player NAME`; else `automatic (or a script: the game names no player)`) and `request` rows per cargo item {item,
+  min, max, payload, holds, on_the_way, rockets, this} (podlog.lua `on_the_way`: rockets sent to the platform and not
+  landed). shipment {ledger, surface} adds `launches` (the platform's with platform, the newest 16) and the line text
+  adds max, minimum payload, on the way and the total with this rocket.
+- Test: tests/d28_batch320.lua (fails on main: no on_the_way).
+
+## d28 batch327 (AG, Sol #2719: a per-tick ammo arrival-gap watch)
+
+Sol's report: "Resolute bow railgun emptied for271ticks despite global rail>1600. Independent ~0.64s inspect polls show
+feeder WAITING_SOURCE with empty hand and no rail on pickup, but miss short arrivals; native flight_watch only samples
+turrets1s."
+
+- **The watch.** `signal_watch {triples: [{turret, inserter, pickup?, ammo?}], seconds: 10..120, platform | surface}`.
+  It is a third mode of signal_watch, on batch316's duty watch: one watch an agent, ended and freed at its end, or
+  when every triple is gone.
+- **What it reads, every tick, per triple (1..4):**
+  - the turret's ammo inventory (every item in it);
+  - the inserter's held stack and status;
+  - the pickup's count of the ammo (get_item_count; on a belt the transport lines' count). The pickup is the
+    inserter's pickup_target unless named: a belt, chest or hub. The ammo is what the turret holds, else the one ammo
+    its categories take, else it must be named. Quality is normal unless the turret held another.
+- **The reply, per triple:**
+  - turret_empty, no_source (waiting_for_source_items with an empty hand) and pickup_none, each with ticks, longest
+    {ticks, from_tick, to_tick, began_before, still}, runs by length (24 kept, the rest as other), open_end,
+    transitions, and the first and last 8;
+  - min and max with their ticks for turret_ammo, hand and at_pickup;
+  - inserter_status ticks;
+  - context: turret_ammo_slots, ammo_stack_size, automated_ammo_count (what inserters fill it to),
+    inserter_stack_size_override, pickup_kind, pickup_slots, pickup_lines;
+  - a line.
+- **Measured** (iMac copy of world n's newest autosave, loaded at tick 78637040; four bow railguns on Resolute, each
+  fed by a bulk inserter from a fast belt, 60 s):
+  - 0.048 ms a tick on average, the worst game second 3.77 ms over 56 ticks (0.07 ms a tick);
+  - a start 3.6-4.4 ms and a read 3.3-4.0 ms in dispatch, against 2.6 ms for uptime;
+  - the finished reply encodes to 17 KB of JSON in 2.0 ms.
+  - What it saw there: no turret empty (ammo 8-10, automated_ammo_count 10). No-source runs of up to 79 ticks. The
+    belts at the pickups were empty for 1638-1685 of 3600 ticks, in runs of 2 to 288 ticks.
+- **Test:** tests/d28_batch327.lua: a 271-tick empty turret, the no-source runs split by one rail held, and a one-tick
+  arrival at the pickup, each with its start tick; each read once a tick; runs cut at the start or end; a gone turret
+  ends it; the bounds.
+
+## d29 batch332 (RT, Sol #2734: what each railgun shot was aimed at)
+
+Sol's report: "Native hit_by classes cannot identify which asteroid a round was aimed at; medium58%hits does not
+imply58%ammo or target-filter savings. Need safe evidence before changing targets." Read only: nothing changes in the
+world or the targeting.
+
+- **The watch.** `platform_defense {platform, aim: true, seconds: 10..120, positions?, reason?}` (railaim.lua) starts
+  it; `platform_defense {aim: true}` reads it. `positions`: 1..8 railgun positions (the nearest railgun within 2
+  tiles of each), else the first 8 railguns by position, north first (`picked`, `railguns_total`). One watch an
+  agent; a new one replaces it; kept an hour after its end.
+- **What 2.0.77 gives** (the iMac copy of world n's _autosave11, tick 80.26 M, Resolute on its Aquilo-to-edge leg, 32
+  railguns, a level-script recorder every tick for 20 s: 27 shots):
+  - a shot: the railgun's ammo inventory one item less and its 10 MJ buffer emptied, seen by the next tick's read; an
+    inserter refilling in that tick can hide the item, so a buffer drop of more than half its capacity counts too;
+  - `shooting_target` already reads nil on the tick the shot is seen, and the target read the tick before is invalid
+    (it died), so each railgun's target (unit number, name, position) is kept from every read;
+  - on_entity_damaged on asteroids names the railgun as `cause` (its unit number), on the tick before the shot is
+    seen; one shot hits everything on its line at once.
+  - In 27 of 27 shots the kept target was among that shot's hits, and every railgun hit belonged to a shot.
+- **Per shot:** `exact` when the kept target is among the shot's hits (`aimed_by_size`, `aimed_killed`,
+  `aimed_survived`); its other hits are collateral (`collateral_by_size`, `collateral_killed`); `uncertain` when no
+  target was kept (`no_target`) or the kept one is not among the hits (it changed target within the tick, or missed;
+  `aimed_not_hit_alive` when it lived on). `unattributed`: hits on no seen shot. `recent`: the last 24 shots with tick,
+  aimed name and position, attribution, collateral names. `ammo_used`: items that left its ammo slots at a shot.
+- **Not given:** the game's reason for a target choice; shots of railguns not watched.
+- **Measured** on the copy:
+  - 8 railguns for 55 s: `rail_aim.tick` 0.044 ms a tick on average, the worst game second 3.19 ms (0.053 ms a tick);
+    the damage hook is one table lookup a railgun hit;
+  - the start's own work, profiled part by part over 25 starts: 0.9-2.0 ms (the platform 0.04-0.09 ms, the find by
+    name 0.4-0.9 ms, the sort 0.3-1.0 ms before its positions were read once, the rows and first read under 0.2 ms);
+  - in dispatch as the bot, 30 of each alternating (cp2): a start median 4.4 ms (90% within 7.8, longest 15.2), a read
+    median 4.5 ms (90% within 9.0, longest 92.2), `signal_watch {}` median 5.9 ms (longest 16.1); `status` 18.9-21.4
+    ms. The long ones come in every kind of call, a read and signal_watch included, with the start's own parts at their
+    usual 0.95 ms in the one profiled (12.6 ms): they are the dispatch path's, not this watch's; no first-call warm-up
+    (a start as the first call after a fresh deploy: 4.8 ms);
+  - a 20 s watch of the first 8 railguns: 32 shots, all exact (medium 25, big 6, huge 1, all killed), and 101 hits:
+    69 collateral (small 32, medium 32, big 4, huge 1), all killed; 0 unattributed.
+- **Tests:** tests/d29_batch332.lua (bounds; picks; an exact hit with collateral and a survivor; a retarget within the
+  tick; a shot with no target read; a refill hiding the item; an unattributed hit; other turrets' hits ignored; a
+  railgun removed; freed after its keep time).
+
+## d29 batch329 (PR, Astra #2727: a partial-return endurance budget for deep flights)
+
+Astra's report: "Resolute21 earlyturned~29k because deep phase railNET28.63/min invalidated older10min17.4 rate;
+manual Sol budget caught it. platform_endurance route [edge,Aquilo] while flying edge->SP rejects route starts behind
+ship ..."
+
+**`platform_endurance {platform, turnaround: {km | fraction, back_to?, speed_floor?, margin?, reserve?}}`**
+- **The turn:** a ship in flight read as a partial return. From where it is, it goes `km` farther along the connection
+  it flies (or to the turn point at `fraction` of the connection from its start), back along it to its start, then
+  on to `back_to` (default that start).
+- **The legs:** the turn's legs are the route: out, back, on. No route, design or forecast goes with it. A turn
+  behind the ship, or past the connection's end, is refused with the distances.
+- **return_budget, per item:**
+  - the stock that reaches it, as the read counts it (stranded ammunition apart);
+  - the net use: the worse of the current phase (this leg so far from freight's counts; for ammunition also its moving
+    phase) and the last 10 minutes, both given (`net_phase`, `net_10min`, `phase_from`);
+  - at the planning speed (`speed_floor` km/s when below the speed read), with `margin` (default 0.1) and `reserve`:
+    `out_km_max = ((stock - reserve) / (1 + margin) / net x speed - flown - back) / 2`, `lasts_min`, and for the planned
+    turn `spare_km` and `left_at_return`.
+  - `binds`: the item that binds first. An item made at least as fast as it is used binds nothing.
+- **Read only:** facts; no floor is lowered and nothing is changed.
+
+**`wait_until {until: "budget_below", platform, turnaround, km}`**
+- Met once the binding item's `out_km_max` is under `km`.
+- The budget is read at most every 600 ticks (`BUDGET_EVERY`); between reads the last reading stands, and its tick is
+  said.
+
+**Checked:**
+- **By hand** (tests/d29_batch329.lua). Resolute at 4969 km/min (4,000,000 km in 13h25m), 20,000 km flown,
+  railgun ammunition 1741 aboard, 1500 kept, margin 10%:
+  - 241 / 1.1 = 219.09 usable, lasting 219.09 / 28.63 = 7.65 min, so 38,025 km;
+  - the turn 9,012 km farther, at about 29,012 km, 488 km short of a planned 9,500;
+  - at the 10-minute 17.4/min alone it would read 21,283 km, more than twice as far.
+- **On the iMac copy of world n's newest autosave** (tick 80,958,348):
+  - Resolute returning edge->Aquilo, a 5,000 km turn: railgun ammunition binds first.
+  - The read takes 9.3-9.5 ms with a turnaround and the same without one, so the budget adds nothing measurable; the
+    plain read is 7.07 ms on n (tools/read_cost.py).
+  - `budget_below` on Kestrel IVa was met under 30,000,000 km and held under 10 km.

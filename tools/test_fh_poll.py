@@ -88,7 +88,7 @@ def main():
         inbox = os.path.join(run, "operator-inbox.jsonl")
         rows = [json.loads(l) for l in open(inbox)]
         assert rows == [{"t": NOW - 50, "agent": "viewer idea fan", "text": "poll idea: Trains? | 0. yes; 1. no | 6 h", "viewer": True,
-                         "source": "site", "poll_idea": True}], rows
+                         "source": "site", "poll_idea": True, "rid": "idea:3"}], rows  # (batch323: written once by rid)
         assert json.load(open(os.path.join(d, "runs", "poll-ideas.json"))) == {"after": 3}
         relay.next_ideas = 0
         relay.step()
@@ -128,7 +128,8 @@ def main():
         code, out = fh(["suggest", "--args", '{"question":"Rail or bots for ore?","options":["rail","bots"],"hours":12}'], ws, relay)
         assert code == 0 and "filed in the operator inbox" in out, out
         last = json.loads(open(inbox).readlines()[-1])
-        assert last == {"t": NOW, "agent": "grok", "text": "poll idea: Rail or bots for ore? | 0. rail; 1. bots | 12 h", "poll_idea": True}, last
+        assert {k: v for k, v in last.items() if k != "rid"} == {"t": NOW, "agent": "grok", "text": "poll idea: Rail or bots for ore? | 0. rail; 1. bots | 12 h", "poll_idea": True} \
+            and last["rid"].startswith("grok:"), last
         # JSON output
         code, out = fh(["--format", "json"], ws)
         assert json.loads(out)["ok"] is True and json.loads(out)["result"]["open"][0]["id"] == 1

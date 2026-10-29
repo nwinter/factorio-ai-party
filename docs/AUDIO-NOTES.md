@@ -1587,3 +1587,69 @@ and compare a few real clips."
 - **Cost:** 8 exchanges on shift58's events, with claude-opus-5.5 through OpenRouter, twice with each prompt. Writer
   cost $0.0242 → $0.0267 an exchange (+10%, about $0.0012 a line); latency 2.6 → 3.7 s (worst 3.1 → 5.4 s). The
   directions averaged 11 words (68 characters, about 20 output tokens a line); 16 of 16 lines had one.
+
+## d28 batch319: narrated pieces hold the routine lines; replies said whole (viewer Aurora site:5401, site:5412)
+
+**What happened** (shift92 and shift93, from audio-played.jsonl and the hourly tour logs). Three hourly pieces aired
+each shift, two narrated stops each.
+- **Narrations started over a playing Operator clip** (ducked under it to 0.2 for the rest of the clip): 1 in
+  shift92 (5.9 s left) and 2 in shift93 (3.6 s and 12.6 s left).
+- **Operator clips expired unplayed** (skip, 60 s): 0 in shift92, 2 in shift93 (8.2 s and 15.9 s long, 78 s after
+  they were posted, behind two narrated stops). The page blocks queued clips while a timed clip plays, and their
+  expiry kept counting.
+- **Pieces split by a routine line:** none played between two stops. One piece (shift93 14:01) held a stop open 8.2 s
+  for the Operator line (tour.py agent_gap), and that line still expired.
+- **Host clips skipped as stale:** 2 in shift92, 5 in shift93.
+- **Text cuts:**
+  - Operator reply parts (up to 500 bytes each, tools/opreply.py) were voiced through `speakable(text, 300)`.
+  - TalkPicker voiced the first part of a long aloud say and dropped the agent's other waiting lines, the later parts
+    among them.
+  - A provider's max_chars sliced the line after pronunciation markup.
+
+**The segment hold** (static/audio.js, serve.py, tour.py, hourly.py):
+- **What holds:** an hourly piece is one segment. Its clips carry `segment` {id, part, parts}. From the first part's
+  arrival until its last part has played, no queued clip starts.
+- **Urgent lines:** rank urgent (caster priority 8 and up: attack, death, loss; space beats) may go between two
+  parts, never over one.
+- **Release:** the hold ends on the last part's end, cut, error or skip; on a `release` event (POST /audio/release,
+  sent by the tour at its end or early stop); `?holdgap` 15 s after the last known part should have ended; or
+  `?holdmax` 240 s after it opened. Nothing stays muted.
+- **Waiting lines:**
+  - An agent's, the operator's or a viewer answer's clip keeps its place. The time it was held is added to its expiry
+    (`?holdextend`, at most 120 s), and it plays after the piece.
+  - Host banter gets no extension and drops when stale, as before.
+  - The skip report says why: expired, late or cancelled; the log keeps the reason.
+- **No duplicates and no loss on reload:** a page that connects is sent the clips still queued (not started, done or
+  expired; a timed one under 2 s past its moment). The page takes each id once.
+- **A playing line is not ducked:** the first cut of a piece waits for the voice line playing now to end (at most
+  20 s, FIRST_WAIT_MAX_S). No stop is held open for a waiting line any more (agent_gaps off under a segment).
+- **Interrupted pieces resume:** a piece ended early (a look, the host view, a battle, with one camera a fresh attack,
+  loss or death) airs its stops not yet played once more, when nothing blocks it, within its 600 s age, as the same
+  segment.
+- **Restart:** after a service restart the page's own queue fails over as errors, which end its hold. A reloaded page
+  starts with no hold and gets the queued lines replayed.
+
+**Text said whole:**
+- **Operator replies:** each part is said whole, without its "@Name (k/n) Operator:" heading. Past 600 characters
+  (more than a part holds), it goes as consecutive clips (`voices.speakable_parts`); nothing is left out.
+- **Aloud says:** a long aloud say's parts are voiced in order, the next part first and past the team gap, the
+  agent's cooldown and --chat-stale (up to 300 s). They are no longer marked repeats of each other.
+- **Provider limits:** never a slice. Past max_chars the shorter respellings are tried, else a TTSError, so TTS.speak's
+  fallback says the same whole text with another provider.
+- **Intentional cuts are labelled:** a chat line said in part (near --max-chars) is an excerpt. The clip carries
+  `excerpt` {said, of}, the caption ends "(excerpt)", and the record keeps what was left out.
+- **Unicode:** speakable() still drops symbols (emoji). Letters in any script and punctuation stay (test: "Zürich
+  café, naïve ... — end of message.").
+- **Narration:** tour and hourly narration had no cap; only their captions are short.
+
+**Tests:**
+- tools/stream/test_segmenthold.py, with segment_audio_selftest.mjs (the page in Node):
+  - a burst during a two-part piece, an urgent line between parts;
+  - operator held past expiry plays, banter drops;
+  - release, a failed last part and a timeout each end the hold;
+  - a clip sent twice plays once, and a reloaded page plays the replayed lines once each;
+  - the service's replay, release and skip reasons;
+  - the tour's segment parts, first-cut wait and release.
+- tools/stream/test_hourly.py: an interrupted piece resumes its unaired stop as the same segment.
+- tools/stream/test_spokenwhole.py: a distinctive last sentence through an operator reply's parts, a 5-part aloud say,
+  the provider limit and fallback, the excerpt label, and the clip the page gets (replayed once).

@@ -8,68 +8,65 @@
   reactor's fuel cells go in and out as any burner's; a roboport's robots come out with `{position, direction:
   "to_player", item: "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup
   {belt: true}`.
-  - `item: "name@quality"` (`"iron-plate@uncommon"`) is item and quality in every action that takes quality (transfer,
-    collect, feed, stock, build and its entries, use_item, wait_until; entries of requests `set`, drop and load_silo
-    `items`); an action without quality refuses it, naming quality. transfer refuses a name that is no item.
   - `to_player: "haiku"` hands items to a teammate within your reach: dropped at its feet as loot its character picks
     up (`players` gives teammates' positions).
-  - Two places in one call: `{position, to, item, from_inventory, to_inventory}` takes at `position` and gives at
-    `to`, each end its own inventory (a machine's `assembling_machine_output` into another's
-    `assembling_machine_input`); a take not reached ends `unreached`, nothing given. `{from: {x,y}, to: {x,y}, item,
-    count}` too, `inventory` going with the place that has it (a silo's cargo at `to`).
-  - `from: "nearest"` (with `item`; `radius` up to 256 to walk; `walk: true` alone looks 32 tiles) takes from the
-    nearest of our chests holding it now and says which; a `count` it lacks comes from the next ones (up to 16), and
-    one holding it all, no farther, goes alone (chests holding less than the count ahead of it: `skipped_small`). A
-    spoilable item comes from the freshest chests first, then the nearest. Chests that feed something (requester and
-    buffer chests, a chest an inserter takes from) only with `feeding: true`; walking, none in a worm's reach; a chest
-    you put that item into by hand in the last 10 minutes neither (named by position it is taken from); each left out
-    is named. A walking take from chests holding none of it now is refused before the walk, naming the
-    nearest holding it. With `to` (and `to_inventory`) it is a courier straight to that machine, freshest stacks
-    first, and takes from a chest feeding `to` itself.
-  - `to: "nearest_room"` (with `item`, `count` default all you hold, `radius` up to your reach, `chest` a name or
-    names): into our chests in reach with room for it, the nearest first, each filled before the next; `chests` and
-    `line` say which took how much and what was not placed.
-  - `pick: "first_with_stock" | "most_stock"` with `positions` and `item` or `items` (collect too) takes at one listed
-    place holding it now (empty ones `skipped`, not short; none: nothing walked); `to` (`{x,y}` or `{item: {x,y}}`)
-    carries it on to that destination in the same call. `dry_run: true` on such a courier gives `courier`, a preview:
-    the source and what it holds (robots' reservations), the destination and its room, how many would move; a
-    requester or buffer source's own request (`spare`: how many can leave it with its request still filled), the
-    destination's request and what robots bring each side now, and when the first stack spoils or hatches. Tour stops end once
-    within transfer reach of the entity (a silo, a pad), as `move_to {target}` does.
-  - `steps: [{take: [{x,y}, ...], item, count?}, {give: [...], item, split?: "even" | "fill", count?}]` chains takes
-    and gives in one walking call, in order (32 chests at most). The first leg that fails or is not reached ends it:
-    `last.chain_held`, `last.chain_left`; `on_fail: "return"` walks what it took back to where it came from.
-  - `via: [{"x":30,"y":5}]` walks those points first; a walking transfer's `last.route` gives where it started, each
-    via point and stop as reached, and the tiles walked.
-  - Robots bring items to you: `requests {set: [{item, min}]}` with no position sets your own logistic requests, and
-    the logistic robots of the network you stand in bring them to your inventory while you stay in its logistic area
-    (Opus, shift35 131h: copper-plate 28 to 500 in about 80 s; advanced-circuit 38 to 304 in 2 min, 3.5 a second).
-    The reply's `unfilled` says per item what you hold, what is on the way and why the rest is not coming (no network
-    where you stand, no logistic robots, none free in the network). `clear: ["item"]` ends one and keeps what came.
-    A sleep or wait that ends early gives `personal_requests`. `./fh wait --until "item_count copper-plate>=500"` waits
-    for it. Example: `./fh call requests --args '{"set":[{"item":"steel-plate","min":200},{"item":"concrete","min":500}]}'`
-  - Personal requests: what you take over a request's max goes to your trash slots (`trash` says how much; collect and
-    pickup too); `up_to: true` stops at the max, `keep_max: true` refuses the take. A courier over a max says how much
-    would arrive (`personal_logistics`, the dry run's `arrives`); `personal_logistics: "pause"` switches your requests
-    off for the move.
-  - Spoilage: `fresh_first: true` (`fresh: true` on a courier) takes the least spoiled stacks first on any take or
-    give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail, on a
-    courier (`positions` and `to`) too. The reply gives `freshness` (the moved stacks' spread) and `left_less_fresh`
-    (what the filter left where it was, e.g. "200 left where they were: less than 50% spoiled (the least spoiled
-    20%)"); a timed one in `last`.
   - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
     direction; `amount`, `quantity` are `count` (the reply's corrected line shows the call as it ran).
   Example: `./fh call transfer --args '{"position":{"x":15.5,"y":59.5},"direction":"to_entity","item":"rocket-fuel","count":50}'`
+- `transfer`, quality: `item: "name@quality"` (`"iron-plate@uncommon"`) is item and quality in every action that takes
+  quality (transfer, collect, feed, stock, build and its entries, use_item, wait_until; entries of requests `set`,
+  drop and load_silo `items`); an action without quality refuses it, naming quality. transfer refuses a name that is
+  no item.
+- `transfer`, two places: `{position, to, item, from_inventory, to_inventory}` takes at `position` and gives at `to`,
+  each end its own inventory (a machine's `assembling_machine_output` into another's `assembling_machine_input`); a
+  take not reached ends `unreached`, nothing given. `{from: {x,y}, to: {x,y}, item, count}` too, `inventory` going
+  with the place that has it (a silo's cargo at `to`).
+- `transfer`, from nearest: `from: "nearest"` (with `item`; `radius` up to 256 to walk; `walk: true` alone looks 32
+  tiles) takes from the nearest of our chests holding it now and says which; a `count` it lacks comes from the next
+  ones (up to 16), and one holding it all, no farther, goes alone (chests holding less than the count ahead of it:
+  `skipped_small`). A spoilable item comes from the freshest chests first, then the nearest. Chests that feed
+  something (requester and buffer chests, a chest an inserter takes from) only with `feeding: true`; walking, none in
+  a worm's reach; a chest you put that item into by hand in the last 10 minutes neither (named by position it is taken
+  from); each left out is named. A walking take from chests holding none of it now is refused before the walk, naming
+  the nearest holding it. With `to` (and `to_inventory`) it is a courier straight to that machine, freshest stacks
+  first, and takes from a chest feeding `to` itself.
+- `transfer`, nearest room: `to: "nearest_room"` (with `item`, `count` default all you hold, `radius` up to your
+  reach, `chest` a name or names): into our chests in reach with room for it, the nearest first, each filled before
+  the next; `chests` and `line` say which took how much and what was not placed.
+- `transfer`, pick: `pick: "first_with_stock" | "most_stock"` with `positions` and `item` or `items` (collect too)
+  takes at one listed place holding it now (empty ones `skipped`, not short; none: nothing walked); `to` (`{x,y}` or
+  `{item: {x,y}}`) carries it on to that destination in the same call. `dry_run: true` on such a courier gives
+  `courier`, a preview: the source and what it holds (robots' reservations), the destination and its room, how many
+  would move; a requester or buffer source's own request (`spare`: how many can leave it with its request still
+  filled), the destination's request and what robots bring each side now, and when the first stack spoils or hatches.
+  Tour stops end once within transfer reach of the entity (a silo, a pad), as `move_to {target}` does.
+- `transfer`, steps: `steps: [{take: [{x,y}, ...], item, count?}, {give: [...], item, split?: "even" | "fill",
+  count?}]` chains takes and gives in one walking call, in order (32 chests at most). The first leg that fails or is
+  not reached ends it: `last.chain_held`, `last.chain_left`; `on_fail: "return"` walks what it took back to where it
+  came from.
+- `transfer`, via: `via: [{"x":30,"y":5}]` walks those points first; a walking transfer's `last.route` gives where it
+  started, each via point and stop as reached, and the tiles walked.
+- `transfer`, robots bring: `requests {set: [{item, min}]}` with no position sets your own logistic requests, and the
+  logistic robots of the network you stand in bring them to your inventory while you stay in its logistic area (Opus,
+  shift35 131h: copper-plate 28 to 500 in about 80 s; advanced-circuit 38 to 304 in 2 min, 3.5 a second). The reply's
+  `unfilled` says per item what you hold, what is on the way and why the rest is not coming (no network where you
+  stand, no logistic robots, none free in the network). `clear: ["item"]` ends one and keeps what came. A sleep or
+  wait that ends early gives `personal_requests`. `./fh wait --until "item_count copper-plate>=500"` waits for it.
+  Example: `./fh call requests --args '{"set":[{"item":"steel-plate","min":200},{"item":"concrete","min":500}]}'`
+- `transfer`, personal requests: what you take over a request's max goes to your trash slots (`trash` says how much;
+  collect and pickup too); `up_to: true` stops at the max, `keep_max: true` refuses the take. A courier over a max
+  says how much would arrive (`personal_logistics`, the dry run's `arrives`); `personal_logistics: "pause"` switches
+  your requests off for the move.
+- `transfer`, spoilage: `fresh_first: true` (`fresh: true` on a courier) takes the least spoiled stacks first on any
+  take or give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail,
+  on a courier (`positions` and `to`) too. The reply gives `freshness` (the moved stacks' spread) and
+  `left_less_fresh` (what the filter left where it was, e.g. "200 left where they were: less than 50% spoiled (the
+  least spoiled 20%)"); a timed one in `last`.
 - `collect {positions | area | radius, item?, count?, chests?, outputs_only?, wait_ticks?, follow?, min_fresh?}`:
   takes machine outputs; chests only when you name their positions or pass `chests: true`. `radius` without `item`
   takes every assembler and furnace output in it (output slots only); with `item` it walks to the outputs and chests
   holding it until `count`. `outputs_only: true` never takes fuel, inputs or burnt results. `min_fresh: 70` takes only
   stacks at least 70% fresh (`left_less_fresh` says what stayed).
-  - `pods: true` walks the landed cargo pods on your surface (those `pods` lists, else those within 64 tiles; `area`:
-    those there), nearest first, taking what each holds up to your free slots; `to: {x,y}` (a chest) gets what it took
-    each time your inventory is full, then it goes back for the rest, and at the end. `last.items` (taken),
-    `last.given`, `last.pods_left`, `last.items_left` and `last.pods_line`; the walk and enemy checks are the tours'.
-    Example: `./fh call collect --args '{"pods":true,"to":{"x":10.5,"y":170.5}}'`
   - `wait_ticks` at a machine's position stands there and takes each product the tick it appears (`count` stops
     early): `last.took`, `last.made` and `last.inserters_took` (counted) say who got what, `last.why` why it took
     none, and `taken_by_inserters` which inserters take the output and the chest they fill. `follow: true` takes from
@@ -84,11 +81,16 @@
     `last.taken_back`). A breeder cycle in one call: `{"position":{"x":7.5,"y":20.5},"give":{"nutrients":30,"pentapod-egg":1},"item":"pentapod-egg","wait_ticks":1800,"take_back":["nutrients"]}`.
   - `wait_ticks` or `keep_taking`: the call returns when the collect ends, with or without `--wait`, its outcome the
     exit status; `--no-wait` returns at the start (`until_tick`).
-  - A haul from several chests into one: a queue plan of a walking collect over the chests, then a walking transfer
-    into the chest (each step a timed tour with the tours' enemy checks; the plan stops at a step that fails), e.g.
-    `./fh call queue_submit --args '{"steps":[{"action":"collect","args":{"positions":[{"x":-40.5,"y":12.5},{"x":-44.5,"y":12.5}],"item":"tungsten-ore","walk":true}},{"action":"transfer","args":{"position":{"x":10.5,"y":3.5},"item":"tungsten-ore","direction":"to_entity","walk":true}}]}'`;
-    from one chest: `pick` with `to` (above) in one call.
   Example: `./fh call collect --args '{"positions":[{"x":10.5,"y":3.5}],"wait_ticks":1800,"count":20}'`
+- `collect`, pods: `pods: true` walks the landed cargo pods on your surface (those `pods` lists, else those within 64
+  tiles; `area`: those there), nearest first, taking what each holds up to your free slots; `to: {x,y}` (a chest) gets
+  what it took each time your inventory is full, then it goes back for the rest, and at the end. `last.items` (taken),
+  `last.given`, `last.pods_left`, `last.items_left` and `last.pods_line`; the walk and enemy checks are the tours'.
+  Example: `./fh call collect --args '{"pods":true,"to":{"x":10.5,"y":170.5}}'`
+- `collect`, hauls: a haul from several chests into one is a queue plan of a walking collect over the chests, then a walking transfer
+  into the chest (each step a timed tour with the tours' enemy checks; the plan stops at a step that fails), e.g.
+  `./fh call queue_submit --args '{"steps":[{"action":"collect","args":{"positions":[{"x":-40.5,"y":12.5},{"x":-44.5,"y":12.5}],"item":"tungsten-ore","walk":true}},{"action":"transfer","args":{"position":{"x":10.5,"y":3.5},"item":"tungsten-ore","direction":"to_entity","walk":true}}]}'`;
+  from one chest: `pick` with `to` (above) in one call.
 - `feed {positions | area | radius, item | items?, recipe?, crafts?, fuel?, count?, keep?}`: tops up every machine in
   reach (or in `radius`, a walking tour; `position` its centre) from your inventory: an assembler or furnace its
   recipe's ingredients, a lab its science packs, a burner fuel when its fuel slots are empty or with `fuel` (`true` or
@@ -209,3 +211,5 @@
   (16.5,23.5)`). `./fh help transfer` shows calls that work; an argument refusal ends with one built from your call
   (`launch`'s with the silos there).
 - A burner's fuel slot holds one fuel type: you cannot add coal while wood remains.
+- A hand-crafted science pack takes your character's crafting time; an
+  assembler making it does not.

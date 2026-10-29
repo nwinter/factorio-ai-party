@@ -74,6 +74,7 @@ def main():
         assert updates.stage(u) == updates.when("2026-10-25 12:00")
         # due: open rows past their review or with none, oldest asked first; not live, not the one reviewed for the 30th
         lines = ok("due", "--now", "2026-10-26 10:30").splitlines()
+        lines = lines[:next(i for i, x in enumerate(lines) if x.startswith("follow-ups:"))]  # (batch322) the rows' section
         assert lines[0] == "due: 2 of 3 open rows at 2026-10-26 10:30 (next review passed or none), oldest asked first", lines
         assert lines[1].split()[0] == "old-ask" and lines[2].split()[0] == "new-ask", lines
         assert ("[Aurora site:4400]  priority normal  owner engineer batch233  planned  changed 22 h 30 min ago"

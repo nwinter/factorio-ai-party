@@ -22,6 +22,7 @@ import pacing
 import waitcard
 import workcard
 import viewer_replies
+import stories as stories_mod
 import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
@@ -66,6 +67,10 @@ def research_units(used):
 
 HISTORY_S = 60  # game seconds: a line in the first chat read (the backlog at a restart) older than this is history
 CHAT_LOG_TAIL = 4 << 20  # bytes of runs/RUN/chat.jsonl read for restored lines' times (about 15000 lines)
+# (d28 batch309, viewer Aurora 09:38: "Could viewer chat retain replies as long as their prompts remain, across shifts and
+# reloads?") the replies kept (RUN/viewer-replies.jsonl, read back across REPLY_RUNS_BACK runs at a start; /replies.json
+# for push_live, which sends them to the site's reply store) and the newest REPLY_STATE in the state
+REPLIES_KEEP, REPLY_RUNS_BACK, REPLY_STATE = 400, 6, 40
 MAIDEN_STALE_S = 120  # game seconds: a platform_left read later than this (a restart catching up) is not shown
 # (d26 batch239 NP) game seconds: a platform first listed whose chronicle creation is older than this (a shift) gets
 # its hub now (a record waiting for its starter pack), said so instead of "new"
@@ -843,6 +848,44 @@ class Model:
             self.links_mtime, self.links = m, links
         return self.links
 
+    def set_reply_store(self, path):
+        """(d28 batch309) RUN/viewer-replies.jsonl: the replies this run and the REPLY_RUNS_BACK runs it resumed from kept
+        (a later record of a seq over an earlier one), the newest REPLIES_KEEP, read back as they were made (each with
+        its own time: unchanged, so push_live sends none again); each new reply is added to it."""
+        rows = {}
+        for p in viewer_replies.links_files(path, REPLY_RUNS_BACK):
+            for r in viewer_replies.read_rows(p):
+                rows[r["seq"]] = r
+        for r in sorted(rows.values(), key=lambda r: r["t"])[-REPLIES_KEEP:]:
+            self.add_reply(r, keep=False)
+        self.replies_path = path
+
+    def add_reply(self, row, keep=True):
+        """A reply row (viewer_replies.row), once per game seq: a restart's backlog reads lines whose replies are kept."""
+        seq = row.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            if seq in self.reply_seqs:
+                return False
+            if len(self.viewer_replies) == self.viewer_replies.maxlen:
+                self.reply_seqs.discard(self.viewer_replies[0].get("seq"))
+            self.reply_seqs.add(seq)
+        self.viewer_replies.append(row)
+        if keep and self.replies_path and isinstance(seq, int):
+            try:
+                with open(self.replies_path, "a") as f:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            except OSError as e:
+                print(f"[model] {self.replies_path}: {e}", flush=True)
+        return True
+
+    def set_story_store(self, path):
+        """(d28 batch312 B) runs/RUN/stories.json: the operation stories followed (stories.py), kept across a restart."""
+        self.stories = stories_mod.Stories(path)
+
+    def replies_all(self):
+        """(d28 batch309) every reply kept, oldest first (serve.py /replies.json, for push_live's reply store)."""
+        return list(self.viewer_replies)
+
     def __init__(self, run):
         self.run = run
         self.agents = {}
@@ -851,12 +894,16 @@ class Model:
         self.chat = deque(maxlen=200)  # chat_window() picks each lane's latest from here
         # agents' and the Operator's lines that answer a viewer or speak to the viewers (viewer_replies.py; Nick, d15
         # 08:07): the live page's site chat shows them among the viewers' lines, so they outlive the chat window
-        self.viewer_replies = deque(maxlen=40)
+        # (d28 batch309) every reply kept, by game seq (once each), in RUN/viewer-replies.jsonl (set_reply_store): a
+        # restart or the next shift reads them back (the game's chat backlog is only its newest 30 lines)
+        self.viewer_replies = deque(maxlen=REPLIES_KEEP)
+        self.reply_seqs, self.replies_path = set(), None
         self.reply_threads = viewer_replies.Threads()  # a long reply's numbered parts stay in part 1's thread
         # viewers' lines to the Operator, which go to the run's operator inbox, not the game chat (viewer_replies.py):
         # set_inbox; read again when the file changes
         self.inbox_path, self.inbox_mtime, self.inbox_rows = None, None, []
         self.links_path, self.links_mtime, self.links = None, None, {}  # set_reply_links
+        self.stories = stories_mod.Stories()  # (d28 batch312 B) set_story_store keeps them in the run
         self.chat_seen = set()
         self.chat_read = False  # the first chat read (the backlog) is done
         # (d22 batch111 BU1) the operator-read feeds whose backlog is read (an empty read since the start): until then a
@@ -891,6 +938,7 @@ class Model:
         self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.silos = None  # (d26 batch257) launches.SiloFeed's last read (live.py, every poll): the launch shot
+        self.speaker_alarms = None  # (d28 batch326 RA2) harness ALARMS_LUA's last read: alarmquiet.py
         self.vehicles = None  # (d26 batch233 VM) the census's vehicles read {tick, rows, total, t} (live.py, every 10 s)
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
@@ -982,6 +1030,12 @@ class Model:
         for r in obs.get("operator_requests") or []:
             self._ingest_operator_request(r, now)
         self._feeds_read(obs, ("confessions", "tells", "operator_requests"))
+        try:  # (d28 batch312 B) operation stories: the agents' flight watches carried to their results (stories.py)
+            for r in obs.get("watch_reads") or []:
+                self.stories.on_read(r, now)
+            self.stories.update(self, now)
+        except Exception as e:  # noqa: BLE001 (a story's fault never stops the service's read)
+            print(f"[model] stories: {type(e).__name__}: {e}", flush=True)
         if obs.get("research"):
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
@@ -1004,6 +1058,8 @@ class Model:
             self.vehicles = obs["vehicles"]
         if isinstance(obs.get("silos"), dict):  # (d26 batch257) the rocket silos' states: the launch shot (onecam)
             self.silos = obs["silos"]
+        if isinstance(obs.get("alarms"), dict):  # (d28 batch326 RA2) the speaker alarms the camera client hears
+            self.speaker_alarms = obs["alarms"]
         if isinstance(obs.get("turret_state"), dict):  # (d20 batch50 G1) each turret's readiness (turretstate.py)
             self.turret_state = obs["turret_state"]
         if obs.get("basemap"):
@@ -1108,6 +1164,9 @@ class Model:
         who = ag.display_name or w["agent"]
         item = {"id": f"work-{w['agent']}-{w.get('at') or now}", "agent": w["agent"], "action": w.get("action"),
                 "t": now, "platform": w.get("platform"), "position": w.get("position"), "surface": w.get("surface")}
+        for k in ("extent", "what", "verb"):  # (d28 batch312) the box it covers and what it names: the build shot's close-up
+            if w.get(k):
+                item[k] = w[k]
         if w.get("platform"):
             view = self.platform_view(w["platform"])
             if not view:
@@ -1491,7 +1550,7 @@ class Model:
             r = self.reply_threads.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
                                             self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
             if r:
-                self.viewer_replies.append(viewer_replies.row(entry, r))
+                self.add_reply(viewer_replies.row(entry, r))
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))
         if cl:
             self._changelog(cl.group(2).strip(), m.get("tick"), entry["t"], version=cl.group(1))
@@ -2131,6 +2190,7 @@ class Model:
             total = int(m[1]) if m else 1
             if key not in seen or total > seen[key][0]:  # re-reported every poll: the time only moves when it grows
                 seen[key] = (total, now)
+            self.stories.on_loss(e["platform"], key, total, now)  # (batch312 B) lost during a flight watch
             for k in [k for k, v in seen.items() if now - v[1] > 600]:
                 del seen[k]
         if e["kind"] == "loss" and HUB_LOST.search(e["text"]):
@@ -2354,6 +2414,7 @@ class Model:
         # headlines: a platform's first arrival at a planet, the run's first there. Later ones (a ferry's round
         # trips) are an ordinary "arrival" below battles: a headline every trip pulled the hosts off fights.
         for name, planet, came, first, team_first in arrivals:
+            self.stories.on_arrival(name, planet_label(planet), now)  # (batch312 B) a flight watch's ship arrived
             if f"orbit:{name}:{planet}" in fired:
                 continue
             aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == name and a.alive]
@@ -3003,7 +3064,8 @@ class Model:
             "shift": self.run.get("shift"),
             "agents": agents,
             "chat": self.chat_window(),
-            "viewer_replies": list(self.viewer_replies),
+            "viewer_replies": list(self.viewer_replies)[-REPLY_STATE:],
+            "stories": self.stories.public(now),  # (d28 batch312 B) story beats for the director (onecam.maybe_story)
             "operator_requests": list(self.operator_requests),
             # the run's chronicle, newest last: the agents' entries and the events the harness saw (the site's live page;
             # the hosts read a new entry)
@@ -3045,5 +3107,6 @@ class Model:
             "board": self.board_snapshot(),
             "reminders": self.reminders_snapshot(),
             "cameras": cameras or {},
+            "speaker_alarms": self.speaker_alarms,
             "errors": self.errors,
         }

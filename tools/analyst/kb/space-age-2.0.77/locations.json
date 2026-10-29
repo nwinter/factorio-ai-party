@@ -200,26 +200,52 @@
 "name": "quality-unknown"
 }
 ],
-"surface_properties": [
-{
-"default": 300,
-"name": "day-night-cycle"
+"surface_properties": {
+"defaults": {
+"day-night-cycle": 300,
+"gravity": 10,
+"magnetic-field": 90,
+"pressure": 1000,
+"solar-power": 100
 },
-{
-"default": 10,
-"name": "gravity"
+"surfaces": {
+"aquilo": {
+"day-night-cycle": 72000,
+"gravity": 15,
+"magnetic-field": 10,
+"pressure": 300,
+"solar-power": 1
 },
-{
-"default": 90,
-"name": "magnetic-field"
+"fulgora": {
+"day-night-cycle": 10800,
+"gravity": 8,
+"magnetic-field": 99,
+"pressure": 800,
+"solar-power": 20
 },
-{
-"default": 1000,
-"name": "pressure"
+"gleba": {
+"day-night-cycle": 36000,
+"gravity": 20,
+"magnetic-field": 25,
+"pressure": 2000,
+"solar-power": 50
 },
-{
-"default": 100,
-"name": "solar-power"
+"nauvis": {
+"day-night-cycle": 25200
+},
+"space-platform": {
+"day-night-cycle": 0,
+"gravity": 0,
+"magnetic-field": 0,
+"pressure": 0
+},
+"vulcanus": {
+"day-night-cycle": 5400,
+"gravity": 40,
+"magnetic-field": 25,
+"pressure": 4000,
+"solar-power": 400
 }
-]
+}
+}
 }

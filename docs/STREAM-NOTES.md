@@ -1427,7 +1427,8 @@ minute and a half of flight, and the hosts get a card and a headline.
   back for what is left of it. Host view (Nick's own view on air, hostview.py) comes first too: the director takes no
   maiden moment while it is on, and takes it after if it is still within `maiden_late`.
 - One camera (POG_CAMS=1): plain departures and platform visits stay off with one client, but a maiden flight moves the
-  one client to the ship, as a segment does.
+  one client to the ship, as a segment does. (Since d28 batch318 OC plain departures and visits move it too: see "One
+  client's timed shots" below.)
 - Tests: tools/stream/test_maiden.py covers the history along a run chain, a reused name and a rename, the moment
   and what is not one, three cameras and one camera, a departure already on air, a big loss and a segment first, the
   card's facts and camera, the overlay rows, and the hosts' call. vendor/factorio-harness/tests/chronicle.lua covers the
@@ -2480,3 +2481,202 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
 - caster.py's Differ skips `history` chat lines and board events outright (their old `t` already kept them out of
   its 30/60/120 s windows). The site and the overlay sort and mark them by their own time.
 - Test: tools/stream/test_backlog.py. Deploy: a stream service restart.
+
+## Build close-ups, operation stories, engineering highlights (2026-10-28, d28 batch312, viewer Aurora 10:47-10:50)
+
+- **Build shots on large ships (A).**
+  - A build on a platform that names where it lands (its place_ghosts entries, a deconstruct area or a position)
+    opens on the whole ship for 5 s on a first visit. Its caption says where the work is: "Sol placing 5 ghosts (3
+    assembling machine 2, 2 inserter) on Loom · whole ship, the work near the stern, starboard side".
+  - The camera then glides to the work, at a zoom that fits the request's box plus 10 tiles, between 0.6 and 0.9
+    (19-29 px a tile at 1080p). The caption becomes "... on Loom · near the stern, starboard side" (thirds of the
+    hull, bow north). A repeat within 15 min goes to the work at once.
+  - Before this, a first visit always framed the whole ship, and with one client (camera panels, since d28 09:13) no
+    platform build shot aired at all. Builds now air with one client; inspections still need two.
+  - onecam `maybe_work`, `work_close`, `closeup_step`; work.py `extent_of`, `what_of`; tools/stream/test_buildclose.py.
+- **Operation stories (B).**
+  - stories.py follows one agent's flight watching of one ship, across the watches it replaces at each leg. It takes
+    the question and handoff from the board: the setter's item about the ship, who asked for it, who took it.
+  - The result comes from the agent's own read of the watch (lost_count, ended_by, from its journal), else the
+    stream's loss alerts and arrivals. It reads passed, failed or still pending, with the reason. A story ends when
+    the newest watch ends otherwise, waiting up to 2 min for the agent's read.
+  - Two beats, each once: the ship on the main camera with the caption, and the agent in the inset (a camera panel
+    with one client). The result goes back to the spot last built on the ship. The hosts get a "story" beat, facts
+    only.
+  - One story per ship on air per 30 min; the others are followed quietly and only a failure airs. Kept in
+    runs/RUN/stories.json across restarts.
+  - `tools/stream/stories_replay.py runs/RUN` runs a run's journals through it. On shift92: Sol's Lark watch opened
+    08:16:08 and passed 08:20:11 on Sol's read ("arrived at nauvis, nothing lost").
+  - tools/stream/test_stories.py.
+- **Engineering highlights (C).**
+  - A build's close-up on the main camera for 6 s is saved from the OBS replay buffer (12 s from 1 s before it) and
+    kept.
+  - When a later story result on that ship passes (within 3 h), the clip airs as a replay: "Highlight: <the build>,
+    then <the result>", the banner "Replay · highlight" with minutes ago, and the hosts told the payoff.
+  - At most one highlight per 20 min, each once. The replay's urgent cut, spacing and news gates apply as for any
+    replay.
+  - replays.py `watch_highlights`; tools/stream/test_highlight.py.
+
+## One client's timed shots (2026-10-28, d28 batch318 OC, viewer Aurora 15:02, site:5398-5400)
+
+- **What stopped.** The base map, a cloud, a platform in danger, an edge leg's dense asteroids, departures other than
+  a maiden flight and platform visits were each guarded by `n_clients() < 2` (before batch285: `len(self.slots) < 2`).
+  They were written for three clients: a standby framed the shot off air and the program cut to it. The stream has
+  run one client since d27 10:21 (POG_CAMS=1; camera panels since d28 09:13), so none of them aired from then on.
+  Director logs, per hour: three clients d27 00:03-10:21 had map 7.6, visits 7.2, departures 4.0 (and 5.2 in the
+  inset), edge 0.6, danger 0.1; one client d27 10:21-d28 09:13 (22.5 h) had departures 0.09 (two maiden flights)
+  and none of the others; with panels d28 09:13-15:13 none at all. The chronicle had 64-73 departures an hour then.
+- **One-client paths** (`one_client_shots`, on): each of these moves the one client there and back, as it cut with
+  three (`urgent` -> `retarget`, the story resumed after).
+  - The story's agent waits in a free camera panel meanwhile (`away_inset`, inset why "away"; ends when the story is
+    back on air). Without panels (POG_CAMS=1 alone) there is no inset.
+  - Map, cloud and visits wait while the story on air has readable action: a fight, a big action, or its news
+    (`story_action`). Danger and edge are urgent as with three clients.
+  - Departures: news on air `depart_hold`; routine ones on air at most once per 20 min, else in a free panel
+    (`routine_inset`), else not shown, as with three.
+  - Repeats with one client (`one_repeat`, 1 h): a ship's departure within an hour of its last departure or edge shot
+    is routine; its edge entry is not shown (logged). Resolute flew Aquilo to the edge and back about every 20 min on
+    d28.
+  - The base map decays with one client: `map_every` after the last map, doubled for each map in a row that showed
+    the same base map rows, at most `map_decay_max` (1 h); a quiet view's map too.
+  - Visits with one client: at most one per `platform_every`, quiet ones included. The whole ship
+    `visit_overview_s` (7 s; a long ship's pan), then its bow defense in flight (QM1's bow read on a long leg, else its
+    foremost turrets within 12 tiles of the first and the space they reach ahead) and its machinery while machines
+    work (the most working assemblers and furnaces in one frame at zoom 0.7), 7 s each, gliding, in turn from visit to
+    visit; a framing with nothing changing is left out, so a docked ship with nothing working is on air 7 s.
+    Captions (test_oneclient.py's ship): "Starling · bow defense: 2 turrets ahead", "Starling · machinery: 4 working
+    here, 4 of 5 on the ship".
+  - The platforms read (harness.py PLATFORM_LUA) gives each ship's `machines` ({x, y, w}, at most 120): +1.3 ms on
+    the iMac copy of world n (the whole read 32.3-33.0 ms before, 33.7-34.4 after, 22 platforms, 506 machines, 44
+    working; it runs every 15 s).
+  - Three clients: unchanged. `one_client_shots=false`: as before.
+- **Replay** (director_replay.py `--panels`, `--platforms STATE.json`, `--stories`, `--hours`; shot counts by kind):
+  see the batch318 report for d28's numbers.
+- **obs.py stats** `--seconds N --world n`: OBS's frames and skips and the game's ticks, each second (read only).
+- tools/stream/test_oneclient.py; tools/test_obs_stats.py.
+
+## Delivery receipts after a durable write (2026-10-28, d28 batch323 DR, viewer Aurora 16:19, site:5413)
+
+- Every writer of runs/RUN/operator-inbox.jsonl appends through `operator_inbox.write_rows`: whole lines in one write,
+  then fsync; a file whose last line was cut gets its newline first. Each writer writes a row once: viewer lines by
+  their id, the polls relay's rows by `rid` (an agent's request id, or `idea:N`), agents' requests against the
+  file's tail (a retry after a write that landed and then failed).
+- Viewer routing (viewers.Feed.to_inbox): the line is marked as in the inbox, and a line to the operator alone gets
+  its "operator" receipt, only after that write. A failed write shows the line as held ("the operator's inbox could
+  not be written; tried again"); each later pass tries it again by its id and gives the receipt when it lands; the
+  site cursor stays before it, so a restart reads it again.
+- The polls relay: a request is handled, its reply written (once by rid), then the count saved, one line at a time; a
+  suggestion whose inbox write fails gets no reply and is tried next pass. Site ideas move the cursor one at a time.
+- tools/opreply.py: each reply's request id (`rid`, from its line and parts); the record (pending) is fsynced before
+  anything is sent, the Updates row (--update) is saved next, then the lines go, then
+  RUN/operator-replies-sent.jsonl gets {rid, t}. A crash or a failed send leaves it pending: the next call in that run,
+  or `--resume`, sends what the game chat (RUN/chat.jsonl after the record's `chat_seq`) does not have yet, once,
+  waiting until 20 s after the record so chat-log.py has logged anything sent before the crash; the same reply run
+  again sends nothing (`--again` sends it as a new request). site/updates.py shows a reply under its row once it is
+  marked sent (records without a rid, from before, count as sent).
+- tools/stream/test_durable_delivery.py.
+
+## Speech-linked framing, still agents' remote work, the one-client trio (2026-10-28, d28 batch324, viewer Aurora 16:46-17:00, site:5414-5416)
+
+- **Speech** (onecam `maybe_speech`, `speech_*`; serve.py snapshot `speech`: every line playing, hosts, agents, the
+  Operator, the narrator).
+  - A line's subjects are verified ones only: a host line's event's own agent, agents, platform or ship fields
+    (caster.py `subjects_of`, sent with the clip); an agent line's speaker (a line with a look stays a cue); an
+    Operator line's agent and platform names in its text. Names the director does not know are skipped.
+  - The first subject on air already: held while the line plays (the still rules wait). Else one cut to it, when the
+    story has been up `speech_min` (12 s), no speech cut came within `speech_gap` (40 s), no rocket is due and nothing
+    holds the camera (urgent shots, battles, operator looks and follows, tours, segments, a fight or big action on
+    air); else in a free panel; else not shown. A second subject goes in a panel beside the first (a comparison); the
+    rest are not shown: one cut a line at most. A subject a line put on air within `speech_merge` (120 s) is not cut
+    to again; the same subject in the next line extends the hold. Holds and insets end with the line's playback.
+  - Each decision is a program row "speech hold|cut|inset|drop: why" with the line's id, channel and subjects.
+- **Still agents' remote work** (one client; `swap_*`): the agent on air standing still `swap_still` (20 s) while its
+  attention inset shows work that changes the world there (building, configuring, moving items; anything on a
+  platform; not a look at an entity), the inset up `swap_min` (4 s), no rocket due, at most every `swap_gap` (90 s):
+  the work on the main view ("@work", "Luna placing ghosts 80 m north") for `swap_hold` (20 s), the agent in the panel
+  (away inset); back after, or at once when it moves or acts again.
+- **The trio with one client** (`panel_trio`): one client and two camera panels: the main view as it is (layout.json
+  main hole and crop: the panels' strips stay out) and both panels at once in `panel_trio_holes` (top left and top
+  right of the main view). program() gives `holes`; cuts.py places the captures by them and stacks the small tiles on
+  top; the overlay takes the holes for its tile labels. No map tile (a panel draws the world).
+  (cp3, operator 19:59) It starts only while the story on air is acting now (moved or acted within `moving_s` with
+  an action running or news), a big action, a fight or a live event shot (a launch, a platform's work or story); it
+  leaves once that story has stood `still_cut`; at most one every `panel_trio_gap` (30 min).
+- **Replay** (director_replay.py `--attention`: attention points from the journals; `--speech`: the played lines from
+  RUN/audio-played.jsonl with words and subjects from the caster logs).
+- tools/stream/test_speechframe.py, tools/stream/test_paneltrio.py.
+
+## Replay sound and speaker alarms (2026-10-28, d28 batch326 RA/RA2, viewer Aurora site:5417, site:5423)
+
+**Before** (OBS read on pogwin, profile "pog", d28 19:2x, no change made):
+- **Recording:** Advanced output, recording track 1 only (`RecTracks` 1), mkv, replay buffer 45 s. In Advanced mode
+  the replay buffer records the recording's tracks, so every clip carries one mix: game and voices.
+- **Sources:** every audio source is on all six tracks.
+- **The "replay" scene:** the clip (muted), the banner and the overlay (live voices). It has no game audio source, so
+  a replay aired voices over silence.
+
+**Now:**
+- **Track 2, game only:** track 2 is the game audio alone, from its own capture "stream game clean". It is not ducked
+  under the voices, so the track has no dips where someone spoke. Track 1 stays the full mix for the stream and the
+  archive.
+- **The companion:** when a replay starts, replays.py copies the clip's video and second audio track into
+  "<clip>-game.mkv" on the box (ffmpeg stream copy, about 1 s). It plays that file with its sound, ducked under the
+  live voices, and deletes it when the replay ends.
+- **No clean track:** an old clip with one track, a slow-motion clip, or a clip whose window had an audible speaker
+  alarm plays muted over "replay game ambience", a quiet live capture of the game.
+- **Back on stream:** the clip is muted and the ambience off again; the live game level is never touched. Neither the
+  clip nor the ambience feeds track 2.
+- **Speaker alarms (alarmquiet.py):** a speaker alarm the camera client hears gets a short cue at -6 dB, then -24 dB
+  while it holds. The hold clears on recovery, and the alarm re-arms after 30 s quiet. The state is kept in
+  runs/RUN/alarm-quiet.json across restarts.
+
+**OBS settings for the operator** (pogwin, profile "pog"). Output settings are greyed while the recording or replay
+buffer runs, so apply them between shifts, after stop-team and before start-team:
+1. **Settings > Output > Recording:** Audio Track: tick 1 and 2 (1 stays). Format stays mkv.
+2. **Settings > Output > Audio:** Track 2 Name "game only", bitrate 160.
+3. **Sources > + > Application Audio Capture** in scene "stream", named "stream game clean":
+   - Window: the same as "stream game audio" ([factorio-cam1.exe] Factorio 2.0.77); Window Match Priority: "Match
+     executable".
+   - Volume -2 dB (as "stream game audio").
+   - Filters: Limiter "limit peaks" (threshold -12 dB, release 60 ms); Gain "alarm cue" -6 dB, disabled; Gain "alarm
+     hold" -24 dB, disabled. No compressor (not ducked).
+4. **Sources > + > Application Audio Capture** in scene "replay", named "replay game ambience":
+   - Window: the same; Window Match Priority: "Match executable".
+   - Volume -16 dB.
+   - Filters: Compressor "duck under voices" (ratio 2.5, threshold -40 dB, attack 15 ms, release 700 ms, output gain 0,
+     sidechain "stream overlay"); Limiter "limit peaks" (-12 dB, 60 ms); Gain "alarm cue" -6 dB, disabled; Gain "alarm
+     hold" -24 dB, disabled.
+   - Hide the scene item (eye off): the service shows it for clips without a clean track.
+5. **"replay clip" Filters:** Compressor "duck under voices" (the same settings, sidechain "stream overlay"). Leave it
+   muted: the service unmutes it for a clean replay.
+6. **"stream game audio" Filters:** add Gain "alarm cue" -6 dB, disabled, and Gain "alarm hold" -24 dB, disabled.
+7. **Edit > Advanced Audio Properties > Tracks:**
+   - "stream game clean": track 2 only (1 off).
+   - "stream game audio", "stream overlay", "replay clip", "replay game ambience", "replay banner": track 1 only.
+   - Every other source: track 2 off.
+8. **Check:** with the stream scene on air, the Audio Mixer shows "stream game clean" moving with the game, and a test
+   recording (Start Recording for 10 s, then stop) has two audio streams. `ffprobe -v error -show_entries
+   stream=index,codec_type FILE` on the box lists video, audio and audio.
+
+If any of 3-6 is missing, the service logs it and carries on: without "replay game ambience" a clip without a clean
+track airs silent under the voices (as today), and without the gain filters no alarm is quieted. Recordings get a
+second audio track: the archive tools take audio track 1 (`-map 0:a:0`), and the joined uploads keep both (YouTube
+plays the first).
+
+## Alarm gains confirmed and retried (2026-10-29, d29 batch335 AQ, viewer Aurora site:5438)
+
+- **The fault (batch326's alarmquiet.py):** `apply` recorded the wanted gain as applied even when its OBS writes
+  failed, so a failed hold or clear was never tried again while the alarm state stayed the same. One source could fail
+  while the others worked.
+- **Now, per source and filter** (3 sources x "alarm cue", "alarm hold"), each with a desired and a confirmed state:
+  - **Confirmation:** every write is read back (`GetSourceFilter`), and only a read that matches confirms it.
+  - **Retries:** a failed or unconfirmed write stays pending and is tried again after 2 s, doubling to 120 s, with no
+    alarm change or restart needed.
+  - **Re-reads:** every 60 s each filter is read again. One found changed (by hand, or an OBS restart) is written back in
+    the same pass.
+  - **Missing filters:** said once a run and tried with backoff.
+- **Status:** `/state.json` `replays.alarm` holds `gain`, `confirmed` (all filters as wanted), `pending`, and per filter
+  `source`, `filter`, `desired`, `confirmed`, `pending`, `attempts`, `next_try_in`, `error`, `checked_ago`.
+- **On pogwin, read d29 05:xx:** all six filters exist (gain -6 and -24 dB), disabled (no alarm sounding);
+  `GetSourceFilter` gives `filterEnabled`.
+- **Test:** tools/stream/test_alarmapply.py.

@@ -1,62 +1,67 @@
 - `build {item, position, direction?, recipe?, builds?, all?, check_inserters?, entity?, dry_run?}`: places from your
   inventory; `builds` is a batch of entries (up to 256; more than 64 are worked in batches of 64 in the same call, one
-  reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8,
-  12); `recipe` sets an assembler's recipe; a machine the game placed facing north without its recipe's fluid ports
-  is turned the way asked once the recipe is set (`direction_note`; place_ghosts: `directions_turned`). `"all": true` builds every entry it can and lists the rest in `failed` (a batch of mining drills does so unless `all: false`, and `left` names each spot left with what blocked it)
-  with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. A refused
-  placement names what the game's collision test meets in the footprint (flying robots over it are left out). A railgun
-  entry (build, place_ghosts, their dry runs) adds `line_of_fire`: the entities of ours its shots would cross from
-  there by the prototypes' arc and line (ghosts apart: hit once built). Errors name the
-  blocker (tree, rock, the character, water); trees and rocks go with `place_ghosts` + `construct`, or `mine`.
-  Standing on the footprint, the character steps aside first: the reply gives `not_yet`, `still_to_build` and
-  `built_so_far` (nothing of that entry built yet); `--wait` or status `last.built` counts it, and a retry with the
-  item gone names the entity already standing there. A 1x1 entity (chest, inserter, pole, pipe, wall) given
-  whole-number coordinates goes at the centre of that tile (x.5, y.5), as `place_ghosts` places it (`snapped` says
-  so); 2x2 entities (gun turrets) stand on whole numbers. It works while the clock is paused. It reports `materials`
-  before acting (need, held, missing, queued, hand_craftable; its dry run too). An inserter build says what its sides
-  touch: `pickup` and `drop` (`requester-chest (44.5,190.5)`, `none: the ground at (42.5,190.5)`), with `inserter`
-  (its direction in words) and `io_warning`; build replies and `inspect` flag a built inserter with no pickup or drop
-  target. A belt or chest built again on a disabled inserter's pickup tile leaves the engine's pickup target unset
-  until the inserter runs (2.0.77); replies then name both (`pickup target unset by the engine (transport-belt
-  (-7.5,320.5) on its pickup tile)`), and `the ground` only when nothing stands there. `inspect` always gives an inserter's hand size:
-`effective_hand_size`, `hand_size_override` (0 none), `hand_size_max` (1 + the force's research bonus, `capacity_bonus`),
-apart from `held_count`; on 2.0.77 every inserter waited at a belt for a full hand. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
-  chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles). Entry settings (a
-  single `build`, `builds` entries, `place_ghosts` entries): `configure`, `requests`, `circuit` (the arguments of
-  `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side, to_side}]`. A hand
-  build sets each entry's as it is placed, ghosts after every entry is placed, then the wires; the reply's `settings`
-  and `settings_line` say what was set or refused (a refused setting leaves the entry placed: `entry N configure: ...
-  (storage-chest at (x,y) is placed without it)`, the row's `placed_without`; a hand build adds `settings_refused` and
-  `summary`), except a `configure` asking for filters: refused, the entity is removed again (`asked for filters: its
-  ghost removed` or `mined back into your inventory`, the row's `removed`, `removed_unfiltered`); each setting goes to
-  the ghost or entity of the entry's name at its position. Settings that go in separate `configure` calls, a
-  `wait_for_full_hand` other than the inserter's own (2.0.77: only stack-inserter waits, fixed) and a `hand_size` above
-  its hand size now refuse the whole call before anything is placed (`...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry is
-  refused (in the dry run too); a `build` entry's chest takes it. A dry run gives `settings_planned` and `settings_check`, each
-  setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
-  (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already
-  (`exists`) or an inserter with no target reads
-  `dry_run_ok: false` and `verdict: fails: ...` naming the first of each, and `fh` exits 1. Ghost settings go by
-  remote view: an entry (or a wire's other end) in a chunk our force does not see now (no radar coverage or character
-  there) has its settings refused in the dry run as in the live call (`settings_unseen` counts them). A live call that
-  places its ghosts with settings refused gives `settings_refused`, `summary` and `verdict: partial: ...`, and `fh`
-  exits 1. Settings are read as their own call reads them (`settings_corrected`: a
-  requests `set` map, ...). An entry's `settings: {...}` is read as those keys (`settings_alias`); a setting key such as
-  `modules` at the entry's top level is refused with the shape. `"check_inserters": true` checks every planned
-  inserter's pickup, drop, power and filters first and places nothing if one would not work; each row's `line` (and
-  the refusal) names both sides: `picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`. Fast replace
-  over a chest of the same group keeps its contents in the new chest; what it cannot hold comes to you
-  (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires, circuit
-  settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one end of an underground pair
-  with another tier replaces its other end too when that is ours, in build reach and you hold the item for it
-  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`, even with none of the item left); else it
-  is refused naming the other end and a spot within reach of both. Both ends are checked before either changes: one
-  that cannot take the new tier refuses the build with nothing changed, and a second end that fails puts the first
-  back. A build out of reach walks within reach of both ends. Rails: `{item: "rail", entity: "straight-rail"
-  | "curved-rail-a" | "curved-rail-b" | "half-diagonal-rail"}`; stops, locomotives and wagons build as any entity.
-  `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
-  the same collision and reach checks.
+  reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8, 12);
+  `recipe` sets an assembler's recipe; a machine the game placed facing north without its recipe's fluid ports is
+  turned the way asked once the recipe is set (`direction_note`; place_ghosts: `directions_turned`). `"all": true`
+  builds every entry it can and lists the rest in `failed` (a batch of mining drills does so unless `all: false`, and
+  `left` names each spot left with what blocked it) with why; a batch that fails part way says on the `warning:` line
+  when what it placed closes you in. A refused placement names what the game's collision test meets in the footprint
+  (flying robots over it are left out). Errors name the blocker (tree, rock, the character, water); trees and rocks go
+  with `place_ghosts` + `construct`, or `mine`. Standing on the footprint, the character steps aside first: the reply
+  gives `not_yet`, `still_to_build` and `built_so_far` (nothing of that entry built yet); `--wait` or status
+  `last.built` counts it, and a retry with the item gone names the entity already standing there. A 1x1 entity (chest,
+  inserter, pole, pipe, wall) given whole-number coordinates goes at the centre of that tile (x.5, y.5), as
+  `place_ghosts` places it (`snapped` says so); 2x2 entities (gun turrets) stand on whole numbers. It works while the
+  clock is paused. It reports `materials` before acting (need, held, missing, queued, hand_craftable; its dry run
+  too). An inserter build says what its sides touch: `pickup` and `drop` (`requester-chest (44.5,190.5)`, `none: the
+  ground at (42.5,190.5)`), with `inserter` (its direction in words) and `io_warning`; build replies and `inspect`
+  flag a built inserter with no pickup or drop target.
   Example: `./fh call build --args '{"item":"transport-belt","direction":"east","builds":[{"position":{"x":10.5,"y":6.5}},{"position":{"x":11.5,"y":6.5}}]}'`
+- `build`, railguns: A railgun entry (build, place_ghosts, their dry runs) adds `line_of_fire`: the entities of ours
+  its shots would cross from there by the prototypes' arc and line (ghosts apart: hit once built).
+- `build`, inserter targets: A belt or chest built again on a disabled inserter's pickup tile leaves the engine's
+  pickup target unset until the inserter runs (2.0.77); replies then name both (`pickup target unset by the engine
+  (transport-belt (-7.5,320.5) on its pickup tile)`), and `the ground` only when nothing stands there. `inspect`
+  always gives an inserter's hand size: `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max` (1 + the
+  force's research bonus, `capacity_bonus`), apart from `held_count`; on 2.0.77 every inserter waited at a belt for a
+  full hand. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
+  chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles).
+- `build`, entry settings: Entry settings (a single `build`, `builds` entries, `place_ghosts` entries): `configure`,
+  `requests`, `circuit` (the arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires:
+  [{to, color, from_side, to_side}]`. A hand build sets each entry's as it is placed, ghosts after every entry is
+  placed, then the wires; the reply's `settings` and `settings_line` say what was set or refused (a refused setting
+  leaves the entry placed: `entry N configure: ... (storage-chest at (x,y) is placed without it)`, the row's
+  `placed_without`; a hand build adds `settings_refused` and `summary`), except a `configure` asking for filters:
+  refused, the entity is removed again (`asked for filters: its ghost removed` or `mined back into your inventory`,
+  the row's `removed`, `removed_unfiltered`); each setting goes to the ghost or entity of the entry's name at its
+  position. Settings that go in separate `configure` calls, a `wait_for_full_hand` other than the inserter's own
+  (2.0.77: only stack-inserter waits, fixed) and a `hand_size` above its hand size now refuse the whole call before
+  anything is placed (`...: nothing placed`), its dry run too. A ghost holds no items: `bar` on a `place_ghosts` entry
+  is refused (in the dry run too); a `build` entry's chest takes it. A dry run gives `settings_planned` and
+  `settings_check`, each setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the
+  real call refuses (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours
+  stands already (`exists`) or an inserter with no target reads `dry_run_ok: false` and `verdict: fails: ...` naming
+  the first of each, and `fh` exits 1. Ghost settings go by remote view: an entry (or a wire's other end) in a chunk
+  our force does not see now (no radar coverage or character there) has its settings refused in the dry run as in the
+  live call (`settings_unseen` counts them). A live call that places its ghosts with settings refused gives
+  `settings_refused`, `summary` and `verdict: partial: ...`, and `fh` exits 1. Settings are read as their own call
+  reads them (`settings_corrected`: a requests `set` map, ...). An entry's `settings: {...}` is read as those keys
+  (`settings_alias`); a setting key such as `modules` at the entry's top level is refused with the shape.
+- `build`, check inserters: `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters
+  first and places nothing if one would not work; each row's `line` (and the refusal) names both sides: `picks from
+  iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`.
+- `build`, fast replace: Fast replace over a chest of the same group keeps its contents in the new chest; what it
+  cannot hold comes to you (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps
+  filters, wires, circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one
+  end of an underground pair with another tier replaces its other end too when that is ours, in build reach and you
+  hold the item for it (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`, even with none of
+  the item left); else it is refused naming the other end and a spot within reach of both. Both ends are checked
+  before either changes: one that cannot take the new tier refuses the build with nothing changed, and a second end
+  that fails puts the first back. A build out of reach walks within reach of both ends.
+- `build`, rails: Rails: `{item: "rail", entity: "straight-rail" | "curved-rail-a" | "curved-rail-b" |
+  "half-diagonal-rail"}`; stops, locomotives and wagons build as any entity. `{item: "rail-ramp", position,
+  direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with the same collision and reach
+  checks.
 - `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, clear_obstacles?, dry_run?}`: places ghosts, no items needed
   (`clear_obstacles: true`, on `build` too: trees and rocks in the footprints marked, those in reach mined by hand,
   the call run again once they are gone, never over another action running then; a queue step with wait ends with that
@@ -359,3 +364,7 @@ apart from `held_count`; on 2.0.77 every inserter waited at a belt for a full ha
 - On Vulcanus a build, ghost placement, paste or route inside a demolisher territory (as the map draws it) carries
   `demolisher_territory`, dry runs too, with the territory's state as `demolishers` gives it (its demolisher seen,
   killed at T by X, or none seen in it).
+- Poles and inserters: small electric poles supply only a 5x5 area. Inserters
+  pick up from the tile behind and drop on the tile in front; check the edge tiles of 3x3 machines. An inserter's
+  `direction` is the side it picks up from (`direction: east` takes from the east, drops west; a belt's is where items
+  go); `build` replies say it in words. `build` accepts a batch of up to 64 placements.
