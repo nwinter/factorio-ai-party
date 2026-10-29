@@ -17673,3 +17673,39 @@ turrets1s."
 - **Test:** tests/d28_batch327.lua: a 271-tick empty turret, the no-source runs split by one rail held, and a one-tick
   arrival at the pickup, each with its start tick; each read once a tick; runs cut at the start or end; a gone turret
   ends it; the bounds.
+
+## d29 batch332 (RT, Sol #2734: what each railgun shot was aimed at)
+
+Sol's report: "Native hit_by classes cannot identify which asteroid a round was aimed at; medium58%hits does not
+imply58%ammo or target-filter savings. Need safe evidence before changing targets." Read only: nothing changes in the
+world or the targeting.
+
+- **The watch.** `platform_defense {platform, aim: true, seconds: 10..120, positions?, reason?}` (railaim.lua) starts
+  it; `platform_defense {aim: true}` reads it. `positions`: 1..8 railgun positions (the nearest railgun within 2
+  tiles of each), else the first 8 railguns by position, north first (`picked`, `railguns_total`). One watch an
+  agent; a new one replaces it; kept an hour after its end.
+- **What 2.0.77 gives** (the iMac copy of world n's _autosave11, tick 80.26 M, Resolute on its Aquilo-to-edge leg, 32
+  railguns, a level-script recorder every tick for 20 s: 27 shots):
+  - a shot: the railgun's ammo inventory one item less and its 10 MJ buffer emptied, seen by the next tick's read; an
+    inserter refilling in that tick can hide the item, so a buffer drop of more than half its capacity counts too;
+  - `shooting_target` already reads nil on the tick the shot is seen, and the target read the tick before is invalid
+    (it died), so each railgun's target (unit number, name, position) is kept from every read;
+  - on_entity_damaged on asteroids names the railgun as `cause` (its unit number), on the tick before the shot is
+    seen; one shot hits everything on its line at once.
+  - In 27 of 27 shots the kept target was among that shot's hits, and every railgun hit belonged to a shot.
+- **Per shot:** `exact` when the kept target is among the shot's hits (`aimed_by_size`, `aimed_killed`,
+  `aimed_survived`); its other hits are collateral (`collateral_by_size`, `collateral_killed`); `uncertain` when no
+  target was kept (`no_target`) or the kept one is not among the hits (it changed target within the tick, or missed;
+  `aimed_not_hit_alive` when it lived on). `unattributed`: hits on no seen shot. `recent`: the last 24 shots with tick,
+  aimed name and position, attribution, collateral names. `ammo_used`: items that left its ammo slots at a shot.
+- **Not given:** the game's reason for a target choice; shots of railguns not watched.
+- **Measured** on the copy:
+  - 8 railguns for 55 s: `rail_aim.tick` 0.044 ms a tick on average, the worst game second 3.19 ms (0.053 ms a tick);
+    the damage hook is one table lookup a railgun hit;
+  - in dispatch as the bot, after the first call (13.5 ms, a fresh deploy): a start 4.6-4.9 ms (railguns found by
+    name), with two positions 2.8 ms, a read 2.5 ms, against 17.7 ms for `status`;
+  - a 20 s watch of the first 8 railguns: 32 shots, all exact (medium 25, big 6, huge 1, all killed), and 101 hits:
+    69 collateral (small 32, medium 32, big 4, huge 1), all killed; 0 unattributed.
+- **Tests:** tests/d29_batch332.lua (bounds; picks; an exact hit with collateral and a survivor; a retarget within the
+  tick; a shot with no target read; a refill hiding the item; an unattributed hit; other turrets' hits ignored; a
+  railgun removed; freed after its keep time).

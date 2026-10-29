@@ -2353,6 +2353,8 @@ function handlers.describe(_,a)
   -- (d22 batch82 AR1) platform_defense's asteroid watch: its arguments and what it returns (asteroidwatch.lua)
   if description.actions.platform_defense and M.asteroidwatch then
     for k,v in pairs(M.asteroidwatch.ARGS) do description.actions.platform_defense[k]=v end
+    if M.railaim then for k,v in pairs(M.railaim.ARGS) do description.actions.platform_defense[k]=v end end
+    description.actions.platform_defense.seconds='with asteroids: 10..1800; with aim: 10..120; how long to watch'
   end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.logaudit and M.logaudit.schema or {}) do description.actions[name]=schema end
@@ -9006,6 +9008,7 @@ local function starts(mod) return function(a) return M[mod].starts(a) end end
 local function retrying(a) return a.retry_when_clear==true end
 M.step_ranges={
   platform_defense={{'seconds',watch_range('asteroidwatch'),when=function(a) return a.asteroids==true end},
+    {'seconds',function() return M.railaim.MIN_S,M.railaim.MAX_S end,when=function(a) return a.aim==true end},
     {'trajectory_limit',1,100,when=function(a) return a.asteroids==true end}},
   platform_supply={{'seconds',watch_range('collectreach'),when=function(a) return a.collection==true end}},
   uptime={{'seconds',watch_range('uptime'),when=starts('uptime')}},  -- (d25 batch214 QZ1) read's page and page_size: step_checks (uptime.check_read)
@@ -9104,7 +9107,8 @@ M.step_lengths={
   platform_defense={{'reason',check=reason_check,when=function(a) return a.asteroids==true and a.seconds~=nil end},
     {'asteroid_names',1,of('asteroidwatch','NAMES_MAX'),list=true,one=true,each={1,of('asteroidwatch','NAME_LEN')},when=asteroids},
     {'names',1,of('platdefense','PICK_NAMES'),list=true,one=true,when=function(a) return not asteroids(a) end},
-    {'positions',1,of('platdefense','PICK_POSITIONS'),list=true,when=function(a) return not asteroids(a) end}},
+    {'positions',1,of('platdefense','PICK_POSITIONS'),list=true,when=function(a) return not asteroids(a) and a.aim~=true end},
+    {'positions',1,of('railaim','MAX'),list=true,when=function(a) return a.aim==true end}},
   platform_supply={{'reason',check=reason_check,when=function(a) return a.collection==true and a.seconds~=nil end}},
   uptime={{'reason',check=reason_check,when=starts('uptime')},{'positions',1,of('uptime','MAX'),list=true,when=function(a) return a.items==nil end},
     {'items',1,of('uptime','ITEMS'),list=true,when=starts('uptime')}},  -- (d25 batch214 QZ2, Astra #2380: 9 items passed dry_run)
@@ -16861,6 +16865,8 @@ M.turrettally=require('turrettally'){state=state,reason=function(v) return M.mea
 function handlers.turret_tally(p,a) return M.turrettally.handler(p,a) end
 -- asteroid_watch (asteroidwatch.lua, d22 batch82 AR1, Astra #1855): a platform's asteroids, their straight-line paths
 -- against its foundation, and its turrets' fire by those classes, over a window.
+-- (d29 batch332 RT, Sol #2734) platform_defense {aim: true}: what each railgun shot was aimed at (railaim.lua)
+M.railaim=require('railaim'){state=state,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform}
 M.asteroidwatch=require('asteroidwatch'){state=state,count_by=function(st,n,c) return M.qflow.count_by(st,n,c) end,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform,timed=M.timed}
 -- signal_watch (signalwatch.lua, d24 batch140 PL1, Sol #2116): named signals on one circuit network over a window.
 M.signalwatch=require('signalwatch'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,
@@ -19958,7 +19964,9 @@ end
 function handlers.platform_defense(p,a)
   -- (d22 batch82 AR1) asteroids: true: the asteroid watch (asteroidwatch.lua)
   if a.asteroids~=nil then return M.asteroidwatch.handler(p,a) end
-  assert(a.seconds==nil and a.reason==nil,'seconds and reason go with asteroids: true')
+  -- (d29 batch332 RT) aim: true: the railgun aim watch (railaim.lua)
+  if a.aim~=nil then return M.railaim.handler(p,a) end
+  assert(a.seconds==nil and a.reason==nil,'seconds and reason go with asteroids: true or aim: true')
   return M.platdefense.read(p,a)
 end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
@@ -21318,6 +21326,7 @@ function M.tick_body(event)
   if M.beltsample and state().belt_flow then pcall(M.timed,'beltsample.tick',M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
   if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks; (batch316) a duty watch: a status per entity every tick
+  if state().rail_aim then pcall(M.timed,'rail_aim.tick',M.railaim.tick,event.tick) end  -- (batch332) railgun aim watch: 1..8 railguns every tick
   -- (d24 batch144 cp2) a ghost record log from before the position index: 512 ring slots a tick until it is whole
   if state().ghost_log and not state().ghost_log.pidx_done then pcall(M.timed,'ghostlog.index',M.ghostlog.index_tick,M.ghostlog.INDEX_SLICE) end
   if state().asteroid_watch then pcall(M.timed,'asteroid_watch.tick',M.asteroidwatch.tick,event.tick) end  -- (AR1) asteroid_watch: a read every 15 ticks
@@ -21581,6 +21590,8 @@ function M.on_event(event)
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
       if not oka then local s=state(); s.asteroid_watch_errors={count=((s.asteroid_watch_errors or {}).count or 0)+1,last=tostring(erra),tick=game.tick} end
     end
+    -- (d29 batch332 RT) a watched railgun's hit (railaim.lua)
+    if state().rail_aim then pcall(M.railaim.on_damaged,event) end
     -- (BH1) a railgun's hit on a platform a flight_watch watches (flightwatch.lua)
     if state().flightwatch then pcall(M.flightwatch.on_damaged,event) end
     -- A unit a driving bot's vehicle hits counts as rammed (vehicles.lua).
