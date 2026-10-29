@@ -1641,6 +1641,9 @@ fh queue repeat --file plan.json
   A pending step has `state: "if_started_now"`: its projected deadline depends on when preceding work finishes or the
   queue resumes. An active step has `state: "waiting"` and its actual game deadline (also in `waiting.deadline` and the
   platform lane summary). Guard reactions, arrival, explicit cancellation or failure can end it earlier.
+  For an explicit timeout over 54000, the arrival ETA uses only the current flight leg; before departure or for a
+  later destination it reports `no_estimate`. The full schedule projection is excluded from these long waits to
+  keep a check below the tick-work budget; arrival checks themselves still run every 10 ticks.
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
   `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With

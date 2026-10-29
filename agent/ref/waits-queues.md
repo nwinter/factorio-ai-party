@@ -5,6 +5,8 @@
   Submission and `queue_status` give `wait_deadlines`: game `tick`/`game_seconds`, `ticks_left`, `wall_unix_ms` and
   `wall_seconds_left` projected at 60 ticks/s (pauses/slower UPS delay wall time). `state: "if_started_now"` means
   pending: its actual start depends on earlier steps or resume. `state: "waiting"` gives its running deadline.
+  With a timeout over 54000, arrival ETA covers the current flight leg only; before departure or beyond that leg,
+  `no_estimate` says so. Arrival itself is still checked every 10 ticks.
 - `wait_until {until, ..., timeout?}`: waits inside the game until a condition holds, with no call per check: a direct
   timed action (`--wait`), a queue step, a queue guard's `when` or a standing order's `when`. Conditions: `researched`
   (`technology`; without it the research running now; a technology with levels, an infinite one too, is met once the
