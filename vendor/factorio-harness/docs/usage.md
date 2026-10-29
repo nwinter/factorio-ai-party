@@ -17543,3 +17543,47 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   10-tick clock, pumps on C < 1 and C < 2 enabled the tick after, the clock stopped 100 ticks: 9.4% and 18.9%, runs,
   the stop as a 109-tick disabled run and a window of 0, the 60-tick watch reading C = 0 at every sample, bounds,
   capped histograms, an entity gone).
+
+## d28 batch325 (IC, Astra #2717: a complete item count across belts and robot cargo; an indeterminate residual)
+
+Astra's supply read of agricultural science on Nauvis counted 10000 of 19304 belts and 4096 of 7523 robots. Its
+residual of +208 was then given as "spoiling ... or what left uncounted", although the census had left out the
+holders past its caps.
+
+- **Why the caps exist.** supply reads a whole surface in one call, in one tick (supply.lua: 2048 crafters, 1024 labs,
+  5000 chests, 10000 belts, 8192 inserters, 4096 robots, and one find of at most 40000 entities); `counted` says
+  where a scan stopped. They stay as they are.
+- **The residual (spoilflow.lua).** supply passes its coverage (`supply.coverage`: holders counted of those the find
+  saw; "at least" where a platform's per-group find was itself capped) to the residual. A measure whose count then or
+  now left holders out has no residual and no uncounted, only `indeterminate (N of M holders counted: ...)`. Its held
+  counts read "at least", and it names no cause. dependency.lua reads no rate from it; fuel_budget's and pack_audit's
+  spoiling text quotes it as indeterminate.
+- **supply {item, count_all: true} (itemcount.lua).** One item's complete count on every belt of ours and in every
+  flying robot's cargo on a surface, read in the background a page every 5 ticks, one count at a time:
+  - Belts: walk.lua's bands over the box where we built (up to 4 band finds a step), each belt read with
+    get_item_count(item), up to 1500 a step. On the copy this equals the transport lines' counts, with an
+    underground's buried lines counted once.
+  - Robots: each logistic network's logistic_robots, then its construction_robots, one list a step. The list's size
+    is all less available robots, known before reading, and a list over 8000 is left out and said. Cargo is read
+    2000 a step.
+  - Replies: "started", "counting" (phase, progress), then "done" with total, belts, robots, complete, coverage,
+    line, and pages ("tick N belts|robots R read C") from first_tick to last_tick. Each page is read at its own tick.
+- **Measured** (iMac copy of world n's newest autosave, loaded at tick 78529013, and read-only probes on n):
+
+  | | Copy | n |
+  |---|---|---|
+  | Heaviest belt step (4 band finds, 1500 belts) | 4.5 ms | 5.6 ms |
+  | Network 243's robot list | 2.5 ms (4747 robots) | 5.9 ms (5677 robots) |
+  | 1000 cargo reads | 1.3 ms | 1.2 ms |
+
+  - A whole Nauvis count on the copy: 77 belt steps (64 ms in all, 222 bands over 6432 chunks, 19304 belts read,
+    which is every belt the engine counts) and 15 robot steps (7.7 ms). It took 390 ticks running.
+  - With every page read at one paused tick, it gave iron plate 4778 on belts and 1288 in robots, equal to a full
+    count of every belt and every listed robot at that tick.
+  - Running, the pages over ticks 78534020-78534390 read 4648 and 1274.
+- **Test:** tests/d28_batch325.lua:
+  - a truncated census marks the residual indeterminate, then or now, with no cause named;
+  - coverage counts holders counted of those the find saw;
+  - a paginated count equals the full one, with each step within its finds, belt reads, one list and cargo reads;
+  - a network past the list bound is left out (complete false);
+  - count_all is refused with other reads, and a surface with no box is said.
