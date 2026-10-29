@@ -62,8 +62,10 @@ def parse(command, bot):
         req = json.loads(body)
     except ValueError:
         raise Refused("the request is not JSON")
-    if not isinstance(req, dict) or set(req) - {"id", "action", "args", "bot"}:
-        raise Refused("a request has only id, action, args and bot")
+    if not isinstance(req, dict) or set(req) - {"id", "action", "args", "bot", "wall"}:
+        raise Refused("a request has only id, action, args, bot and wall")
+    if "wall" in req and (not isinstance(req["wall"], (int, float)) or isinstance(req["wall"], bool)):
+        raise Refused("wall is the request's wall clock in ms")
     if req.get("bot") != bot:
         raise Refused(f"this socket acts for bot {bot}, not {req.get('bot') or 'a player'}")
     if not isinstance(req.get("id"), str) or not 1 <= len(req["id"]) <= 128:
@@ -244,6 +246,12 @@ class Broker:
                             self.reply({"ok": False, "refused": True, "error": f"refused: {e}"})
                             continue
                         rid, before = req["id"], broker.seen(bot, req["id"])
+                        # (d29 batch336 FL6) the request's wall clock for the runtime (board review times; the game has
+                        # none): the id's first send, so a resend matches what the game cached for that id
+                        first_at = before["at"] if before else time.time()
+                        if "wall" not in req:
+                            req = dict(req, wall=int(first_at * 1000))
+                            out = dispatch(req)
                         # An id answered before: from the record, not sent again.
                         if before and before.get("state") == "answered" and before.get("text") is not None:
                             note = f"answered from the broker's record: request {rid} was answered at {hms(before['at'])}"
@@ -274,7 +282,7 @@ class Broker:
                                       "not known until the game answers: retry this id then") if before and before.get("state") == "sent" else ""
                             self.reply({"ok": False, "unavailable": True, "error": f"{since}: rcon: {e}; this request was not sent{unsure}"})
                             continue
-                        broker.remember(bot, rid, state="sent", at=before["at"] if before else time.time())
+                        broker.remember(bot, rid, state="sent", at=first_at)
                         try:
                             text = rcon.command(out)
                         except (OSError, ConnectionError, struct.error) as e:

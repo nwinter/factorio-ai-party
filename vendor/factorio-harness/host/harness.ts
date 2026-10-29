@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import { RconOutcomeUnknown, RconUnavailable } from './rcon.js';
 
-export interface Transport { command(command: string): Promise<string> }
+/** stampsWall: the transport adds the request's wall clock itself (the broker, tools/fh_broker.py: it refuses other
+ * fields from its clients, and a resend must carry the first send's clock). */
+export interface Transport { command(command: string): Promise<string>; readonly stampsWall?: boolean }
 export interface Reply {
   id?: string;
   ok: boolean;
@@ -121,7 +123,8 @@ export class Harness {
     // Reuse the bootstrap's stable read-only operation. New observation views
     // must not be treated as mutations by a bootstrap already loaded in-game.
     if (OBSERVE_SCOPES.has(action)) { args = {...args, scope:action}; action = 'observe'; }
-    const request = this.bot === undefined ? { id, action, player: this.player, args, wall } : { id, action, bot: this.bot, args, wall };
+    const stamp = this.transport.stampsWall ? {} : {wall};
+    const request = this.bot === undefined ? { id, action, player: this.player, args, ...stamp } : { id, action, bot: this.bot, args, ...stamp };
     const json = JSON.stringify(request);
     if (Buffer.byteLength(json) > 1048576) throw new Error('Request exceeds 1 MiB limit');
     await this.record({ event: 'request', request });

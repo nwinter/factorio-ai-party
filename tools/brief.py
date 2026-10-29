@@ -217,8 +217,13 @@ def topic_units(player, open_=None):
 def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
     open_ = disclosure_open()
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import expedition  # tools/expedition.py: the shift start's expedition clock, if start-team saved one
-    line = expedition.line(os.path.dirname(os.path.abspath(d)))
+    try:
+        import expedition  # tools/expedition.py: the shift start's expedition clock, if start-team saved one
+        line = expedition.line(os.path.dirname(os.path.abspath(d)))
+    except ImportError:  # a copy of tools/ without it (tests copy a few scripts): no line
+        line = ""
+    finally:
+        sys.path.pop(0)
     open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role, open_, line))
     ref = os.path.join(d, "ref")
     os.makedirs(ref, exist_ok=True)
