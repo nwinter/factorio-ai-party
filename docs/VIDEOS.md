@@ -131,8 +131,19 @@ resumed-from chain, plus the planets the shift's first score lists.
 - 95: landing on a planet. 92: the first rocket. 91: a platform lost. 90: a platform built, and a departure for the
   edge or the Shattered Planet that no platform made before.
 - Milestone technologies (45 to 80): the rocket silo and space science weigh most, early ones such as automation least.
-- 66 and 64: a platform setting out for the Shattered Planet again, or reaching the edge again. 60: setting out for the
-  edge again. Only the first of the shift for each platform and place; later ones are routine.
+- 66 and 64: a platform's first departure for the Shattered Planet, or its first arrival at the edge (another platform
+  made it before). 60: its first departure for the edge. (d29 batch338) A far departure or arrival the same platform
+  made in an earlier shift is routine: Resolute sets out for the Shattered Planet and turns back every shift, and
+  shifts 91-94 all had that title. What can be new in such a shift is its arrival, or a record:
+- 66 (60 toward the edge): the farthest toward a far place on a connection beats the run's record, rounded to 1,000 km
+  ("Resolute: 38,000 km toward the Shattered Planet, its farthest yet"). The distance is the score log's: since d29
+  batch338, `tools/pog.py score` gives each platform in flight `route` (the space connection's ends), `km` (from its
+  `from` end) and `len`, every 2 minutes, so the farthest can be up to 2 minutes' flight short of the turn. The
+  record needs an earlier shift's score log with a distance on that connection. Before that nothing kept the distance:
+  the chronicle has departures and arrivals only, and the stream service's log only an occasional whole percent (1% of
+  the 4,000,000 km to the Shattered Planet is 40,000 km). Short of a record, the farthest is a moment of 24, and
+  "What happened" gives one line a platform and place ("Resolute set out for the Shattered Planet again (5 times),
+  37,000 km at the farthest"), outside the routine trips' sum.
 - 55 to 85: a fight in which one loss alert reached 10 buildings, placed at that alert.
 - 50: each thousandth rocket. 48: a platform's first visit to a place (it never arrived, left or was built there
   before; only once an earlier shift has a chronicle).
@@ -149,7 +160,16 @@ middle of the interval in which they first appear. A repeating technology keeps 
 only the chronicle sees its next level.
 
 The title is the heaviest moment, plus a second one when it weighs 60 or more, is about another platform or kind, and
-both fit. "What happened" lists, heaviest first:
+both fit. (d29 batch338) A moment whose words, numbers aside, are in the shift before's title does not lead or join
+(the shift before: its video.json's highlight, else built then; a run stopped while setting up is skipped). The
+next-heaviest leads: a big moment, else the heaviest research, an agent's chronicle entry, then a thousandth rocket's
+"N more rockets" (every shift launches about a thousand, so it leads only when nothing else does). Only when nothing
+else is left does the repeat lead. `tools/shift_video.py --titles 85-99` gives each shift's title by these rules in
+order (each the next one's shift before), old -> new; `--write` puts them in the video.json files, and
+`tools/yt_archive.py titles [--shifts 85-94] [--apply]` sets them on YouTube: one videos.list (1 unit) for each 50
+videos and one videos.update part=snippet (50 units) each. The snippet goes back as YouTube has it, with only the title
+changed: an update clears any snippet field it leaves out, so the description, its chapters and the tags stay.
+"What happened" lists, heaviest first:
 - the notable moments;
 - the new technologies, with what research finished;
 - the rockets;
