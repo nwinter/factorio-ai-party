@@ -64,6 +64,67 @@ function M.check_direction(proto,dir)
   for _,d in ipairs(list) do names[#names+1]=string.format('%s (%d)',M.direction_name(d),d) end
   error(string.format('%s is built facing %s only; %s (%d) is not one',proto.name,table.concat(names,', '),M.direction_name(dir),dir),0)
 end
+-- (d29 batch352 RR, Astra #2764: Resolute's corner railguns face north, impacts come 53-63 degrees outboard) a placed
+-- turret facing another way, as measured on a copy of world n (2.0.77):
+-- - R and Shift+R (LuaEntity.rotate) refuse every placed turret and its ghost, on a platform or a planet; blueprint
+--   pastes (normal or shift, by a player too) facing another way leave it.
+-- - In person: the same turret built over it facing another way is the game's fast replace (can_fast_replace true for
+--   another direction, false for its own): a new unit facing there with its ammo, quality, priority list, ignore
+--   setting, circuit wire and control settings; create_entity{fast_replace, character} gives the old one back to the
+--   character's inventory and takes none, so the item the player spends is taken here.
+-- - The turned footprint must be free: side by side in a row a railgun turret (3x5) facing a diagonal needs 4 tiles to
+--   one facing north or the same diagonal, 5 to one facing the other diagonal (two facing north fit at 3);
+--   can_fast_replace refuses it otherwise (Resolute's row is 3 apart).
+-- - By remote view (ghosts only) a rebuild: a superforced paste marks it (and whatever the new footprint meets) for
+--   deconstruction; on Resolute the hub took each turret and its 10 rounds at once and built the new one 46-121 ticks
+--   later, with no priority list, ignore setting, wires or control; its feeder refilled it, and twice the inserter
+--   feeding it dropped what it held on the floor.
+M.TURRET_TYPES={['ammo-turret']=true,['electric-turret']=true,['fluid-turret']=true,turret=true,['artillery-turret']=true}
+local function turret_item(e)
+  local it=e.prototype.items_to_place_this and e.prototype.items_to_place_this[1]
+  return it and (type(it)=='table' and it.name or it) or e.name
+end
+local function footprint_line(e,target)
+  return e.name=='railgun-turret' and target and target%4~=0 and string.format('. Facing %s its 3x5 box turns 45 degrees: side by side in a row it needs '
+    ..'4 tiles to a railgun turret facing north or the same diagonal, 5 to one facing the other diagonal (two facing north fit at 3)',M.direction_name(target)) or ''
+end
+function M.turret_turn_note(e,target)
+  local want=target and M.direction_name(target) or 'another way'
+  local q=e.quality and e.quality.name~='normal' and ' ('..e.quality.name..')' or ''
+  return string.format('%s at (%g,%g) faces %s: the game does not turn a placed turret with R or Shift+R. A player turns it in person: a %s%s in hand, '
+    ..'built over it facing %s, is a fast replace that keeps its ammo, priority list, ignore setting, wires and circuit settings (rotate with direction '
+    ..'does that when you stand in reach holding one; the old one comes back to your inventory). By remote view only a rebuild: blueprint_place with '
+    ..'mode superforced (its dry_run names what it would mark), or deconstruct, then place_ghosts with the direction; on a platform the hub takes the '
+    ..'turret and its ammo at once and builds the new one 1-2 s later, with no priority list, ignore setting, wires or control settings unless the '
+    ..'blueprint carries them (configure priority_targets and ignore_unprioritised set them again), and an inserter holding ammo for it may drop that '
+    ..'on the floor%s',
+    e.name,e.position.x,e.position.y,M.direction_name(e.direction),turret_item(e),q,want,footprint_line(e,target))
+end
+-- In person, holding the item: the fast replace a player's build over it is. Returns the new turret and the reply's line.
+function M.turret_fast_replace(p,e,target)
+  local want=M.direction_name(target)
+  local surface,pos,name,force=e.surface,e.position,e.name,e.force
+  local q=e.quality and e.quality.name or 'normal'
+  local item=turret_item(e)
+  local inv=p.get_main_inventory and p.get_main_inventory()
+  local held=inv and inv.get_item_count{name=item,quality=q} or 0
+  if held<1 then error(M.turret_turn_note(e,target)..string.format('. You hold no %s%s',item,q~='normal' and ' of '..q..' quality' or ''),0) end
+  if not surface.can_fast_replace{name=name,position=pos,direction=target,force=force} then
+    error(string.format('%s at (%g,%g) cannot face %s here: the game refuses the fast replace, its turned footprint meets an entity beside it%s; nothing was changed',
+      name,pos.x,pos.y,want,footprint_line(e,target)),0)
+  end
+  local ch=p.character
+  assert(ch and ch.valid,'a fast replace goes through your character, and there is none here; nothing was changed')
+  local unit=e.unit_number
+  assert(inv.remove{name=item,quality=q,count=1}==1,'the '..item..' could not be taken from your inventory; nothing was changed')
+  local n=surface.create_entity{name=name,position=pos,direction=target,force=force,quality=q,fast_replace=true,character=ch,spill=false}
+  if not (n and n.valid) then
+    inv.insert{name=item,quality=q,count=1}
+    error(string.format('the game did not replace %s at (%g,%g) facing %s; nothing was changed',name,pos.x,pos.y,want),0)
+  end
+  return n,string.format('turned as a player does in person: built over it facing %s with the %s you held, a fast replace (the old one came back to your inventory): '
+    ..'unit %d now (was %d), its ammo, priority list, ignore setting, wires and circuit settings kept',want,item,n.unit_number,unit)
+end
 -- A ghost facing another way (N8): the game's rotate does not turn a railgun turret's ghost; a player removes it and
 -- places a new one. The new ghost keeps the name, quality, tags and item requests; one with circuit wires is refused.
 function M.reghost(e,dir)
@@ -8694,8 +8755,10 @@ function handlers.rotate(p,a)
     M.check_direction(proto,target)
   end
   local replaced
+  local turret=not ghost and proto and M.TURRET_TYPES[proto.type]
   if target==nil then
     if e.rotate{reverse=a.reverse==true,by_player=real(p)} then turns=1 end
+    if turns==0 and turret then error(M.turret_turn_note(e,nil),0) end
   elseif before~=target then
     -- The shorter way round: clockwise up to 180 degrees, else counter-clockwise.
     local back=(target-before)%16>8
@@ -8707,6 +8770,10 @@ function handlers.rotate(p,a)
     if e.direction~=target and turns==0 and ghost then
       e=M.reghost(e,target)
       replaced=string.format('the game does not turn a %s ghost (its rotate, as R, refuses it): replaced by a ghost facing %s, as removing it and placing a new one does',kind,name(target))
+    end
+    if e.direction~=target and turns==0 and turret then
+      if remote then error(M.turret_turn_note(e,target),0) end
+      e,replaced=M.turret_fast_replace(p,e,target)
     end
     assert(e.direction==target,turns==0 and string.format('%s at (%g,%g) faces %s: the game does not turn a placed %s (its rotate, as R, refuses it); it faces another way only as built (build or place_ghosts with direction %s)',
       kind,e.position.x,e.position.y,name(e.direction),kind,name(target))
