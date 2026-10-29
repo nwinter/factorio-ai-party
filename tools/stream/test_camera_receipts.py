@@ -43,6 +43,13 @@ def sends():
     d.sender = lambda b: {'ok': True}
     d.step(snap([agent('luna', 0, 0)]), 101)
     assert d.state['main']['subject'] == 'luna'
+    d = OneCam([{'slot': 'main', 'player': 3}, {'slot': 'cam2', 'player': 4}],
+               lambda b: {'ok': False}, None, trio=False)
+    d.step(snap([agent('luna', 0, 0)]), 100)
+    d.sender = lambda b: {'ok': True}
+    d.retry_sends(110)
+    assert d.state['cam2']['framed'] == 110 and not d.ready('cam2', 110)
+    assert d.ready('cam2', 112)
 
 
 def frames():

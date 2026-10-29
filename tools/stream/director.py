@@ -489,6 +489,8 @@ class Director:
             self.send_pending.pop(name, None)
         if ok and target is not None:
             target["sent"] = now
+            if "framed" in target:
+                target["framed"] = now  # readiness dwell starts at the successful send, including a retry
             target["game_zoom"] = body.get("zoom")  # frame_of: what the client shows
             if body.get("move"):  # the game plays it (its camera says move), else the director steps it
                 r = result.get("result", result) if isinstance(result, dict) else {}
