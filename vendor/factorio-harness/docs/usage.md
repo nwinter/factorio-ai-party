@@ -8219,6 +8219,7 @@ fh watch    # deploy on every change
     Tests: `tests/platdigest_counts.lua` (65/137 turrets, only empty on page 2; 256/257 cap; failures and filters).
     The census vehicle summaries in the stream harness, model and public state also preserve a missing total as
     unknown (`null`); their rows stop at 64. `site/test_vehicles.py` covers totals 137, 0 and missing through all three.
+    The map does not report no vehicles on a surface when rows are missing or a vehicle lacks a known position.
 - B2 (Astra, ~10 times on Kestrel): `belt_flow {position, seconds?, platform?}` (beltsample.lua) walks the belt line
   (64 tiles back and on, undergrounds followed), cuts it into sections at each merge, and samples each section's last
   tile and each belt merging in for 2..30 s: each lane's items by `unique_id` (2.0.77's detailed transport line

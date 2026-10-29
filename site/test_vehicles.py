@@ -56,8 +56,13 @@ out.nauvis = look('nauvis', M.DEFAULT_ON, { cx: -150, cy: -500, span: 200 });
 out.gleba = look('gleba', M.DEFAULT_ON, { cx: 70, cy: 20, span: 60 });
 out.off = look('nauvis', Object.assign({}, M.DEFAULT_ON, { vehicles: false }), { cx: -150, cy: -500, span: 200 });
 out.far = look('nauvis', M.DEFAULT_ON, { cx: 0, cy: 0, span: 40 });
-out.none = M.absentWhy({}, M.prepare({ surface: 'nauvis', base, vehicles: { rows: [] } }), 'vehicles');
+out.none = M.absentWhy({}, M.prepare({ surface: 'nauvis', base, vehicles: { rows: [], total: 0 } }), 'vehicles');
 out.unread = M.absentWhy({}, M.prepare({ surface: 'nauvis', base }), 'vehicles');
+out.incomplete = [
+  { rows: [] },
+  { rows: Array.from({ length: 64 }, (_, i) => ({ unit_number: i, surface: 'gleba', position: { x: 0, y: 0 } })), total: 137 },
+  { rows: [{ unit_number: 1, surface: 'nauvis', unseen: true }], total: 1 }
+].map(v => M.absentWhy({}, M.prepare({ surface: 'nauvis', base, vehicles: v }), 'vehicles'));
 out.layer = M.LAYERS.some((l) => l[0] === 'vehicles') && M.DEFAULT_ON.vehicles === true;
 out.group = M.GROUPS.filter((g) => g[2].indexOf('vehicles') >= 0).map((g) => g[0]);
 const sc = M.scene(M.prepare({ surface: 'nauvis', base, agents, vehicles }), { cx: -150, cy: -500, span: 200 }, 400, 400, M.DEFAULT_ON);
@@ -168,6 +173,8 @@ def main():
     check("far away: pinned to the edge, no line, its distance from the base", all(mk["tx"] is None for mk in o["far"]["marks"])
           and any("tiles from the base" in t for t in o["far"]["hits"] if t.startswith("Spidertron")), o["far"])
     check("its toggle says none or not read", o["none"].startswith("none: no vehicle of ours on Nauvis") and o["unread"].startswith("not read"), o)
+    check("a partial page, missing total or unknown position never says no vehicles",
+          all(x.startswith("none shown:") and "unknown" in x for x in o["incomplete"]), o["incomplete"])
     check("painted: a square each spidertron", o["painted"] >= 4, o["painted"])
     print("vehicles: ok")
 
