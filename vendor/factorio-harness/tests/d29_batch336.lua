@@ -206,5 +206,6 @@ do
   runtime.PRODUCERS=1
   rows,lines=runtime.rates_producers({a,b},'copper-cable'); eq(#rows,1); assert(lines[2]:find('+1 more producers not read',1,true),lines[2])
   runtime.PRODUCERS=48
+  eq(runtime.rates_producers({},'copper-cable'),nil)   -- none: no rows, no lines
 end
 print('d29_batch336: ok')

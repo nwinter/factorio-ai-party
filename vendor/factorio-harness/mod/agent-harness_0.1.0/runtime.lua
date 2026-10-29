@@ -4272,6 +4272,7 @@ function M.rates_producers(list,item)
         pr.per_min,row.status and ', '..row.status or '')
     end
   end
+  if #rows==0 then return nil,nil,nil end
   if #list>M.PRODUCERS then lines[#lines+1]=string.format('+%d more producers not read (the first %d)',#list-M.PRODUCERS,M.PRODUCERS) end
   lines[#lines+1]=string.format('these %d: made %g/min (%d counted) against %g/min at full speed',#rows,math.floor(meas_sum*10+0.5)/10,measured_n,math.floor(full_sum*10+0.5)/10)
   return rows,lines,'full_per_min: the machine at full speed with its modules, beacons and productivity (as inspect); measured_per_min: what it made, from its own crafts counter over measured_over (10-20 min, the harness\'s background count; not counted yet: a machine new to it); the statistics line is every machine on the surface'
