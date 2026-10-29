@@ -17857,3 +17857,35 @@ next queued flight_watch refused done and not read."
 - Another agent's start is refused and nothing is read.
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
+
+## d29 batch342 (HI, Opus #2748: the hub delivering ingredients into a platform machine)
+
+Opus's report: "Priming a new fusion core on a platform needs cold fluoroketone; deliver refuses barrels into the
+barrel-emptying AM3 (only fuel/ammo/modules)."
+
+**Survival-fair** (a private 2.0.77 copy of world n's newest autosave, Kestrel IVa's barrel-emptying assembling
+machine 3 at (0.5,21.5)):
+- **What a player can do:** paste a blueprint over the machine whose entity carries an item request into its input
+  inventory (inventory 2, the crafter input). This is a blueprint string, or a copy of an entity with a pending request.
+  - The blueprint keeps the insert plan (`get_blueprint_entities`), and the paste makes the item request.
+  - The platform hub fills it from its own main inventory: all 10 asked within 10 ticks while it held 20.
+  - With 6 held, it delivered what reached the request (2; an inserter took the rest for the belt line) and left the
+    rest requested.
+  - A request for 25 in one slot was taken: the hub moved the 10 it had, and 15 stayed requested.
+- **What a player cannot do:**
+  - Request an item the recipe does not take: the game drops such a request at once and moves nothing (iron plate into
+    the barrel-emptying machine).
+  - Request a fluid: item requests carry items, and the hub holds no fluids. The fluid alternatives are a barrel with
+    an emptying recipe, or a pump from a tank.
+
+**deliver now** (`deliver {platform?, position, items}`):
+- **On a platform:** an ingredient of a crafting machine's current recipe gets an insert plan into the input slot of
+  that ingredient (the recipe's item ingredients in order), at most the slot's room (a stack).
+- **The reply:** the row names what the hub holds and says the hub fills it.
+- **Refusals:** an item the recipe does not take, a machine with no recipe, ingredients off a platform (no hub there;
+  this was checked on platforms only), and a fluid, naming the barrel or pump instead.
+- **Unchanged:** fuel and ammunition.
+- **On the copy:** Opus's call on Kestrel IVc asked for 10 barrels with the hub holding 8. 30 ticks later the hub had
+  moved all 8 (4 in the input, 4 crafted) and 2 stayed requested.
+
+**Test:** tests/d29_batch342.lua.
