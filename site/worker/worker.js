@@ -26,12 +26,17 @@
 //   POST /v1/polls/suggest    a viewer's poll idea {name, question, options, hours?, cid?}: seen by the operator only
 //   POST /v1/polls, POST /v1/polls/ID/close, GET /v1/polls/ID/voters, GET /v1/polls/suggestions?after=ID
 //                             the operator's (Authorization: PUBLISH_TOKEN): create, close early, the voter log, ideas
+//   GET  /v1/debug            the start's error and the store's sizes (Authorization: Bearer PUBLISH_TOKEN; batch333)
+//   GET  /v1/debug/export?table=T&after=K, POST /v1/debug/import?do=main-NAME   a move to a new object (the same token)
 //
 // Everything is unlisted: every response carries X-Robots-Tag noindex and /robots.txt disallows all.
 // Client addresses are never stored: rate limits and bans key on a salted hash.
 
 const SCHEMA = 1;
 const MAX_STATE_BYTES = 256 * 1024;
+// (d29 batch333) the state and board documents' rows: every value this object stores stays well under the size that
+// failed with SQLITE_NOMEM (on the main object on d29, a 128 KB value failed and 16-64 KB passed)
+const DOC = { chunk: 16 * 1024 };
 const CHAT = {
   maxLen: 500,          // characters per message (d27 batch263 VR, Nick 06:30: 200 before, so long messages came in parts)
   minGapS: 4,           // per client: seconds between messages
@@ -179,6 +184,12 @@ function withCors(resp, req, env) {
 // (The Cache API is not available on workers.dev.)
 const micro = new Map();
 const MICRO_TTL = { "/v1/state": 3000, "/v1/chat": 2000, "/v1/polls": 3000, "/v1/board": 10000 };
+// /v1/debug* ?do=NAME: the old "main" (reads), or a new object (probe-NAME, main-NAME; import only into these)
+const NEW_OBJECT = /^(probe|main)-[a-z0-9-]{1,40}$/;
+const OBJECT_NAME = /^(main|(probe|main)-[a-z0-9-]{1,40})$/;
+// (d29 batch333) the tables a move copies, each by its key; kv's "state" and "board" rows stay behind (unreadable on the
+// old object; the Mac sends both again within seconds)
+const COPY = { kv: "k", chat: "seq", replies: "seq", polls: "id", votes: "id", poll_ideas: "id", bans: "who", blueprints: "id" };
 const PUBLIC_POST = /^\/v1\/(chat|here|blueprints|polls\/\d+\/vote|polls\/suggest)$/;
 
 export default {
@@ -223,7 +234,10 @@ export default {
       if (hit && Date.now() - hit.at < ttl) return withCors(json(hit.body, 200), req, env);
     }
 
-    const stub = env.LIVE.get(env.LIVE.idFromName("main"));
+    // (d29 batch333) LIVE_OBJECT names the object that serves (wrangler.toml; "main" until d29); /v1/debug* with
+    // ?do=NAME goes to that object instead (the move off the failing one)
+    const other = path.startsWith("/v1/debug") && OBJECT_NAME.test(url.searchParams.get("do") || "") ? url.searchParams.get("do") : null;
+    const stub = env.LIVE.get(env.LIVE.idFromName(other || env.LIVE_OBJECT || "main"));
     const fwd = new Request(req);
     fwd.headers.set("x-client-ip", req.headers.get("CF-Connecting-IP") || "");
     const resp = await stub.fetch(fwd);
@@ -344,62 +358,80 @@ export class Live {
     this.global = [];
     this.lastText = new Map(); // who -> {text, at}
     this.here = new Map(); // page id -> {at, who}
-    ctx.blockConcurrencyWhile(async () => {
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
-        name TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`);
-      // cid: the page's id for one message (joonazan, d15 08:05: messages sent twice); a table from before it gains it
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN cid TEXT`); } catch (e) { /* already there */ }
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS chat_cid ON chat (cid)`);
-      // channel (viewer LimeLight555, d16 10:36): "viewers" lines stay on the site; GET /v1/chat leaves them out unless
-      // asked (channels=all), so the Mac's relay to the game never reads them
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
-      // host: a line posted with the host link (Nick, d16 17:11)
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      // op: the Operator's announcement (POST /v1/announce, batch293)
-      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN op INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      this.hostTimes = [];
-      // (d28 batch309) replies: seq = the game chat line's seq; prompt = the site line it answers (site:N), if any; rv =
-      // the store's version when it last changed (GET /v1/chat?replies_after=rv)
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS replies (seq INTEGER PRIMARY KEY, t REAL NOT NULL, prompt INTEGER,
-        rv INTEGER NOT NULL, row TEXT NOT NULL)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_rv ON replies (rv)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_t ON replies (t)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_prompt ON replies (prompt)`);
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
-        name TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, blueprints INTEGER NOT NULL,
-        entities INTEGER NOT NULL, bytes INTEGER NOT NULL, string TEXT NOT NULL, who TEXT NOT NULL, cid TEXT,
-        hidden INTEGER NOT NULL DEFAULT 0)`);
-      // polls: status "open" until closes (or the operator closes it early: status "closed", closes = then)
-      // options: a JSON list of labels; details: a JSON list of each option's details ("" for none)
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL,
-        options TEXT NOT NULL, opens REAL NOT NULL, closes REAL NOT NULL, created_by TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open', intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
-      // every vote is kept; current = 1 on each voter's latest one (the one that counts)
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS votes (id INTEGER PRIMARY KEY AUTOINCREMENT, poll INTEGER NOT NULL,
-        voter TEXT NOT NULL, name TEXT NOT NULL, option INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', t REAL NOT NULL,
-        cid TEXT, current INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, agent INTEGER NOT NULL DEFAULT 0)`);
-      this.sql.exec(`CREATE INDEX IF NOT EXISTS votes_poll ON votes (poll, current)`);
-      try { this.sql.exec(`ALTER TABLE votes ADD COLUMN voided INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      // host: a vote cast with the host link (shown as the host's on the comments)
-      try { this.sql.exec(`ALTER TABLE votes ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
-      this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
-        name TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, hours REAL, who TEXT NOT NULL, cid TEXT,
-        intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
-      this.ideaTimes = new Map(); // who -> [ms] suggestions in the last hour
-      this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
-      this.state = this.get("state");
-      this.received = Number(this.get("received") || 0);
-      this.board = this.get("board");
-      this.boardReceived = Number(this.get("board_received") || 0);
-      this.salt = this.get("salt");
-      if (!this.salt) {
-        const b = crypto.getRandomValues(new Uint8Array(16));
-        this.salt = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-        this.put("salt", this.salt);
-      }
-    });
+    this.hostTimes = [];
+    this.ideaTimes = new Map(); // who -> [ms] suggestions in the last hour
+    this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
+    // (d29 batch333) a failing start (SQLITE_NOMEM from 01:40) no longer throws out of the constructor, which reset the
+    // object on every request: the error is kept, each request tries again, GET /v1/debug reports it
+    this.ready = false;
+    this.initError = null;
+    ctx.blockConcurrencyWhile(async () => this.start());
+  }
+  start() {
+    try {
+      this.init();
+      this.ready = true;
+      this.initError = null;
+    } catch (e) {
+      this.initError = String((e && e.message) || e);
+    }
+    return this.ready;
+  }
+  init() {
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+      name TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`);
+    // cid: the page's id for one message (joonazan, d15 08:05: messages sent twice); a table from before it gains it
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN cid TEXT`); } catch (e) { /* already there */ }
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS chat_cid ON chat (cid)`);
+    // channel (viewer LimeLight555, d16 10:36): "viewers" lines stay on the site; GET /v1/chat leaves them out unless
+    // asked (channels=all), so the Mac's relay to the game never reads them
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
+    // host: a line posted with the host link (Nick, d16 17:11)
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    // op: the Operator's announcement (POST /v1/announce, batch293)
+    try { this.sql.exec(`ALTER TABLE chat ADD COLUMN op INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    // (d28 batch309) replies: seq = the game chat line's seq; prompt = the site line it answers (site:N), if any; rv =
+    // the store's version when it last changed (GET /v1/chat?replies_after=rv)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS replies (seq INTEGER PRIMARY KEY, t REAL NOT NULL, prompt INTEGER,
+      rv INTEGER NOT NULL, row TEXT NOT NULL)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_rv ON replies (rv)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_t ON replies (t)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS replies_prompt ON replies (prompt)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
+    // (d29 batch333) the state and board documents, DOC.chunk characters a row (kv's one 230 KB "state" row failed every
+    // read and write with SQLITE_NOMEM from d29 01:40; nothing reads kv's "state" and "board" rows now)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS docs (k TEXT NOT NULL, i INTEGER NOT NULL, v TEXT NOT NULL, PRIMARY KEY (k, i))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+      name TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, blueprints INTEGER NOT NULL,
+      entities INTEGER NOT NULL, bytes INTEGER NOT NULL, string TEXT NOT NULL, who TEXT NOT NULL, cid TEXT,
+      hidden INTEGER NOT NULL DEFAULT 0)`);
+    // polls: status "open" until closes (or the operator closes it early: status "closed", closes = then)
+    // options: a JSON list of labels; details: a JSON list of each option's details ("" for none)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL,
+      options TEXT NOT NULL, opens REAL NOT NULL, closes REAL NOT NULL, created_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open', intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
+    // every vote is kept; current = 1 on each voter's latest one (the one that counts)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS votes (id INTEGER PRIMARY KEY AUTOINCREMENT, poll INTEGER NOT NULL,
+      voter TEXT NOT NULL, name TEXT NOT NULL, option INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', t REAL NOT NULL,
+      cid TEXT, current INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, agent INTEGER NOT NULL DEFAULT 0)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS votes_poll ON votes (poll, current)`);
+    try { this.sql.exec(`ALTER TABLE votes ADD COLUMN voided INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    // host: a vote cast with the host link (shown as the host's on the comments)
+    try { this.sql.exec(`ALTER TABLE votes ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+      name TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, hours REAL, who TEXT NOT NULL, cid TEXT,
+      intro TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '[]')`);
+    this.state = this.getDoc("state");
+    this.received = this.state ? Number(this.get("received") || 0) : 0;
+    this.board = this.getDoc("board");
+    this.boardReceived = this.board ? Number(this.get("board_received") || 0) : 0;
+    this.salt = this.get("salt");
+    if (!this.salt) {
+      const b = crypto.getRandomValues(new Uint8Array(16));
+      this.salt = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+      this.put("salt", this.salt);
+    }
   }
   get(k) {
     const r = this.sql.exec("SELECT v FROM kv WHERE k = ?", k).toArray();
@@ -407,6 +439,22 @@ export class Live {
   }
   put(k, v) {
     this.sql.exec("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
+  }
+  getDoc(k) {
+    const rows = this.sql.exec("SELECT v FROM docs WHERE k = ? ORDER BY i", k).toArray();
+    return rows.length ? rows.map((r) => r.v).join("") : null;
+  }
+  // a document in rows of at most DOC.chunk characters (a cut never splits a surrogate pair), its old extra rows dropped
+  putDoc(k, v) {
+    let i = 0;
+    for (let at = 0; at < v.length || i === 0; i++) {
+      let end = Math.min(v.length, at + DOC.chunk);
+      const c = v.charCodeAt(end - 1);
+      if (end < v.length && c >= 0xd800 && c <= 0xdbff) end--;
+      this.sql.exec("INSERT INTO docs (k, i, v) VALUES (?, ?, ?) ON CONFLICT(k, i) DO UPDATE SET v = excluded.v", k, i, v.slice(at, end));
+      at = end;
+    }
+    this.sql.exec("DELETE FROM docs WHERE k = ? AND i >= ?", k, i);
   }
   async who(req) {
     const data = new TextEncoder().encode(this.salt + "|" + (req.headers.get("x-client-ip") || "unknown"));
@@ -420,6 +468,10 @@ export class Live {
     try {
       // Read the body before any early return: answering first and leaving the body unread breaks the response.
       const text = req.method === "POST" ? await req.text() : "";
+      if (route === "GET /v1/debug") return await this.debug(req);
+      if (route === "GET /v1/debug/export") return this.exportRows(req, url);
+      if (route === "POST /v1/debug/import" && NEW_OBJECT.test(url.searchParams.get("do") || "")) return this.importRows(req, text);
+      if (!this.ready && !this.start()) return json({ error: "storage unavailable", detail: this.initError }, 503);
       switch (route) {
         case "GET /v1/state": return this.getState();
         case "POST /v1/state": return this.postState(req, text);
@@ -447,8 +499,75 @@ export class Live {
         }
       }
     } catch (e) {
+      // (d29 batch333) a storage error is the object's, not the request's: 503, and in wrangler tail
+      const msg = String((e && e.message) || e);
+      if (/SQLITE_|internal error/.test(msg)) {
+        console.error(route, msg);
+        return json({ error: "storage unavailable", detail: msg }, 503);
+      }
       return json({ error: "bad request" }, 400);
     }
+  }
+
+  // (d29 batch333) GET /v1/debug/export?table=T&after=K&limit=N: a page of one COPY table's rows by its key
+  exportRows(req, url) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const table = url.searchParams.get("table") || "";
+    const key = COPY[table];
+    if (!key) return json({ error: "table must be one of " + Object.keys(COPY).join(", ") }, 400);
+    const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") || "100", 10) || 100));
+    const after = url.searchParams.get("after");
+    const skip = table === "kv" ? " AND k NOT IN ('state', 'board')" : "";
+    const where = after == null ? "1 = 1" : `${key} > ?`;
+    const args = after == null ? [] : [key === "k" || key === "who" ? after : Number(after)];
+    const rows = this.sql.exec(`SELECT * FROM ${table} WHERE ${where}${skip} ORDER BY ${key} LIMIT ?`, ...args, limit).toArray();
+    return json({ table, key, rows });
+  }
+
+  // (d29 batch333) POST /v1/debug/import?do=main-NAME {table, rows}: rows as exported, stored by their key (a new object)
+  importRows(req, text) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const { table, rows } = JSON.parse(text);
+    if (!COPY[table] || !Array.isArray(rows)) return json({ error: "table and rows, please" }, 400);
+    let n = 0;
+    for (const r of rows) {
+      const cols = Object.keys(r);
+      if (!cols.length || !cols.every((c) => /^[a-z_]+$/.test(c))) return json({ error: "bad column" }, 400);
+      if (table === "kv" && (r.k === "state" || r.k === "board")) continue;
+      this.sql.exec(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, ...cols.map((c) => r[c]));
+      n++;
+    }
+    if (table === "kv") {
+      const salt = this.get("salt");
+      if (salt) this.salt = salt;
+      this.received = 0;
+    }
+    return json({ ok: true, stored: n });
+  }
+
+  // (d29 batch333) GET /v1/debug (Authorization: Bearer PUBLISH_TOKEN): the start's error and the store's sizes, each
+  // read on its own so one failing read leaves the others
+  async debug(req) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const out = { ready: this.ready, init_error: this.initError, reads: {} };
+    const read = (k, f) => { try { out.reads[k] = f(); } catch (e) { out.reads[k] = { error: String((e && e.message) || e) }; } };
+    const one = (q) => this.sql.exec(q).toArray();
+    read("database_size", () => this.ctx.storage.sql.databaseSize);
+    read("tables", () => one("SELECT name, type FROM sqlite_master ORDER BY name"));
+    read("page_size", () => one("PRAGMA page_size"));
+    read("kv", () => one("SELECT k FROM kv ORDER BY k"));
+    read("docs", () => one("SELECT k, COUNT(*) AS rows, SUM(length(v)) AS chars, MAX(length(v)) AS longest FROM docs GROUP BY k ORDER BY k"));
+    read("chat", () => one("SELECT COUNT(*) AS n, MIN(seq) AS lo, MAX(seq) AS hi, SUM(length(text)) AS bytes FROM chat"));
+    read("replies", () => one("SELECT COUNT(*) AS n, MIN(rv) AS lo, MAX(rv) AS hi, SUM(length(row)) AS bytes FROM replies"));
+    read("blueprints", () => one("SELECT COUNT(*) AS n, SUM(bytes) AS bytes, MAX(bytes) AS longest FROM blueprints"));
+    read("votes", () => one("SELECT COUNT(*) AS n, SUM(length(comment)) AS bytes FROM votes"));
+    read("polls", () => one("SELECT COUNT(*) AS n FROM polls"));
+    read("poll_ideas", () => one("SELECT COUNT(*) AS n FROM poll_ideas"));
+    read("bans", () => one("SELECT COUNT(*) AS n FROM bans"));
+    read("here", () => this.here.size);
+    // the data centre this object's requests leave from
+    try { out.trace = (await (await fetch("https://www.cloudflare.com/cdn-cgi/trace")).text()).split("\n").filter((l) => /^(colo|loc)=/.test(l)); } catch (e) { out.trace = String(e); }
+    return json(out);
   }
 
   getState() {
@@ -491,7 +610,7 @@ export class Live {
     if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "state must be an object" }, 400);
     this.state = JSON.stringify(body);
     this.received = Date.now() / 1000;
-    this.put("state", this.state);
+    this.putDoc("state", this.state);
     this.put("received", this.received);
     return json({ ok: true, received: this.received });
   }
@@ -515,7 +634,7 @@ export class Live {
     if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "board must be an object" }, 400);
     this.board = JSON.stringify(body);
     this.boardReceived = Date.now() / 1000;
-    this.put("board", this.board);
+    this.putDoc("board", this.board);
     this.put("board_received", this.boardReceived);
     return json({ ok: true, received: this.boardReceived });
   }
