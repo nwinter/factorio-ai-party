@@ -378,7 +378,7 @@ for i = START, math.min(#list, START + COUNT - 1) do
   r.burns_fluid = g(function() return e.burns_fluid end)
   r.scale_fluid_usage = g(function() return e.scale_fluid_usage end)
   r.perceived_performance = g(function() return e.perceived_performance end)
-  r.max_power_output_kw = g(function() return e.max_power_output * 60 / 1000 end)
+  r.max_power_output_kw = g(function() return e.get_max_power_output() * 60 / 1000 end)
   r.fluid_energy_source = g(function()
     local f = e.fluid_energy_source_prototype
     if not f then return nil end
