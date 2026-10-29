@@ -61,11 +61,12 @@ fails(function() H.pact_propose(nil,{with='green'}) end,'no contact with green y
 fails(function() H.pact_propose(nil,{with='blue',terms={shares={red=0.9,blue=0.2}}}) end,'summing to 1')
 fails(function() H.pact_propose(nil,{with='blue',terms={chart=true}}) end,'terms: no chart')
 fails(function() H.pact_propose(nil,{with='blue',terms={obligations={{kind='deliver',who='blue',item='iron-plate',count=60}}}}) end,'needs a depot')
-local r=H.pact_propose(nil,{with='blue',note='trade',terms={cease_fire=true,shares={red=0.9,blue=0.1},depot={x=10,y=20},
+fails(function() H.pact_propose(nil,{with='blue',terms={shares={red=0.9,blue=0.1}}}) end,'at most 0.70 each')
+local r=H.pact_propose(nil,{with='blue',note='trade',terms={cease_fire=true,shares={red=0.7,blue=0.3},depot={x=10,y=20},
   obligations={{kind='deliver',who='blue',item='iron-plate',count=60},{kind='keep_out',who='blue',x=0,y=0,r=50},{kind='no_attack',who='blue',target='green'}}}})
 local id=r.pact.id
 eq(r.pact.status,'proposed')
-assert(last('blue'):find('red proposes pact #'..id..': cease%-fire; shares blue 0.10 / red 0.90; a depot at %(10,20%)'),last('blue'))
+assert(last('blue'):find('red proposes pact #'..id..': cease%-fire; shares blue 0.30 / red 0.70; a depot at %(10,20%)'),last('blue'))
 assert(last('blue'):find('blue delivers 60 iron%-plate an hour') and last('blue'):find('Note: trade'),last('blue'))
 fails(function() H.pact_accept(nil,{id=id}) end,'the other team accepts it')
 
@@ -115,6 +116,7 @@ local list=H.pacts(nil,{}).pacts
 eq(list[1].id,id); eq(list[1].status,'active')
 team='blue'
 game.tick=3000
+P.operator.mt_pacts({config={end_notice_s=600}})   -- the notice path (the default 0 lifts at once: below)
 H.pact_end(nil,{id=id,note='enough'})
 eq(p.status,'ended'); eq(p.lift_tick,3000+600*60)
 assert(last('red'):find('blue ended pact #'..id..' at tick 3000; the cease%-fire lifts at tick 39000 %(600 s from now%). Note: enough'),last('red'))
@@ -168,13 +170,24 @@ eq(dep.team,'red'); eq(dep.from,'nauvis'); eq(dep.pacts[1].with,'blue'); eq(dep.
 
 -- the operator read and its settings
 local o=P.operator.mt_pacts({config={cut=0.3}})
-eq(o.config.cut,0.3); eq(o.config.end_notice_s,600); eq(o.config.share_cap_score,1.5)
+eq(o.config.cut,0.3); eq(o.config.end_notice_s,600); eq(o.config.share_max_score,1.4)
 fails(function() P.operator.mt_pacts({config={chart=true}}) end,'is no setting')
--- the scoring's allied edge: 0.9/0.1 of two is 1.8/0.2 before the cap, 1.5/0.5 after; even without shares
-P.operator.mt_pacts({config={cut=0.2}})
-local sc=P.allied_scores({red=0.9,blue=0.1},{'red','blue'})
-assert(math.abs(sc.red-1.5)<1e-9 and math.abs(sc.blue-0.5)<1e-9,sc.red..' '..sc.blue)
+-- the scoring's allied edge (mt284): shares bounded by share_max_score / N; 0.7/0.3 of two is 1.4/0.6, even 1.0 each
+local sc=P.allied_scores({red=0.7,blue=0.3},{'red','blue'})
+assert(math.abs(sc.red-1.4)<1e-9 and math.abs(sc.blue-0.6)<1e-9,sc.red..' '..sc.blue)
 sc=P.allied_scores(nil,{'red','blue'}); assert(sc.red==1 and sc.blue==1)
-sc=P.allied_scores({red=0.6,blue=0.4},{'red','blue'}); assert(math.abs(sc.red-1.2)<1e-9 and math.abs(sc.blue-0.8)<1e-9)
+assert(math.abs(P.share_max(2)-0.7)<1e-9 and math.abs(P.share_max(3)-1.4/3)<1e-9 and math.abs(P.share_max(4)-0.35)<1e-9)
+-- pact_end with the default end_notice_s 0: the cease-fire lifts on the same tick, one fact line says so
+P.operator.mt_pacts({config={end_notice_s=0}})
+team='red'
+H.pact_end(nil,{id=a6})
+local q=H.pact_propose(nil,{with='blue',terms={cease_fire=true}}).pact.id
+team='blue'; H.pact_accept(nil,{id=q})
+eq(red.get_cease_fire('blue'),true)
+local before_n=#facts
+H.pact_end(nil,{id=q})
+eq(red.get_cease_fire('blue'),false,'lifted at once'); eq(blue.get_cease_fire('red'),false)
+assert(last('red'):find('blue ended pact #'..q..' at tick %d+; the cease%-fire lifted now'),last('red'))
+eq(#facts-before_n,2,'one line to each team, no second lift line')
 game=nil; defines=nil; prototypes=nil; helpers=nil
 print('mt281 pacts: ok')

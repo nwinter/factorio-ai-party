@@ -5,10 +5,12 @@
 --   agents: pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end, pacts (read)
 --   the human team: the same through chat, "!pact ACTION {json}" (humans.lua's roster)
 --   operator: mt_pacts {config?} (settings; the pacts and departures), mt_pacts_tick (test: the step now)
--- Settings (mt_pacts config): cut 0.2, move_s 10, end_notice_s 600, share_cap_score 1.5, expires_min 60, check_s 3600.
+-- Settings (mt_pacts config): cut 0.2, move_s 10, end_notice_s 0, share_max_score 1.4, expires_min 60, check_s 3600.
 return function(api)
   local M = {operator={}}
-  local DEFAULTS = {cut=0.2, move_s=10, end_notice_s=600, share_cap_score=1.5, expires_min=60, check_s=3600,
+  -- (mt284, Nick d29 14:00) end_notice_s 0: the cease-fire lifts on the tick a side ends the pact; share_max_score 1.4:
+  -- no member's allied score above it (the solo edge is 1.5), so no team-up pays more than winning alone
+  local DEFAULTS = {cut=0.2, move_s=10, end_notice_s=0, share_max_score=1.4, expires_min=60, check_s=3600,
     terms={cease_fire=true, shares=true, depot=true, obligations=true}}
   local KINDS = {deliver=true, keep_out=true, no_attack=true}
   local MAX_PACTS, MAX_DEPARTURES, NOTE = 64, 50, 500
@@ -74,6 +76,9 @@ return function(api)
       local n = 0
       for _ in pairs(t.shares) do n = n + 1 end
       assert(n == 2 and sa and sb and sa >= 0 and sb >= 0 and math.abs(sa + sb - 1) < 1e-6, 'shares: both teams, ' .. a .. ' and ' .. b .. ', summing to 1')
+      -- a share is at most share_max_score / N of the allied total (N members x 1.0): two teams, 0.70
+      local most = M.share_max(2)
+      assert(sa <= most + 1e-9 and sb <= most + 1e-9, string.format('shares: at most %.2f each (no allied score above %.2f, below the solo edge 1.5)', most, cfg('share_max_score')))
       out.shares = {[a]=sa, [b]=sb}
     end
     if t.depot ~= nil then
@@ -177,13 +182,15 @@ return function(api)
     assert(p.b == team, 'pact #' .. p.id .. ' was proposed by us: the other team accepts it')
     if p.replaces then
       local old = st().by_id[p.replaces]
-      if old and old.status == 'active' then M.finish(old, team, who, 'replaced by #' .. p.id, true) end
+      if old and old.status == 'active' then
+        M.finish(old, team, who, 'replaced by #' .. p.id, true)
+        if p.terms.cease_fire then old.lift_tick = nil end   -- the new pact's cease-fire goes on: nothing lifts
+      end
     end
     if p.terms.depot then place_depot(p) end
     p.status, p.accepted_by = 'active', {team=team, agent=who, tick=game.tick}
     if p.terms.cease_fire then
       local fa, fb = game.forces[p.a], game.forces[p.b]
-      p.prev = p.prev or {ab=fa.get_cease_fire(fb), ba=fb.get_cease_fire(fa)}
       fa.set_cease_fire(fb, true); fb.set_cease_fire(fa, true)
     end
     p.ledger = {}
@@ -194,20 +201,25 @@ return function(api)
   end
 
   -- Ending: the record at once; the engine cease-fire lifts end_notice_s later (M.tick); depot moves stop.
+  local lift   -- below: the cease-fire back as the pact found it
   function M.finish(p, team, who, note, quiet)
     p.status = 'ended'
     p.ended = {team=team, agent=who, tick=game.tick, note=note and tostring(note):sub(1, NOTE) or nil}
-    if p.terms.cease_fire then p.lift_tick = game.tick + cfg('end_notice_s') * 60 end
+    local notice = cfg('end_notice_s')
+    if p.terms.cease_fire then p.lift_tick = game.tick + notice * 60 end
     if not quiet then
       both(p, string.format('%s ended pact #%d at tick %d%s%s', team, p.id, game.tick,
-        p.lift_tick and string.format('; the cease-fire lifts at tick %d (%d s from now)', p.lift_tick, cfg('end_notice_s')) or '',
+        p.lift_tick and (notice > 0 and string.format('; the cease-fire lifts at tick %d (%d s from now)', p.lift_tick, notice)
+          or '; the cease-fire lifted now') or '',
         p.ended.note and ('. Note: ' .. p.ended.note) or ''), true)
     end
+    if p.lift_tick and notice <= 0 then lift(p, true) end
   end
 
-  local function lift(p)
+  lift = function(p, quiet)
     local fa, fb = game.forces[p.a], game.forces[p.b]
-    local prev = p.prev or {ab=false, ba=false}
+    -- teams are at war but by a pact (mt_setup): a lift is war both ways
+    local prev = {ab=false, ba=false}
     -- a frozen human team keeps its cease-fire until it thaws, then puts back what it found: what the pact found
     local h = mt().humans
     if h and h.state == 'frozen' and h.prev and (h.team == p.a or h.team == p.b) then
@@ -219,7 +231,7 @@ return function(api)
       fa.set_cease_fire(fb, prev.ab); fb.set_cease_fire(fa, prev.ba)
     end
     p.lift_tick, p.lifted_tick = nil, game.tick
-    both(p, string.format('the cease-fire of pact #%d lifted at tick %d', p.id, game.tick), false)
+    if not quiet then both(p, string.format('the cease-fire of pact #%d lifted at tick %d', p.id, game.tick), false) end
   end
 
   -- The depot's move: each send chest's stacks into the other team's receive chest, floor(count x (1 - cut)) arriving,
@@ -355,21 +367,12 @@ return function(api)
     end
   end
 
-  -- The scoring's allied edge (docs/mt-diplomacy.md): 1.0 x the members split by shares (none: even), no team above
-  -- share_cap_score; what the cap takes off goes to the other members by their shares. {team=points}.
+  -- The scoring's allied edge (docs/mt-diplomacy.md): 1.0 x the N members split by shares (none: even). Shares are
+  -- bounded when proposed (share_max): no member above share_max_score, so no team-up pays more than winning alone.
+  function M.share_max(n) return cfg('share_max_score') / n end
   function M.allied_scores(shares, members)
     local n, out = #members, {}
-    local cap = cfg('share_cap_score')
-    local total = n * 1.0
-    for _, t in ipairs(members) do out[t] = total * ((shares and shares[t]) or (1 / n)) end
-    for _ = 1, n do
-      local over, room = 0, 0
-      for _, t in ipairs(members) do if out[t] > cap then over = over + out[t] - cap; out[t] = cap end end
-      if over <= 1e-9 then break end
-      for _, t in ipairs(members) do if out[t] < cap then room = room + ((shares and shares[t]) or (1 / n)) end end
-      if room <= 0 then break end
-      for _, t in ipairs(members) do if out[t] < cap then out[t] = out[t] + over * ((shares and shares[t]) or (1 / n)) / room end end
-    end
+    for _, t in ipairs(members) do out[t] = n * ((shares and shares[t]) or (1 / n)) end
     return out
   end
 
@@ -428,13 +431,13 @@ return function(api)
   }
   M.reads = {pacts=true}
   M.schema = {
-    pact_propose={with='the other team (a team you have had contact with)', terms='{cease_fire?: true, shares?: {TEAM: fraction, both teams, summing to 1}, depot?: {x, y, surface?}, obligations?: [{kind: "deliver", who, item, count (an hour, through the depot)}, {kind: "keep_out", who, x, y, r, surface?}, {kind: "no_attack", who, target}]}',
+    pact_propose={with='the other team (a team you have had contact with)', terms='{cease_fire?: true, shares?: {TEAM: fraction, both teams, summing to 1, each at most 0.70}, depot?: {x, y, surface?}, obligations?: [{kind: "deliver", who, item, count (an hour, through the depot)}, {kind: "keep_out", who, x, y, r, surface?}, {kind: "no_attack", who, target}]}',
       note='optional text, 500 bytes', expires_min='optional minutes it stays open (default 60)', returns='pact: its number, terms and status; the other team gets it as a fact line'},
     pact_accept={id='a pact proposed to your team', returns='pact; its terms hold from now (the cease-fire both ways, the depot\'s chests placed)'},
     pact_decline={id='a pact proposed to your team', note='optional text', returns='pact'},
     pact_withdraw={id='your team\'s open proposal', returns='pact'},
     pact_amend={id='an active pact', terms='as pact_propose', note='optional text', returns='pact: a new proposal that replaces it when accepted'},
-    pact_end={id='an active pact', note='optional text', returns='pact; ended now for both teams, the cease-fire lifting after a notice'},
+    pact_end={id='an active pact', note='optional text', returns='pact; ended now for both teams, the cease-fire lifted now'},
     pacts={returns='pacts: your team\'s pacts and proposals, with this hour\'s depot ledger and the obligations\' last measurements'},
   }
   -- describe: the pact actions for a team with a contact only (none before: nothing says other teams exist)

@@ -91,10 +91,11 @@ surface both teams have, on dry ground, within no other team's buildings; obliga
   first move away from the last planet past a set distance; the platform watch already sees routes).
 - An allied edge: the platform's team and every team holding an active pact with cease-fire and shares with it at
   the snapshot score; the allied total is 1.0 x the number of those teams, split by the shares (no shares: even).
-  The cap (mt281, setting `share_cap_score`, default 1.5): no team's allied score above the solo edge's 1.5; what the
-  cap takes off goes to the other members by their shares. A 0.9/0.1 pact of two: 1.8 and 0.2 before the cap, 1.5
-  and 0.5 after it. A 0.5/0.5 pact: 1.0 and 1.0. So allying never pays a leader more than going alone, and a share
-  moves points to the smaller team only up to the cap.
+  The bound (mt284, Nick d29 14:00; setting `share_max_score`, default 1.4, below the solo edge's 1.5): no member's
+  allied score above it, so a share is at most share_max_score / N of the allied total (N members x 1.0). pact_propose
+  and pact_amend refuse a share past it, naming the bound. Two teams: at most 0.70 each, so 70/30 is the most
+  lopsided (1.4 and 0.6); three: about 0.47 (1.4 of 3.0); four: 0.35 (1.4 of 4.0). The even split stays 1.0 each. No
+  team-up pays a leader more than winning alone.
 - The home-must-hold rule is unchanged (the team's Nauvis landing pad, powered, when its platform arrives).
 - A mid-run milestone ranking (if Nick adds one): pacts do not change it.
 
@@ -115,12 +116,13 @@ surface both teams have, on dry ground, within no other team's buildings; obliga
 
 ## Built (mt281): the operator's defaults, each a setting in mt_pacts' config
 - Terms: cease-fire, shares, depot, the three obligation kinds; no shared chart.
-- Shares: the allied total 1.0 x the members, split by shares, capped at share_cap_score (1.5).
+- Shares: the allied total 1.0 x the members, split by shares, each share at most share_max_score / N (1.4 / N).
 - Depot: cut 0.2, a move every move_s (10 s). Four chests, harness-placed, indestructible and not minable: each team
   has a sending chest and a receiving chest of its own force (a team opens only its own), A-send, A-receive,
   B-receive, B-send in a row at the agreed spot, tagged on each team's map.
-- pact_end: ended at once in the record, both teams told; the engine cease-fire lifts end_notice_s (600 s) later, and
-  the fact line says when.
+- pact_end: ended at once in the record, both teams told; the engine cease-fire lifts on the same tick (mt284, Nick:
+  "That's how real diplomacy works, and then you can see if troops are mustering"; end_notice_s 0, a setting: above 0
+  it lifts that many seconds later and the fact line says when). A lift is war both ways (teams' default).
 - The human team: the same terms through chat, `!pact ACTION {json}` (propose, accept, decline, withdraw, amend, end,
   list); the reply in its console.
 - Unlock: at first contact (the pact actions out of describe and refused until then; a `new:` fact line at the
