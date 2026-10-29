@@ -320,6 +320,26 @@ return function(api)
     end
   end
 
+  -- (d29 batch346 LC, Astra #2754) the rockets' pods sent up to a platform at or after since (origin: one planet, else
+  -- every one): {sent, landed, gone, planet} each, newest first, and whether the log reaches back to since (complete).
+  -- The lists are in send order: read from the newest, stopped SLACK ticks before since (a sampled send can be early).
+  M.SLACK = 600
+  function M.ups(platform, since, origin)
+    local out, complete = {}, true
+    for planet, list in pairs(store().by) do
+      if not origin or planet == origin then
+        if #list >= M.KEEP and list[1] and list[1].sent > since then complete = false end
+        for i = #list, 1, -1 do
+          local r = list[i]
+          if r.sent <= since - M.SLACK then break end
+          if r.up and r.platform == platform and r.sent >= since then out[#out+1] = {sent=r.sent, landed=r.landed, gone=r.gone, planet=planet} end
+        end
+      end
+    end
+    table.sort(out, function(x, y) return x.sent > y.sent end)
+    return out, complete
+  end
+
   -- (d28 batch320 LP) what is on the way up to a platform now: each rocket pod sent to it from a silo and not landed yet
   -- (in flight or rising), counted by item key (name or name@quality); with item, that item's count only.
   function M.on_the_way(platform, item)

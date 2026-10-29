@@ -38,6 +38,12 @@
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
   `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed);
+  `launches_at_least` (`platform`, `n`, `window` seconds back or `since_tick`, `origin?` planet: the rockets sent up to
+  that platform then, launched (landed, in flight) plus loaded in silos with a rocket ready aimed at it, met at n; saw
+  and a fired guard's evidence give each count; counted every 1 s; read only: the harness stops nothing, so a cap is
+  your own guard whose steps act as you choose (e.g. a `requests` step on the platform's section), and removing or
+  re-arming that guard is the override; remote and platform lanes; `shipment {launches: true, platform, window |
+  since_tick, origin?}` reads the same count);
   `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
   in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
   guard keeps the progress and leg; remote and platform lanes);

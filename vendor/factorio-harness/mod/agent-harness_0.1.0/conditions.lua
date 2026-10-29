@@ -262,6 +262,9 @@ return function(api)
   -- (batch329 PR) budget_below's last reading per condition (in memory: read again after a load)
   local budget_kept=setmetatable({},{__mode='k'})
   M.BUDGET_EVERY=600
+  -- (batch346 LC) launches_at_least's last count per condition, read at most every LAUNCH_EVERY ticks
+  local launch_kept=setmetatable({},{__mode='k'})
+  M.LAUNCH_EVERY=60
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -839,6 +842,29 @@ return function(api)
       local x=b.binds.out_km_max
       return x<c.km,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
     end,
+    -- (d29 batch346 LC, Astra #2754: 23 pods went up before an audit; a correction raced rockets already loaded and in
+    -- flight) the rockets to a platform in a window (seconds back from now) or since a tick, from origin or any planet:
+    -- launched (the pod log's rockets: landed, in flight) plus loaded (silos with a rocket ready aimed at it), met at n.
+    -- Facts only: what follows is the guard's own steps (or the plan's next step). Counted at most every LAUNCH_EVERY
+    -- ticks (launchcount.lua); between, the last count stands (its tick said). When met, the counts are its evidence.
+    launches_at_least=function(p,c,estimate,record)
+      local now=game.tick
+      local kept=launch_kept[c]
+      if not kept or now-kept.tick>=M.LAUNCH_EVERY then
+        kept={tick=now,r=api.launch_count(p.force,c.platform,{window=c.window,since_tick=c.since_tick,origin=c.origin})}
+        launch_kept[c]=kept
+      end
+      local r=kept.r
+      local met=r.total>=c.n
+      local holder=record or c
+      if met then
+        holder.evidence={tick=kept.tick,launched=r.launched,landed=r.landed,in_flight=r.in_flight,loaded=r.loaded,total=r.total,
+          since_tick=r.since_tick,complete=r.complete,line=r.line}
+      end
+      return met,string.format('%s (met at %d%s)%s',r.line,c.n,now>kept.tick and '; counted at tick '..kept.tick or '',
+        met and '; the harness stops nothing: what follows is this guard\'s own steps, or the plan\'s next step' or ''),
+        estimate and {value=r.total,scope='launches:'..c.platform} or nil
+    end,
     -- (d22 batch92 BB2, Astra #1886: a probe flight's retreat when its power reserve drops) a platform's accumulators
     -- together: the energy they hold over what they can hold, as each one's GUI shows them; met under fraction. Read
     -- at each check (a platform holds tens of them); (d22 batch110 BT1) the list kept while the same, as fluid_count's
@@ -1074,7 +1100,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|tick_at_least|all|any'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1162,7 +1188,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1354,6 +1380,15 @@ return function(api)
       assert(type(c.platform)=='string' and #c.platform>0,'budget_below requires platform (a platform of ours in flight, by name)')
       assert(type(c.turnaround)=='table','budget_below turnaround: as platform_endurance\'s ({km | fraction, back_to?, speed_floor?, margin?, reserve?})')
       assert(type(c.km)=='number' and c.km>=0 and c.km<=1e8,'budget_below km: met once the binding item can go out less than this many km farther (0..100000000)')
+    end
+    if kind=='launches_at_least' then
+      assert(type(c.platform)=='string' and #c.platform>0,'launches_at_least requires platform (a platform name: the rockets sent up to it)')
+      assert(type(c.n)=='number' and c.n>=1 and c.n<=100000 and c.n==math.floor(c.n),'launches_at_least n: 1..100000 rockets (launched + loaded), met at it')
+      assert((c.window==nil)~=(c.since_tick==nil),'launches_at_least takes window (seconds back from now, 1..86400) or since_tick (a game tick): one of them')
+      assert(c.window==nil or (type(c.window)=='number' and c.window>=1 and c.window<=86400),'launches_at_least window: 1..86400 seconds back from now')
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick==math.floor(c.since_tick) and c.since_tick>=0 and c.since_tick<=game.tick),
+        'launches_at_least since_tick is a whole game tick 0..now ('..game.tick..')')
+      assert(c.origin==nil or (type(c.origin)=='string' and prototypes.space_location[c.origin]~=nil),'launches_at_least origin: a planet name (the silos there and the rockets from there)')
     end
     if kind=='platform_energy_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'platform_energy_below requires platform (a platform of ours by name)')
