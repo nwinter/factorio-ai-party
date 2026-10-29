@@ -5,10 +5,6 @@
   crosses (ground the character cannot cross, cliffs, buildings, trees or rocks, with where), and `last.route` gives
   the tiles walked against the straight line, the point farthest off it and what the walk went round (that, enemies'
   reach in `avoided_enemies`, a path off belts).
-  - `{"stand_off":{"target":{"x":425,"y":-410},"reach":36}}` walks to the spot within `reach` tiles of the target outside
-    every worm's range, spawner's reach and area under attack the map shows plus the `avoid_enemies` margin, the one
-    nearest you; with none clear of the margin, at their bare reach (said); with none at all, refused naming them.
-    `stand_off` in the reply: where, how far from the target, the nearest reach edge.
   - `{"target":{"position":{"x":-75.5,"y":-86.5}},"reach":"transfer"}` (reach `build` or tiles; a vehicle by
     `{"unit_number":N}`) walks until you are within reach of that entity (`last.reach`; transfer reach to its box,
     build reach to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does
@@ -35,14 +31,19 @@
     fewest to mine for one (never a rocket silo, landing pad or platform hub; a goal inside a building: the way to its
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
-  - Gates: our gate opens as the character comes, and walks route through it (one set across the wall line joins no
-    wall and leaves gaps beside it). A walk ending unreachable, blocked or near gives `last.across`: what stands across
-    the straight line from where it ended to the goal (48 tiles), each wall with how many, the box it spans and its gates
-    (ours, or another force's, which does not open for ours), or `no gate in it` (`last.across_walls`).
-  - Mech armor (armor that provides flight): the character takes off when it walks into something and lands when it
-    stops where it can stand; flying it crosses water, walls and buildings (only spidertrons and pentapods stop it), and
-    walks plan with that (status `flight` says flying or on the ground). A change to armor without flight while it
-    flies kills the character in 2.0.77: `equip` refuses it then.
+- `move_to`, stand off: `{"stand_off":{"target":{"x":425,"y":-410},"reach":36}}` walks to the spot within `reach`
+  tiles of the target outside every worm's range, spawner's reach and area under attack the map shows plus the
+  `avoid_enemies` margin, the one nearest you; with none clear of the margin, at their bare reach (said); with none at
+  all, refused naming them. `stand_off` in the reply: where, how far from the target, the nearest reach edge.
+- `move_to`, gates: our gate opens as the character comes, and walks route through it (one set across the wall line
+  joins no wall and leaves gaps beside it). A walk ending unreachable, blocked or near gives `last.across`: what
+  stands across the straight line from where it ended to the goal (48 tiles), each wall with how many, the box it
+  spans and its gates (ours, or another force's, which does not open for ours), or `no gate in it`
+  (`last.across_walls`).
+- `move_to`, mech armor: Mech armor (armor that provides flight): the character takes off when it walks into something
+  and lands when it stops where it can stand; flying it crosses water, walls and buildings (only spidertrons and
+  pentapods stop it), and walks plan with that (status `flight` says flying or on the ground). A change to armor
+  without flight while it flies kills the character in 2.0.77: `equip` refuses it then.
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
     of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,

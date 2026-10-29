@@ -268,7 +268,7 @@
   acknowledged that stays open. `status` `overdue_reviews` lists
   your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
   `next_check` tick, oldest first.
-- What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
+- What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the urgent alerts below:
   a `./fh sleep` or `./fh wait` begun while teammates' tells have stayed unread 2 minutes or more ends at once on them
   (`woke: told`, `N unread tells from before this sleep began ...`, `woke_by` with `unread: true`), each tell once;
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
@@ -319,3 +319,33 @@
   slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`, also on the clock
   line) and end `paused` when it stops. After a server restart from a save, one reply says `rolled_back` and lists in
   `redo` what you changed since, which is gone.
+- Waiting and planning: before a step that needs real thought, leave a queue
+  plan or a long timed action running. `wait_until` and a queue plan check a condition inside the game, with no call
+  per check; your character can work while a queue or another condition runs. One `status` carries the clock and the
+  research progress (`factory`). `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no
+  round trips.
+- `--wait`: timed actions (move_to, mine, build_path, construct, ...) take
+  `--wait`, which lasts until the action's own end tick (`--wait-timeout MS` cuts it shorter). After `--wait`, a nonzero
+  exit means it failed or is still running: read `error.code`. On `wait_timeout`, run `./fh wait` (never a new
+  move/mine/build, which would interrupt it) until it reports `idle`. A `--wait` that a tell or mention ends while the
+  action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
+- `./fh sleep 120` waits up to 120 s; the game runs in real time either way.
+  Your current action and queue keep going, and nothing new starts. It returns early when you are hit, mentioned or
+  told something, when someone changes your board item, when your running queue finishes or stalls, and with
+  `--until` when a condition holds: `--until "researched"` (the research running now, or `researched TECH`),
+  `--until crafting_done`, `--until "item_count iron-plate>=200"` (your inventory). It does not return when a machine
+  starves, and never runs past your deadline. With no queue running, no action running and no `--until` it lasts at
+  most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s otherwise. A tell or mention wakes it once.
+- `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one
+  line out (`woke: told after 42 s (astra: ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a
+  `--until` condition as for sleep, or after `--max` seconds; the team block comes with your next reply, and the line
+  ends with `open for you: ...`.
+- Urgent alerts: every sleep and wait ends on an urgent alert (`woke: urgent`,
+  naming it): our structures attacked within 40 tiles of you, an enemy group heading within 40 tiles of you, enemies
+  destroying buildings in your fresh claims or near you, a platform you hear about losing a building or its hub hit,
+  a teammate dying on your surface, a network on your surface half on low or no power; `--no-urgent` opts out.
+- A direct action that drives your character (walk, `move_to`, build, mine,
+  transfer, collect, feed and the like) pauses your running queue at once; `./fh queue resume` continues it. A direct
+  `wait_ticks` or `wait_until` while your queue runs runs as a sleep and the queue keeps going (`as_sleep`;
+  `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue
+  running.
