@@ -14201,7 +14201,8 @@ M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then
 M.routefeeds=require('routefeeds')()
 M.sidefeed=require('sidefeed'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
 -- (d29 batch341 PW) a removal that leaves an electric network with consumers and no generation says so (powerleft.lua)
-M.powerleft=require('powerleft'){typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,flow=function(...) return M.qflow.flow(...) end}
+M.powerleft=require('powerleft'){typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,flow=function(...) return M.qflow.flow(...) end,
+  stats=function(id,sf) return M.networks.stats_of(id) or (sf.has_global_electric_network and sf.global_electric_network_statistics) or nil end}
 do local blueprint_handlers=blueprint_module{power_left=function(f,list,dry) return M.powerleft.after(f,list,dry) end,railrun=function() return M.railrun end,circuits=function() return M.circuits end,unwired_check=function(s,f) return M.unwired_check(s,f) end,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
   build_notes=function(p,ents) return M.build_notes(p,ents) end,
   heat_loss=function(surface,force,list) return M.heating.loss(surface,force,list) end,
