@@ -188,7 +188,7 @@ claude_settings() {
     for f in "$root"/*; do [ "${f##*/}" = runs ] || readable="$readable \"$f\""; done
     for r in $chain; do readable="$readable \"$root/runs/$r/$part\""; done
     filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
-    file_allow="$(for f in $readable; do printf '"Read(/%s/**)", ' "${f//\"/}"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
+    file_allow="$(for f in $readable; do f=${f//\"/}; [ -f "$f" ] && printf '"Read(/%s)", ' "$f" || printf '"Read(/%s/**)", ' "$f"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
   fi
   local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
