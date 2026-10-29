@@ -111,6 +111,28 @@ def claude_settings():
         dr1 = json.load(open(os.path.join(ws1, ".claude", "settings.json")))["sandbox"]["filesystem"]["denyRead"]
         assert os.path.join(runs, "mt9") in dr1 and os.path.join(runs, "shift91") not in dr1, dr1
         assert 'label=${run//\\//-}' in text and 'name="pog-${POG_WS:-$world}-$label"' in text
+        # POG_READ_SCOPE=1: the settings name only this tree's shared folders and this part (here and in the run it
+        # resumes); no other part, run or POG_DENY_READ path (Claude Code shows the model these lists)
+        for d in ("tools", "agent"):
+            os.makedirs(os.path.join(tmp, d))
+        allow = '"Read", "Grep", "Glob", "Edit(/**)", "Bash(./fh:*)"'
+        script = f'root={tmp!r} run=mt9/blue dir={ws!r} allow={allow!r}\n{body}\nclaude_settings\n'
+        subprocess.run(["bash", "-c", script], env=dict(os.environ, POG_BROKER="1", POG_BOT="haiku", POG_DENY_READ="/x/mt277 /x/op",
+                                                     POG_READ_SCOPE="1"), check=True)
+        raw = open(os.path.join(ws, ".claude", "settings.json")).read()
+        cfg = json.loads(raw)
+        fs, perms = cfg["sandbox"]["filesystem"], cfg["permissions"]
+        home = os.path.expanduser("~")
+        assert fs["denyRead"][:2] == [f"{home}/.config/pog", f"{home}/code"], fs
+        want = [os.path.join(tmp, "agent"), os.path.join(tmp, "tools"), os.path.join(runs, "mt9", "blue"), os.path.join(runs, "mt8", "blue")]
+        assert fs["allowRead"] == want, fs
+        assert perms["allow"] == [f"Read(/{p}/**)" for p in want] + ["Edit(/**)", "Bash(./fh:*)"], perms["allow"]
+        assert not any(w in raw for w in ("/red", "/green", "/op", "mt277", "shift91")), raw
+        assert perms["deny"] == ["Read(~/.config/pog/**)", f"Read({home}/.config/pog/**)", "Edit(~/.config/pog/**)", f"Edit({home}/.config/pog/**)"], perms
+        # Grok Build's allowlist (nosandbox) keeps the bare Read
+        subprocess.run(["bash", "-c", script.replace("\nclaude_settings\n", "\nclaude_settings nosandbox\n")],
+                       env=dict(os.environ, POG_BROKER="1", POG_BOT="haiku", POG_READ_SCOPE="1"), check=True)
+        assert json.load(open(os.path.join(ws, ".claude", "settings.json")))["permissions"]["allow"][0] == "Read"
     finally:
         shutil.rmtree(tmp)
     print("claude settings: ok")
@@ -211,7 +233,14 @@ def web_block():
         full_tools.web_block(tmp)
         cfg = json.load(open(os.path.join(tmp, ".claude", "settings.json")))
         assert cfg["permissions"]["deny"] == ["Read(x)", "WebSearch", "WebFetch(domain:factorio.nickwinter.net)", "WebFetch(domain:github.com)"], cfg
-        assert cfg["sandbox"]["network"]["deniedDomains"] == ["factorio.nickwinter.net", "github.com"], cfg
+        # no allowed host for the shell: no host list in the sandbox (Claude Code shows it to the model)
+        assert "deniedDomains" not in cfg["sandbox"]["network"], cfg
+        json.dump({"sandbox": {"network": {"allowedDomains": ["pypi.org"]}}}, open(os.path.join(tmp, ".claude", "settings.json"), "w"))
+        full_tools.web_block(tmp)
+        net = json.load(open(os.path.join(tmp, ".claude", "settings.json")))["sandbox"]["network"]
+        assert net["deniedDomains"] == ["factorio.nickwinter.net", "github.com"], net
+        json.dump({"sandbox": {"network": {}}, "permissions": {"deny": ["Read(x)"]}}, open(os.path.join(tmp, ".claude", "settings.json"), "w"))
+        full_tools.web_block(tmp)
         full_tools.web_block(tmp)
         assert len(json.load(open(os.path.join(tmp, ".claude", "settings.json")))["permissions"]["deny"]) == 4, "twice: no duplicates"
         assert "agy: search_web, read_url_content and browser_subagent on" in full_tools.web_state(tmp, "agy")

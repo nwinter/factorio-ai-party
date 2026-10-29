@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # (mt277, private) Stop a multi-team run (tools/mt/start-mt.sh): every team's supervisors, broker and helpers and the
-# run's own, pause the world (imac2), save it (game.server_save RUN on the iMac, and /server-save), gzip the journals.
+# run's own, close the agents' panes, pause the world (imac2), save it (game.server_save RUN on the iMac, and /server-save), gzip the journals.
 #   tools/mt/stop-mt.sh RUN_ID
 # The teams' folders are in the launch tree start-mt.sh wrote in runs/RUN/op/launch-tree.
 # Env: POG_STOP_WORLD=1 also stops the mt server (tools/mt/imac_mt.sh stop: /quit saves over its saves/mt.zip, which
@@ -24,5 +24,16 @@ for j in glob.glob(f"{sys.argv[1]}/*/*/journal.jsonl"):
     os.remove(j)
 PY
 rm -rf "$rundir"/*/.keys
+# The agents' panes (as tools/shift-change.sh closes a shift's); a process left after that (mt-smoke1: a Grok shell's
+# fh call, its parent gone) is listed by PID for the operator, not killed here.
+if [ -f "$op/panes.txt" ]; then
+  while read -r t name pane kind; do
+    [ -n "$pane" ] || continue
+    herdr pane close "$pane" >/dev/null 2>&1 && echo "closed pane $pane ($t/$name)" || echo "pane $pane ($t/$name): already gone"
+  done < "$op/panes.txt"
+  sleep 2
+  left=$(pgrep -f "$rundir/" | tr '\n' ' ')
+  [ -z "$left" ] || echo "still running with $rundir in their command line (PIDs): $left" >&2
+fi
 if [ "${POG_STOP_WORLD:-0}" = 1 ]; then tools/mt/imac_mt.sh stop || true; fi
 [ $saved = 1 ] && echo "stopped $run; world $world saved as $run (and /server-save)" || { echo "stopped $run; world $world NOT saved as $run" >&2; exit 3; }

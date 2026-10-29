@@ -42,6 +42,8 @@ for w in $(git worktree list --porcelain | awk '/^worktree /{w=$2} /^branch refs
   case " $deny " in *" $w "*) ;; *) deny="$deny $w" ;; esac
 done
 export POG_DENY_READ=$deny
+# Claude Code: reads scoped to the tree and the team's folder (tools/launch-agent.sh), so its settings name no other team
+export POG_READ_SCOPE=1
 resume=${POG_RESUME:-}
 only=${POG_MT_TEAMS:-}
 teams=$(awk -F'\t' -v only=",$only," '!/^#/ && NF >= 8 && (only == ",," || index(only, "," $1 ",")) && !seen[$1]++ {print $1}' "$teams_file")

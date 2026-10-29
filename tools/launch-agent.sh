@@ -177,15 +177,29 @@ claude_settings() {
     keys_read="$keys_read, \"$d\""
     keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
   done
+  # POG_READ_SCOPE=1, a run in parts, Claude Code: Claude Code shows the model its sandbox settings and Read rules, so
+  # the list above would name the run's other parts. Instead the shell reads nothing under ~/code or Dropbox but this
+  # tree's shared files and this part's folder (and the same part of the runs it resumes), and the Read tool the same
+  # paths (allow rules: no bare Read, Grep or Glob; the shell's grep, rg and ls stay).
+  local filesystem="\"denyRead\": [\"$HOME/.config/pog\"$keys_read]" file_allow=$allow
+  if [ "${POG_READ_SCOPE:-0}" = 1 ] && [ -n "$part" ] && [ "${1:-}" != nosandbox ]; then
+    local roots="\"$HOME/code\"" readable="" f
+    for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
+    for f in "$root"/*; do [ "${f##*/}" = runs ] || readable="$readable \"$f\""; done
+    for r in $chain; do readable="$readable \"$root/runs/$r/$part\""; done
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
+    file_allow="$(for f in $readable; do printf '"Read(/%s/**)", ' "${f//\"/}"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
+    keys_rules=""
+  fi
   local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
-    \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {\"denyRead\": [\"$HOME/.config/pog\"$keys_read]}},"
+    \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {$filesystem}},"
   [ "${1:-}" = nosandbox ] && sandbox=''   # Grok Build: allowlist only (its own sandbox flags differ)
   cat > "$dir/.claude/settings.json" <<EOS
 {
   $sandbox
   "permissions": {
     "defaultMode": "dontAsk",
-    "allow": [$allow],
+    "allow": [$file_allow],
     "deny": ["Read(~/.config/pog/**)", "Read($HOME/.config/pog/**)", "Edit(~/.config/pog/**)", "Edit($HOME/.config/pog/**)"$keys_rules]
   }
 }

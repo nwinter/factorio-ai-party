@@ -581,8 +581,11 @@ def web_block(d):
     for rule in ["WebSearch"] + [f"WebFetch(domain:{h})" for h in web_blocked()]:
         if rule not in deny:
             deny.append(rule)
-    if cfg.get("sandbox") is not None:
-        dd = cfg["sandbox"].setdefault("network", {}).setdefault("deniedDomains", [])
+    # The shell's own hosts: only where the sandbox lets it reach any (allowedDomains); with none it reaches no host
+    # anyway, and Claude Code shows the model the sandbox's host lists.
+    net = (cfg.get("sandbox") or {}).get("network") or {}
+    if net.get("allowedDomains"):
+        dd = net.setdefault("deniedDomains", [])
         dd += [h for h in web_blocked() if h not in dd]
     with open(path, "w") as f:
         json.dump(cfg, f, indent=2)
