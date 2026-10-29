@@ -17732,6 +17732,29 @@ world or the targeting.
 batch321 found that the agents compared factory and research against the ship only when a viewer asked, and named the
 facts they lacked; and that dated checks lived in note text and never came due. Facts only: nothing here advises.
 
+- **Explicit level costs (batch355).** `technologies {name: "low-density-structure-productivity", level: 16}`
+  accepts one exact enabled technology and a level in its prototype's range; lists, filters and paging cannot
+  accompany `level`. This is a read: no queue insertion, level assignment, progress write or target update.
+  The entry's `level` is requested, `force_level` is native, `count`/`full_units` is the full level cost and
+  `remaining_units` deducts current/saved progress only at the native level (zero for completed levels).
+  `progress_source` names which; `cost.eta_seconds`/`takes` uses the measured research-work rate including
+  productivity, for this level alone with no queue wait or assumed supply changes. No positive measured rate
+  means ETA unavailable. A future level never inherits the current level's remainder.
+  The engine evaluates the prototype formula with L and l; the difficulty multiplier applies unless ignored,
+  after flooring the formula result, then the multiplied value is floored again (native 2.0.77 checks).
+  Out-of-range/overflow/trigger requests are refused. `cost.rate` gives the measurement date, age and window.
+  `cost.nominal_packs_per_unit`, `nominal_packs_full`, `nominal_packs_remaining` are recipe amounts before lab
+  drain/productivity. `physical_packs_remaining` is a conditional estimate in fresh normal-quality full-durability
+  pack equivalents: nominal remainder times sum(speed * drain/100) / sum(speed * (1 + productivity)) across
+  working compatible labs. `cost.cohort` lists grouped labs by surface/type/quality/speed/drain/productivity/status,
+  the current research, census membership date, compatible/working counts, and its assumption. Live properties
+  come from the listed labs. It is not a count of inventory items: freshness, quality and partially consumed packs
+  matter. Incomplete census, the 256-lab cap or no working compatible labs omits physical demand with a reason.
+  Plain catalog `packs_needed`/`packs_short` remain nominal and say so in `packs_basis`; entries also name full
+  and remaining units. Queue entries label successive levels of repeated infinite technologies, their individual
+  full/remaining costs and progress source. Only the first occurrence carries current/saved progress; cumulative
+  `done_in` uses each level's cost. Unknown costs stop the queue clock. Sample pairs spanning a changed unit cost
+  of the same infinite technology no longer contribute to throughput.
 - **1. Effects.** `technologies` entries carry `effects` as the research screen lists them (research.lua unlocks,
   cached per name), and for a technology with levels `next_level` ("level 8 adds ...; N units"). A recipe
   productivity research carries `change`, not `modifier`: it read no effect before (low-density-structure
