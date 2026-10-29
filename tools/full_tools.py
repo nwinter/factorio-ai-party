@@ -594,7 +594,12 @@ def agy_agent(d):
 # network proxy with a permission profile allowing that one Unix socket and no domain (checked: the socket answers,
 # github.com and wiki.factorio.com do not, direct or through the proxy); ai-session's --sandbox/--network are left out
 # so the profile applies (tools/launch-agent.sh). Muse's restricted and proxy-only modes block Unix sockets and
-# loopback TCP alike (muse 1.4.14), so fh could not reach the broker: Muse's shell network stays enabled.
+# loopback TCP alike (muse 1.4.14), so fh could not reach the broker: Muse's shell network stays enabled. (mt280) A
+# Muse permission profile (-c permissions={...} --permission-profile ID) can allow one socket only with network mode
+# proxy_only, which requires prompting approval with a human reviewer, and the live session refused every filesystem
+# shape tried: no unattended profile found. Grok (1.0.70): its sandbox's restrict_network is Linux-only ("the network
+# filter exists only on Linux"); on macOS it adds container-socket denies only, which fail here on OrbStack's
+# symlinked /var/run/docker.sock, and sandbox-exec cannot nest inside Grok's own Seatbelt profile.
 CODEX_PROFILE = "pog_socket"
 
 
@@ -653,8 +658,9 @@ def web_state(d, kind):
     net = {"claude": "shell in the sandbox (no network but the broker socket)" if os.environ.get("POG_BROKER") == "1"
                      else "shell in the sandbox (local network only)",
            "codex": "shell network: the broker socket only (Codex's network proxy, no host)" if shell_net() == "socket"
-                    else "shell network open (--network)", "grok": "shell network open",
-           "muse": "shell network open (--sandbox-network enabled)" + ("; Muse's restricted modes block the broker socket" if shell_net() == "socket" else ""),
+                    else "shell network open (--network)",
+           "grok": "shell network open" + ("; Grok's network filter is Linux-only" if shell_net() == "socket" else ""),
+           "muse": "shell network open (--sandbox-network enabled)" + ("; Muse's restricted modes block the broker socket, and a profile allowing it needs a human approver" if shell_net() == "socket" else ""),
            "agy": "shell network open"}.get(kind, "?")
     line = f"{kind}: {web}; {net}"
     with open(os.path.join(d, ".web-state"), "w") as f:
