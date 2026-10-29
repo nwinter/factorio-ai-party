@@ -3290,6 +3290,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
   chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+- (d28 batch330 IH, Astra #2728: area inspect read a bulk inserter holding 4 rockets as `holds: empty`) In `inspect`'s
+  area rows an inserter has no `holds` (it has no inventory): its hand is `held` ("4 rocket", "nothing"; a quality as
+  name@quality) and `held_count`, as the exact inspect gives them. A crafting machine's row adds `in_progress` ("one
+  craft 40% done (its products are in no slot yet)") beside `holds` (its slots). Belts' `holds` are their lanes, a
+  turret's its ammo slots, robots' their cargo, as before.
 - (d28 batch328 SC, Astra #2725) An entity whose surface conditions the surface does not meet is refused naming the
   condition, before any footprint check, in `build`, `place_ghosts`, `paste` and `blueprint_place` and their dry runs:
   `placement blocked: iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0` (the
