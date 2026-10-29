@@ -234,6 +234,20 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
             bad.append("OBS")
     else:
         parts.append(service)
+    # (d29 batch347 OR, shift100: the overlay blank 26 min after its start) the main overlay page's event stream, as the
+    # service sees it (tools/overlay_check.py status; obs-steps already toggled it once if it had not connected)
+    if service == "service ok" and obs:
+        ov = overlay_status(state_url)
+        if ov is not None:
+            # which way the start's check went (obs-steps.sh's overlay line in start.log)
+            began = [l for l in read(os.path.join(rundir, "start.log")).splitlines() if "obs-steps: overlay:" in l]
+            if began and "toggled the source" in began[-1]:
+                ov += " (after a toggle at the start)"
+            elif began and "FAILED" in began[-1]:
+                ov += " (the start's check failed)"
+            parts.append(ov)
+            if ov.startswith("overlay NOT"):
+                bad.append("overlay")
     # the OBS restart before the shift (shift-change.sh / start-team.sh: obs-restart.sh's last line); a failure is
     # reported, the shift went on with the OBS that ran
     restart = read(os.path.join(rundir, "obs-restart.txt")).strip()
@@ -254,6 +268,26 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
     for e in errors[:5]:
         line += "\n  " + e
     return not bad, line
+
+
+def overlay_status(state_url):
+    """'overlay connected' or 'overlay NOT connected (...)' from the service's /overlay/status (beside state_url), or
+    None for a service without it (before batch347) or a URL that is no HTTP one (tests)."""
+    if not state_url.startswith("http") or not state_url.endswith("/state.json"):
+        return None
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import overlay_check
+    try:
+        st = overlay_check.read(state_url[:-len("/state.json")])
+    except overlay_check.NoStatus:
+        return None
+    except overlay_check.Down as e:
+        return f"overlay NOT connected (no status: {e})"
+    if overlay_check.connected(st):
+        return "overlay connected"
+    p = overlay_check.page(st)
+    return "overlay NOT connected" + (f" (its stream closed {round(st['now'] - p['closed'])} s ago)" if p.get("closed")
+                                      else " (no main overlay stream since the service started)")
 
 
 def run_words(words):

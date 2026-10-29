@@ -2680,3 +2680,31 @@ plays the first).
 - **On pogwin, read d29 05:xx:** all six filters exist (gain -6 and -24 dB), disabled (no alarm sounding);
   `GetSourceFilter` gives `filterEnabled`.
 - **Test:** tools/stream/test_alarmapply.py.
+
+## The overlay checked after a start and while running (2026-10-29, d29 batch347 OR, viewer Aurora site:5491)
+
+- **The fault:** shift100's start (OBS restarted 09:05, overlay reloaded 09:06:22) left the "stream overlay" browser
+  source blank for 26 minutes: no right panel and no voices (they play in that page; audio-played.jsonl had no line
+  until 09:32:49). The tunnel answered and the page was served. A refreshnocache did not bring it back; turning the scene
+  item off and on did, at once.
+- **The page names itself** on its one event stream: `/events?audio=1&page=main` (index.html, body `data-page`; the
+  portrait page is `portrait`, `?page=` overrides). The service keeps each page's open streams, connects, last connect,
+  last write and close: `GET /overlay/status` (`{now, up, pages: {main: {open, connects, connected, seen, closed}}}`).
+  The main page is connected when a stream of it is open and had a write in the last 60 s.
+- **After every start:** `tools/obs-steps.sh` runs `tools/overlay_check.py start --since RELOAD` after the outputs
+  start. Connected within 30 s (POG_OS_OVERLAY_WAIT) of the reload: `overlay: connected N s after the reload`. Else
+  `tools/obs.py toggle-overlay` (the scene item off, 1 s, on) and 30 s more: `... toggled the source: connected N s
+  later`, or `overlay: FAILED: ...`. The outputs' exit code is unchanged. The health line (tools/shift_change.py) says
+  `overlay connected` (with `(after a toggle at the start)` or `(the start's check failed)` from start.log) or
+  `overlay NOT connected (...)`, which makes the health line bad.
+- **While running:** `tools/overlay_check.py watch` is one pass for a watchdog. It is silent while connected. With no
+  main stream for 120 s (`--stale`) it toggles once and prints `HH:MM OVERLAY: no main overlay stream for N s; toggled
+  the source: connected again` or `... still not connected` (exit 1). Within 10 min (`--again`) of a toggle it says
+  so again without toggling. The state is in /tmp/claude-501/overlay-check.json.
+- **A service from before:** with no /overlay/status, start says `overlay check: skipped`, and watch and the health
+  line say nothing. The first start after the merge serves the new pages.
+- **The "Press Tab to skip cutscene" hint:** no camera move puts a camera client in a cutscene controller (none in the
+  harness; cam1 read `spectator` at 09:40, and `cameras.lua` ends a join's intro cutscene). The client keeps a stale
+  hint at the bottom centre, and the overlay's bottom bar on each view covers it (test_trio's hint_bars). It showed on
+  shift100's program only because the overlay was blank.
+- **Tests:** tools/test_overlay_check.py and tools/test_obs_restart.py (obs-steps).
