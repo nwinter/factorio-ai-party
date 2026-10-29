@@ -100,6 +100,9 @@ def frames():
     c.set({'onair': 'main', 'inset': 'cam3', 'cameras': {'cam3': {'pending': True}}})
     c.work(13)
     assert not c.applied.get('inset')
+    c.set({'onair': 'main', 'inset': 'cam3', 'cameras': {'cam3': {'pending': False, 'shot': None}}})
+    c.work(14)
+    assert not c.applied.get('inset'), 'positive capture dimensions alone are not a camera acknowledgement'
 
 
 if __name__ == '__main__':

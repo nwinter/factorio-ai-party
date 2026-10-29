@@ -162,7 +162,7 @@ class Cuts:
         if want.get("layout") == "trio":
             visible.update((want.get("tiles") or {}).values())
         cameras = want.get("cameras") or {}
-        if any(cameras.get(s, {}).get("pending") for s in visible):
+        if any(s in cameras and (cameras[s].get("pending") or not cameras[s].get("shot")) for s in visible):
             self.status["error"] = "camera send pending"
             return
         self.acknowledged = copy.deepcopy(want)
