@@ -2599,6 +2599,9 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
   main hole and crop: the panels' strips stay out) and both panels at once in `panel_trio_holes` (top left and top
   right of the main view). program() gives `holes`; cuts.py places the captures by them and stacks the small tiles on
   top; the overlay takes the holes for its tile labels. No map tile (a panel draws the world).
+  (cp3, operator 19:59) It starts only while the story on air is acting now (moved or acted within `moving_s` with
+  an action running or news), a big action, a fight or a live event shot (a launch, a platform's work or story); it
+  leaves once that story has stood `still_cut`; at most one every `panel_trio_gap` (30 min).
 - **Replay** (director_replay.py `--attention`: attention points from the journals; `--speech`: the played lines from
   RUN/audio-played.jsonl with words and subjects from the caster logs).
 - tools/stream/test_speechframe.py, tools/stream/test_paneltrio.py.

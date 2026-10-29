@@ -73,6 +73,31 @@ def panel_trio():
           "ends after trio_hold, and at an urgent cut: ok")
 
 
+def lively_only():
+    """(cp3) Only over a lively story; out when it stands still; at most every panel_trio_gap."""
+    d, _ = director(PANELS)
+    d.started = 1000
+    gap = int(d.cfg["trio_gap"])
+    still = [dict(x, activity="idle", active=None) for x in team()]
+    assert until_trio(d, still, 1000, 1000 + gap + 120) is None, d.layouts  # a still story: no trio
+    d, _ = director(PANELS)
+    d.started = 1000
+    a = team()
+    s = until_trio(d, a, 1000, 1000 + gap + 60)
+    assert s is not None
+    subj = d.state[d.onair]["subject"]
+    calm = [dict(x, activity="idle", active=None) if x["name"] == subj else x for x in a]
+    for k in range(1, 60):
+        d.step(snap(calm), s + k)
+        if d.mode != "trio":
+            break
+    assert d.mode == "onecam" and "still" in d.layouts[-1][2] and k <= d.cfg["still_cut"] + 2, (k, d.layouts[-1])
+    nxt = until_trio(d, a, s + k + 1, s + k + 1700)
+    assert nxt is None, nxt  # within panel_trio_gap (30 min): none
+    assert until_trio(d, a, s + k + 1700, s + 1800 + 200) is not None
+    print(f"1b. only over a lively story, out after {k} s once it stands still, the next after panel_trio_gap: ok")
+
+
 def no_panels():
     d, _ = director(PANELS[:1], trio=True)
     d.started = 1000
@@ -108,6 +133,7 @@ def obs():
 
 def main():
     panel_trio()
+    lively_only()
     no_panels()
     obs()
     print("paneltrio: ok")

@@ -298,6 +298,11 @@ ONECAM = {
     # cuts.py take the holes from the program); no map tile (a panel draws the world only).
     "panel_trio": True,
     "panel_trio_holes": {"main": [24, 24, 1208, 1032], "cam2": [40, 40, 408, 230], "cam3": [808, 40, 408, 230]},
+    # (batch324 cp3, operator 19:59: the replay's check-in trios held a still story in the main tile, +2.8 points of idle
+    # air) A panel trio starts only while the story on air is lively (acting, news, a big action or a fight, or a live
+    # event shot: a launch, a platform's work or story), leaves when it has stood still_cut, and comes at most every
+    # panel_trio_gap after the last one.
+    "panel_trio_gap": 1800.0,
     "map_gap": 30.0,        # no base map within this long after another cut (16:44:05 came 2 s after one)
     "cloud_hold": 20.0,     # seconds on a cloud shot (module doc); the operator's call may say otherwise (5..120)
     "cloud_auto": True,     # the director shows a cloud that reached new nests
@@ -4805,6 +4810,8 @@ class OneCam(Director):
                 self.trio_pending = None
                 self.set_mode("trio", f"{p['why']}: {', '.join(p['agents'])}", now)
             return
+        if panel_trio and (now - self.last_trio < cfg["panel_trio_gap"] or not self.main_lively(subj, by_name, now, start=True)):
+            return
         found = self.trio_pick(subj, by_name, scores, ranked, now)
         # a trio's tiles are clients, not panels; (batch324 SF2) with one client, the two panels
         sb = [s for s in self.standbys() if bool(s.get("panel")) == panel_trio]
@@ -4832,12 +4839,32 @@ class OneCam(Director):
         if panel_trio:
             self.trio_pending["panels"] = True
 
+    def main_lively(self, subj, by_name, now, start=False):
+        """(batch324 cp3) The story on air is something happening: a live event shot (a launch, a platform's work or
+        story), a big action or a fight, or an agent acting (not standing still_cut) or with news. To start a trio
+        (`start`) it must be acting now (moved or acted within moving_s) with an action running or news, so the main
+        tile lasts its trio_min (a story acting a moment ago stood still within seconds in the replay)."""
+        cur = self.state.get(self.onair) or {}
+        if cur.get("launch") or (cur.get("platform") or {}).get("why") in ("work", "story"):
+            return True
+        a = by_name.get(subj)
+        if not a:
+            return False
+        if big_plan(a) or self.fighting(subj, by_name, now):
+            return True
+        if start:
+            return self.stale_s(subj, now) < self.cfg["moving_s"] and bool(a.get("active") or self.newsworthy(subj, now))
+        return self.stale_s(subj, now) < self.cfg["still_cut"] or self.newsworthy(subj, now)
+
     def tiles(self, by_name, scores, now):
         """In a trio: the big tile keeps its story (zoom follows), the small tiles their agents; over at `until`, or at
         once when an agent in it is gone."""
         if not self.trio:  # maybe_departure left the trio earlier in this step (01:55: TypeError on None)
             return
         cur = self.state.get(self.onair)
+        if self.trio.get("panels") and cur and not self.main_lively(cur.get("subject"), by_name, now):
+            self.leave_trio(f"{cur.get('subject')} still {int(self.stale_s(cur.get('subject'), now))} s", now)
+            return
         gone = (not cur or cur.get("subject") not in scores) or any(a not in scores for a in self.trio["agents"])
         if gone or now >= self.trio["until"]:
             self.leave_trio("an agent left" if gone else f"after {int(now - self.since_mode())} s", now)
