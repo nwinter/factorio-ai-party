@@ -2575,3 +2575,60 @@ them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-2
   again sends nothing (`--again` sends it as a new request). site/updates.py shows a reply under its row once it is
   marked sent (records without a rid, from before, count as sent).
 - tools/stream/test_durable_delivery.py.
+
+## Replay sound and speaker alarms (2026-10-28, d28 batch326 RA/RA2, viewer Aurora site:5417, site:5423)
+
+**Before** (OBS read on pogwin, profile "pog", d28 19:2x, no change made):
+- **Recording:** Advanced output, recording track 1 only (`RecTracks` 1), mkv, replay buffer 45 s. In Advanced mode
+  the replay buffer records the recording's tracks, so every clip carries one mix: game and voices.
+- **Sources:** every audio source is on all six tracks.
+- **The "replay" scene:** the clip (muted), the banner and the overlay (live voices). It has no game audio source, so
+  a replay aired voices over silence.
+
+**Now:**
+- **Track 2, game only:** track 2 is the game audio alone, from its own capture "stream game clean". It is not ducked
+  under the voices, so the track has no dips where someone spoke. Track 1 stays the full mix for the stream and the
+  archive.
+- **The companion:** when a replay starts, replays.py copies the clip's video and second audio track into
+  "<clip>-game.mkv" on the box (ffmpeg stream copy, about 1 s). It plays that file with its sound, ducked under the
+  live voices, and deletes it when the replay ends.
+- **No clean track:** an old clip with one track, a slow-motion clip, or a clip whose window had an audible speaker
+  alarm plays muted over "replay game ambience", a quiet live capture of the game.
+- **Back on stream:** the clip is muted and the ambience off again; the live game level is never touched. Neither the
+  clip nor the ambience feeds track 2.
+- **Speaker alarms (alarmquiet.py):** a speaker alarm the camera client hears gets a short cue at -6 dB, then -24 dB
+  while it holds. The hold clears on recovery, and the alarm re-arms after 30 s quiet. The state is kept in
+  runs/RUN/alarm-quiet.json across restarts.
+
+**OBS settings for the operator** (pogwin, profile "pog"). Output settings are greyed while the recording or replay
+buffer runs, so apply them between shifts, after stop-team and before start-team:
+1. **Settings > Output > Recording:** Audio Track: tick 1 and 2 (1 stays). Format stays mkv.
+2. **Settings > Output > Audio:** Track 2 Name "game only", bitrate 160.
+3. **Sources > + > Application Audio Capture** in scene "stream", named "stream game clean":
+   - Window: the same as "stream game audio" ([factorio-cam1.exe] Factorio 2.0.77); Window Match Priority: "Match
+     executable".
+   - Volume -2 dB (as "stream game audio").
+   - Filters: Limiter "limit peaks" (threshold -12 dB, release 60 ms); Gain "alarm cue" -6 dB, disabled; Gain "alarm
+     hold" -24 dB, disabled. No compressor (not ducked).
+4. **Sources > + > Application Audio Capture** in scene "replay", named "replay game ambience":
+   - Window: the same; Window Match Priority: "Match executable".
+   - Volume -16 dB.
+   - Filters: Compressor "duck under voices" (ratio 2.5, threshold -40 dB, attack 15 ms, release 700 ms, output gain 0,
+     sidechain "stream overlay"); Limiter "limit peaks" (-12 dB, 60 ms); Gain "alarm cue" -6 dB, disabled; Gain "alarm
+     hold" -24 dB, disabled.
+   - Hide the scene item (eye off): the service shows it for clips without a clean track.
+5. **"replay clip" Filters:** Compressor "duck under voices" (the same settings, sidechain "stream overlay"). Leave it
+   muted: the service unmutes it for a clean replay.
+6. **"stream game audio" Filters:** add Gain "alarm cue" -6 dB, disabled, and Gain "alarm hold" -24 dB, disabled.
+7. **Edit > Advanced Audio Properties > Tracks:**
+   - "stream game clean": track 2 only (1 off).
+   - "stream game audio", "stream overlay", "replay clip", "replay game ambience", "replay banner": track 1 only.
+   - Every other source: track 2 off.
+8. **Check:** with the stream scene on air, the Audio Mixer shows "stream game clean" moving with the game, and a test
+   recording (Start Recording for 10 s, then stop) has two audio streams. `ffprobe -v error -show_entries
+   stream=index,codec_type FILE` on the box lists video, audio and audio.
+
+If any of 3-6 is missing, the service logs it and carries on: without "replay game ambience" a clip without a clean
+track airs silent under the voices (as today), and without the gain filters no alarm is quieted. Recordings get a
+second audio track: the archive tools take audio track 1 (`-map 0:a:0`), and the joined uploads keep both (YouTube
+plays the first).

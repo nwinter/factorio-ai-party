@@ -630,7 +630,10 @@ def main():
     if (a.replays if a.replays is not None else not a.mock) and run.get("replays", True) is not False:
         from obsws import OBS
         host, _, port = a.obs.partition(":")
-        replays = Replays(segments, obs=OBS(host, int(port or 4455)), **(run.get("replays") or {}))
+        from alarmquiet import AlarmQuiet  # (d28 batch326 RA2) its state beside stream.json: kept across restarts
+        alarm = AlarmQuiet(os.path.join(os.path.dirname(os.path.abspath(a.run)), "alarm-quiet.json") if a.run else None)
+        replays = Replays(segments, obs=OBS(host, int(port or 4455)), alarm=alarm, remux="box",
+                          **(run.get("replays") or {}))
     show = None
     if not a.mock and run.get("show", True) is not False:  # an image over the main camera (POST /show)
         from obsws import OBS
