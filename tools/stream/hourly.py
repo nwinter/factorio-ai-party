@@ -49,6 +49,10 @@ MAX_AGE_S = 600.0  # a piece not on air this long after it was written is droppe
 URGENT_S = 120.0  # an attack, loss or death this fresh comes first
 URGENT_KINDS = ("attack", "loss", "death")
 WAIT_STEP_S = 15.0  # how often a waiting piece looks again
+# (d28 batch319 SU, viewer Aurora site:5401: "allow urgent interruptions and resume unfinished important parts") a
+# piece ended early (Airing.interrupt: a look, the host view, a battle, with one camera a fresh attack, loss or death)
+# airs its stops not played yet once more when nothing blocks it, within MAX_AGE_S of its writing; at most this often
+RESUMES = 1
 ROWS_MAX = 40  # rows offered to the model, best weight first
 PLANETS = ("nauvis", "vulcanus", "fulgora", "gleba", "aquilo")
 # Capitalised words a narration may use without them being in its facts: the game and the show's goal.
@@ -1023,11 +1027,43 @@ class Airing:
         rows = tour.checked(script_for(p)["stops"])
         if any(s and s["narration"] and not tour.clip_for(manifest, d, s) for _, s, _ in rows):
             return {"event": "dropped", "id": p["id"], "why": "a clip is missing after prepare"}
+        t, aired, skipped, log_path = self.run_tour(p, rows, manifest, d, script, "")
+        out = {"event": "aired", "id": p["id"], "aired": aired, "skipped": skipped, "waited_s": round(waited),
+               "age_s": round(self.started - float(p["written"])), "voice": manifest.get("voice"),
+               "seconds": round(sum(c.get("duration") or 0 for c in manifest["clips"].values()), 1),
+               "tts_usd": tts_spent(manifest), "ended_early": t.stop_why, "log": rel(log_path)}
+        # (SU) ended early: the stops not played yet, once more when nothing blocks them (within the piece's age)
+        left = [r for r in rows if r[1] and r[1]["id"] not in t.aired_ids]
+        for n in range(RESUMES):
+            if not (t.stop_why and left):
+                break
+            why = None
+            while True:
+                now = self.now()
+                if now >= deadline:
+                    out["resumed"] = {"stops": len(left), "expired": True, "why": why}
+                    return out
+                try:
+                    why = blocked(self.svc.state(), now) or other_tour(self.run_file)
+                except Exception as x:
+                    why = f"the stream service does not answer ({type(x).__name__})"
+                if not why:
+                    break
+                self.sleep(min(WAIT_STEP_S, deadline - now))
+            t, a2, k2, lp = self.run_tour(p, left, manifest, d, script, f"-resume{n + 1}")
+            out["resumed"] = {"stops": len(left), "aired": a2, "skipped": k2, "ended_early": t.stop_why, "log": rel(lp)}
+            left = [r for r in left if r[1]["id"] not in t.aired_ids]
+        return out
+
+    def run_tour(self, p, rows, manifest, d, script, suffix):
+        """One tour.Tour run of rows as the piece's segment (the page holds routine lines until it ends):
+        (tour, aired, skipped, log path)."""
+        import tour
         self.ours = {s["id"] for _, s, _ in rows if s}
         self.started = self.now()
-        log_path = os.path.join(self.log_dir, f"tour-{p['id']}.jsonl")
+        log_path = os.path.join(self.log_dir, f"tour-{p['id']}{suffix}.jsonl")
         t = tour.Tour(self.svc, rows, manifest, d, log_path, hush_file=self.hush_file, stop_file=self.stop_file,
-                      clock=self.now, sleep=self.sleep, interrupt=self.interrupt)
+                      clock=self.now, sleep=self.sleep, interrupt=self.interrupt, segment=p["id"])
         with open(self.run_file, "w") as f:
             json.dump({"pid": os.getpid(), "script": script, "started": self.started, "log": log_path, "by": "hourly"}, f)
         try:
@@ -1037,10 +1073,7 @@ class Airing:
                 os.remove(self.run_file)
             except FileNotFoundError:
                 pass
-        return {"event": "aired", "id": p["id"], "aired": aired, "skipped": skipped, "waited_s": round(waited),
-                "age_s": round(self.started - float(p["written"])), "voice": manifest.get("voice"),
-                "seconds": round(sum(c.get("duration") or 0 for c in manifest["clips"].values()), 1),
-                "tts_usd": tts_spent(manifest), "ended_early": t.stop_why, "log": rel(log_path)}
+        return t, aired, skipped, log_path
 
 
 def record(path, row):
