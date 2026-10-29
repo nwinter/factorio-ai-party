@@ -386,16 +386,18 @@ return function(api)
   -- News is numbered with the attack alerts (alert_seq) so replies push each
   -- item once; it carries the bearing and distance from the base centre (the
   -- force's spawn position) and from our nearest structure.
+  -- (mt276) the known nests per force (the player force's stay st.nests); news carries its force (nil: player)
   local function note_bases(p,list)
     local st=api.state()
-    local first=st.nests==nil
-    local nests=st.nests or {}
-    st.nests=nests
+    local fname=p.force.name
+    local first,nests
+    if fname=='player' then first=st.nests==nil; nests=st.nests or {}; st.nests=nests
+    else st.nests_teams=st.nests_teams or {}; first=st.nests_teams[fname]==nil; nests=st.nests_teams[fname] or {}; st.nests_teams[fname]=nests end
     st.enemy_news=st.enemy_news or {}
     local centre=p.force.get_spawn_position(p.surface)
     local function news(kind,b)
       st.alert_seq=(st.alert_seq or 0)+1
-      table.insert(st.enemy_news,{seq=st.alert_seq,tick=game.tick,kind=kind,surface=p.surface.name,position=b.position,spawners=b.spawners,
+      table.insert(st.enemy_news,{seq=st.alert_seq,tick=game.tick,kind=kind,force=fname~='player' and fname or nil,surface=p.surface.name,position=b.position,spawners=b.spawners,
         centre={x=round(centre.x),y=round(centre.y)},from_centre=round(api.distance(centre,b.position)),bearing=compass(centre,b.position),
         nearest=b.distance,nearest_direction=b.direction})
       while #st.enemy_news>MAX_NEWS do table.remove(st.enemy_news,1) end
@@ -734,10 +736,11 @@ return function(api)
     end
   end
   -- Lines for news after `from` (an alert_seq), oldest first.
-  function M.news_lines(from,since_tick,reader)
+  -- (mt276) fname: that force's news only
+  function M.news_lines(from,since_tick,reader,fname)
     local out={}
     for _,n in ipairs(api.state().enemy_news or {}) do
-      local new=(from and (n.seq or 0)>from) or (not from and n.tick>=since_tick)
+      local new=((from and (n.seq or 0)>from) or (not from and n.tick>=since_tick)) and (not fname or (n.force or 'player')==fname)
       if new and n.kind=='pollution_reached_nest' then
         local on=n.surface and reader and n.surface~=reader and ' on '..n.surface or ''
         out[#out+1]=string.format('pollution reached nest%s (%g,%g), %d spawner%s: %d tiles %s of base centre (%g,%g)%s',on,n.position.x,n.position.y,
@@ -860,11 +863,17 @@ return function(api)
     end
     return kinds
   end
+  -- (mt276) the forces with players that see the chunk: nil for none, true for the player force alone, else a set
   local function visible_to_players(surface,pos)
+    local set,only
     for _,force in pairs(game.forces) do
-      if force.name~='enemy' and force.name~='neutral' and #force.players>0 and force.is_chunk_visible(surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) then return true end
+      if force.name~='enemy' and force.name~='neutral' and #force.players>0 and force.is_chunk_visible(surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) then
+        set=set or {}; set[force.name]=true
+        if only==nil then only=force.name=='player' else only=false end
+      end
     end
-    return false
+    if only then return true end
+    return set or false
   end
   local function track(g,tick,target,kinds)
     local s=api.state(); s.live_groups=s.live_groups or {}
@@ -1041,10 +1050,11 @@ return function(api)
     local target=command_target(g.command)
     local kinds=member_kinds(g.members)
     if target then track(g,event.tick,target,kinds) end
-    if not visible_to_players(g.surface,pos) then return end
+    local seen=visible_to_players(g.surface,pos)
+    if not seen then return end
     local s=api.state(); s.attack_groups=s.attack_groups or {}
     s.alert_seq=(s.alert_seq or 0)+1
-    table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,size=#g.members,kinds=next(kinds) and kinds_text(kinds) or nil,position={x=round(pos.x),y=round(pos.y)},
+    table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,seen=seen~=true and seen or nil,size=#g.members,kinds=next(kinds) and kinds_text(kinds) or nil,position={x=round(pos.x),y=round(pos.y)},
       target=target and {x=round(target.x),y=round(target.y)} or nil,surface=g.surface and g.surface.name or nil})
     while #s.attack_groups>MAX_GROUPS do table.remove(s.attack_groups,1) end
   end
@@ -1058,7 +1068,9 @@ return function(api)
     if surface and surface.platform then return end
     local s=api.state(); s.damage=s.damage or {}
     -- Keyed by surface and chunk: hits on two planets at the same chunk are two incidents.
-    local key=(surface and surface.name or '?')..':'..math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
+    -- (mt276) another team's areas are its own (the key starts with its force)
+    local fname=e.force.name
+    local key=(fname~='player' and fname..'|' or '')..(surface and surface.name or '?')..':'..math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
     local area=s.damage[key]
     -- An area kept from before incidents had ids (a hot deploy) starts afresh.
     local fresh=not area or not area.id or event.tick-area.last>INCIDENT_GAP
@@ -1077,7 +1089,7 @@ return function(api)
       -- A quiet minute ends an incident; the next hit starts a new one.
       s.incident_seq=(s.incident_seq or 0)+1
       area.id,area.first,area.hits,area.damage,area.entities,area.by=s.incident_seq,event.tick,0,0,{},nil
-      area.at={x=round(e.position.x),y=round(e.position.y)}; area.surface=surface and surface.name or nil
+      area.at={x=round(e.position.x),y=round(e.position.y)}; area.surface=surface and surface.name or nil; area.force=fname~='player' and fname or nil
       area.units,area.kinds,area.size,area.source,area.source_tried,area.group={},{},0,nil,nil,nil
       -- A visible group that gathered in the last 3 minutes heading here.
       for k=#(s.attack_groups or {}),1,-1 do
@@ -1136,14 +1148,17 @@ return function(api)
     return string.format('attack #%d%s at (%d,%d)%s: %s%s%s hit %d times, %d damage, %s',v.id or 0,on,at.x,at.y,again and ' continues' or '',
       who and who..'; ' or '',from and from..'; ' or '',table.concat(names,', '),v.hits,round(v.damage),span)
   end
-  function M.alerts(since,reader)
+  -- (mt276) fname: that force's areas, groups it saw and news only (nil: all)
+  function M.alerts(since,reader,fname)
     local s,out=api.state(),{}
     local groups={}
-    for _,g in ipairs(s.attack_groups or {}) do if g.tick>since then groups[#groups+1]=g end end
+    for _,g in ipairs(s.attack_groups or {}) do
+      if g.tick>since and (not fname or (g.seen and g.seen[fname]) or (not g.seen and fname=='player')) then groups[#groups+1]=g end
+    end
     local areas={}
     for key,v in pairs(s.damage or {}) do
       -- Zero-damage hits (the crash site's fire) are not an attack: readers took the wreck for one.
-      if v.last>since and round(v.damage)>0 then
+      if v.last>since and round(v.damage)>0 and (not fname or (v.force or 'player')==fname) then
         -- Keys are surface:cx,cy (cx,cy before surfaces were kept).
         local cx,cy=key:match('(-?%d+),(-?%d+)$')
         local names={}
@@ -1157,7 +1172,7 @@ return function(api)
     table.sort(areas,function(a,b) return a.last_tick>b.last_tick end)
     while #areas>4 do table.remove(areas) end
     local news={}
-    for _,n in ipairs(s.enemy_news or {}) do if n.tick>since then news[#news+1]=n end end
+    for _,n in ipairs(s.enemy_news or {}) do if n.tick>since and (not fname or (n.force or 'player')==fname) then news[#news+1]=n end end
     out.enemy_news=#news>0 and news or nil
     out.attack_groups=#groups>0 and groups or nil
     out.attacked=#areas>0 and areas or nil

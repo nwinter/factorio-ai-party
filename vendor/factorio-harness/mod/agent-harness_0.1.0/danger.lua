@@ -15,6 +15,10 @@ return function(api)
   local M = {}
   local MAX_R, CHUNKS, WINDOW = 128, 64, 10 * 3600
   local function try(f) local ok, v = pcall(f); if ok then return v end end
+  -- (mt276) records of the reader's force only (force nil: the player force); an attack group: seen by that force
+  local function fname_of(p) local ok, n = pcall(function() return p.force.name end); return ok and n or 'player' end
+  local function ours(v, fname) return (v.force or 'player') == fname end
+  local function sees(g, fname) if g.seen then return g.seen[fname] == true end return fname == 'player' end
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function round(v) return math.floor(v + 0.5) end
   local function at(q) return string.format('(%d,%d)', round(q.x), round(q.y)) end
@@ -171,7 +175,7 @@ return function(api)
     local st = api.state()
     local hits, last
     for _, v in pairs(st.damage or {}) do
-      if v.at and (v.surface or 'nauvis') == s.name and game.tick - (v.last or 0) <= WINDOW and dist(v.at, pos) <= r then
+      if v.at and (v.surface or 'nauvis') == s.name and ours(v, f.name) and game.tick - (v.last or 0) <= WINDOW and dist(v.at, pos) <= r then
         hits = (hits or 0) + 1
         if not last or v.last > last.last then last = v end
       end
@@ -180,7 +184,7 @@ return function(api)
     local lost, lostn = 0, {}
     for _, i in ipairs(st.losses or {}) do
       local b = i.box
-      if b and i.surface == s.name and game.tick - (i.last or i.first or 0) <= WINDOW and dist({x=(b[1] + b[3]) / 2, y=(b[2] + b[4]) / 2}, pos) <= r then
+      if b and i.surface == s.name and ours(i, f.name) and game.tick - (i.last or i.first or 0) <= WINDOW and dist({x=(b[1] + b[3]) / 2, y=(b[2] + b[4]) / 2}, pos) <= r then
         lost = lost + (i.total or 0)
         for n, k in pairs(i.names or {}) do lostn[n] = (lostn[n] or 0) + k end
       end
@@ -188,7 +192,7 @@ return function(api)
     if lost > 0 then lines[#lines+1] = string.format('buildings lost within %d tiles in the last 10 min: %d (%s)', r, lost, counts(lostn)) end
     local groups = 0
     for _, g in ipairs(st.attack_groups or {}) do
-      if g.target and (g.surface or 'nauvis') == s.name and game.tick - g.tick <= WINDOW and dist(g.target, pos) <= r then groups = groups + (g.size or 0) end
+      if g.target and (g.surface or 'nauvis') == s.name and sees(g, f.name) and game.tick - g.tick <= WINDOW and dist(g.target, pos) <= r then groups = groups + (g.size or 0) end
     end
     if groups > 0 then lines[#lines+1] = string.format('enemy groups gathered heading within %d tiles in the last 10 min: %d enemies', r, groups) end
     -- Our deaths there.
@@ -232,7 +236,7 @@ return function(api)
       local from = here or pos
       local latest, n = nil, 0
       for _, v in pairs(st.damage or {}) do
-        if v.at and (v.surface or 'nauvis') == s.name and game.tick - (v.last or 0) <= q * 60 and api.avoid.seg_dist(from, pos, v.at) <= 24 then
+        if v.at and (v.surface or 'nauvis') == s.name and ours(v, f.name) and game.tick - (v.last or 0) <= q * 60 and api.avoid.seg_dist(from, pos, v.at) <= 24 then
           n = n + 1
           if not latest or v.last > latest.last then latest = v end
         end
@@ -260,7 +264,7 @@ return function(api)
       lines[#lines+1] = 'you: no character on a planet now'
     end
     -- (d17 batch22 B1, Luna) eggs within radius that hatch, each site's first hatch and the turrets covering it
-    local eggs = api.eggs and try(function() return api.eggs(s.name, pos, r) end) or {}
+    local eggs = api.eggs and try(function() return api.eggs(s.name, pos, r, f.name) end) or {}
     if #eggs > 0 then
       out.eggs = {}
       for i, e in ipairs(eggs) do

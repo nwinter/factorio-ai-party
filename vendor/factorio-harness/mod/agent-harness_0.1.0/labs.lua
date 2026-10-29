@@ -388,11 +388,11 @@ return function(api)
       local ok, n = pcall(qflow.flow, stats, name, category, defines.flow_precision_index.ten_minutes, true)
       return ok and math.floor(n + 0.5) or 0
     end
-    -- Agents carrying it, wherever they are.
+    -- Agents carrying it, wherever they are (mt276: the read force's agents).
     local carried = {}
     for _, ag in ipairs(api.agents and api.agents() or {}) do
       local ok, c = pcall(function() local pl = api.lookup(ag.index); return pl and pl.character end)
-      local inv = ok and c and c.valid and c.get_main_inventory()
+      local inv = ok and c and c.valid and (c.force == nil or c.force == force) and c.get_main_inventory()
       for _, name in ipairs(packs) do
         local n = inv and inv.get_item_count(name) or 0
         if n > 0 then carried[name] = carried[name] or {}; carried[name][#carried[name]+1] = ag.name .. ' ' .. n end

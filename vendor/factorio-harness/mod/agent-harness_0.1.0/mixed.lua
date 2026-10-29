@@ -74,6 +74,7 @@ return function(api)
     for _, e in ipairs(ents) do
       if e and e.valid then
         entry.surface = entry.surface or e.surface.index
+        entry.force = entry.force or try(function() return e.force.name end)
         local bb = e.bounding_box
         local b = {bb.left_top.x, bb.left_top.y, bb.right_bottom.x, bb.right_bottom.y}
         if e.unit_number then entry.units[e.unit_number] = true end
@@ -132,6 +133,8 @@ return function(api)
   -- How edit d touches entry: 'measured', 'feeds it' or 'on the platform', or nil.
   local function touches(entry, d)
     if d.surface ~= entry.surface then return nil end
+    -- (mt276) another team's edit is not this watch's
+    if entry.force and d.force and d.force ~= entry.force then return nil end
     if d.unit_number and entry.units and entry.units[d.unit_number] then return entry.line and 'a belt it samples' or 'what it measures' end
     if not entry.types[d.type] then return nil end
     if entry.whole then return 'on the platform it watches' end
@@ -240,9 +243,9 @@ return function(api)
   function M.edit(e, what, removed)
     local list = watches()
     if not list then return 0 end
-    if type(e) == 'userdata' and not (e.valid and e.force.name == 'player') then return 0 end
+    if type(e) == 'userdata' and not (e.valid and e.force.name ~= 'enemy' and e.force.name ~= 'neutral') then return 0 end
     local d = M.describe(e)
-    if not d or (d.force and d.force ~= 'player') then return 0 end
+    if not d or (d.force and (d.force == 'enemy' or d.force == 'neutral')) then return 0 end
     local n = 0
     for _, entry in ipairs(list) do
       local how = touches(entry, d)
@@ -261,14 +264,14 @@ return function(api)
     return n
   end
   -- A call's targets: the entities at its position(s) on its surface.
-  function M.at(surface, positions, what)
+  function M.at(surface, positions, what, force)
     if not watches() or not surface then return 0 end
     local n = 0
     for k, q in ipairs(positions) do
       if k > 64 then break end
       local x, y = q.x or q[1], q.y or q[2]
       if type(x) == 'number' and type(y) == 'number' then
-        for _, e in ipairs(surface.find_entities_filtered{position={x, y}, force='player'}) do n = n + M.edit(e, what) end
+        for _, e in ipairs(surface.find_entities_filtered{position={x, y}, force=force or 'player'}) do n = n + M.edit(e, what) end
       end
     end
     return n

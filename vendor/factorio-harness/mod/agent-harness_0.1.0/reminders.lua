@@ -744,7 +744,8 @@ return function(api)
         job.pending = job.pending or {}; job.acked = job.acked or {}
         job.last_trigger = {tick=game.tick, why=why}
         for _, name in ipairs(targets(job)) do
-          if index[name] and (kind ~= 'respawn' or name == info.name) then
+          -- (mt276) a trigger with a force (research) goes to that force's agents only
+          if index[name] and (kind ~= 'respawn' or name == info.name) and (not (info and info.force) or not api.force_name or api.force_name(name) == info.force) then
             local pd = job.pending[name]
             if pd then pd.triggers = (pd.triggers or 0) + 1; pd.trigger_last = {tick=game.tick, why=why}
             else start_run(job, name, index[name], why); n = n + 1 end

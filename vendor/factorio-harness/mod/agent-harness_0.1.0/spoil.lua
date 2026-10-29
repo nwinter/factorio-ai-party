@@ -344,11 +344,16 @@ return function(api)
     for _, r in ipairs(acc) do if M.hatch(r.name) then rows[#rows+1] = r end end
     return rows
   end
-  local function watch()
+  -- (mt276) one watch per team force; the player force's stays st.eggs. The news seq is one counter (st.eggs.seq).
+  local function watch(fname)
     local st = api.state()
     st.eggs = st.eggs or {anchors={}, places={}, told={}, seq=0}
-    return st.eggs
+    if fname == nil or fname == 'player' then return st.eggs end
+    st.eggs_teams = st.eggs_teams or {}
+    st.eggs_teams[fname] = st.eggs_teams[fname] or {anchors={}, places={}, told={}}
+    return st.eggs_teams[fname]
   end
+  local function fname_of(p) return try(function() return p.force.name end) end
   -- Surfaces where an item that hatches was made or used (force statistics).
   local function flowing(force, names)
     local out = {}
@@ -409,14 +414,17 @@ return function(api)
   end
   -- The background sweep, a stage a tick: cells (found, then read SLICE a
   -- tick), then characters and hubs, then the merge into places.
+  -- (mt276) with several team forces, one force's sweep a tick, in turn
   function M.tick(tick)
     local all = M.hatching()
     if #all == 0 then return end
-    local w = watch()
+    local teams = api.team_names and api.team_names()
+    local fname = teams and #teams > 0 and teams[tick % #teams + 1] or nil
+    local w = watch(fname)
     -- (BT1) between sweeps nothing to do: the force not read (the same test as below, made before it)
     if not w.anchor_job and not w.job and w.tick and tick - w.tick < M.SWEEP_TICKS then return end
     local names = w.watched or all
-    local force = api.force and api.force()
+    local force = api.force and api.force(fname)
     if not force then return end
     if w.anchor_job then return anchor_step(w, force, all) end
     local job = w.job
@@ -465,7 +473,10 @@ return function(api)
     end
     -- Characters anywhere (agents carrying eggs) and platform hubs.
     local extra = {}
-    for _, ch in ipairs(api.characters and api.characters() or {}) do extra[#extra+1] = ch end
+    for _, ch in ipairs(api.characters and api.characters() or {}) do
+      local cf = fname and try(function() return ch.force.name end)
+      if not cf or cf == fname then extra[#extra+1] = ch end
+    end
     for _, pl in pairs(try(function() return force.platforms end) or {}) do
       local hub = try(function() return pl.valid and pl.hub end)
       if hub and hub.valid then extra[#extra+1] = hub end
@@ -501,7 +512,7 @@ return function(api)
       local mark = left <= M.LAST_TICKS and 2 or (left <= M.WARN_TICKS and 1 or 0)
       local before = (w.told or {})[f.key]
       if before and f.tick > (before.tick or 0) + 600 then before = nil end
-      if mark > (before and before.mark or 0) then w.seq = (w.seq or 0) + 1; before = {mark=mark, seq=w.seq, tick=f.tick} end
+      if mark > (before and before.mark or 0) then local sq = watch(); sq.seq = (sq.seq or 0) + 1; before = {mark=mark, seq=sq.seq, tick=f.tick} end
       if before then told[f.key] = before; f.news = before.seq end
     end
     -- Keep old timer sites for ten minutes after their predicted expiry, as
@@ -591,7 +602,7 @@ return function(api)
   -- Lines for the team block (d17 batch23 B1): one line a surface with eggs due within 5 min (this agent's surface,
   -- or holders it built), told again only when the set of holders due there changes (h.egg_sets).
   function M.alert_lines(p, h, name)
-    local w = watch()
+    local w = watch(fname_of(p))
     local here = try(function() return p.surface.name end)
     local out = {}
     local surfaces, sorder = {}, {}
@@ -611,7 +622,7 @@ return function(api)
       local sig = table.concat(keys, ';')
       if sig ~= '' and h.egg_sets[sname] ~= sig and #out < 3 then
         h.egg_sets[sname] = sig
-        local cov = api.coverage and try(function() return api.coverage(first.surface, first.position) end)
+        local cov = api.coverage and try(function() return api.coverage(first.surface, first.position, fname_of(p)) end)
         local parts = {}
         for i, a in ipairs(areas) do
           if i <= 4 then parts[i] = string.format('(%d,%d)-(%d,%d) %d in %d holder%s, the first in %s', a.x0, a.y0, a.x0 + M.CELL, a.y0 + M.CELL, a.eggs, a.holders,
@@ -622,12 +633,12 @@ return function(api)
           table.concat(parts, '; '), #areas > 4 and string.format('; +%d more areas', #areas - 4) or '', sname)
       end
     end
-    h.eggs_seq = w.seq or 0
+    h.eggs_seq = watch().seq or 0
     return out
   end
   -- (B1) eggs {surface?, limit?}: every holder of eggs the last sweep found on a surface, the first to hatch first.
   function M.read_eggs(p, a)
-    local w = watch()
+    local w = watch(fname_of(p))
     local sname = a.surface or try(function() return p.surface.name end)
     assert(type(sname) == 'string', 'surface must be a surface name')
     -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as an empty one
@@ -639,7 +650,7 @@ return function(api)
       if f.surface == sname then
         holders = holders + 1; eggs = eggs + f.count
         if #rows < limit then
-          local cov = api.coverage and try(function() return api.coverage(f.surface, f.position) end)
+          local cov = api.coverage and try(function() return api.coverage(f.surface, f.position, fname_of(p)) end)
           local h = M.hatch(f.item:match('^[^@]+'))
           local row = {holder=f.entity, position=f.position, item=f.item, count=f.count, spoiled_percent=f.mean or math.floor(f.percent * 100 + 0.5),
             first_spoiled_percent=math.floor(f.percent * 100 + 0.5), first_hatch_in_s=math.floor((f.tick - game.tick) / 60), due_5min=f.soon, into=h and h.entity or nil, cover=cov, by=f.by}
@@ -670,7 +681,7 @@ return function(api)
   -- carried_only: a sleep that takes no messages (a ship wait; E9, Grok 19:50: every egg alert woke one) hears only of
   -- eggs its own character carries; the rest reach it in the team block of its next reply.
   function M.news(p, seq, name, carried_only)
-    local w = watch()
+    local w = watch(fname_of(p))
     local here = try(function() return p.surface.name end)
     for _, place in ipairs(w.places or {}) do
       if place.news and place.news > seq and place.tick > game.tick and mine(p, name, place)
@@ -679,15 +690,15 @@ return function(api)
   end
   local nearby=require('eggnear'){}
   function M.nearby(p)
-    local w,sites=watch(),{}
+    local w,sites=watch(fname_of(p)),{}
     for _,list in ipairs({w.places or {},w.recent or {}}) do for _,s in ipairs(list) do if not s.gone then sites[#sites+1]=s end end end
     sites.check=live
     return nearby.read(p,sites)
   end
   function M.seq() return watch().seq or 0 end
   -- The places on a surface within r of pos whose eggs hatch, nearest first (danger, d17 batch22 B1): {position, tick, text}.
-  function M.near(surface, pos, r)
-    local w, out = watch(), {}
+  function M.near(surface, pos, r, fname)
+    local w, out = watch(fname), {}
     for _, place in ipairs(w.places or {}) do
       if place.surface == surface and place.tick > game.tick and M.hatch(place.item:match('^[^@]+')) and live(place) then
         local d = ((place.position.x - pos.x)^2 + (place.position.y - pos.y)^2)^0.5

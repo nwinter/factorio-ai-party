@@ -253,10 +253,16 @@ return function(api)
   local tally = {}   -- this pass's machines and running, per builder (rebuilt each pass; a reload restarts it)
   -- Every planet surface and our platforms (no count over a surface: with none of ours there, it would scan it whole;
   -- an empty block costs about 0.05 ms).
+  -- (mt276) force: one LuaForce or a list of them (every team's machines in one walk; credit goes by builder)
+  local function owns(force, f)
+    if type(force) ~= 'table' or rawget(force, 'name') ~= nil or rawget(force, 1) == nil then return f == force end
+    for _, x in ipairs(force) do if x == f then return true end end
+    return false
+  end
   local function surfaces_now(force)
     local out = {}
     for _, s in pairs(game.surfaces) do
-      local ours = s.platform and s.platform.force == force or (not s.platform and s.planet ~= nil)
+      local ours = s.platform and owns(force, s.platform.force) or (not s.platform and s.planet ~= nil)
       if ours then out[#out+1] = s.name end
     end
     table.sort(out)

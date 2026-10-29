@@ -316,10 +316,10 @@ return function(api)
     local okr, robot_n, carriers, robots_read, capped = pcall(M.robot_cargo, p.force, surface, item)
     if okr and robot_n > 0 then add('robot_cargo', robot_n) end
     local robot_note = okr and capped and string.format('robot cargo: the first %d robots read', robots_read) or nil
-    -- The team's characters on this surface, by agent name.
+    -- The team's characters on this surface, by agent name (mt276: our force's).
     for _, ag in ipairs(api.agents()) do
       local c = api.character(ag.index)
-      if c and c.valid and c.surface == surface then
+      if c and c.valid and c.surface == surface and (c.force == nil or c.force == p.force) then
         local n, by = count_in(c, item)
         if n > 0 then
           add('characters', n); qflow.add(acc, n, by)

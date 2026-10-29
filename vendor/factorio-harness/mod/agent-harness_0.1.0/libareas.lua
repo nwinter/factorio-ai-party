@@ -134,9 +134,10 @@ return function(api)
       if tx ~= ty then return tx < ty end
       return x.key < y.key
     end)
-    local force = game.forces.player
     for i = 1, math.min(n_hook, #order) do
       local a = order[i]
+      -- (mt276) the hookups of the placer's force
+      local force = api.force and api.force(a.rec.by) or game.forces.player
       local surface = game.get_surface(a.rec.surface)
       local b = a.rec.box
       if surface and b.r - b.l <= M.MAX_SIDE and b.b - b.t <= M.MAX_SIDE then

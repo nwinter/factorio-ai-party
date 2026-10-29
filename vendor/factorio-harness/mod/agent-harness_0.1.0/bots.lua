@@ -177,16 +177,19 @@ return function(api)
     if api.on_spawn then api.on_spawn(b, kind) end
     return c
   end
-  function M.create(name)
+  -- (mt276) force: a team's force (default player); the body comes at that force's spawn
+  function M.create(name, force)
     assert(type(name) == 'string' and #name <= 16 and name:match('^[a-z][a-z0-9_-]*$'), 'name must match [a-z][a-z0-9_-]{0,15}')
+    force = force == nil and 'player' or force
+    assert(force == 'player' or type(force) == 'string' and game.forces[force] and force ~= 'enemy' and force ~= 'neutral', 'force must be a player force: ' .. tostring(force))
     local all = bots()
     assert(not all.by_name[name], 'a bot named ' .. name .. ' already exists')
     for _, p in pairs(game.players) do assert(p.name ~= name, 'a player is named ' .. name) end
-    local b = {name=name, index=BASE+all.next, slot=all.next, force='player', surface='nauvis', planet='nauvis', created_tick=game.tick}
+    local b = {name=name, index=BASE+all.next, slot=all.next, force=force, surface='nauvis', planet='nauvis', created_tick=game.tick}
     spawn(b, 'created')
     all.next = all.next + 1
     all.by_name[name] = b; all.by_index[b.index] = b
-    return {name=name, unit_number=b.character.unit_number, position=b.character.position, index=b.index}
+    return {name=name, unit_number=b.character.unit_number, position=b.character.position, index=b.index, force=force}
   end
   -- The character dies where it stands; its corpse keeps the items.
   function M.remove(name)
