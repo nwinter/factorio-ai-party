@@ -430,7 +430,9 @@
   ones no longer kept, with when and why), or `not_found`, and never starts or replaces one (in a platform lane `{read: true}` reads the lane's platform; dry_run
   checks it); `{}` lists them with
   `limit` (one watch a platform of the force), `counted` and `counting`: armed, watching, or done and not read; a done
-  one stops counting once read, kept 1 h after. `replace: true` keeps the watch it replaces readable by `{id}`
+  one stops counting once read, kept 1 h after. A read only counts once the watch is done: one read while it still
+  watches is not its result. Your own start on a platform whose watch of yours is done and unread reads it first
+  (`previous_watch`, `previous_line`) and goes on; another agent's unread watch still refuses it. `replace: true` keeps the watch it replaces readable by `{id}`
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
   names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
   step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The

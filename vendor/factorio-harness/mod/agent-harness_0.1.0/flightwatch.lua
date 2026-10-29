@@ -1427,6 +1427,20 @@ return function(api)
     local lim, cl = M.limit(p.force), counting(st, p.force)
     local rep
     for i, w in ipairs(cl) do if w.index == pl.index then rep = table.remove(cl, i); break end end
+    -- (d29 batch337 WR, Sol #2741: Cinder's queue read #1660 while it still watched (job 67, tick 81243368), the watch
+    -- ended at the arrival the queue then waited for, and the start after it (job 71, tick 81248280) was refused "done
+    -- and not read") the platform's watch done and not read, set by the same agent: this start reads it first, as
+    -- flight_watch {id} would (its read tick set; its full result in previous_watch; kept and readable by id as any
+    -- read one), and goes on. Another agent's unread watch still refuses it.
+    local prev_row, prev_line
+    if rep and rep.state == 'done' and not rep.read_tick and not rep.replaced_by and rep.setter == who and a.replace ~= true then
+      rep.read_tick = game.tick
+      prev_row = M.row(rep, true)
+      prev_row.note = M.NOTE
+      prev_line = string.format('flight watch #%d on %s (yours, ended: %s) was done and not read: read now by this start (its result in previous_watch; flight_watch {id: %d} reads it again)',
+        rep.id, pl.name, tostring(rep.why), rep.id)
+      rep = nil
+    end
     -- a replace leaves the count as it was
     assert(rep or #cl < lim, string.format('the force has %d flight watches counting against its limit of %d (one per platform of the force): %s; end one with flight_watch {id, clear: true}, or read a done one (flight_watch {id}): read, it stops counting',
       #cl, lim, counting_text(cl)))
@@ -1488,7 +1502,7 @@ return function(api)
     local r = M.row(w, false)
     r.replaced, r.ammunition_chain_note = replaced, chain_note
     local nl = #(w.lasers or {})
-    return {watch=r, replaced_watch=replaced_row, replaced_line=replaced_line, line=from == 'now' and string.format('flight watch #%d on %s: watching %s%s and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, M.count_text(w),
+    return {watch=r, replaced_watch=replaced_row, replaced_line=replaced_line, previous_watch=prev_row, previous_line=prev_line, line=from == 'now' and string.format('flight watch #%d on %s: watching %s%s and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, M.count_text(w),
         nl > 0 and string.format(', %d laser turrets', nl) or '', w.acc_n or 0, minutes)
       or string.format('flight watch #%d on %s: begins at its next departure%s and runs until the arrival after it or %d min', w.id, pl.name, w.seen_stopped and '' or ' (it flies now: the departure after its next stop)', minutes),
       note=M.NOTE}
@@ -1526,7 +1540,7 @@ return function(api)
     return #out > 0 and out or nil
   end
   M.schema = {flight_watch = {platform='a platform of ours: start a watch on it', from='optional "now" (default) or "departure": begin at its next departure',
-    minutes='optional 1..480 (default 120): the longest it watches; it ends sooner at the platform\'s next arrival after it flew', replace='optional true: replace this platform\'s watch running or not read yet; the replaced one stays readable by id (a running one ends there, replaced by #N; an armed one is dropped) and no longer counts; the new one\'s ammunition_chain counts from the replaced one\'s start (none counting: the platform\'s newest kept watch done)',
+    minutes='optional 1..480 (default 120): the longest it watches; it ends sooner at the platform\'s next arrival after it flew', replace='optional true: replace this platform\'s watch running or not read yet (a start by the setter of a done, unread watch on the platform reads it first, its result in previous_watch and previous_line, and goes on without replace; another agent\'s unread watch still refuses a start); the replaced one stays readable by id (a running one ends there, replaced by #N; an armed one is dropped) and no longer counts; the new one\'s ammunition_chain counts from the replaced one\'s start (none counting: the platform\'s newest kept watch done)',
     id='alone: read that watch in full (a done one is then kept 1 h and no longer counts against the limit); with clear: true, drop it', clear='true, with id: drop it',
     read='true, with platform alone (in a platform lane its platform): read that platform\'s newest kept watch by the tick it first began (watch.began_tick: a from-now watch\'s call, a from-departure one\'s departure, not moved by a mixed split; an armed one by its set tick) in full as id does (watch, older: the ids of older ones kept on it, newest first; dropped_newer: newer ones no longer kept [{id, set_tick, began_tick, end_tick, dropped_tick, why, line}]; line), or not_found and line when none is kept; never starts or replaces one; a queue step and dry_run check it',
     returns='start: watch, line, note, and on a replace replaced_watch (its row: id, state, ended_by, end_tick, replaced_by, line) and replaced_line; {}: watches (the force\'s, each with counts: whether it counts against the limit), lines, limit, counted, counting (the ids that count), limit_line; id: watch {id, platform, setter, state (armed: waiting for the departure, watching, done), from, minutes, set_tick, start_tick, end_tick, until_tick, ended_by, replaced_by, replaced_tick, leg, samples, seconds, '
