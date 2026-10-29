@@ -13,7 +13,13 @@
 --   mt_survey    each start and each placed site: resources, water and nests round it.
 --   mt_corridor  whether a path between two starts avoids every nest by a margin (a grid walk over the area).
 --   mt_contacts  first contacts: the first time a team's chart shows another team's entity (on_chunk_charted), and
---                the first hit between two teams (on_entity_damaged), per ordered pair, with tick, place and what.
+--                the first hit between two teams (on_entity_damaged), per ordered pair, with tick, place and what; the
+--                rules sent (mt_rules) per team.
+--   mt_rules     (mt276 G) the rules of contact, sent when the operator chooses (Nick d27 10:45: first let the teams
+--                work out from the harness's own facts that others exist): one operator tell to every agent of each
+--                team named, the tick kept per team.
+-- (mt276 G) Each first contact also reaches the agents it concerns as a fact line (api.on_contact; runtime.lua): the
+-- team whose chart showed the other's entity; for a hit, the team hit (waking) and the team whose entity hit.
 return function(api)
   local M = {operator={}}
   local MAX_TEAMS, MAX_PATCHES, MAX_CONTACTS = 8, 200, 200
@@ -491,6 +497,7 @@ return function(api)
     s.contacts[#s.contacts+1] = rec
     log('mt contact: ' .. helpers.table_to_json(rec))
     pcall(helpers.write_file, 'pog/mt-contacts.jsonl', helpers.table_to_json(rec) .. '\n', true, 0)
+    if api.on_contact then pcall(api.on_contact, rec) end
   end
   -- (mt275) the chart hook's cost: mt_cost {reset?} writes the events counted and their total time to the server log
   -- (a LuaProfiler prints only there or by rcon.print), then starts again with reset
@@ -554,7 +561,22 @@ return function(api)
     for _, c in ipairs(s.contacts or {}) do
       if not a.since or c.tick > a.since then out[#out+1] = c end
     end
-    return {teams=team_names(), contacts=out, since_setup_tick=s.set_tick}
+    return {teams=team_names(), contacts=out, since_setup_tick=s.set_tick, rules=s.rules}
+  end
+  function M.operator.mt_rules(a)
+    local s = st()
+    local list = type(a.teams) == 'table' and a.teams or {a.team}
+    assert(#list >= 1, 'teams: the teams to send the rules to (or team)')
+    for _, t in ipairs(list) do assert(s.teams and s.teams[t], 'not a team: ' .. tostring(t)) end
+    assert(api.tell_team, 'no tell in this runtime')
+    s.rules = s.rules or {}
+    local out = {}
+    for _, t in ipairs(list) do
+      local r = api.tell_team(t, a.text, a.summary)
+      s.rules[t] = {tick=game.tick, seq=r and r.seq, bytes=#tostring(a.text)}
+      out[#out+1] = {team=t, seq=r and r.seq, to=r and r.to}
+    end
+    return {sent=out, tick=game.tick}
   end
   return M
 end

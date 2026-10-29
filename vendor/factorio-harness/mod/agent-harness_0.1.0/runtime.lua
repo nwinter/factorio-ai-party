@@ -262,6 +262,19 @@ function M.each_team_holding(key,fn,...)
     elseif ts and ts[t] and ts[t][key]~=nil then M.as_team(t,fn,...) end
   end
 end
+-- (mt276 G) What hit or killed one of ours, as the game names it: an entity of another player force is named with its
+-- force ("gun-turret of force blue"); the enemy's and neutral's by name alone, as before. by_force: the event's force
+-- when the cause is gone.
+function M.cause_text(cause,own,by_force)
+  local ok,name,fname=pcall(function()
+    local c=cause and cause.valid and cause or nil
+    local f=c and c.force or by_force
+    return c and c.name or nil,f and f.name or nil
+  end)
+  if not ok then return nil end
+  if fname and fname~=own and fname~='enemy' and fname~='neutral' then return (name or 'unknown source')..' of force '..fname end
+  return name
+end
 -- Who a character belongs to: a player's name, else a bot's (nil if neither).
 function M.character_owner(e)
   local ok,pl=pcall(function() return e.player end)
@@ -17935,7 +17948,29 @@ M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) 
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
 -- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
-M.multiteam=require('multiteam'){state=state}
+M.multiteam=require('multiteam'){state=state,
+  -- (mt276 G) the rules of contact: an operator tell to the whole team, as that team
+  tell_team=function(team,text,summary) return M.as_team(team,M.tells.operator.tell,{to='team',text=text,summary=summary}) end,
+  -- (mt276 G) a first contact as a fact line to the agents of the teams it concerns: the game's facts (what, whose,
+  -- where), no reading of them
+  on_contact=function(rec)
+    local at=string.format('(%d,%d) on %s',math.floor(rec.x),math.floor(rec.y),tostring(rec.surface))
+    local lines={}
+    if rec.kind=='chart' then
+      lines[1]={rec.team,'chart',string.format('charted: a %s of force %s at %s',tostring(rec.entity),rec.other,at),false}
+    else
+      local by=rec.cause and (rec.cause..' of force '..rec.team) or 'force '..rec.team
+      lines[1]={rec.other,'hit',string.format('hit: our %s at %s, by %s',tostring(rec.entity),at,by),true}
+      lines[2]={rec.team,'hit',string.format('our %s hit a %s of force %s at %s',tostring(rec.cause or 'entity'),tostring(rec.entity),rec.other,at),false}
+    end
+    for _,l in ipairs(lines) do
+      M.as_team(l[1],function()
+        for _,ag in ipairs(M.board.agents()) do
+          M.board.deliver(ag.index,{seq='contact',tick=game.tick,from=l[2],text=l[3],wake=l[4] or nil,fyi=not l[4] or nil})
+        end
+      end)
+    end
+  end}
 M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
   notice=function(from,text) return M.chat.notice(from,text) end,agents=function() return M.board.agents() end,
   director=function(index) return M.is_director(index) end}
@@ -17944,7 +17979,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,team_now=function() return M.team_now() end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){state=state,team_now=function() return M.team_now() end,cause_text=function(c,own) return M.cause_text(c,own) end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -21860,12 +21895,14 @@ function M.on_event(event)
     local okt,struck=pcall(M.lightning.struck,event)
     struck=not cause and not friendly and okt and struck or nil
     if struck then pcall(M.lightning.lost,e) end
+    -- (mt276 G) a cause of another player force named with it (M.cause_text)
+    local cname=cause and M.cause_text(cause,own) or (not friendly and not struck and M.cause_text(nil,own,event.force)) or nil
     -- A pole of ours: whether its loss split its network or left machines with no pole (powercut.lua); a fault is counted.
     if e.type=='electric-pole' then
-      local ok,err=pcall(M.powercut.on_died,e,cause and cause.name or (friendly and 'friendly fire') or struck)
+      local ok,err=pcall(M.powercut.on_died,e,cname or (friendly and 'friendly fire') or struck)
       if not ok then s.powercut_errors={count=((s.powercut_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
-    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or struck,friendly,friendly and cause and cause.position or nil)
+    record_loss(event.tick,e,cname or (friendly and 'unknown source') or struck,friendly,friendly and cause and cause.position or nil)
     -- One row a building (lostlog.lua); seen to die, the fog memory forgets it, else it stays remembered (fogmem.lua).
     local okl,errl=pcall(function()
       M.lostlog.died(e,cause and cause.name or (friendly and 'unknown source') or struck)

@@ -2671,7 +2671,8 @@ return function(api)
     end
     hit.seq = s.alert_seq
     hit.last = event.tick; hit.hits = hit.hits + 1; hit.damage = hit.damage + (event.final_damage_amount or 0)
-    hit.by = event.cause and event.cause.valid and event.cause.name or hit.by
+    -- (mt276 G) an attacker of another player force is named with its force
+    hit.by = event.cause and event.cause.valid and (api.cause_text and api.cause_text(event.cause, e.force.name) or event.cause.name) or hit.by
   end
   return M
 end
