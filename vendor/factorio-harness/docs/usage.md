@@ -17889,3 +17889,28 @@ machine 3 at (0.5,21.5)):
   moved all 8 (4 in the input, 4 crafted) and 2 stayed requested.
 
 **Test:** tests/d29_batch342.lua.
+## d29 batch341 (PW: a removal that leaves consumers without power says so; viewer Aurora)
+
+At 376h48 (shift99, tick 81382616) Opus pasted Resolute-W45-99-strip3 on Asterion in superforced mode; the paste marked
+533 of Asterion's entities, among them its 9 solar panels, 143 accumulators, 5 fusion generators and 2 fusion reactors
+(its fusion made no power). The reply listed them in marked_by_name and said nothing about what generated after.
+
+- **powerleft.lua.** A removal that takes a generator (generator, fusion-generator, solar-panel, burner-generator,
+  electric-energy-interface, lightning-attractor) reads each electric network it takes one from: what generates there
+  after it, leaving out what the removal takes and what is already marked. A generator left counts when its kind made
+  power on that network in the last 10 minutes; the rest are named as staying idle. What is left gives: a generator
+  its rating (get_max_power_output, else get_max_energy_production: a fusion generator 50 MW); on a platform a solar
+  panel its rating in the place's sunlight (solar_power_in_space: Aquilo 60, Vulcanus 600; in flight between the
+  ends by distance); on a planet a panel or attractor its kind's last-minute output, its share. With nothing left, or
+  less than its consumers drew over the last minute (consumers that drew in the last 10 minutes): `power_left`, one
+  line a network.
+- **Where:** deconstruct (live and dry run), a forced or superforced paste's marks (paste and blueprint_place), mine
+  (live and dry run).
+- **Measured on 2.0.77 (iMac copy of world n):** an electric network's statistics count what consumers use as input
+  and what generators make as output; LuaEntity.electric_network_statistics reads only on poles (a platform's are its
+  surface's global ones, networks.lua stats_of).
+- **Cost** (iMac copy, dry runs as a bot): Resolute's 16 fusion generators 7.6-8.4 ms (a lamp-filtered dry run of the
+  same area 5.9-8.6); 5 of Asterion's solar panels 4.8-8.4 ms (lamp 3.1-4.2): about 3 ms for the platform's
+  generators and accumulators. A dry run over a 120x255 area of Asterion took 60-65 ms with or without it.
+- **Tests:** tests/d29_batch341.lua (the strip paste case; a bridge kept; an undersized bridge; accumulators left; a
+  quiet network; a planet with steam engines, an idle and a working fusion generator).
