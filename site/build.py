@@ -578,7 +578,7 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies")] + updates_nav() + \
             [("/about/", "About")]
-    return [("/", "Live"), ("/polls/", "Polls")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
+    return [("/", "Live"), ("/polls/", "Polls"), ("/ideas/", "Ideas")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
                               if LONG else []) + updates_nav() + [("/how/", "How it was made"), ("/about/", "About"),
                                                   (GITHUB_URL, "GitHub")]
@@ -586,7 +586,7 @@ def nav_items():
 
 # Under "More" in the nav (batch270, Nick d27 10:10: Polls was the second item and used once; highlighted on the
 # homepage and in the nav when a poll is open instead): the pages a returning viewer looks for less often.
-NAV_MORE = ("/polls/", "/updates/", "/how/", GITHUB_URL)
+NAV_MORE = ("/polls/", "/ideas/", "/updates/", "/how/", GITHUB_URL)
 
 
 def nav_html(active):
@@ -2122,6 +2122,48 @@ No links; chat's rules apply.</p>
                 extra_head='<script src="/static/polls.js" defer></script>', path="/polls/")
 
 
+IDEA_SECTIONS = [("next_run", "What would you like to see in the next run?",
+                  "The next run's world, rules, team, goals or anything else you would like to see."),
+                 ("general", "General ideas", "For the harness, the site, the stream or the whole project.")]
+
+
+def build_ideas():
+    """/ideas/ (d29 batch340 ID, viewer Aurora site:5470): viewers' ideas in two sections and an idea box with the
+    saved chat name, for the host to read and answer (static/ideas.js and the live API's ideas endpoints). Ideas reach no agent
+    and no AI."""
+    api = CONFIG.get("live_api_url") or ""
+    radios = "".join(f'<label class="idea-sec-pick"><input type="radio" name="section" value="{k}"{" checked" if i == 0 else ""}> '
+                     f'{esc(t)}</label>' for i, (k, t, _) in enumerate(IDEA_SECTIONS))
+    sections = "".join(f"""
+<section class="idea-section" data-section="{k}" aria-labelledby="ideas-{k}">
+<h2 id="ideas-{k}">{esc(t)}</h2>
+<p class="muted small">{esc(sub)}</p>
+<ol class="idea-list"><li class="muted">Loading the ideas…</li></ol>
+</section>""" for k, t, sub in IDEA_SECTIONS)
+    body = f"""
+<h1>Ideas</h1>
+<p class="lede">Ideas from viewers, kept from run to run. The host reads them, sorts them and may answer here. They are
+for people only: no agent or AI reads them, and nothing here goes into the game or the agents' tasks.</p>
+<div id="ideas" class="ideas-page" data-api="{esc(api)}">
+<p class="idea-host small" hidden>Signed in as host: the hidden ideas show too, with your tools. <button class="fx-btn small idea-host-forget" type="button">Forget</button></p>
+<section class="idea-box">
+<h2>Share an idea</h2>
+<form id="idea-form" class="idea-form" autocomplete="off">
+  <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name (blank: a guest name)" title="Your chat name, kept in this browser. Blank: you post as Guest and four letters or digits">
+  <fieldset class="idea-secs"><legend class="small muted">Section</legend>{radios}</fieldset>
+  <textarea class="fx-textfield" name="text" maxlength="1000" rows="4" placeholder="Your idea" aria-label="Your idea" required></textarea>
+  <button class="fx-btn" type="submit">Send the idea</button>
+  <p class="idea-note small muted" aria-live="polite"></p>
+</form>
+<p class="muted small">No links; chat's rules apply. The host may move, edit, hide or answer an idea.</p>
+</section>
+{sections}
+</div>
+"""
+    return page("Ideas", body, "/ideas/", "Viewers' ideas for the next run and the project, read and answered by the host.",
+                extra_head='<script src="/static/ideas.js" defer></script>', path="/ideas/")
+
+
 def build_live():
     return page("Live", live_app("Live", "/live/?demo=1"), "/", "Watch the run: stream, chat and the team's live status.",
                 extra_head=LIVE_HEAD, path="/live/")
@@ -2303,6 +2345,7 @@ def main():
             write(f"studies/{sid}/index.html", build_study(sid, st))
     write("live/index.html", build_live())
     write("polls/index.html", build_polls())
+    write("ideas/index.html", build_ideas())
     if updates_nav():  # the operator's changes, what each asking message said and the operator's replies (CB4)
         data = op_updates.load(UPDATES)
         for line in op_updates.problems(data):  # built anyway: the operator's live data
