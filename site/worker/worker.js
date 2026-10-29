@@ -344,7 +344,24 @@ export class Live {
     this.global = [];
     this.lastText = new Map(); // who -> {text, at}
     this.here = new Map(); // page id -> {at, who}
-    ctx.blockConcurrencyWhile(async () => {
+    // (d29 batch333) a failing start (SQLITE_NOMEM from 01:40) no longer throws out of the constructor, which reset the
+    // object on every request: the error is kept, each request tries again, GET /v1/debug reports it
+    this.ready = false;
+    this.initError = null;
+    ctx.blockConcurrencyWhile(async () => this.start());
+  }
+  start() {
+    try {
+      this.init();
+      this.ready = true;
+      this.initError = null;
+    } catch (e) {
+      this.initError = String((e && e.message) || e);
+    }
+    return this.ready;
+  }
+  init() {
+    {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
         name TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`);
       // cid: the page's id for one message (joonazan, d15 08:05: messages sent twice); a table from before it gains it
@@ -399,7 +416,7 @@ export class Live {
         this.salt = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
         this.put("salt", this.salt);
       }
-    });
+    }
   }
   get(k) {
     const r = this.sql.exec("SELECT v FROM kv WHERE k = ?", k).toArray();
@@ -420,6 +437,8 @@ export class Live {
     try {
       // Read the body before any early return: answering first and leaving the body unread breaks the response.
       const text = req.method === "POST" ? await req.text() : "";
+      if (route === "GET /v1/debug") return this.debug(req);
+      if (!this.ready && !this.start()) return json({ error: "storage unavailable", detail: this.initError }, 503);
       switch (route) {
         case "GET /v1/state": return this.getState();
         case "POST /v1/state": return this.postState(req, text);
@@ -449,6 +468,31 @@ export class Live {
     } catch (e) {
       return json({ error: "bad request" }, 400);
     }
+  }
+
+  // (d29 batch333) GET /v1/debug (Authorization: Bearer PUBLISH_TOKEN): the start's error and the store's sizes, each
+  // read on its own so one failing read leaves the others
+  debug(req) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const out = { ready: this.ready, init_error: this.initError, reads: {} };
+    const read = (k, f) => { try { out.reads[k] = f(); } catch (e) { out.reads[k] = { error: String((e && e.message) || e) }; } };
+    const one = (q) => this.sql.exec(q).toArray();
+    read("database_size", () => this.ctx.storage.sql.databaseSize);
+    read("tables", () => one("SELECT name, type FROM sqlite_master ORDER BY name"));
+    for (const p of ["page_size", "page_count", "freelist_count"]) read(p, () => one("PRAGMA " + p));
+    read("kv_keys", () => one("SELECT k FROM kv ORDER BY k"));
+    for (const k of ["salt", "received", "board_received", "chat_open", "board", "state"]) {
+      read("kv_" + k, () => this.sql.exec("SELECT length(CAST(v AS BLOB)) AS bytes FROM kv WHERE k = ?", k).toArray());
+    }
+    read("chat", () => one("SELECT COUNT(*) AS n, MIN(seq) AS lo, MAX(seq) AS hi, SUM(length(text)) AS bytes FROM chat"));
+    read("replies", () => one("SELECT COUNT(*) AS n, MIN(rv) AS lo, MAX(rv) AS hi, SUM(length(row)) AS bytes FROM replies"));
+    read("blueprints", () => one("SELECT COUNT(*) AS n, SUM(length(string)) AS bytes FROM blueprints"));
+    read("votes", () => one("SELECT COUNT(*) AS n, SUM(length(comment)) AS bytes FROM votes"));
+    read("polls", () => one("SELECT COUNT(*) AS n FROM polls"));
+    read("poll_ideas", () => one("SELECT COUNT(*) AS n FROM poll_ideas"));
+    read("bans", () => one("SELECT COUNT(*) AS n FROM bans"));
+    read("here", () => this.here.size);
+    return json(out);
   }
 
   getState() {
