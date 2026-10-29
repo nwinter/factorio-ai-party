@@ -39,6 +39,14 @@ FMT = "%Y-%m-%d %H:%M"
 OWNER_LEN = 80
 # the owner is a role, never a person: the names build.py's _BLOCKED keeps off the site, and an email
 OWNER_BLOCKED = re.compile(r"(?i)\bnick\b|\bwinter\b|account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d|@")
+# (d28 batch322 UL, viewer Aurora site:5411: "Could unfinished promises remain actionable even when their parent batch is
+# Live? ... Give remaining work a linked owner, next action and review point.") a row of any status holds followups:
+# {n, what, owner, next, review, state, opened, closed?, source?, note?, reviewed?, deferred?}; n numbers them within the
+# row (ID/n). The owner is a role: a batch ("batch322", linked to the row that batch works on), "operator", or the
+# stream's owner. deferred (on a planned row or an open follow-up) is a list of {at, reason}, the newest the reason now.
+FOLLOW_STATES = ("open", "done", "dropped")
+STREAM_OWNER = "the stream's owner"
+BATCH_ID = re.compile(r"\bbatch(\d+)\b")
 try:
     from zoneinfo import ZoneInfo
     PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -91,6 +99,7 @@ def load(path):
                 isinstance(h, dict) and isinstance(h.get("note"), str) and h["note"] and when(h.get("until"))
                 and h.get("status", "planned") in STATUSES and (h.get("from") is None or when(h["from"])) for h in hist)):
             raise ValueError(f"operator update {uid}: history is a list of {{until: YYYY-MM-DD HH:MM, note, status, from}}")
+        _check_follow(uid, u)
         rows.append(u)
     notices = []
     for n in data.get("notices") or []:
@@ -107,6 +116,73 @@ def load(path):
     if reviewed is not None and when(reviewed) is None:
         raise ValueError(f"backlog_reviewed {reviewed!r}: YYYY-MM-DD HH:MM")
     return {"updates": rows, "notices": notices, "notices_checked": checked, "backlog_reviewed": reviewed}
+
+
+def _deferred_ok(d):
+    return d is None or (isinstance(d, list) and all(isinstance(x, dict) and when(x.get("at")) and isinstance(x.get("reason"), str)
+                                                     and x["reason"].strip() for x in d))
+
+
+def _check_follow(uid, u):
+    """(batch322) a row's followups and deferred, or ValueError naming the row and the follow-up."""
+    if not _deferred_ok(u.get("deferred")):
+        raise ValueError(f"operator update {uid}: deferred is a list of {{at: YYYY-MM-DD HH:MM, reason}}")
+    fl = u.get("followups")
+    if fl is None:
+        return
+    if not isinstance(fl, list):
+        raise ValueError(f"operator update {uid}: followups is a list")
+    seen = set()
+    for f in fl:
+        n = f.get("n") if isinstance(f, dict) else None
+        if not isinstance(n, int) or n < 1 or n in seen:
+            raise ValueError(f"operator update {uid}: a follow-up needs its own number n (1, 2, ...)")
+        seen.add(n)
+        bad = [k for k in ("what", "next") if not (isinstance(f.get(k), str) and f[k].strip())]
+        if not owner_ok(f.get("owner")):
+            bad.append("owner (a role)")
+        bad += [k for k in ("review", "opened") if when(f.get(k)) is None]
+        if f.get("state", "open") not in FOLLOW_STATES:
+            bad.append(f"state (one of {FOLLOW_STATES})")
+        elif f.get("state", "open") != "open" and when(f.get("closed")) is None:
+            bad.append("closed (when it was done or dropped)")
+        if f.get("reviewed") is not None and when(f["reviewed"]) is None:
+            bad.append("reviewed")
+        if not _deferred_ok(f.get("deferred")):
+            bad.append("deferred")
+        if bad:
+            raise ValueError(f"operator update {uid}/{n}: {', '.join(bad)} (dates YYYY-MM-DD HH:MM)")
+
+
+def open_follow(u):
+    """(batch322) the row's open follow-ups."""
+    return [f for f in u.get("followups") or [] if f.get("state", "open") == "open"]
+
+
+def follow_due(f, now):
+    """An open follow-up whose review time has passed at now."""
+    return f.get("state", "open") == "open" and when(f.get("review")) <= now
+
+
+def batch_rows(rows):
+    """{"batch290": the first row whose work names it}: where a follow-up's batch owner links."""
+    out = {}
+    for u in rows:
+        for m in BATCH_ID.finditer(str(u.get("work") or "")):
+            out.setdefault(f"batch{m.group(1)}", u["id"])
+    return out
+
+
+def owner_link(owner, links):
+    """The row id a batch owner ("batch322", "engineer batch322") links to, or None."""
+    m = BATCH_ID.search(owner or "")
+    return links.get(f"batch{m.group(1)}") if m else None
+
+
+def deferred_reason(x):
+    """The newest deferred reason recorded on a row or a follow-up, or None."""
+    d = x.get("deferred") or []
+    return d[-1] if d else None
 
 
 def owner_ok(o):
@@ -258,6 +334,8 @@ def _search(u, asks):
     for r in u.get("requested_by") or []:
         bits += [r.get("name"), r.get("ref"), (asks.get(r.get("ref")) or {}).get("text")]
     bits += [h.get("note") for h in u.get("history") or []]
+    for f in u.get("followups") or []:
+        bits += [f.get("what"), f.get("next"), f.get("owner")]
     return " ".join(" ".join(str(b).split()) for b in bits if b).lower()
 
 
@@ -278,7 +356,47 @@ def _review(u, esc, now):
     return '<p class="small upd-review">' + " · ".join(bits) + "</p>"
 
 
-def _row(u, asks, replies, esc, now=None):
+def _follow(u, esc, now, links):
+    """(batch322) the row's follow-ups under it, whatever its status: each open one with its owner (a batch links to the
+    row it works on), next action and review time (due at now, the build's time), where it came from; the closed ones
+    folded."""
+    fl = u.get("followups") or []
+    if not fl:
+        return ""
+
+    def owner(f):
+        to = owner_link(f["owner"], links)
+        return (f'<a href="#u-{esc(to)}">{esc(f["owner"])}</a>' if to and to != u["id"] else esc(f["owner"]))
+
+    def item(f):
+        rv = when(f["review"])
+        state = f.get("state", "open")
+        bits = [f'<span class="upd-fwhat">{esc(f["what"])}</span>', "Owner " + owner(f)]
+        if state == "open":
+            bits.append("Next: " + esc(f["next"]))
+            bits.append("Review " + esc(_day(rv)) + (' <span class="upd-flag upd-due">due</span>' if now and rv <= now else ""))
+            d = deferred_reason(f)
+            if d:
+                bits.append(f'<span class="muted">deferred {esc(_day(when(d["at"])))}: {esc(d["reason"])}</span>')
+        else:
+            bits.append(f'<span class="muted">{esc(state)} {esc(_day(when(f["closed"])))}'
+                        + (f': {esc(f["note"])}' if f.get("note") else "") + "</span>")
+        if f.get("source"):
+            bits.append(f'<span class="muted">from {esc(f["source"])}</span>')
+        return f'<li id="u-{esc(u["id"])}-f{f["n"]}" class="upd-f upd-f-{esc(state)}">' + " · ".join(bits) + "</li>"
+    opened = [f for f in fl if f.get("state", "open") == "open"]
+    closed = [f for f in fl if f.get("state", "open") != "open"]
+    out = ""
+    if opened:
+        out += (f'<p class="small upd-follow-head">Open follow-up{"" if len(opened) == 1 else "s"} ({len(opened)})</p>'
+                '<ul class="upd-follow small">' + "".join(item(f) for f in opened) + "</ul>")
+    if closed:
+        out += (f'<details class="upd-history upd-follow-closed"><summary>Closed follow-up{"" if len(closed) == 1 else "s"} '
+                f'({len(closed)})</summary><ul>' + "".join(item(f) for f in closed) + "</ul></details>")
+    return out
+
+
+def _row(u, asks, replies, esc, now=None, links=None):
     st = u["status"]
     who = []
     for r in u.get("requested_by") or []:
@@ -335,7 +453,8 @@ def _row(u, asks, replies, esc, now=None):
         note += (f'<details class="upd-history"><summary>{"Earlier notes" if len(hist) > 1 else "Earlier note"} ({len(hist)})</summary>'
                  f'<ul>{items}</ul></details>')
     anchor = esc(u["id"])
-    attrs = (f' data-status="{esc(st)}" data-area="{esc(u.get("area") or "")}" data-stage="{_key(stage(u, asks))}"'
+    nf = len(open_follow(u))
+    attrs = (f' data-status="{esc(st)}"' + (f' data-follow="{nf}"' if nf else "") + f' data-area="{esc(u.get("area") or "")}" data-stage="{_key(stage(u, asks))}"'
              f' data-ack="{_key(acknowledged(u))}" data-live="{_key(deployed(u))}" data-asked="{_key(_asked(u, asks))}"'
              f' data-q="{esc(_search(u, asks))}"')
     return (f'<li class="upd" id="u-{anchor}"{attrs}><div class="upd-head"><span class="fx-chip {CHIP[st]} upd-status">{esc(st)}</span>'
@@ -344,6 +463,7 @@ def _row(u, asks, replies, esc, now=None):
             + _review(u, esc, now)
             + (f'<p class="small muted upd-dates">{timeline}</p>' if timeline else "")
             + note
+            + _follow(u, esc, now, links or {})
             + msgs + "</li>")
 
 
@@ -363,8 +483,9 @@ def rows_html(data, asks, replies, esc, built=None):
     """{id: (status, the row's li)}: the rows as the page and updates.json give them, each with a sig (a hash of its
     li) that the page compares to see a row changed. built: the build's time, which a next review is due against."""
     out = {}
+    links = batch_rows(data["updates"])
     for u in data["updates"]:
-        li = _row(u, asks, replies, esc, built)
+        li = _row(u, asks, replies, esc, built, links)
         sig = hashlib.sha1(li.encode()).hexdigest()[:12]
         out[u["id"]] = (u["status"], li.replace('<li class="upd" ', f'<li class="upd" data-sig="{sig}" ', 1), sig)
     return out
@@ -390,9 +511,13 @@ def _backlog(data, built):
     rows = [u for u in data["updates"] if is_open(u)]
     rv = when(data.get("backlog_reviewed"))
     due = sum(1 for u in rows if is_due(u, built)) if built else None
+    fl = [f for u in data["updates"] for f in open_follow(u)]
+    fdue = sum(1 for f in fl if follow_due(f, built)) if built else None
     return ((f"Backlog last reviewed {_day(rv)}" if rv else "The backlog has no review yet") +
             f"; {len(rows)} row{'' if len(rows) == 1 else 's'} open (planned or in progress)" +
-            (f", {due} due for review at this build" if due is not None else "") + ".")
+            (f", {due} due for review at this build" if due is not None else "") +
+            (f"; {len(fl)} open follow-up{'' if len(fl) == 1 else 's'} on rows of any status" +
+             (f", {fdue} past {'its' if len(fl) == 1 else 'their'} review" if fdue is not None else "") if fl else "") + ".")
 
 
 def _checked(data):
