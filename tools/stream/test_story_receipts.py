@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import caster
 from analyst_board import AnalystBoard
-from freshness import stamp, current_analyst
+from freshness import stamp, current_analyst, scoped, invalid
 from playback_memory import PlaybackMemory
 from serve import AudioHub
 
@@ -166,8 +166,15 @@ def freshness(clock):
     assert fresh['source_tick'] == 6000 and fresh['subject_revision']
     changed = copy.deepcopy(s); changed['board']['plan']['goals'] = 'Retreat for repairs'
     assert 'corrections' not in current_analyst(fresh, changed, clock.t + 3)
+    subjects = snapshot()
+    subjects['agents'].append({'name': 'luna', 'alive': True})
+    source = scoped(stamp(subjects, clock.t), 'Sol holds position.', ['sol'])
+    subjects['agents'][1]['last_said'] = {'text': 'A new unrelated job'}
+    assert invalid(source, subjects, clock.t + 1) is None
+    subjects['agents'][0]['last_said'] = {'text': 'Retreating now'}
+    assert invalid(source, subjects, clock.t + 1) == 'subject or plan revised'
     # Each change occurs DURING synthesis; no first line reaches the queue.
-    for change in ('loss', 'retreat', 'correction', 'expiry'):
+    for change in ('loss', 'retreat', 'correction', 'point revision', 'expiry'):
         c, hub = host(clock); e = event(c, clock)
         e['_analyst_source'] = dict(stamp(c.source_snap, clock.t),
             correction_revision=__import__('freshness').fingerprint(c.source_snap['analyst']['corrections']))
@@ -175,6 +182,8 @@ def freshness(clock):
             if change == 'loss': c.source_snap['alerts'] = [{'kind': 'loss', 'id': 'new-loss'}]
             if change == 'retreat': c.source_snap['board']['plan']['goals'] = 'Retreat for repairs'
             if change == 'correction': c.source_snap['analyst']['corrections'] = ['The belt, not the gun, was damaged.']
+            if change == 'point revision': c.source_snap['analyst']['talking_points'] = [
+                {'id': 'p2', 'topic': 'ammo', 'text': 'The feed belt was destroyed.'}]
             if change == 'expiry': clock.t += 301
             return b'audio', 'audio/mpeg', 2, 0, {'voice': 'stub'}
         c.speak_clip = slow

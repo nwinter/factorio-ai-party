@@ -15,7 +15,7 @@ The point's text is written for a voice and its facts hold every name and number
 it passes the caster's fact check.
 """
 import re, threading, time
-from freshness import TTL, current_analyst
+from freshness import TTL, TRANSIENT, current_analyst, scoped
 
 MAX_POINTS = 60
 MAX_ANSWERS = 6
@@ -60,12 +60,14 @@ class AnalystBoard:
                 q = dict(p, **provenance, id=f"tp{int(now)}-{self.seq}", t=now,
                          game_minute=cycle.get("game_minute"))
                 q["expires"] = min(provenance["expires"], source_t + float(p.get("ttl_s") or TTL))
+                q = scoped(q, str(p.get("text")) + str(p.get("facts")), p.get("agents"))
                 self.points.append(q)
             self.points = self.points[-MAX_POINTS:]
             self.latest = {k: cycle.get(k) for k in ("headline", "judgement", "storylines", "next", "segments",
                                                      "corrections", "game_minute", "meta", "viewer_questions")}
             self.latest["t"] = now
             self.latest.update(provenance)
+            self.latest = scoped(self.latest, str({k: self.latest.get(k) for k in TRANSIENT}))
             return {"ok": True, "cycle": self.cycles, "points": len(cycle.get("talking_points") or [])}
 
     def mark_used(self, pid):

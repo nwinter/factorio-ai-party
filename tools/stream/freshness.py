@@ -1,6 +1,7 @@
 """Source provenance for transient commentary. Uses snapshots already read by the stream; no game reads."""
 import hashlib
 import json
+import re
 import time
 
 TTL = 300
@@ -15,7 +16,9 @@ def revisions(s):
     s = s or {}
     board = s.get('board') or {}
     plan = board.get('plan') or {}
-    out = {'plan': fingerprint({k: plan.get(k) for k in ('goals', 'doing', 'revision')})}
+    out = {'plan': fingerprint(plan.get('goals'))}
+    for row in plan.get('doing') or []:
+        out['plan:' + str(row.get('name') or row.get('agent'))] = fingerprint(row.get('text'))
     research = s.get('research') or {}
     out['research'] = fingerprint({k: research.get(k) for k in ('current', 'name', 'level', 'queue')})
     for a in s.get('agents') or []:
@@ -32,6 +35,16 @@ def stamp(s, now=None, ttl=TTL):
     now = time.time() if now is None else now
     return {'source_tick': (s or {}).get('tick'), 'source_t': now,
             'subject_revision': revisions(s), 'news': news(s), 'expires': now + ttl}
+
+
+def scoped(source, text, agents=()):
+    """Bind only the subjects this claim actually names; another agent's new message is not a retraction."""
+    text = str(text).lower()
+    names = {str(a.get('name') if isinstance(a, dict) else a).lower() for a in agents or []}
+    revisions = source.get('subject_revision') or {}
+    selected = {k: v for k, v in revisions.items() if ':' not in k or k.split(':', 1)[1].lower() in names
+                or re.search(r'(?<!\w)' + re.escape(k.split(':', 1)[1].lower()) + r'(?!\w)', text)}
+    return dict(source, subject_revision=selected)
 
 
 def news(s):

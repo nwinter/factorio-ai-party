@@ -2702,6 +2702,11 @@ class Caster:
         an = e.get("_analyst_source")
         if an and an.get("correction_revision") != fingerprint((current.get("analyst") or {}).get("corrections")):
             return "analyst diagnosis corrected"
+        point = e.get("point") or {}
+        for newer in (current.get("analyst") or {}).get("talking_points") or []:
+            if (point.get("topic") and newer.get("topic") == point["topic"] and newer.get("id") != point.get("id")
+                    and (newer.get("text"), newer.get("facts")) != (point.get("text"), point.get("facts"))):
+                return "analyst point superseded"
         since = (e.get("_source") or {}).get("source_t")
         if since is not None and e.get("prio", 0) < URGENT:
             # A loss arriving during writing, synthesis OR the queue wait can invalidate the first line too.
@@ -3215,6 +3220,13 @@ class Caster:
         if not lines:
             self.caster_free = max(self.caster_free, time.time() + 3)
             return
+        from freshness import scoped
+        point = e.get("point") or {}
+        subject_text = " ".join(line for _, line in lines) + str({k: point.get(k) for k in ("text", "facts", "topic")})
+        subjects = list(point.get("agents") or []) + [e.get("agent"), (facts.get("agent") or {}).get("name")]
+        for key in ("_source", "_analyst_source"):
+            if e.get(key):
+                e[key] = scoped(e[key], subject_text, [s for s in subjects if s])
         if self.claim_invalid(e):
             log(f"[caster] cancelled {e['kind']} after writing: {self.claim_invalid(e)}")
             return
