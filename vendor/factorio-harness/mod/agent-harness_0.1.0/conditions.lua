@@ -827,14 +827,22 @@ return function(api)
     -- (d29 batch329 PR, Astra #2727) a flight's return budget (platform_endurance turnaround): met once the item that
     -- binds first can go out less than km farther before the way back needs the rest. The read (about 7 ms on world n)
     -- is made at most every BUDGET_EVERY ticks; between, the last reading stands (its tick said).
+    -- (d29 batch346, Astra #2755: in platform lane guards, inside all) a platform at a stop is not met, said, with no
+    -- read (the budget reads a ship in flight); a read that fails is kept as the reading is, so a guard re-reads it at
+    -- most every BUDGET_EVERY ticks too (each check raises it: the guard's read error).
     budget_below=function(p,c)
       local now=game.tick
+      local pl
+      for _,each in pairs(p.force and p.force.platforms or {}) do if each.valid and each.name==c.platform then pl=each; break end end
+      local at=pl and pl.space_location
+      if at then return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met)',c.platform,at.name) end
       local kept=budget_kept[c]
       if not kept or now-kept.tick>=M.BUDGET_EVERY then
-        local b=api.return_budget(p,c.platform,c.turnaround)
-        kept={tick=now,b=b}
+        local ok,b=pcall(api.return_budget,p,c.platform,c.turnaround)
+        kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil}
         budget_kept[c]=kept
       end
+      if kept.err then error(kept.err..' (read at tick '..kept.tick..')',0) end
       local b=kept.b
       if not (b and b.binds and b.binds.out_km_max) then
         return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)

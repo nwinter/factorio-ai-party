@@ -64,8 +64,10 @@ return function(api)
   function M.read(p, a)
     M.check_args(a)
     local r = M.count(p.force, a.platform, {window=a.window, since_tick=a.since_tick, origin=a.origin})
-    r.note = 'launched: the pod log\'s rockets sent to it (landed, or in flight); loaded: silos with a rocket ready whose request target is it, '
-      .. 'launched next; the harness changes nothing (a cap is your own guard: wait_until or a queue guard on launches_at_least, with your steps). Read only'
+    r.note = 'launched: the pod log\'s rockets sent to it (landed, or in flight); loaded: silos with a rocket ready whose request target is it '
+      .. '(taking or holding its cargo: launched next, unless the request goes first: on a copy, switching the request\'s section off before '
+      .. 'the launch cleared the target and the rocket stayed, its cargo taken back out); the harness changes nothing (a cap is your own guard: '
+      .. 'wait_until or a queue guard on launches_at_least, with your steps). Read only'
     return r
   end
   return M

@@ -17857,3 +17857,47 @@ next queued flight_watch refused done and not read."
 - Another agent's start is refused and nothing is read.
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
+
+## d29 batch346 (LC, Astra #2754: a launch count to guard on; Astra #2755: budget_below in lane guards)
+
+Astra's report: native requests with payload 10 sent 23 pods to Asterion (81886081..81928582, 18 with repair packs,
+303 packs) before an audit; a request count does not cap launches, and a correction races rockets already loaded or in
+flight.
+
+**The read:** `shipment {launches: true, platform, window | since_tick, origin?}` (launchcount.lua).
+- `launched`: rockets sent up to the platform at or after the start (`window` seconds back, or `since_tick`), from the
+  pod log (its last 1000 journeys a planet): `landed`, `in_flight`, and `gone` (removed unlanded).
+- `loaded`: silos with a rocket ready whose request target (`transitional_request_target`) is the platform, named in
+  `loaded_silos`.
+- `total` = launched + loaded, `by_planet`, `newest_tick`, `oldest_tick`, and `complete` (false when the pod log's
+  oldest kept journey is after the start: "at least").
+- `origin` keeps one planet's rockets and silos. Read only.
+
+**The condition:** `wait_until {until: "launches_at_least", platform, n, window | since_tick, origin?}`.
+- Met once total reaches n. Counted at most every 60 ticks, the last count standing between (its tick said).
+- saw is the read's line; a fired guard's evidence keeps each count.
+- The harness stops nothing. A cap is the agent's own guard, whose steps act as it chooses (for example a `requests`
+  step switching the platform's section off). Removing or re-arming that guard is the override.
+- A direct wait, a plan step and a guard's when, in every lane, inside all/any.
+
+**budget_below in lanes (#2755):** the remote and platform lanes now take `budget_below` (and `launches_at_least`) with
+platform, as a wait and a guard's when, inside all/any.
+- A platform at a stop is not met, said, with no read (the budget reads a ship in flight).
+- A read that fails is kept like a reading, so it is made at most every 600 ticks; each check raises it as the
+  guard's read error (guard_error, queue_status guards read_error). Before, a failing read ran at every 10-tick check.
+
+**On the iMac copy of world n (2.0.77):**
+- The pod log held Astra's case exactly: 23 rockets from Aquilo to Asterion from 81886081 to 81928582, 18 with repair
+  packs, 303 packs.
+- One count takes 0.24 ms for a 1-hour window and 0.9 ms for a day (every planet's log, 5000 journeys, and 17 silos).
+- A guard `launches_at_least {platform: Asterion, n: 30, since_tick: 81886081, origin: aquilo}` in the remote lane, with
+  a `requests` step switching section 4 off, fired 8 ticks after the section asked for more repair packs: 29 launched
+  + 1 loaded = 30. The section went off in that tick, the silo's target cleared, and nothing launched.
+- From a silo taking Asterion as its target to the launch: about 480 ticks.
+- A rocket aimed at Asterion with 8 packs already in it: switching the section off cleared its target. It did not
+  launch, and 300 ticks later it held nothing.
+- Astra's draft deep34-100k (lane platform:Resolute, 30 steps, 8 guards, the eighth `all(tick_at_least,
+  platform_progress, budget_below)`) passes its dry run. A guard `all(tick_at_least, budget_below)` in that lane fired
+  8 ticks after Resolute left the edge ("rocket binds first, at most 8144 km farther out").
+
+**Tests:** tests/d29_batch346.lua.

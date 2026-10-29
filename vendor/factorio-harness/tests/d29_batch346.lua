@@ -6,7 +6,9 @@
 --    rockets: landed, in flight, gone) + loaded (silos with a rocket ready whose request target is it), each shown.
 -- 2. launches_at_least: met at n, the counts as its evidence, counted at most every LAUNCH_EVERY ticks; arguments
 --    checked; the harness stops nothing (the reply says what follows is the guard's own steps).
--- 3. shipment {launches}; the remote lane takes the condition.
+-- 3. shipment {launches}.
+-- 4. (Astra #2755) budget_below and launches_at_least in the remote and platform lanes, inside all/any.
+-- 5. a window reaching past the pod log's oldest kept journey.
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '..x) end
@@ -108,9 +110,6 @@ do
   met,saw=C.check(p,d); eq(met,false); has(saw,'counted at tick '..t0)
   game.tick=t0+60
   met,saw=C.check(p,d); eq(met,true); has(saw,'29 launched'); eq(d.evidence.tick,t0+60)
-  -- the remote lane takes it in a wait and a guard's when (queue_lanes.lua's check text)
-  local src=io.open('mod/agent-harness_0.1.0/queue_lanes.lua'):read('a')
-  has(src,"c['until']=='launches_at_least') and type(c.platform)=='string'")
   -- arguments
   fails(function() C.validate({['until']='launches_at_least',n=5,window=3600}) end,'launches_at_least requires platform')
   fails(function() C.validate({['until']='launches_at_least',platform='Asterion',window=3600}) end,'launches_at_least n: 1..100000')
@@ -132,6 +131,51 @@ do
 end
 print('d29_batch346 3. shipment {launches}: ok')
 
+-- (Astra #2755) budget_below and launches_at_least in the remote and platform lanes, as a wait and a guard's when,
+-- inside all/any: Astra's eighth guard from deep34-100k-DRAFT (lane platform:Resolute), word for word
+do
+  local lanes=dofile('mod/agent-harness_0.1.0/queue_lanes.lua')
+  local checks={}
+  local function factory(api) checks[#checks+1]=api.check_step; return {handlers={},schema={queue_submit={}},validate=function() end} end
+  local L=lanes{scheduler={handlers={},schema={queue_submit={},queue_status={returns=''}}},base={player=function() end,busy=function() end,state=function() return {} end},
+    factory=factory,is_read=function() return false end}
+  L.validate({lane='platform:Resolute'})
+  eq(#checks,2,'the remote lane and lane platform:Resolute')
+  local eighth={['until']='all',conditions={{['until']='tick_at_least',tick=82022000},
+    {['until']='platform_progress',platform='Resolute',from='solar-system-edge',to='shattered-planet',at_least=1e-06},
+    {['until']='budget_below',platform='Resolute',turnaround={km=0,back_to='solar-system-edge',speed_floor=35,margin=0.2,
+      reserve={['firearm-magazine']=3000,rocket=2000,['railgun-ammo']=1500},items={'firearm-magazine','rocket','railgun-ammo'}},km=5000}}}
+  local cap={['until']='any',conditions={{['until']='launches_at_least',platform='Asterion',n=5,window=3600,origin='aquilo'},
+    {['until']='budget_below',platform='Resolute',turnaround={km=0},km=5000}}}
+  for _,check in ipairs(checks) do
+    check('wait_until',eighth); check('wait_until',cap)
+    check('wait_until',{['until']='budget_below',platform='Resolute',turnaround={km=0},km=5000})
+    fails(function() check('wait_until',{['until']='all',conditions={{['until']='budget_below',turnaround={km=0},km=5000}}}) end,
+      'launches_at_least, budget_below or ghosts_waiting with platform')
+  end
+end
+-- budget_below at a stop: not met, said, no read; a read that fails is kept 600 ticks like a reading (a guard's read
+-- error raised at each check, the read made once)
+do
+  local reads,fail=0,true
+  local C=require('conditions'){return_budget=function() reads=reads+1; if fail then error('turnaround: Resolute flies no connection now',0) end
+    return {binds={name='rocket',out_km_max=100}} end}
+  local res={name='Resolute',valid=true,space_location={name='solar-system-edge'}}
+  local p={force={platforms={res}}}
+  local c={['until']='budget_below',platform='Resolute',turnaround={km=0},km=5000}
+  local t0=game.tick
+  local met,saw=C.check(p,c)
+  eq(met,false); eq(reads,0); has(saw,'platform Resolute: stopped at solar-system-edge: the return budget reads a ship in flight (not met)')
+  res.space_location=nil
+  fails(function() C.check(p,c) end,'flies no connection now (read at tick '..t0..')')
+  game.tick=t0+590
+  fails(function() C.check(p,c) end,'(read at tick '..t0..')')
+  eq(reads,1,'a failed read kept for BUDGET_EVERY')
+  fail=false; game.tick=t0+600
+  met=C.check(p,c); eq(met,true); eq(reads,2)
+end
+print('d29_batch346 4. budget_below and launches_at_least in remote and platform lanes, in all/any (Astra\'s eighth guard): ok')
+
 -- the pod log keeps its last KEEP journeys a planet: a window reaching past its oldest says so (at least)
 do
   local keep=P.KEEP  -- last: it trims the log
@@ -142,4 +186,4 @@ do
   eq(LC.count(force,'Asterion',{window=60,origin='aquilo'}).complete,true)
   P.KEEP=keep
 end
-print('d29_batch346 4. a window past the pod log\'s oldest kept journey: complete false, said: ok')
+print('d29_batch346 5. a window past the pod log\'s oldest kept journey: complete false, said: ok')
