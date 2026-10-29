@@ -1014,6 +1014,11 @@ html { scroll-padding-top: 76px; }
 /* (d26 batch235 UR, viewer Aurora site:5022) an open row's priority, owner and next review; the backlog line */
 .upd-review { color: var(--muted); }
 .upd-backlog { margin: .25rem 0 0; }
+/* (d28 batch322 UL, viewer Aurora site:5411) a row's follow-ups, whatever its status */
+.upd-follow-head { margin: 4px 0 0; color: var(--heading); }
+.upd-follow { list-style: none; padding: 0 0 0 10px; margin: 2px 0 0; border-left: 3px solid var(--accent); }
+.upd-follow li { margin: 2px 0; overflow-wrap: anywhere; }
+.upd-fwhat { font-weight: 600; }
 .upd-history { margin-top: 2px; font-size: .9rem; }
 .upd-history > summary { cursor: pointer; color: var(--muted); }
 .upd-history ul { list-style: none; padding: 0 0 0 10px; margin: 4px 0 0; border-left: 3px solid var(--line-strong); }
