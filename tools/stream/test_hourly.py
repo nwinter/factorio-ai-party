@@ -353,9 +353,17 @@ def airing_tests(m, facts):
     res = a.air(p)
     assert res["event"] == "aired" and res["ended_early"] == "a attack with one camera (Base under attack)", res
     assert svc.cancelled and svc.look_hold is None and not os.path.exists(a.hush_file), "narration back, look and hush cleared"
-    assert clock() < 1000 + 20, "ended within seconds"
     end = [json.loads(l) for l in open(os.path.join(d, f"tour-{p['id']}.jsonl"))][-1]
     assert end["event"] == "end" and end["stopped"] and end["why"].startswith("a attack with one camera")
+    # (d28 batch319 SU) the stop it cut short airs again once the attack is no longer fresh (URGENT_S), as the same
+    # segment: the narration's clips say {id, part, parts}, and each run releases the page's hold at its end
+    assert res["resumed"]["stops"] == 1 and res["resumed"]["aired"] == 1 and res["resumed"]["ended_early"] is None, res
+    rs = [json.loads(l) for l in open(os.path.join(d, f"tour-{p['id']}-resume1.jsonl"))]
+    assert rs[0]["event"] == "start" and rs[0]["t"] >= 1010.0 + 120, rs[0]
+    segs = [c.get("segment") for c in svc.clips]
+    assert len(segs) == 2 and all(sg == {"id": p["id"], "part": 1, "parts": 1} for sg in segs), segs
+    releases = [c for c in svc.calls if c[1:3] == ("POST", "/audio/release")]
+    assert len(releases) == 2 and releases[0][3] == {"segment": p["id"]}, releases
     # three cameras: the attack goes to the inset, the piece goes on
     a, svc, clock, calls, p, d = setup(attack_at(1010.0), cams=3)
     res = a.air(p)
