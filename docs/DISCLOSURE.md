@@ -209,18 +209,18 @@ The replay's finding:
 
 ## Sizes
 
-Each row adds that milestone's conditions to the one before. The core is today's assembled core for a Claude agent
-less the closed brief items, with the index cut to open commands. Today's core is 20,931 bytes. The disclosure line
-adds about 330 bytes.
+Each row adds that milestone's conditions to the one before. The core is the assembled core for a Claude agent less
+the closed brief items, with the index cut to open commands. After cp4 the whole core is 14,871 bytes (20,931 before);
+the disclosure line adds about 330 bytes. Doc entries count the cp4 split parts.
 
 | Milestone | Actions | Arguments | describe.json bytes | Doc entries | Doc bytes | Core bytes |
 |---|---|---|---|---|---|---|
-| tick 0 | 54 | 350 | 95,643 | 56 | 67,917 | 16,768 |
-| first hour: power, labs, a few drills and belts | 82 | 591 | 165,545 | 88 | 119,326 | 18,608 |
-| mid game: oil, robots, circuits, trains, defense | 188 | 1236 | 281,368 | 181 | 191,682 | 19,978 |
-| rocket and first platform | 224 | 1613 | 370,389 | 249 | 320,505 | 20,520 |
-| every planet | 228 | 1637 | 374,776 | 260 | 326,323 | 20,567 |
-| all (agent-facing) | 230 | 1652 | 375,908 | 262 | 327,590 | 20,931 |
+| tick 0 | 54 | 350 | 95,643 | 73 | 67,306 | 12,217 |
+| first hour: power, labs, a few drills and belts | 82 | 591 | 165,545 | 123 | 132,557 | 12,548 |
+| mid game: oil, robots, circuits, trains, defense | 188 | 1237 | 281,889 | 247 | 244,092 | 13,918 |
+| rocket and first platform | 224 | 1614 | 370,910 | 297 | 324,498 | 14,460 |
+| every planet | 228 | 1638 | 375,297 | 313 | 332,561 | 14,507 |
+| all (agent-facing) | 230 | 1653 | 376,429 | 319 | 335,711 | 14,871 |
 
 ## Costs (measured on the iMac copy)
 
