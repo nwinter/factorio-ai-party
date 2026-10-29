@@ -235,6 +235,23 @@ def refs(rows):
     return out
 
 
+def sent_rids(run_dir):
+    """(d28 batch323 DR) The request ids tools/opreply.py marked sent in a run (operator-replies-sent.jsonl): a reply
+    shows under its Updates row once its lines went to the game chat, as the chat's acknowledgement does."""
+    out = set()
+    try:
+        for line in (Path(run_dir) / "operator-replies-sent.jsonl").read_text(errors="replace").splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and r.get("rid"):
+                out.add(r["rid"])
+    except OSError:
+        pass
+    return out
+
+
 def _local(t):
     return datetime.datetime.fromtimestamp(t, PACIFIC).replace(tzinfo=None)
 
@@ -259,6 +276,7 @@ def messages(runs_dir, wanted, clean, keep, hidden=None):
                 continue
             asks[mid] = {"name": name, "text": clean(row["text"]), "at": _local(row["t"]) if isinstance(row.get("t"), (int, float)) else None}
     for f in sorted(root.glob("*/operator-replies.jsonl")):
+        sent = sent_rids(f.parent)
         for line in f.read_text(errors="replace").splitlines():
             try:
                 row = json.loads(line)
@@ -267,6 +285,8 @@ def messages(runs_dir, wanted, clean, keep, hidden=None):
             to = row.get("to") if isinstance(row, dict) else None
             if to not in wanted:
                 continue
+            if row.get("rid") and row["rid"] not in sent:
+                continue  # (d28 batch323) pending: not in the game chat yet (tools/opreply.py marks it sent after)
             text = " ".join(p for p in row.get("parts") or [] if isinstance(p, str))
             if not text or not keep(text):
                 continue
