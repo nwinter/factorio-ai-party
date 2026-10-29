@@ -12,6 +12,8 @@
 # POG_VIEWER_ROUTE (default 0; 1: a viewer line that names no agent goes by what it is about, tools/stream/router.py).
 # POG_CODEX_HOOKS (default 0; 1: Codex agents' tool hooks record each call for the busy notice, tools/codex_hooks.py;
 # it writes trust entries into the Codex routes' config.toml).
+# POG_DISCLOSURE (unset: as the save has it, off by default; 1: each team's kit grows with it, docs/DISCLOSURE.md;
+# observe: kept, not filtered; 0: off).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
 # starts on the previous run's stop save (its stopped.json, written by tools/stop-team.sh), else the newest save
 # written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
@@ -245,6 +247,15 @@ if [ -n "$resume" ]; then
   progress=$(python3 tools/progress.py --shift-lines 2>/dev/null | tr -d '\n' || true)
   closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n,[==[$progress]==]))" 2>&1)
   log "world $world: shift_start $closed"
+fi
+# (d28 batch317) Progressive disclosure (docs/DISCLOSURE.md): POG_DISCLOSURE=1 filters each team's kit by what it has
+# researched, built, met and done; observe keeps that state without filtering; 0 turns it off. Unset leaves the world as
+# its save has it (off unless set: world n as before). The team's open set is saved once for the briefs (tools/brief.py).
+if [ -n "${POG_DISCLOSURE:-}" ]; then
+  dteam=$(awk -F'\t' '!/^#/ && NF' "$team" | wc -l | tr -d ' ')
+  dflags=(--stream); [ "$dteam" -gt 1 ] && dflags+=(--team)
+  log "world $world: disclosure $(python3 tools/disclosure/set.py --world "$world" --mode "$POG_DISCLOSURE" ${dflags[@]+"${dflags[@]}"} --open "$rundir/disclosure-open.json" 2>&1 | tr '\n' ' ')"
+  export POG_DISCLOSURE_OPEN="$rundir/disclosure-open.json"
 fi
 
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.
