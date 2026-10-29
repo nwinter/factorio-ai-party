@@ -49,6 +49,9 @@ machines; the base map too), each platform where the runs' chronicles put it (Pl
 departures, edge entries, visits, bows and base maps (the log's are left out), and work rows take those views. No
 platform danger (not logged) and no clouds. --stories RUN/stories.json: the story beats (Stories). --hours: airtime's
 numbers for each hour too. The result's `shots` counts the program's cuts and moves by kind (shot_counts).
+(d28 batch324) --attention: each agent's attention point from its journal (World.attention_of), so the attention
+inset and the one-client swap of a still agent run; --speech: the lines that played, with their words and subjects
+(Speech), so the speech-linked framing runs.
 """
 import argparse, bisect, importlib, json, math, os, re, subprocess, sys, tempfile, time
 
@@ -431,9 +434,11 @@ class World:
     """The agents' states at each second (module doc)."""
 
     def __init__(self, js, log_rows, fights=None, shells=None, live=False, vehicle_interest=False, launches=None, work=None,
-                 platforms=None, stories=None):
+                 platforms=None, stories=None, attention=False, speech=None):
         import model
         self.platforms, self.stories = platforms, stories  # (batch318)
+        self.with_attention, self.speech = attention, speech  # (batch324)
+        self.att_i, self.att_last = {n: 0 for n in js}, {}
         self.work_rows = work  # (batch267) the service's work rows (Work)
         self.launches, self.last_silos, self.silo_snap = launches, -1e9, None  # (batch257) the silos read, a poll
         self.vehicle_interest = vehicle_interest  # (batch232 VC2: rules that bump interest for a vehicle's new target)
@@ -573,7 +578,8 @@ class World:
             ag.active = active
             ag.decay(t)
             thinking = t - self.last_req.get(name, -1e9) < self.model.THINK_WINDOW
-            out.append({"name": name, "display_name": name.capitalize(), "alive": True, "seen": True,
+            att = self.attention_of(name, pos, t) if self.with_attention else None
+            out.append({"name": name, "display_name": name.capitalize(), "alive": True, "seen": True, "attention": att,
                         "position": pos, "surface": self.surf[name].at(t) or "nauvis",
                         "activity": "acting" if active else "thinking" if thinking else "idle",
                         "active": active, "interest": round(ag.interest, 2),
@@ -598,7 +604,33 @@ class World:
             snap["tick"] = snap["tick"] or self.platforms.tick_at(t)
         if self.stories:
             snap["stories"] = self.stories.rows(t)
+        if self.speech:  # (batch324) the lines playing now
+            snap["speech"] = self.speech.rows(t)
         return snap
+
+    def attention_of(self, name, pos, t):
+        """(d28 batch324) The agent's attention point as model.attention_row makes it: its latest request with a place
+        (attention.point) under model.ATTENTION_TTL old, far when ATTENTION.FAR tiles from the character or on a
+        platform."""
+        import attention
+        reqs = self.js[name].requests
+        i = self.att_i[name]
+        while i < len(reqs) and reqs[i][0] <= t:
+            rt, action, args, res, ok = reqs[i]
+            p = attention.point(action, args) if ok else None
+            if p:
+                self.att_last[name] = (rt, p)
+            i += 1
+        self.att_i[name] = i
+        got = self.att_last.get(name)
+        if not got or t - got[0] > self.model.ATTENTION_TTL:
+            return None
+        rt, a = got
+        here = pos if not a.get("platform") else None
+        d = math.hypot(a["position"]["x"] - here["x"], a["position"]["y"] - here["y"]) if here and a.get("position") else None
+        far = (d is not None and d >= attention.FAR) or bool(a.get("platform"))
+        return dict(a, text=attention.text(a, here), age_s=round(t - rt, 1), dist=None if d is None else round(d, 1),
+                    far=far, surface=a.get("surface") or self.surf[name].at(t) or "nauvis")
 
 
 PLAT_NAME_RE = re.compile(r"platform (?:work|visit|departure|arrival)[^:]*: (?:[^·]*· working on )?([^·]+?)(?: ·|$)")
@@ -850,6 +882,51 @@ class Stories:
         return [b for b in self.beats if b["t"] <= t < b["t"] + self.keep]
 
 
+class Speech:
+    """(d28 batch324) The lines that played (RUN/audio-played.jsonl: each clip's end, played seconds, channel, speaker,
+    agent) with what they said and named (the caster's logs in the director log's folder: hosts' lines with their
+    exchange's facts -> caster.subjects_of, agents' and the Operator's lines): rows(t) is the snapshot's `speech`."""
+
+    def __init__(self, runs, log_dir, t0, t1):
+        import caster
+        rows = []
+        for f in sorted(os.listdir(log_dir)):
+            if f.startswith("caster-") and f.endswith(".jsonl"):
+                rows += [r for r in airtime.rows_of(os.path.join(log_dir, f)) if r.get("pushed") and
+                         isinstance(r.get("t"), (int, float)) and t0 - 600 <= r["t"] <= t1]
+        facts = {}
+        for r in rows:
+            if r.get("facts") and r.get("exchange"):
+                facts[r["exchange"]] = r["facts"]
+        said = []
+        for r in sorted(rows, key=lambda r: r["t"]):
+            ch = {"caster": "caster", "agent": "agent", "operator": "operator"}.get(r.get("type"))
+            if ch:
+                subs = caster.subjects_of(facts.get(r.get("exchange")), {"kind": r.get("event")}) if ch == "caster" else []
+                said.append((r["t"], ch, r.get("line") or "", r.get("agent"), subs))
+        self.lines = []
+        for run in runs:
+            for r in airtime.rows_of(os.path.join(run, "audio-played.jsonl")):
+                if r.get("state") != "end" or not isinstance(r.get("played"), (int, float)) or r.get("channel") not in \
+                        ("caster", "agent", "operator", "narrator"):
+                    continue
+                start = r["t"] - r["played"]
+                if not t0 - 60 <= start <= t1:
+                    continue
+                # its log row: the newest pushed line of its channel (and agent) before it started
+                m = [x for x in said if x[1] == r["channel"] and x[0] <= start + 1 and
+                     (r["channel"] != "agent" or x[3] == r.get("agent"))]
+                x = m[-1] if m else None
+                self.lines.append({"id": r.get("id") or f"{r['channel']}-{start}", "channel": r["channel"],
+                                   "speaker": r.get("speaker"), "agent": r.get("agent"), "started": start,
+                                   "duration": r.get("duration") or r["played"], "end": r["t"],
+                                   "text": x[2] if x else "", "subjects": x[4] if x else []})
+        self.lines.sort(key=lambda v: v["started"])
+
+    def rows(self, t):
+        return [dict(v) for v in self.lines if v["started"] <= t < v["end"]]
+
+
 PANEL_SLOTS = [{"slot": "cam2", "player": 1, "panel": 1, "rect": [2388, 0, 492, 277], "scale": 0.171},
                {"slot": "cam3", "player": 1, "panel": 2, "rect": [0, 0, 492, 277], "scale": 0.171}]  # (tools/cams.py)
 
@@ -882,7 +959,7 @@ def clock_t(day_t, hhmm):
 
 def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0, t0=None, t1=None, fights=False,
            shells=None, vehicles="journal", surface_from=None, timed=False, launches=True, tuning=None, work=True,
-           panels=0, platforms=None, stories=None):
+           panels=0, platforms=None, stories=None, attention=False, speech=False):
     log_rows = log_rows_of(log_path)
     t0 = log_rows[0]["t"] if t0 is None else t0
     t1 = log_rows[-1]["t"] if t1 is None else t1
@@ -899,7 +976,9 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
         world = World(js, log_rows, fights_of(js) if fights else None, flare_shells(js) if shells == "flares" else None,
                       live=vehicles == "live", vehicle_interest=True, launches=Launches(runs, js) if launches else None,
                       work=Work(js, log_rows, plats and plats.views) if work else None,  # (batch245: main has model.py's bumps since
-                      platforms=plats, stories=Stories(stories) if stories else None)
+                      platforms=plats, stories=Stories(stories) if stories else None, attention=attention,
+                      speech=Speech(runs, os.path.dirname(os.path.abspath(
+                          log_path if isinstance(log_path, str) else list(log_path)[0])), t0, t1) if speech else None)
         # batch232 and 240; "here" only gave main's replays no vehicle or build interest, shift81: 26.4% vs 21.5% idle)
 
         def send(body):
@@ -948,7 +1027,8 @@ def replay(log_path, runs, out_path, cams=3, rules="here", chart=None, step=1.0,
 
 SHOT_KINDS = (("danger", "platform danger"), ("edge", "platform edge"), ("departure", "platform departure"),
               ("visit", "platform visit"), ("work", "platform work"), ("story", "platform story"), ("bow", "platform bow"),
-              ("map", "base map"), ("cloud", "cloud:"), ("tour", "tour:"), ("launch", "launch:"))
+              ("map", "base map"), ("cloud", "cloud:"), ("tour", "tour:"), ("launch", "launch:"), ("speech", "speech:"),
+              ("work swap", "work:"))
 
 
 def shot_counts(rows, t0, t1):
@@ -963,7 +1043,8 @@ def shot_counts(rows, t0, t1):
         body = m.group(3) if m else None
         if body is None:
             k = "away inset" if reason.startswith("inset away:") else "departure inset" if \
-                reason.startswith("inset departure") else None
+                reason.startswith("inset departure") else "speech inset" if reason.startswith("inset speech") else \
+                ("speech " + reason.split(":")[0].split()[1]) if r.get("slot") == "program" and reason.startswith("speech ") else None
         else:
             k = next((k for k, p in SHOT_KINDS if body.startswith(p) or body.startswith("quiet " + p)), None)
         if k:
@@ -1000,6 +1081,10 @@ def main(argv=None):
     ap.add_argument("--platforms", metavar="STATE.json", help="(batch318) a stream service state file: the platforms' views "
                     "and the base map; where each platform is from the runs' chronicles (Platforms)")
     ap.add_argument("--stories", metavar="RUN/stories.json", help="(batch318) the story beats from a run's stories.json")
+    ap.add_argument("--attention", action="store_true", help="(batch324) the agents' attention points from their journals "
+                    "(the attention inset and, with one client, the still agent's swap)")
+    ap.add_argument("--speech", action="store_true", help="(batch324) the lines that played (RUN/audio-played.jsonl) with "
+                    "their words and subjects (the caster logs beside the director log)")
     ap.add_argument("--hours", action="store_true", help="(batch318) airtime's numbers for each hour of the span too")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -1010,7 +1095,8 @@ def main(argv=None):
     _, js, (t0, t1) = replay(a.log, a.runs, out, a.cams, a.rules, a.chart, t0=t0, t1=t1, fights=a.fights,
                              shells=a.shells, vehicles=a.vehicles, surface_from=a.surface_from, timed=a.timed,
                              launches=not a.no_launches, work=not a.no_work, tuning={k: json.loads(v) for k, v in (x.split("=", 1) for x in a.set)},
-                             panels=a.panels, platforms=a.platforms, stories=a.stories)
+                             panels=a.panels, platforms=a.platforms, stories=a.stories, attention=a.attention,
+                             speech=a.speech)
     rows = list(airtime.rows_of(out))
     m = airtime.measure(rows, js, t0, t1)
     m.update(log=" ".join(os.path.basename(x) for x in a.log), rules=a.rules, cams=a.cams, replay_log=out,
