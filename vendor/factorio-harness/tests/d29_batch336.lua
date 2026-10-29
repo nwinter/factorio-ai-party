@@ -257,4 +257,15 @@ do
   ok,err=pcall(runtime.dispatch,{action='board_update',args={id=id,review='1h00m'},bot='sol',wall=W})
   assert(not ok and tostring(err):find('sets the review time',1,true),tostring(err))
 end
+
+-- 5. (cp2, operator 07:24) a page of 32 technologies at most; from and next_from page through them
+do
+  for k=1,40 do tech(string.format('page-tech-%02d',k),10,{red}) end
+  local r=astra('technologies',{prefix='page-tech-'})
+  eq(#r.entries,32); eq(r.total,40); eq(r.truncated,true); eq(r.next_from,33); eq(r.entries[1].name,'page-tech-01')
+  r=astra('technologies',{prefix='page-tech-',from=33})
+  eq(#r.entries,8); eq(r.entries[1].name,'page-tech-33'); eq(r.next_from,nil); eq(r.truncated,false); eq(r.from,33)
+  local ok,err=pcall(astra,'technologies',{prefix='page-tech-',limit=64})
+  assert(not ok and tostring(err):find('limit',1,true),tostring(err))
+end
 print('d29_batch336: ok')
