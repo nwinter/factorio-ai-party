@@ -300,6 +300,66 @@ def launch_tree():
     print("launch tree: ok")
 
 
+def team_views():
+    """F: reads as a team's force (pog.for_force, the stream harness's team field) and the operator's page per team."""
+    import pog
+    sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
+    import harness
+    assert pog.for_force(pog.SCORE_LUA, None) == pog.SCORE_LUA == pog.for_force(pog.SCORE_LUA, "player")
+    red = pog.for_force(pog.SCORE_LUA + pog.CENSUS_FN + ' find{force = "player"}', "red")
+    assert "game.forces.player" not in red and 'game.forces["red"]' in red and 'force = "red"' in red, red[-200:]
+    assert 'operator = true, team = "red",' in red
+    try:
+        pog.for_force("x", 'red"..os')
+        raise AssertionError("a force name with quotes must be refused")
+    except ValueError:
+        pass
+
+    class R:
+        sent = []
+
+        def command(self, cmd):
+            self.sent.append(cmd)
+            return json.dumps({"ok": True, "tick": 5, "result": {}})
+    h = harness.Harness.__new__(harness.Harness)
+    h.world, h.team, h.lock, h.rcon = "imac2", "blue", __import__("threading").Lock(), R()
+    h.operator_read("tells", {"since": 0})
+    assert '"team": "blue"' in R.sent[-1], R.sent[-1]
+    h.team = None
+    h.operator_read("tells", {"since": 0})
+    assert '"team"' not in R.sent[-1], R.sent[-1]
+    assert harness.Harness.__init__.__code__.co_varnames[:3] == ("self", "world", "team")
+    # the page: one column per team, its agents' force checked
+    sys.path.insert(0, os.path.join(ROOT, "tools", "mt"))
+    import team_views as tv
+    tmp = tempfile.mkdtemp()
+    try:
+        op = os.path.join(tmp, "op")
+        os.makedirs(os.path.join(op, "red"))
+        open(os.path.join(op, "teams.tsv"), "w").write("# t\nred\tastra\tcodex\nblue\thaiku\tclaude\n")
+        open(os.path.join(op, "red", "chat.jsonl"), "w").write(json.dumps({"from": "astra", "message": "iron <b>"}) + "\n")
+
+        class Fake:
+            def bots(self):
+                return [{"name": "astra", "force": "red", "alive": True, "position": {"x": 1, "y": 2}},
+                        {"name": "haiku", "force": "player", "alive": True, "position": {"x": 3, "y": 4}}]
+
+            def op(self, action, args=None, team=None):
+                return {"mt_contacts": {"contacts": []}, "board": {"items": [{"id": 1, "status": "open", "title": f"{team} item"}]},
+                        "tells": {"tells": [{"from": "x", "to": ["y"], "text": "t"}]}}[action]
+
+            def score(self, force):
+                return {"tick": 9, "research_done": ["automation"], "entities": {"stone-furnace": 2}, "produced": {}}
+        view = tv.collect(Fake(), op)
+        assert [c["team"] for c in view["teams"]] == ["red", "blue"]
+        assert view["teams"][0]["board"][0]["title"] == "red item" and view["teams"][1]["board"][0]["title"] == "blue item"
+        text = tv.page(view)
+        assert "iron &lt;b&gt;" in text and "<b>force player</b>" in text and text.count("<section>") == 2, text[:300]
+    finally:
+        shutil.rmtree(tmp)
+    print("team views: ok")
+
+
 if __name__ == "__main__":
     brief_and_new_run()
     claude_settings()
@@ -308,3 +368,4 @@ if __name__ == "__main__":
     team_files()
     web_block()
     launch_tree()
+    team_views()

@@ -21,7 +21,7 @@
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
 # harness what that does), POG_DENY_READ (this checkout, every mt/ worktree, the operator's folder) for the Claude Code
 # and Grok sandboxes, which also deny the other teams' folders (tools/launch-agent.sh). The operator's files (this log,
-# the teams file, scores, the shared chat log) go in this checkout's runs/RUN/op/.
+# the teams file, the per-team scores and chat logs, the team views) go in this checkout's runs/RUN/op/.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
@@ -92,7 +92,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
       python3 tools/full_tools.py carry --dry-run "$tree/runs/$run/$t" "$tree/runs/$resume/$t" $(members "$tmp/$t/team.tsv") 2>&1 | sed "s/^/   $t carry: /" || true
     fi
   done
-  echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; scores and the shared chat log in runs/$run/op/; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
+  echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   exit 0
 fi
 
@@ -200,16 +200,24 @@ done
 log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; $op/not-started.txt)}; deadline $(cat "$rundir"/*/*/deadline.txt 2>/dev/null | head -1)"
 [ -s "$op/panes.txt" ] || { log "no agent started"; exit 1; }
 
-# 4. Supervisors (agy runs its own loop), scores, the shared chat log, idle nudges per team (POG_IDLE_NUDGE=1).
+# 4. Supervisors (agy runs its own loop), per-team scores and chat logs, the team views, idle nudges per team (POG_IDLE_NUDGE=1).
 while read -r t name pane kind; do
   [ "$kind" = agy ] && continue
   nohup tools/supervise.sh "$pane" "$rundir/$t/$name" >/dev/null 2>&1 &
   echo $! >> "$rundir/$t/supervisors.pid"
 done < "$op/panes.txt"
-nohup tools/score-loop.sh "$op" "${POG_SCORE_EVERY:-120}" "$world" >/dev/null 2>&1 &
-echo $! >> "$op/helpers.pid"
-first_bot=$(awk '{print $2; exit}' "$op/panes.txt")
-nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$op/chat.jsonl" >"$op/chat-log.err" 2>&1 &
+# Per team (mt276 B: chat and the board are the team's): its force's score rows and its chat, read as its first
+# agent, in op/TEAM/; tools/mt/team_views.py puts them beside the team's board and tells in op/views.html.
+for t in $teams; do
+  mkdir -p "$op/$t"
+  POG_FORCE=$t nohup tools/score-loop.sh "$op/$t" "${POG_SCORE_EVERY:-120}" "$world" >/dev/null 2>&1 &
+  echo $! >> "$op/helpers.pid"
+  first_bot=$(awk -v t="$t" '$1 == t {print $2; exit}' "$op/panes.txt")
+  [ -n "$first_bot" ] || continue
+  nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$op/$t/chat.jsonl" >"$op/$t/chat-log.err" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+done
+nohup python3 tools/mt/team_views.py "$run" --every "${POG_VIEWS_EVERY:-60}" >"$op/team-views.err" 2>&1 &
 echo $! >> "$op/helpers.pid"
 if [ "${POG_IDLE_NUDGE:-0}" = 1 ]; then
   for t in $teams; do
@@ -217,4 +225,4 @@ if [ "${POG_IDLE_NUDGE:-0}" = 1 ]; then
     echo $! >> "$rundir/$t/supervisors.pid"
   done
 fi
-log "supervisors, scores ($op/scores.jsonl) and chat log ($op/chat.jsonl) running"
+log "supervisors, per-team scores and chat logs ($op/TEAM/) and the team views ($op/views.html) running"
