@@ -6679,7 +6679,8 @@ function M.surface_block(surface,proto)
       props[c.property]=v
     end
     if v and ((c.min and v<c.min) or (c.max and v>c.max)) then
-      local need=c.min and c.max and string.format('%s between %s and %s',c.property,sc_num(c.min),sc_num(c.max))
+      local need=c.min and c.max and c.min==c.max and string.format('%s = %s',c.property,sc_num(c.min))
+        or c.min and c.max and string.format('%s between %s and %s',c.property,sc_num(c.min),sc_num(c.max))
         or c.min and string.format('%s >= %s',c.property,sc_num(c.min)) or string.format('%s <= %s',c.property,sc_num(c.max))
       local where=surface.platform and surface.platform.name or (surface.planet and surface.planet.name) or surface.name
       return string.format('%s cannot be placed on %s: needs %s, this surface has %s',name,where,need,sc_num(v))

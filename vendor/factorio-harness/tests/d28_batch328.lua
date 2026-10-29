@@ -80,6 +80,9 @@ eq(runtime.surface_block(plat,silo),'rocket-silo cannot be placed on Resolute: n
 eq(runtime.surface_block(nauvis,chest),nil,'gravity 10 meets it')
 eq(runtime.surface_block(plat,belt),nil,'no conditions')
 eq(runtime.surface_block(fulgora,odd),'odd-thing cannot be placed on fulgora: needs magnetic-field <= 50, this surface has 99')
+local crusher=proto('crusher',{{property='gravity',min=0,max=0}})
+eq(runtime.surface_block(nauvis,crusher),'crusher cannot be placed on nauvis: needs gravity = 0, this surface has 10')
+eq(runtime.surface_block(plat,crusher),nil,'space only: the platform meets it')
 eq(runtime.surface_block(fulgora,band),'band-thing cannot be placed on fulgora: needs pressure between 100 and 600, this surface has 800')
 -- cached: a prototype's conditions read once, a surface's property once a game minute
 local c0,p0=reads.conds,reads.prop
