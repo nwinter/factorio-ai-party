@@ -116,7 +116,7 @@ def unhooked():
     o = FakeOBS()
     o.sizes[o.ids["stream cam3"]] = (0, 0)
     c = cuts.Cuts(o, LAYOUT, log=lambda *a: None, start=False, vertical=None)
-    c.set({"onair": "cam1", "inset": None})
+    c.set({"onair": "main", "inset": None})
     c.work()
     t = o.tf("stream cam3")
     assert (t["positionX"], t["boundsWidth"], t["boundsHeight"]) == (24, 1208, 1032) and "cropLeft" not in t, t
@@ -126,7 +126,7 @@ def unhooked():
     c.work()
     assert "cropLeft" not in o.tf("stream cam3")
     o.sizes[o.ids["stream cam3"]] = (2880, 1620)  # hooked: the next apply crops it, and it is kept as placed
-    c.set({"onair": "cam1", "inset": None})
+    c.set({"onair": "main", "inset": None})
     c.work()
     assert o.tf("stream cam3")["cropLeft"] == 492 and c.targets[0]["placed"]["stream cam3"] == "main", o.tf("stream cam3")
     n = len(o.calls)

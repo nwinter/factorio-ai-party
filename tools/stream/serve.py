@@ -892,6 +892,21 @@ def main():
                                       if v.get("channel") in ("caster", "agent", "operator", "narrator")]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 cams = director.step(snap, now, segments.camera())
+                if cuts:
+                    program = director.program()
+                    program["cameras"] = {s["slot"]: {"pending": s["slot"] in director.send_pending,
+                                                       "shot": director.state[s["slot"]]} for s in director.slots}
+                    program["frames"] = cams
+                    program["layout_info"] = director.layout_info()
+                    cuts.set(program)
+                    cut_state = cuts.public()
+                    aired = cut_state.get("on_air") or {}
+                    cams = aired.get("frames") or {}
+                    director.on_air = {s["slot"]: (aired.get("cameras", {}).get(s["slot"]) or {}).get("shot")
+                                       if s["slot"] in {r.get("client") for r in cams.values()} else None
+                                       for s in director.slots}
+                    snap["program"], snap["cuts"] = aired, cut_state
+                    snap["camera_states"] = director.camera_states()
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
                 if platform:
@@ -900,6 +915,8 @@ def main():
                     snap["look"] = director.look_info(now)
                 if host:
                     snap["hostview"] = director.host_info(now)  # the page's on-air card, the hosts
+                    if cuts and not snap["program"].get("host"):
+                        snap["hostview"] = None
                 if show:
                     snap["show"] = show.public()  # an image over the main camera: the page's caption, the hosts
                 if hasattr(director, "battle_info"):
@@ -923,14 +940,12 @@ def main():
                     snap["onair"] = onair_info(snap, cams)  # who viewers watch: the label, the hosts' beats
                     if snap.get("hostview"):  # Nick's own view on air, not a camera (hostview.py): no agent is on air
                         snap["onair"].update(host=snap["hostview"], agent=None, display_name=None, doing=snap["hostview"]["label"])
-                    snap["onair"]["layout"] = director.layout_info()  # one camera or three tiles (the hosts, the page)
+                    snap["onair"]["layout"] = (snap["program"].get("layout_info") or {"mode": "onecam"}) if cuts else director.layout_info()
                     for row in cams.values():  # each tile's label: "Luna · fixing the north wall"
                         if len(row.get("agents") or []) == 1:
                             row["doing"] = onair_doing(snap, row["agents"][0])
-                    snap["program"] = director.program()
-                    if cuts:
-                        cuts.set(snap["program"])
-                        snap["cuts"] = cuts.public()
+                    if not cuts:
+                        snap["program"] = director.program()
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                     if snap.get("hostview") and ag["camera"] == "main":  # (behind Nick's view: not on air)

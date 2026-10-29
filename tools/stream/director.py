@@ -5,7 +5,7 @@ cameras on the next two; when another agent is within ~40 tiles of a camera's su
 zoomed out). Zoom follows the subject's activity (close for fights and building, wide for walks that last), and
 fights, base attacks and deaths cut the main camera straight away. Every decision is appended to a JSONL log so the weights can be tuned after a stream.
 """
-import json, math, time
+import copy, json, math, time
 
 DEFAULTS = {
     "main_dwell": 20.0,      # seconds before the main camera may cut
@@ -119,6 +119,10 @@ class Director:
         self.cfg = dict(DEFAULTS, **{k: v for k, v in tuning.items() if v is not None})
         self.log_path = log_path
         self.state = {s["slot"]: None for s in slots}  # slot -> current assignment dict
+        self.requested = dict(self.state)
+        self.acknowledged = self.state
+        self.on_air = dict(self.state)  # confirmed by the compositor, never by a send attempt
+        self.send_pending = {}
         self.last_on_air = {}
         self.started = time.time()
         self.last_cut = 0.0
@@ -333,7 +337,7 @@ class Director:
                         self.last_on_air[n] = now
                     continue  # holding on a base attack nobody is near, or a segment's shot
                 cur = None
-            elif attack and i == 0 and attack[0]:
+            elif attack and i == 0 and attack[0] and cur:
                 taken.update(cur["agents"])  # just cut to the attacked agent; secondaries take the rest
                 for n in cur["agents"]:
                     self.last_on_air[n] = now
@@ -396,6 +400,7 @@ class Director:
                            f"zoom {target['zoom']} ({act or by_name[subject].get('activity') or 'idle'})", scores, now)
             for n in self.state[name]["agents"] if self.state.get(name) else []:
                 self.last_on_air[n] = now
+        self.retry_sends(now)
         return self.public(now)
 
     def choose(self, cur, free, scores, now, dwell, on_air=(), released=()):
@@ -428,6 +433,8 @@ class Director:
 
     def apply(self, slot, target, reason, scores, now, quiet=False):
         name = slot["slot"]
+        target = dict(target) if target is not None else None
+        self.requested[name] = copy.deepcopy(target)
         if target is None:
             body = {"player": slot["player"], "release": True}
         elif "position" in target:
@@ -462,23 +469,38 @@ class Director:
             body.pop("move", None)
             if body.get("zoom") is not None:  # the panel's share of the window (cams.py scale), within cameras.lua's
                 body["zoom"] = round(min(4.0, max(0.05, body["zoom"] * slot.get("scale", 1))), 2)  # panel range
+        pending = self.send_pending.get(name)
+        if pending and pending["body"] == body and now < pending["retry_at"]:
+            return False
         try:
             result = self.sender(body)
         except Exception as e:  # keep directing even if the harness call fails; the log shows it
             result = {"ok": False, "error": str(e)}
-        if target is not None:
+        inner = result.get("result", result) if isinstance(result, dict) else None
+        ok = (isinstance(result, dict) and result.get("ok") is True and
+              isinstance(inner, dict) and inner.get("ok", True) is not False)
+        # Explicit offline simulation is useful; a disabled live sender is not an acknowledgement.
+        ok = ok or bool(isinstance(result, dict) and result.get("mock"))
+        if not ok:
+            attempts = pending["attempts"] + 1 if pending and pending["body"] == body else 1
+            self.send_pending[name] = dict(body=body, target=target, reason=reason, scores=scores,
+                                           attempts=attempts, retry_at=now + min(8.0, 0.5 * 2 ** min(attempts - 1, 5)))
+        else:
+            self.send_pending.pop(name, None)
+        if ok and target is not None:
             target["sent"] = now
             target["game_zoom"] = body.get("zoom")  # frame_of: what the client shows
             if body.get("move"):  # the game plays it (its camera says move), else the director steps it
                 r = result.get("result", result) if isinstance(result, dict) else {}
                 target["move_ok"] = bool(isinstance(r, dict) and (r.get("camera") or {}).get("move"))
-        if reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
+        if ok and reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
             self.last_cut = now
-        self.state[name] = target
+        if ok:
+            self.state[name] = target
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
                  "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did") if k in target},
-                 "cmd": body, "result": result, "scores": dict(top)}
+                 "cmd": body, "result": result, "acknowledged": bool(ok), "scores": dict(top)}
         if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
             entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})
         if self.log_path:
@@ -487,8 +509,25 @@ class Director:
         if not quiet:
             who = "+".join(target["agents"]) if target else "-"
             stub = " (stub)" if isinstance(result, dict) and result.get("stub") else ""
-            print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub}",
+            status = "acknowledged" if ok else "pending send"
+            print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub} [{status}]",
                   flush=True)
+        return bool(ok)
+
+    def retry_sends(self, now):
+        for slot in self.slots:
+            p = self.send_pending.get(slot["slot"])
+            if p and now >= p["retry_at"]:
+                if p["target"] and p["target"].get("until", now + 1) <= now:
+                    self.send_pending.pop(slot["slot"], None)
+                    continue
+                # Bypass subclass policy: this is the exact request still awaiting acknowledgement.
+                Director.apply(self, slot, p["target"], p["reason"], p["scores"], now)
+
+    def camera_states(self):
+        return copy.deepcopy({s["slot"]: {"requested": self.requested[s["slot"]],
+                              "acknowledged": self.state[s["slot"]], "on_air": self.on_air[s["slot"]]}
+                              for s in self.slots})
 
     def public(self, now=None):
         now = now or time.time()
