@@ -17753,3 +17753,39 @@ ship ..."
   - The read takes 9.3-9.5 ms with a turnaround and the same without one, so the budget adds nothing measurable; the
     plain read is 7.07 ms on n (tools/read_cost.py).
   - `budget_below` on Kestrel IVa was met under 30,000,000 km and held under 10 km.
+
+## d29 batch339 (RB, Sol #2745: the return budget's fuel at its stock aboard, an items filter, no startup in the window)
+
+Sol's report: "return_budget fuel stock1977/oxid1682 vs fuel_outlook8703aboard; reserve12k yields negative outmax and
+binds ... Clean179s leg: held853fuel/558oxid vs fuel_outlook7208aboard; fuel7190use/6000made within1500batch no deficit
+... Last10min includes startup1653net."
+
+**What the budget does now** (`platform_endurance` turnaround, `return_budget`):
+- **Fuel and oxidizer** are counted as fuel_outlook counts them:
+  - the stock is everything aboard (thrusters, tanks, pipes, pumps, the makers' outputs), with the held count said in
+    `stock_scope`;
+  - the rates are its clean sample, the longest wholly in this leg (180 s, else 60 s);
+  - a deficit within a batch a maker binds nothing (`within_step`).
+- **`turnaround.items`** lists the item or fluid names that may bind, for example the ammunition and repair packs. The
+  others stay listed with their numbers, `not_selected`, and do not bind. budget_below follows it, since the
+  turnaround is passed through.
+- **The second rate's window** is the last 10 minutes only when they lie wholly after the leg's first 60 s (startup:
+  the stop it left and its first minute flying). Otherwise it is the last 5 or 1 minute that does, else none. `window`
+  says which (`M.budget_window`).
+- **Each row** gives `stock_scope`, `usable` and `usable_basis` ("(N aboard - K kept) / (1 + margin)"), and
+  `reserve_over_stock` when the reserve is more than the stock.
+- **The fuel outlook** is read once a call, for the budget and the reply.
+
+**Checked:**
+- **tests/d29_batch339.lua**, with Sol's numbers:
+  - fuel at 8703 aboard rather than 1977 held, and the 12000 reserve said to be over it;
+  - 7190 used / 6000 made in batches of 1500: no deficit;
+  - with items (ammunition and repair packs), the ammunition binds and fuel does not;
+  - the window at 13 s, 179 s, 3, 10.5 and 11 min into a leg.
+- **On the iMac copy of world n's newest autosave** (tick 81,390,184): Resolute on aquilo->solar-system-edge, a 20,000
+  km turn.
+  - Fuel 8606 aboard (844 held), made at least as fast as used. A minute later: within a batch, no deficit, 7324
+    aboard. The 12,000 reserve is said to be over it, and fuel is not in items.
+  - Railgun ammunition binds (165,696 km), its second rate over the last 1 min since the 10 would hold the leg's
+    startup.
+  - The read takes 10.8-10.9 ms with a turnaround and 9.9-11.6 ms without, at that state of Resolute.
