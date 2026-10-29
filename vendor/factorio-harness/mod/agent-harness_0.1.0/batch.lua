@@ -171,8 +171,8 @@ return function(api)
     local output = a.output ~= nil and api.entity(p, api.position(a.output)) or outs[1]
     assert(output, string.format('no inserter takes from %s %s: give output {x,y}', m.name, at(m.position)))
     -- What the batch still needs of each ingredient.
-    local mi = try(function() return m.get_inventory(defines.inventory.assembling_machine_input) end)
-    local mo = try(function() return m.get_inventory(defines.inventory.assembling_machine_output) end)
+    local mi = try(function() return m.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
+    local mo = try(function() return m.get_inventory((defines.inventory.crafter_output or defines.inventory.assembling_machine_output)) end)
     -- (the name alone is normal quality)
     local function id(name, q) q = q or quality; return q == 'normal' and name or {name=name, quality=q} end
     local function count_in(inv, name, q) return inv and (try(function() return inv.get_item_count(id(name, q)) end) or 0) or 0 end

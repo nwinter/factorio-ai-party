@@ -69,8 +69,8 @@ return function(api)
           row.amount = row.amount + sd.amount
           local who = try(function() return e.last_user and e.last_user.name end)
           if who then row.by[who] = true end
-          add_inv(row, try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end), sd.seed)
-          add_inv(row, try(function() return e.get_inventory(defines.inventory.assembling_machine_output) end), sd.seed)
+          add_inv(row, try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end), sd.seed)
+          add_inv(row, try(function() return e.get_inventory((defines.inventory.crafter_output or defines.inventory.assembling_machine_output)) end), sd.seed)
           local bb = e.bounding_box
           for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=force,
               area={{bb.left_top.x - 2.5, bb.left_top.y - 2.5}, {bb.right_bottom.x + 2.5, bb.right_bottom.y + 2.5}}} end) or {}) do
