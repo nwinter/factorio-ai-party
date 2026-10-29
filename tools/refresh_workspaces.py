@@ -82,14 +82,23 @@ def refresh(ws, describe_text):
     os.environ["POG_SPACE_AGE"] = "1" if space_age else "0"
     try:
         player = os.path.basename(ws)
-        for topic, text in brief.topic_files(player).items():
-            if put(os.path.join(ws, "ref", topic + ".md"), text):
-                changed.append(f"ref/{topic}.md")
-        tsv = "".join(f"{name}\t{topic}\n" for name, topic in sorted(brief.commands().items()))
-        if put(os.path.join(ws, "ref", "commands.tsv"), tsv):
-            changed.append("ref/commands.tsv")
-        if put(agents, with_index(core, brief.index_text())):
-            changed.append("AGENTS.md index")
+        # (d28 batch317) a disclosure workspace (ref/.units) is written from the team's open set (POG_DISCLOSURE_OPEN),
+        # never whole; without one its ref/ and index stay as they are (fh help reads the open set live)
+        open_ = brief.disclosure_open()
+        if os.path.isdir(os.path.join(ws, "ref", ".units")) and open_ is None:
+            changed.append("ref/ and index kept (a disclosure workspace; POG_DISCLOSURE_OPEN unset)")
+        else:
+            for topic, (text, units) in brief.topic_units(player, open_).items():
+                if put(os.path.join(ws, "ref", topic + ".md"), text):
+                    changed.append(f"ref/{topic}.md")
+                if units is not None:
+                    os.makedirs(os.path.join(ws, "ref", ".units"), exist_ok=True)
+                    put(os.path.join(ws, "ref", ".units", topic + ".json"), json.dumps(units))
+            tsv = "".join(f"{name}\t{topic}\n" for name, topic in sorted(brief.commands().items()))
+            if put(os.path.join(ws, "ref", "commands.tsv"), tsv):
+                changed.append("ref/commands.tsv")
+            if put(agents, with_index(core, brief.open_index(open_) if open_ else brief.index_text())):
+                changed.append("AGENTS.md index")
     finally:
         if old is None:
             os.environ.pop("POG_SPACE_AGE", None)
