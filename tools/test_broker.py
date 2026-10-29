@@ -43,11 +43,14 @@ def check():
     sneak = request({"id": "a3", "action": "status", "bot": "haiku"}) + ' game.speed=10 rcon.print(remote.call("agent_harness", "dispatch", [[\n{}]]))'
     assert "closes early" in refused(sneak) or "only harness" in refused(sneak)
     assert "not sol" in refused(request({"id": "a4", "action": "walk", "bot": "sol"}))
-    assert "only id, action, args and bot" in refused(request({"id": "a5", "action": "walk", "player": 1}))
+    assert "only id, action, args, bot and wall" in refused(request({"id": "a5", "action": "walk", "player": 1}))
     assert "not a player" in refused(request({"id": "a5", "action": "walk"}))
-    assert "only id, action, args and bot" in refused(request({"id": "a6", "action": "walk", "bot": "haiku", "x": 1}))
+    assert "only id, action, args, bot and wall" in refused(request({"id": "a6", "action": "walk", "bot": "haiku", "x": 1}))
     assert "not JSON" in refused('/silent-command rcon.print(remote.call("agent_harness", "dispatch", [[\nnot json]]))')
     assert "action name" in refused(request({"id": "a7", "action": "walk; game", "bot": "haiku"}))
+    # (d29 batch336 FL6) wall: the request's wall clock in ms, a number
+    assert "wall is the request's wall clock" in refused(request({"id": "a8", "action": "walk", "bot": "haiku", "wall": "now"}))
+    assert '"wall":1793293200000' in fb.check(request({"id": "a9", "action": "status", "bot": "haiku", "wall": 1793293200000}), "haiku")
     assert "command must be a string" in refused(None)
     print("check: ok")
 
@@ -125,6 +128,9 @@ def handler():
     ours.close()
     t.join(5)
     assert len(fake.received) == 2 and all(fb.HARNESS.fullmatch(b) for b in fake.received), fake.received
+    # (d29 batch336 FL6) the broker stamps the request's wall clock (ms) where fh sent none: the id's first send
+    walls = [json.loads(fb.HARNESS.fullmatch(b).group(2))["wall"] for b in fake.received]
+    assert all(isinstance(w, int) and abs(w / 1000 - time.time()) < 60 for w in walls), walls
     refusals = [json.loads(l) for l in open(log)]
     assert [e["event"] for e in refusals] == ["refused"] * 3 and refusals[1]["command"] == "/sc game.speed=10", refusals
     assert broker.counts["haiku"] == {"forwarded": 2, "refused": 3, "rcon_errors": 0}, broker.counts

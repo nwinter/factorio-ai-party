@@ -42,6 +42,9 @@ return function(api)
       elseif kind == 'unlock-space-location' then out[#out+1] = 'travel to ' .. tostring(name_of(e.space_location))
       elseif kind == 'unlock-quality' then out[#out+1] = tostring(name_of(e.quality)) .. ' quality'
       elseif kind == 'give-item' then out[#out+1] = tostring(e.count or 1) .. ' ' .. tostring(name_of(e.item))
+      -- (d29 batch336 FL1) a recipe's productivity research carries `change`, not `modifier` (LDS productivity read no effect)
+      elseif kind == 'change-recipe-productivity' and type(e.change) == 'number' then
+        out[#out+1] = tostring(name_of(e.recipe)) .. ' productivity ' .. signed(e.change)
       elseif kind ~= 'nothing' and type(e.modifier) == 'number' then
         local scope = name_of(e.ammo_category) or name_of(e.turret_id)
         out[#out+1] = kind .. (scope and ' (' .. tostring(scope) .. ')' or '') .. ' ' .. signed(e.modifier)
@@ -346,6 +349,8 @@ return function(api)
     if plan and plan.mine then out.your_plan_line = plan.mine end
     -- Open projects, the agent's own first: "#12 nuclear plant: 3 of 7 steps; owner sol (...); next 4. ...; handoff: ...".
     if plan and plan.projects then out.projects = plan.projects end
+    -- (d29 batch336 FL6) its board items past the review time their owner set
+    if plan and plan.past_review then out.past_review = plan.past_review end
     local since = last_call or shift.prev_tick or 0
     local names = finished_since(s, p.force, since)
     if #names > 0 then
@@ -414,7 +419,7 @@ return function(api)
   -- What there is of a pack that nobody made lately (Grok, shift17 20:40: "chemical science missing" with 5571 in chests
   -- and labs consuming them): used in the last 10 minutes on any surface, held in our labs, and in our logistic
   -- networks (their providers, storage and buffers), as the game counts them.
-  local function packs_stock(force, names)
+  local function packs_stock(force, names, census)
     -- Per surface too (Sol 05:19: from Aquilo, cryogenic packs 2288 "in stock" counted Aquilo's networks while the labs
     -- on Nauvis held none): labs use what is on their own surface; the rest is elsewhere.
     local out = {}
@@ -424,10 +429,17 @@ return function(api)
     for _, surface in pairs(game.surfaces or {}) do surfaces[#surfaces+1] = surface end
     table.sort(surfaces, function(x, y) return tostring(x.name) < tostring(y.name) end)
     for _, surface in ipairs(surfaces) do
+      -- (d29 batch336 FL2) census: the census pass's labs where it walked the surface (the searches over the five planets
+      -- took 26 ms of 30 on a copy of world n), a search where it has not; only surfaces with labs, and no use statistics
+      -- (the technologies read needs neither). The queue's waits_for keeps searching every surface.
+      local labs = census and api.labs_of and api.labs_of(force, surface)
+      if type(labs) ~= 'table' then
+        local okl, found = pcall(function() return surface.find_entities_filtered{type='lab', force=force} end)
+        labs = okl and type(found) == 'table' and found or {}
+      end
+      if census and #labs == 0 then goto next_surface end
       local okp, stats = pcall(function() return force.get_item_production_statistics(surface) end)
-      if not okp then stats = nil end
-      local okl, labs = pcall(function() return surface.find_entities_filtered{type='lab', force=force} end)
-      if not okl or type(labs) ~= 'table' then labs = {} end
+      if not okp or census then stats = nil end
       local nets = {}
       pcall(function() nets = force.logistic_networks[surface.name] or {} end)
       for _, name in ipairs(names) do
@@ -455,9 +467,12 @@ return function(api)
           s.by_surface[#s.by_surface+1] = row
         end
       end
+      ::next_surface::
     end
     return out
   end
+  M.pack_stock = packs_stock   -- (d29 batch336 FL2) technologies: the packs a technology needs against these
+  M.minutes = minutes
   -- "0 where the labs are (nauvis: labs 0, logistic networks 0); 2288 elsewhere (aquilo: logistic networks 2288)".
   local function stock_text(s)
     local here = {}
