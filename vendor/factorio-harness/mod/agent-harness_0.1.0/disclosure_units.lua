@@ -678,6 +678,7 @@ return {
   ["space-age#shot-name-platform-name"]={g={},a={"research:rocket-silo","built:rocket-silo","research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_production"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_defense"]={g={},a={"research:space-platform","built:space-platform-hub","event:asteroids"}},
+  ["space-age#platform_defense-aim-watch"]={g={},a={"research:space-platform","built:space-platform-hub","event:asteroids"}},
   ["space-age#platform_defense-2"]={g={},a={"research:space-platform","built:space-platform-hub","event:asteroids"}},
   ["space-age#platform_digest"]={g={},a={"research:space-platform","built:space-platform-hub"}},
   ["space-age#platform_tiles"]={g={},a={"research:space-platform","built:space-platform-hub"}},
@@ -712,6 +713,7 @@ return {
   ["space-age#gleba-inspect-on-an"]={g={},a={"arrived:gleba","research:agriculture"}},
   ["space-age#spoilage-inspect-supply-and"]={g={},a={"arrived:gleba","research:agriculture"}},
   ["space-age#eggs"]={g={},a={"arrived:gleba","research:captive-biter-spawner","event:pentapods"}},
+  ["space-age#surface-conditions-an-entity"]={g={},a={"research:rocket-silo","built:rocket-silo","research:space-platform","built:space-platform-hub"}},
  },
  brief={
   ["PLAYBOOK.md#you-are-playing-factorio"]={g={},a={"start"}},
