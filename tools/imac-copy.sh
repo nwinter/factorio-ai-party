@@ -11,7 +11,8 @@
 #   tools/imac-copy.sh stop HOLDER [--force]     /quit, then the server's own PID if it is still up; frees the copy
 #   tools/imac-copy.sh status                    who holds it, since when, the save, whether it answers (tick, paused)
 #   tools/imac-copy.sh log [N]                   the server log's last N lines (default 200; 0: the whole log)
-# IMAC_FACTORIO_DIR, IMAC_MOD (the agent-harness folder to serve), IMAC_RCON_PORT and IMAC_GAME_PORT override defaults.
+# IMAC_FACTORIO_DIR, IMAC_MOD (the agent-harness folder to serve), IMAC_MOD_LIST, IMAC_RCON_PORT and IMAC_GAME_PORT
+# override defaults. Custom ports also apply to readiness, status and stop commands.
 #
 # Then the usual tools take world `imac` (bin/fh and tools/pog.py: imac.local:27400, ~/.config/pog/rcon-imac.pw):
 #   POG_WORLD=imac FH_DESCRIBE_CACHE=$SCRATCH/.desc-imac.json bin/fh deploy          this checkout's runtime
@@ -35,7 +36,7 @@ remote() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" "$@"; }
 holder_json() { remote "cat '$dir/holder.json' 2>/dev/null" || true; }
 field() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read() or "{}"); print(d.get(sys.argv[1]) or "")' "$1"; }
 alive() { [ -n "$1" ] && remote "kill -0 $1 2>/dev/null"; }
-rcon() { python3 "$root/tools/pog.py" --world imac rcon "$1"; }
+rcon() { POG_RCON_HOST="$host" python3 "$root/tools/pog.py" --world imac --port "$rcon_port" rcon "$1"; }
 
 binary() {
   # The server binary inside the install: factorio.app/Contents/MacOS/factorio (or a bin/ layout). No globs: the
@@ -90,7 +91,7 @@ json.dump({"name": "pog private copy", "description": "tools/imac-copy.sh", "vis
            "autosave_interval": 0, "autosave_slots": 1, "auto_pause": False, "only_admins_can_pause_the_game": True,
            "autosave_only_on_server": True}, open(sys.argv[1], "w"), indent=1)
 EOF
-  cp "$root/tools/imac-mod-list.json" "$tmp/mod-list.json"
+  cp "${IMAC_MOD_LIST:-$root/tools/imac-mod-list.json}" "$tmp/mod-list.json"
   remote "mkdir -p '$dir/saves' '$dir/mods' '$dir/config' '$dir/data/saves'"
   rsync -a --delete "$mod/" "$host:$dir/mods/agent-harness_0.1.0/"
   scp -q "$tmp/mod-list.json" "$host:$dir/mods/mod-list.json"
@@ -108,14 +109,23 @@ EOF
   python3 -c 'import json,sys; print(json.dumps({"holder": sys.argv[1], "started": sys.argv[2], "pid": int(sys.argv[3]), "save": sys.argv[4], "checkout": sys.argv[5], "rcon": sys.argv[6]}))' \
     "$who" "$started" "$pid" "$save_label" "$root" "$host:$rcon_port" | remote "cat > '$dir/holder.json'"
   echo "started pid $pid on $host ($save_label), held by $who; waiting for RCON $host:$rcon_port"
-  for _ in $(seq 1 90); do
+  for attempt in $(seq 1 90); do
     if out=$(rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>/dev/null); then
       echo "up: $out"; exit 0
     fi
     alive "$pid" || { echo "the server exited; its output:" >&2; remote "tail -30 '$dir/server.out'" >&2; remote "rm -f '$dir/holder.json'"; exit 1; }
+    # macOS can hold exec at dyld while a Gatekeeper dialog waits on the user's desktop. Factorio normally writes
+    # its first log line immediately. Never leave such a launch waiting for the user to dismiss a dialog.
+    if [ "$attempt" -ge 6 ] && ! remote "test -s '$dir/server.out'"; then
+      echo "no Factorio startup output after 10 s; stopping this launch (check macOS Gatekeeper logs)" >&2
+      remote "kill $pid; rm -f '$dir/holder.json'"
+      exit 1
+    fi
     sleep 2
   done
-  echo "RCON did not answer in 180 s; tools/imac-copy.sh log 50" >&2; exit 1
+  echo "RCON did not answer in 180 s; stopping this launch; tools/imac-copy.sh log 50" >&2
+  remote "kill $pid; rm -f '$dir/holder.json'"
+  exit 1
   ;;
 stop)
   who=${1:?usage: tools/imac-copy.sh stop HOLDER [--force]}
