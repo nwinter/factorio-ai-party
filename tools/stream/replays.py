@@ -836,7 +836,7 @@ class Replays:
                 except OBSError as e:
                     self.status["error"] = str(e)[:200]
         try:
-            self.alarm.apply(o.call)  # (RA2) the alarm gains on the game audio, as decided
+            self.alarm.apply(o.call, now)  # (RA2) the alarm gains on the game audio, as decided (AQ: confirmed, retried)
         except Exception as e:
             self.status["error"] = f"alarm gains: {str(e)[:160]}"
         if not self.audio_reset and not self.playing:
@@ -1144,6 +1144,7 @@ class Replays:
 
     def public(self):
         s = dict(self.status)
+        s["alarm"] = self.alarm.public()  # (d29 batch335 AQ) each alarm gain filter: desired, confirmed, pending, last error
         s.update(highlights_saved=[c["label"] for c in self.hl_saved],
                  pending=self.pending and {k: self.pending[k] for k in ("kind", "label")},
                  clip=self.clip and {k: self.clip[k] for k in ("id", "label", "path")}, playing=self.playing,

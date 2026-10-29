@@ -70,6 +70,8 @@ class OBS:
             self.cursor = data["mediaCursor"]
         elif req == "SetSourceFilterEnabled":
             self.filters[(data["sourceName"], data["filterName"])] = data["filterEnabled"]
+        elif req == "GetSourceFilter":  # (batch335) the write read back
+            out = {"filterEnabled": self.filters.get((data["sourceName"], data["filterName"]), False)}
         elif req in ("SetInputVolume",) and data.get("inputName") == "stream game audio":
             self.live_volume_set = True
         self.states.append((self.program, self.muted, self.ambience))
@@ -262,7 +264,7 @@ def ra2():
         o = OBS()
         assert a3.apply(o.call) and o.filters == {(src, f): f == "alarm hold" for src in aq.SOURCES for f in ("alarm cue", "alarm hold")}, o.filters
         assert set(aq.SOURCES) == {"stream game audio", "stream game clean", "replay game ambience"}
-        assert not a3.apply(o.call), "applied once per change"
+        assert not a3.apply(o.call, now=0.5), "confirmed: nothing written again"
         a3.decide(read([], t=202.0), 202.0)
         assert a3.apply(o.call) and not any(o.filters.values())
         print("8. a restart mid-hold: the hold at once (no second cue), the filters set on the first apply: ok")
