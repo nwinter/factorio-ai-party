@@ -135,6 +135,13 @@ do
   R.each_team(function() turns[#turns+1]=R.team_now() end)
   eq(table.concat(turns,','),'player,red')
   eq(R.team_now(),'player')
+  -- each_team_holding: another team only when it holds that store (the player force always)
+  turns={}
+  R.each_team_holding('votes',function() turns[#turns+1]=R.team_now() end)
+  eq(table.concat(turns,','),'player','red holds no votes store: no turn, no swap')
+  turns={}
+  R.each_team_holding('board',function() turns[#turns+1]=R.team_now() end)
+  eq(table.concat(turns,','),'player,red')
   print('mt276 B profiles, chart joins, team turns: ok')
 end
 

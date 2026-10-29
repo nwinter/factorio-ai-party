@@ -250,9 +250,17 @@ function M.as_team(t,fn,...)
   if not r[1] then error(r[2],0) end
   return table.unpack(r,2,r.n)
 end
--- Each team's turn, in name order (a one-team world: the player force once).
+-- Each team's turn, in name order (a one-team world: the player force once). key: only the teams holding that store
+-- (the player force always, as before): another team's stores come in only when there is something of it to step.
 function M.each_team(fn,...)
   for _,t in ipairs(M.team_names()) do M.as_team(t,fn,...) end
+end
+function M.each_team_holding(key,fn,...)
+  local ts=state().team_stores
+  for _,t in ipairs(M.team_names()) do
+    if t=='player' then M.as_team(t,fn,...)
+    elseif ts and ts[t] and ts[t][key]~=nil then M.as_team(t,fn,...) end
+  end
 end
 -- Who a character belongs to: a player's name, else a bot's (nil if neither).
 function M.character_owner(e)
@@ -21401,7 +21409,7 @@ function M.tick_body(event)
   idle_tick()
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
-  if event.tick%M.drops.SAMPLE==0 then M.each_team(M.drops.tick,event.tick) end  -- (mt276 B) each team's drops, a step every SAMPLE ticks
+  if event.tick%M.drops.SAMPLE==0 then M.each_team_holding('drops',M.drops.tick,event.tick) end  -- (mt276 B) each team's drops, a step every SAMPLE ticks
   M.drop_jobs_tick(event.tick)
   M.nametags.tick(event.tick)
   pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
@@ -21441,13 +21449,13 @@ function M.tick_body(event)
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
-  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team,M.owed.tick) end  -- unanswered mentions' reminders
+  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team_holding,'owed',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
-  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.each_team,M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
+  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.each_team_holding,'board',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
   if event.tick%120==65 and M.turretwatch then pcall(M.timed,'turretwatch.tick',M.turretwatch.tick) end  -- turret ghosts' targeting once built
-  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.each_team,M.progress.tick) end  -- owned board items' checks (progress.lua)
+  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.each_team_holding,'board',M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%30==19 and M.spiderroute and state().spiderroute then pcall(M.timed,'spiderroute.guard_tick',M.spiderroute.guard_tick) end  -- their retreat guards (QAE1)
@@ -21587,7 +21595,9 @@ function M.tick_body(event)
   end
   M.orders.tick()
   do local rs=state().robot_sweeps; if rs and rs.active then local ok,err=pcall(M.timed,'reservations.tick',M.reservations.tick); if not ok then rs.error={tick=event.tick,error=tostring(err)} end end end  -- (d25 batch217 QAB1) a sweep's step
-  local okr,errr=pcall(M.timed,'reminders.tick',M.each_team,M.reminders.tick)
+  -- (mt276 B) each team's reminders on their check step only (reminders.lua steps once every CHECK ticks)
+  local okr,errr=true,nil
+  if game.tick%M.reminders.CHECK==0 then okr,errr=pcall(M.timed,'reminders.tick',M.each_team_holding,'reminders',M.reminders.tick) end
   if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
   M.cameras.tick()
