@@ -73,6 +73,7 @@ return function(api)
     local by = store().by
     local r = by[pl.index]
     if not r then r = {minutes={}, workers={}, seq=0}; by[pl.index] = r end
+    r.minutes, r.workers, r.seq = r.minutes or {}, r.workers or {}, r.seq or 0  -- (cp4) a record trim() kept to its name
     r.name = pl.name
     -- (d22 batch110 BT1) no closure a call: rec runs at every hit
     local ok, sn = pcall(surface_name, pl)
@@ -220,7 +221,7 @@ return function(api)
   local function addressed(pl, r, me, who)
     local any = false
     if r.creator then any = true; if r.creator == me then return true end end
-    for n, t in pairs(r.workers) do
+    for n, t in pairs(r.workers or EMPTY) do
       if game.tick - t <= WORKER_TICKS then any = true; if n == me then return true end end
     end
     who = who or aboard()
@@ -487,9 +488,35 @@ return function(api)
   -- twice as old while the background runs, and reads one itself only past that
   M.SCAN_STEP, M.SCAN_WANTED = 20, 18000
   local function platforms_of(f) return f.platforms end
+  -- (d29 batch334 cp4, item 3: 23 of 45 records were for gone platforms, keeping their scans, feeds, hub samples and
+  -- damaged lists) once a minute: a feed past FEED_TICKS goes (never read again: the next one traces anew), and workers
+  -- past WORKER_TICKS (addressed() skips them); a record whose platform is gone keeps only what board, urgent and status
+  -- read of it (name, surface, seq, total, minutes, last_hit, creator)
+  M.TRIM_EVERY = 3600
+  local KEEP_GONE = {name=true, surface=true, seq=true, total=true, minutes=true, last_hit=true, creator=true}
+  function M.trim(tick)
+    local by = store().by
+    if not next(by) then return end
+    local live = {}
+    for _, f in pairs(game.forces) do
+      local okp, list = pcall(platforms_of, f)
+      for _, pl in pairs(okp and list or {}) do if pl.valid then live[pl.index] = true end end
+    end
+    for index, r in pairs(by) do
+      if type(r) == 'table' then
+        if not live[index] then
+          for k in pairs(r) do if not KEEP_GONE[k] then r[k] = nil end end
+        else
+          if r.feed and tick - r.feed.tick >= FEED_TICKS then r.feed = nil end
+          for n, t in pairs(r.workers or {}) do if tick - t > WORKER_TICKS then r.workers[n] = nil end end
+        end
+      end
+    end
+  end
   function M.tick(tick)
     if tick % M.SCAN_STEP ~= 0 then return end
     store().scan_bg = tick
+    if tick % M.TRIM_EVERY == 40 then M.trim(tick) end
     local by = store().by
     -- (d22 batch110 BT1: every forces' platforms read every 20 ticks, a new list and object each) the platforms are read
     -- only when a record says a scan is due (the same test as below: none due, none picked)

@@ -24,11 +24,37 @@ return function(api)
     return s.lost_log
   end
   -- A building of ours died (runtime.lua's on_entity_died, after its not-lost types).
+  -- (d29 batch334 cp4, item 7) the position entry of the row a slot held, dropped when the ring writes over it (they
+  -- were dropped only once a surface passed MAX positions: 4,687 of 8,191 pointed at overwritten rows); rows_in skipped
+  -- them already, so no answer changes
+  local function unpos(m, slot)
+    local o = m.pos and m.rows[slot]
+    if not o then return end
+    local by = m.pos[o.f .. '|' .. o.s]
+    local k = o.n .. '@' .. o.x .. ',' .. o.y
+    local x = by and by.at[k]
+    if x and x[1] == slot and x[2] == o.t then by.at[k] = nil; by.n = by.n - 1 end
+  end
+  -- (cp4) once, the entries pointing at rows written over before this runtime (flagged in storage: every peer at once)
+  local function prune(m)
+    if m.pruned or not m.pos then return end
+    m.pruned = true
+    for _, by in pairs(m.pos) do
+      local n = 0
+      for k, x in pairs(by.at) do
+        local o = m.rows[x[1]]
+        if o and o.t == x[2] then n = n + 1 else by.at[k] = nil end
+      end
+      by.n = n
+    end
+  end
   function M.died(e, cause)
     local m = store()
+    prune(m)
     local q = try(function() return e.quality and e.quality.name end)
     local r = {f=e.force.name, s=e.surface.name, n=e.name, x=e.position.x, y=e.position.y,
       d=try(function() return e.supports_direction and e.direction or nil end), q=q ~= 'normal' and q or nil, t=game.tick, c=cause}
+    unpos(m, m.next)
     m.rows[m.next] = r
     -- (d20 batch55 P5) each force and surface's last loss tick: platform_loss reads nothing more while none is newer
     m.last = m.last or {}
