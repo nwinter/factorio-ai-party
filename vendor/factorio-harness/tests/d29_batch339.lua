@@ -48,11 +48,13 @@ do
   eq(b3.name,'railgun-ammo'); eq(out3[1].not_selected,true); assert(out3[1].out_km_max<0,'still listed with its numbers')
   near(b3.out_km_max,((3050-1500)/1.1/2.2*v-1000)/2,2)
   -- budget_below with items binds on the ammunition only (the turnaround passes items to the read)
-  local C=require('conditions'){return_budget=function(p,name,t)
+  local pl={name='Resolute',valid=true,space_connection={name='edge-shattered'}}
+  local p={force={platforms={pl}}}
+  local C=require('conditions'){leg=function() return {from='solar-system-edge',to='shattered-planet',back=false} end,return_budget=function(p,name,t)
     eq(t.items[1],'railgun-ammo'); return {binds={name=b3.name,out_km_max=b3.out_km_max}} end}
   local c={['until']='budget_below',platform='Resolute',turnaround={km=1000,items={'railgun-ammo','repair-pack'}},km=5000000}
   C.validate(c)
-  local met,saw=C.check({},c)
+  local met,saw=C.check(p,c)
   eq(met,true); has(saw,'railgun-ammo binds first')
   print('d29_batch339 2. items (ammunition and repair packs): fuel listed and not binding, the ammunition binds; budget_below follows it: ok')
 end

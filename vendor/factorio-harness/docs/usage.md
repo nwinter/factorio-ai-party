@@ -17893,6 +17893,17 @@ next queued flight_watch refused done and not read."
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
 
+## d29 batch360 (BC, Astra #2772: budget_below cannot carry a previous leg's budget)
+
+`budget_below` reuses a read for up to 600 ticks only for the same platform, connection, from/to, direction and
+turnaround arguments (including nested reserve, items and return_allowance values). A changed leg or arguments
+reads again immediately. A stop/arrival or no flight leg clears the cached budget. No fresh successful budget for
+the new leg means not met, with the reason in `saw`; failed reads are retried after 600 ticks on that leg, or
+immediately if its leg/arguments change. `saw` names the cached leg, connection, direction and read tick.
+
+This also applies inside `all`/`any` and remote/platform lane guards: an AQ->EDGE cached budget cannot satisfy a
+new EDGE->Shattered guard. The underlying endurance read's rate windows and stock scopes are unchanged.
+
 ## d29 batch346 (LC, Astra #2754: a launch count to guard on; Astra #2755: budget_below in lane guards)
 
 Astra's report: native requests with payload 10 sent 23 pods to Asterion (81886081..81928582, 18 with repair packs,

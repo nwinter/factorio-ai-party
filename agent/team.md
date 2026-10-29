@@ -8,6 +8,7 @@
 
 You share the factory, research and power. `./fh` controls your character and inventory.
 `technologies {name, level}` reads cost without queueing.
+`budget_below` refreshes on a new leg; `saw` names the cached leg and tick.
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in

@@ -36,7 +36,9 @@
   between reads, and when it was rebuilt; a fired guard keeps them in its queue history; remote and platform lanes,
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
-  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: met once the item that binds first can go out
+  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: its cache is per leg and read arguments;
+  a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
+  met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
   platform lanes, inside all/any too);
   `launches_at_least` (`platform`, `n`, `window` seconds back or `since_tick`, `origin?` planet: the rockets sent up to
