@@ -18046,3 +18046,62 @@ crafts at +50% (opus-ugbatch-228-refused.txt, tick 81798147).
 - **Tests:** tests/d29_batch345.lua (Astra's 228 and a count that fits; two adjacent batches with the bar carried;
   every even count 2..60 at five bars: the fewest base crafts, never short; no productivity, and a product productivity
   leaves out, staged in full).
+
+## d29 batch352 (RR, Astra #2764: diagonal railgun rotation)
+
+Astra's report: Resolute's corner railguns face north, edge impacts arrive 53-63 degrees outboard, past their +/-36
+degree arcs; `rotate` refused northeast and northwest.
+
+**What the game allows (a copy of world n, 2.0.77, on Resolute and on Nauvis):**
+- The railgun turret is built in 8 directions (`building-direction-8-way`; place_ghosts and build already take
+  northeast/northwest), and its turn range is 0.2 (+/-36 degrees).
+- **R and Shift+R:** `LuaEntity.rotate` returns false for every placed railgun turret, its ghost, and a gun turret,
+  on a platform or a planet; `rotatable` reads true all the same. In person and by remote view it is the same call.
+- **In person, the same turret built over it facing another way:** the game's fast replace. `can_fast_replace` is
+  true for another direction and false for its own.
+  - The turret comes back as a new unit, facing there, with its ammo, quality, priority list, ignore setting,
+    circuit wire and control settings: a rare railgun with 7 rounds, 1 target, ignore on, a red wire, read ammo and
+    enable/disable came back with all of them.
+  - `create_entity{fast_replace, character}` gives the old turret back to the character's inventory and takes none;
+    a player's build spends one, so the player ends even.
+- **The footprint (its 3x5 box turned 45 degrees), side by side in a row:**
+  - two railgun turrets facing north fit 3 tiles apart;
+  - one facing a diagonal needs 4 to one facing north or the same diagonal, and 5 to one facing the other diagonal.
+  - `can_fast_replace` refuses every turn (diagonal or east) in Resolute's front row, which is 3 apart. At a spot
+    with room on both sides it allows it.
+- **Blueprint pastes:** a blueprint of the turret facing another way, pasted normal or forced (Shift), by a player
+  too, places nothing over it. Superforced (Ctrl+Shift) marks the turret, and whatever the new footprint meets, for
+  deconstruction and places the ghost.
+- **The rebuild on Resolute:**
+  - The hub took the turret and its 10 rounds at once and built the new one 46-121 ticks later. Its feeder refilled
+    it.
+  - The new one had no priority list, ignore setting, circuit wire or control settings, unless the blueprint carries
+    them. A blueprint captured from the turret carries `priority-list` and `ignore-unprioritised`.
+  - Copying settings from a neighbour restored its targets.
+  - Twice the feeding inserter dropped what it held on the floor.
+  - In the front row (3 apart) the superforced paste also marked a neighbour, which was lost from the row.
+- **Not a player's action:** a script ghost placed with fast_replace removed the turret and spilled it and its ammo on
+  the floor.
+
+**The change:**
+- `rotate {position, direction}` on a placed turret, in person, holding the same turret (name and quality): the fast
+  replace a player's build over it is. One item is taken, the old one comes back, and the reply's `replaced` names
+  the new unit.
+- Refused, with nothing changed:
+  - where the game refuses the fast replace (the turned footprint meets a neighbour; a railgun's diagonal gets the
+    4-tile line);
+  - with no such item;
+  - by remote view, naming the rebuild routes and what they cost;
+  - plain R on a turret.
+- Queue steps run the same handler.
+
+**Live, through the deployed runtime on the copy:**
+- `rotate {platform: Resolute, position: (10.5,-75.5), direction: northeast}` (remote view): refused, naming the
+  in-person fast replace and the rebuild routes.
+- Haiku on Nauvis, holding a railgun turret, rotated a north one to northeast in person. It came back as a new unit
+  with its 6 rounds, priority target and ignore setting, and Haiku still held one.
+- Muse's northwest turn of the next railgun 4 tiles away was refused, with nothing changed: it would need 5.
+
+**Tests:** tests/round1520d.lua: no item held (the refusal with the facts and routes), the footprint refused, plain R,
+and the fast replace (the item spent, the old one back, the new unit).
+
