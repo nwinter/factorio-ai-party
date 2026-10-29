@@ -292,6 +292,12 @@ ONECAM = {
     "map_first": 300.0,     # the first one this long after the start
     "map_hold": 15.0,       # seconds on the map
     "map_trio": True,       # a check-in trio shows the map in one small tile
+    # (d28 batch324 SF2, viewer Aurora 17:00, site:5416: "Please include main plus two simultaneous GUI insets ... Keep main
+    # free of GUI strips") With one client and two camera panels the trio is the main view as it is (layout.json's
+    # main hole, the crop that leaves the panels' strips out) and both panels at once in panel_trio_holes (overlay and
+    # cuts.py take the holes from the program); no map tile (a panel draws the world only).
+    "panel_trio": True,
+    "panel_trio_holes": {"main": [24, 24, 1208, 1032], "cam2": [40, 40, 408, 230], "cam3": [808, 40, 408, 230]},
     "map_gap": 30.0,        # no base map within this long after another cut (16:44:05 came 2 s after one)
     "cloud_hold": 20.0,     # seconds on a cloud shot (module doc); the operator's call may say otherwise (5..120)
     "cloud_auto": True,     # the director shows a cloud that reached new nests
@@ -898,12 +904,15 @@ class OneCam(Director):
         out = {"onair": self.onair, "inset": self.inset and self.inset["slot"], "layout": self.mode}
         if self.trio:
             out["tiles"] = dict(self.trio["tiles"], main=self.onair)
+            if self.trio.get("panels"):  # (batch324 SF2) the holes of a panel trio: main as it is, the panels on it
+                out["holes"] = {k: list(v) for k, v in self.cfg["panel_trio_holes"].items()}
         if self.hosting(getattr(self, "step_t", None) or time.time()):
             out["host"] = True  # cuts.py: the host's capture over the cameras
         return out
 
     def onair_frac(self):
-        return self.cfg["trio_frac"] if self.mode == "trio" else self.cfg["view_frac"]
+        # (batch324) a panel trio keeps the main view's own crop
+        return self.cfg["trio_frac"] if self.mode == "trio" and not (self.trio or {}).get("panels") else self.cfg["view_frac"]
 
     def frame_half(self, zoom):
         """(batch245) Half the on-air frame in tiles at this game zoom (a shot's game_zoom): (across, down)."""
@@ -4534,7 +4543,9 @@ class OneCam(Director):
     def maybe_trio(self, by_name, scores, ranked, now):
         """One camera long enough, nothing urgent: frame two standbys for a trio, switch once both are there."""
         cfg = self.cfg
-        if not cfg["trio"] or self.n_clients() < 3:
+        panels = [s for s in self.slots if s.get("panel")]
+        panel_trio = self.n_clients() < 3 and cfg["panel_trio"] and len(panels) >= 2  # (batch324 SF2)
+        if not cfg["trio"] or (self.n_clients() < 3 and not panel_trio):
             return
         cur = self.state.get(self.onair)
         subj = cur.get("subject") if cur else None
@@ -4557,12 +4568,13 @@ class OneCam(Director):
                 self.set_mode("trio", f"{p['why']}: {', '.join(p['agents'])}", now)
             return
         found = self.trio_pick(subj, by_name, scores, ranked, now)
-        sb = [s for s in self.standbys() if not s.get("panel")]  # a trio's tiles are clients, not panels
+        # a trio's tiles are clients, not panels; (batch324 SF2) with one client, the two panels
+        sb = [s for s in self.standbys() if bool(s.get("panel")) == panel_trio]
         if not found or len(sb) < 2:
             return
         pick, why = found
         tiles = {}
-        if why == "check-in" and cfg["map_trio"]:  # one small tile shows the whole base on the map
+        if why == "check-in" and cfg["map_trio"] and not panel_trio:  # one small tile shows the whole base on the map
             t = self.map_target((596, 336), 1e18, 1.0)
             if t:
                 self.frame_on(sb[1], t, "trio tile: base map", scores, now)
@@ -4579,6 +4591,8 @@ class OneCam(Director):
                               f"trio tile: {name}", scores, now)
             tiles[hole] = slot["slot"]
         self.trio_pending = {"tiles": tiles, "agents": pick, "why": why, "map": "cam3" in tiles and len(pick) == 1}
+        if panel_trio:
+            self.trio_pending["panels"] = True
 
     def tiles(self, by_name, scores, now):
         """In a trio: the big tile keeps its story (zoom follows), the small tiles their agents; over at `until`, or at
