@@ -247,6 +247,9 @@ if [ -n "$resume" ]; then
   progress=$(python3 tools/progress.py --shift-lines 2>/dev/null | tr -d '\n' || true)
   closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n,[==[$progress]==]))" 2>&1)
   log "world $world: shift_start $closed"
+  # (d29 batch336 FL7) the expedition's own clock for the briefs (tools/expedition.py; tools/brief.py puts its line beside
+  # the deadline paragraph): the world's game time and our platforms on the way to the Shattered Planet, at this start
+  log "expedition: $(printf '%s' "$closed" | python3 tools/expedition.py save "$rundir" 2>&1 | tail -1)"
 fi
 # (d28 batch317) Progressive disclosure (docs/DISCLOSURE.md): POG_DISCLOSURE=1 filters each team's kit by what it has
 # researched, built, met and done; observe keeps that state without filtering; 0 turns it off. Unset leaves the world as

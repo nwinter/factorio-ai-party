@@ -4239,6 +4239,39 @@ end
 end -- rates {recipe | item} with no area or positions (Gemini 02:36: rates filtered by recipe or item across a surface):
 -- every crafter of ours on the surface set to that recipe (or to one making the item), at most 512, as the rates read
 -- computes them, with the surface's statistics for the item beside it (made and used a minute over 10 min).
+-- (d29 batch336 FL7) the expedition's own clock for the brief (tools/start-team.sh at shift_start; tools/brief.py): the
+-- world's game time, the solar system edge's connection to the Shattered Planet and its length, and each platform of
+-- ours stopped at the edge or the Shattered Planet or on a connection to either, with the km left to the Shattered
+-- Planet along that connection and then the edge's (the platform's distance along its connection, from its from end).
+local EDGE,SHATTERED='solar-system-edge','shattered-planet'
+function M.expedition_facts()
+  local leg
+  for _,c in pairs(prototypes.space_connection or {}) do
+    local a,b=c.from and c.from.name,c.to and c.to.name
+    if (a==EDGE and b==SHATTERED) or (a==SHATTERED and b==EDGE) then leg=c end
+  end
+  local L2=leg and leg.length or nil
+  local rows={}
+  for _,pl in pairs(game.forces.player.platforms or {}) do
+    if pl.valid then
+      local at=pl.space_location and pl.space_location.name
+      local c=pl.space_connection
+      local row
+      if at==SHATTERED then row={platform=pl.name,at=at,km_left=0}
+      elseif at==EDGE then row={platform=pl.name,at=at,km_left=L2}
+      elseif c and not at then
+        local from,to=c.from.name,c.to.name
+        local d=pl.distance or 0
+        local function toward(name) return to==name and (1-d)*c.length or d*c.length end
+        if from==SHATTERED or to==SHATTERED then row={platform=pl.name,from=from,to=to,progress=d,km_left=toward(SHATTERED)}
+        elseif (from==EDGE or to==EDGE) and L2 then row={platform=pl.name,from=from,to=to,progress=d,km_left=toward(EDGE)+L2} end
+      end
+      if row then row.km_left=row.km_left and math.floor(row.km_left+0.5) or nil; rows[#rows+1]=row end
+    end
+  end
+  table.sort(rows,function(x,y) return (x.km_left or math.huge)<(y.km_left or math.huge) end)
+  return {tick=game.tick,edge_to_shattered_km=L2,platforms=rows}
+end
 M.RATES_SURFACE=512
 -- (d29 batch336 FL5, Astra #2694 s92: "Make rates capacity versus actual explicit in structured rows") rates {item}: one
 -- row a producer, its full speed (craftrate, as inspect) beside what it made: its products_finished counter now against
@@ -21588,7 +21621,9 @@ M.operator={
     local shift=M.research.shift_start(n,progress)
     -- (d28 batch305 NR) the stored routes carry over; those asked from now name this shift
     local okr,routes=pcall(M.sharedroutes.shift_start,n)
-    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0,routes_kept=okr and routes.routes or nil}
+    local oke,expedition=pcall(M.expedition_facts)
+    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0,routes_kept=okr and routes.routes or nil,
+      expedition=oke and expedition or {error=tostring(expedition)}}
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
