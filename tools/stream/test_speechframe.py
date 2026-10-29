@@ -12,11 +12,13 @@ Speech (onecam maybe_speech, speech_*):
 5. The same subject again within speech_merge: no second cut; a tour on air keeps the camera (inset instead).
 6. Unknown names are skipped; an Operator line's own names (an agent, a platform) count.
 Remote work (maybe_swap, swap_*):
-7. The agent on air stands still while its attention inset shows where it works: after swap_still the work goes on
-   the main view and the agent into a panel; back to the agent after swap_hold, or at once when it acts again.
+7. The agent on air stands still while its attention inset shows where it works (building, configuring, moving items,
+   a platform; not a look at an entity): after swap_still the work goes on the main view and the agent into a panel;
+   back after swap_hold, or at once when it acts again.
 8. caster.subjects_of: the event's agent and platform fields (also nested), never words of the line.
+9. director_replay.Speech: the played lines (audio-played.jsonl) with their words and subjects from the caster logs.
 """
-import os, sys
+import json, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -146,8 +148,14 @@ def swap():
     d = director(attention=True)
     a = team()
     warm(d, a)
-    att = {"far": True, "age_s": 2, "kind": "looking", "text": "inspecting 80 m north", "position": {"x": 0, "y": -80},
-           "surface": "nauvis"}
+    look = {"far": True, "age_s": 2, "kind": "looking", "text": "inspecting 80 m north", "position": {"x": 0, "y": -80},
+            "surface": "nauvis"}
+    d0 = director(attention=True)
+    warm(d0, a)
+    for k in range(40, 120):
+        d0.step(snap(team(luna={"activity": "idle", "active": None, "attention": look})), T + k)
+    assert not d0.swaps and d0.attns, (d0.swaps, d0.attns)  # a look at an entity: the inset only, no swap
+    att = dict(look, kind="building", text="placing ghosts 80 m north")
     still = team(luna={"activity": "idle", "active": None, "attention": att})
     k0 = None
     for k in range(40, 120):
@@ -157,7 +165,7 @@ def swap():
             break
     assert k0 is not None and d.swaps and d.swaps[-1][1] == "luna", (d.swaps, d.attns, d.inset)
     assert d.inset and d.inset["why"] == "away" and d.state[d.inset["slot"]]["subject"] == "luna", d.inset
-    assert d.public(T + k0)["main"].get("work") == "Luna inspecting 80 m north", d.public(T + k0)["main"]
+    assert d.public(T + k0)["main"].get("work") == "Luna placing ghosts 80 m north", d.public(T + k0)["main"]
     for k in range(k0 + 1, k0 + 40):
         d.step(snap(still), T + k)
         if main_subj(d) != "@work":
@@ -187,6 +195,31 @@ def subjects():
     print("8. caster.subjects_of: the event's own agent and platform fields only: ok")
 
 
+def replay_speech():
+    import director_replay as R
+    with tempfile.TemporaryDirectory() as tmp:
+        run, logs = os.path.join(tmp, "shift99"), os.path.join(tmp, "logs")
+        os.makedirs(run)
+        os.makedirs(logs)
+        with open(os.path.join(logs, "caster-1.jsonl"), "w") as f:
+            for r in ({"type": "caster", "t": 100.0, "pushed": True, "event": "arrival", "exchange": 99.0, "line": "Anvil's in.",
+                       "facts": {"arrival": {"platform": "Anvil"}}},
+                      {"type": "caster", "t": 104.0, "pushed": True, "event": "arrival", "exchange": 99.0, "line": "Six minutes."},
+                      {"type": "agent", "t": 110.0, "pushed": True, "agent": "sol", "line": "Turning back."}):
+                f.write(json.dumps(r) + "\n")
+        with open(os.path.join(run, "audio-played.jsonl"), "w") as f:
+            for r in ({"t": 104.0, "id": "a", "state": "end", "channel": "caster", "speaker": "Rook", "played": 3.5, "duration": 3.5},
+                      {"t": 107.5, "id": "b", "state": "end", "channel": "caster", "speaker": "Vale", "played": 3.0, "duration": 3.0},
+                      {"t": 116.0, "id": "c", "state": "end", "channel": "agent", "speaker": "Sol", "agent": "sol", "played": 5.0,
+                       "duration": 5.0}):
+                f.write(json.dumps(r) + "\n")
+        sp = R.Speech([run], logs, 90.0, 200.0)
+        assert [(v["id"], v["subjects"]) for v in sp.lines] == [("a", [{"platform": "Anvil"}]), ("b", [{"platform": "Anvil"}]),
+                                                                 ("c", [])], sp.lines
+        assert [v["id"] for v in sp.rows(105.0)] == ["b"] and sp.rows(112.0)[0]["text"] == "Turning back."
+    print("9. the replay's played lines: words and subjects from the caster logs, each while it played: ok")
+
+
 def main():
     cut_and_hold()
     busy_inset()
@@ -194,6 +227,7 @@ def main():
     verified()
     swap()
     subjects()
+    replay_speech()
     print("speechframe: ok")
 
 

@@ -558,6 +558,11 @@ ONECAM = {
     "swap_still": 20.0,     # 0: off
     "swap_min": 4.0,
     "swap_hold": 20.0,
+    "swap_gap": 90.0,       # swaps at most this often
+    # only work that changes the world there (building, configuring, moving items; anything on a platform): a look at
+    # an entity (inspect, scan) is no more to see than the agent standing (replay d28 12:00-17:20: 94 swaps in 5.3 h,
+    # most of them inspections)
+    "swap_kinds": ["building", "configuring", "moving items"],
     # Surface balance (viewer awoo3391, 19:34: "the camera feed needs a real priority system"; 8 of 9 agents on Nauvis,
     # so rotation by agent showed Nauvis while Gemini landed on Fulgora and Sol worked Vulcanus): on-air seconds per
     # surface over the last surface_window; a surface other than Nauvis with an agent on it is due surface_share of
@@ -2911,6 +2916,8 @@ class OneCam(Director):
             if not busy and (now - self.speech_cut_t < cfg["speech_gap"] or now - self.onair_since < cfg["speech_min"] or
                              now - self.last_program_cut < cfg["cut_spacing"]):
                 busy = "a cut a moment ago"
+            if not busy and self.launch_soon(now):
+                busy = "a rocket lifting off soon"
             if not busy:
                 t = self.speech_target(kind, name, until, by_name, now)
                 if t:
@@ -3399,6 +3406,10 @@ class OneCam(Director):
             return  # (the first standby frames the next subject; the last one takes insets)
         self.show_attention(self.inset_free(sb)["slot"], subj, by_name[subj], att, scores, now)
 
+    def launch_soon(self, now):
+        """(batch324) A rocket due to lift off within launch_wait (maybe_launch would take a still story for it)."""
+        return self.cfg["launch"] and any(d["lift"][1] - now <= self.cfg["launch_wait"] for d in self.launch_due.values())
+
     def maybe_swap(self, by_name, scores, now, segment=None):
         """(batch324 SF) One client: the agent on air standing still while its attention inset shows where it works:
         the work on the main view, the agent in the panel (module doc, swap_*). A swapped view ends at its `until`, or
@@ -3417,8 +3428,14 @@ class OneCam(Director):
         if not ins or ins.get("why") != "attention" or segment or self.hold_layout or self.pending:
             return
         name = ins["agent"]
-        if cur.get("subject") != name or now - ins.get("moved", now) < cfg["swap_min"]:
+        if cur.get("subject") != name or now - ins.get("moved", now) < cfg["swap_min"] or \
+                now - max((w[0] for w in self.swaps), default=-1e9) < cfg["swap_gap"]:
             return
+        att = (self.state.get(ins["slot"]) or {}).get("attention") or {}
+        if att.get("kind") not in cfg["swap_kinds"] and not att.get("platform"):
+            return
+        if self.launch_soon(now):
+            return  # a rocket lifting off soon takes a still story first (maybe_launch)
         still = self.stale_s(name, now)
         if still < cfg["swap_still"] or self.story_action(now):
             return
