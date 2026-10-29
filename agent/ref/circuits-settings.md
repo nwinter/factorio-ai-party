@@ -18,7 +18,10 @@
     first must say and or or), `{signal, comparator, value, compare, first_networks: "red"}`, or the game's own rows
     (`first_signal`, `constant`, `compare_type`); outputs `{signal, copy_input: true}` (the input count) or `{signal,
     constant: 1}`, with `networks`. The read shows `AND iron-plate < 150 [reads red+green]` and `signal-B = constant 1
-    [from red+green]`.
+    [from red+green]`. `first_networks`, `second_networks` and `networks` take `red`, `green`, `both`, or `red+green` as
+    the read shows it (the same as both). A queued circuit_set step (queue_submit, and its dry run) is checked for these
+    values as the live call checks them, so a value live would refuse is refused before any step runs; whether the
+    entity takes that setting (a decider on a decider combinator) is checked when the step runs.
   - Requester and buffer chests: `read: {contents: true}` or `set_requests: true`, and `enable` (the chest's circuit
     condition); provider chests send contents whenever wired; no chest has a logistic condition. A roboport: `read:
     {logistic_network_contents: true}`.
