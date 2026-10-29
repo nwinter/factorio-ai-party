@@ -2247,18 +2247,37 @@ return function(api)
   -- (C6) a captive spawner dying within 2 minutes, or dead, is told in the team block's urgent part and wakes a sleep
   -- (M.urgent_captive), not here.
   local URGENT_KINDS = {captive_urgent=true, captive_died=true}
+  -- (d29 batch334) the roster and each group's owners, made once a tick for a force and shared by every agent's reply in
+  -- it (each reply made them for all ~170 groups: claims, near lists and sorts, the same for every agent); kept by group
+  -- key, as active_claims is kept a tick
+  local own_tick, own_force, own_who, own_by
+  local function shared_owners(force)
+    if own_tick ~= game.tick or own_force ~= force.name then
+      own_tick, own_force, own_who, own_by = game.tick, force.name, roster(), {}
+    end
+    return own_who, own_by
+  end
+  local NO_OWNERS = {}  -- never written
   function M.lines(p, h)
     local mem = h.push or {told={}}
     if mem.tick and game.tick - mem.tick < DIGEST_TICKS then return {} end
     local c = current(p.force)
     local me = api.who(p)
     local here = try(function() return p.surface.name end)
-    local who = roster()
+    local who, by = shared_owners(p.force)
     local now, lines, more = {}, {}, 0
     for _, g0 in ipairs(c.groups) do
       -- One of yours, a turret group read again first: refilled since, it is not shown (nor counted as told).
-      local info = {}
-      local o = not URGENT_KINDS[g0.kind] and owners(g0, who, info) or {}
+      local o, info = NO_OWNERS, NO_OWNERS
+      if not URGENT_KINDS[g0.kind] then
+        local m = g0.key ~= nil and by[g0.key]
+        if not m then
+          m = {info={}}
+          m.o = owners(g0, who, m.info)
+          if g0.key ~= nil then by[g0.key] = m end
+        end
+        o, info = m.o, m.info
+      end
       local why = o[me]
       -- (d24 batch158) a group no playing agent hears comes to every playing agent, with why
       if not why and o['*team'] and playing(who[me]) then why = 'team' end

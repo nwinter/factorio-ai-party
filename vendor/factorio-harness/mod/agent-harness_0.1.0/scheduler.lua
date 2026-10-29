@@ -1542,7 +1542,10 @@ return function(api)
         -- any other step needs it on foot: the lookup refuses a seated one and the plan pauses, as before
         -- (eng/queuecliffs: a queued drive paused its plan the tick after it began).
         local nxt=q.current or (not q.current and q.pending[1]) or nil
-        local valid,p=pcall(api.player,index,nxt and nxt.action=='vehicle' or nil)
+        -- (d29 batch334) an idle queue (no step, nothing pending, no loop, order or guards) runs nothing below but the
+        -- lookup's failure path: the lookup's asserts only, no player or proxy made (p is then true, never read)
+        local idle=not nxt and not q.loop and not q.order and not (q.guards and #q.guards>0)
+        local valid,p=pcall(idle and api.player_check or api.player,index,nxt and nxt.action=='vehicle' or nil)
         if not valid then
           api.stop_index(index); M.pause(index,'the queue could not act for you: '..(api.reason and api.reason(p) or tostring(p)))
         else
