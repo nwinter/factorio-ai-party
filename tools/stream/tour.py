@@ -59,6 +59,9 @@ SILENT_S = 8.0  # a stop with no narration and no seconds
 WORDS_PER_S = 2.5  # the timeline's estimate for a stop without a prepared clip (150 words a minute)
 PREROLL_S = 4.0  # each stop goes to the service this long before its cut (the standby frames it, the page loads it)
 MIN_PREROLL_S = 2.0  # a stop running late is still sent at least this long ahead
+# (d28 batch319 SU) a segment (segment=...): the first cut waits for a voice line already playing to end, at most this
+# long (shift92-93: 3 narrations started over an Operator clip and ducked it under)
+FIRST_WAIT_MAX_S = 20.0
 LOOK_MAX_S = 60.0  # lookcam.MAX_S
 LOOK_RENEW_S = 20.0  # extend a look this long before it ends
 LOOK_SPARE_S = 15.0  # a look runs this long past its stop's planned end (the next stop's look replaces it)
@@ -580,7 +583,7 @@ def platforms(feed):
 class Tour:
     def __init__(self, svc, rows, manifest, out, log_path, hush_file=HUSH_FILE, stop_file=STOP_FILE,
                  clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True, subtitles=True,
-                 videos=None, interrupt=None):
+                 videos=None, interrupt=None, segment=None):
         self.svc, self.rows, self.manifest, self.out = svc, rows, manifest, out
         self.log_path, self.hush_file, self.stop_file = log_path, hush_file, stop_file
         self.now, self.sleep = clock, sleep
@@ -592,6 +595,14 @@ class Tour:
         self.cur = None  # the stop holding the camera: {id, look_until, need_until}
         self.scheduled = []  # narration clip ids sent with at (taken back at a stop)
         self.pending = None  # the last stop's log row, written when the next cut (or the end) is known
+        # (d28 batch319 SU) the narrated piece as one segment: each clip says {id, part, parts} and the page holds the
+        # routine lines until the last part has played (audio.js); the end releases it. Its lines wait for the segment's
+        # end there, so no stop is held open for them (agent_gaps off).
+        self.segment = segment
+        if segment:
+            self.agent_gaps = False
+        self.parts, self.part = 0, 0
+        self.aired_ids = []  # the stops whose narration played to its end (hourly.py resumes the others)
 
     def record(self, **kw):
         t = self.now()
@@ -707,9 +718,12 @@ class Tour:
         meta = {"channel": "narrator", "speaker": "Narrator", "text": s["caption"] or "", "rank": "urgent",
                 "caption": caption,  # (CK4) false: the page shows the narration's own captions instead
                 "duration": clip["duration"], "at": round(at, 3), "expires_in": 30, "tour": s["id"],
+                **({"segment": {"id": self.segment, "part": self.part + 1, "parts": self.parts}} if self.segment else {}),
                 "voice": self.manifest.get("voice"), "audio_b64": base64.b64encode(audio).decode(),
                 "ctype": "audio/mpeg"}
         code, r = self.svc.call("POST", "/audio", meta)
+        if self.segment:
+            self.part += 1
         if code == 200 and r.get("id"):
             self.scheduled.append(r["id"])
             return r["id"]
@@ -761,6 +775,16 @@ class Tour:
             return min(AGENT_GAP_MAX_S, float(c["duration"])), c.get("speaker")
         return 0.0, None
 
+    def playing_until(self):
+        """When the voice line playing now (not a timed one) ends, on the service's clock; None when none plays."""
+        try:
+            st = self.svc.audio_status()
+        except Exception:
+            return None
+        ends = [self.now() + float(p.get("ends_in") or 0) for p in st.get("playing") or []
+                if p.get("channel") not in ("narrator", "control") and float(p.get("ends_in") or 0) > 0]
+        return max(ends) if ends else None
+
     def flush(self, ended):
         if self.pending:
             row, self.pending = self.pending, None
@@ -775,6 +799,13 @@ class Tour:
                     voice=(self.manifest or {}).get("voice"), lead_s=self.lead, tail_s=self.tail)
         aired = skipped = 0
         T = self.now() + PREROLL_S  # the next cut
+        if self.segment:
+            self.parts = sum(1 for _, s, _ in rows if s and clip_for(self.manifest, self.out, s))
+            busy = self.playing_until()  # (SU) a line playing now ends before the first narration starts
+            if busy and busy + 0.3 > T + self.lead:
+                waited = min(FIRST_WAIT_MAX_S, busy + 0.3 - (T + self.lead))
+                T += waited
+                self.record(event="waited", seconds=round(waited, 2), why="a voice line was playing")
         try:
             for i, s, why in rows:
                 if self.want_stop():
@@ -844,6 +875,7 @@ class Tour:
                         end += gap
                         self.cur["need_until"] = end + LOOK_SPARE_S
                 self.pending = self.row(s, cut, ask, t_air, narr_at, t_narr, clip, gap, who)
+                self.aired_ids.append(s["id"])
                 aired += 1
                 left -= length
                 T = end
@@ -884,6 +916,11 @@ class Tour:
             except Exception:
                 pass
         self.scheduled = []
+        if self.segment:  # (SU) the page's hold ends with the tour, played whole or stopped early
+            try:
+                self.svc.call("POST", "/audio/release", {"segment": self.segment}, timeout=3)
+            except Exception:
+                pass
         try:
             self.svc.call("DELETE", "/tour/overlay", timeout=3)
         except Exception:
