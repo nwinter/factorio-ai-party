@@ -120,8 +120,9 @@ local rr=F.call(p,{id=w2.id}).watch
 eq(#rr.turrets,2); eq(rr.turrets_more,2); assert(rr.turrets_more_line:find('^2 more ammo turrets, none read empty'),rr.turrets_more_line)
 F.SHOW=24
 w2.read_tick=nil
--- a second watch on the platform while one is not read: refused without replace
-local ok,err=pcall(F.call,p,{platform='Kestrel IVc'})
+-- a second watch on the platform while one is not read: refused without replace (d29 batch337: for another agent; the
+-- setter's own start reads it first, tests/d29_batch337.lua)
+local ok,err=pcall(F.call,{name='someone else',force=p.force,index=p.index+50},{platform='Kestrel IVc'})
 assert(not ok and tostring(err):find('done and not read'),tostring(err))
 r=F.call(p,{platform='Kestrel IVc',replace=true}); eq(r.watch.replaced,2)
 -- the listing, clear
