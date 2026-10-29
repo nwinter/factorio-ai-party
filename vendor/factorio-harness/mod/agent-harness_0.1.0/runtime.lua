@@ -19210,8 +19210,65 @@ function M.request_team(request)
   if type(request.player)=='number' then return M.team_of_index(request.player) end
   return 'player'
 end
+-- (mt279 L2) The forces an agent's reply names, as its reader may see them (mt277 smoke test: every agent read its own
+-- force's colour in observe's entities, enemy_news and build details, which says other forces exist): the reader's
+-- own force is never named; another team's by name once the reader's team has had contact with it (multiteam's first
+-- records: its chart showed that team's entity, or a hit either way), else `other`; enemy, neutral and any force that
+-- is no team by name, as before. Applied to the whole reply of a team other than the player force (a `force` field,
+-- and "force NAME" in a text, where an own force reads `ours`); a table is copied before a change, so stored records
+-- keep theirs. The player force's replies (world n, a one-team world) are left as they are.
+function M.force_shown(name,reader,teams)
+  if name==nil or name==reader then return nil end
+  if not teams then
+    teams={}
+    for _,t in ipairs(M.team_names()) do teams[t]=true end
+    for t in pairs((state().mt or {}).teams or {}) do teams[t]=true end
+  end
+  if not teams[name] then return name end
+  local first=(state().mt or {}).first or {}
+  if first['chart '..reader..'>'..name] or first['shot '..reader..'>'..name] or first['shot '..name..'>'..reader] then return name end
+  return 'other'
+end
+function M.scrub_forces(v,reader)
+  local teams={}
+  for _,t in ipairs(M.team_names()) do teams[t]=true end
+  for t in pairs((state().mt or {}).teams or {}) do teams[t]=true end
+  local function text(pre,name)
+    if not teams[name] and name~=reader then return nil end
+    return pre..(M.force_shown(name,reader,teams) or 'ours')
+  end
+  local function scrub(x,depth)
+    local tx=type(x)
+    if tx=='string' then
+      if not x:find('force',1,true) then return x end
+      return (x:gsub('(force[ =:]+)([%w_%-]+)',text))
+    end
+    if tx~='table' or depth>24 then return x end
+    local copy
+    for k,y in pairs(x) do
+      local ny
+      if k=='force' and type(y)=='string' then ny=M.force_shown(y,reader,teams) else ny=scrub(y,depth+1) end
+      if ny~=y then
+        if not copy then copy={}; for k2,y2 in pairs(x) do copy[k2]=y2 end end
+        copy[k]=ny
+      end
+    end
+    return copy or x
+  end
+  return scrub(v,0)
+end
 local dispatch_team
-function M.dispatch(request) return M.as_team(M.request_team(request),dispatch_team,request) end
+local function dispatch_scrubbed(request)
+  local ok,result=pcall(dispatch_team,request)
+  local reader=team_now
+  if reader~='player' and type(request)=='table' and request.operator~=true then
+    local oks,scrubbed=pcall(M.scrub_forces,result,reader)
+    if oks then result=scrubbed end
+  end
+  if not ok then error(result,0) end
+  return result
+end
+function M.dispatch(request) return M.as_team(M.request_team(request),dispatch_scrubbed,request) end
 function dispatch_team(request)
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
