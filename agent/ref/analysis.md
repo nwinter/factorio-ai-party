@@ -195,7 +195,9 @@
   `name` narrows it. A belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
   underground`), or `empty`. An inserter has no inventory and no `holds`: its hand is `held` (`4 rocket` or `nothing`)
   and `held_count`. A machine's `holds` is its slots; a craft under way is `in_progress` (its products are in no slot
-  until it finishes). `compact: true` gives a line each (with `positions`, up to 32 in one reply): status,
+  until it finishes). An entity with module slots adds `modules` (`{"efficiency-module@normal": 3}`; absent when none),
+  `module_slots` ("3/4"), and `modules_requested` / `modules_removing` while robots move some; its compact line says
+  `modules efficiency-module*3 (3/4 slots)` or `modules none (0/4 slots)`. `compact: true` gives a line each (with `positions`, up to 32 in one reply): status,
   health, recipe, what it holds, and `spoil:` (each spoilable item's count and spoiled share, the first to spoil or hatch
   and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
   condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
