@@ -162,7 +162,7 @@
   queue plan, each step a call whose reply says what it did: the machine's own conditions (its logistic condition, and
   its circuit condition when a wire is on it) and the output inserter's switched off; the input inserter held (logistic
   `INGREDIENT < -2147483648`, false at any count); the requester feeding it cleared, then asked for exactly what the
-  batch still needs of each ingredient (crafts x amount less what the machine and the requester hold now); waits for it;
+  batch still needs of each ingredient (base crafts x amount less what the machine and the requester hold now); waits for it;
   requests cleared; the input on; waits for the crafts on the machine's products-finished counter (`counter`: its count
   at the plan and the count that ends the batch; productivity bonus crafts count too) while the products go out through
   the output inserter (`destination`, and a chest's `room` for them); the input off again (or its own condition set
@@ -178,7 +178,11 @@
   unrequested on has it switched off before its requests are cleared and staged, and on again after the batch
   (`trash_unrequested` in the reply; a plan stopped between leaves it off). The recipe's quality (`quality`) goes on
   every item ingredient's request and wait (fluids have none). `other_quality`: what the requester holds of an
-  ingredient at another quality (the machine does not take it).
+  ingredient at another quality (the machine does not take it). With productivity (`productivity`), the ingredients are
+  for `base_crafts`: each base craft fills the machine's productivity bar by its productivity, and a full bar is one
+  more completion with no ingredients; `bonus_progress` is the bar now, `bonus_crafts` the completions it adds, and
+  `crafts` the completions at the stop: the fewest base crafts that reach them (a product productivity leaves out is
+  staged in full).
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, clear_all?, section?, active?, add_section?, remove_section?, group?,
   trash_unrequested?, construction_requests?, keep?, dry_run?, force?, surface?}` or `{groups: true}`: a
