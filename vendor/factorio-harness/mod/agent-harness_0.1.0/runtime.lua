@@ -2290,6 +2290,7 @@ function handlers.describe(_,a)
   end
   description.aliases=M.ALIASES
   for name,schema in pairs(M.orders and M.orders.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.disclosure and M.disclosure.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(clock and clock.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
@@ -17657,6 +17658,28 @@ M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=
     return math.max(not c.peeked and c.call_tick or 0,c.wait_tick or 0)
   end}
 for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
+-- (d28 batch317) progressive disclosure: the kit each force sees grows with its research, buildings, encounters and
+-- habits (disclosure.lua, docs/DISCLOSURE.md); off by default. The player force until the per-force helpers are here.
+M.disclosure=require('disclosure'){state=state,units=require('disclosure_units'),
+  forces=function() return {game.forces.player} end,
+  is_team=function(force) return force.name=='player' end,
+  team_size=function(force)
+    local n=0
+    for _,b in ipairs(M.bots.list()) do if (b.force or 'player')==force.name then n=n+1 end end
+    return n
+  end,
+  characters=function(force)
+    local out={}
+    for _,b in ipairs(M.bots.list()) do
+      if b.character and b.character.valid and b.character.force==force then out[#out+1]=b.character end
+    end
+    for _,pl in pairs(game.connected_players) do
+      if pl.character and pl.character.valid and pl.character.force==force then out[#out+1]=pl.character end
+    end
+    return out
+  end,
+  push_groups=function(force) return (state().push_alerts or {})[force.name] end}
+handlers.disclosure=function(p,a) return M.disclosure.read(game.forces.player) end
 -- Queue writes answer briefly: the revision, state, the next steps by id and
 -- the last results; queue_status has steps in full (agent-minds study: each
 -- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
@@ -18160,6 +18183,7 @@ passive.blueprint_import=true
 local reads={launch_budget=true,losses=true,platform=true,damage_log=true,shortages=true,reservations=true,nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
+reads.disclosure=true  -- disclosure.lua: the host's read of the force's open set
 reads.heat_budget=true
 reads.platform_bom=true
 reads.platform_production=true
@@ -18235,7 +18259,9 @@ function check_args(action,args)
     if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean')
       and not (key=='helper' and type(args.helper)=='boolean') and not (key=='queue_resume_after' and type(args.queue_resume_after)=='boolean') then
       local valid={}
-      for k in pairs(set) do valid[#valid+1]=k end
+      for k in pairs(set) do
+        if not (M.disclosure and M.disclosure.arg_hidden(game.forces.player,action,k)) then valid[#valid+1]=k end
+      end
       table.sort(valid)
       -- The valid name nearest the unknown one (Luna 06:20: filter on configure): a plural or singular, a name
       -- that starts with it, or at most 2 letters apart.
@@ -18777,7 +18803,27 @@ function M.dispatch(request)
     for k,v in pairs(request.args) do if k~='queue_resume_after' then c[k]=v end end
     request.args=c
   end
-  local ok,result=pcall(M.dispatch_inner,request)
+  -- (d28 batch317) progressive disclosure (disclosure.lua): a unit not open yet for the caller's force is refused naming
+  -- its condition; the call is counted for the force's habits; describe shows the open set
+  local disc=M.disclosure and M.disclosure.mode()~='off' and type(request)=='table' and request.operator~=true and game.forces.player or nil
+  local refused,from
+  if disc then
+    refused=M.disclosure.gate(request,disc)
+    if (request.action=='move_to' or request.action=='walk') then
+      local okp,pos=pcall(function() return M.lookup(request.player or M.bots.index_of(request.bot)).position end)
+      from=okp and pos or nil
+    end
+  end
+  local ok,result
+  if refused then ok,result=false,refused
+  elseif disc and request.action=='describe' and M.disclosure.mode()=='filter' and type(request.args)=='table'
+    and request.args.if_bundle~=nil and request.args.if_bundle==M.disclosure.describe_key(disc,BUNDLE_ID) then
+    ok,result=true,{bundle=request.args.if_bundle,unchanged=true}
+  else
+    ok,result=pcall(M.dispatch_inner,request)
+    if ok and disc and request.action=='describe' then result=M.disclosure.filter_describe(result,disc,BUNDLE_ID) end
+  end
+  if disc then pcall(M.disclosure.count,request,ok,result,disc,from) end
   M.ghost_via=nil
   local dp=M.direct_paused
   if dp and type(request)=='table' and dp.index==request.player and dp.tick==game.tick and (resume_after or scheduler.resume_after_direct(dp.index)) then
@@ -18843,6 +18889,7 @@ function M.dispatch_inner(request)
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action])
+      relay=relay or (M.disclosure and M.disclosure.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -18951,6 +18998,11 @@ function M.dispatch_inner(request)
       -- (d20 batch50 E1) the ground rules whose applies_to names the call's args name (lessonbook.lua applies)
       local okr,gr=pcall(M.lessonbook.applies,p.index,request.action,request.args,result)
       if okr and gr then result.ground_rules=gr end
+      -- (d28 batch317) what opened for the team since this agent's last line (disclosure.lua, filter mode)
+      if M.disclosure and M.disclosure.mode()=='filter' then
+        local okn,nl=pcall(M.disclosure.reply_line,p.name,game.forces.player)
+        if okn and nl then result.new=nl end
+      end
     end
     if p and p.valid and not M.is_director(p.index) then
       -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
@@ -21176,6 +21228,7 @@ function M.tick_body(event)
   if M.freight and M.freight.belt_tick and event.tick%M.freight.BELT_STEP==0 then pcall(M.timed,'freight.belts',M.freight.belt_tick,event.tick) end
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
+  if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
@@ -21359,6 +21412,8 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d28 batch317) the force's first research, attack, loss, death, enemies of a kind, freight (disclosure.lua)
+  if M.disclosure then pcall(M.disclosure.on_event,event) end
   -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record
   if event.name~=nil and event.name==(defines.events or {}).on_space_platform_built_tile then
     local ok,err=pcall(M.timed,'flightwatch.built_tile',M.flightwatch.on_built_tile,event)

@@ -180,6 +180,22 @@ function sortKeys(value: unknown): unknown {
   for (const key of Object.keys(value).sort()) out[key] = sortKeys(value[key]);
   return out;
 }
+// describe.json as pog tools/describe-lines.py writes it: one action per line, each with its name (grep NAME finds it).
+// (Python's json.dumps spacing, ", " and ": ": agents grep for `"name": "craft"`)
+function pyJson(v: unknown): string {
+  if (Array.isArray(v)) return '[' + v.map(pyJson).join(', ') + ']';
+  if (v !== null && typeof v === 'object') return '{' + Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${pyJson(x)}`).join(', ') + '}';
+  return JSON.stringify(v) ?? 'null';
+}
+export function describeLines(result: Record<string, unknown>): string {
+  const {actions, ...rest} = result as {actions?: Record<string, unknown>};
+  const out = Object.entries(rest).map(([k, v]) => `  ${JSON.stringify(k)}: ${pyJson(v)},`);
+  out.push('  "actions": {');
+  out.push(Object.entries(actions ?? {}).map(([k, v]) => `    ${JSON.stringify(k)}: ${pyJson({name: k, args: v})}`).join(',\n'));
+  out.push('  }');
+  return '{\n' + out.join('\n') + '\n}\n';
+}
+
 export function actionHelp(describe: unknown, action: string, max = 1400): string {
   const actions = record(describe) && record(describe.actions) ? describe.actions : {};
   // An alias (the runtime's M.ALIASES, d17 lean D1) prints the action it runs as.
@@ -189,6 +205,9 @@ export function actionHelp(describe: unknown, action: string, max = 1400): strin
     return `${action} is ${real}: the call runs as ${real}\n` + actionHelp(describe, real, max);
   }
   const schema = actions[action];
+  // (d28 batch317) an action not open yet for the team (a disclosure run's describe): its condition
+  const locked = record(describe) && record(describe.locked) ? describe.locked : {};
+  if (!record(schema) && typeof locked[action] === 'string') return `${action} is not available yet: ${locked[action]}\n`;
   if (!record(schema)) {
     const names = Object.keys(actions).sort();
     const near = names.filter(n => n.includes(action) || action.includes(n) || n.split('_').some(w => w.length > 2 && action.includes(w)));
