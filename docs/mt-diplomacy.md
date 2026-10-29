@@ -1,4 +1,4 @@
-# Pacts between teams: design (mt278 part I, for Nick to confirm; nothing built)
+# Pacts between teams (mt278 part I design; built in mt281 with the operator's defaults, Nick d29 12:30)
 
 Private, mt branches only (tools/mt/launch-tree.sh leaves `docs/mt-*.md` out of the agents' tree). Sources: Nick's d29
 10:20 brainstorm (multiteam-design.md), the scoring of d28 13:35 (solo edge x1.5, allied edge x1.0 each member,
@@ -91,9 +91,10 @@ surface both teams have, on dry ground, within no other team's buildings; obliga
   first move away from the last planet past a set distance; the platform watch already sees routes).
 - An allied edge: the platform's team and every team holding an active pact with cease-fire and shares with it at
   the snapshot score; the allied total is 1.0 x the number of those teams, split by the shares (no shares: even).
-  So a 0.9/0.1 pact gives the leader 1.8 of 2.0 and the other 0.2; a solo edge stays 1.5. With shares, allying with
-  a weak team pays the leader more than going alone: the share is what moves the decision, and Nick may want a cap
-  (e.g. no share above 0.8) or the allied total at less than 1.0 per member.
+  The cap (mt281, setting `share_cap_score`, default 1.5): no team's allied score above the solo edge's 1.5; what the
+  cap takes off goes to the other members by their shares. A 0.9/0.1 pact of two: 1.8 and 0.2 before the cap, 1.5
+  and 0.5 after it. A 0.5/0.5 pact: 1.0 and 1.0. So allying never pays a leader more than going alone, and a share
+  moves points to the smaller team only up to the cap.
 - The home-must-hold rule is unchanged (the team's Nauvis landing pad, powered, when its platform arrives).
 - A mid-run milestone ranking (if Nick adds one): pacts do not change it.
 
@@ -112,7 +113,22 @@ surface both teams have, on dry ground, within no other team's buildings; obliga
   average; nothing in the 10 ms range.
 - Storage: a pact is under 2 KB with its hourly ledger kept for 24 h.
 
-## To confirm (Nick)
+## Built (mt281): the operator's defaults, each a setting in mt_pacts' config
+- Terms: cease-fire, shares, depot, the three obligation kinds; no shared chart.
+- Shares: the allied total 1.0 x the members, split by shares, capped at share_cap_score (1.5).
+- Depot: cut 0.2, a move every move_s (10 s). Four chests, harness-placed, indestructible and not minable: each team
+  has a sending chest and a receiving chest of its own force (a team opens only its own), A-send, A-receive,
+  B-receive, B-send in a row at the agreed spot, tagged on each team's map.
+- pact_end: ended at once in the record, both teams told; the engine cease-fire lifts end_notice_s (600 s) later, and
+  the fact line says when.
+- The human team: the same terms through chat, `!pact ACTION {json}` (propose, accept, decline, withdraw, amend, end,
+  list); the reply in its console.
+- Unlock: at first contact (the pact actions out of describe and refused until then; a `new:` fact line at the
+  contact; disclosure's atom event:contact for a filtered run), explained by the rules-of-contact message.
+- Obligations are measured each check_s (3600 s): a delivery counts what arrived at the other team.
+- Proposals lapse after expires_min (60).
+
+## The questions the operator decided (d29 12:40)
 1. The terms: cease-fire, shares, depot, the three obligation kinds. Others to add (shared chart between allies via
    `set_friend`? passage only?).
 2. Shares and scoring: the allied total of 1.0 per member split by shares, and whether to cap a share.

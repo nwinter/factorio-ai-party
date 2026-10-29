@@ -20657,6 +20657,8 @@ for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- (mt281) the pact actions (pacts.lua; open per team at its first contact)
 for name,handler in pairs(M.pacts.handlers) do handlers[name]=handler end
 for name in pairs(M.pacts.reads) do reads[name]=true end
+-- a refused pact call leaves the agent's queue running (passive, as tell and vote)
+for name in pairs(M.pacts.handlers) do passive[name]=true end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,

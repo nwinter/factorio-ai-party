@@ -355,6 +355,24 @@ return function(api)
     end
   end
 
+  -- The scoring's allied edge (docs/mt-diplomacy.md): 1.0 x the members split by shares (none: even), no team above
+  -- share_cap_score; what the cap takes off goes to the other members by their shares. {team=points}.
+  function M.allied_scores(shares, members)
+    local n, out = #members, {}
+    local cap = cfg('share_cap_score')
+    local total = n * 1.0
+    for _, t in ipairs(members) do out[t] = total * ((shares and shares[t]) or (1 / n)) end
+    for _ = 1, n do
+      local over, room = 0, 0
+      for _, t in ipairs(members) do if out[t] > cap then over = over + out[t] - cap; out[t] = cap end end
+      if over <= 1e-9 then break end
+      for _, t in ipairs(members) do if out[t] < cap then room = room + ((shares and shares[t]) or (1 / n)) end end
+      if room <= 0 then break end
+      for _, t in ipairs(members) do if out[t] < cap then out[t] = out[t] + over * ((shares and shares[t]) or (1 / n)) / room end end
+    end
+    return out
+  end
+
   -- A pact as an agent reads it.
   function M.view(p)
     local v = {id=p.id, a=p.a, b=p.b, status=p.status, terms=terms_text(p.terms), note=p.note, proposed_tick=p.proposed_by.tick,
@@ -451,7 +469,11 @@ return function(api)
       end
     end
     local all = {}
-    for _, p in pairs(s.by_id) do all[#all+1] = M.view(p) end
+    for _, p in pairs(s.by_id) do
+      local v = M.view(p)
+      if p.status == 'active' and p.terms.cease_fire then v.allied_edge = M.allied_scores(p.terms.shares, {p.a, p.b}) end
+      all[#all+1] = v
+    end
     table.sort(all, function(x, y) return x.id > y.id end)
     local c = {}
     for k in pairs(DEFAULTS) do c[k] = cfg(k) end

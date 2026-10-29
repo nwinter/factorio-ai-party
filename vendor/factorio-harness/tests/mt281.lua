@@ -170,5 +170,11 @@ eq(dep.team,'red'); eq(dep.from,'nauvis'); eq(dep.pacts[1].with,'blue'); eq(dep.
 local o=P.operator.mt_pacts({config={cut=0.3}})
 eq(o.config.cut,0.3); eq(o.config.end_notice_s,600); eq(o.config.share_cap_score,1.5)
 fails(function() P.operator.mt_pacts({config={chart=true}}) end,'is no setting')
+-- the scoring's allied edge: 0.9/0.1 of two is 1.8/0.2 before the cap, 1.5/0.5 after; even without shares
+P.operator.mt_pacts({config={cut=0.2}})
+local sc=P.allied_scores({red=0.9,blue=0.1},{'red','blue'})
+assert(math.abs(sc.red-1.5)<1e-9 and math.abs(sc.blue-0.5)<1e-9,sc.red..' '..sc.blue)
+sc=P.allied_scores(nil,{'red','blue'}); assert(sc.red==1 and sc.blue==1)
+sc=P.allied_scores({red=0.6,blue=0.4},{'red','blue'}); assert(math.abs(sc.red-1.2)<1e-9 and math.abs(sc.blue-0.8)<1e-9)
 game=nil; defines=nil; prototypes=nil; helpers=nil
 print('mt281 pacts: ok')
