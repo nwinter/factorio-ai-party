@@ -47,8 +47,9 @@ def ensure(rcon, names, force=None):
             state = "alive" if b.get("alive") else f"dead until tick {b.get('dead_until_tick')}"
             lines.append(f"{name} kept ({state}{', ' + where if where else ''})")
         else:
-            extra_arg = f',"{force}"' if force else ""
-            reply = rcon.command(f'/silent-command rcon.print(remote.call("agent_harness","bot_create","{name}"{extra_arg}))')
+            # control.lua's remote bot_create passes one argument: a force goes in a table with the name (mt276)
+            arg = f'{{name="{name}",force="{force}"}}' if force else f'"{name}"'
+            reply = rcon.command(f'/silent-command rcon.print(remote.call("agent_harness","bot_create",{arg}))')
             lines.append(f"{name} created {reply.strip()[:160]}")
     if force:
         now = existing(rcon)
@@ -68,8 +69,11 @@ def main():
     import pog
     pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
     rcon = pog.Rcon(pog.HOSTS.get(world, "127.0.0.1"), pog.PORTS[world], pw)
-    for line in ensure(rcon, members(team_file), force):
+    lines = ensure(rcon, members(team_file), force)
+    for line in lines:
         print(line, flush=True)
+    if any("FORCE MISMATCH" in line for line in lines):
+        sys.exit(2)   # a team in another force's body: the start stops
 
 
 if __name__ == "__main__":

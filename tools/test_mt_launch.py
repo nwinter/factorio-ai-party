@@ -179,6 +179,24 @@ def team_files():
         assert all(re.fullmatch(r"[a-z][a-z0-9_-]{0,15}", r[1]) for r in rows), f   # tools/fh_broker.py's bot names
         seen[f] = rows
     assert len(seen["teams-four.tsv"]) == 12 and len(seen["teams-smoke.tsv"]) == 4
+    # team_bots with a force: one table argument (control.lua's remote bot_create passes one), a mismatch named
+    import team_bots
+
+    class Rcon:
+        def __init__(self, force):
+            self.sent, self.force = [], force
+
+        def command(self, cmd):
+            self.sent.append(cmd)
+            if '"bots"' in cmd:
+                made = [{"name": "astra", "force": self.force, "alive": True}] if len(self.sent) > 1 else []
+                return json.dumps({"ok": True, "tick": 1, "bots": made})
+            return json.dumps({"ok": True, "tick": 1, "bot": {"name": "astra"}})
+    r = Rcon("red")
+    assert team_bots.ensure(r, ["astra"], "red")[-1].startswith("astra created"), r.sent
+    assert 'remote.call("agent_harness","bot_create",{name="astra",force="red"})' in r.sent[1], r.sent
+    r = Rcon("player")
+    assert team_bots.ensure(r, ["astra"], "red")[-1] == "astra FORCE MISMATCH: wanted red, the bots row says player"
     print("team files: ok")
 
 
