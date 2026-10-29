@@ -18145,27 +18145,27 @@ M.multiteam=require('multiteam'){state=state,
       lines[1]={rec.other,'hit',string.format('hit: our %s at %s, by %s',tostring(rec.entity),at,by),true}
       lines[2]={rec.team,'hit',string.format('our %s hit a %s of force %s at %s',tostring(rec.cause or 'entity'),tostring(rec.entity),rec.other,at),false}
     end
+    -- (mt281) the pact actions open for both teams at their first contact (pacts.lua; disclosure's event:contact): the
+    -- team's contact line says so the first time
+    local mt=state().mt
+    mt.pacts_open=mt.pacts_open or {}
+    local opened={}
+    for _,t in ipairs({rec.team,rec.other}) do
+      if M.disclosure and game.forces[t] then pcall(M.disclosure.mark,game.forces[t],'event:contact') end
+      if not mt.pacts_open[t] then mt.pacts_open[t]=game.tick; opened[t]=true end
+    end
+    for _,l in ipairs(lines) do
+      if opened[l[1]] then
+        opened[l[1]]=nil
+        l[3]=l[3]..'. new: pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end and pacts (fh help pact_propose): agreements with a team you have had contact with'
+      end
+    end
     for _,l in ipairs(lines) do
       M.as_team(l[1],function()
         for _,ag in ipairs(M.board.agents()) do
           M.board.deliver(ag.index,{seq='contact',tick=game.tick,from=l[2],text=l[3],wake=l[4] or nil,fyi=not l[4] or nil})
         end
       end)
-    end
-    -- (mt281) the pact actions open for both teams at their first contact (pacts.lua; disclosure's event:contact)
-    local mt=state().mt
-    mt.pacts_open=mt.pacts_open or {}
-    for _,t in ipairs({rec.team,rec.other}) do
-      if M.disclosure and game.forces[t] then pcall(M.disclosure.mark,game.forces[t],'event:contact') end
-      if not mt.pacts_open[t] then
-        mt.pacts_open[t]=game.tick
-        M.as_team(t,function()
-          for _,ag in ipairs(M.board.agents()) do
-            M.board.deliver(ag.index,{seq='contact',tick=game.tick,from='pact',fyi=true,
-              text='new: pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end and pacts (fh help pact_propose): agreements with a team you have had contact with'})
-          end
-        end)
-      end
     end
   end}
 M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
