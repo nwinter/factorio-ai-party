@@ -260,6 +260,12 @@
   asteroids once each. Each ammo turret's rounds (read every 15-60 ticks): `rounds_used` exact for gun turrets
   (`exact`); rocket turrets' a load and a shot can offset: `unsure_reads`, `rounds_used_most`. `platform_consumed`:
   the platform's consumed count per ammo item (item production statistics) beside the turrets' `turrets_used`.
+- `platform_defense`, aim watch: `{platform, aim: true, seconds: N}` (10..120; `positions`: 1..8 railguns, else the
+  first 8 by position) reads those railguns every tick; the same without `seconds` reads it. Per railgun: shots and ammo used,
+  and each shot's aimed target, the one it read the tick before the shot: `exact` when that shot hit it (killed or
+  survived, by size), else `uncertain` (no target read, or it was not hit: `aimed_not_hit_alive` when it lived on);
+  the shot's other hits as collateral by size (a railgun's line hits everything on it at once); `unattributed`: its
+  hits on no seen shot; `recent`: the last 24 shots. Not given: the game's reason for a target choice.
   Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
   legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
   restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
