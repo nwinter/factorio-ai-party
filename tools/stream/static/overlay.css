@@ -155,6 +155,7 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 /* ---- alerts: Factorio alert strips ---- */
 #alerts {
   position: absolute;
+  z-index: 6; /* captions stay above main-camera cards and panels */
   left: 24px;
   width: 1208px;
   top: 40px;
@@ -781,11 +782,10 @@ body:not(.onecam) .loadout.lo-main { top: calc(70px + var(--alerts-clear, 0px));
 .ship-card .ship-facts { color: var(--muted); font-size: 0.9em; }
 body.onecam #cam-main .ship-card { top: 14px; font-size: 20px; }
 /* The featured/main ship: a persistent compact telemetry card, clear of the lower captions and inset. */
-#platform-metrics { position: absolute; z-index: 4; left: 14px; top: 62px; width: 430px; box-sizing: border-box;
+#platform-metrics { position: absolute; z-index: 4; left: 14px; top: var(--pm-top, 62px); width: 430px; box-sizing: border-box;
   padding: 12px 15px; border-left: 3px solid var(--fx-blue, #4aa3ff); border-radius: 4px;
   background: rgba(var(--fx-frame-rgb), 0.94); box-shadow: var(--fx-bevel), var(--fx-shadow-window);
   font-size: 14px; line-height: 1.35; pointer-events: none; font-variant-numeric: tabular-nums; }
-body.onecam #platform-metrics { top: 14px; }
 .has-metrics .ship-card { display: none; }
 .pm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .pm-name { color: var(--head); font-size: 23px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -813,4 +813,16 @@ body.onecam #platform-metrics { top: 14px; }
 .pm-ammo .pm-value { display: block; text-align: left; font-size: 11px; }
 .pm-bad .pm-value { color: var(--dead); }
 .pm-foot { margin-top: 8px; font-size: 10px; color: var(--muted); }
+/* Port: one nonzero stock row. Quiet flight: navigation and supplies. Combat keeps the full card. */
+#platform-metrics.pm-parked { width: max-content; max-width: calc(100% - 28px); padding: 6px 12px; }
+.pm-parked-row { display: flex; gap: 18px; font-size: 13px; white-space: nowrap; }
+.pm-parked-row .pm-row { gap: 6px; }
+#platform-metrics.pm-transit { padding: 9px 12px; }
+.pm-transit .pm-name { font-size: 20px; }
+.pm-transit .pm-route { margin-top: 0; font-size: 14px; }
+.pm-transit .pm-ammo { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.pm-transit .pm-ammo .pm-row { padding: 0; }
+.pm-transit .pm-supplies { display: block; }
+.pm-transit .pm-supplies .pm-row { display: flex; justify-content: flex-start; }
+.pm-transit .pm-supplies .pm-key { font-size: 12px; }
 body.trio #cam-cam2 .ship-card, body.trio #cam-cam3 .ship-card { top: 8px; left: 8px; font-size: 13px; min-width: 0; padding: 4px 8px; }
