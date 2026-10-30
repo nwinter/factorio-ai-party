@@ -15612,6 +15612,15 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   - The cover (idle_nudge `cover_for`): an active (a request of its own in 10 min, not resting) coverer of one of its
     active claims (`board_update {id, cover: true}`: the board read's covers), else the handoff's lead (the first
     active --lead, else the member with the latest request of its own); never the agent. None: logged, not sent.
+  - d30 batch388 CA: no eligible cover or a failed tell leaves the alert pending. Retries wait 5, 10, 20, then every
+    30 min while the episode lasts. A successful tell completes the alert; its log says `told`, with no cover
+    acceptance recorded. `pacing.resting` excludes ordinary and firm rests at selection, including claim coverers,
+    leads and the fallback member; the next eligible recipient is selected.
+  - Provider-stop episodes (original stop time, resume attempts, pending alert retry time and delivered recipient)
+    persist in `runs/RUN/pane-resume-state.json`, atomically replaced before log callbacks. Restart reloads pending
+    retries and completed alerts. An unreadable/invalid state file raises instead of silently discarding delivery
+    history. Dry runs read this state and only mark their simulated delivery in memory; they never write the file.
+    Tests: `tools/test_cover_alert.py` uses fixed times, fake panes and tells for failure, rest and restart cases.
   - A purchase or credit screen ("Buy more credits", "Buy credits", "Add credits", "Purchase", "Add funds", "Upgrade
     plan", "Payment method") on the pane's last 40 lines: nothing pressed or typed, logged once (`purchase_screen`),
     for a provider stop and for a rest's end; Grok's limit dialog keeps batch213's Try Again rule.
