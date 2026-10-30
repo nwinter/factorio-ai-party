@@ -2890,8 +2890,8 @@ return function(api)
     out.checked = n
     out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')'..(over_cliffs > 0 and string.format('; %d over cliffs', over_cliffs) or '')) or nil
     local u = out.undergrounds
-    if out.summary and u and (u.unpaired>0 or u.external>0 or u.flow_mismatch>0) then
-      out.summary = out.summary..string.format('; underground ends: %d unpaired, %d paired outside request, %d with mismatched flow',u.unpaired,u.external,u.flow_mismatch)
+    if out.summary and u and (u.unpaired>0 or u.external>0 or u.requested_flow_mismatch>0) then
+      out.summary = out.summary..string.format('; underground ends: %d unpaired, %d paired outside request, %d with differing requested flow',u.unpaired,u.external,u.requested_flow_mismatch)
     end
     -- (d23 batch120 CC3, Astra #2019) a floor the hub would not finish, or one not checked yet, is in the summary
     local ft = out.tiles

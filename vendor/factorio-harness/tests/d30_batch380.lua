@@ -81,7 +81,7 @@ existing(4,0,'output').force={name='other'}
 eq(check({rec(0,0,'input'),rec(5,0,'output')}).paired,2)
 built={}
 o=check({rec(0,0,'output',12),rec(5,0,'output',4)})
-eq(o.flow_mismatch,2); eq(o.paired,0); has(o.rows[1].line,'do not carry flow in the same direction')
+eq(o.requested_flow_mismatch,2); eq(o.paired,2); has(o.rows[1].line,'requested types/directions disagree')
 -- Blocked/refused entries never supply a partner.
 for _,field in ipairs({'status','refused'}) do
   local b=rec(5,0,'output'); b[field]=field=='status' and 'blocked' or true

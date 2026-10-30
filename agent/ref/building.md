@@ -331,10 +331,11 @@
   mark and a filter; an entry with none reads "not marked".
   Example: `./fh call blueprint_status --args '{"name":"smelter-row-v2","status":"current"}'`
 - `place_ghosts` and `belt_route` dry runs return `undergrounds`: counts of checked ends, paired ends,
-  unpaired ends, partners outside the request, and mismatched flow. `rows` names each problem's endpoints;
+  unpaired ends, partners outside the request, and differing requested flow. `rows` names each problem's endpoints;
   `details: true` also lists ordinary pairs. These are connections after the placeable ghosts are built;
   built ends and existing ghosts outside the request are labelled separately. Placement success alone does not
-  assert paired flow. Pipe-to-ground ends use direction, with no input/output type.
+  assert paired flow. Opposing requested flow can make the engine reverse an earlier endpoint when pairing.
+  Pipe-to-ground ends use direction, with no input/output type.
 - Dry runs (`"dry_run": true` on `build`, `place_ghosts`, `paste`) place nothing and report the plan: per entity
   whether it fits or what blocks it and where, blocked entities first and all of them in `blocked` (up to 200) apart
   from those needing tiles; the tiles an entry needs (landfill, foundation, shallow oil, water, and on a platform the

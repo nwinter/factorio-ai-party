@@ -78,25 +78,25 @@ return function(api)
       nearest[e]={other=other,why=why}
       return other,why
     end
-    local out={checked=#ends,paired=0,unpaired=0,external=0,flow_mismatch=0,rows={}}
+    local out={checked=#ends,paired=0,unpaired=0,external=0,requested_flow_mismatch=0,rows={}}
     for _,e in ipairs(ends) do
       local q,why=next_end(e)
       local paired=q and toward(q)==(toward(e)+8)%16 and next_end(q)==e
-      local row={index=e.index,name=e.name,position=e.pos,type=e.kind}
+      local row={index=e.index,name=e.name,position=e.pos,type=e.kind,direction=e.dir}
       local label=string.format('#%s %s %s %s',e.index,e.name,e.kind,at(e.pos))
       if paired then
-        row.partner={index=q.index,name=q.name,position=q.pos,type=q.kind,source=q.index and 'request' or q.source}
-        row.flow=e.dir==q.dir and e.kind~=q.kind
-        row.status=row.flow and 'paired' or 'flow_mismatch'
-        if row.flow then out.paired=out.paired+1 else out.flow_mismatch=out.flow_mismatch+1 end
+        row.partner={index=q.index,name=q.name,position=q.pos,type=q.kind,direction=q.dir,source=q.index and 'request' or q.source}
+        row.requested_flow_matches=e.dir==q.dir and e.kind~=q.kind
+        row.status='paired'; out.paired=out.paired+1
+        if not row.requested_flow_matches then out.requested_flow_mismatch=out.requested_flow_mismatch+1 end
         if not q.index then out.external=out.external+1 end
         row.line=label..': would pair with '..(q.index and ('request #'..q.index) or (q.source..' outside request'))..' '..q.name..' '..q.kind..' '..at(q.pos)
-          ..(row.flow and '' or '; the two ends do not carry flow in the same direction')
+          ..(row.requested_flow_matches and '' or '; requested types/directions disagree; pairing can reverse an earlier end')
       else
         out.unpaired=out.unpaired+1; row.status='unpaired'
         row.line=label..': unpaired; '..(why or (q and ('nearest same-tier end '..q.name..' '..q.kind..' '..at(q.pos)..' does not pair back') or ('no same-tier partner within '..e.reach..' tiles')))
       end
-      if details or not paired or not row.flow or not q.index then out.rows[#out.rows+1]=row end
+      if details or not paired or not row.requested_flow_matches or not q.index then out.rows[#out.rows+1]=row end
     end
     if #out.rows==0 then out.rows=nil end
     return out

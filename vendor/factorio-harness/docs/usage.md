@@ -18401,11 +18401,13 @@ Real route replies use the same placement-entry shape, including the return line
 already use direction alone and `pipe_route` keeps its existing output.
 
 `place_ghosts` and `belt_route` dry runs return `undergrounds` for placeable underground-belt ends:
-`checked`, `paired`, `unpaired`, `external`, `flow_mismatch` count ends, not pairs. `rows` names each unpaired
-end, each partner outside the request (built or ghost), and both ends of mismatched flow. With `details: true`,
+`checked`, `paired`, `unpaired`, `external`, `requested_flow_mismatch` count ends, not pairs. `rows` names each unpaired
+end, each partner outside the request (built or ghost), and both ends whose requested flow differs. With `details: true`,
 ordinary pairs appear too. The check combines all entries and charted existing ends of our force; it follows
 same-tier tunnel axes within prototype reach and checks intervening lava and empty space. The results describe
-connections after the placeable ghosts are built. Placement success remains separate from paired flow.
+tunnel partners after the placeable ghosts are built. Requested flow is compared before the engine
+reverses an endpoint: in the private-copy test, two requested outputs faced opposite ways and the engine
+reversed the earlier end into an input. Placement success remains separate from paired flow.
 
 Baseline on Factorio 2.0.77: route `E1 uE5 E4` from (0,0) to (10,0), around a wall, reported seven placeable
 entries. Copying its unmodified diagnostic rows into `place_ghosts` was refused for `footprint, index, status`.
