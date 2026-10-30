@@ -12,6 +12,7 @@
     return n;
   }
   function put(n, value) { if (n.textContent !== value) n.textContent = value; }
+  const outerStops = new Set(["aquilo", "solar-system-edge", "shattered-planet"]);
   function modeFor(box, p, now) {
     const l = p.leg || {};
     if (!(l.from && l.to) && !(finite(p.speed_kms) && p.speed_kms > 0)) {
@@ -21,22 +22,21 @@
     const key = JSON.stringify([p.platform, l.connection, l.from, l.to, l.back, l.start_tick, p.at]);
     let a = box._activity;
     if (!a || a.key !== key || (finite(p.tick) && finite(a.tick) && p.tick < a.tick))
-      a = box._activity = {key, tick: null, samples: [], until: -Infinity, mode: "combat"};
+      a = box._activity = {key, tick: null, samples: [], until: -Infinity, mode: "transit"};
     // Only fresh telemetry advances history. Repainting a cached sample cannot restart the 60-second hold.
     if (finite(p.tick) && p.tick !== a.tick) {
-      const rocks = p.asteroids || {}, guns = Object.values(p.turrets || {});
-      const hot = Object.values(rocks).some(v => finite(v) && v > 0) ||
-        [p.kills_min, p.hits_min].some(v => finite(v) && v > 0) || guns.some(g => finite(g.targeting) && g.targeting > 0);
-      const quiet = ["small", "medium", "big", "huge"].every(k => rocks[k] === 0) &&
-        p.kills_min === 0 && p.hits_min === 0 && !!p.turrets && guns.every(g => g.targeting === 0);
+      const rocks = p.asteroids || {};
+      // Routine small/medium kills and firing do not make an inner leg an attempt. Unknowns stay hidden,
+      // but do not promote the card either (a first sample has no hit/damage window yet).
+      const hot = [rocks.big, rocks.huge, p.hits_min, p.damage_taken].some(v => finite(v) && v > 0);
       const at = now - (finite(p.age_s) ? Math.max(0, p.age_s) : 0);
       a.tick = p.tick;
-      a.samples.push({hot, quiet});
+      a.samples.push(hot);
       if (a.samples.length > 2) a.samples.shift();
       if (hot) a.until = at + 60;
-      a.mode = a.samples.some(s => s.hot) || at < a.until || !a.samples.every(s => s.quiet) ? "combat" : "transit";
+      a.mode = a.samples.some(Boolean) || at < a.until ? "combat" : "transit";
     }
-    return p.featured ? "combat" : a.mode;
+    return p.featured || outerStops.has(l.from) || outerStops.has(l.to) ? "combat" : a.mode;
   }
   function total(values) {
     return values && values.every(finite) ? values.reduce((sum, v) => sum + v, 0) : null;

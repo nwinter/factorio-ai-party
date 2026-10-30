@@ -50,6 +50,7 @@ render(box, {...parked, ammo: [{name: "rocket", hub: 5}], turrets: {gun: {}}, re
 assert.equal(box._parts.parked.textContent, "Repair packs 7"); // partial stock is not an invented total
 
 const quiet = {...p, featured: false, tick: 1, kills_min: 0, hits_min: 0,
+  leg: {from: "fulgora", to: "nauvis", pct: 56.8, flown_km: 8525.1, left_km: 6474.9},
   asteroids: {small: 0, medium: 0, big: 0, huge: 0},
   turrets: {"rocket-turret": {count: 8, targeting: 0, empty: 0}}};
 const isTransit = b => b.classList.contains("pm-transit");
@@ -62,9 +63,9 @@ assert.equal(flightBox._parts.ammo.textContent, "Rocket 40 hub + guns");
 assert.equal(flightBox._parts.supplies.textContent, "Repair packs · hub 50");
 for (const k of ["rocks", "combat", "guns", "foot", "parked"]) assert(flightBox._parts[k].hidden, k);
 
-// Each requested signal enters combat immediately; two recent quiet samples and 60 seconds clear the hold.
-for (const signal of [{asteroids: {...quiet.asteroids, huge: 1}}, {kills_min: 3}, {hits_min: 3},
-  {turrets: {"rocket-turret": {count: 8, targeting: 1, empty: 0}}}]) {
+// Only the requested attempt/danger signals enter full; two non-triggering samples and 60 seconds clear the hold.
+for (const signal of [{asteroids: {...quiet.asteroids, big: 1}}, {asteroids: {...quiet.asteroids, huge: 1}},
+  {hits_min: 3}, {damage_taken: 3}]) {
   const b = new Element("section"), hot = {...quiet, ...signal, tick: 2};
   render(b, quiet, 0); assert(isTransit(b));
   render(b, hot, 20); assert(isCombat(b)); assert(!b._parts.combat.hidden && !b._parts.guns.hidden);
@@ -78,21 +79,47 @@ for (const signal of [{asteroids: {...quiet.asteroids, huge: 1}}, {kills_min: 3}
 }
 // A combat sample remains relevant among the last two even when more than 60 seconds separate the reads.
 const recent = new Element("section");
-render(recent, {...quiet, kills_min: 1}, 0);
+render(recent, {...quiet, hits_min: 1}, 0);
 render(recent, {...quiet, tick: 2}, 80); assert(isCombat(recent));
 render(recent, {...quiet, tick: 3}, 100); assert(isTransit(recent));
 // Sample age is respected: repainting an already 20-second-old combat sample starts no new 60-second window.
 const aged = new Element("section");
-render(aged, {...quiet, kills_min: 1, age_s: 20}, 100);
+render(aged, {...quiet, hits_min: 1, age_s: 20}, 100);
 render(aged, {...quiet, tick: 2}, 120); assert(isCombat(aged));
 render(aged, {...quiet, tick: 3}, 140); assert(isTransit(aged));
-// Missing readings cannot be mistaken for no combat; two new known-quiet samples clear the uncertainty.
-for (const missing of [{asteroids: undefined}, {kills_min: undefined}, {hits_min: undefined},
-  {turrets: undefined}, {turrets: {gun: {count: 1}}}]) {
+// The first window or a missing value is not a positive full-card trigger. Unknown data still has no row.
+for (const missing of [{asteroids: undefined}, {kills_min: undefined}, {hits_min: undefined}, {damage_taken: undefined},
+  {turrets: undefined}, {turrets: {gun: {count: 1}}}, {tick: undefined}]) {
   const b = new Element("section");
-  render(b, {...quiet, ...missing}, 0); assert(isCombat(b));
-  render(b, {...quiet, tick: 2}, 20); assert(isCombat(b));
+  render(b, {...quiet, ...missing}, 0); assert(isTransit(b));
+  render(b, {...quiet, tick: 2}, 20); assert(isTransit(b));
   render(b, {...quiet, tick: 3}, 40); assert(isTransit(b));
+}
+// Reproduce Asterion's live 12:11 Fulgora -> Nauvis sample, including its missing rate window.
+const routine = {...quiet, platform: "Asterion", speed_kms: 53, kills_min: undefined, hits_min: undefined,
+  damage_taken: undefined, window_s: undefined, eta_wall_s: undefined,
+  turrets: {"laser-turret": {count: 23, targeting: 7}, "gun-turret": {count: 58, targeting: 2, empty: 0},
+    "rocket-turret": {count: 31, targeting: 2, empty: 0}, "railgun-turret": {count: 41, targeting: 0, empty: 0}}};
+const routineBox = new Element("section");
+render(routineBox, routine, 0); assert(isTransit(routineBox));
+assert(routineBox._parts.flight.textContent.includes("53 km/s"));
+for (const k of ["rocks", "combat", "guns"]) assert(routineBox._parts[k].hidden);
+// Small/medium encounters, kills and damage dealt alone do not promote or prolong the full card.
+const smallFight = {...routine, kills_min: 900, damage_dealt_min: 90000, hits_min: 0, damage_taken: 0,
+  asteroids: {small: 200, medium: 100, big: 0, huge: 0}};
+render(routineBox, {...smallFight, tick: 2}, 20); assert(isTransit(routineBox));
+render(routineBox, {...smallFight, tick: 3, damage_taken: 1}, 40); assert(isCombat(routineBox));
+render(routineBox, {...smallFight, tick: 4}, 60); assert(isCombat(routineBox));
+render(routineBox, {...smallFight, tick: 5}, 80); assert(isCombat(routineBox));
+render(routineBox, {...smallFight, tick: 6}, 100); assert(isTransit(routineBox));
+// Each outer stop forces full in both directions, even before the first rate window or while at zero speed.
+for (const stop of ["aquilo", "solar-system-edge", "shattered-planet"]) for (const endpoint of ["from", "to"]) {
+  const b = new Element("section");
+  const leg = {...quiet.leg, [endpoint]: stop};
+  render(b, {...routine, leg}, 0); assert(isCombat(b));
+  render(b, {...routine, leg, speed_kms: 0}, 1); assert(isCombat(b));
+  render(b, {...routine, tick: 2}, 20); assert(isTransit(b)); // new inner leg inherits no route override
+  render(b, {...parked, at: stop}, 21); assert(b.classList.contains("pm-parked"));
 }
 // Featured runs get the full flight card even when quiet; being parked always takes precedence.
 render(flightBox, {...quiet, featured: true}, 1); assert(isCombat(flightBox));
@@ -100,12 +127,12 @@ render(flightBox, parked, 2); assert(flightBox.classList.contains("pm-parked"));
 render(flightBox, {...quiet, speed_kms: 0}, 3); assert(isTransit(flightBox)); // zero speed on a leg is still flight
 render(flightBox, {...quiet, leg: null}, 4); assert(isTransit(flightBox)); // positive speed, route unknown
 // A different ship, leg, direction, departure, arrival or tick rollback cannot inherit another combat hold.
-for (const change of [{platform: "Petrel"}, {leg: {...p.leg, to: "aquilo"}},
-  {leg: {...p.leg, back: true}}, {leg: {...p.leg, start_tick: 20}}, {tick: 0}]) {
+for (const change of [{platform: "Petrel"}, {leg: {...quiet.leg, to: "gleba"}},
+  {leg: {...quiet.leg, back: true}}, {leg: {...quiet.leg, start_tick: 20}}, {tick: 0}]) {
   const b = new Element("section");
-  render(b, {...quiet, kills_min: 1}, 0);
+  render(b, {...quiet, hits_min: 1}, 0);
   render(b, {...quiet, tick: 2, ...change}, 20); assert(isTransit(b));
 }
 render(box, {platform: "Bare"}, 0); assert(box.hidden);
 render(box, null); assert(box.hidden);
-console.log("platform metrics DOM: slim nonzero port totals, quiet flight, two-sample combat hold, featured runs and leg isolation");
+console.log("platform metrics DOM: slim port, routine inner flights, attempt/danger triggers, outer legs and two-sample 60s hold");
