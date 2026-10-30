@@ -72,17 +72,23 @@ return function(api)
   -- shortest way from it: Asterion's guard set Aquilo mid edge->shattered-planet and it turned back to the edge, while
   -- the leg read on to the Shattered Planet with 4M km left and a fuel alarm); else the way `distance` moved since the
   -- last read (not paused: a paused platform drifts back); else the end it did not come from (last visited).
-  local MOVED = {}  -- platform index -> {conn, d}: the last distance read
+  local MOVED = {}  -- fallback for module fixtures without a state provider
   local function heading_back(pl, c, from, to, length, d)
     local sch = pget(pl, 'schedule')
     local records = sch and sch.records
     local rec = records and records[sch.current or 1]
     local stop = rec and rec.station
     local idx, cname = pget(pl, 'index'), pget(c, 'name')
-    local m = idx and MOVED[idx]
+    -- Direction inferred from movement is history. A joining client must have the same previous distance,
+    -- especially when the schedule supplies no reachable stop (d29 batch367).
+    local moved_by=MOVED
+    if api.state then
+      local s=api.state(); s.freight_moved=s.freight_moved or {}; moved_by=s.freight_moved
+    end
+    local m = idx and moved_by[idx]
     local moved
     if m and m.conn == cname and m.d ~= d and not pget(pl, 'paused') then moved = d < m.d end
-    if idx and not (m and m.conn == cname and m.d == d) then MOVED[idx] = {conn=cname, d=d} end
+    if idx and not (m and m.conn == cname and m.d == d) then moved_by[idx] = {conn=cname, d=d} end
     if stop == from or stop == to then return stop == from end
     if stop and M.path then
       local pf, pt = M.path(from, stop), M.path(to, stop)
