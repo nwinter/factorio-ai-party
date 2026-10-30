@@ -156,7 +156,9 @@ return function(api)
     if flying(pl) then
       local l = api.leg and api.leg(pl)
       if l then return {connection=pl.space_connection.name, from=l.from, to=l.to, back=l.back == true, tick=tick} end
-    elseif pl.space_location then return {location=pl.space_location.name, tick=tick} end
+    elseif pl.state ~= defines.space_platform_state.on_the_path and pl.space_location then
+      return {location=pl.space_location.name, tick=tick}
+    end
   end
   local function leg_text(l)
     if l.location then return 'stop at ' .. l.location end

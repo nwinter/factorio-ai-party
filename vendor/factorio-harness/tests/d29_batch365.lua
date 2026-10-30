@@ -47,6 +47,10 @@ has(read(w).line,'began on connection changed'); has(st.flightwatch.events[1].te
 F=load(); eq(read(w).start_change.tick,c.tick)
 F.rebase(w,game.tick); eq(read(w).start_change.tick,c.tick)
 stop('shattered-planet'); run(); eq(w.state,'done'); eq(read(w).start_change.tick,c.tick)
+-- A location reached while still on its path is not a stop (freight.where_row uses the same distinction).
+fly('aquilo-edge','aquilo','edge'); w=start('leg')
+pl.space_connection,pl.space_location=nil,{name='edge'}; run(); eq(w.state,'armed')
+fly('edge-shattered','edge','shattered-planet'); run(); eq(read(w).start_change.kind,'connection')
 -- Departure semantics are unchanged: a pass-through does not start it, a subsequent stop/departure does.
 fly('aquilo-edge','aquilo','edge'); w=start('departure')
 fly('edge-shattered','edge','shattered-planet'); run(); eq(w.state,'armed')
