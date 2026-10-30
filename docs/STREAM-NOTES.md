@@ -1276,6 +1276,54 @@ On Sunday Nick plays his own Factorio on the box, so the stream runs on one came
 
 ![one camera, scratch scene](stream-onecam-scratch.png)
 
+## Resolute asteroid rendering, d30 (batch374)
+
+`tools/win/start-client.ps1` writes `show-particles=false` and `show-smoke=false` under `[graphics]` for
+`pog-cam*` / `pog-director*`, unless `-Human` is set. It rewrites these on every launch, so they survive shift
+changes and camera restarts. These settings affect client visuals, including the number of smoke effects;
+they do not remove real asteroids or change game speed or flight controls. Ordinary clients keep their previous
+graphics settings. Apply through the normal camera launch at a shift change; batch374 did not restart the live client.
+
+The iMac's own 2.0.77 client loaded a private copy of world n at tick 85494286, with a fixed Resolute bow view,
+zoom 0.3, no GUI camera panels, medium sprites, low VRAM and texture streaming. Native graphics benchmarks ran
+1800 frames each; the table excludes the first 60. Drawable resolution was 2880x1620, matching pogwin. VSync was
+off for measurement (the engine still sleeps toward 60 fps). Frame work is `cpu-frame - sleep`, including simulation;
+it is not a GPU timer. The Mac's GPU timing columns were unavailable. These are copy measurements, not pogwin FPS.
+
+| Change from baseline | Client fps | Median frame work, ms | p95, ms |
+|---|---:|---:|---:|
+| Baseline | 59.79 | 12.47 | 18.44 |
+| Baseline repeated | 59.83 | 12.39 | 18.29 |
+| Particles off | 59.83 | 11.95 | 17.81 |
+| Smoke off | 59.87 | 12.20 | 17.95 |
+| Particles + smoke off (launcher setting) | 59.87 | 11.80 | 17.57 |
+| Space dust off | 59.86 | 12.61 | 18.54 |
+| All three effects off | 59.90 | 11.83 | 17.59 |
+| Drawable 1920x1080, same zoom (also narrows world view) | 59.80 | 11.54 | 17.13 |
+| Tighter bow framing, zoom 0.5 | 59.83 | 11.59 | 17.34 |
+| Same surface also in one 492x277 GUI panel, zoom 0.05 | 58.95 | 15.23 | 20.86 |
+
+Particles + smoke off reduced median frame work by 5.4% and median sprite count by about 32% in this scene.
+Dust showed no frame-work saving, so its default stays on. No separate starfield display toggle was found in the
+2.0.77 native options; no prototype or simulation change was used to suppress it. Resolution stays 2880x1620:
+changing it also requires changing the director's pixel rectangles and OBS crops. Tighter framing saves work but
+shows less of the ship; use it for a bow detail rather than replacing every platform overview.
+
+The live director log did put Resolute in both views (02:43:44 inset, 02:43:45 main). Cam2 and cam3 are GUI panels
+in cam1's client. The director can retain a panel after its OBS inset disappears. Avoiding the extra drawing requires
+resolving followed agents to surfaces, suppressing a same-platform inset, and sending `camera {panel=N,release=true}`
+when a panel is unused. That must account for pending trio preparations, swaps and failed command receipts. A mere
+OBS visibility change does not release the GUI element. This checkpoint changes launch settings; it does not change
+that scheduling policy.
+
+Read-only OBS samples on the live stream had zero render/output skips, including naturally occurring Resolute shots.
+A saved busy-encounter replay nevertheless repeats the world image for about seven or eight 30-fps video frames.
+That is evidence of slow source-image delivery, not an exact client FPS or UPS measurement. The existing client's log
+has no FPS/UPS telemetry, and it was launched without `--output-perf-stats`. OBS's 30-fps counter is not Factorio FPS.
+The modest copy gains do not establish the cause of this much larger live slowdown. At the operator's next shift
+launch, verify another busy encounter and compare source-image cadence alongside OBS render/output skips; native
+client performance counters are needed to separate client rendering from capture delivery.
+
 ## Camera client memory, d16 (eng/d16-stream7)
 
 The box (pogwin, 32 GB) at 15:06 on 2026-10-16: 0.4 GB free; nonpaged pool 3.1 GB; about 13 GB held by no process;
