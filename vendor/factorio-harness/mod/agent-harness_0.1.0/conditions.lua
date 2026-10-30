@@ -278,6 +278,55 @@ return function(api)
   -- (batch346 LC) launches_at_least's last count per condition, read at most every LAUNCH_EVERY ticks
   local launch_kept=setmetatable({},{__mode='k'})
   M.LAUNCH_EVERY=60
+  local function circuit_wire(v)
+    local w=v==nil and 'both' or type(v)=='string' and v:lower():gsub('%s','')
+    if w=='red+green' or w=='green+red' then w='both' end
+    assert(w=='red' or w=='green' or w=='both','circuit_signal wire is red, green or both (red+green is both)')
+    return w
+  end
+  -- CP (Sol #2777): a position selects the native entity network, independent of the hub.
+  -- No cached entities or networks: replacement, disconnection and network splits are visible at the next check.
+  local function circuit_read(p,c)
+    local pl=M.platform_named(p,c.platform)
+    local wire=circuit_wire(c.wire)
+    local e,on=pl.hub,c.platform.."'s hub"
+    if c.position~=nil then
+      local pos=api.position(c.position)
+      local where=string.format('(%g,%g) on %s',pos.x,pos.y,c.platform)
+      assert(pl.surface,'circuit_signal unreadable: platform '..c.platform..' has no surface')
+      local candidates,there={},{}
+      for _,found in pairs(pl.surface.find_entities_filtered{position=pos,force=p.force}) do
+        if found.valid then
+          there[#there+1]=found.name
+          local ok,d=pcall(function() return found.prototype.get_max_circuit_wire_distance(found.quality) end)
+          if found.type~='entity-ghost' and ok and d and d>0 then candidates[#candidates+1]=found end
+        end
+      end
+      table.sort(there)
+      if #candidates~=1 then error('circuit_signal unreadable at '..where..': '..(#candidates>1 and 'more than one entity with a circuit connector' or 'no entity with a circuit connector')..'; found '..(#there>0 and table.concat(there,', ') or 'no entity'),0) end
+      e=candidates[1]
+      on=string.format('%s (%g,%g) on %s',e.name,e.position.x,e.position.y,c.platform)
+    end
+    assert(e and e.valid,'circuit_signal unreadable: '..on..' is missing')
+    local sig=M.signal_of(c.signal)
+    local n,nets,parts=0,{},{}
+    local strict=c.position~=nil or c.wire~=nil
+    for _,w in ipairs({'red','green'}) do
+      if wire=='both' or wire==w then
+        local ok,net=pcall(function() return e.get_circuit_network(defines.wire_connector_id['circuit_'..w]) end)
+        if not ok or (strict and not net) then error('circuit_signal unreadable: '..on..' has no readable '..w..' network'..(ok and '' or ': '..tostring(net))..'; read tick '..game.tick,0) end
+        if net then
+          local okv,v=pcall(function() return net.get_signal(sig) end)
+          if not okv or type(v)~='number' then error('circuit_signal unreadable: '..on..' '..w..' network signal read failed: '..tostring(v)..'; read tick '..game.tick,0) end
+          local id=net.network_id
+          nets[#nets+1]={wire=w,id=id,count=v}
+          parts[#parts+1]=string.format('%s network #%s: %d',w,tostring(id or '?'),v)
+          n=n+v
+        end
+      end
+    end
+    return n,on,nets,parts,{circuit_signal=true,platform=c.platform,entity={name=e.name or 'space-platform-hub',position=e.position and {x=e.position.x,y=e.position.y},unit_number=e.unit_number},signal=c.signal,wire=wire,networks=nets,count=n,tick=game.tick}
+  end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -501,23 +550,15 @@ return function(api)
     -- was met at once and the platform left, rocket > -1 too; on a wired hub with no rocket signal, rocket < 4850 met,
     -- rocket > 4850 not): below N (over 0) is met, at_least N (over 0) is never met while it has none.
     circuit_signal=function(p,c,estimate)
-      local pl=M.platform_named(p,c.platform)
-      local hub=pl.hub
-      assert(hub and hub.valid,'platform '..c.platform..' has no hub')
-      local sig=M.signal_of(c.signal)
-      local n,wires=0,{}
-      for _,w in ipairs({{'red',defines.wire_connector_id.circuit_red},{'green',defines.wire_connector_id.circuit_green}}) do
-        local ok,net=pcall(function() return hub.get_circuit_network(w[2]) end)
-        if ok and net then
-          wires[#wires+1]=w[1]
-          local okv,v=pcall(function() return net.get_signal(sig) end)
-          if okv and v then n=n+v end
-        end
-      end
+      local holder=c
+      holder.evidence=nil
+      local ok,n,on,nets,parts,evidence=pcall(circuit_read,p,c)
+      if not ok then return false,tostring(n)..'; unreadable at tick '..game.tick end
+      holder.evidence=evidence
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,#wires>0 and string.format('%s %d on %s\'s hub (%s)',c.signal,n,c.platform,table.concat(wires,' and '))
-        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',
-          c.platform,c.signal,met and 'met' or 'never met while it has none'),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
+      local saw=#nets>0 and string.format('%s %d on %s (%s)',c.signal,n,on,table.concat(parts,'; '))
+        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',c.platform,c.signal,met and 'met' or 'never met while it has none')
+      return met,saw..'; read tick '..game.tick,estimate and {value=n,scope='circuit:'..on..':'..c.signal..':'..evidence.wire} or nil
     end,
     -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
     -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
@@ -1260,7 +1301,7 @@ return function(api)
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
   M.TICK_AHEAD=1296000
-  function M.validate(c)
+  function M.validate(c,p)
     if type(c)=='table' and M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end
     -- queue_done (A1, Sonnet 22:50) is a sleep's: fh sleep/fh wait --until queue_done; in a queue the next step is that.
     if type(c)=='table' and c['until']=='queue_done' then
@@ -1290,7 +1331,7 @@ return function(api)
       for i,m in ipairs(c.conditions) do
         assert(type(m)=='table' and m['until']~='all' and m['until']~='any','until='..kind..' takes plain conditions')
         -- (CJ1) a member's refusal names it
-        local ok,err=pcall(M.validate,m)
+        local ok,err=pcall(M.validate,m,p)
         if not ok then error(kind..' conditions['..i..'] ('..tostring(m['until'])..'): '..tostring(err):gsub('^[^:]*:%d+: ',''),0) end
       end
       return c
@@ -1368,7 +1409,11 @@ return function(api)
       assert(type(c.platform)=='string' and #c.platform>0 or (kind=='fluid_count' and c.surface~=nil),kind..' requires platform (a platform name)'..(kind=='fluid_count' and ', or surface (a planet) with positions or area' or ''))
       assert(kind~='fluid_count' or c.platform==nil or (c.positions==nil and c.area==nil),'fluid_count on a platform reads all of it: no positions or area (those go with surface)')
       if kind=='fluid_count' then assert(type(c.fluid)=='string' and prototypes.fluid[c.fluid],'fluid_count requires fluid (a fluid name: thruster-fuel, thruster-oxidizer, water, ...)')
-      else assert(type(c.signal)=='string','circuit_signal requires signal (an item, fluid or virtual signal name)'); M.signal_of(c.signal) end
+      else
+        assert(type(c.signal)=='string','circuit_signal requires signal (an item, fluid or virtual signal name)'); M.signal_of(c.signal)
+        circuit_wire(c.wire)
+        if p and (c.position~=nil or c.wire~=nil) then circuit_read(p,c) end
+      end
       assert(c.at_least~=nil or c.below~=nil,kind..' requires at_least or below')
       if c.at_least~=nil then number(c.at_least,-2147483648,2147483647,'at_least') end
       if c.below~=nil then number(c.below,-2147483648,2147483647,'below') end
@@ -1533,6 +1578,10 @@ return function(api)
         whys[#whys+1]=why
       end
       return #whys>0 and 'any: no member can be met: '..table.concat(whys,'; ') or nil
+    end
+    if kind=='circuit_signal' and (c.position~=nil or c.wire~=nil) then
+      local ok,why=pcall(circuit_read,p,c)
+      return not ok and tostring(why) or nil
     end
     if kind~='circuit_signal' or c.at_least==nil or c.at_least<=0 then return nil end
     local ok,hub=pcall(function() return M.platform_named(p,c.platform).hub end)

@@ -260,7 +260,7 @@ return function(api)
           assert(research, 'no research is running; name the technology')
           condition.technology = research.name
         end
-        api.validate_condition(condition)
+        api.validate_condition(condition,p)
         conditions[#conditions+1] = condition
         texts[#texts+1] = texts_of(condition)
       end
