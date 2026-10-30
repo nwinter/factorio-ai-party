@@ -16,7 +16,7 @@ const window = {}, document = {createElement: tag => new Element(tag)};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, "static/platformmetrics.js"), "utf8"), {window, document});
 const box = new Element("section"), render = window.PogPlatformMetrics.render;
 render(box, null); assert(box.hidden);
-const p = {platform: "Resolute <b>", featured: true, age_s: 0, speed_kms: 120,
+const p = {platform: "Resolute <b>", featured: true, tick: 100, age_s: 0, speed_kms: 120, eta_wall_s: 3600,
   leg: {from: "solar-system-edge", to: "shattered-planet", pct: 20, flown_km: 800000, left_km: 3200000},
   kills_min: 120, hits_min: 0, window_s: 20, damage_taken: 0, losses_leg: 0,
   turrets: {"rocket-turret": {count: 8, targeting: 4, empty: 0}},
@@ -31,31 +31,81 @@ render(box, {...p, kills_min: 140, ammo: [], asteroids: undefined, repair_packs:
 assert.equal(box._parts.combat._rows.get("kills_min"), identity);
 assert.equal(identity._value.textContent, "140"); assert(box._parts.ammo.hidden); assert(box._parts.rocks.hidden);
 assert(!box.textContent.includes("Repair packs"));
-// Arrival removes flight-only facts even when the sample still carries known zeroes/rates/fuel.
-render(box, {...p, platform: "Asterion", at: "nauvis", leg: null, speed_kms: 0,
-  fuel: {"thruster-fuel": 2000, "thruster-oxidizer": 2000}});
-assert(box.classList.contains("pm-compact")); assert.equal(box._parts.route.textContent, "At Nauvis");
-assert(box._parts.flight.hidden && box._parts.rocks.hidden && box._parts.combat.hidden && box._parts.bar.hidden);
-assert.equal(box._parts.guns.textContent, "Turrets Rocket 8");
-assert.equal(box._parts.ammo.textContent, "Rocket 40 hub + guns");
-assert.equal(box._parts.supplies.textContent, "Repair packs · hub 50");
-assert(box._parts.tag.hidden && box._parts.foot.hidden);
-// Unknown stock is omitted at a stop, known zero is shown; the row survives a stock update.
-const stockRow = box._parts.ammo._rows.get("rocket");
-render(box, {platform: "Asterion", at: "nauvis", speed_kms: 0,
-  ammo: [{name: "rocket", hub: 0, turrets: 0}, {name: "railgun-ammo", made_min: 10}],
-  turrets: {"rocket-turret": {count: 0}, "gun-turret": {empty: 2}}});
-assert.equal(box._parts.ammo._rows.get("rocket"), stockRow);
-assert.equal(box._parts.ammo.textContent, "Rocket 0 hub + guns");
-assert.equal(box._parts.guns.textContent, "Turrets Rocket 0");
-assert(box._parts.supplies.hidden);
-// Stopped mid-flight keeps the full card; departure restores flight rows on the same card.
-render(box, {...p, speed_kms: 0});
-assert(!box.classList.contains("pm-compact")); assert(!box._parts.combat.hidden && !box._parts.rocks.hidden);
-assert(!box._parts.tag.hidden && !box._parts.foot.hidden);
-assert(box._parts.ammo.textContent.includes("net -10"));
-render(box, {...p, leg: null}); assert(!box.classList.contains("pm-compact"));
-render(box, {platform: "Bare"}); assert(box._parts.flight.hidden); assert(box._parts.combat.hidden);
-assert(!box.textContent.includes("Kills/min"));
+// A parked ship has exactly one row of positive totals, even if its cached payload has combat/flight facts.
+const parked = {...p, platform: "Asterion", at: "nauvis", leg: null, speed_kms: 0,
+  turrets: {"rocket-turret": {count: 8}, "laser-turret": {count: 4}},
+  ammo: [...p.ammo, {name: "railgun-ammo", hub: 3, turrets: 2}]};
+render(box, parked, 0);
+assert(box.classList.contains("pm-parked"));
+assert.equal(box._parts.parked.textContent, "Turrets 12 Ammo 45 Repair packs 50");
+for (const k of ["header", "route", "bar", "flight", "rocks", "combat", "guns", "ammo", "supplies", "foot"])
+  assert(box._parts[k].hidden, k + " must be hidden in port");
+const stockRow = box._parts.parked._rows.get("ammo");
+render(box, {...parked, ammo: [{name: "rocket", hub: 10, turrets: 1}]}, 1);
+assert.equal(box._parts.parked._rows.get("ammo"), stockRow);
+assert.equal(stockRow._value.textContent, "11");
+render(box, {...parked, ammo: [], turrets: {}, repair_packs: 0}, 2);
+assert(box.hidden); assert.equal(box._parts.parked.textContent, "");
+render(box, {...parked, ammo: [{name: "rocket", hub: 5}], turrets: {gun: {}}, repair_packs: 7}, 3);
+assert.equal(box._parts.parked.textContent, "Repair packs 7"); // partial stock is not an invented total
+
+const quiet = {...p, featured: false, tick: 1, kills_min: 0, hits_min: 0,
+  asteroids: {small: 0, medium: 0, big: 0, huge: 0},
+  turrets: {"rocket-turret": {count: 8, targeting: 0, empty: 0}}};
+const isTransit = b => b.classList.contains("pm-transit");
+const isCombat = b => !b.classList.contains("pm-transit") && !b.classList.contains("pm-parked") && !b.hidden;
+const flightBox = new Element("section");
+render(flightBox, quiet, 0); assert(isTransit(flightBox));
+assert(!flightBox._parts.flight.hidden && !flightBox._parts.bar.hidden);
+assert(flightBox._parts.flight.textContent.includes("ETA · wall"));
+assert.equal(flightBox._parts.ammo.textContent, "Rocket 40 hub + guns");
+assert.equal(flightBox._parts.supplies.textContent, "Repair packs · hub 50");
+for (const k of ["rocks", "combat", "guns", "foot", "parked"]) assert(flightBox._parts[k].hidden, k);
+
+// Each requested signal enters combat immediately; two recent quiet samples and 60 seconds clear the hold.
+for (const signal of [{asteroids: {...quiet.asteroids, huge: 1}}, {kills_min: 3}, {hits_min: 3},
+  {turrets: {"rocket-turret": {count: 8, targeting: 1, empty: 0}}}]) {
+  const b = new Element("section"), hot = {...quiet, ...signal, tick: 2};
+  render(b, quiet, 0); assert(isTransit(b));
+  render(b, hot, 20); assert(isCombat(b)); assert(!b._parts.combat.hidden && !b._parts.guns.hidden);
+  render(b, {...hot, age_s: 19}, 39); // same read repainted: must not extend the hold to 99 seconds
+  render(b, {...quiet, tick: 3}, 40); assert(isCombat(b));
+  render(b, {...quiet, tick: 4}, 60); assert(isCombat(b));
+  render(b, {...quiet, tick: 4, age_s: 19}, 79); assert(isCombat(b));
+  render(b, {...quiet, tick: 5}, 80); assert(isTransit(b));
+  assert(b._parts.combat.hidden && b._parts.guns.hidden);
+  render(b, {...hot, tick: 6}, 100); assert(isCombat(b));
+}
+// A combat sample remains relevant among the last two even when more than 60 seconds separate the reads.
+const recent = new Element("section");
+render(recent, {...quiet, kills_min: 1}, 0);
+render(recent, {...quiet, tick: 2}, 80); assert(isCombat(recent));
+render(recent, {...quiet, tick: 3}, 100); assert(isTransit(recent));
+// Sample age is respected: repainting an already 20-second-old combat sample starts no new 60-second window.
+const aged = new Element("section");
+render(aged, {...quiet, kills_min: 1, age_s: 20}, 100);
+render(aged, {...quiet, tick: 2}, 120); assert(isCombat(aged));
+render(aged, {...quiet, tick: 3}, 140); assert(isTransit(aged));
+// Missing readings cannot be mistaken for no combat; two new known-quiet samples clear the uncertainty.
+for (const missing of [{asteroids: undefined}, {kills_min: undefined}, {hits_min: undefined},
+  {turrets: undefined}, {turrets: {gun: {count: 1}}}]) {
+  const b = new Element("section");
+  render(b, {...quiet, ...missing}, 0); assert(isCombat(b));
+  render(b, {...quiet, tick: 2}, 20); assert(isCombat(b));
+  render(b, {...quiet, tick: 3}, 40); assert(isTransit(b));
+}
+// Featured runs get the full flight card even when quiet; being parked always takes precedence.
+render(flightBox, {...quiet, featured: true}, 1); assert(isCombat(flightBox));
+render(flightBox, parked, 2); assert(flightBox.classList.contains("pm-parked"));
+render(flightBox, {...quiet, speed_kms: 0}, 3); assert(isTransit(flightBox)); // zero speed on a leg is still flight
+render(flightBox, {...quiet, leg: null}, 4); assert(isTransit(flightBox)); // positive speed, route unknown
+// A different ship, leg, direction, departure, arrival or tick rollback cannot inherit another combat hold.
+for (const change of [{platform: "Petrel"}, {leg: {...p.leg, to: "aquilo"}},
+  {leg: {...p.leg, back: true}}, {leg: {...p.leg, start_tick: 20}}, {tick: 0}]) {
+  const b = new Element("section");
+  render(b, {...quiet, kills_min: 1}, 0);
+  render(b, {...quiet, tick: 2, ...change}, 20); assert(isTransit(b));
+}
+render(box, {platform: "Bare"}, 0); assert(box.hidden);
 render(box, null); assert(box.hidden);
-console.log("platform metrics DOM: unknowns hidden, zeroes shown, stable rows, compact arrival and full flight restored");
+console.log("platform metrics DOM: slim nonzero port totals, quiet flight, two-sample combat hold, featured runs and leg isolation");

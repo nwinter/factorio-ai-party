@@ -813,15 +813,16 @@ body.onecam #cam-main .ship-card { top: 14px; font-size: 20px; }
 .pm-ammo .pm-value { display: block; text-align: left; font-size: 11px; }
 .pm-bad .pm-value { color: var(--dead); }
 .pm-foot { margin-top: 8px; font-size: 10px; color: var(--muted); }
-/* At a stop, keep only identification and stock. A leg at zero speed still uses the flight card. */
-#platform-metrics.pm-compact { padding: 9px 12px; }
-.pm-compact .pm-name { font-size: 20px; }
-.pm-compact .pm-route { margin-top: 0; font-size: 14px; }
-.pm-compact .pm-guns .pm-row { display: block; padding: 0; }
-.pm-compact .pm-guns .pm-key { margin-right: 8px; }
-.pm-compact .pm-ammo { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
-.pm-compact .pm-ammo .pm-row { padding: 0; }
-.pm-compact .pm-supplies { display: block; }
-.pm-compact .pm-supplies .pm-row { display: flex; justify-content: flex-start; }
-.pm-compact .pm-supplies .pm-key { font-size: 12px; }
+/* Port: one nonzero stock row. Quiet flight: navigation and supplies. Combat keeps the full card. */
+#platform-metrics.pm-parked { width: max-content; max-width: calc(100% - 28px); padding: 6px 12px; }
+.pm-parked-row { display: flex; gap: 18px; font-size: 13px; white-space: nowrap; }
+.pm-parked-row .pm-row { gap: 6px; }
+#platform-metrics.pm-transit { padding: 9px 12px; }
+.pm-transit .pm-name { font-size: 20px; }
+.pm-transit .pm-route { margin-top: 0; font-size: 14px; }
+.pm-transit .pm-ammo { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.pm-transit .pm-ammo .pm-row { padding: 0; }
+.pm-transit .pm-supplies { display: block; }
+.pm-transit .pm-supplies .pm-row { display: flex; justify-content: flex-start; }
+.pm-transit .pm-supplies .pm-key { font-size: 12px; }
 body.trio #cam-cam2 .ship-card, body.trio #cam-cam3 .ship-card { top: 8px; left: 8px; font-size: 13px; min-width: 0; padding: 4px 8px; }
