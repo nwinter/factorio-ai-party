@@ -112,19 +112,18 @@ function M.extrema(store,key,leg,name,value,reserve,margin,scope,now)
   return r
 end
 -- Conditions that explicitly reference a budget item, including belt caps. Do not infer that every condition is a cap,
--- or that an off gate guarantees later production. Only entity references/methods are cached, never conditions.
+-- or that an off gate guarantees later production. Only entity references are cached, never conditions or methods.
 local GATE_TYPES={'assembling-machine','furnace','inserter','transport-belt','underground-belt','splitter','pump'}
 local gate_entities={}
 local function gate_list(pl,now)
   local key=pl.index
   local rec=key and gate_entities[key]
   if rec and rec.n==pl.surface.count_entities_filtered{type=GATE_TYPES,force=pl.force} then
-    rec.tick=now; return rec.entities
+    local valid=true
+    for _,e in ipairs(rec.entities) do if not e.valid then valid=false; break end end
+    if valid then rec.tick=now; return rec.entities end
   end
-  local list={}
-  for _,e in ipairs(pl.surface.find_entities_filtered{type=GATE_TYPES,force=pl.force}) do
-    list[#list+1]={entity=e,read=e.get_control_behavior}
-  end
+  local list=pl.surface.find_entities_filtered{type=GATE_TYPES,force=pl.force}
   if key then
     for k,x in pairs(gate_entities) do if now-x.tick>36000 then gate_entities[k]=nil end end
     gate_entities[key]={entities=list,n=#list,tick=now}
@@ -133,9 +132,8 @@ local function gate_list(pl,now)
 end
 local function read_gates(pl,wanted,now)
   local out={}; for name in pairs(wanted) do out[name]={tick=now,conditions={},scope='item-referencing circuit/logistic enable conditions on machines, inserters, belts and pumps; indirect signals are not attributed'} end
-  for _,entry in ipairs(gate_list(pl,now)) do
-    local e=entry.entity
-    local cb=entry.read()
+  for _,e in ipairs(gate_list(pl,now)) do
+    local cb=e.get_control_behavior()
     if cb then
       for _,kind in ipairs({'circuit','logistic'}) do
         local enabled=try(function() return kind=='circuit' and cb.circuit_enable_disable or kind=='logistic' and cb.connect_to_logistic_network end)
@@ -160,11 +158,9 @@ local function read_gates(pl,wanted,now)
   return out
 end
 function M.gates(pl,wanted,now)
-  -- A cached entity method throws if its entity was removed. Refresh once on that path, including a same-count
-  -- replacement, instead of a second 5000-entity valid-flag walk on every Resolute read.
-  local ok,out=pcall(read_gates,pl,wanted,now)
-  if ok then return out end
-  if pl.index then gate_entities[pl.index]=nil end
+  -- Factorio 2.0.77 can SIGSEGV in getUsefulEntity/luaGetControlBehavior when a retained bound method's entity
+  -- was destroyed. pcall cannot contain that. Validate the entire kept list before any method call, and refresh
+  -- on removal even when construction has restored the count. The fresh list supplies the replacement's facts.
   return read_gates(pl,wanted,now)
 end
 return M
