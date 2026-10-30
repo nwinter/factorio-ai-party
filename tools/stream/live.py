@@ -710,7 +710,10 @@ class LiveSource:
             return
         for n, h in hulls.items():
             if n in views and h.get("surface") == views[n].get("surface"):
-                views[n]["hull"], views[n]["bow"] = h.get("hull"), h.get("bow")
+                views[n]["hull"] = h.get("hull")
+                # Only long-leg ships used the foundation bow shot before. Giving it to every ship would
+                # replace the existing short-leg turret close-up merely because its overview got a hull read.
+                views[n]["bow"] = h.get("bow") if self.long_leg(views[n]) else None
                 if h.get("hull"):
                     views[n]["bounds"] = h["hull"]
                     views[n]["bounds_source"] = "foundation"

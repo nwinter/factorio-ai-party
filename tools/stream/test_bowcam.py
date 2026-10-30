@@ -86,6 +86,7 @@ def live_hulls():
     assert views["Asterion"]["bow"] == BOW and views["Asterion"]["hull"] == HULL
     assert "bow" not in views["Probe"]  # the read named another surface: not this ship's
     assert views["Anvil"]["bounds"] == HULL and views["Docked"]["bounds_source"] == "foundation"
+    assert not views["Anvil"].get("bow") and not views["Docked"].get("bow")  # preserve their existing close-ups
 
 
 def run(d, a, rows, t0, secs, seg=None, hold=None):

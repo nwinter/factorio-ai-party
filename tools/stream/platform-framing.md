@@ -27,7 +27,8 @@ ships retain their sweep, with endpoints derived from the actual hull; a ship wi
 remains limited as before. `platform_frame.limited` in director logs makes that limit explicit. Intentional
 flight detail, bow/machinery framing, work close-ups and the batch383 remote pan identity/speed rules remain.
 Pan endpoint geometry uses the exact 33.75-tile height; timing, easing, destination identity and speed cap do not
-change. GUI panel fits still meet their independent final floor and may therefore show only part of a large ship.
+change. Foundation bow metadata stays restricted to long legs, so a new hull survey does not replace a
+short-leg ship's existing turret close-up. GUI panel fits still meet their independent final floor and may therefore show only part of a large ship.
 
 `platform_frame` in each ship command log records source bounds, hull centre, pane fraction, unconstrained fit
 and whether the floor prevented the full fit. The existing command and camera acknowledgement record the sent
