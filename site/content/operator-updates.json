@@ -403,6 +403,6 @@
   {"t": "2026-10-30 09:28", "kind": "deploy", "text": "Harness runtime deployed (2319c56b).", "affected": "harness runtime"},
   {"t": "2026-10-30 09:28", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 09:28"},
   {"t": "2026-10-30 09:55", "kind": "shift", "text": "Shift 106 change began.", "affected": "stream and agents", "recovered": null},
-  {"t": "2026-10-30 11:09", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-30 11:09", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 11:09"}
  ]
 }
