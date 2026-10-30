@@ -1681,6 +1681,7 @@
       $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics);
     }
     renderSegment(s);
+    if (window.PogShiftRecap) window.PogShiftRecap.render(s);
     renderLoadouts(s);
     renderPollStrip(s);
     rotateWidgets();

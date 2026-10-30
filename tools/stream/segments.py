@@ -231,6 +231,8 @@ class Segments:
             return 400, {"error": "bad params"}
         with self.lock:
             snap = self.snap
+            if snap and (snap.get("shift_recap") or {}).get("active"):
+                return 409, {"error": "busy", "why": "shift recap on air", "retry_after": 5}
             why = self.why_unavailable(kind, snap, now)
             if why:
                 return 409, {"error": "unavailable", "why": why, "retry_after": 60}
@@ -284,6 +286,10 @@ class Segments:
         now = now or time.time()
         with self.lock:
             self.snap = snap
+            if (snap.get("shift_recap") or {}).get("active"):
+                self.cur = self.queue = None
+                self.last_end = now
+                return None
             for a in snap.get("alerts") or []:
                 if a["id"] not in self.seen:
                     self.seen.add(a["id"])

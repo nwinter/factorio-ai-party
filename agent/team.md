@@ -29,3 +29,4 @@ Platform arrival/progress `wait_until`: up to 80h (help waits-queues).
 - When you're waiting on someone, say so, then do something else useful.
 - A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
+- The stream's shift recap uses recorded files via `tools/stream/shift_recap.py`; it adds no game reads.

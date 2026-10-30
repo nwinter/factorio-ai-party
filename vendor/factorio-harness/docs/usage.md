@@ -18414,6 +18414,13 @@ Copying only name/position/direction passed both calls; the real call placed sev
 ends, (1.5,0.5) and (6.5,0.5), were input and unpaired. `place_ghosts` passes `type=spec.type` to create_entity;
 when omitted, Factorio creates an input ghost. With this change the unchanged route entries pass both calls
 and those endpoints are input/output with mutual neighbours. Regression suite: `tests/d30_batch380.lua`.
+### Recorded shift recaps (operator stream tool)
+
+`tools/stream/shift_recap.py rehearse --run-dir runs/RUN --out OUT --offline` renders a shift's
+script, cards and timeline from existing records. The stream prepares its voiced recap at
+three hours, appends closing developments at the deadline, and plays it through the next
+start until `start.log` says `started: N/M agents`. Prepared assets survive service restarts.
+No new harness reads/actions or OBS commands are involved. See `tools/stream/shift-recap.md`.
 ## d30 batch377: stream platform metrics
 
 The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns

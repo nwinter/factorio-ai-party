@@ -173,6 +173,7 @@
   }
 
   function cancel(id) {
+    if (current && current.clip.id === id) interrupt();
     const x = timed.get(id);
     if (x && !x.done) {
       x.done = true;
@@ -243,6 +244,15 @@
     svcNow() + (length != null ? length : (clip.duration || 20)) + GUARD <= nextAt();
 
   function arrive(clip) {
+    if (clip.stop_segment != null) {
+      const matches = c => c.segment && c.segment.id === clip.stop_segment;
+      for (const [id, x] of timed) if (matches(x.clip)) cancel(id);
+      for (const c of [...queue]) if (matches(c)) cancel(c.id);
+      if (current && matches(current.clip)) cancel(current.clip.id);
+      holds.delete(clip.stop_segment);
+      playNext();
+      return;
+    }
     if (clip.cancel) { cancel(clip.cancel); return; }
     if (clip.release != null) { holds.delete(clip.release); playNext(); return; }  // (SU) the tour ended its segment
     if (clip.id != null) {

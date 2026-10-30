@@ -2984,6 +2984,10 @@ class Caster:
 
     def caster_tick(self, now, st):
         self.playback_receipts(st)
+        if ((getattr(self, "snap", None) or {}).get("shift_recap") or {}).get("active"):
+            # The prepared Rook/Vale audio is owned by the new stream service during startup.
+            self.caster_free = max(self.caster_free, now)
+            return
         if now >= self.caster_free and self.resume_explanation(st):
             return
         if self.hush_tick(now):

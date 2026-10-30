@@ -174,5 +174,29 @@ const seg = (id, part, parts) => ({ channel: "narrator", rank: "urgent", segment
   check(fresh.maxActive === 1, "one voice at a time after the reload");
 }
 
+// Shift recap handoff: cancelling a timed clip already speaking cuts it and releases routine audio.
+{
+  const P = page("?holdgap=3");
+  await wait(50);
+  const clip = P.send("RECAP", 5, Object.assign(seg("shift-recap", 1, 2), { channel: "caster", at: now() + 0.2 }));
+  await wait(600);
+  P.send("AFTER_RECAP", 0.2);
+  P.event({ cancel: clip.id });
+  P.event({ release: "shift-recap" });
+  await wait(800);
+  check(P.reports.some(r => r.id === clip.id && r.state === "cut"), "agent-ready handoff cuts a recap already speaking");
+  check(P.played("AFTER_RECAP").length === 1, "agent-ready handoff releases routine speech");
+}
+// A service restart has lost clip ids; its stable segment id still stops decoded old audio.
+{
+  const P = page("?holdgap=3");
+  await wait(50);
+  const clip = P.send("OLD_SERVICE", 5, Object.assign(seg("shift-recap-old", 1, 2), { channel: "caster", at: now() + 0.2 }));
+  await wait(600);
+  P.event({ stop_segment: "shift-recap-old" });
+  await wait(400);
+  check(P.reports.some(r => r.id === clip.id && r.state === "cut"), "new service stops decoded prior-service recap audio");
+  check(!P.win.pogVoiceHolding(), "restart clears the prior segment hold");
+}
 console.log(fails.length ? `FAILED: ${fails.length}` : "segment_audio_selftest: all ok");
 process.exit(fails.length ? 1 : 0);
