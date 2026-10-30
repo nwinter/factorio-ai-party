@@ -1146,7 +1146,7 @@ test('fh wait on a belt_flow sample keeps --max and the wake rules: STILL SAMPLI
     await assert.rejects(cli(port,['wait','--max','1']),(error:any)=>{
       const reply=JSON.parse(error.stdout);
       assert.equal(reply.error.code,'wait_timeout');
-      assert.match(reply.error.message,/^your belt_flow sample belt_flow@100 is STILL SAMPLING: the wait gave up after \d+ s, up to \d+ s more, until tick 100000\. No action of yours or stop ends it; belt_flow \{\} reads its result once it ends/);
+      assert.match(reply.error.message,/^your belt_flow sample belt_flow@100 is STILL SAMPLING: the wait gave up after \d+ s, up to \d+ s more, until tick 100000\. No action of yours or stop ends it; belt_flow \{"id":"belt_flow@100"\} reads its result once it ends/);
       assert.match(reply.result.still_running,/^belt_flow sample belt_flow@100, up to \d+ s more$/); return true;
     });
   });
@@ -1162,8 +1162,8 @@ test('fh wait on a belt_flow sample keeps --max and the wake rules: STILL SAMPLI
       const json=JSON.parse(error.stdout);
       assert.equal(json.ok,true); assert.equal(json.result.outcome,'told'); assert.equal(json.result.from,'sol');
       assert.match(json.result.still_running,/^belt_flow sample belt_flow@100, up to \d+ s more$/);
-      assert.match(json.result.note,/a tell from sol ended this wait \(the team block has it\); your belt_flow sample belt_flow@100 keeps going: fh wait waits for it again/);
-      assert.match(error.stderr,/still running \(exit 3\): belt_flow sample belt_flow@100, up to \d+ s more goes on after this wait ended; fh wait resumes waiting for it\. No action of yours or stop ends it \(it ends at its until_tick\)/);
+      assert.match(json.result.note,/a tell from sol ended this wait \(the team block has it\); your belt_flow sample belt_flow@100 keeps going: fh call belt_flow \{"id":"belt_flow@100"\} waits for it again/);
+      assert.match(error.stderr,/still running \(exit 3\): belt_flow sample belt_flow@100, up to \d+ s more goes on after this wait ended; fh call belt_flow \{"id":"belt_flow@100"\} waits for it\. No action of yours or stop ends it \(it ends at its until_tick\)/);
       assert.doesNotMatch(error.stderr,/A call that drives your character/); return true;
     });
   });
