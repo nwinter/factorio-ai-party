@@ -1683,6 +1683,22 @@
     watchVoice();
     watchLoadoutClear();
     watchAlerts();
+    reportRender();
+  }
+
+  // (d29 batch349) the page says it drew: after a state frame, at most every 30 s, its right panel's height in px
+  // (POST /overlay/render), so the start and watch checks see a panel that draws, not only a stream that is open.
+  let renderSaid = 0;
+  function reportRender() {
+    const now = Date.now();
+    if (now - renderSaid < 30000) return;
+    renderSaid = now;
+    const side = $("side");
+    const page = (new URLSearchParams((typeof location !== "undefined" && location.search) || "").get("page") || (document.body && document.body.dataset && document.body.dataset.page) || "main");
+    try {
+      fetch("/overlay/render", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page, height: side ? Math.round(side.getBoundingClientRect().height) : 0 }) }).catch(() => {});
+    } catch (err) { /* no fetch: nothing to say */ }
   }
 
   // The site's poll under the chat (serve.py pollstrip.py decides when: ~30 s every 10 min while open, the result for

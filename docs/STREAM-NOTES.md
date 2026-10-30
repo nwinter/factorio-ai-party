@@ -2708,3 +2708,58 @@ plays the first).
   hint at the bottom centre, and the overlay's bottom bar on each view covers it (test_trio's hint_bars). It showed on
   shift100's program only because the overlay was blank.
 - **Tests:** tools/test_overlay_check.py and tools/test_obs_restart.py (obs-steps).
+
+## Speech, the panel and the cameras in the overlay checks (2026-10-29, d29 batch349 SP, viewer Aurora site:5491)
+
+Aurora (09:29, during shift100's blank overlay): "Add recovery checks for panel rendering, camera state and a
+completed speech clip so 'live' alone cannot pass next shift." batch347's checks saw only whether the main page's event
+stream was open.
+
+- **Speech.** The stream service keeps a summary of the page's clip reports, in GET /overlay/status as `speech`: the
+  last clip played whole (state end, played >= its length - 0.5 s, not early) and how many in 30 min, and of the clips
+  posted in the last 15 min (not control) whose time is up (ended, skipped or expired), how many played whole and how
+  many were skipped. Bad: some, and none played whole (shift100: none reported at all). The health line says it;
+  tools/overlay_check.py watch prints it only when bad, at most once per --again s, and once when it is good again. No
+  toggle for speech alone: a page that is not connected is batch347's toggle.
+- **The panel.** The page posts POST /overlay/render {page, height} after a state frame, at most every 30 s, with its
+  right panel's height (overlay.js reportRender); the service keeps `rendered` and `panel_px` per page. Bad: a report
+  over 90 s old, or 0 px high. A page from before this says nothing. It is not in the connected test: a page cached
+  from before would never report, and the connected test decides the toggle.
+- **Cameras.** One RCON line (overlay_check.CAMS_LINE): the harness's camera list (remote.call cameras) and each
+  client's controller and whether it is connected. 0.68 ms on world n (d29, the one read: pog-cam1 spectator
+  connected, cam2 and cam3 spectator not connected). Bad: a connected camera in a cutscene or a character controller.
+  The health line says "cams: pog-cam1 spectator"; watch prints a change. The recovery is the runtime's own:
+  cameras.lua's tick runs make_director for a connected camera client that is not a spectator (exit_remote_view,
+  exit_cutscene, then the spectator controller), every tick, so a cutscene lasts a tick; the check reports.
+- **Tests:** tools/test_speech_cams.py (clips whole, cut short, all expired, none reported, none posted; render reports
+  fresh, stale, 0 px; a camera in a cutscene in status, watch and the health line); tools/test_overlay_check.py's
+  health line now reads the overlay part first.
+
+### cp2: a reload when a toggle does not bring the page back (d29 13:20, shift101)
+
+Shift101's start (13:14:53 reload) left the overlay blank again: "overlay: FAILED: not connected 30 s after the reload
+nor 30 s after a toggle"; the operator's second toggle (13:17) did not help either; `tools/obs.py reload-overlay`
+(refreshnocache, 13:18:46) brought it back in 5 s. At shift100's start (09:06) it was the other way round. So start and
+watch now run a recovery round: toggle, then reload-overlay, then toggle once more, each followed by up to --wait s for
+a connect; the round stops at the first that brings the page back, and the line names each step and what followed. watch
+keeps --again (600 s) between rounds. The health line says "(after a reload at the start)" or "(after a toggle at the
+start)" by the step that did. The "unnamed" page in /overlay/status is tools/stream/caster.py following /events with
+no page= (and replay.html when open): no overlay, which is why it stayed connected throughout.
+
+### cp2 item 3: a disabled scene item, and a page connected but blank (viewer Aurora site:5516)
+
+- **The scene item.** start and each watch pass run `tools/obs.py enable-overlay`: the "stream overlay" item in the
+  stream scene read, and switched on when it is off ("stream overlay: was off in stream, enabled (item N)"); the check
+  says so ("the scene item was off: enabled"). A toggle leaves an item that was off as it was, so a disabled item was
+  never brought back before.
+- **Connected but blank.** The page's render report (overlay.js reportRender, every 30 s while it draws) is part of the
+  test: start waits for a connect and a render at or after the reload; while running, a page connected for 60 s
+  (BLANK_S) with no render since its connect counts as not connected, and gets the same round (toggle, reload, toggle):
+  "the main page is connected but has drawn nothing for N s". A render from before the stream's connect is another
+  page's and does not count. status and the health line say "overlay NOT drawing: connected but blank, nothing drawn
+  for N s".
+- **A failed round stays in the health line.** watch keeps it in its state (`failed`), and the health line adds "the last
+  recovery FAILED: ..." (bad: "overlay recovery") until a later round brings the page back. POG_OC_STATE names the
+  state file (default /tmp/claude-501/overlay-check.json).
+- **Tests:** tools/test_overlay_blank.py (the item off at start and in watch; a blank page brought back by a reload at
+  start; a blank page in watch, a failed round kept in the health line, and cleared by one that works).
