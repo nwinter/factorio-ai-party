@@ -18257,3 +18257,17 @@ For a turnaround read, put all three options inside `turnaround`. A guard accept
 `return_budget.window_budgets` retains every item for each named window, its rate basis (window, endpoints, made/used/NET), unavailable reasons and eligibility ticks. An unavailable `rate_basis` has no counts or NET; any rejected sample is separately labeled `excluded_rate_basis`. `window_check` gives per-item binding/pending counts, each window's state and NET, and `binding_items`. The read checks its planned turnaround distance; the guard separately checks its own `km` and labels the scope. Default `items` and `binds` remain the conservative comparison. A fired guard keeps `evidence.window_check` plus the entire return budget; composite guards retain this too. The per-leg cache includes these options and refreshes at the first pending window's eligibility tick or after ten seconds. Both the reply and guard description state the full same-leg, same-item rule.
 
 Batch364 label corrections (Sol tick 84054702): `usable_after_reserve_margin` replaces the ambiguous `usable_stock_extrema` name. Its `measure` and `formula` explicitly identify budget usable after reserve and margin: `(stock - reserve) / (1 + margin)`. For stock 5908, reserve 3600 and margin 0.2, the observed value is 1923.333333, not raw stock 5908. Existing observations retain their values. An item's legacy `window` follows authoritative `rate_basis.window`; `recent_window` preserves the separately labeled comparison candidate, including in the explanatory line. No budget arithmetic changes.
+
+
+## d29 batch365 FL (eng/d20-batch365)
+
+`flight_watch {platform, from:"leg"}` arms at the current leg and begins on the next observed connection, oriented
+from/to, or direction change: a departure from a stop, pass-through, or reversal. `from:"departure"` retains its
+meaning: leaving a stop, excluding pass-through. A stop alone does not start a leg watch. Both modes check on the
+watch's existing once-per-second phase and end unbegun after 24 game hours. The watching window and limits are
+unchanged. Direct calls, queue submission and dry runs accept the same `from` values.
+
+The read and start alert identify the change. `watch.start_change` keeps `kind` (departure, connection, direction),
+`before` and `after` (location or connection/from/to/back), and the observation ticks `from_tick` and `tick`.
+The reason survives a mixed split and remains in the final read. Registration captures the baseline immediately;
+changes between samples can be missed. Distance and speed changes within a leg do not start a watch.
