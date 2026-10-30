@@ -127,7 +127,10 @@
   forward), naming where other items join a lane (`joins transport-belt (12,5) carrying iron-plate on the left lane:
   your iron-ore mixes in`); with `audit: true` it adds `audit`: where the walked lanes lose capacity (a belt
   side-loading both carried lanes onto one, a curve made a side-load by an empty stub behind the turn, a route ending at
-  missing tiles with the run going on within 4 tiles, what it carries). `upstream: true` goes the other way: from a
+  missing tiles with the run going on within 4 tiles, what it carries). `lane_facts` adds native contents and the front
+  item per lane, two source lanes connected to one destination lane, and inserters along the line: status, held item,
+  pickup switches, near/far lanes. Belts and inserters include their circuit/logistic conditions and current values.
+  `max_tiles: N` caps a forward walk at N lane tiles (1..3000); `continue_at` names where the capped route stops. `upstream: true` goes the other way: from a
   machine, lab, thruster, hub or belt tile back along what feeds it, naming per ingredient the first place it stops or
   goes elsewhere (a filter, a circuit condition, an inserter taking it onto another belt, a jammed mixed lane, a
   splitter filter, where another item joins); `item` picks one. `item` alone follows every route from its makers to the
@@ -318,8 +321,9 @@
   `passed_on` (seen next on what the tile feeds) and `lanes_rate`, and its `rate` is passed_on + picked: an inserter can
   take an item in the tick it comes onto the tile, and no sample sees it on the lane. `note` names what each count can
   miss. The call returns when the sampling ends;
-  `belt_flow {}` reads the last result. The sample ends at `until_tick`: `stop` and your actions do not end it (a new
-  `belt_flow {position}` replaces it); `./fh wait` waits for it when nothing else runs. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
+  Each start, progress and result names its own `id`; `belt_flow {id}` reads that watch, `{}` the latest. Four watches
+  are retained per agent. A new start is refused while all four sample; otherwise it evicts the oldest completed
+  result and names it in `evicted_id` and `warning`. The sample ends at `until_tick`; `stop` and actions do not end it; `./fh wait` waits for it when nothing else runs. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
   With `exact_tile: true` it samples the belt at position only, no line walked (a splitter: the half position is in, its
   input lanes). Per lane: `left` (items seen on the lane, then gone; `rate` a minute), `passed_on` (seen next on what the
   tile feeds), `taken` (gone from mid-lane: taken off this tile; an inserter can take part of a stack, which stays on

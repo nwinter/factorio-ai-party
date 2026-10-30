@@ -1840,6 +1840,7 @@ async function main() {
   }
   function watchRead(r: any): string {
     if (r.kind === 'flight_watch') return `flight_watch {id: ${String(r.id).replace(/^flight#/, '')}}`;
+    if (r.kind === 'belt_flow') return `belt_flow ${JSON.stringify({id:r.id})}`;
     return WATCH_READ[r.kind] ?? `${r.kind} {}`;
   }
   function secondsLeft(r: any, tick: unknown): number | undefined {
@@ -1859,7 +1860,7 @@ async function main() {
   }
   // The belt_flow sample this wait waited for has ended: its result, read once (belt_flow {}).
   async function sampleEnded(sample: any, status: Reply, started: number): Promise<Reply> {
-    const read = await harness.request('belt_flow', {});
+    const read = await harness.request('belt_flow', {id:sample.id});
     if (!read.ok) return read;
     const row = Array.isArray(status.result?.watches) ? status.result.watches.find((r: any) => r && r.id === sample.id) : undefined;
     const note = read.result?.sampling
@@ -1902,7 +1903,7 @@ async function main() {
     while (!stopping) {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
-        const flow = runningWatches(status).find(r => r.kind === 'belt_flow');
+        const flow = runningWatches(status).find(r => r.kind === 'belt_flow' && (!sample || r.id === sample.id));
         if (flow && (sample || (status === first && !(typeof last?.tick === 'number' && typeof flow.start_tick === 'number' && last.tick >= flow.start_tick)))) {
           if (!sample && !explicit) {
             budget = waitBudget(flow.end_tick, first.tick ?? first.result?.tick);
@@ -2101,11 +2102,12 @@ async function main() {
     // belt_flow (batch24 B2): the sampling runs in the game over seconds; the call reads belt_flow {} each second until
     // the result is in (--no-wait: the start only).
     if (action === 'belt_flow' && reply.ok && reply.result?.sampling && values['no-wait'] !== true && !bridged) {
+      const id = reply.result.id;
       const seconds = typeof reply.result.seconds === 'number' ? reply.result.seconds : 10;
       const until = Date.now() + (seconds * 4 + 20) * 1000;
       while (Date.now() < until) {
         await delay(1000);
-        const read = await harness.request('belt_flow', {});
+        const read = await harness.request('belt_flow', id ? {id} : {});
         if (!read.ok || !read.result?.sampling) return read;
       }
       return {...reply, ok:false, error:{code:'wait_timeout', message:`belt_flow still sampling after ${seconds * 4 + 20} s (a slow game); belt_flow {} reads it when done`}};

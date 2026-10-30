@@ -381,4 +381,6 @@ do
   has(r.ingredients[1].text,'is full of sulfur')
   plant.valid=false; arm.valid=false; pick.valid=false; for _,b in ipairs(back) do b.valid=false end
 end
+-- Native line positions run down toward the exit: the smallest position is the front.
+eq(trace.h.front_item(belt(300.5,300.5,{{'coal','iron-plate'}}),1),'coal')
 print('trace: ok')

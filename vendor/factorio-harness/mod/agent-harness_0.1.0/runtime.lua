@@ -17155,7 +17155,7 @@ M.platrearm=require('platrearm'){state=state,remote_entity=remote_entity,on_plat
   takes=function(proto) return M.turretammo.takes(proto) end,unusable=function(e) return M.turretammo.unusable(e) end}
 function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
 -- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
-M.beltsample=require('beltsample'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
+M.beltsample=require('beltsample'){state=state,watch_id=function(kind,job,index) return M.measures.id(kind,job,index) end,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
 M.uptime=require('uptime'){state=state,reason=function(v) return M.measures.reason(v) end,timed=M.timed,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
@@ -22106,7 +22106,7 @@ end)()
     handlers[name]=function(p,a)
       local out=orig(p,a)
       local k=type(kind)=='function' and kind(a or {}) or kind
-      local job=k and p and p.valid and (state()[k] or {})[p.index]
+      local job=k and p and p.valid and (k=='belt_flow' and require('beltwatches').find(state(),p.index,out and out.id) or (state()[k] or {})[p.index])
       if type(job)=='table' then
         if job.start==game.tick and not job.result and not job.call then
           local args={}
