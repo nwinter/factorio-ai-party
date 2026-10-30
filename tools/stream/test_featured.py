@@ -151,6 +151,16 @@ def lifecycle():
             assert subprocess.run(cmd+args,capture_output=True).returncode!=0
 
 
+def sustained_encounter():
+    d,_=setup();frames=set()
+    for t in range(1000,1400):
+        ship=copy.deepcopy(SHIP)
+        ship['danger']={'kind':'fire','last':t,'level':2,'reason':'Resolute under fire'}
+        d.step(snap(TEAM,[ship]),t)
+        frames.add((d.public(t).get('main',{}).get('platform') or {}).get('framing'))
+    assert 'bow defense' in frames and 'whole ship' in frames, frames
+
+
 def failures():
     d,sent=setup();run(d,1000,1004)
     d.featured.finish('off',1004,cleared=True);run(d,1004,1010)
@@ -206,5 +216,5 @@ def model_contract():
 
 if __name__=='__main__':
     with contextlib.redirect_stdout(io.StringIO()) as captured:
-        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract()
+        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract();sustained_encounter()
     print('featured: ok (share, dwell, framing, inset, urgent, repair, arrival, loss, reversal, time, restart, carry, clear, CLI, send failure)')

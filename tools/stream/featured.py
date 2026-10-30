@@ -259,8 +259,7 @@ class Featured:
         featured = cur.get("featured") == self.active["id"] and now < cur.get("until", 0)
         if featured and self.started is None:
             self.started = now
-        if news and featured:
-            self.started = now
+        # News can recall the ship from other coverage, but does not postpone its context shot indefinitely.
         age = now - self.started if self.started is not None else 0
         if self.started is not None and age >= MAIN_S + CONTEXT_S:
             self.started, self.away_until = None, now + AWAY_S
