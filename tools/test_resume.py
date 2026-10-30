@@ -115,6 +115,9 @@ def dry_run():
         assert r.returncode == 0, r.stderr
         out = r.stdout
         assert "resume-save.ps1 -Name n -From shake4 -Check" in out, out
+        assert "tick-pause the world; deploy the runtime" in out, out
+        assert "resume right after started: N/M (including failed launches)" in out, out
+        assert "also resume if the start fails" in out, out
         assert "last score tick 236000 (game 65m)" in out, out
         assert "bot haiku: kept if the save has it, else created; notes.md from" in out, out
         assert "bot luna: kept if the save has it, else created; fresh notes.md (none in shake4)" in out, out
