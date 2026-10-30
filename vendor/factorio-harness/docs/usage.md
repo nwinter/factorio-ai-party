@@ -18390,6 +18390,31 @@ Configure and inspect.splitter expose filter_quality and filter_comparator, incl
 state both in the line. Inspect adds outputs: at most two adjacent belt lookups, with two surface lanes per straight
 belt or underground mouth (items by quality, can_insert_at_back). It does no downstream traversal or background work.
 
+
+## d30 batch380: belt_route underground types and combined placement checks (Sol #2810)
+
+`belt_route {dry_run: true, details: true}` returns placement entries in `entities`:
+`{name, position, direction, type?}`, with `type: "input"` or `"output"` on every underground belt.
+The list is accepted unchanged by `place_ghosts` within its entry limit. Dry-run per-entry placement status,
+footprints and refusal reasons are retained in `entity_checks`; `blocked`, `summary` and other checks remain.
+Real route replies use the same placement-entry shape, including the return line. Pipe-to-ground endpoints
+already use direction alone and `pipe_route` keeps its existing output.
+
+`place_ghosts` and `belt_route` dry runs return `undergrounds` for placeable underground-belt ends:
+`checked`, `paired`, `unpaired`, `external`, `requested_flow_mismatch` count ends, not pairs. `rows` names each unpaired
+end, each partner outside the request (built or ghost), and both ends whose requested flow differs. With `details: true`,
+ordinary pairs appear too. The check combines all entries and charted existing ends of our force; it follows
+same-tier tunnel axes within prototype reach and checks intervening lava and empty space. The results describe
+tunnel partners after the placeable ghosts are built. Requested flow is compared before the engine
+reverses an endpoint: in the private-copy test, two requested outputs faced opposite ways and the engine
+reversed the earlier end into an input. Placement success remains separate from paired flow.
+
+Baseline on Factorio 2.0.77: route `E1 uE5 E4` from (0,0) to (10,0), around a wall, reported seven placeable
+entries. Copying its unmodified diagnostic rows into `place_ghosts` was refused for `footprint, index, status`.
+Copying only name/position/direction passed both calls; the real call placed seven ghosts and both underground
+ends, (1.5,0.5) and (6.5,0.5), were input and unpaired. `place_ghosts` passes `type=spec.type` to create_entity;
+when omitted, Factorio creates an input ghost. With this change the unchanged route entries pass both calls
+and those endpoints are input/output with mutual neighbours. Regression suite: `tests/d30_batch380.lua`.
 ## d30 batch377: stream platform metrics
 
 The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns
