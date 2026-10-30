@@ -7,8 +7,8 @@
 # exit 1 when the recording (or with --stream the stream) did not start, or was accepted but did not become active
 # within POG_OS_ACTIVE_WAIT s (status / stream-status active=True), else 0. Then (d29 batch347 OR, shift100: the overlay
 # blank for 26 min after its reload) the overlay check: the main overlay page connected to the stream service after the
-# reload (tools/overlay_check.py start: within POG_OS_OVERLAY_WAIT s, default 30; else the scene item toggled off and
-# on and checked again; a second failure is printed FAILED and the health line says overlay NOT connected; the exit
+# reload (tools/overlay_check.py start: within POG_OS_OVERLAY_WAIT s, default 30; else (d29 batch349 cp2) a toggle, a
+# refreshnocache and a toggle again, each checked for that long; none bringing it back is printed FAILED and the health line says overlay NOT connected; the exit
 # code is the recording's and stream's only). Last, a read of each camera's crop (obs.py cams).
 # Stubs for tests: POG_OS_OBS, POG_OS_VERTICAL, POG_OS_OVERLAY (commands, split on spaces), POG_OS_SLEEP (seconds before the
 # vertical check, default 8), POG_OS_POLL (seconds between active checks, default 1).
@@ -29,7 +29,7 @@ read -ra vertical <<<"${POG_OS_VERTICAL:-$py tools/vertical.py}"
 read -ra overlay <<<"${POG_OS_OVERLAY:-python3 tools/overlay_check.py}"
 say() { printf '%s obs-steps: %s\n' "$(date +%H:%M:%S)" "$*"; }
 if [ $dry = 1 ]; then
-  say "plan: ${obs[*]} stream-scene; scene stream; reload-overlay; start (then status until active, ${POG_OS_ACTIVE_WAIT:-10} s)${stream:+; stream-start (then stream-status until active); then ${vertical[*]} status (start --yes if not streaming)}; ${overlay[*]} start --since RELOAD (toggle-overlay if not connected); cams"
+  say "plan: ${obs[*]} stream-scene; scene stream; reload-overlay; start (then status until active, ${POG_OS_ACTIVE_WAIT:-10} s)${stream:+; stream-start (then stream-status until active); then ${vertical[*]} status (start --yes if not streaming)}; ${overlay[*]} start --since RELOAD (if not connected: toggle, reload, toggle); cams"
   exit 0
 fi
 bad=0

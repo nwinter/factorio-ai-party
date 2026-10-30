@@ -8209,6 +8209,18 @@ fh watch    # deploy on every change
   arrival, hub slots and chunks, chunks collected and where they go, crushers, makers, thrusters, tanks, ammunition,
   turrets, power; `errors` for a read that failed. `platform_supply` now also returns `stops` (every entry not
   working, in the chain's order; `first_stop` is the first). tests/platdigest.lua.
+  - PD (d29 batch354, Aurora site:5523): `platform_defense.turret_counts` counts the whole ship before row filters
+    or pages: `status` (`complete`, `capped`, `unknown`), `read`, `total` (complete only), `empty` (ammo turrets),
+    `armed`, `unarmed`, `unread` (readiness unknown), `by_hand`, and `capped` (the find limit, 256, when reached).
+    Capped or unknown counts describe only the turrets read. `platform_digest` uses these structured counts,
+    including empties past row 64; `turrets` remains text and `turret_counts` carries the counts and status.
+    Its `check {status, incomplete}` names failed constituent reads, capped counts or hull reads, and failed/pending
+    ammunition traces. An incomplete check never says “stopped or blocked: none”; known stops remain listed.
+    `platform_defense.sides_capped` names the 40,000-tile hull limit when reached. These are read results.
+    Tests: `tests/platdigest_counts.lua` (65/137 turrets, only empty on page 2; 256/257 cap; failures and filters).
+    The census vehicle summaries in the stream harness, model and public state also preserve a missing total as
+    unknown (`null`); their rows stop at 64. `site/test_vehicles.py` covers totals 137, 0 and missing through all three.
+    The map does not report no vehicles on a surface when rows are missing or a vehicle lacks a known position.
 - B2 (Astra, ~10 times on Kestrel): `belt_flow {position, seconds?, platform?}` (beltsample.lua) walks the belt line
   (64 tiles back and on, undergrounds followed), cuts it into sections at each merge, and samples each section's last
   tile and each belt merging in for 2..30 s: each lane's items by `unique_id` (2.0.77's detailed transport line
