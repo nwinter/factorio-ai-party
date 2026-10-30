@@ -19,7 +19,7 @@ local surface={index=1,find_entities_filtered=function(f) scans=scans+1; return 
 local hub={valid=true,get_inventory=function() return {get_item_count=chest.get_item_count} end}
 local platform={valid=true,name='Sunward',hub=hub}
 force.platforms={platform}
-local where={stopped=false,text='flying gleba->nauvis',leg={to='nauvis',eta_ticks=600}}
+local where={stopped=false,text='flying gleba->nauvis',leg={to='nauvis',left_km=100,speed_now_kms=10}}
 local p={index=1,force=force,surface=surface,position={x=0,y=0},character={valid=true},crafting_queue_size=2,
   get_main_inventory=function() return {get_item_count=chest.get_item_count} end}
 local C=require('conditions'){position=function(v) return v end,platform_where=function() return where end}
@@ -68,9 +68,9 @@ game.tick=360; items=19; scans,counts=0,0; eq(row(c,record).eta_s,4); eq(scans,0
 eq(row(c,{}).eta_s,nil) -- no inherited rate from an earlier wait
 -- Distance/speed comes from the same oriented flight leg as the predicate, including reverse flights.
 c={['until']='platform_arrived',platform='Sunward',location='nauvis'}
-eq(row(c).eta_s,10); where.leg.eta_ticks=300; eq(row(c).eta_s,5)
+eq(row(c).eta_s,10); where.leg.left_km=50; eq(row(c).eta_s,5)
 platform.paused=true; has(row(c).no_estimate,'paused'); platform.paused=false
-where.leg.eta_ticks=nil; has(row(c).no_estimate,'speed is zero')
+where.leg.speed_now_kms=0; has(row(c).no_estimate,'speed is zero')
 where.leg.to='gleba'; has(row(c).no_estimate,'ends at gleba')
 where.leg=nil; has(row(c).no_estimate,'not departed')
 where.stopped=true; where.at='nauvis'; eq(row(c).eta_s,0)
@@ -84,9 +84,11 @@ do
   local c={['until']='platform_arrived',platform='Sunward',location='nauvis',timeout=17280000}
   local function estimate() local _,_,r=LW.check(p,c,{}); return r end
   has(estimate().no_estimate,'before departure'); eq(projections,0); eq(predicates,1)
-  where.stopped=false; where.leg={to='gleba',eta_ticks=600}
+  -- The current-speed ETA is 10s; the historical freight projection deliberately differs (2s).
+  where.stopped=false; where.leg={to='gleba',left_km=100,speed_now_kms=10,eta_ticks=120}
   has(estimate().no_estimate,'beyond the current flight leg'); eq(projections,0); eq(predicates,2)
   where.leg.to='nauvis'; eq(estimate().eta_s,10); eq(projections,0); eq(predicates,3)
+  where.leg.speed_now_kms=nil; has(estimate().no_estimate,'current platform speed is zero or unavailable'); eq(projections,0)
   where.leg=nil; c.timeout=54000; eq(estimate().eta_s,120); eq(projections,1)
   c.timeout=nil; eq(estimate().eta_s,120); eq(projections,2)
   where.stopped=true; where.at='gleba'

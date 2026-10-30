@@ -1745,8 +1745,15 @@ fh sleep 900 --until researched                       # ...or until the research
     observations at least one game second apart establish the rate; zero change or movement away from the
     threshold gives no estimate. Strict `below` uses the next integer below the threshold. Starting a new wait
     starts a new sample pair. The predicate's count supplies the sample, with no second inventory/entity scan.
-  - Platform arrival: distance left on the current flight leg divided by current speed, assuming unchanged speed.
-    A stopped/paused platform, zero speed, or a leg to another destination gives no estimate for a pending arrival.
+  - Platform arrival: distance left in the direction now flown divided by the speed now, assuming that speed is
+    maintained. This uses the same `leg_left_km` as the platform row after a mid-leg reversal. `speed_kms`,
+    `heading_to`, `speed_trend` and `eta_uncertain` identify the inputs and uncertainty. Acceleration/deceleration
+    comes from the latest existing speed sample within two game seconds, with its speed pair and interval in the
+    basis. No fresh comparison is explicitly uncertain. Past cruise or a 60-second mean is not substituted for
+    the current leg's arrival speed. `platforms` and hub `inspect.flight` use the same calculation for `eta_min`,
+    `eta_s`, `eta_basis` and `eta_uncertain`. `eta_to` uses it for the current leg and retains the explicitly named
+    cruise assumption for later legs. A paused platform or zero/unavailable speed gives no pending arrival ETA;
+    a stopped platform or a later destination uses the schedule estimate when one is available.
     Hand crafting uses the remaining queue at the current hand-crafting speed. Event conditions without a rate
     (including alerts and platform departure) say no estimate.
   `idle_s` is the character's cumulative idle game seconds in this wait, also printed in `wait_line`. Body actions
