@@ -3008,7 +3008,7 @@ class Model:
             if isinstance(r.get("sent_tick"), (int, float)) and isinstance(tick, (int, float)):
                 row["sent_age_s"] = round(max(0, tick - r["sent_tick"]) / 60 + since)
             rows.append(row)
-        return {"rows": rows, "total": v.get("total") or len(rows), "read_age_s": round(since)}
+        return {"rows": rows, "total": v.get("total"), "read_age_s": round(since)}
 
     def snapshot(self, now, cameras=None):
         self.snap_now = now  # (BI5) the time a project's owner_work reads its wait at

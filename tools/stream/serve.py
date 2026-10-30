@@ -302,8 +302,9 @@ class AudioHub:
                     self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 
-    def page_event(self, page, what, now=None):
-        """A page's event stream: what = open (it connected), seen (a write went out to it) or close."""
+    def page_event(self, page, what, now=None, height=None):
+        """A page's event stream: what = open (it connected), seen (a write went out to it) or close; render (d29
+        batch349: the page drew a state frame, with its right panel's height in px, POST /overlay/render)."""
         now = now or time.time()
         with self.cond:
             r = self.pages.setdefault(page, {"open": 0, "connects": 0, "connected": None, "seen": None, "closed": None})
@@ -313,13 +314,40 @@ class AudioHub:
                 r["seen"] = now
             elif what == "close":
                 r["open"] = max(0, r["open"] - 1); r["closed"] = now
+            elif what == "render":
+                r["rendered"] = now
+                r["panel_px"] = int(height) if isinstance(height, (int, float)) else None
+
+    WHOLE_S = 0.5  # (batch349) a clip played whole: state end, played within this of its length, not early
+
+    def speech(self, now=None):
+        """(d29 batch349 SP, viewer Aurora: shift100's blank overlay played no voice and nothing said so) the page's
+        voices: the last clip played whole (state end, played >= its length - WHOLE_S, not early) and how many in the
+        last 30 min; clips posted in the last 15 min (not control) whose time is up (ended, skipped or expired), and how
+        many of those played whole."""
+        now = now or time.time()
+        with self.cond:
+            self._trim(now)
+            whole = [r for _, r in self.ended if r.get("state") == "end" and not r.get("early")
+                     and isinstance(r.get("played"), (int, float)) and isinstance(r.get("duration"), (int, float))
+                     and r["played"] >= r["duration"] - self.WHOLE_S]
+            ids = {r["id"] for r in whole}
+            due = [c for c in self.order if c in self.clips for m in [self.clips[c][2]]
+                   if m.get("channel") != "control" and now - m.get("t", 0) <= 900 and (c in self.done or m["expires"] <= now)]
+            return {"last_whole": round(max((r["t"] for r in whole), default=0), 2) or None,
+                    "whole_30m": sum(1 for r in whole if now - r["t"] <= 1800),
+                    "due_15m": len(due), "due_15m_whole": sum(1 for c in due if c in ids),
+                    "due_15m_skipped": sum(1 for c in due if c in self.skipped)}
 
     def pages_status(self, now=None):
-        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed}}}
-        (epoch seconds)."""
+        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed,
+        rendered, panel_px}}, speech} (epoch seconds)."""
+        now = now or time.time()
         with self.cond:
-            return {"now": round(now or time.time(), 2), "up": round(self.up, 2),
-                    "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+            out = {"now": round(now, 2), "up": round(self.up, 2),
+                   "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+        out["speech"] = self.speech(now)
+        return out
 
     def status(self):
         now = time.time()
@@ -447,6 +475,11 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(code, json.dumps(reply, ensure_ascii=False).encode(), "application/json")
             if path == "/audio/played":
                 audio.played(body)
+                return self.send(200, b"{}", "application/json")
+            if path == "/overlay/render":  # (batch349) a page drew a state frame: its right panel's height
+                name = str(body.get("page") or "unnamed")
+                if re.fullmatch(r"[A-Za-z0-9_-]{1,24}", name):
+                    audio.page_event(name, "render", height=body.get("height"))
                 return self.send(200, b"{}", "application/json")
             if path == "/audio/release":  # (batch319 SU) the tour ends its segment's hold
                 ok = audio.release(body.get("segment"))
