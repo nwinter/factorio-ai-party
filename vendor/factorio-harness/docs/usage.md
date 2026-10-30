@@ -18274,6 +18274,7 @@ restart. The position fallback operates on a runtime-only deploy, but does not g
 - `windows.whole_leg/last_1_min/last_3_min/last_5_min`: the same counts and signed NET. Whole leg uses departure counter snapshots for ammunition and fuel; `partial` means first observed underway. Repair packs have no departure production baseline and say unavailable. The engine's one-minute count interpolates its oldest bucket and includes its partial bucket: `start_tick/end_tick` are the nominal window, `read_tick` is the observation tick, and `oldest_bucket` gives its exact bounds and weight. These counts can be fractional, not exact event deltas; three/five minutes sum 90/150 completed two-second production-graph buckets, ending at the stated boundary, with age and bucket width. Windows crossing departure say `includes_before_leg`. These are production/consumption counts, not changes in stock (cargo and location changes are separate).
 - `usable_after_reserve_margin`: min/max and ticks for `(stock-reserve)/(1+margin)` **observed at reads** on this leg, with first/last sample ticks and sample count. No continuous or pre-installation extrema are inferred. Changing leg, scope, reserve or margin starts another observation series; at most 32 series per platform leg are retained.
 - `cap_conditions`: currently readable item-referencing circuit/logistic enable conditions on machines, inserters, belts and pumps, with entity, position, condition, tick and `on`/`off`/unknown state. An unwired circuit is labeled ignored. Indirect virtual signals are not attributed to an item. A gate being off never changes the budget's net rate.
+  Removed or rebuilt entities refresh this read's entity list even when its count is unchanged; the replacement's current conditions are reported. Bound entity methods are never retained across reads (Factorio 2.0.77 can crash when one is called after destruction).
 
 `budget_below` includes the binding item's used window and multiwindow line in `saw`. On firing its evidence keeps the **whole return budget**, including every item's rate basis, counts, windows, stocks and cap states. In an `all`/`any` guard, `evidence.budget_conditions` keeps each met budget member even if a preceding progress or hit condition already supplied evidence. Cached reads retain their original tick; fired snapshots are detached from later reads.
 
@@ -18321,3 +18322,15 @@ either selector, the hub keeps its existing unwired-zero behavior (and positive 
 `count`, `tick` and `circuit_signal:true`. Compound guards retain these under `circuit_conditions` alongside other
 evidence. Guard status also exposes the latest `saw`. Network identities and signal values are read afresh at each
 check; no hub fallback or cached zero is substituted for an unreadable entity network.
+## d29 batch365 FL (eng/d20-batch365)
+
+`flight_watch {platform, from:"leg"}` arms at the current leg and begins on the next observed connection, oriented
+from/to, or direction change: a departure from a stop, pass-through, or reversal. `from:"departure"` retains its
+meaning: leaving a stop, excluding pass-through. A stop alone does not start a leg watch. Both modes check on the
+watch's existing once-per-second phase and end unbegun after 24 game hours. The watching window and limits are
+unchanged. Direct calls, queue submission and dry runs accept the same `from` values.
+
+The read and start alert identify the change. `watch.start_change` keeps `kind` (departure, connection, direction),
+`before` and `after` (location or connection/from/to/back), and the observation ticks `from_tick` and `tick`.
+The reason survives a mixed split and remains in the final read. Registration captures the baseline immediately;
+changes between samples can be missed. Distance and speed changes within a leg do not start a watch.

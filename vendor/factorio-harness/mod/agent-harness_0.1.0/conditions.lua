@@ -261,8 +261,23 @@ return function(api)
   local function ring_row(ring,size,s) local x=ring[(s-1)%size+1]; if x and x.s==s then return x end end
   local function tenth(v) return math.floor(v*10+0.5)/10 end
   local function location_name(pl) return pl.space_location and pl.space_location.name end
-  -- (batch329 PR) budget_below's last reading per condition (in memory: read again after a load)
-  local budget_kept=setmetatable({},{__mode='k'})
+  -- These readings decide when a guard changes the world. Keep both the reading and its clock in storage:
+  -- a joining peer has fresh module locals, but must not read earlier than the server (d29 batch367).
+  -- Condition tables are serialized keys, with their shared references restored on load; no userdata keys.
+  -- Keep the cache outside the condition arguments returned by queue_status. Expiry releases abandoned keys
+  -- deterministically, rather than depending on a weak table's peer-local garbage collection.
+  local standalone={}  -- module fixtures without a state provider; runtime always supplies storage's state
+  local function readings(kind,every)
+    local s=api.state and api.state() or standalone
+    s.condition_reads=s.condition_reads or {}
+    local r=s.condition_reads[kind]
+    if not r then r={by={}}; s.condition_reads[kind]=r end
+    if not r.trim or game.tick-r.trim>=every then
+      for c,v in pairs(r.by) do if game.tick-v.tick>=every then r.by[c]=nil end end
+      r.trim=game.tick
+    end
+    return r.by
+  end
   M.BUDGET_EVERY=600
   -- Keep the read's arguments by value: reserve, items and return_allowance can be edited in place.
   local function budget_copy(v)
@@ -276,7 +291,6 @@ return function(api)
     return true
   end
   -- (batch346 LC) launches_at_least's last count per condition, read at most every LAUNCH_EVERY ticks
-  local launch_kept=setmetatable({},{__mode='k'})
   M.LAUNCH_EVERY=60
   local function circuit_wire(v)
     local w=v==nil and 'both' or type(v)=='string' and v:lower():gsub('%s','')
@@ -894,6 +908,7 @@ return function(api)
     budget_below=function(p,c,estimate,record)
       (record or c).evidence=nil
       local turnaround,window_config=budgetwindows.arguments(c)
+      local budget_kept=readings('budget',M.BUDGET_EVERY)
       local now=game.tick
       local pl
       for _,each in pairs(p.force and p.force.platforms or {}) do if each.valid and each.name==c.platform then pl=each; break end end
@@ -901,13 +916,13 @@ return function(api)
       local at=pl and pl.space_location
       if at then
         budget_kept[c]=nil
-        if window_config then budgetwindows.stopped(pl,now) end
+        if window_config then budgetwindows.stopped(pl,now,api.state and api.state()) end
         return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met); cached budget cleared',c.platform,at.name)
       end
       local l=api.leg and api.leg(pl)
       if not l then
         budget_kept[c]=nil
-        if window_config then budgetwindows.stopped(pl,now) end
+        if window_config then budgetwindows.stopped(pl,now,api.state and api.state()) end
         return false,string.format('platform %s: no flight leg: no fresh return budget (not met); cached budget cleared',c.platform)
       end
       local connection=pl.space_connection and pl.space_connection.name
@@ -957,6 +972,7 @@ return function(api)
     -- ticks (launchcount.lua); between, the last count stands (its tick said). When met, the counts are its evidence.
     launches_at_least=function(p,c,estimate,record)
       local now=game.tick
+      local launch_kept=readings('launch',M.LAUNCH_EVERY)
       local kept=launch_kept[c]
       if not kept or now-kept.tick>=M.LAUNCH_EVERY then
         kept={tick=now,r=api.launch_count(p.force,c.platform,{window=c.window,since_tick=c.since_tick,origin=c.origin})}

@@ -82,7 +82,7 @@ return {
   ["feed"]={g={},a={"start"},t="moving-items",w="tops up every machine in reach"},
   ["flamers"]={g={},a={"research:flamethrower"}},
   ["fleet"]={g={},a={"scale:platforms:2"},t="space-age",w="one line a platform: where it is and its current stop with each departure condition against the hub"},
-  ["flight_watch"]={g={},a={"research:space-platform","built:space-platform-hub"},t="space-age",w="one platform watched once a second from now"},
+  ["flight_watch"]={g={},a={"research:space-platform","built:space-platform-hub"},t="space-age",w="one platform watched once a second from now, its next departure, or its next leg change, to its next arrival or `minutes`"},
   ["flush"]={g={},a={"research:oil-processing","built:pumpjack"}},
   ["freight_audit"]={g={},a={"event:freight"},t="space-age",w="one item across every planet and platform: stock, spoil times, silo room, unmet lab and requester demand"},
   ["fuel_budget"]={g={},a={"habit:hand_feeds:20","scale:machines:10"},t="analysis",w="each fuel made and used per minute, and each group of fuel users"},

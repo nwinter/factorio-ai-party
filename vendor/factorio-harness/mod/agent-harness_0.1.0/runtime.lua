@@ -2517,7 +2517,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch) running or needing it: id (KIND@START_TICK/AGENT), kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line, mixed (d23 batch123 CF2: an edit inside what it measures split its window: the line); and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read or replaced, end_tick its time limit); none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch, signal_watch) running or needing it: id (KIND@START_TICK/AGENT), kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line, mixed (d23 batch123 CF2: an edit inside what it measures split its window: the line); and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure or leg change), running or done until read or replaced, end_tick its time limit); none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -9101,7 +9101,7 @@ M.preflight=M.preflight or {}
 M.step_checks={
   -- (d29 batch348 CS, Sol #2758) circuit_set's values as the live call parses them (circuits.lua check_args)
   circuit_set=function(a) M.circuits.check_args(a) end,
-  flight_watch=function(a) M.flightwatch.check_read(a) end,  -- (d25 batch205 QR2) read: true with platform alone
+  flight_watch=function(a) M.flightwatch.check(a) end,  -- (d25 batch205 QR2) read: true with platform alone
   uptime=function(a) M.uptime.check_read(a) end,  -- (d25 batch214 QZ1) read: true in pages, never a new watch
   reservations=function(a) M.reservations.check_point(a) end,  -- (d25 batch217 QAB1) position, from, radius, sweep
   configure=function(a)
@@ -17875,7 +17875,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{launch_count=function(f,name,o) return M.launchcount.count(f,name,o) end,turret_snapshot=function(pl,t,why) return M.turretsnap.take(pl,t,why) end,return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{state=state,launch_count=function(f,name,o) return M.launchcount.count(f,name,o) end,turret_snapshot=function(pl,t,why) return M.turretsnap.take(pl,t,why) end,return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
@@ -20408,7 +20408,7 @@ function handlers.shipment(p,a) return M.shipment.read(p,a) end
 M.delivwatch=require('delivwatch'){state=state,who=function(p) return M.board.who(p) end,freight=M.freight,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
 function handlers.delivery_watch(p,a) return M.delivwatch.call(p,a) end
 -- (d21 batch72 AH1, Sol #1720) flight_watch: a platform's turrets' ammunition, damage, losses, repair packs and fuel
--- once a second from now or its next departure to its next arrival (flightwatch.lua)
+-- once a second from now, its next departure or leg change to its next arrival (flightwatch.lua)
 -- (d22 batch99 BI5) status {brief, work}'s watches: the bounded ones (measures.lua) and the flight watches the agent set
 function M.work_watches(p)
   local out=M.measures.card(p.index) or {}

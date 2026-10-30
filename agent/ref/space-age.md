@@ -452,8 +452,14 @@
   container it went to and what that held of it on that tick, before robots take any; the setter hears each.
   `quality` (or item `name@quality`) counts that quality only; none counts every quality (`counts` says which).
   Received, the landed stage (the same pods), arrivals (each with `by_quality`), the stock test and hub reads count by it.
-- `flight_watch {platform, from?: "now" | "departure", minutes?}`: one platform watched once a second from now (or its
-  next departure) to its next arrival or `minutes` (1..480, default 120). Per ammo turret (unit_number, position):
+- `flight_watch {platform, from?: "now" | "departure" | "leg", minutes?}`: one platform watched once a second from now,
+  its next departure, or its next leg change, to its next arrival or `minutes` (1..480, default 120). `departure` means
+  leaving a stop; it does not include a pass-through. `leg` starts when the connection, oriented from/to, or direction
+  changes, including departure from a stop, pass-through and reversal. It records the current leg when armed and
+  checks once a second; arriving at a stop alone does not start it. Both armed modes end unbegun after 24 game hours.
+  A `leg` watch's `start_change` and read line say what started it: `kind` (departure, connection, direction),
+  `before`/`after` (location or connection/from/to/back), and the two observation ticks (`from_tick`, `tick`).
+  Per ammo turret (unit_number, position):
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
   the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it
   first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
@@ -469,7 +475,7 @@
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
   names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
   step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The
-  setter hears in team.alerts when it begins at a departure and when it ends; the end line starts with the damage
+  setter hears in team.alerts when it begins at a departure or leg change and when it ends; the end line starts with the damage
   taken and the losses over the whole watch (the same as `{id}`'s `damage` and `lost_count`, a pause and a coast
   included), and its railgun part (`their fire: N hits`) is what the railguns hit, never damage taken. A turret empty under a second between
   two samples can be missed. Every ammo turret aboard is read, up to 1024 a watch: `turrets_total` (aboard at its last
