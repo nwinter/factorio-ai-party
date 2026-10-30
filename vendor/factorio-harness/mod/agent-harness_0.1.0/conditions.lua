@@ -1,3 +1,5 @@
+local budgetrates = require('budgetrates')
+local budgetwindows = require('budgetwindows')
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
@@ -262,6 +264,17 @@ return function(api)
   -- (batch329 PR) budget_below's last reading per condition (in memory: read again after a load)
   local budget_kept=setmetatable({},{__mode='k'})
   M.BUDGET_EVERY=600
+  -- Keep the read's arguments by value: reserve, items and return_allowance can be edited in place.
+  local function budget_copy(v)
+    if type(v)~='table' then return v end
+    local out={}; for k,x in pairs(v) do out[k]=budget_copy(x) end; return out
+  end
+  local function budget_same(a,b)
+    if type(a)~='table' or type(b)~='table' then return a==b end
+    for k,v in pairs(a) do if not budget_same(v,b[k]) then return false end end
+    for k in pairs(b) do if a[k]==nil then return false end end
+    return true
+  end
   -- (batch346 LC) launches_at_least's last count per condition, read at most every LAUNCH_EVERY ticks
   local launch_kept=setmetatable({},{__mode='k'})
   M.LAUNCH_EVERY=60
@@ -834,29 +847,67 @@ return function(api)
     end,
     -- (d29 batch329 PR, Astra #2727) a flight's return budget (platform_endurance turnaround): met once the item that
     -- binds first can go out less than km farther before the way back needs the rest. The read (about 7 ms on world n)
-    -- is made at most every BUDGET_EVERY ticks; between, the last reading stands (its tick said).
-    -- (d29 batch346, Astra #2755: in platform lane guards, inside all) a platform at a stop is not met, said, with no
-    -- read (the budget reads a ship in flight); a read that fails is kept as the reading is, so a guard re-reads it at
-    -- most every BUDGET_EVERY ticks too (each check raises it: the guard's read error).
-    budget_below=function(p,c)
+    -- is made at most every BUDGET_EVERY ticks on the same leg with the same arguments.
+    -- (d29 batch360 BC, Astra #2772) a stop, connection/direction change or changed arguments drops the old reading,
+    -- including a failed read. A new leg reads immediately; without a successful read it is not met, said in saw.
+    budget_below=function(p,c,estimate,record)
+      (record or c).evidence=nil
+      local turnaround,window_config=budgetwindows.arguments(c)
       local now=game.tick
       local pl
       for _,each in pairs(p.force and p.force.platforms or {}) do if each.valid and each.name==c.platform then pl=each; break end end
+      if not pl then budget_kept[c]=nil; error('no platform of ours named '..tostring(c.platform),0) end
       local at=pl and pl.space_location
-      if at then return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met)',c.platform,at.name) end
+      if at then
+        budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now) end
+        return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met); cached budget cleared',c.platform,at.name)
+      end
+      local l=api.leg and api.leg(pl)
+      if not l then
+        budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now) end
+        return false,string.format('platform %s: no flight leg: no fresh return budget (not met); cached budget cleared',c.platform)
+      end
+      local connection=pl.space_connection and pl.space_connection.name
       local kept=budget_kept[c]
-      if not kept or now-kept.tick>=M.BUDGET_EVERY then
-        local ok,b=pcall(api.return_budget,p,c.platform,c.turnaround)
-        kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil}
+      if kept and (kept.platform~=pl or kept.name~=c.platform or kept.connection~=connection or kept.from~=l.from
+        or kept.to~=l.to or kept.back~=l.back or not budget_same(kept.args,turnaround)) then
+        budget_kept[c]=nil; kept=nil
+      end
+      local ready=kept and kept.b and kept.b.window_budgets and kept.b.window_budgets.next_ready_tick
+      if not kept or now-kept.tick>=M.BUDGET_EVERY or (window_config and ready and now>=ready) then
+        local ok,b=pcall(api.return_budget,p,c.platform,turnaround)
+        kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil,platform=pl,name=c.platform,
+          connection=connection,from=l.from,to=l.to,back=l.back,args=budget_copy(turnaround)}
         budget_kept[c]=kept
       end
-      if kept.err then error(kept.err..' (read at tick '..kept.tick..')',0) end
+      local source=string.format('; cached leg %s->%s (connection %s, direction %s), read at tick %d',
+        kept.from,kept.to,kept.connection or 'unknown',kept.back and 'back' or 'forward',kept.tick)
       local b=kept.b
+      if kept.err or not b then
+        return false,string.format('platform %s: no fresh return budget for this leg (not met): %s%s',
+          c.platform,kept.err or 'read returned no budget',source)
+      end
+      if window_config then
+        local check=budgetwindows.evaluate(b.window_budgets,window_config,c.km)
+        check.scope='budget_below km'
+        (record or c).evidence=check.met and {tick=kept.tick,platform=c.platform,
+          cached_leg={from=kept.from,to=kept.to,connection=kept.connection,back=kept.back},
+          return_budget=budgetrates.copy(b),window_check=check} or nil
+        return check.met,'platform '..c.platform..': '..check.line..source
+      end
       if not (b and b.binds and b.binds.out_km_max) then
-        return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)
+        return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)..source
       end
       local x=b.binds.out_km_max
-      return x<c.km,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+      local holder=record or c
+      local met=x<c.km
+      holder.evidence=met and {tick=kept.tick,platform=c.platform,cached_leg={from=kept.from,to=kept.to,connection=kept.connection,back=kept.back},return_budget=budgetrates.copy(b)} or nil
+      local line
+      for _,r in ipairs(b.items or {}) do if r.name==b.binds.name then line=r.multiwindow_line or budgetrates.line(r); break end end
+      return met,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+        ..source..(line and '; '..line or '')
     end,
     -- (d29 batch346 LC, Astra #2754: 23 pods went up before an audit; a correction raced rockets already loaded and in
     -- flight) the rockets to a platform in a window (seconds back from now) or since a tick, from origin or any planet:
@@ -1395,6 +1446,7 @@ return function(api)
     if kind=='budget_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'budget_below requires platform (a platform of ours in flight, by name)')
       assert(type(c.turnaround)=='table','budget_below turnaround: as platform_endurance\'s ({km | fraction, back_to?, speed_floor?, margin?, reserve?})')
+      budgetwindows.arguments(c)
       assert(type(c.km)=='number' and c.km>=0 and c.km<=1e8,'budget_below km: met once the binding item can go out less than this many km farther (0..100000000)')
     end
     if kind=='launches_at_least' then

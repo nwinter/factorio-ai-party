@@ -1,3 +1,12 @@
+- In `lane: "platform:NAME"`, `wait_until` with `until: "platform_arrived"` or `"platform_progress"` takes
+  `timeout: 1..17280000` ticks (80 game hours). Default 3600, other conditions/lanes and `wait_ticks` stay unchanged.
+  Dry and live `queue_submit` enforce the same bound, including guard steps. Guards still interrupt every 10 ticks
+  (a deadline guard at its tick); one wait occupies one step, with no extra queue entries or host polling.
+  Submission and `queue_status` give `wait_deadlines`: game `tick`/`game_seconds`, `ticks_left`, `wall_unix_ms` and
+  `wall_seconds_left` projected at 60 ticks/s (pauses/slower UPS delay wall time). `state: "if_started_now"` means
+  pending: its actual start depends on earlier steps or resume. `state: "waiting"` gives its running deadline.
+  With a timeout over 54000, arrival ETA covers the current flight leg only; before departure or beyond that leg,
+  `no_estimate` says so. Arrival itself is still checked every 10 ticks.
 - `wait_until {until, ..., timeout?}`: waits inside the game until a condition holds, with no call per check: a direct
   timed action (`--wait`), a queue step, a queue guard's `when` or a standing order's `when`. Conditions: `researched`
   (`technology`; without it the research running now; a technology with levels, an infinite one too, is met once the
@@ -36,9 +45,23 @@
   between reads, and when it was rebuilt; a fired guard keeps them in its queue history; remote and platform lanes,
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
-  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: met once the item that binds first can go out
+  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: its cache is per leg and read arguments;
+  a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
+  met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
-  platform lanes, inside all/any too);
+  platform lanes, inside all/any too; optional `windows:[60,180,300,600,"leg"]` (any distinct subset) and
+  `require:"all"` (default with windows) or a count: **one same item** must bind under `km` in that many windows.
+  Different binding items across windows do not combine. Every fixed window needs its full duration on the current
+  leg, keyed by platform, connection, endpoints and direction; no cross-leg history or shorter fallback. The native
+  oldest bucket must also lie on this leg (up to one bucket after the nominal duration). Whole-leg counters need a
+  complete recorded baseline for this leg. `missing:"binding"` is the default: no data counts as binding, NET unknown.
+  `missing:"pending"` neither binds nor clears: with `require:"all"`, an item with any pending window cannot meet it.
+  `saw` says each item's NET/state per window and the eligibility tick; missing baselines say ready tick unknown.
+  The cache refreshes at that tick or after 10 s. An entire failed read still says not met.
+  `saw` and `evidence.window_check` name the corroborated item; `return_budget.window_budgets` keeps every item and
+  rate basis. Stock, reserve, margin, speed and caller allowance retain the existing formula; no gate state makes
+  NET zero. Omitting the options keeps the default calculation. Set `windows`/`require`/`missing` here or inside
+  `turnaround`, not both; changing them reads fresh);
   `launches_at_least` (`platform`, `n`, `window` seconds back or `since_tick`, `origin?` planet: the rockets sent up to
   that platform then, launched (landed, in flight) plus loaded in silos with a rocket ready aimed at it, met at n; saw
   and a fired guard's evidence give each count; counted every 1 s; read only: the harness stops nothing, so a cap is

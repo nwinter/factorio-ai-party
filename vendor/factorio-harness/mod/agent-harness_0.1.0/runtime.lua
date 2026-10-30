@@ -17887,6 +17887,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
 M.scheduler_api={snapshots=function(p,a) return M.turretsnap.read(p,a) end,collect_waiting=function(index) return M.waits.collect_waiting(index) end,
+  wall=function() return M.wall_ms end,
   -- (d22 batch112 BV1) a build's entries its running action had left (a walk for the rest, a step aside): {count, line}
   left_undone=function(index) return M.left_undone(index) end,
   guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,deadline=function(c) return conditions.deadline(c) end,
@@ -18053,7 +18054,7 @@ function M.queue_brief(q)
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guard_lines and q.guards or q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
-    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,
+    waiting=q.waiting,wait_deadlines=q.wait_deadlines,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,
     kept_wait=q.kept_wait,cancelled_wait=q.cancelled_wait,guards_after_plan=q.guards_after_plan,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume','queue_pause'} do
@@ -21770,6 +21771,11 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d29 batch356 DL) confirm the original damaged unit's removal before mined events return below.
+  if M.damagelog.removal_events[event.name] then
+    local ok,err=pcall(M.damagelog.on_removed,event)
+    if not ok then local s=state(); s.damage_log_errors={count=((s.damage_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+  end
   if event.name~=nil and event.name==(defines.events or {}).on_space_platform_changed_state then
     local pl=event.platform
     local ok,err=pcall(function() M.timed('productionlegs.event',M.freight.productionlegs.observe,pl,event.tick,'event',M.freight.where(pl)) end)

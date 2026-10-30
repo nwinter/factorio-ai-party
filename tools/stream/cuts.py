@@ -15,7 +15,7 @@ the switch is live (no scene rebuild). The vertical scene stays one camera: the 
 (d28 batch324 SF2) A panel trio (one client, two camera panels) brings its own holes in the program ("holes": main as
 layout.json's, the panels over it): the main capture keeps its crop, so no GUI strip shows in it.
 """
-import json, os, re, threading, time, traceback
+import copy, json, os, re, threading, time, traceback
 
 from obsws import OBSError
 
@@ -83,14 +83,31 @@ class Cuts:
         self.log = log
         self.want = None
         self.applied = None
+        self.acknowledged = None
+        self.retry_at = 0
+        self.attempts = 0
+        self.incomplete = False
         self.status = {"connected": False, "error": None, "onair": None, "inset": None, "t": None, "vertical": None}
         self.lock = threading.Lock()
         if start:
             threading.Thread(target=self.run, daemon=True).start()
 
+    @staticmethod
+    def program_key(program):
+        if not program:
+            return None
+        # Labels, ship progress and other snapshot facts can change each second without a new camera command.
+        # They must neither reset a pending capture's backoff nor trigger another OBS scene update.
+        key = {k: v for k, v in program.items() if k not in ("frames", "layout_info", "cameras")}
+        key["cameras"] = {s: (r.get("pending"), (r.get("shot") or {}).get("sent"))
+                          for s, r in (program.get("cameras") or {}).items()}
+        return key
+
     def set(self, program):
         with self.lock:
-            self.want = dict(program)
+            if self.program_key(program) != self.program_key(self.want):
+                self.retry_at, self.attempts = 0, 0
+            self.want = copy.deepcopy(program)
 
     def run(self):
         while True:
@@ -100,7 +117,6 @@ class Cuts:
                 self.status.update(connected=False, error=str(e)[:200])
                 for t in self.targets:
                     t["placed"] = {}
-                self.applied = None
                 time.sleep(5)
             except Exception as e:
                 self.status["error"] = f"{type(e).__name__}: {e}"[:200]
@@ -127,24 +143,69 @@ class Cuts:
                                  "placed": {}})
         self.status["vertical"] = "on" if uuid else "no scene " + v["scene"]
 
-    def work(self):
+    def work(self, now=None):
+        now = time.time() if now is None else now
         with self.lock:
             want = self.want
-        if not want or want == self.applied:
+        if not want:
             return
+        if self.program_key(want) == self.program_key(self.applied) and not self.incomplete:
+            self.applied = copy.deepcopy(want)  # fresh labels for the same confirmed frames
+            return
+        if now < self.retry_at:
+            return
+        self.attempts += 1
+        self.retry_at = now + min(8.0, 0.5 * 2 ** min(self.attempts - 1, 5))
         if self.vertical and not self.vertical_checked:
             self.find_vertical()
+        visible = {want.get("onair"), want.get("inset")} - {None}
+        if want.get("layout") == "trio":
+            visible.update((want.get("tiles") or {}).values())
+        cameras = want.get("cameras") or {}
+        if any(s in cameras and (cameras[s].get("pending") or not cameras[s].get("shot")) for s in visible):
+            self.status["error"] = "camera send pending"
+            return
+        self.acknowledged = copy.deepcopy(want)
+        # Preflight every destination before touching transforms, enables or z-order. In particular a 0x0
+        # inset/host/trio source cannot displace the last valid program while it hooks its capture.
+        for t in self.targets:
+            if not self.ready_sources(t, want, visible):
+                return
         for t in self.targets:
             self.apply(t, want)
-        self.applied = want
+        self.incomplete = any(t.get("incomplete") for t in self.targets)
+        self.applied = copy.deepcopy(want)
+        if not self.incomplete:
+            self.retry_at, self.attempts = 0, 0
         self.status.update(connected=True, error=None, onair=want.get("onair"), inset=want.get("inset"), t=time.time(),
                            layout=want.get("layout") or "onecam")
         onair, inset = self.by_slot.get(want.get("onair")), self.by_slot.get(want.get("inset") or "")
         self.log(f"[cuts] on air {onair}" + (f", inset {inset}" if inset else "") +
                  (" (trio)" if want.get("layout") == "trio" else "") + (" under the host view" if want.get("host") else ""))
 
+    def ready_sources(self, target, want, visible):
+        items = self.obs.call("GetSceneItemList", target["ref"])["sceneItems"]
+        ids = {it["sourceName"]: it["sceneItemId"] for it in items}
+        required = {self.by_slot.get(s) for s in visible}
+        if want.get("host"):
+            required.add(HOST)
+        for src in required:
+            if src not in ids:
+                self.status["error"] = f"source missing: {src}"
+                return False
+            tr = self.obs.call("GetSceneItemTransform", dict(target["ref"], sceneItemId=ids[src]))["sceneItemTransform"]
+            size = (tr.get("sourceWidth", 0), tr.get("sourceHeight", 0))
+            if not all(v > 0 for v in size):
+                self.status["error"] = f"source pending: {src} {size[0]}x{size[1]}"
+                self.log(f"[cuts] pending {src} {size[0]}x{size[1]}; keeping previous program")
+                return False
+            if target.setdefault("sizes", {}).get(ids[src]) != size:
+                target["placed"].pop(src, None)
+        return True
+
     def apply(self, target, want):
         o, ref = self.obs, target["ref"]
+        target["incomplete"] = False
         items = o.call("GetSceneItemList", ref)["sceneItems"]
         ids = {it["sourceName"]: it["sceneItemId"] for it in items}
         cams = {src: ids[src] for src in self.by_slot.values() if src in ids}
@@ -180,6 +241,7 @@ class Cuts:
                     target["placed"][src] = key
                 else:
                     target["placed"].pop(src, None)
+                    target["incomplete"] = True
         tiles = [s for s in hole if s in cams and s != onair]  # (batch324) a trio's small tiles over the big one
         front = tiles + [s for s in (inset, onair) if s in cams and s not in tiles] + \
             [s for s in self.by_slot.values() if s in cams and s not in (inset, onair) and s not in tiles]
@@ -205,6 +267,8 @@ class Cuts:
         x, y, w, h = (holes or target["trio"])[role[5:]] if role.startswith("trio:") else target["layout"]["cams"][role]
         t = o.call("GetSceneItemTransform", dict(ref, sceneItemId=iid))["sceneItemTransform"]
         known = bool(t.get("sourceWidth") and t.get("sourceHeight"))
+        if known:
+            target.setdefault("sizes", {})[iid] = (t["sourceWidth"], t["sourceHeight"])
         tr = dict(positionX=float(x), positionY=float(y), boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=float(w),
                   boundsHeight=float(h), boundsAlignment=0, alignment=5)
         if known:
@@ -213,4 +277,4 @@ class Cuts:
         return known
 
     def public(self):
-        return dict(self.status)
+        return copy.deepcopy(dict(self.status, requested=self.want, acknowledged=self.acknowledged, on_air=self.applied))

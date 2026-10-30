@@ -764,6 +764,10 @@ def onair_info(snap, cams):
             "tour": main.get("tour"), "vehicle": main.get("vehicle"), "did": main.get("did")}
 
 
+class CameraPending(Exception):
+    """Stop this decision before it records a failed camera send as shown."""
+
+
 class OneCam(Director):
     def __init__(self, slots, sender, log_path, **tuning):
         tuning = dict(ONECAM, **{k: v for k, v in tuning.items() if v is not None})
@@ -978,7 +982,7 @@ class OneCam(Director):
                                     "slot": "program", "reason": f"cut to {slot}: {reason}",
                                     "target": cur and {k: cur[k] for k in ("agents", "zoom", "vehicle", "did") if k in cur}}) + "\n")
         who = "+".join(cur["agents"]) if cur and cur.get("agents") else (cur or {}).get("subject", "-")
-        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot}: {who}  <- {reason}", flush=True)
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} PROGRAM requested {slot}: {who}  <- {reason}", flush=True)
 
     def retarget(self, target, reason, scores, now):
         """One client (POG_CAMS=1, Sunday 2026-10-18): no standby to frame on, so a cut moves the client on air to the
@@ -993,7 +997,7 @@ class OneCam(Director):
                                     "slot": "program", "reason": f"move {slot['slot']}: {reason}",
                                     "target": {k: target[k] for k in ("agents", "zoom", "vehicle", "did") if k in target}}) + "\n")
         who = "+".join(target.get("agents") or []) or target.get("subject", "-")
-        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot['slot']}: {who}  <- {reason} "
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} PROGRAM requested {slot['slot']}: {who}  <- {reason} "
               f"(one client: moved)", flush=True)
 
     def frame_on(self, slot, target, reason, scores, now):
@@ -1026,7 +1030,7 @@ class OneCam(Director):
     def ready(self, slot, now):
         t = self.state.get(slot)
         need = self.pending.get("ready_s") if self.pending and self.pending["slot"] == slot else None
-        return bool(t) and now - t.get("framed", t.get("since", now)) >= (self.cfg["ready_s"] if need is None else need)
+        return slot not in self.send_pending and bool(t) and now - t.get("framed", t.get("since", now)) >= (self.cfg["ready_s"] if need is None else need)
 
     def next_wake(self, now):
         """Seconds until the director should step again sooner than serve.py's 1 s tick (a cut timed to land before
@@ -1118,7 +1122,9 @@ class OneCam(Director):
             if fit and fit < target["zoom"] * scale - 1e-9:
                 target = dict(target, zoom=fit, exact_zoom=True, fire_fit=fit, solo_zoom=target.get("solo_zoom", target["zoom"]))
                 reason = f"{reason} (zoom {fit}: {self.fire_text(a)})"
-        return super().apply(slot, target, reason, scores, now, quiet=quiet)
+        if not super().apply(slot, target, reason, scores, now, quiet=quiet):
+            raise CameraPending(slot["slot"])
+        return True
 
     def near_onair(self, subject, position, by_name):
         """Do viewers see this now: the agent on air is in it, or its position is inside the on-air frame."""
@@ -1851,6 +1857,15 @@ class OneCam(Director):
         return self.fight_zoom(ext) if ext else None
 
     def step(self, snapshot, now=None, segment=None):
+        now = now or time.time()
+        try:
+            return self._step(snapshot, now, segment)
+        except CameraPending:
+            return self.public(now)
+        finally:
+            self.retry_sends(now)
+
+    def _step(self, snapshot, now=None, segment=None):
         now = now or time.time()
         self.step_t = now
         agents = snapshot["agents"]

@@ -1630,6 +1630,20 @@ fh queue repeat --file plan.json
 
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
+- In a `platform:NAME` lane, a `wait_until` step with `until: "platform_arrived"` or `"platform_progress"` accepts
+  `timeout: 1..17280000` ticks (80 game hours). Dry and live submissions share the bound, including guard steps.
+  Other conditions, `all`/`any`, body/remote lanes, direct calls and `wait_ticks` retain their limits. The 3600-tick
+  default and its existing ETA extension stay unchanged. One long wait is one step; checks still run every 10 ticks,
+  guards interrupt as before, and the realtime clock keeps running. Pending steps remain capped at 128.
+  Submission (including dry run) and `queue_status` return `wait_deadlines` for these platform waits: deadline `tick`
+  and `game_seconds`, `ticks_left`, `wall_unix_ms` and `wall_seconds_left`. Wall time is a projection at 60 ticks/s from
+  the request timestamp; pauses and slower UPS delay it. Requests without a wall timestamp say `wall_unavailable`.
+  A pending step has `state: "if_started_now"`: its projected deadline depends on when preceding work finishes or the
+  queue resumes. An active step has `state: "waiting"` and its actual game deadline (also in `waiting.deadline` and the
+  platform lane summary). Guard reactions, arrival, explicit cancellation or failure can end it earlier.
+  For an explicit timeout over 54000, the arrival ETA uses only the current flight leg; before departure or for a
+  later destination it reports `no_estimate`. The full schedule projection is excluded from these long waits to
+  keep a check below the tick-work budget; arrival checks themselves still run every 10 ticks.
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
   `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With
@@ -6348,11 +6362,24 @@ fh watch    # deploy on every change
   `no ghost at N (a new placement each): ...`. Checked on the copy: of two belts and a solar panel killed on Swift, the
   hub had rebuilt both belts and a ghost stood for the panel.
 - `damage_log {position, radius?, surface?}` (B8, Sol, board #695: incident 973 blamed a flamethrower that faced away):
-  hits on our entities, alive or destroyed since, only where our force saw at the time (a chunk in radar coverage or a
+  hits on our entities, only where our force saw at the time (a chunk in radar coverage or a
   character's sight): each row's age, count, damage type and amount, and its source, its position and facing (or no
   source the game names: a fire or projectile that outlived it). Hits from one source within a second are one row; the
-  last 8 rows an entity, 512 entities. `inspect` adds `damage_history`. On the copy the log adds about 6-12 ms per 1000
-  hits in the container (about 0.002 ms a hit on n).
+  last 8 rows per unit, 512 units. `inspect` adds `damage_history`.
+  (d29 batch356 DL) Each entity row identifies the original `unit_number` and name. `hit_rows` holds the original
+  unit/name, first `tick`, `last_tick`, copied hit `position`/`surface`, count, damage and type; `hits` keeps the source
+  and cause text. Hits at different positions form separate groups. An area read returns matching historical hits;
+  its top-level `position`, `hit_tick` and `last_hit_tick` identify the latest matching group.
+  `state` is `alive` only for the same original unit in current sight (saved entity reference, by-unit lookup, or a
+  visible same-ID occupant for old records), with `current_position` and `current_surface`. `destroyed` requires a
+  recorded death; `removed` requires mining or a script-raised removal, with `removal` tick/position/surface.
+  Otherwise it is `unknown`, including an absent unit without a removal event or a unit outside current sight.
+  `alive` is true/false only for confirmed states and absent for unknown. Moving away does not confirm destruction.
+  `current_occupants` separately lists entities standing at the returned historical position when visible, including
+  each occupant's own unit number (when it has one), name and position and whether it is the original. Its status is `complete`, `capped`
+  (17 entities reached, at most 16 listed), or `unknown` (outside sight or failed lookup).
+  Saved history from before this change has no per-hit target position: `position_status: unknown`, with no hit
+  position or surface. The old first-observation search anchor is explicitly labelled by `position_basis`.
 - `platform_rename {platform, name}` (C1, Astra 13:30): renames one of our platforms, as its GUI does, refusing another
   platform's name; `still_named` lists each agent's queue steps (pending and running), running action, standing orders,
   saved plans and open board items that name the old name. Nothing of theirs is changed. Platform schedules and
@@ -17905,6 +17932,17 @@ next queued flight_watch refused done and not read."
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
 
+## d29 batch360 (BC, Astra #2772: budget_below cannot carry a previous leg's budget)
+
+`budget_below` reuses a read for up to 600 ticks only for the same platform, connection, from/to, direction and
+turnaround arguments (including nested reserve, items and return_allowance values). A changed leg or arguments
+reads again immediately. A stop/arrival or no flight leg clears the cached budget. No fresh successful budget for
+the new leg means not met, with the reason in `saw`; failed reads are retried after 600 ticks on that leg, or
+immediately if its leg/arguments change. `saw` names the cached leg, connection, direction and read tick.
+
+This also applies inside `all`/`any` and remote/platform lane guards: an AQ->EDGE cached budget cannot satisfy a
+new EDGE->Shattered guard. The underlying endurance read's rate windows and stock scopes are unchanged.
+
 ## d29 batch346 (LC, Astra #2754: a launch count to guard on; Astra #2755: budget_below in lane guards)
 
 Astra's report: native requests with payload 10 sent 23 pods to Asterion (81886081..81928582, 18 with repair packs,
@@ -18187,3 +18225,33 @@ history is reconstructed. Two changes wholly between position samples cannot be 
 
 The state event is forwarded by control.lua; installing this change's control.lua requires a mod reload/server
 restart. The position fallback operates on a runtime-only deploy, but does not give state-event boundaries.
+### Return-budget rate evidence (d29 batch363)
+
+`platform_endurance {platform, turnaround:{...}}` keeps the conservative budget unchanged and adds diagnostics to **every** `return_budget.items` row:
+
+- `rate_basis`: window, start/end ticks where available, production `made`, consumption `used`, `net` (**made minus used**), rates and the exact `budget_net_used` (**used minus made**) used in the calculation. Existing fuel/phase rate rounding and fuel's `within_step` treatment remain explicit. A moving-phase aggregate spans separate moving intervals and is periodically halved; it has weighted counts and an explicit `endpoints_unavailable`, not invented contiguous timestamps.
+- `windows.whole_leg/last_1_min/last_3_min/last_5_min`: the same counts and signed NET. Whole leg uses departure counter snapshots for ammunition and fuel; `partial` means first observed underway. Repair packs have no departure production baseline and say unavailable. The engine's one-minute count interpolates its oldest bucket and includes its partial bucket: `start_tick/end_tick` are the nominal window, `read_tick` is the observation tick, and `oldest_bucket` gives its exact bounds and weight. These counts can be fractional, not exact event deltas; three/five minutes sum 90/150 completed two-second production-graph buckets, ending at the stated boundary, with age and bucket width. Windows crossing departure say `includes_before_leg`. These are production/consumption counts, not changes in stock (cargo and location changes are separate).
+- `usable_stock_extrema`: min/max and ticks for `(stock-reserve)/(1+margin)` **observed at reads** on this leg, with first/last sample ticks and sample count. No continuous or pre-installation extrema are inferred. Changing leg, scope, reserve or margin starts another observation series; at most 32 series per platform leg are retained.
+- `cap_conditions`: currently readable item-referencing circuit/logistic enable conditions on machines, inserters, belts and pumps, with entity, position, condition, tick and `on`/`off`/unknown state. An unwired circuit is labeled ignored. Indirect virtual signals are not attributed to an item. A gate being off never changes the budget's net rate.
+
+`budget_below` includes the binding item's used window and multiwindow line in `saw`. On firing its evidence keeps the **whole return budget**, including every item's rate basis, counts, windows, stocks and cap states. In an `all`/`any` guard, `evidence.budget_conditions` keeps each met budget member even if a preceding progress or hit condition already supplied evidence. Cached reads retain their original tick; fired snapshots are detached from later reads.
+
+
+### Explicit return-budget windows (d29 batch364)
+
+`platform_endurance` accepts `turnaround.windows`: a distinct subset of `[60,180,300,600,"leg"]`, meaning seconds or the current leg. With windows, `require` defaults to `"all"`; an integer from 1 to the number of windows is also accepted. **One same selected item must bind in that many windows.** Different items binding in different windows do not combine. Omitting windows keeps the existing conservative calculation unchanged.
+
+```json
+{"until":"budget_below","platform":"Resolute","km":5000,
+ "turnaround":{"km":25000,"back_to":"aquilo","speed_floor":55,"margin":0.2,
+               "items":["firearm-magazine","rocket","railgun-ammo"]},
+ "windows":[60,300,600],"require":"all","missing":"pending"}
+```
+
+For a turnaround read, put all three options inside `turnaround`. A guard accepts them at its top level or inside `turnaround`, never both. Each window uses measured made/used counts divided by its full duration, with the same stock, selection, reserve, margin, speed and caller return allowance. It does not replace a measured deficit with zero because a gate is off or fuel is within a maker's batch. An item binds when its maximum distance farther out is strictly less than the threshold. A one-minute deficit with that item's three/five-minute and leg nets in surplus is 1/4 binding, not met for `"all"` and met for `1`.
+
+**Every window stays on the current leg**, keyed by platform identity/name, connection, endpoints and direction. A stop or changed leg clears the old boundary. A matching recorded freight segment supplies its start; if that record has not caught up, the current direction's first observation is a conservative boundary. Each fixed window requires its full length since that boundary, with no shorter fallback. The one- and ten-minute native counts include an interpolated oldest bucket; that whole bucket must start on this leg too. The three/five-minute windows use completed two-second buckets. Consequently eligibility can be up to one bucket later than the nominal duration; `eligible_tick` gives the exact tick. Whole-leg data must have a complete, matching departure baseline; partial or old-leg baselines are unavailable.
+
+`missing:"binding"` is the default: a selected item's unavailable window counts as binding, conservatively. `missing:"pending"` makes it neither bind nor clear. With `require:"all"`, any pending window prevents that item from meeting the condition. With a numeric count, an item can meet it once enough other windows bind. If no item meets and an item's pending windows could still meet the count, the result says pending (not met). `saw` names which windows are pending and their eligibility ticks. For absent counters, partial whole-leg baselines or an unknown planning speed, no recovery tick is invented: it says ready tick unknown and why. Unselected missing rows do not count. A measured zero is distinct from missing data. A stopped ship, absent flight leg or failed whole read retains the existing not-met/error behavior.
+
+`return_budget.window_budgets` retains every item for each named window, its rate basis (window, endpoints, made/used/NET), unavailable reasons and eligibility ticks. An unavailable `rate_basis` has no counts or NET; any rejected sample is separately labeled `excluded_rate_basis`. `window_check` gives per-item binding/pending counts, each window's state and NET, and `binding_items`. The read checks its planned turnaround distance; the guard separately checks its own `km` and labels the scope. Default `items` and `binds` remain the conservative comparison. A fired guard keeps `evidence.window_check` plus the entire return budget; composite guards retain this too. The per-leg cache includes these options and refreshes at the first pending window's eligibility tick or after ten seconds. Both the reply and guard description state the full same-leg, same-item rule.

@@ -61,7 +61,7 @@ return {
   ["craft"]={g={},a={"start"},t="moving-items",w="queues hand crafts from your inventory, whatever stock the factory holds"},
   ["craftable"]={g={},a={"start"}},
   ["cut"]={g={},a={"research:construction-robotics","research:logistic-robotics","built:roboport"}},
-  ["damage_log"]={g={},a={"event:attacked","event:loss"},t="analysis",w="what hit our entities there"},
+  ["damage_log"]={g={},a={"event:attacked","event:loss"},t="analysis",w="what hit our entities there, for hits our force saw: what dealt each hit"},
   ["danger"]={g={},a={"event:enemy_seen"},t="analysis",w="a destination before a trip"},
   ["deconstruct"]={g={},a={"start"},t="building",w="marks for deconstruction"},
   ["defense"]={g={},a={"research:gun-turret","built:gun-turret|laser-turret|flamethrower-turret"}},
