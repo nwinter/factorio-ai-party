@@ -1,0 +1,13 @@
+.shift-recap{position:absolute;inset:0;z-index:45;box-sizing:border-box;padding:38px 42px;background:#11232c;color:#f4f0e6;display:flex;flex-direction:column;gap:15px;overflow:hidden;text-shadow:none;border-top:6px solid #e5bb76}
+.shift-recap[hidden]{display:none}
+.sr-kicker{font:700 19px system-ui;letter-spacing:2px;color:#e5bb76;text-transform:uppercase}
+.sr-title{font:700 36px/1.15 system-ui;margin:0;flex-shrink:0}
+.sr-text{font:400 27px/1.4 system-ui;margin:0;flex-shrink:0;overflow-wrap:anywhere}
+.sr-speaker{color:#e5bb76}
+.sr-source,.sr-still figcaption{font:400 16px/1.3 system-ui;color:#bfd0d8;margin:0;overflow-wrap:anywhere}
+.sr-still{margin:0;min-height:80px;max-height:34%;display:flex;flex-direction:column;gap:6px}
+.sr-still img{min-height:0;object-fit:contain;width:100%;flex:1;background:#0a161c}
+.sr-timeline{margin:auto 0 0;padding:12px 0 0;list-style:none;border-top:1px solid #49606a;display:grid;gap:12px;overflow:hidden;min-height:0}
+.sr-timeline li{display:grid;grid-template-columns:145px 1fr;gap:12px;font:400 19px/1.3 system-ui;max-height:4em;overflow:hidden}
+.sr-timeline time{color:#e5bb76}
+.sr-holding{font:500 18px system-ui;color:#bfd0d8;margin:0}
