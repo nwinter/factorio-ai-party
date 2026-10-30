@@ -462,7 +462,9 @@ def write_script(evidence, writer=None, audit_dir=None):
 
 
 def stills(run, until, out):
+    import shift_recap_visuals as visuals
     found = []
+    run = Path(run)
     start = ((read_json(Path(run) / "stream.json", {}) or {}).get("shift") or {}).get("start", 0)
     for meta in sorted((Path(run) / "mapframes").glob("*.json")):
         r = read_json(meta, {}) or {}
@@ -474,7 +476,32 @@ def stills(run, until, out):
         asset = hashlib.sha256(data).hexdigest()[:24] + ".webp"
         atomic(Path(out) / "assets" / asset, data)
         found.append({"asset": asset, "caption": f"Recorded still: {r.get('surface', 'factory')} · {wall(t)} · Graphics copyright Wube Software",
-                      "t": t, "source": str(meta.relative_to(run))})
+                      "t": t, "surface": r.get("surface"), "platform": r.get("platform"),
+                      "game_time": game_time(r["tick"]) if r.get("tick") is not None else None,
+                      "source": str(meta.relative_to(run))})
+    # Optional explicit index of already recorded ship/surface images or archive clips.
+    # Capture timestamps and subject labels are mandatory; filenames/mtime are not evidence.
+    catalog = read_json(run / "recap-media.json", [])
+    for index, row in enumerate(catalog if isinstance(catalog, list) else []):
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            continue
+        path = (run / row["path"]).resolve()
+        t = epoch(row.get("t"))
+        ext = path.suffix.lower()
+        if not path.is_relative_to(run.resolve()) or not path.is_file() or t is None or not start <= t <= until:
+            continue
+        if ext not in (".webp", ".png", ".jpg", ".jpeg", ".mp4", ".webm"):
+            continue
+        candidate = dict(row, asset="0" * 24 + ext, t=t)
+        if not visuals.media_record(candidate):
+            continue
+        data = path.read_bytes()
+        asset = hashlib.sha256(data).hexdigest()[:24] + ext
+        atomic(Path(out) / "assets" / asset, data)
+        found.append({"asset": asset, "t": t, "surface": row.get("surface"),
+                      "platform": row.get("platform"), "subject": row.get("subject"),
+                      "subject_type": row.get("subject_type"), "offset": row.get("offset", 0),
+                      "source": f"recap-media.json:{index + 1}", "recorded_path": row["path"]})
     return found
 
 
@@ -548,6 +575,8 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
                 "base_through": base_through, "base_count": base_count,
                 "evidence": evidence, "review": review, "lines": lines, "transition": transition,
                 "stills": sorted(pictures.values(), key=lambda r: r["t"])}
+    import shift_recap_visuals
+    manifest = shift_recap_visuals.bind(manifest)
     # The manifest becomes visible only after all of its assets are durable.
     save_json(out / "manifest.json", manifest)
     export(manifest, out)
@@ -557,6 +586,8 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
 def export(manifest, out):
     """Offline script, contact sheet and timeline; the same cards the overlay renders."""
     out = Path(out)
+    import shift_recap_visuals
+    manifest = shift_recap_visuals.bind(manifest)
     by_id = {r["id"]: r for r in manifest["evidence"]["rows"]}
     script = [f"# {manifest['run']} recap", "", f"Record through {wall(manifest['through'])}; {manifest['review']['mode']}.", ""]
     base_review = manifest["review"].get("base", manifest["review"])
@@ -585,8 +616,12 @@ def export(manifest, out):
         refs = [by_id[x] for x in line["sources"] if x in by_id]
         cites = [f"{r['source']}:{r['row']} · {r['game_time'] or r['wall_time']}" for r in refs]
         script += [f"## {i + 1}. {line['title']}", f"{line['speaker']}: {line['text']}", "", "; ".join(cites), ""]
-        picture = manifest["stills"][i % len(manifest["stills"])] if manifest["stills"] else None
-        pic = f'<figure><img src="assets/{picture["asset"]}"><figcaption>{html.escape(picture["caption"])}</figcaption></figure>' if picture else ""
+        picture = manifest["visuals"].get(line["id"], {}).get("media")
+        pic = ""
+        if picture:
+            media = (f'<video controls muted src="assets/{picture["asset"]}"></video>' if picture["kind"] == "video"
+                     else f'<img src="assets/{picture["asset"]}">')
+            pic = f'<figure>{media}<figcaption>{html.escape(picture["subject"] + " · " + picture["recorded_time"] + " · Graphics copyright Wube Software")}</figcaption></figure>'
         cards.append(f'<article><small>{html.escape(manifest["run"])} · SHIFT RECAP</small><h2>{html.escape(line["title"])}</h2>'
                      f'{pic}<p><b>{line["speaker"]}</b> {html.escape(line["text"])}</p><footer>{html.escape("; ".join(cites))}</footer></article>')
     atomic(out / "script.md", "\n".join(script))
@@ -595,31 +630,11 @@ def export(manifest, out):
     atomic(out / "cards.html", '<!doctype html><html lang="en"><meta charset="utf-8"><title>Shift recap rehearsal</title>'
            '<style>body{margin:32px;background:#101b22;color:#f5f3e9;font:20px system-ui}main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}'
            'article{background:#20343e;padding:32px;border-top:5px solid #e9bd6a;break-inside:avoid}h2{font-size:30px}p{line-height:1.5}'
-           'small,footer,figcaption{color:#bdcdd1;font-size:15px}img{width:100%;max-height:280px;object-fit:contain}figure{margin:0}li{margin:16px 0}</style>'
+           'small,footer,figcaption{color:#bdcdd1;font-size:15px}img,video{width:100%;max-height:280px;object-fit:contain}figure{margin:0}li{margin:16px 0}</style>'
            f'<h1>{html.escape(manifest["run"])} · shift recap</h1><main>{"".join(cards)}</main><h2>Recorded timeline</h2><ol>{timeline}</ol></html>')
-    # Render the actual on-air component too, at the same main-camera sizes as both pages.
-    css = (HERE / "static" / "shift-recap.css").read_text()
-    js = (HERE / "static" / "shift-recap.js").read_text()
-    timeline_rows = [{k: r[k] for k in ("kind", "text", "game_time", "wall_time")}
-                     for r in manifest["evidence"]["rows"] if r["kind"] in ("milestone", "loss", "research")]
-    for name, layout in (("main", "layout.json"), ("portrait", "layout-portrait.json")):
-        config = read_json(HERE / "static" / layout)
-        width, height = config["cams"]["main"][2:]
-        previews = []
-        for line in manifest["lines"]:
-            refs = [by_id[x] for x in line["sources"] if x in by_id]
-            picture = manifest["stills"][0] if manifest["stills"] else None
-            previews.append({"active": True, "phase": "recap", "run": manifest["run"], **line,
-                             "sources": refs, "timeline": timeline_rows[-8:],
-                             "still": dict(picture, url="assets/" + picture["asset"]) if picture else None})
-        data = json.dumps(previews, ensure_ascii=False).replace("<", "\\u003c")
-        atomic(out / f"onair-{name}.html", '<!doctype html><html><meta charset="utf-8"><title>On-air recap rehearsal</title>'
-               f'<style>body{{margin:0;background:#080e12}}#cam-main{{position:relative;width:{width}px;height:{height}px}}{css}</style>'
-               '<div id="cam-main"></div><script>' + js + '</script><script>const cards=' + data + ';'
-               'let i=Number(new URLSearchParams(location.search).get("card")||0);'
-               'const show=()=>PogShiftRecap.render({shift_recap:cards[i%cards.length]});show();'
-               'document.addEventListener("keydown",e=>{if(e.key==="ArrowRight"){i++;show();}if(e.key==="ArrowLeft"){i=Math.max(0,i-1);show();}});'
-               '</script></html>')
+    # Same pages, component, bound sequence and restore state used by the live overlay.
+    import shift_recap_rehearsal
+    shift_recap_rehearsal.pages(manifest, out)
 
 
 def main():

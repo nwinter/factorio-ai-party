@@ -54,15 +54,32 @@ and the live caster writer yield. The normal page audio queue holds routine spee
 `start.log`'s `started: N/M agents` ends playback, cancels any current clip, releases the
 audio hold and removes the recap card. Partial and zero successful launches use the same
 boundary. The marker is checked twice a second; a mid-shift service restart does not replay
-the recap. If narration finishes first, its final card/timeline stays up without repeating
-the voices until the marker appears. Agent readiness is controlled by start-team, not by
+the recap. If narration finishes first, the page restores the normal layout; the audio hold
+remains without repeating the voices until the marker appears. Agent readiness is controlled by start-team, not by
 the recap. A short startup can end a longer script before all lines air.
 
-The on-air cards use the same recorded script, source clocks and still captions as the
-offline export. Stills remain explicitly labelled archival images; game graphics carry
-Wube's credit. The timeline comes from recorded milestones, losses and research. No OBS
-scene change is needed. These changes take effect only when the operator deploys/restarts
-the service through the normal shift start.
+The recap and transition cover the entire broadcast canvas, including cameras and sidebar,
+at 1920×1080 and 1080×1920. Each beat shows a short headline, speaker, record time and the
+spoken caption. A fitting recorded image takes the media field at its original aspect ratio;
+wide images letterbox on the portrait canvas. Its capture time and Wube credit are separate
+from the claim's record time. The page binds by ship/surface and nearest recorded time,
+never by rotating an unrelated still. Ship names take precedence over their dock/route;
+ambiguous subjects and missing or failed media get a neutral card. Source paths, row IDs,
+binding reasons and the full timeline stay in the offline manifest/script/contact sheet.
+
+Normal layout keeps receiving snapshots beneath the opaque recap layer. Completion,
+interruption and an ended state after page reload restore it. A mid-recap reload renders the
+current service beat; a recorded clip seeks to its elapsed time and stays muted beneath the
+casters. The recap renderer runs before agent-dependent renderers, including when the service
+has no agents snapshot yet. No OBS scene change is needed. The operator deploys/restarts the
+service through the normal shift start.
+
+`mapframes/*.json` supplies timestamped surface stills. An optional `runs/RUN/recap-media.json`
+array can index other **already recorded** local images/clips, for example
+`{"path":"archive/lark.webm","t":1793391508,"platform":"Lark","offset":0}` (or `surface`).
+It must name an existing file inside that run, a capture time inside the recorded shift and
+a subject. Accepted formats are WebP/PNG/JPEG/MP4/WebM. No capture, remux, OBS request or
+filename/mtime inference runs. Content-addressed copies and bindings survive service restarts.
 
 Offline rehearsal (no service, game or OBS):
 
@@ -74,6 +91,19 @@ Omit `--offline` to use the record-only narrative model and evidence review. `--
 (the CLI default) renders script and cards only; `--tts say`/`tone` is local, and `auto`
 uses the configured voice providers. `--logs tools/stream/logs` includes available legacy
 analyst logs. `--until EPOCH` sets a reproducible record boundary. The rehearsal retains
-`early-manifest.json`; arrow keys browse the two on-air HTML previews, or `?card=N` selects
-a zero-based card. `python3 tools/stream/test_shift_recap.py` uses stub records/audio and
-never needs the game, model credentials, the current clock or a live service.
+`early-manifest.json`; arrow keys browse the two on-air HTML previews, or `?step=N` selects
+a zero-based beat (transition followed by recap). Space or `?play=1` advances at prepared
+line durations; Escape restores the normal layout. `?case=still`, `neutral`, `transition`,
+`restore`, `early`, `interrupted` and `holding` select the corresponding checks. These are
+the actual page markup, CSS and renderers with file-only state delivery and no audio. Early
+startup supplies only `shift_recap`; restore uses an empty pre-observation Model, not a fake
+world. The normal layout's remote font import is omitted so the rehearsal stays offline.
+
+To rehearse a saved, reviewed manifest without rewriting its script:
+
+```sh
+python3 tools/stream/shift_recap_rehearsal.py --manifest OUT/manifest.json --out REPLAY
+```
+
+`python3 tools/stream/test_shift_recap.py` and `test_shift_recap_visuals.py` use stub records/audio
+and never need the game, model credentials, the current clock or a live service.

@@ -321,6 +321,21 @@ class RecapTest(unittest.TestCase):
         self.assertIsNotNone(p.current)
         self.assertTrue(any(m[2].get("stop_segment") == p.segment for m in audio.clips.values()))
 
+    def test_early_service_publishes_current_beat_before_agents_and_restores_on_end(self):
+        p = Player(self.run, self.old, self.audio())
+        self.assertTrue(p.step(T0)["active"], "preparing card needs no world snapshot")
+        manifest = self.prepare()
+        first = p.step(T0 + 1)
+        self.assertEqual(first["id"], manifest["lines"][0]["id"])
+        self.assertIn("time_label", first)
+        self.assertNotIn("sources", first)
+        self.assertNotIn("timeline", first)
+        self.assertEqual(p.step(T0 + 4)["id"], first["id"], "page reload receives the current beat")
+        self.assertEqual(p.public["elapsed"], 1)
+        p.finish("interrupted")
+        self.assertIsNone(p.step(T0 + 5))
+        self.assertIsNone(Player(self.run, self.old, self.audio()).step(T0 + 6))
+
     def test_exhaustion_holds_cards_without_repeating(self):
         m = self.prepare()
         p = Player(self.run, self.old, self.audio())
