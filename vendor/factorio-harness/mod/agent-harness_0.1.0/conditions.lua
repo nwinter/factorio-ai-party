@@ -1,3 +1,4 @@
+local budgetrates = require('budgetrates')
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
@@ -838,7 +839,8 @@ return function(api)
     -- (d29 batch346, Astra #2755: in platform lane guards, inside all) a platform at a stop is not met, said, with no
     -- read (the budget reads a ship in flight); a read that fails is kept as the reading is, so a guard re-reads it at
     -- most every BUDGET_EVERY ticks too (each check raises it: the guard's read error).
-    budget_below=function(p,c)
+    budget_below=function(p,c,estimate,record)
+      (record or c).evidence=nil
       local now=game.tick
       local pl
       for _,each in pairs(p.force and p.force.platforms or {}) do if each.valid and each.name==c.platform then pl=each; break end end
@@ -856,7 +858,13 @@ return function(api)
         return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)
       end
       local x=b.binds.out_km_max
-      return x<c.km,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+      local holder=record or c
+      local met=x<c.km
+      holder.evidence=met and {tick=kept.tick,platform=c.platform,return_budget=budgetrates.copy(b)} or nil
+      local line
+      for _,r in ipairs(b.items or {}) do if r.name==b.binds.name then line=r.multiwindow_line or budgetrates.line(r); break end end
+      return met,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+        ..(line and '; '..line or '')
     end,
     -- (d29 batch346 LC, Astra #2754: 23 pods went up before an audit; a correction raced rockets already loaded and in
     -- flight) the rockets to a platform in a window (seconds back from now) or since a tick, from origin or any planet:

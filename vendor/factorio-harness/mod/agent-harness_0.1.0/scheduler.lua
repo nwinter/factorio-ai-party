@@ -801,6 +801,16 @@ return function(api)
         for _,m in ipairs((g.when['until']=='all' or g.when['until']=='any') and g.when.conditions or {}) do
           evidence=evidence or m.evidence or m.hit_first and #m.hit_first>0 and m.hit_first or nil
         end
+        -- A preceding progress/hit member must not hide the budget's full per-item rate evidence.
+        local budgets={}
+        for _,m in ipairs((g.when['until']=='all' or g.when['until']=='any') and g.when.conditions or {}) do
+          if m.evidence and m.evidence.return_budget then budgets[#budgets+1]=m.evidence end
+        end
+        if #budgets>0 then
+          local merged={}; for k,v in pairs(evidence or {}) do merged[k]=v end
+          merged.budget_conditions=budgets
+          evidence=merged
+        end
         if q.current then record(q,q.current,false,{reason='guard',condition=g.when['until'],saw=saw,evidence=evidence}); q.current=nil end
         api.stop(p)
         q.history[#q.history+1]={action='guard',ok=true,result={condition=g.when['until'],saw=saw,evidence=evidence,guard=g.id},finished_tick=game.tick,plan=q.plan_seq}
