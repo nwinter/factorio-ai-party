@@ -18383,3 +18383,11 @@ comparator or extra filter keys refuse before either priority changes. Clear and
 Configure and inspect.splitter expose filter_quality and filter_comparator, including normal/= and any/none, and
 state both in the line. Inspect adds outputs: at most two adjacent belt lookups, with two surface lanes per straight
 belt or underground mouth (items by quality, can_insert_at_back). It does no downstream traversal or background work.
+
+### Recorded shift recaps (operator stream tool)
+
+`tools/stream/shift_recap.py rehearse --run-dir runs/RUN --out OUT --offline` renders a shift's
+script, cards and timeline from existing records. The stream prepares its voiced recap at
+three hours, appends closing developments at the deadline, and plays it through the next
+start until `start.log` says `started: N/M agents`. Prepared assets survive service restarts.
+No new harness reads/actions or OBS commands are involved. See `tools/stream/shift-recap.md`.

@@ -1677,6 +1677,7 @@
     renderResearchCard(s);
     renderCams(s);
     renderSegment(s);
+    if (window.PogShiftRecap) window.PogShiftRecap.render(s);
     renderLoadouts(s);
     renderPollStrip(s);
     rotateWidgets();

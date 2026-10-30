@@ -179,6 +179,8 @@ class AudioHub:
                "duration": round(float(length), 2) if length is not None else None,
                "early": bool(early), "reason": (reason or state) if early else None}
         row["completed"] = state == "end" and not early
+        if v.get("recap"):
+            row["recap"] = v["recap"]  # durable line completion, recoverable by the successor service
         if row["completed"]:
             self.completed.add(cid)
         self.ended.append((now, row))
@@ -247,6 +249,23 @@ class AudioHub:
             return False
         self.push({"channel": "control", "release": str(segment), "expires_in": 30}, b"", "text/plain")
         return True
+
+    def interrupt(self, cid):
+        """End a prepared recap when the agents are up, including a clip already playing."""
+        with self.cond:
+            if cid not in self.clips:
+                return False
+            self.done.add(cid)
+        self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
+        return True
+
+    def stop_segment(self, segment):
+        """Also reaches decoded audio from a prior service instance on a reconnecting page."""
+        with self.cond:
+            for cid, (_, _, meta) in self.clips.items():
+                if (meta.get("segment") or {}).get("id") == segment:
+                    self.done.add(cid)
+        self.push({"channel": "control", "stop_segment": segment, "expires_in": 30}, b"", "text/plain")
 
     def pending(self, now=None):
         """The clips a page that connects now still needs: not started, done or expired, not control events, a timed
@@ -417,7 +436,7 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None):
+                 platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None, recap=None):
     audio = audio or AudioHub()
     tour = tour or TourOverlay()
     segments = segments or Segments()
@@ -476,6 +495,10 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, json.dumps(audio.pages_status()).encode(), "application/json")
             if path == "/analyst.json":
                 return self.send(200, json.dumps(analyst.full(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
+            if path.startswith("/shift-recap/assets/") and recap:
+                asset = recap.asset(path[len("/shift-recap/assets/"):])
+                if asset:
+                    return self.send(200, asset[0], asset[1])
             if path.startswith("/audio/clip/"):
                 clip = audio.clips.get(path.rsplit("/", 1)[-1])
                 if clip:
@@ -855,6 +878,10 @@ def main():
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
     audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None,
                      require_capture=not a.mock)
+    shift_recap = None
+    if a.run and not a.mock and run.get("shift") and run.get("shift_recap", True) is not False:
+        from shift_recap_air import ShiftRecap
+        shift_recap = ShiftRecap(os.path.dirname(os.path.abspath(a.run)), run, audio).start()
     follow = platform = look = host = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
@@ -944,6 +971,7 @@ def main():
                 with lock:
                     snap = model.snapshot(now, cams)
                     snap["artillery"] = arty["res"]
+                snap["shift_recap"] = shift_recap.public if shift_recap else None
                 snap["segment"] = segments.step(snap, now)
                 if mode == "onecam":  # no layout change while a replay is (about to be) on air
                     cur = segments.cur
@@ -1035,6 +1063,10 @@ def main():
                     # (d17 batch35 D4) what each agent does and which places its claims hold, for routing by content
                     feed.relay.set_team(router.Team.from_snapshot(snap, list(model.board["items"].values())))
                 snap["analyst"] = analyst.public(now)
+                if shift_recap:
+                    with lock:
+                        recorded_board = model.board_all_snapshot()
+                    shift_recap.observe_snapshot(snap, recorded_board)
                 snap["tour"] = tour.public(now)  # (CK3) the tour's marks, captions and clip over the camera
                 snap["poll"] = polls.step(now) if polls else None
                 snap["library"] = lib.public() if lib else None
@@ -1073,7 +1105,8 @@ def main():
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
                                                                     show=show, host=host,
-                                                                    board_all=board_all, tour=tour, replies_all=replies_all))
+                                                                    board_all=board_all, tour=tour, replies_all=replies_all,
+                                                                    recap=shift_recap))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")
