@@ -109,7 +109,9 @@ return function(api)
                 local key = b.unit_number .. ':' .. e.unit_number .. ':' .. j
                 if src[1] and src[2] and not joins[key] then
                   joins[key] = true
-                  out.side_loads[#out.side_loads+1] = {from=ref(b), into=ref(e), source_lanes={M.lane(b,1),M.lane(b,2)}, destination_lane=M.lane(e,j), source_lane_count=2, destination_lane_count=1}
+                  local source = ref(b)
+                  source.status, source.controls = api.status_name(b), M.controls(b)
+                  out.side_loads[#out.side_loads+1] = {from=source, into=ref(e), source_lanes={M.lane(b,1),M.lane(b,2)}, destination_lane=M.lane(e,j), source_lane_count=2, destination_lane_count=1}
                 end
               end
             end

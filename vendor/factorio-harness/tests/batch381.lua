@@ -73,6 +73,7 @@ local C={conditions=function() return {enable='signal-A > 0',enable_met=false,lo
 local F=require('lanefacts'){status_name=function(e) return e.status end,circuits=function() return C end,lane_near=function() return 2 end,is_belt=function() return true end}
 local facts=F.read({{tiles={dest}}},function() return {by_pick={[dest.unit_number]={{e=i}}},by_drop={}} end)
 eq(#facts.side_loads,1); eq(facts.side_loads[1].destination_lane.index,2)
+eq(facts.side_loads[1].from.controls.enable_met,false)
 eq(facts.side_loads[1].source_lanes[1].front.name,'iron-plate')
 eq(facts.side_loads[1].source_lanes[1].items,3)
 eq(facts.inserters[1].near_lane,'right'); eq(facts.inserters[1].far_lane,'left')
