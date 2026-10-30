@@ -399,13 +399,14 @@ do
     return trace.trace(p,args)
   end
   local off=read{lane_facts=false}; local old_reads=detailed
-  eq(off.lane_facts,nil); has(off.cost,'300 belt tiles')
+  eq(off.lane_facts,nil); eq(off.lane_facts_coverage,nil); has(off.cost,'300 belt tiles')
   local on=read(); local f=on.lane_facts
   eq(detailed-old_reads,64,'only 32 belts have both native lines read')
   eq(on.cost,off.cost); eq(on.routes[1].path,off.routes[1].path); eq(on.routes[1].stop,off.routes[1].stop)
   eq(table.concat(on.audit,'|'),table.concat(off.audit,'|'))
   eq(f.limit,32); eq(f.lane_tiles_total,300); eq(f.lane_tiles_included,32); eq(f.lane_tiles_omitted,268); eq(f.truncated,true)
-  eq(f.more.lane_facts_limit,256); eq(f.next.lane_facts_offset,32); has(f.note,'268 of 300'); has(f.note,'lane_facts_limit=256')
+  eq(f.more.lane_facts_limit,256); eq(f.next.lane_facts_offset,32)
+  has(on.lane_facts_coverage,'32 of 300 walked lane tiles included, 268 omitted'); has(on.lane_facts_coverage,'lane_facts_limit=256')
   f=read{lane_facts_limit=256}.lane_facts
   eq(#f.belts,256); eq(f.lane_tiles_included,256); eq(f.lane_tiles_omitted,44); eq(f.next.lane_facts_offset,256)
   f=read(f.next).lane_facts

@@ -45,6 +45,14 @@ test('CLI help works without a server or credentials',async()=>{
   const {stdout}=await exec(process.execPath,['dist/host/cli.js','--help']);
   assert.match(stdout,/queue submit/);assert.match(stdout,/blueprint import/);
 });
+test('trace lane-facts coverage and paging options survive first-page output truncation',async()=>{
+  const coverage='lane_facts: 32 of 300 walked lane tiles included, 268 omitted (limit 32, offset 0); lane_facts_limit=256 (maximum 256); lane_facts_offset=32 reads the next page';
+  await engine(()=>({ok:true,result:{lane_facts_coverage:coverage,routes:Array.from({length:100},(_,i)=>({route:i,path:'a long belt route '.repeat(30)}))}}),async port=>{
+    const {stdout}=await compact(port,['call','trace','--args','{"position":{"x":0,"y":0},"forward":true,"audit":true}']);
+    assert.match(stdout,/268 omitted/); assert.match(stdout,/lane_facts_limit=256/); assert.match(stdout,/lane_facts_offset=32/);
+    assert.match(stdout,/more lines|more bytes|fh more/);
+  });
+});
 test('fh help ACTION and fh call ACTION --help print that action from describe (help was an unknown command)',async()=>{
   await engine(request=>{
     assert.equal(request.action,'describe');

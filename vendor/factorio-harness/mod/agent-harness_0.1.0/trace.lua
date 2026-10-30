@@ -968,14 +968,16 @@ return function(api)
     out.lane_tiles_total, out.lane_tiles_included = budget.tiles, #budget.fact_tiles
     out.lane_tiles_omitted = budget.tiles - #budget.fact_tiles
     out.truncated = out.lane_tiles_omitted > 0
+    out.coverage = string.format('lane_facts: %d of %d walked lane tiles included, %d omitted (limit %d, offset %d)',
+      out.lane_tiles_included, out.lane_tiles_total, out.lane_tiles_omitted, out.limit, out.offset)
     out.note = out.note .. '; lane tiles count walked (belt, lane) pairs; included belts report all native lines'
     if out.truncated then
       out.more = {lane_facts_limit=math.min(256, budget.tiles), lane_facts_offset=0}
       local next_offset = budget.fact_offset + #budget.fact_tiles
       if next_offset < budget.tiles then out.next = {lane_facts_limit=budget.fact_limit, lane_facts_offset=next_offset} end
-      out.note = out.note .. string.format('; %d of %d walked lane tiles omitted from lane_facts: lane_facts_limit=%d (maximum 256), lane_facts_offset=0 reads the first %d',
-        out.lane_tiles_omitted, budget.tiles, out.more.lane_facts_limit, out.more.lane_facts_limit)
-      if out.next then out.note = out.note .. string.format('; lane_facts_offset=%d reads the next page at this limit', out.next.lane_facts_offset) end
+      out.coverage = out.coverage .. string.format('; lane_facts_limit=%d (maximum 256), lane_facts_offset=0 reads the first %d',
+        out.more.lane_facts_limit, out.more.lane_facts_limit)
+      if out.next then out.coverage = out.coverage .. string.format('; lane_facts_offset=%d reads the next page at this limit', out.next.lane_facts_offset) end
     end
     return out
   end
@@ -1002,7 +1004,7 @@ return function(api)
     out.routes = {}
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     out.merges = all_merges(out.routes)
-    if a and a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, p) end
+    if a and a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, p); out.lane_facts_coverage = out.lane_facts and out.lane_facts.coverage end
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas(),
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out
@@ -1057,7 +1059,7 @@ return function(api)
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     if #out.routes == 0 then out.routes = nil end
     out.merges = out.routes and all_merges(out.routes) or nil
-    if a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, p) end
+    if a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, p); out.lane_facts_coverage = out.lane_facts and out.lane_facts.coverage end
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas() + 1,
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out

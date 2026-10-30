@@ -18450,8 +18450,8 @@ Lane facts cover 32 walked lane tiles by default. `lane_facts_limit` accepts 1..
 0..2999 (default 0), with `forward:true, audit:true`. These only page the added facts; the original routes and
 audit keep their coverage. `lane_facts:false` skips the extra contents, controls and inserter-position lookups.
 `lane_tiles_total`, `lane_tiles_included`, `lane_tiles_omitted` and `truncated` state the facts coverage. `more`
-names the limit/offset for the first up-to-256 lane tiles; `next` names the next page when one remains. The note
-also names omitted counts and those options. Counts are walked (belt, lane) pairs, including repeat belts on
+names the limit/offset for the first up-to-256 lane tiles; `next` names the next page when one remains. Top-level
+`lane_facts_coverage` names the omitted count and those options on the CLI's first page. Counts are walked (belt, lane) pairs, including repeat belts on
 different lanes; the included belts report all their native transport lines. Each page is a current read, not a
 stored snapshot. `max_tiles` still independently limits the original walk, so facts counts cover that walk only.
 
