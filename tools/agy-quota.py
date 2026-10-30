@@ -70,11 +70,19 @@ def rest(d, wait, reason, **extra):
     now = time.time()
     row = dict({"since": round(now), "until": round(now + wait), "reason": reason, "sleep_s": int(wait)},
                **{k: v for k, v in extra.items() if v is not None})
+    return write_rest(d, row, wait)
+
+
+def write_rest(d, row, wait=None):
+    """Atomically keep the complete record, including carried fields (firm, original since, and future metadata)."""
+    now = time.time()
+    if wait is None:
+        wait = row["until"] - now
     tmp = os.path.join(d, REST + ".tmp")
     with open(tmp, "w") as f:
         json.dump(row, f)
     os.replace(tmp, os.path.join(d, REST))
-    return push(d, dict(clock_args(row["until"], now), until_s=max(1, int(wait)), reason=reason,
+    return push(d, dict(clock_args(row["until"], now), until_s=max(1, int(wait)), reason=row.get("reason") or "quota",
                         ticks_per_s=ticks_per_s(d)))
 
 

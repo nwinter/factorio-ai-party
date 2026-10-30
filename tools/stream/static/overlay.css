@@ -780,4 +780,37 @@ body:not(.onecam) .loadout.lo-main { top: calc(70px + var(--alerts-clear, 0px));
 .ship-card .ship-pct { font-variant-numeric: tabular-nums; color: var(--muted); }
 .ship-card .ship-facts { color: var(--muted); font-size: 0.9em; }
 body.onecam #cam-main .ship-card { top: 14px; font-size: 20px; }
+/* The featured/main ship: a persistent compact telemetry card, clear of the lower captions and inset. */
+#platform-metrics { position: absolute; z-index: 4; left: 14px; top: 62px; width: 430px; box-sizing: border-box;
+  padding: 12px 15px; border-left: 3px solid var(--fx-blue, #4aa3ff); border-radius: 4px;
+  background: rgba(var(--fx-frame-rgb), 0.94); box-shadow: var(--fx-bevel), var(--fx-shadow-window);
+  font-size: 14px; line-height: 1.35; pointer-events: none; font-variant-numeric: tabular-nums; }
+body.onecam #platform-metrics { top: 14px; }
+.has-metrics .ship-card { display: none; }
+.pm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pm-name { color: var(--head); font-size: 23px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-tag { font-size: 10px; letter-spacing: 0.08em; color: var(--accent); white-space: nowrap; }
+.pm-route { font-size: 15px; color: var(--head); margin-top: 3px; }
+.pm-progress { height: 5px; background: var(--well); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+.pm-progress i { display: block; height: 100%; background: var(--accent); transition: width 800ms linear; }
+.pm-flight, .pm-combat, .pm-supplies { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
+.pm-combat, .pm-supplies { grid-template-columns: repeat(3, 1fr); }
+.pm-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pm-key { color: var(--muted); }
+.pm-value { color: var(--ink); text-align: right; }
+.pm-flight .pm-row, .pm-combat .pm-row, .pm-supplies .pm-row { display: block; }
+.pm-flight .pm-key, .pm-combat .pm-key, .pm-supplies .pm-key { display: block; font-size: 11px; }
+.pm-flight .pm-value, .pm-combat .pm-value { font-size: 16px; font-weight: 600; }
+.pm-rocks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-top: 8px; margin-top: 7px; border-top: 1px solid var(--edge); }
+.pm-rocks::before { content: 'ASTEROIDS IN SAMPLED VIEW'; grid-column: 1 / -1; font-size: 10px; color: var(--muted); letter-spacing: 0.07em; }
+.pm-rocks .pm-row { display: block; }
+.pm-rocks .pm-key { font-size: 11px; margin-right: 7px; }
+.pm-rocks .pm-value { font-size: 18px; font-weight: 600; }
+.pm-combat, .pm-guns, .pm-ammo, .pm-supplies { border-top: 1px solid var(--edge); margin-top: 8px; padding-top: 7px; }
+.pm-guns .pm-row { padding: 2px 0; font-size: 12px; }
+.pm-ammo .pm-row { display: block; padding: 3px 0; }
+.pm-ammo .pm-key { display: block; color: var(--head); font-size: 12px; }
+.pm-ammo .pm-value { display: block; text-align: left; font-size: 11px; }
+.pm-bad .pm-value { color: var(--dead); }
+.pm-foot { margin-top: 8px; font-size: 10px; color: var(--muted); }
 body.trio #cam-cam2 .ship-card, body.trio #cam-cam3 .ship-card { top: 8px; left: 8px; font-size: 13px; min-width: 0; padding: 4px 8px; }

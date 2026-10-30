@@ -1052,6 +1052,12 @@ def main():
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                     if snap.get("hostview") and ag["camera"] == "main":  # (behind Nick's view: not on air)
                         ag["camera"] = None
+                if hasattr(source, "observe_platform_metrics"):
+                    try:
+                        snap["platform_metrics"] = source.observe_platform_metrics(snap, now)
+                    except Exception as e:
+                        snap["platform_metrics"] = None
+                        snap.setdefault("errors", {})["platform_metrics"] = str(e)
                 snap.update(source_info)
                 snap["static_version"] = page_version
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)

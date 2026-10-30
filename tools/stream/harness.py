@@ -26,7 +26,7 @@ OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_li
                   "efficiency", "chronicle", "artillery_live",
                   "library_areas",  # (d21 batch68 AD2) the library's placed areas and their hookups, for the live map
                   "net_map",  # (d21 batch68 AD3) a planet's electric and logistic networks and items' sources and consumers
-                  "chart"}  # (d22 batch97 BG3) the site's chart: chunks' tiles and entities, the dirty set (chart.lua)
+                  "chart", "platform_metrics"}  # bounded platform telemetry; no endurance or watch start
 # Operator drawing for the camera clients only (highlights.lua): rings and labels on what agents act on, seen by the
 # director camera players alone; nothing in the game changes. A runtime without it refuses the operator request,
 # which stops nobody.

@@ -1676,6 +1676,10 @@
     renderAlerts(s);
     renderResearchCard(s);
     renderCams(s);
+    if (window.PogPlatformMetrics) {
+      window.PogPlatformMetrics.render($("platform-metrics"), s.platform_metrics);
+      $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics);
+    }
     renderSegment(s);
     if (window.PogShiftRecap) window.PogShiftRecap.render(s);
     renderLoadouts(s);

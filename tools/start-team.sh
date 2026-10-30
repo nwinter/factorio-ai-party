@@ -19,7 +19,8 @@
 # written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
 # resumes at is checked against the previous run's last (tools/resume_guard.py; refused when it went back more than
 # POG_RESUME_TICK_SLACK ticks, default 18 game minutes); existing bots are kept, and each agent starts from its
-# notes.md of that run. POG_SPACE_AGE must match the instance's mods.
+# notes.md of that run. The world stays tick-paused until the started: N/M line; a failed start releases the pause too.
+# POG_SPACE_AGE must match the instance's mods.
 # POG_RESUME_DIR: the previous run's directory (default runs/PREVIOUS_RUN here, else in ~/code/player-of-games).
 # POG_DRY_RUN=1: check what can be checked here and print the plan; touches nothing. With POG_RESUME, POG_DRY_RUN_PICK=1
 # also asks the Windows box which save it would take (resume-save.ps1 -Check: read only, safe while the world runs).
@@ -97,7 +98,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ -n "$resume" ]; then
     echo "1. resume: tools/winps.sh tools/win/resume-save.ps1 -Name $world -From $resume -Check (refuse unless space_age=$POG_SPACE_AGE);"
     echo "   stop world $world; copy the previous run's stop save (else the newest save after its stop; with no stop record the newest save) to saves\\$run.zip; refresh the instance's harness mod;"
-    echo "   start the server on $run.zip; deploy the runtime; write runs/$run/resumed-from; carry $resume's target.json (tools/run_target.py) if set"
+    echo "   start the server on $run.zip; tick-pause the world; deploy the runtime; write runs/$run/resumed-from; carry $resume's target.json (tools/run_target.py) if set"
     if [ -n "$stop_utc" ]; then
       echo "   stop record $stop_dir/stopped.json: tick $stop_tick, save ${stop_save:-none (it fell back to /server-save)} at $stop_utc: resume-save gets ${stop_args[*]}"
     else
@@ -142,11 +143,44 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
   rest_carry=(); [ -n "${carry_from:-}" ] && rest_carry=(--carry "$carry_from")   # (d24 batch172) the last run's rests
   { python3 tools/quota_rest.py --at-limit "runs/$run" "$team" ${rest_carry[@]+"${rest_carry[@]}"} --brief "${POG_QUOTA_BRIEF:-$qbrief}" --dry-run || true; } | sed 's/^/5a. /'
+  [ -n "$resume" ] && echo "5b. keep tick-paused through cameras, stream, OBS, helpers, all agent launches and prompt clearing; resume right after started: N/M (including failed launches); log the paused span; also resume if the start fails"
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
 fi
 rundir="runs/$run"; mkdir -p "$rundir"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$rundir/start.log"; }
+# A resumed save must not run while its agents are being relaunched (d30 batch379: Resolute was lost in that gap).
+# Set the hold before asking for the pause: even a lost reply must take the failure cleanup path.
+startup_paused_at=""
+resume_startup_world() {
+  [ -n "$startup_paused_at" ] || return 0
+  local why=$1 reply attempt span
+  for attempt in 1 2 3; do
+    if reply=$(python3 tools/pog.py --world "$world" resume 2>&1) && [[ $reply == *"resumed at "* ]]; then
+      span=$(( $(date +%s) - startup_paused_at ))
+      startup_paused_at=""
+      log "world $world: $reply; startup paused ${span}s; $why"
+      return 0
+    fi
+    log "world $world: startup resume attempt $attempt failed: $reply"
+    [ "$attempt" = 3 ] || sleep 1
+  done
+  log "world $world: FAILED to resume after $(( $(date +%s) - startup_paused_at ))s of startup pause ($why); manual resume required"
+  return 1
+}
+finish_start() {
+  local status=$?
+  trap - EXIT
+  if [ -n "$startup_paused_at" ]; then
+    resume_startup_world "start failed (exit $status)" || status=1
+  fi
+  rm -f ${plan_mark:+"$plan_mark"}
+  exit "$status"
+}
+trap finish_start EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 quota --save "$rundir/quota-brief.json" | while read -r line; do log "$line"; done
 # Launch from the code the fixes are in (docs/studies/shake5.md, P1 item 7): harness and stream commits on main or a
 # recent branch that this checkout lacks, and a built host older than its sources. Warnings only.
@@ -215,6 +249,12 @@ tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort 
 # Wait for RCON before deploying: after a reboot the server took 21 s to open it, and the deploy at 19 s failed
 # (shake9's first start). The first command on a fresh save is swallowed, so this also absorbs that one.
 for _ in $(seq 1 45); do POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 && break; sleep 2; done
+if [ -n "$resume" ]; then
+  startup_paused_at=$(date +%s)
+  paused=$(python3 tools/pog.py --world "$world" pause)
+  [[ $paused == *"paused at "* ]] || { log "world $world: startup pause was not confirmed: $paused"; exit 1; }
+  log "world $world: $paused; holding through runtime deploy, stream, helpers and agent launches"
+fi
 deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
 deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
 log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
@@ -224,17 +264,14 @@ case $deploy_status in ok*) ;; *) exit 1 ;; esac   # as before: no agents on a w
 trusted=${POG_TRUSTED_PLAYERS-nick}
 [ -n "$trusted" ] && log "trusted players: $(python3 tools/players.py --world "$world" trust-names $trusted 2>&1 | tail -1)"
 if [ -n "$resume" ]; then
-  # A save made while tick-paused would load paused; team runs are real time. Game time goes on from the save's tick.
-  python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
   tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["tick"])' 2>/dev/null || echo '?')
   # The tick against the previous run's last (tools/resume_guard.py): a world that went back is not played on.
-  if [ "$tick" = '?' ]; then log "world $world: resumed; its tick could not be read"
+  if [ "$tick" = '?' ]; then log "world $world: loaded and held paused; its tick could not be read"
   else
     guard=$(python3 tools/resume_guard.py "$stop_dir" "$tick" "${resumed_save:-}") && guard_ok=1 || guard_ok=0
-    log "world $world: $guard"
+    log "world $world: ${guard/#resumed at/loaded at}; held paused"
     if [ "$guard_ok" = 0 ]; then
-      python3 tools/pog.py --world "$world" pause >/dev/null 2>&1 || true
-      log "refusing: world $world is paused on $run.zip; no agents start (check the saves, or POG_RESUME_TICK_SLACK)"
+      log "refusing: world $world loaded $run.zip; no agents start (check the saves, or POG_RESUME_TICK_SLACK); failure cleanup releases the startup pause"
       exit 1
     fi
   fi
@@ -548,7 +585,7 @@ done < "$team"
 # it makes no request, and one that can play after all ends the rest with its first status. Not at its limit: nothing.
 # (d24 batch172, viewer Aurora 16:05: Muse's hand-marked rest until Sun 17:00 was gone in shift70, its ai-usage data
 # stale) A resumed run also starts with every rest of the previous one that has not ended, whatever ai-usage says,
-# unless a fresh reading gives the account room (the start log says so).
+# unless a fresh reading gives the account room (the start log says so). Firm rests keep all fields and ignore room.
 rest_carry=(); [ -n "${carry_from:-}" ] && rest_carry=(--carry "$carry_from")
 { python3 tools/quota_rest.py --at-limit "$rundir" "$team" ${rest_carry[@]+"${rest_carry[@]}"} --brief "${POG_QUOTA_BRIEF:-$rundir/quota-brief.json}" 2>&1 || true; } \
   | while read -r line; do log "$line"; done
@@ -556,6 +593,7 @@ prompt_args=()
 while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
 [ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
 log "started: $(wc -l < "$rundir/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; runs/$run/not-started.txt)}; deadline $(cat "$rundir"/*/deadline.txt 2>/dev/null | head -1)"
+resume_startup_world "after started: $n/$wanted agents${missing:+; resuming despite failed launches:$missing}"
 
 # 6. Supervisors (agy runs its own loop until the deadline).
 while read -r name pane kind; do

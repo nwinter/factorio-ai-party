@@ -257,6 +257,12 @@ fh call status
   another date of the shift clock than the day it was pushed, and the label then names it: `resting until Sat 15:59
   (quota)`. Any agent's quota rest: `tools/quota_rest.py RUN AGENT --until "YYYY-MM-DD HH:MM" [--reason quota|pace]`
   (resting.json and this push; `--done` ends it); start-team writes one for an agent whose account is at its limit.
+  At a shift change, `--carry` preserves the full `resting.json`, including `firm` and the original start. A firm
+  operator rest stays effective for supervisors and idle nudges despite fresh quota room or an agent request; it ends
+  at its wall-clock time or `--done`. A later quota reset may extend its scheduling fields; other metadata is retained.
+  Resumed `start-team.sh` runs hold the world tick-paused from before deployment through stream/OBS/helpers and all
+  launches, then resume immediately after `started: N/M`, even with failed launches. Startup failure also releases
+  the pause; `start.log` records the paused duration and failures. See `docs/LAUNCH-NOTES.md`.
   An agent's own next request is one whose reply carries its clock line: describe (launch-agent.sh), profiles,
   cameras and peeks do not end a rest; its first status does.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
@@ -18391,3 +18397,13 @@ script, cards and timeline from existing records. The stream prepares its voiced
 three hours, appends closing developments at the deadline, and plays it through the next
 start until `start.log` says `started: N/M agents`. Prepared assets survive service restarts.
 No new harness reads/actions or OBS commands are involved. See `tools/stream/shift-recap.md`.
+## d30 batch377: stream platform metrics
+
+The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns
+directed leg geometry, turret tooltip counters and shooting targets, existing platform hit counters, ammunition
+in hub/turrets and surface production totals, repair packs, thruster/storage-tank fluids, and recorded entity
+losses on a fully observed leg. Optional `area` is two numeric corners, at most 512 tiles per side; asteroid counts
+are for that sampled camera rectangle. Turret/tank and count limits omit incomplete figures. This starts no watch
+and adds no game-tick work. The stream converts matching samples to wall-minute rates and wall-time ETA. Stock
+locations and the current-speed/rate assumptions remain explicit; the read performs no endurance calculation.
+The field definitions and freshness rules are in `tools/stream/platformmetrics.md` in the enclosing repository.
