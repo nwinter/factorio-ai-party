@@ -49,7 +49,13 @@
   a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
   met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
-  platform lanes, inside all/any too);
+  platform lanes, inside all/any too; optional `windows:[60,180,300,"leg"]` (any distinct subset) and
+  `require:"all"` (default with windows) or a count: met only when that many window budgets bind under `km`.
+  Each uses its measured NET, the same stock, reserve, margin, speed and return allowance. Missing selected-item
+  data in a window counts as binding, explicitly unknown in `saw`; an entire failed read still says not met.
+  `saw` and fired `evidence.window_check` name every window's NET and binding state; `return_budget.window_budgets`
+  keeps every item and rate basis. Omitting the options keeps the default calculation. Set both options here or inside
+  `turnaround`, not both. Read arguments and leg key the cache; window changes read fresh);
   `launches_at_least` (`platform`, `n`, `window` seconds back or `since_tick`, `origin?` planet: the rockets sent up to
   that platform then, launched (landed, in flight) plus loaded in silos with a rocket ready aimed at it, met at n; saw
   and a fired guard's evidence give each count; counted every 1 s; read only: the harness stops nothing, so a cap is

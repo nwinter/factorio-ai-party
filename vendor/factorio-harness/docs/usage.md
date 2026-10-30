@@ -18211,3 +18211,21 @@ and the fast replace (the item spent, the old one back, the new unit).
 - `cap_conditions`: currently readable item-referencing circuit/logistic enable conditions on machines, inserters, belts and pumps, with entity, position, condition, tick and `on`/`off`/unknown state. An unwired circuit is labeled ignored. Indirect virtual signals are not attributed to an item. A gate being off never changes the budget's net rate.
 
 `budget_below` includes the binding item's used window and multiwindow line in `saw`. On firing its evidence keeps the **whole return budget**, including every item's rate basis, counts, windows, stocks and cap states. In an `all`/`any` guard, `evidence.budget_conditions` keeps each met budget member even if a preceding progress or hit condition already supplied evidence. Cached reads retain their original tick; fired snapshots are detached from later reads.
+
+
+### Explicit return-budget windows (d29 batch364)
+
+`platform_endurance` accepts `turnaround.windows`: a distinct subset of `[60,180,300,"leg"]`, meaning seconds or the current leg. With windows, `require` defaults to `"all"`; an integer from 1 to the number of windows is also accepted. No windows means the existing conservative calculation is unchanged.
+
+```json
+{"until":"budget_below","platform":"Resolute","km":5000,
+ "turnaround":{"km":25000,"back_to":"aquilo","speed_floor":55,"margin":0.2,
+               "items":["firearm-magazine","rocket","railgun-ammo"]},
+ "windows":[60,180,300,"leg"],"require":"all"}
+```
+
+For a turnaround read, put `windows` and `require` inside `turnaround`. A guard accepts them at its top level or inside `turnaround`, never both. Each named window uses its measured made/used counts divided by its duration, with the same stock, selection, reserve, margin, speed and caller return allowance. It does not replace a measured deficit with zero because a gate is off or fuel is within a maker's batch. A window binds when its first binding selected item's maximum distance farther out is strictly less than the threshold. Different windows can bind on different items. A one-minute deficit with surplus over three/five minutes and the leg is therefore 1/4 binding, not met for `"all"` and met for `1`.
+
+Missing selected-item data, missing departure counters, or an uncomputable budget for a measured deficit counts that window as binding. NET stays unknown when counters are unavailable; no zero is invented. Unselected missing items do not bind. A measured zero is distinct from missing data. The windows retain batch363's bucket endpoints, partial-history and pre-departure coverage labels; they are production/consumption measurements, not a promise of future refill. A stop, absent flight leg or failed whole read still follows the existing not-met/error behavior.
+
+`return_budget.window_budgets` retains each named window's item rows, binding item, missing items and rate bases (window, endpoints, made/used/NET). `window_check` counts binding windows against the read's planned turnaround distance; its `scope` names that threshold. Default `items` and `binds` remain present as the conservative comparison, labeled in the line. A guard checks its own `km`, says every selected item's NET and each window's binding state in `saw`, and saves `evidence.window_check` plus the entire return budget when met. Composite guard evidence retains this too. The ten-second per-leg cache includes the window options; changing them reads fresh.
