@@ -1565,7 +1565,7 @@ do
       splitter_input_priority='none',splitter_output_priority='none',get_fluid_contents=function() return {} end,
       get_max_transport_line_index=function() return 0 end}
     local filter
-    return setmetatable(sp,{__index=function(_,k) if k=='splitter_filter' then return filter and {name=filter.name,quality=filter.quality or 'normal',comparator='='} or nil end end,
+    return setmetatable(sp,{__index=function(_,k) if k=='splitter_filter' then return filter and {name=filter.name,quality=filter.quality,comparator=filter.quality and (filter.comparator or '=') or nil} or nil end end,
       __newindex=function(t,k,v) if k=='splitter_filter' then filter=v else rawset(t,k,v) end end})
   end
   local store,gstore,provider=chest({x=20.5,y=0.5}),chest({x=22.5,y=0.5},true),chest({x=24.5,y=0.5},false,'active-provider')
@@ -1601,22 +1601,29 @@ do
   eq(sp.splitter_output_priority,'none')
   r=call('configure',{position={x=27,y=0.5},output_priority='left',filter='iron-plate'})
   eq(r.output_priority,'left'); eq(r.filter,'iron-plate'); eq(r.input_priority,'none')
-  eq(r.line,'input priority: none (both inputs alike); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5)')
+  eq(r.line,'input priority: none (both inputs alike); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5); filter quality: normal; comparator: =')
   eq(r.before,'input priority: none (both inputs alike); output priority: none (items split evenly)')
   r=call('configure',{position={x=27,y=0.5},input_priority='right'})
-  eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5)')
+  eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5); filter quality: normal; comparator: =')
   local seen=call('inspect',{position={x=27,y=0.5}})
   eq(seen.splitter.input_priority,'right'); eq(seen.splitter.filter,'iron-plate'); eq(seen.filters,nil)
+  r=call('configure',{position={x=27,y=0.5},filter={name='iron-plate'}})
+  eq(r.filter,'iron-plate@any'); eq(r.filter_quality,'any'); eq(r.filter_comparator,'none')
+  eq(call('inspect',{position={x=27,y=0.5}}).splitter.filter_quality,'any')
+  r=call('configure',{position={x=27,y=0.5},filters={'iron-plate@>=normal'}})
+  eq(r.filter_quality,'normal'); eq(r.filter_comparator,'>='); eq(sp.splitter_filter.comparator,'>=')
+  fails(function() call('configure',{position={x=27,y=0.5},input_priority='left',filter={name='iron-plate',quality='normal',comparator='~'}}) end,'unknown comparator')
+  eq(sp.splitter_input_priority,'right'); eq(sp.splitter_filter.comparator,'>=')
   r=call('configure',{position={x=27,y=0.5},filter=false,output_priority='right'})
   eq(r.filter,'none'); eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: right (the right output (27.5,-0.5) first, the other when it is full)')
   -- A filter set some other way while output priority is none: inspect says it does nothing.
   sp.splitter_output_priority='none'; sp.splitter_filter={name='coal'}
-  eq(call('inspect',{position={x=27,y=0.5}}).splitter.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: none (items split evenly); filter: coal (does nothing while output priority is none)')
+  eq(call('inspect',{position={x=27,y=0.5}}).splitter.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: none (items split evenly); filter: coal@any (does nothing while output priority is none); filter quality: any; comparator: none')
   fails(function() call('configure',{position={x=27,y=0.5},output_priority='middle'}) end,'output_priority is left, right or none')
   fails(function() call('configure',{position={x=20.5,y=0.5},output_priority='left'}) end,"input_priority, output_priority and filter are a splitter's settings; storage-chest (20.5,0.5) is a logistic-container")
   -- A ghost facing east: left is north; filters with one name is its filter.
   r=call('configure',{position={x=31.5,y=1},output_priority='right',filters={'coal'},input_priority='left'})
-  eq(r.ghost,true); eq(r.line,'input priority: left (the left input (30.5,0.5) first, the other when it has none); output priority: right; filter: coal to the right output (32.5,1.5) only, other items to the left output (32.5,0.5)')
+  eq(r.ghost,true); eq(r.line,'input priority: left (the left input (30.5,0.5) first, the other when it has none); output priority: right; filter: coal to the right output (32.5,1.5) only, other items to the left output (32.5,0.5); filter quality: normal; comparator: =')
   p.surface.find_entities_filtered,game.create_inventory,prototypes.item,prototypes.quality=saved_find,saved_inv,saved_item,saved_quality
 end
 -- A refused configure stops nothing (Astra 11:01, twice: configure with surface=nauvis, her own surface, failed and

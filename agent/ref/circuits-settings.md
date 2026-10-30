@@ -139,6 +139,13 @@
 - `configure`, storage filter: `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no
   other item in it), with `bar` in the same call if given (both checked first; a ghost takes no bar);
   `input_priority`, `output_priority`, `filter` set a splitter's (left and right facing the way items move).
+  A splitter filter takes the item-filter forms above: `"railgun-ammo"` means normal quality `=`,
+  `"railgun-ammo@any"` or `{name:"railgun-ammo"}` means every quality, and `{name, quality, comparator}` preserves the
+  comparison. Configure and inspect report `filter_quality` and `filter_comparator` explicitly (`any`/`none` for
+  every quality). Matching items use only the filter output; nonmatching items use only the other output. A packed
+  outlet can hold up items behind its waiting items even while the other outlet is empty. `inspect.splitter.outputs`
+  gives the two adjacent output tiles, their belt name/direction and two surface lanes (`items` by quality and
+  `can_insert_at_back`); these are local lane facts, not a downstream blockage diagnosis.
 - `configure`, turret targets: `priority_targets: ["big-metallic-asteroid", ...]` with `ignore_unprioritised: true`
   sets a turret's (or ghost's) priority list as its GUI does, on one or `positions`; blueprints keep it. A turret
   ghost's targeting (configure, or `configure` on a `place_ghosts` entry) is checked once it is built: a turret that
