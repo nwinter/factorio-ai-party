@@ -47,7 +47,7 @@ SHIP = dict(VIEW, surface="platform-3", bounds={"left": -20, "top": -40, "right"
 def director(slots, **cfg):
     sent = []
     d = OneCam(slots, lambda body: sent.append(body) or {"ok": True}, None,
-               **dict({"trio": False, "map_every": 0, "platform_every": 0, "bow": False, "stories": False}, **cfg))
+               **dict({"auto_feature": False, "trio": False, "map_every": 0, "platform_every": 0, "bow": False, "stories": False}, **cfg))
     d.started = 0
     return d, sent
 

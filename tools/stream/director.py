@@ -74,6 +74,11 @@ def surface_of(agent):
 
 
 CLIENT = (1920, 1080)  # a camera client's screen; Factorio draws 32 px a tile at zoom 1 (60 x 33.75 tiles)
+# Actual game zoom, after every framing and panel scale. Private 2.0.77 GUI cameras switch from map blocks to
+# sprites between .0384 and .0385; .06 leaves margin. Full clients use the camera API's rendered .3 minimum.
+# See zoom-floor.md for dimensions, capture evidence and the distinction between GUI and main cameras.
+WORLD_ZOOM_MIN = 0.3
+PANEL_ZOOM_MIN = 0.06
 
 
 def frame_of(target, frac=1.0):
@@ -469,6 +474,17 @@ class Director:
             body.pop("move", None)
             if body.get("zoom") is not None:  # the panel's share of the window (cams.py scale), within cameras.lua's
                 body["zoom"] = round(min(4.0, max(0.05, body["zoom"] * slot.get("scale", 1))), 2)  # panel range
+        if target is not None and not target.get("map"):
+            # Whole-ship fits, pairs, fights and inset scaling all meet this final bound. Oversized ships keep
+            # their existing pan or a partial frame; only an explicitly intended map can zoom further out.
+            floor = PANEL_ZOOM_MIN if slot.get("panel") else WORLD_ZOOM_MIN
+            body["zoom"] = max(floor, body["zoom"])
+            if body.get("move"):
+                body["move"] = copy.deepcopy(body["move"])
+                for segment in body["move"]["segments"]:
+                    for point in segment["pts"]:
+                        point["zoom"] = max(floor, point["zoom"])
+                target["move"] = body["move"]  # local path evaluation agrees with what the game plays
         pending = self.send_pending.get(name)
         if pending and pending["body"] == body and now < pending["retry_at"]:
             return False

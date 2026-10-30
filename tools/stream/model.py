@@ -475,11 +475,13 @@ def platform_where(p):
     "from->to" are the space connection's ends and N its distance from `from`, whichever way the platform flies:
     `toward` (Model._orient_platforms) is where it is headed; toward `from`, the route and progress turn round."""
     at = p.get("at") or ""
+    if at == "in transit" and isinstance(p.get("route"), str) and p.get("len") and isinstance(p.get("km"), (int, float)):
+        at = f"{p['route']} {round(100 * p['km'] / p['len'])}%"
     m = AT_RE.match(at)
     route = None
     if m:
         a, b, pct = m[1], m[2], int(m[3])
-        if p.get("toward") == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
+        if (p.get("toward") or p.get("to")) == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
             a, b, pct = b, a, 100 - pct
         route = {"from": planet_label(a), "to": planet_label(b), "pct": pct}
         if p.get("turned_back"):  # (CN1) back to where it left, its far end never reached
@@ -491,6 +493,17 @@ def platform_where(p):
             "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
     if route:  # (d20 batch57 S3) the route's location names, origin first (edgedense.py: the edge legs' dense part)
         out["route_ids"] = [a, b]
+        # Score telemetry already carries the connection length and distance from its canonical origin.
+        # Keep those facts for automatic long-run coverage; no extra game read.
+        if isinstance(p.get("len"), (int, float)) and p["len"] > 0:
+            out["leg_km"] = p["len"]
+            out["leg_progress_km"] = p["len"] * pct / 100
+            if isinstance(p.get("km"), (int, float)) and isinstance(p.get("route"), str):
+                ends = p["route"].split("->")
+                if ends == [a, b]:
+                    out["leg_progress_km"] = p["km"]
+                elif ends == [b, a]:
+                    out["leg_progress_km"] = p["len"] - p["km"]
     return out
 
 
