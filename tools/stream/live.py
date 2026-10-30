@@ -21,6 +21,7 @@ from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
 from waitcard import WaitFeed
+from platformmetrics import Metrics
 
 FLOW_PARTS = 3  # (d24 batch184 QAA2) the flows read in three parts of the surfaces, one a poll
 
@@ -214,6 +215,7 @@ class LiveSource:
         self.next_vehicles = 0
         self.platform_detail = {}
         self.platform_views = {}
+        self.platform_metrics = Metrics()
         # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
         self.work = WorkFeed(journals, list(self.agents_cfg)) if journals else None
         self.waits = self.work.waits if self.work else WaitFeed()
@@ -631,6 +633,10 @@ class LiveSource:
         return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
+    def observe_platform_metrics(self, snapshot, now):
+        return self.platform_metrics.step(snapshot, self.h.operator_read, now,
+                                          supported=getattr(self, "has_platform_metrics", False))
+
     # route and speed; and for the Space widget (model.platform_card) the defence, repair packs, damaged entities and
     # hub cargo (eng/platformalerts); ammo made/used and when it runs out in flight (onecam's danger shot; viewer
     # joonazan, d15 10:45)
@@ -740,6 +746,7 @@ class LiveSource:
             self.has_library_areas = "library_areas" in (res.get("operator_reads") or [])
             self.has_net_map = "net_map" in (res.get("operator_reads") or [])
             self.has_chart = "chart" in (res.get("operator_reads") or [])
+            self.has_platform_metrics = "platform_metrics" in (res.get("operator_reads") or [])
             self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
             # artillery shells in flight: serve.py reads them on their own pace (artillery_poller)
             self.has_artillery = "artillery_live" in (res.get("operator_reads") or [])
