@@ -105,7 +105,11 @@ function M.extrema(store,key,leg,name,value,reserve,margin,scope,now)
   if value>x.max then x.max=value; x.max_tick=now end
   if x.last_tick~=now then x.samples=x.samples+1 end
   x.last_tick=now
-  return M.copy(x)
+  local r=M.copy(x)
+  r.measure='budget usable after reserve and margin'
+  r.formula='(stock - reserve) / (1 + margin)'
+  r.reserve=reserve; r.margin=margin; r.stock_scope=scope
+  return r
 end
 -- Conditions that explicitly reference a budget item, including belt caps. Do not infer that every condition is a cap,
 -- or that an off gate guarantees later production. Only entity references/methods are cached, never conditions.

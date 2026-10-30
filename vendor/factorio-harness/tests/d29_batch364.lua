@@ -162,3 +162,18 @@ eq(member.window_check.met,true); eq(member.window_check.binding_items[1],'rocke
 eq(#member.return_budget.items,2); eq(#member.return_budget.window_budgets.budgets,3)
 eq(member.return_budget.window_budgets.budgets[1].items[1].rate_basis.used,50)
 print('d29_batch364: pending predicate, guard description and complete composite receipt: ok')
+
+-- Sol tick 84054702: extrema are the budget usable, and the legacy item window follows the winning basis.
+local extrema_store={}
+local extrema=D.extrema(extrema_store,1,{start=1},'firearm-magazine',(5908-3600)/1.2,3600,.2,'reaches turrets',84054702)
+assert(math.abs(extrema.min-1923.3333333333)<1e-6)
+eq(extrema.formula,'(stock - reserve) / (1 + margin)'); eq(extrema.measure,'budget usable after reserve and margin')
+eq(extrema.reserve,3600); eq(extrema.margin,.2)
+local candidates={name='rocket',stock=1000,made=0,used=20,made10=0,used10=10,window='last 10 min',
+ rate_candidates={phase=rate(1200,0,400),recent=rate(600,0,100)}}
+candidates.rate_candidates.phase.window='whole leg'; candidates.rate_candidates.recent.window='last 10 min'
+local labeled=E.return_budget({candidates},o)[1]
+eq(labeled.window,'whole leg'); eq(labeled.window,labeled.rate_basis.window); eq(labeled.recent_window,'last 10 min')
+candidates.used10=30; candidates.rate_candidates.recent=rate(600,0,300); candidates.rate_candidates.recent.window='last 10 min'; labeled=E.return_budget({candidates},o)[1]
+eq(labeled.window,'last 10 min'); eq(labeled.net_used,30)
+print('d29_batch364: after-reserve/margin extrema and authoritative legacy window labels: ok')
