@@ -56,6 +56,7 @@ eq(caps.rocket.conditions[1].fulfilled,false)
 connected=false; eq(D.gates(pl,{rocket=true},game.tick).rocket.conditions[1].state,'ignored (unwired)')
 -- The warm scan retains references only: a newly configured condition on an existing entity is visible immediately.
 entity.valid=true; pl.index=77
+entity.get_control_behavior=function() assert(entity.valid,'LuaEntity API call when LuaEntity was invalid'); return cb end
 local finds=0; local entities={entity}
 pl.surface.find_entities_filtered=function() finds=finds+1; return entities end
 pl.surface.count_entities_filtered=function() return #entities end

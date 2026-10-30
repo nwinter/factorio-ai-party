@@ -115,9 +115,7 @@ local function gate_list(pl,now)
   local key=pl.index
   local rec=key and gate_entities[key]
   if rec and rec.n==pl.surface.count_entities_filtered{type=GATE_TYPES,force=pl.force} then
-    local valid=true
-    for _,x in ipairs(rec.entities) do if not x.entity.valid then valid=false; break end end
-    if valid then rec.tick=now; return rec.entities end
+    rec.tick=now; return rec.entities
   end
   local list={}
   for _,e in ipairs(pl.surface.find_entities_filtered{type=GATE_TYPES,force=pl.force}) do
@@ -129,7 +127,7 @@ local function gate_list(pl,now)
   end
   return list
 end
-function M.gates(pl,wanted,now)
+local function read_gates(pl,wanted,now)
   local out={}; for name in pairs(wanted) do out[name]={tick=now,conditions={},scope='item-referencing circuit/logistic enable conditions on machines, inserters, belts and pumps; indirect signals are not attributed'} end
   for _,entry in ipairs(gate_list(pl,now)) do
     local e=entry.entity
@@ -156,5 +154,13 @@ function M.gates(pl,wanted,now)
     end
   end
   return out
+end
+function M.gates(pl,wanted,now)
+  -- A cached entity method throws if its entity was removed. Refresh once on that path, including a same-count
+  -- replacement, instead of a second 5000-entity valid-flag walk on every Resolute read.
+  local ok,out=pcall(read_gates,pl,wanted,now)
+  if ok then return out end
+  if pl.index then gate_entities[pl.index]=nil end
+  return read_gates(pl,wanted,now)
 end
 return M
