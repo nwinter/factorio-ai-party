@@ -93,7 +93,12 @@ return function(api)
       end
     elseif c['until']=='platform_arrived' and o then
       local leg=o.leg
-      if not leg then
+      -- An explicit long platform wait still checks arrival every 10 ticks. Its ETA uses only the current leg:
+      -- the full schedule projection (departure watches and later stops) exceeded 10 ms on the private copy.
+      -- Ordinary waits retain that projection; the long wait's deadline is reported separately by the scheduler.
+      if type(c.timeout)=='number' and c.timeout>54000 and (not leg or c.location and leg.to~=c.location) then
+        unknown='long wait: no arrival ETA before departure or beyond the current flight leg'
+      elseif not leg then
         -- Before it leaves (Sonnet, every shift): its schedule, the stop's waits, the legs at its last speed.
         local est,why
         if api.before_departure and o.platform then est,why=api.before_departure(o.platform,c.location) end

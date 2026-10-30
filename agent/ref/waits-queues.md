@@ -1,3 +1,12 @@
+- In `lane: "platform:NAME"`, `wait_until` with `until: "platform_arrived"` or `"platform_progress"` takes
+  `timeout: 1..17280000` ticks (80 game hours). Default 3600, other conditions/lanes and `wait_ticks` stay unchanged.
+  Dry and live `queue_submit` enforce the same bound, including guard steps. Guards still interrupt every 10 ticks
+  (a deadline guard at its tick); one wait occupies one step, with no extra queue entries or host polling.
+  Submission and `queue_status` give `wait_deadlines`: game `tick`/`game_seconds`, `ticks_left`, `wall_unix_ms` and
+  `wall_seconds_left` projected at 60 ticks/s (pauses/slower UPS delay wall time). `state: "if_started_now"` means
+  pending: its actual start depends on earlier steps or resume. `state: "waiting"` gives its running deadline.
+  With a timeout over 54000, arrival ETA covers the current flight leg only; before departure or beyond that leg,
+  `no_estimate` says so. Arrival itself is still checked every 10 ticks.
 - `wait_until {until, ..., timeout?}`: waits inside the game until a condition holds, with no call per check: a direct
   timed action (`--wait`), a queue step, a queue guard's `when` or a standing order's `when`. Conditions: `researched`
   (`technology`; without it the research running now; a technology with levels, an infinite one too, is met once the
