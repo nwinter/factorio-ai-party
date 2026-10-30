@@ -2131,7 +2131,7 @@
 {"id":"doc:analysis#logistics_audit","kind":"doc","topic":"analysis","lead":"- `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?, charging?}` (","condition":{"world":[],"any":["with:action:logistics_audit"]},"bytes":2569},
 {"id":"doc:analysis#construction_robots","kind":"doc","topic":"analysis","lead":"- `construction_robots {network? | position?, sources?, sources_from?, surface?}`","condition":{"world":[],"any":["with:action:construction_robots"]},"bytes":1237},
 {"id":"doc:analysis#shortages","kind":"doc","topic":"analysis","lead":"- `shortages {surface?}`","condition":{"world":[],"any":["with:action:shortages"]},"bytes":350},
-{"id":"doc:analysis#damage_log","kind":"doc","topic":"analysis","lead":"- `damage_log {position?, radius?, surface?}`","condition":{"world":[],"any":["with:action:damage_log"]},"bytes":600},
+{"id":"doc:analysis#damage_log","kind":"doc","topic":"analysis","lead":"- `damage_log {position?, radius?, surface?}`","condition":{"world":[],"any":["with:action:damage_log"]},"bytes":968},
 {"id":"doc:analysis#dependency","kind":"doc","topic":"analysis","lead":"- `dependency {item, surface?}`","condition":{"world":[],"any":["with:action:dependency"]},"bytes":588},
 {"id":"doc:analysis#the-operator-s-factory","kind":"doc","topic":"analysis","lead":"- The operator's factory digest arrives by `tell` at the deadline minus 2 hours","condition":{"world":[],"any":["scale:game_hours:4"]},"bytes":442},
 {"id":"doc:analysis#shift-and-factory-digest","kind":"doc","topic":"analysis","lead":"- Shift and factory-digest `research_use` lines compare researched gear with the","condition":{"world":[],"any":["scale:game_hours:4"]},"bytes":229},

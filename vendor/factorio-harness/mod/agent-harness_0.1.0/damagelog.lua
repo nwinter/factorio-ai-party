@@ -18,6 +18,20 @@ return function(api)
     s.damage_log = s.damage_log or {by={}, ring={}, next=1}
     return s.damage_log
   end
+  -- Events confirm a removal; a failed lookup never does. No records are created by removals.
+  M.removal_events = {}
+  for name, status in pairs{on_entity_died='destroyed', on_player_mined_entity='removed',
+      on_robot_mined_entity='removed', script_raised_destroy='removed'} do
+    local id = defines and defines.events and defines.events[name]
+    if id then M.removal_events[id] = status end
+  end
+  function M.on_removed(event)
+    local status = M.removal_events[event.name]
+    local e = event.entity
+    local rec = status and e and e.valid and e.unit_number and store().by[e.unit_number]
+    if rec then rec.removal = {state=status, tick=event.tick, surface=e.surface.name,
+      position={x=e.position.x, y=e.position.y}} end
+  end
   -- The event as it comes (cheap: our entities only, in a chunk our force sees).
   function M.on_damaged(event)
     local e = event.entity
@@ -36,6 +50,7 @@ return function(api)
       rec = {name=e.name, surface=e.surface.name, x=pos.x, y=pos.y, rows={}}
       m.by[k] = rec
     end
+    rec.entity = e  -- Factorio's by-unit lookup omits stationary entities; a saved reference retains their identity.
     local c = event.cause
     local cname, cx, cy, facing, cforce
     if c and c.valid then
@@ -50,13 +65,13 @@ return function(api)
     local sname, sx, sy, stype, range
     if s and s.valid and s ~= c then sname, sx, sy, stype = s.name, s.position.x, s.position.y, s.type end
     local last = rec.rows[#rec.rows]
-    if last and last.cause == cname and last.cx == cx and last.cy == cy and last.type == dtype and last.source == sname and event.tick - last.last <= JOIN then
+    if last and last.position and last.position.x == pos.x and last.position.y == pos.y and last.surface == e.surface.name and last.cause == cname and last.cx == cx and last.cy == cy and last.type == dtype and last.source == sname and event.tick - last.last <= JOIN then
       last.count = last.count + 1; last.damage = last.damage + (event.final_damage_amount or 0); last.last = event.tick
       return
     end
     -- (d25 batch209 QV1) its range at its quality: the prototype's times the quality's range_multiplier
     if c and c.valid then range = try(function() local r = c.prototype.attack_parameters.range; local q = c.quality; return q and q.name ~= 'normal' and math.floor(r * q.range_multiplier * 10 + 0.5) / 10 or r end) end
-    rec.rows[#rec.rows+1] = {tick=event.tick, last=event.tick, count=1, damage=event.final_damage_amount or 0, type=dtype,
+    rec.rows[#rec.rows+1] = {unit_number=k, name=e.name, position={x=pos.x,y=pos.y}, surface=e.surface.name, tick=event.tick, last=event.tick, count=1, damage=event.final_damage_amount or 0, type=dtype,
       cause=cname, cx=cx, cy=cy, facing=facing, force=cforce, source=sname, sx=sx, sy=sy, stype=stype, range=range,
       dist=cx and math.floor(math.sqrt((cx - pos.x) ^ 2 + (cy - pos.y) ^ 2) + 0.5) or nil}
     if #rec.rows > ROWS then table.remove(rec.rows, 1) end
@@ -84,32 +99,87 @@ return function(api)
     for i = #rec.rows, 1, -1 do out[#out+1] = row_text(rec.rows[i]) end
     return out
   end
+  local function visible(force, surface, pos)
+    return force and surface and pos and try(function()
+      return force.is_chunk_visible(surface, {x=math.floor(pos.x / 32), y=math.floor(pos.y / 32)})
+    end) == true
+  end
+  local function current(unit, rec, force)
+    if rec.removal then return rec.removal.state, false, nil, rec.removal end
+    local e = rec.entity
+    if not (e and e.valid and e.unit_number == unit) then
+      e = try(function() return game.get_entity_by_unit_number(unit) end)
+    end
+    -- Pre-update records have no reference. A visible occupant with the original unit ID is also confirmation.
+    if not (e and e.valid and e.unit_number == unit) then
+      local s = try(function() return game.surfaces[rec.surface] end)
+      local pos = {x=rec.x,y=rec.y}
+      if visible(force,s,pos) then
+        for _, candidate in ipairs(try(function() return s.find_entities_filtered{position=pos,limit=17} end) or {}) do
+          if candidate.valid and candidate.unit_number == unit then e=candidate; break end
+        end
+      end
+    end
+    if e and e.valid and e.unit_number == unit then
+      if visible(force, e.surface, e.position) then return 'alive', true, e end
+      return 'unknown', nil, nil, nil, 'original unit is outside current sight'
+    end
+    return 'unknown', nil, nil, nil, 'original unit not found; no removal event recorded'
+  end
+  local function occupants(surface, force, pos, unit)
+    if not visible(force, surface, pos) then return {status='unknown', reason='hit position is outside current sight'} end
+    local found = try(function() return surface.find_entities_filtered{position=pos, limit=17} end)
+    if not found then return {status='unknown', reason='occupant lookup failed'} end
+    local rows = {}
+    for i, e in ipairs(found) do
+      if i > 16 then break end
+      if e.valid then rows[#rows+1] = {unit_number=e.unit_number, name=e.name,
+        position={x=e.position.x,y=e.position.y}, surface=e.surface.name, original=e.unit_number == unit} end
+    end
+    return {status=#found >= 17 and 'capped' or 'complete', entities=rows}
+  end
   function M.read(p, a)
     local centre = a.position and api.position(a.position) or p.position
     local radius = api.integer(a.radius, 8, 1, 64, 'radius')
     local surface = p.surface.name
     local list = {}
     for unit, rec in pairs(store().by) do
-      if rec.surface == surface and (rec.x - centre.x) ^ 2 + (rec.y - centre.y) ^ 2 <= radius * radius and #rec.rows > 0 then
-        list[#list+1] = {unit=unit, rec=rec, last=rec.rows[#rec.rows].last}
+      local matching = {}
+      for j = #rec.rows, 1, -1 do
+        local hit = rec.rows[j]
+        -- Old saves kept only the first observed position. Keep it as an explicitly labelled search anchor,
+        -- never manufacture a per-hit position for those rows.
+        local pos = hit.position or {x=rec.x, y=rec.y}
+        if (hit.surface or rec.surface) == surface and (pos.x-centre.x)^2 + (pos.y-centre.y)^2 <= radius^2 then
+          matching[#matching+1] = hit
+        end
       end
+      if #matching > 0 then list[#list+1] = {unit=unit, rec=rec, matching=matching, last=matching[1].last} end
     end
-    table.sort(list, function(x, y) return x.last > y.last end)
+    table.sort(list, function(x, y) return x.last > y.last or x.last == y.last and x.unit < y.unit end)
     local rows = {}
     for i, it in ipairs(list) do
       if i > 16 then break end
-      local alive
-      for _, e in ipairs(try(function() return p.surface.find_entities_filtered{name=it.rec.name, position={it.rec.x, it.rec.y}, radius=0.3} end) or {}) do
-        if e.unit_number == it.unit then alive = e end
+      local first = it.matching[1]
+      local pos = first.position or {x=it.rec.x, y=it.rec.y}
+      local status, alive, e, removal, reason = current(it.unit, it.rec, p.force)
+      local hits, hit_rows = {}, {}
+      for _, hit in ipairs(it.matching) do
+        hits[#hits+1] = row_text(hit)
+        hit_rows[#hit_rows+1] = {unit_number=hit.unit_number or it.unit, name=hit.name or it.rec.name,
+          tick=hit.tick, last_tick=hit.last, position=hit.position, surface=hit.surface,
+          position_status=hit.position and 'recorded' or 'unknown', count=hit.count, damage=hit.damage, type=hit.type}
       end
-      local hits = {}
-      for j = #it.rec.rows, 1, -1 do hits[#hits+1] = row_text(it.rec.rows[j]) end
-      rows[#rows+1] = {name=it.rec.name, position={x=it.rec.x, y=it.rec.y}, alive=alive and alive.valid or false, hits=hits}
+      rows[#rows+1] = {unit_number=it.unit, name=first.name or it.rec.name, position=pos,
+        position_basis=first.position and 'latest matching hit' or 'legacy first observation; hit position not recorded',
+        hit_tick=first.tick, last_hit_tick=first.last, state=status, alive=alive, state_reason=reason,
+        current_position=e and {x=e.position.x,y=e.position.y} or nil, current_surface=e and e.surface.name or nil,
+        removal=removal, current_occupants=occupants(p.surface,p.force,pos,it.unit), hits=hits, hit_rows=hit_rows}
     end
     return {surface=surface, centre=centre, radius=radius, entities=rows, more=#list > 16 and #list - 16 or nil,
-      note='hits on our entities in a chunk our force saw at the time (radar coverage or a character\'s sight); one row per source within a second; the last 8 rows an entity, 512 entities kept; every source is the game\'s event (what dealt the hit, and its cause), none inferred: a fire\'s cause is the turret whose stream lit the first fire, wherever the fire spread'}
+      note='hits on our entities in a chunk our force saw at the time; only rows matching this area, newest first; one row per source and hit position within a second; last 8 rows per unit, 512 units kept. Alive is a visible lookup by original unit number; destroyed/removed requires a recorded event; otherwise unknown. Current occupants are separate units at the returned historical position, only when visible. Legacy rows lack per-hit positions and use the first observation as a search anchor. Sources are the game event, never inferred.'}
   end
   M.schema = {damage_log = {position='optional {x,y} (default you)', radius='1..64 (default 8)', surface='optional planet or platform name (default yours)',
-    returns='entities [{name, position, alive (or destroyed since), hits: newest first, each "Ns ago: N TYPE hits, D damage, from SOURCE at (x,y)" (what dealt it: a fire, projectile or stream) and the game\'s cause "CAUSE at (x,y) facing DIR (its force when not ours), N tiles from the hit (its range R; a fire past it spread there)", or no cause the game names}]; both from the game\'s event, none inferred, more; only hits in a chunk our force saw at the time; the last 8 rows an entity, 512 entities. Read only'}}
+    returns='entities [{unit_number, name, position, position_basis, hit_tick, last_hit_tick, state: alive|destroyed|removed|unknown, alive: true/false only when confirmed, state_reason?, current_position?, current_surface?, removal?: {state,tick,position,surface}, current_occupants: {status: complete|capped|unknown, entities?: [{unit_number?,name,position,surface,original}]}, hit_rows: [{unit_number,name,tick,last_tick,position?,position_status,surface?,count,damage,type}], hits: source/cause text newest first}]; only matching historical hit positions (legacy first observation labelled); more; last 8 rows per unit, 512 units. Current occupant lookup is bounded to 17, at the returned position in current sight. Read only'}}
   return M
 end

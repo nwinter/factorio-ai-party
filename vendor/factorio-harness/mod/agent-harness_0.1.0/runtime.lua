@@ -21769,6 +21769,11 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d29 batch356 DL) confirm the original damaged unit's removal before mined events return below.
+  if M.damagelog.removal_events[event.name] then
+    local ok,err=pcall(M.damagelog.on_removed,event)
+    if not ok then local s=state(); s.damage_log_errors={count=((s.damage_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+  end
   -- (d28 batch317) the force's first research, attack, loss, death, enemies of a kind, freight (disclosure.lua)
   if M.disclosure then pcall(M.disclosure.on_event,event) end
   -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record

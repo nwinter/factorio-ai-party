@@ -6348,11 +6348,24 @@ fh watch    # deploy on every change
   `no ghost at N (a new placement each): ...`. Checked on the copy: of two belts and a solar panel killed on Swift, the
   hub had rebuilt both belts and a ghost stood for the panel.
 - `damage_log {position, radius?, surface?}` (B8, Sol, board #695: incident 973 blamed a flamethrower that faced away):
-  hits on our entities, alive or destroyed since, only where our force saw at the time (a chunk in radar coverage or a
+  hits on our entities, only where our force saw at the time (a chunk in radar coverage or a
   character's sight): each row's age, count, damage type and amount, and its source, its position and facing (or no
   source the game names: a fire or projectile that outlived it). Hits from one source within a second are one row; the
-  last 8 rows an entity, 512 entities. `inspect` adds `damage_history`. On the copy the log adds about 6-12 ms per 1000
-  hits in the container (about 0.002 ms a hit on n).
+  last 8 rows per unit, 512 units. `inspect` adds `damage_history`.
+  (d29 batch356 DL) Each entity row identifies the original `unit_number` and name. `hit_rows` holds the original
+  unit/name, first `tick`, `last_tick`, copied hit `position`/`surface`, count, damage and type; `hits` keeps the source
+  and cause text. Hits at different positions form separate groups. An area read returns matching historical hits;
+  its top-level `position`, `hit_tick` and `last_hit_tick` identify the latest matching group.
+  `state` is `alive` only for the same original unit in current sight (saved entity reference, by-unit lookup, or a
+  visible same-ID occupant for old records), with `current_position` and `current_surface`. `destroyed` requires a
+  recorded death; `removed` requires mining or a script-raised removal, with `removal` tick/position/surface.
+  Otherwise it is `unknown`, including an absent unit without a removal event or a unit outside current sight.
+  `alive` is true/false only for confirmed states and absent for unknown. Moving away does not confirm destruction.
+  `current_occupants` separately lists entities standing at the returned historical position when visible, including
+  each occupant's own unit number (when it has one), name and position and whether it is the original. Its status is `complete`, `capped`
+  (17 entities reached, at most 16 listed), or `unknown` (outside sight or failed lookup).
+  Saved history from before this change has no per-hit target position: `position_status: unknown`, with no hit
+  position or surface. The old first-observation search anchor is explicitly labelled by `position_basis`.
 - `platform_rename {platform, name}` (C1, Astra 13:30): renames one of our platforms, as its GUI does, refusing another
   platform's name; `still_named` lists each agent's queue steps (pending and running), running action, standing orders,
   saved plans and open board items that name the old name. Nothing of theirs is changed. Platform schedules and
