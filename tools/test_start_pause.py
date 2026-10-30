@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 import testsafe
 from test_launch_resilience import write_exec
@@ -33,6 +34,13 @@ def event(stage, held=False):
         f.write(json.dumps({"stage": stage, "paused": paused}) + "\n")
     if held:
         assert paused == resumed, (stage, paused, resumed)
+
+def wait_helpers():
+    pids = [pid for p in root.glob("runs/next/*.pid") for pid in p.read_text().split()]
+    end = time.monotonic() + 10
+    while not all((root / ("finished-" + pid)).exists() for pid in pids):
+        assert time.monotonic() < end, ("stub helper did not finish", pids)
+        time.sleep(0.01)
 
 if name == "python3":
     if args[0] in ("-", "-c") or args[0] in ("tools/cams.py", "tools/resume_guard.py"):
@@ -112,9 +120,11 @@ elif name == "nohup":
     # Record the service launch; start no real daemon, tunnel, supervisor or subprocess.
     stage = "helper:" + " ".join(args[:2])
     event(stage, held="supervise" not in stage and "idle_nudge" not in stage and "score-loop" not in stage)
+    (root / f"finished-{os.getpid()}").touch()
 elif name == "sleep":
-    # Give the stub background launches time to finish; never wait game ticks.
-    time.sleep(0.3 if args == ["8"] else 0.01)
+    # Wait for exactly the stub helpers this script started, never for game ticks.
+    if args == ["8"]: wait_helpers()
+    else: time.sleep(0.01)
 elif name == "git": print("stubcommit")
 elif name == "scp": pass
 else: raise AssertionError((name, args))
@@ -147,6 +157,13 @@ def run_case(**over):
         env.update(over)
         r = subprocess.run(["bash", str(d / "tools/start-team.sh"), "next", "10", "--stream"],
                            env=env, capture_output=True, text=True, cwd=d, timeout=30)
+        # The final supervisor/score stubs may still be starting after the shell returns. Let them finish before
+        # inspecting events or deleting their disposable checkout; none starts a real subprocess or service.
+        pids = [pid for p in d.glob("runs/next/*.pid") for pid in p.read_text().split()]
+        end = time.monotonic() + 10
+        while not all((d / ("finished-" + pid)).exists() for pid in pids):
+            assert time.monotonic() < end, ("stub helper did not finish", pids, r.stdout, r.stderr)
+            time.sleep(0.01)
         events = [json.loads(x) for x in (d / "events.jsonl").read_text().splitlines()]
         stages = [x["stage"] for x in events]
         log = (d / "runs/next/start.log").read_text()
