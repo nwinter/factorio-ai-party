@@ -84,9 +84,10 @@ function M.build(cfg,items,o,budget)
     local known,unknown,missing,seen={},{},{},{}
     local function absent(name,why,source,ready)
       local selected=names[name]
-      local basis=D.copy(source) or {window=window=='leg' and 'whole leg' or tostring(window)..'s'}
-      basis.unavailable=why
-      unknown[#unknown+1]={name=name,unavailable=why,eligible_tick=ready,not_selected=not selected or nil,rate_basis=basis}
+      local basis={window=source and source.window or (window=='leg' and 'whole leg' or tostring(window)..'s'),
+        unavailable=why,eligible_tick=ready,leg_start_tick=o.leg and o.leg.start_tick}
+      unknown[#unknown+1]={name=name,unavailable=why,eligible_tick=ready,not_selected=not selected or nil,
+        rate_basis=basis,excluded_rate_basis=D.copy(source)}
       if selected then
         missing[#missing+1]={name=name,reason=why,eligible_tick=ready}
         if ready and ready>o.now and (not result.next_ready_tick or ready<result.next_ready_tick) then result.next_ready_tick=ready end

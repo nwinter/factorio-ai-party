@@ -32,6 +32,9 @@ eq(report(fixture(true)).budgets[1].items[1].net_used,50,'explicit mode does not
 local missing=fixture(true); missing[1].windows.last_3_min=nil; missing[1].windows.last_5_min={unavailable='counter reset',net_per_min=0}
 missing[1].windows.whole_leg=rate(0,0,0)
 check=W.evaluate(report(missing),cfg,5000); eq(check.met,true); eq(check.items[1].binding_windows,4)
+local rejected=report(missing).budgets[3].items[1]
+eq(rejected.rate_basis.net_per_min,nil); eq(rejected.rate_basis.made,nil)
+eq(rejected.excluded_rate_basis.net_per_min,0,'unusable source counts are explicitly excluded, never an eligible zero NET')
 has(check.line,'missing=binding'); has(check.line,'NET unknown'); eq(check.items[1].windows[3].net_per_min,nil)
 local pending=W.config(cfg.windows,'all','pending')
 check=W.evaluate(report(missing,o,pending),pending,5000)
@@ -63,6 +66,8 @@ local long=W.config({60,300,600},'all','pending')
 local young=D.copy(o); young.leg={start_tick=1000}; young.now=10000
 check=W.evaluate(report(fixture(true),young,long),long,5000)
 eq(check.met,false); eq(check.pending,true); eq(check.items[1].windows[3].eligible_tick,37081)
+local old_leg=report(fixture(true),young,long).budgets[3].items[1]
+eq(old_leg.rate_basis.net,nil); eq(old_leg.rate_basis.used,nil); assert(old_leg.excluded_rate_basis.used)
 has(check.line,'eligible from tick 37081'); has(check.line,'no shorter fallback')
 local only600=W.config({600},'all','pending')
 local grow=fixture(true); young.now=37080; grow[1].windows.last_10_min=D.native('last 10 min',37080,10,0,100)
