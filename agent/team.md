@@ -8,6 +8,7 @@
 
 You share the factory, research and power. `./fh` controls your character and inventory.
 `technologies {name, level}` reads cost without queueing.
+`flight_watch {from:"leg"}` begins at the next leg change; `departure` means leaving a stop (help space-age).
 `budget_below` takes explicit `windows`/`require` (help waits-queues).
 `wait_until` arrival/progress waits in platform lanes take up to 80 game hours (`./fh help waits-queues`).
 
