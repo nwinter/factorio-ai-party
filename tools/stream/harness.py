@@ -411,8 +411,8 @@ rcon.print(helpers.table_to_json({cam = {surface = p.surface.name, x = p.positio
 
 # Space Age: where a camera can show each platform (read-only, operator level like SCORE_LUA): its surface name (the
 # camera call takes surfaces, the `platforms` read gives none), the hub (the runtime builds remote work around it) and
-# the bounds of our entities there, so a fixed view fits the whole platform, and the hub's health in % (onecam.py's
-# platform label says it when the hub is hurt). A platform still waiting for its starter
+# the hub's health in % (onecam.py's label says it when hurt). The hub box is pending until platform_hulls
+# supplies the foundation extents; a capped list of entity centres misses refitted hulls. A platform still waiting for its starter
 # pack has no surface and is skipped. (d28 batch318 OC) machines: its assemblers and furnaces (at most 120), each
 # {x, y, w} with w 1 while its status is working (a one-client visit's machinery framing, onecam.machinery).
 PLATFORM_LUA = r"""
@@ -433,10 +433,6 @@ for _, pl in pairs(f.platforms) do
     end)
     local hub = (pl.hub and pl.hub.valid) and pl.hub.position or {x = 0, y = 0}
     local x0, y0, x1, y1 = hub.x - 6, hub.y - 6, hub.x + 6, hub.y + 6
-    for _, e in pairs(s.find_entities_filtered{force = f, limit = 4000}) do
-      local p = e.position
-      x0, y0, x1, y1 = math.min(x0, p.x), math.min(y0, p.y), math.max(x1, p.x), math.max(y1, p.y)
-    end
     local hp = nil
     pcall(function() if pl.hub and pl.hub.valid and pl.hub.max_health > 0 then hp = math.floor(100 * pl.hub.health / pl.hub.max_health) end end)
     local guns = {}
@@ -449,7 +445,8 @@ for _, pl in pairs(f.platforms) do
       ms[#ms + 1] = {x = p.x, y = p.y, w = e.status == working and 1 or 0}
     end
     out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
-      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns, machines = ms, where = w}
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}, bounds_source = "pending",
+      hub_health = hp, turrets = guns, machines = ms, where = w}
   end
 end
 rcon.print(helpers.table_to_json{platforms = out})
@@ -511,6 +508,8 @@ for _, pl in pairs(game.forces.player.platforms) do
       local br = right + 1 - lowest(1, right + 1 - left, function(k) return any(right + 1 - k, top, right + 1, by) end)
       out[#out + 1] = {name = pl.name, surface = s.name, hull = {left = left, top = top, right = right + 1, bottom = bottom + 1},
         bow = {left = bl, top = top, right = br + 1, bottom = by}}
+    else
+      out[#out + 1] = {name = pl.name, surface = s.name}
     end
   end
 end
@@ -799,15 +798,19 @@ class Harness:
         return {r["name"]: r for r in rows}
 
     BOW_ROWS = 24      # the bow: the foundation's x extent in the hull's first this many rows
-    HULL_EVERY = 600.0  # seconds a platform's hull read stands (agents build in flight; the read is not free)
+    HULL_EVERY = 30.0  # minimum age; one ship per poll, oldest first, including docked refits
 
     def platform_hulls(self, names, now=None):
         """(d24 batch170 QM1) {name: {surface, hull, bow}} for these platforms (PLATFORM_HULL_LUA: the foundation
         tiles' box, as the asteroid watch finds it, and the bow's x extent in its first BOW_ROWS rows), each read
-        again after HULL_EVERY s; at most two read per call. A platform without foundation (or gone) is left out."""
+        again after HULL_EVERY s; at most one read per call. No foundation gives a row without hull/bow.
+        Oldest-first scheduling prevents alphabetically early ships starving later refits."""
         now = time.time() if now is None else now
         cache = self.__dict__.setdefault("_hulls", {})  # name -> (read at, row or None)
-        due = sorted(n for n in names if n not in cache or now - cache[n][0] >= self.HULL_EVERY)[:2]
+        for n in set(cache) - set(names):
+            del cache[n]
+        due = sorted((n for n in names if n not in cache or now - cache[n][0] >= self.HULL_EVERY),
+                     key=lambda n: (cache.get(n, (float("-inf"),))[0], n))[:1]
         if due:
             want = "{" + ", ".join(f"[ {lua_string(n)} ] = true" for n in due) + "}"
             rows = self.lua(PLATFORM_HULL_LUA.replace("NAMES", want).replace("ROWS", str(int(self.BOW_ROWS)))).get("hulls")

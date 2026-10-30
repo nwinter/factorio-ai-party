@@ -775,6 +775,9 @@ def main():
         import cuts as cuts_mod
         lay = json.load(open(cuts_mod.LAYOUT))
         frac = {"view_frac": cuts_mod.view_frac(lay), "trio_frac": cuts_mod.view_frac(json.load(open(cuts_mod.TRIO)))}
+        import cams as camera_clients
+        frac["platform_frac"] = cuts_mod.platform_view_frac(
+            [lay, json.load(open(cuts_mod.VERTICAL["layout"]))], camera_clients.CLIENT)
         if a.trio:
             frac.update(trio_force=True)
         director = OneCam(slots, camera, log_path, **dict(frac, **(run.get("director") or {})))
@@ -796,7 +799,8 @@ def main():
                                  sources=["stream cam1" if n == "main" else f"stream {n}" for n in names])
     else:
         director = Director(slots, camera, log_path, **(run.get("director") or {}))
-    segments = Segments(**(run.get("segments") or {}))
+    segments = Segments(**dict({"platform_frac": director.cfg.get("platform_frac") or
+                               director.cfg.get("view_frac", 1.0)}, **(run.get("segments") or {})))
     replays = None
     if (a.replays if a.replays is not None else not a.mock) and run.get("replays", True) is not False:
         from obsws import OBS

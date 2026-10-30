@@ -668,8 +668,8 @@ class LiveSource:
                     self.platform_views = self.h.platform_views()
                 except Exception as e:
                     errors["platform_views"] = str(e)
-                self.add_hulls(self.platform_views, errors)
         views = getattr(self, "platform_views", {})
+        self.add_hulls(views, errors)
 
         def placed(name):
             """(d22 batch75 AK2, viewer Foobator: "the ship overview only has a progress bar for the first 2 that are
@@ -682,7 +682,9 @@ class LiveSource:
         rows = []
         for row in space["platforms"]:
             read = {**placed(row["name"]), **self.platform_detail.get(row["name"], {})}
-            rows.append({**row, **read, **({"view": views[row["name"]]} if row["name"] in views else {}), **self.fresh_at(row, read)})
+            view = views.get(row["name"])
+            ready = view and view.get("bounds_source") != "pending"
+            rows.append({**row, **read, **({"view": view} if ready else {}), **self.fresh_at(row, read)})
         space["platforms"] = rows
 
     LONG_LEGS = ("solar-system-edge", "shattered-planet")
@@ -696,10 +698,9 @@ class LiveSource:
         return any(e in cls.LONG_LEGS for e in ends)
 
     def add_hulls(self, views, errors):
-        """(d24 batch170 QM1, viewer Caleb: the front of Asterion in flight) A platform flying a long leg gets its hull's
-        box and bow from its foundation tiles (Harness.platform_hulls, each read again after HULL_EVERY) in its view:
-        `hull` and `bow` {left, top, right, bottom}, for onecam's bow shot."""
-        names = [n for n, v in (views or {}).items() if self.long_leg(v)]
+        """Foundation extents for every ship, including docked refits. One ship per poll, cached between reads.
+        Capped entity centres cannot describe a hull: Asterion's first 4000 omitted its entire starboard side."""
+        names = list(views or {})
         if not names or not hasattr(self.h, "platform_hulls"):
             return
         try:
@@ -710,6 +711,14 @@ class LiveSource:
         for n, h in hulls.items():
             if n in views and h.get("surface") == views[n].get("surface"):
                 views[n]["hull"], views[n]["bow"] = h.get("hull"), h.get("bow")
+                if h.get("hull"):
+                    views[n]["bounds"] = h["hull"]
+                    views[n]["bounds_source"] = "foundation"
+                else:
+                    hub = views[n].get("hub") or {"x": 0, "y": 0}
+                    views[n]["bounds"] = dict(left=hub["x"] - 6, top=hub["y"] - 6,
+                                              right=hub["x"] + 6, bottom=hub["y"] + 6)
+                    views[n]["bounds_source"] = "hub"
 
     @staticmethod
     def fresh_at(row, detail):

@@ -52,6 +52,17 @@ def view_frac(layout, client=(1920, 1080)):
     return round(min(1.0, (w / h) / (client[0] / client[1])), 3)
 
 
+def platform_view_frac(layouts, client):
+    """Width shared by the actual capture's integer centre crops in both program layouts.
+    Platform fits must survive the narrower portrait pane too; no OBS query is needed."""
+    widths = []
+    for layout in layouts:
+        _, _, w, h = layout["cams"]["main"]
+        crop = crop_for(*client, w, h)
+        widths.append((client[0] - crop["cropLeft"] - crop["cropRight"]) / client[0])
+    return min(widths)
+
+
 def order(items, cams, top_first):
     """items: [(item id, index)] of the whole scene; cams: the camera item ids; top_first: cams from the front back.
     -> the scene's ids bottom to top with the cameras restacked in the slots they already occupy."""

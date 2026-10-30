@@ -562,9 +562,10 @@ def gun_reach(view):
     return left, top, right, bottom
 
 
-def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
-    """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
-    its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
+def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0, overview=False):
+    """A camera shot of a platform from its foundation extents (exclusive right/bottom tile edges), falling back
+    to bounds from older snapshots. An explicit overview omits flight detail and gun reach.
+    A director client at zoom 1 shows 60x33.75 tiles (1920x1080 at 32 px per
     tile), so the zoom is what fits the bounds plus a margin, clamped to cameras.lua's 0.3..4. exact_zoom: the
     director sends it as is (no main/side scaling, which would crop the platform). In flight, include 32 extra
     tiles ahead and 8 aft and on each side for approaching asteroids. Forward on the platform surface is north
@@ -579,11 +580,12 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     reach across (DETAIL_ZOOM), starting at the bow (the top of the reach) and panning to the stern at DETAIL_CROSS_S
     per view height after DETAIL_BOW_S on the bow (`pan` with speed and bow_s; OneCam's pan_step). Docked: a still
     shot."""
-    b = view.get("bounds") or {}
+    b = view.get("hull") or view.get("bounds") or {}
     hub = view.get("hub") or {"x": 0, "y": 0}
     left, top = b.get("left", hub["x"] - 6), b.get("top", hub["y"] - 6)
     right, bottom = b.get("right", hub["x"] + 6), b.get("bottom", hub["y"] + 6)
     hull = (left, top, right, bottom)
+    travelling = travelling and not overview
     reach = gun_reach(view)
     if travelling and "guns" in view:
         margin = 4.0
@@ -592,14 +594,21 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     elif travelling:
         left, top, right, bottom = left - 8, top - 32, right + 8, bottom + 8
     w, h = right - left + margin, bottom - top + margin
-    zoom = max(0.3, min(2.0, 60.0 * frac / w, 34.0 / h))
+    # 1080 / 32 is 33.75, not 34. Round DOWN to the camera protocol's hundredths: rounding up clips margins.
+    # frac is the actual centre crop's width; a wide ship must fit the visible pane, not the full client.
+    fit = min(2.0, 60.0 * frac / w, 33.75 / h)
+    zoom = max(0.3, math.floor(fit * 100 + 1e-9) / 100)
     out = {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
-           "zoom": round(zoom, 2), "exact_zoom": True}
+           "zoom": round(zoom, 2), "exact_zoom": True,
+           "platform_frame": {"bounds": dict(zip(("left", "top", "right", "bottom"), hull)),
+                              "source": view.get("bounds_source", "foundation" if view.get("hull") else "legacy"),
+                              "hull_centre": {"x": (hull[0] + hull[2]) / 2, "y": (hull[1] + hull[3]) / 2},
+                              "frac": frac, "fit_zoom": fit, "limited": fit < 0.3}}
     if "guns" in view:
         out["fit_zoom"] = out["zoom"]
     if travelling and reach:
         detail = max(DETAIL_ZOOM[0], min(DETAIL_ZOOM[1], 60.0 * frac / w))
-        dh = 34.0 / round(detail, 2)
+        dh = 33.75 / round(detail, 2)
         y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
         if detail > zoom + 0.05 and (y1 - y0) <= LONG_VIEWS * dh:
             out.update(zoom=round(detail, 2), position={"x": out["position"]["x"], "y": round(y0, 1)},
@@ -610,8 +619,8 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     # (the least zoom 0.3 shows ~113 tiles; Bastion in flight needs ~174): `pan`, the view's centre from the bow (north,
     # forward) to the stern; OneCam starts the shot at the bow and moves it (pan_step), a camera without that keeps the
     # centre
-    vh = 34.0 / round(zoom, 2)
-    if h > vh + margin:  # (a few tiles of the margin cut is no pan: Cinder in flight is 111 high at 0.31, ~110)
+    vh = 33.75 / round(zoom, 2)
+    if h > vh:
         y0, y1 = top - margin / 2 + vh / 2, bottom + margin / 2 - vh / 2
         out["pan"] = {"y0": round(y0, 1), "y1": round(y1, 1)}
     return out

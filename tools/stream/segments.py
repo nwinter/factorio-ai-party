@@ -83,8 +83,9 @@ def human(item):
 class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
                  recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0, hauling_every=1800.0,
-                 tokens_every=1800.0, efficiency_every=1800.0, site_every=2):
+                 tokens_every=1800.0, efficiency_every=1800.0, site_every=2, platform_frac=1.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
+        self.platform_frac = platform_frac
         self.site_every = max(0, int(site_every))  # 0: never
         self.site_turn = 0
         # Replays skip `spacing` (replays.py), so they have their own: one start per replay_spacing (shake12: three in
@@ -540,7 +541,7 @@ class Segments:
         camera = None
         if pick:
             facts["shown"] = pick["name"]
-            camera = platform_shot(pick["view"])
+            camera = platform_shot(pick["view"], frac=self.platform_frac, overview=True)
         return "Space Age progress", facts, camera
 
     def build_space_moment(self, params, snap, now):
@@ -557,7 +558,7 @@ class Segments:
             view = next((p.get("view") for p in (snap.get("space") or {}).get("platforms") or []
                          if p.get("name") == facts["platform"] and p.get("view")), None)
             if view:  # a maiden flight is under way: framed for flight (room ahead for asteroids)
-                camera = platform_shot(view, travelling=m["kind"] == "maiden_flight")
+                camera = platform_shot(view, travelling=m["kind"] == "maiden_flight", frac=self.platform_frac)
         return m["title"], facts, camera
 
     def build_spotlight(self, params, snap, now):

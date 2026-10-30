@@ -2,10 +2,9 @@
 """A ship's bow on a long flight, a few seconds each round (d24 batch170 QM1, viewer Caleb, site 14:51-14:52: "show a
 view of the front of Asterion when it is in flight for a few seconds"): python3 tools/stream/test_bowcam.py
 
-1. harness PLATFORM_HULL_LUA: one line, no comments; Harness.platform_hulls asks for at most two platforms a call
+1. harness PLATFORM_HULL_LUA: one line, no comments; Harness.platform_hulls asks for at most one platform a call
    (names as Lua long strings), keeps each answer HULL_EVERY s, leaves out a platform without foundation.
-2. live.py add_hulls: only a platform on a leg to or from the solar system edge or the shattered planet gets `hull`
-   and `bow` in its view (Asterion "solar-system-edge->aquilo 1%"); a leg between planets or a docked ship does not.
+2. live.py add_hulls: all platforms get foundation bounds, including docked refits; surface mismatches are rejected.
 3. onecam bow_turn, three clients: at a story turn (the rotation) the bow goes on air instead, a fixed view labelled
    "Asterion · the bow · travelling to Aquilo (1%) · 120 km/s", the bow's width fitted across and its north edge
    bow_ahead down the frame, for ready_s + bow_hold; then the story goes to the agent the turn was for ("after the
@@ -58,12 +57,13 @@ def hull_read():
     got = h.platform_hulls(["Asterion", "Kestrel II", "Bare"], now=1000)
     assert len(calls) == 1 and set(got) == {"Asterion"}, (got, calls)  # Asterion and Bare (sorted; Bare: no foundation)
     assert "ROWS" not in calls[0] and f"top + {h.BOW_ROWS}" in calls[0], calls[0][-400:]
-    got = h.platform_hulls(["Asterion", "Kestrel II", "Bare"], now=1001)  # the third one now; the first two kept
-    assert len(calls) == 2 and set(got) == {"Asterion", "Kestrel II"}, (got, len(calls))
+    h.platform_hulls(["Asterion", "Kestrel II", "Bare"], now=1001)
+    got = h.platform_hulls(["Asterion", "Kestrel II", "Bare"], now=1002)
+    assert len(calls) == 3 and set(got) == {"Asterion", "Kestrel II"}, (got, len(calls))
     h.platform_hulls(["Asterion"], now=1000 + h.HULL_EVERY - 1)
-    assert len(calls) == 2
+    assert len(calls) == 3
     h.platform_hulls(["Asterion"], now=1000 + h.HULL_EVERY)
-    assert len(calls) == 3 and "[ [[Asterion]] ] = true" in calls[-1]
+    assert len(calls) == 4 and "[ [[Asterion]] ] = true" in calls[-1]
 
 
 def live_hulls():
@@ -72,7 +72,7 @@ def live_hulls():
 
         def platform_hulls(self, names):
             H.asked = sorted(names)
-            return {n: {"surface": "platform-16" if n == "Asterion" else "platform-9", "hull": HULL, "bow": BOW}
+            return {n: {"surface": {"Asterion": "platform-16", "Anvil": "platform-7", "Docked": "platform-8"}.get(n, "platform-9"), "hull": HULL, "bow": BOW}
                     for n in names}
     src = LiveSource.__new__(LiveSource)
     src.h = H()
@@ -82,10 +82,10 @@ def live_hulls():
              "Docked": {"surface": "platform-8", "where": {"at": "solar-system-edge"}}}
     errors = {}
     src.add_hulls(views, errors)
-    assert H.asked == ["Asterion", "Probe"] and not errors, (H.asked, errors)
+    assert H.asked == ["Anvil", "Asterion", "Docked", "Probe"] and not errors, (H.asked, errors)
     assert views["Asterion"]["bow"] == BOW and views["Asterion"]["hull"] == HULL
     assert "bow" not in views["Probe"]  # the read named another surface: not this ship's
-    assert "bow" not in views["Anvil"] and "bow" not in views["Docked"]
+    assert views["Anvil"]["bounds"] == HULL and views["Docked"]["bounds_source"] == "foundation"
 
 
 def run(d, a, rows, t0, secs, seg=None, hold=None):

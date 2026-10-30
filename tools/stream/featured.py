@@ -273,7 +273,7 @@ class Featured:
         return "repair" if repair_started else fresh[0][0] if fresh else None
 
     def shot(self, d, name, now, context=False):
-        shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S)
+        shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S, overview=context)
         if not shot:
             return None
         detail = None if context else d.bow_defense(name)

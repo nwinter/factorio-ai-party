@@ -259,6 +259,7 @@ ONECAM = {
     "loss_recut": 180.0,    # a loss within this long of the last loss cut is an inset, not a cut
     "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
     "view_frac": 1.0,       # share of the client's width the on-air hole shows (serve.py: from layout.json's crop)
+    "platform_frac": None, # shared landscape/portrait crop for ship fits; other shots keep view_frac
     "work_cut": False,      # work away from the body was a side camera's shot; no side cameras now
     "trio": True,           # sometimes one big tile and two small ones (module doc)
     "trio_hold": 90.0,      # a trio lasts this long ...
@@ -3450,7 +3451,8 @@ class OneCam(Director):
         "Sol · placing ghosts 40 m north")."""
         if att.get("platform"):
             from model import platform_shot
-            shot = platform_shot(self.plat_rows[att["platform"]]["view"])
+            shot = platform_shot(self.plat_rows[att["platform"]]["view"],
+                                 frac=self.cfg.get("platform_frac") or self.cfg["view_frac"])
         else:
             ext = att.get("extent") or 0
             z = min(self.cfg["attn_zoom"], Director.fight_zoom(self, ext)) if ext else self.cfg["attn_zoom"]
@@ -4037,13 +4039,14 @@ class OneCam(Director):
                                     "departure": {"name": d["name"], "label": d["label"], "news": bool(d.get("news")),
                                                   "decision": decision, "why": why}}) + "\n")
 
-    def platform_target(self, name, why, until, agent=None, label=None):
+    def platform_target(self, name, why, until, agent=None, label=None, overview=False):
         from model import platform_shot
         row = self.plat_rows.get(name) or {}
         view = row.get("view")
         if not view or not view.get("surface"):
             return None
-        t = dict(platform_shot(view, travelling=self.travelling(row), frac=self.cfg["view_frac"]),
+        t = dict(platform_shot(view, travelling=self.travelling(row),
+                               frac=self.cfg.get("platform_frac") or self.cfg["view_frac"], overview=overview),
                  agents=[agent] if agent else [], subject="@platform", until=until,
                  platform={"name": name, "why": why, "label": label or self.platform_label(name, why)})
         if t.get("pan"):  # a tall ship: from the bow (pan_step)
