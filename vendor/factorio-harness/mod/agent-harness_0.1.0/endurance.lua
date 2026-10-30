@@ -697,7 +697,7 @@ return function(api)
     -- Legs: from where it is (the rest of the leg it flies), then stop to stop.
     local legs, total_km = {}, 0
     local leg_now = api.leg and api.leg(pl)
-    if window_config and not leg_now then budgetwindows.stopped(pl,game.tick) end
+    if window_config and not leg_now then budgetwindows.stopped(pl,game.tick,api.state and api.state()) end
     local here = try(function() return pl.space_location.name end)
     local start = here
     local route_note
@@ -1189,7 +1189,7 @@ return function(api)
           .. (#parts > 0 and '. ' .. table.concat(parts, '; ') or ''),
         note='read only: facts from the production statistics and the stock that reaches the turrets; nothing lowers a floor or changes the route'}
       if window_config then
-        budget_options.leg=budgetwindows.leg(pl,leg_now,open_leg,game.tick)
+        budget_options.leg=budgetwindows.leg(pl,leg_now,open_leg,game.tick,state)
         budget_options.now=game.tick
         return_budget.window_budgets=budgetwindows.build(window_config,items,budget_options,M.return_budget)
         return_budget.window_check=budgetwindows.evaluate(return_budget.window_budgets,window_config,turn.out_km)

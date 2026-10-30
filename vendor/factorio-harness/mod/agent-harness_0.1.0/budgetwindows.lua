@@ -32,9 +32,17 @@ function M.arguments(c)
 end
 -- No tick sampler. Freight's matching segment supplies the initial boundary; subsequent reads also key by the
 -- platform object/name, connection, endpoints and direction, like batch360. An observed stop invalidates it.
-local legs={}
-function M.stopped(pl,now) legs[pl.index or pl]={platform=pl,stopped_tick=now} end
-function M.leg(pl,l,segment,now)
+-- A first-observed boundary can be newer than freight's segment. It is history, not a rebuildable cache:
+-- joining peers must restore it, including a stop observed before freight's next sample (d29 batch367).
+local standalone={}  -- module fixtures; runtime callers pass storage's state
+local function records(state)
+  if not state then return standalone end
+  state.budget_window_legs=state.budget_window_legs or {}
+  return state.budget_window_legs
+end
+function M.stopped(pl,now,state) records(state)[pl.index or pl]={platform=pl,stopped_tick=now} end
+function M.leg(pl,l,segment,now,state)
+  local legs=records(state)
   local key=pl.index or pl
   local old=legs[key]
   local connection=pl.space_connection and pl.space_connection.name
