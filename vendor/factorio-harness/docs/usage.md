@@ -6515,8 +6515,7 @@ fh watch    # deploy on every change
   give each target: researching level L (queued to level M), queued N times from place P (levels), or not queued (the
   queue full, after the pending names), and the levels left. The tick: 1.9 ms over 360 ticks in the container.
 - `trace {position, forward: true, audit: true}` (C3, Opus 18:20: 3 of 4 trunks ran at half capacity): `audit` names,
-  along the belts the walk followed, a belt side-loading both its carried lanes onto one lane (at most half gets on;
-  whether that lane is full), a curve made a side-load (an empty stub of at most 3 tiles behind the turn tile keeps it
+  along the belts the walk followed, a belt side-loading both its carried lanes onto one lane (with whether that lane is full), a curve made a side-load (an empty stub of at most 3 tiles behind the turn tile keeps it
   straight), and a route ending where the run goes on within 4 tiles ahead (the missing tiles, what that run carries,
   "nothing reaches it from here"; a ghost waiting there; or a belt against it facing another way). On the copy, the NW
   coal trunk: transport-belt (-291.5,-312.5) side-loads 4 coal on each lane onto the fast belt's right lane, which is
@@ -8274,7 +8273,7 @@ fh watch    # deploy on every change
   contents), every half of the ticks an item takes to cross a tile. An item gone at a later sample has passed: items a
   minute per lane; a lane whose items did not move is stopped (full at 4 or more on the tile). `merges`: the line
   before and each belt in, against the line after. The sampler runs from on_tick (at most 16 tiles, 2 lanes each; 16
-  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {}` each second until the result is in
+  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {id}` each second until its result is in
   (`--no-wait`: the start). tests/beltsample.lua, tests/cli.test.ts.
 - B3 (Astra: tiles deconstruct only from exposed edges, learned by trial): `platform_tiles {platform, positions |
   area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
@@ -12414,7 +12413,7 @@ Each fails on the code before the fix.
 - Why: `fh wait` (host/cli.ts waitForIdle) waits on the character's action (status `active`, `combat`). A belt_flow
   sample is a bounded watch (measures.lua), not an action, so with nothing active the wait returned the last ended
   action. `stop` pauses the queue and ends the action and combat (runtime.lua handlers.stop); it does not touch a
-  watch. A sample ends at its until_tick, or when a new `belt_flow {position}` replaces it.
+  watch. A sample ends at its until_tick. Since batch381, each call has an independent ID.
 - The change (CLI):
   - fh wait's polls ask for the watches: `status {peek, brief, work: true}`; a runtime that refuses `work` gets the
     polls as before.
@@ -12434,7 +12433,7 @@ Each fails on the code before the fix.
   - Exit 3's stderr line for a sample says that no action or stop ends it (the action line's "a call that drives
     your character stops it" does not hold for a sample).
 - belt_flow's start and progress replies have `ends`: "the sample ends at until_tick: stop and your actions do not end
-  it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
+  it; each call now has its own ID; fh wait waits for it when nothing else runs". Its help (returns) says
   the same.
 
 ## d22 batch110 BT1: the harness's garbage (Lua heap churn)
@@ -18390,6 +18389,38 @@ Configure and inspect.splitter expose filter_quality and filter_comparator, incl
 state both in the line. Inspect adds outputs: at most two adjacent belt lookups, with two surface lanes per straight
 belt or underground mouth (items by quality, can_insert_at_back). It does no downstream traversal or background work.
 
+
+## d30 batch380: belt_route underground types and combined placement checks (Sol #2810)
+
+`belt_route {dry_run: true, details: true}` returns placement entries in `entities`:
+`{name, position, direction, type?}`, with `type: "input"` or `"output"` on every underground belt.
+The list is accepted unchanged by `place_ghosts` within its entry limit. Dry-run per-entry placement status,
+footprints and refusal reasons are retained in `entity_checks`; `blocked`, `summary` and other checks remain.
+Real route replies use the same placement-entry shape, including the return line. Pipe-to-ground endpoints
+already use direction alone and `pipe_route` keeps its existing output.
+
+`place_ghosts` and `belt_route` dry runs return `undergrounds` for placeable underground-belt ends:
+`checked`, `paired`, `unpaired`, `external`, `requested_flow_mismatch` count ends, not pairs. `rows` names each unpaired
+end, each partner outside the request (built or ghost), and both ends whose requested flow differs. With `details: true`,
+ordinary pairs appear too. The check combines all entries and charted existing ends of our force; it follows
+same-tier tunnel axes within prototype reach and checks intervening lava and empty space. The results describe
+tunnel partners after the placeable ghosts are built. Requested flow is compared before the engine
+reverses an endpoint: in the private-copy test, two requested outputs faced opposite ways and the engine
+reversed the earlier end into an input. Placement success remains separate from paired flow.
+
+Baseline on Factorio 2.0.77: route `E1 uE5 E4` from (0,0) to (10,0), around a wall, reported seven placeable
+entries. Copying its unmodified diagnostic rows into `place_ghosts` was refused for `footprint, index, status`.
+Copying only name/position/direction passed both calls; the real call placed seven ghosts and both underground
+ends, (1.5,0.5) and (6.5,0.5), were input and unpaired. `place_ghosts` passes `type=spec.type` to create_entity;
+when omitted, Factorio creates an input ghost. With this change the unchanged route entries pass both calls
+and those endpoints are input/output with mutual neighbours. Regression suite: `tests/d30_batch380.lua`.
+### Recorded shift recaps (operator stream tool)
+
+`tools/stream/shift_recap.py rehearse --run-dir runs/RUN --out OUT --offline` renders a shift's
+script, cards and timeline from existing records. The stream prepares its voiced recap at
+three hours, appends closing developments at the deadline, and plays it through the next
+start until `start.log` says `started: N/M agents`. Prepared assets survive service restarts.
+No new harness reads/actions or OBS commands are involved. See `tools/stream/shift-recap.md`.
 ## d30 batch377: stream platform metrics
 
 The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns
@@ -18400,3 +18431,47 @@ are for that sampled camera rectangle. Turret/tank and count limits omit incompl
 and adds no game-tick work. The stream converts matching samples to wall-minute rates and wall-time ETA. Stock
 locations and the current-speed/rate assumptions remain explicit; the read performs no endurance calculation.
 The field definitions and freshness rules are in `tools/stream/platformmetrics.md` in the enclosing repository.
+
+
+## d30 batch382: analyst helper import collision
+
+The stream's commentary TTL/provenance module is `tools/stream/commentary_freshness.py`; the public-site/repo
+freshness alarm remains `tools/freshness.py`. The analyst, analyst board and caster import the commentary module
+by its distinct name, including after the analyst's game module puts `tools/` first on Python's import path.
+`tools/stream/test_analyst_startup.py` launches the analyst entry script with replay data, a temporary local /ask
+listener and digest-only mode, then checks both module import orders. It makes no live game or model call.
+## d30 batch381: independent belt watches and native lane/input facts
+
+`belt_flow {position, seconds}` returns its own `id` in start, progress and final.
+`belt_flow {id}` reads that watch; `{}` reads the latest. The CLI polls the ID it started, and `fh wait` keeps the
+ID it first waited for. `status {brief:true, work:true}` lists all retained watches. Each agent retains four watches
+including completed results. While all four are sampling a new start is refused without replacing anything.
+Otherwise a new start evicts the oldest completed result and returns its `evicted_id` and `warning`. An ID owned
+by another agent, or an evicted ID, is refused. Runtime reload and edits keep the ID; an edit still splits the
+measured window into the existing `mixed.parts`.
+
+`trace {position, forward:true, audit:true}` adds `lane_facts` on its visible walked belts. `belts` lists every native
+transport line index, item/quality counts, stack count, front item (minimum native line position),
+`can_insert_at_back`, and entity status. `side_loads` names two source lines whose native connections lead to one
+destination line, with contents at both ends, even when empty or carrying the same item. `inserters` includes
+status, held item, pickup/drop positions and targets, native left/right pickup permissions, and near/far lanes
+from native lane positions. Both belts and inserters include circuit/logistic conditions, their fulfillment and
+current signal values. Wildcard circuit signals have no single numeric value; their native fulfillment remains.
+These are snapshots: a full lane is not a measurement that it stopped, and permissions do not report pickup order.
+Inserters with unset targets are included by pickup/drop points on the belt tile. No current contents are read
+past visibility. `max_tiles` (1..3000, with forward) bounds lane tiles read; a stopped route names `continue_at`.
+
+Lane facts cover 32 walked lane tiles by default. `lane_facts_limit` accepts 1..256; `lane_facts_offset` accepts
+0..2999 (default 0), with `forward:true, audit:true`. These only page the added facts; the original routes and
+audit keep their coverage. `lane_facts:false` skips the extra contents, controls and inserter-position lookups.
+`lane_tiles_total`, `lane_tiles_included`, `lane_tiles_omitted` and `truncated` state the facts coverage. `more`
+names the limit/offset for the first up-to-256 lane tiles; `next` names the next page when one remains. Top-level
+`lane_facts_coverage` names the omitted count and those options on the CLI's first page. Counts are walked (belt, lane) pairs, including repeat belts on
+different lanes; the included belts report all their native transport lines. Each page is a current read, not a
+stored snapshot. `max_tiles` still independently limits the original walk, so facts counts cover that walk only.
+
+`platform_production {platform,item}` retains nominal maker capacity and native status, adding each maker input
+with ingredient counts at recipe quality, zero-held ingredient names, input/output inserter and loader counts.
+An inserter counts by native target or, when unset, its pickup/drop point on the machine footprint. Loaders count
+by native container and direction. The nearby arm search is bounded at 256 and says when capped. A machine
+without arms or ingredient stock says so beside capacity; no achievable rate is inferred.

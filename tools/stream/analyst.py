@@ -456,7 +456,7 @@ def cycle(a, dg, prev, logf):
     feed = fetch_feed(a.feed) if a.feed else None
     t0 = time.time()
     text, facts, snap = dg.build(prev, feed)
-    from freshness import stamp
+    from commentary_freshness import stamp
     provenance = stamp(feed or snap, t0)
     provenance["source_tick"] = snap["tick"]
     t_digest = time.time() - t0

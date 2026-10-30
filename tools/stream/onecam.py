@@ -4122,7 +4122,9 @@ class OneCam(Director):
         the stern over the shot's time (at most PAN_LEG_S, then back), at the stern for PAN_END_S. A detail pan (d20
         batch50 A2: `speed`, `bow_s`) rests bow_s on the bow, then moves at its speed in tiles/s, rests PAN_END_S at the
         stern and comes back the same way: a short shot shows the bow and part of the hull."""
-        p, since = t["pan"], t.get("since") if t.get("since") is not None else now
+        p = t["pan"]
+        since = t.get("pan_since", t.get("since"))
+        since = since if since is not None else now
         rest0 = rest1 = self.PAN_END_S
         if p.get("speed"):
             rest0, leg = p.get("bow_s", rest0), max(1.0, abs(p["y1"] - p["y0"]) / p["speed"])
@@ -4153,15 +4155,17 @@ class OneCam(Director):
         ahead = self.PAN_LEAD * getattr(self, "_pan_dt", self.PAN_DT)
         for slot in self.slots:
             t = self.state.get(slot["slot"])
-            if not t or not t.get("pan") or not t.get("position") or now >= t.get("until", now + 1):
+            # refresh_remote releases stale work; its initial attention/hold deadline is not a pan deadline.
+            if not t or not t.get("pan") or not t.get("position") or \
+                    (not t.get("remote_work") and now >= t.get("until", now + 1)):
                 continue
             y = self.pan_y(t, now + ahead)
             ends = (t["pan"]["y0"], t["pan"]["y1"])
             if abs(y - t["position"]["y"]) >= self.DETAIL_STEP or (y in ends and y != t["position"]["y"]):
                 target = {k: v for k, v in t.items() if k != "jump"}
                 target["position"] = dict(t["position"], y=y)
-                # cameras.lua moves at this speed: it reaches y as the step after next would come
-                target["glide"] = round(max(0.5, abs(y - t["position"]["y"]) / ahead), 2)
+                # cameras.lua moves at this speed: reach y as the step after next comes (API limit: 60 tiles/s).
+                target["glide"] = round(min(60.0, max(0.5, abs(y - t["position"]["y"]) / ahead)), 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
     def work_close(self, w, view, who, name):

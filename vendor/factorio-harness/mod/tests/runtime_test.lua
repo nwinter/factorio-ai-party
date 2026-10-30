@@ -3930,7 +3930,8 @@ end
 -- underground ends typed; dry_run only plans; missing items are counted.
 prototypes.entity['transport-belt']={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
   related_underground_belt={name='underground-belt',type='underground-belt',max_underground_distance=5}}
-prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',items_to_place_this={{name='underground-belt',count=1}}}
+prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',max_underground_distance=5,items_to_place_this={{name='underground-belt',count=1}}}
+p.surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={}}}} end
 local made={ghosts={}}
 p.surface.find_entities_filtered=function(f)
   -- (the search for belts and belt ghosts around the last belt ghost placed: last_belt)
@@ -3951,6 +3952,19 @@ p.surface.create_entity=function(a)
   return made.ghosts[#made.ghosts]
 end
 p.get_main_inventory=function() return {get_item_count=function(n) return n=='transport-belt' and 1 or 0 end} end
+-- The detailed dry-run list is accepted unchanged by both place_ghosts paths.
+do
+  local detail=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true,details=true})
+  eq(#detail.entity_checks,#detail.entities)
+  local preview=call('place_ghosts',{entities=detail.entities,dry_run=true})
+  eq(preview.undergrounds.paired,2); eq(preview.undergrounds.unpaired,0)
+  local copied=call('place_ghosts',{entities=detail.entities})
+  eq(copied.placed,#detail.entities)
+  local ends={}
+  for _,a in ipairs(made) do if a.type then ends[#ends+1]=a.type..'@'..a.position.x end end
+  eq(table.concat(ends,','),'input@2.5,output@5.5')
+  made={ghosts={}}
+end
 local plan=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
 eq(plan.dry_run,true); eq(#made,0); eq(plan.missing['underground-belt'],2); eq(plan.entities,nil)
 local routed=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})

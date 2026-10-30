@@ -967,7 +967,7 @@ def checked_facts(e, facts):
 def analyst_facts(f, e, s):
     """The analyst's material for this beat: its point (said in the hosts' words, numbers kept), its corrections
     for what is on screen, and the headline and what comes next on the opener."""
-    from freshness import current_analyst
+    from commentary_freshness import current_analyst
     an = current_analyst(s.get("analyst"), s)
     if e.get("point"):
         from analyst_board import point_facts
@@ -2688,7 +2688,7 @@ class Caster:
             return False
 
     def claim_invalid(self, e):
-        from freshness import invalid, fingerprint
+        from commentary_freshness import invalid, fingerprint
         if e.get("history") and e.get("history_at"):
             return None
         current = getattr(self, "source_snap", None) or getattr(self, "snap", None)
@@ -2984,6 +2984,10 @@ class Caster:
 
     def caster_tick(self, now, st):
         self.playback_receipts(st)
+        if ((getattr(self, "snap", None) or {}).get("shift_recap") or {}).get("active"):
+            # The prepared Rook/Vale audio is owned by the new stream service during startup.
+            self.caster_free = max(self.caster_free, now)
+            return
         if now >= self.caster_free and self.resume_explanation(st):
             return
         if self.hush_tick(now):
@@ -3116,7 +3120,7 @@ class Caster:
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
-        from freshness import stamp, fingerprint
+        from commentary_freshness import stamp, fingerprint
         source = getattr(self, "source_snap", None) or s
         self._writing_source = source
         e = dict(e, _source=stamp(source, min(t_start, getattr(self, "source_received", t_start))), _digest=digest(s))
@@ -3220,7 +3224,7 @@ class Caster:
         if not lines:
             self.caster_free = max(self.caster_free, time.time() + 3)
             return
-        from freshness import scoped
+        from commentary_freshness import scoped
         point = e.get("point") or {}
         subject_text = " ".join(line for _, line in lines) + str({k: point.get(k) for k in ("text", "facts", "topic")})
         subjects = list(point.get("agents") or []) + [e.get("agent"), (facts.get("agent") or {}).get("name")]

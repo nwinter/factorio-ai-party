@@ -14,6 +14,7 @@
 return function(api)
   local M = {}
   local TC = require('tilecheck')()
+  local undergroundplan = require('undergroundplan')(api)
   M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true, belt_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
@@ -2445,6 +2446,9 @@ return function(api)
       end
     end
     out.entities = #rows > 0 and rows or nil
+    if plan.check_undergrounds then
+      out.undergrounds = undergroundplan.check(p,recs,plan.details)
+    end
     if nproblems > #rows and not plan.details then out.more_problems = nproblems-#rows end
     -- A paste over an entity with requests (a hub, requester chests, landing
     -- pads): its requests stay, and the blueprint's own are not applied (keep.lua).
@@ -2885,6 +2889,10 @@ return function(api)
     end)
     out.checked = n
     out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')'..(over_cliffs > 0 and string.format('; %d over cliffs', over_cliffs) or '')) or nil
+    local u = out.undergrounds
+    if out.summary and u and (u.unpaired>0 or u.external>0 or u.requested_flow_mismatch>0) then
+      out.summary = out.summary..string.format('; underground ends: %d unpaired, %d paired outside request, %d with differing requested flow',u.unpaired,u.external,u.requested_flow_mismatch)
+    end
     -- (d23 batch120 CC3, Astra #2019) a floor the hub would not finish, or one not checked yet, is in the summary
     local ft = out.tiles
     if out.summary and ft and ft.unbuilt_count then

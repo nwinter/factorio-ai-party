@@ -23,6 +23,7 @@
 -- running watches is compared; the index of what they measure is made again when it changes).
 return function(api)
   local M = {}
+  local belt_watches = require('beltwatches')
   M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally', 'asteroid_watch'}
   M.EDITS, M.PARTS, M.LINES, M.PART_LINES = 6, 3, 3, 64
   -- the fewest seconds a kind's start takes (its handler's own lower bound)
@@ -60,8 +61,10 @@ return function(api)
   local function signature()
     local s, parts = api.state(), {}
     for _, k in ipairs(M.KINDS) do
-      for idx, job in pairs(s[k] or {}) do
-        if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then parts[#parts+1] = k .. idx .. ':' .. job.start end
+      for idx in pairs(s[k] or {}) do
+        for _, job in ipairs(belt_watches.list(s, k, idx)) do
+          if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then parts[#parts+1] = (job.id or k .. idx) .. ':' .. job.start end
+        end
       end
     end
     for _, w in ipairs(s.flightwatch and s.flightwatch.list or {}) do
@@ -86,30 +89,32 @@ return function(api)
   local function build()
     local s, list = api.state(), {}
     for _, k in ipairs(M.KINDS) do
-      for idx, job in pairs(s[k] or {}) do
-        if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then
-          local entry = {kind=k, index=idx, job=job}
-          if k == 'uptime' then
-            local ents = {}
-            for _, m in ipairs(job.machines or {}) do ents[#ents+1] = m.e end
-            units_of(entry, ents); entry.types = FEED
-          elseif k == 'turret_tally' then
-            local ents = {}
-            for _, t in ipairs(job.turrets or {}) do ents[#ents+1] = t.e end
-            units_of(entry, ents); entry.types = FEED
-          elseif k == 'belt_flow' then
-            local ents = {}
-            for _, pt in ipairs(job.points or {}) do ents[#ents+1] = pt.entity end
-            units_of(entry, ents); entry.types, entry.line = BELT, true
-            local f, t = job.path_from, job.path_to
-            if f and t and entry.box then
-              local b = entry.box
-              entry.box = {math.min(b[1], f.x, t.x) - 1, math.min(b[2], f.y, t.y) - 1, math.max(b[3], f.x, t.x) + 1, math.max(b[4], f.y, t.y) + 1}
+      for idx in pairs(s[k] or {}) do
+        for _, job in ipairs(belt_watches.list(s, k, idx)) do
+          if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then
+            local entry = {kind=k, index=idx, job=job}
+            if k == 'uptime' then
+              local ents = {}
+              for _, m in ipairs(job.machines or {}) do ents[#ents+1] = m.e end
+              units_of(entry, ents); entry.types = FEED
+            elseif k == 'turret_tally' then
+              local ents = {}
+              for _, t in ipairs(job.turrets or {}) do ents[#ents+1] = t.e end
+              units_of(entry, ents); entry.types = FEED
+            elseif k == 'belt_flow' then
+              local ents = {}
+              for _, pt in ipairs(job.points or {}) do ents[#ents+1] = pt.entity end
+              units_of(entry, ents); entry.types, entry.line = BELT, true
+              local f, t = job.path_from, job.path_to
+              if f and t and entry.box then
+                local b = entry.box
+                entry.box = {math.min(b[1], f.x, t.x) - 1, math.min(b[2], f.y, t.y) - 1, math.max(b[3], f.x, t.x) + 1, math.max(b[4], f.y, t.y) + 1}
+              end
+            else
+              entry.surface, entry.whole, entry.types = job.surface, true, PLATFORM
             end
-          else
-            entry.surface, entry.whole, entry.types = job.surface, true, PLATFORM
-          end
-          if entry.surface then list[#list+1] = entry end
+            if entry.surface then list[#list+1] = entry end
+        end
         end
       end
     end
@@ -204,6 +209,7 @@ return function(api)
     if not why then
       local args = copy(job.call.args)
       args.seconds, args.reason = left, job.reason
+      if kind == 'belt_flow' then args.id = job.id end
       -- (d26 batch225 QR) a split's new start keeps no copy of this watch (uptime.keep): it carries the kept ones on
       job.splitting = true
       local ok, err = pcall(api.call, p, job.call.action, args)
