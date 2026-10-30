@@ -95,19 +95,19 @@ def destination_changes():
     a['attention'] = dict(platform='Asterion', kind='scanning', text='scanning on Asterion')
     d.refresh_remote(d.agents_now, 1400)
     t = d.state['main']
-    assert t['since'] == 1000 and t['position']['y'] == -4.8
+    assert t['since'] == 1000 and t['position']['y'] == -5.2
     d.pan_step(1401)
-    assert d.state['main']['position']['y'] == -4.8
+    assert d.state['main']['position']['y'] == -5.2
 
 
 def eased_return():
     d, a, _ = setup()
     t = dict(remotework.shot(d, a, 1000)[1], since=1000)
     ys = [d.pan_y(t, 1000 + i / 10) for i in range(1801)]
-    assert min(ys) == -4.8 and max(ys) == 203.8
+    assert min(ys) == -5.2 and max(ys) == 204.2
     deltas = [b - a for a, b in zip(ys, ys[1:])]
     assert min(deltas) < 0 < max(deltas) and max(abs(v) for v in deltas) <= .9
-    for end in (-4.8, 203.8):
+    for end in (-5.2, 204.2):
         assert all(abs(delta) <= .2 for y, delta in zip(ys, deltas) if y == end)
     # After a long scheduling gap, a catch-up glide must still satisfy cameras.lua's API limit.
     d.frame_on(d.slots[0], t, 'initial', {}, 1000)

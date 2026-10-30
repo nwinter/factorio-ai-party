@@ -28,7 +28,7 @@ SWIFTLET = {"surface": "platform-6", "hub": {"x": 0, "y": 0},
 
 def frame(shot, frac):
     """(left, top, right, bottom) a shot shows: ~60 x 34 tiles at zoom 1, the width cut to frac."""
-    w, h = 60.0 * frac / shot["zoom"], 34.0 / shot["zoom"]
+    w, h = 60.0 * frac / shot["zoom"], 33.75 / shot["zoom"]
     x, y = shot["position"]["x"], shot["position"]["y"]
     return x - w / 2, y - h / 2, x + w / 2, y + h / 2
 
@@ -40,21 +40,21 @@ def cap():
     assert reach == (-36, -48, 38, 24), reach
     # the whole-ship zoom fits the reach (ship and guns) with the 2-tile margin, no more
     w, h = max(38, 20.5) - min(-36, -18.5) + 4, max(24, 17.5) - min(-48, -32.5) + 4
-    assert whole["fit_zoom"] == round(min(60 * frac / w, 34 / h), 2) == 0.45, whole
+    assert whole["fit_zoom"] == 0.44, whole
     old = platform_shot({k: v for k, v in SWIFTLET.items() if k != "guns"}, travelling=True, frac=frac)
-    assert old["zoom"] == 0.34 and "fit_zoom" not in old, old  # 07:16:26 "main: zoom 0.34 <- platform departure: Swiftlet"
+    assert old["zoom"] == 0.33 and "fit_zoom" not in old, old  # rounded down from 0.3375 to preserve the margin
     # never more than the ship plus its longest range all round: the fit zoom shows at most that box's larger side
     longest = 18
     bw, bh = 39 + 2 * longest + 4, 50 + 2 * longest + 4
-    assert whole["fit_zoom"] >= round(min(60 * frac / bw, 34 / bh), 2)
+    assert whole["fit_zoom"] >= int(min(60 * frac / bw, 33.75 / bh) * 100) / 100
     # a rocket turret (range 36) on the bow reaches further ahead: the box grows with it
     far = dict(SWIFTLET, guns=SWIFTLET["guns"] + [{"x": 0, "y": -30, "range": 36}])
     assert gun_reach(far)[1] == -66 and platform_shot(far, travelling=True, frac=frac)["fit_zoom"] < whole["fit_zoom"]
     # no turrets: the bounds plus the margin, in flight too (no 32 tiles ahead)
     bare = dict(SWIFTLET, guns=[])
     fly, dock = platform_shot(bare, travelling=True, frac=frac), platform_shot(bare, frac=frac)
-    assert fly["zoom"] == round(min(60 * frac / 43, 34 / 54), 2) and "pan" not in fly and fly["position"] == {"x": 1.0, "y": -7.5}, fly
-    assert dock["zoom"] == round(min(60 * frac / 49, 34 / 60), 2), dock  # docked: as before (bounds and the 10-tile margin)
+    assert fly["zoom"] == 0.62 and "pan" not in fly and fly["position"] == {"x": 1.0, "y": -7.5}, fly
+    assert dock["zoom"] == 0.56, dock  # docked: as before (bounds and the 10-tile margin)
 
 
 def detail():
@@ -67,7 +67,7 @@ def detail():
     assert fly["position"]["y"] == p["y0"], fly  # a camera without the pan shows the bow
     _, _, _, bottom = frame(dict(fly, position={"x": 0, "y": p["y1"]}), frac)
     assert abs(bottom - (17.5 + 2)) < 0.2, bottom  # at the stern its bottom edge is the hull's
-    assert p["speed"] == round(34 / fly["zoom"] / model.DETAIL_CROSS_S, 2) and p["bow_s"] == model.DETAIL_BOW_S
+    assert p["speed"] == round(33.75 / fly["zoom"] / model.DETAIL_CROSS_S, 2) and p["bow_s"] == model.DETAIL_BOW_S
     # 1080p: the on-air hole is 1032 px high for 34/zoom tiles, a gun turret (2 tiles) at least 30 px, a small asteroid
     # (about 1 tile) at least 15
     px = 1032 / (34 / fly["zoom"])
@@ -94,11 +94,13 @@ def pan_y(d):
 
 
 def onair():
-    d, sent = world(map_every=0)
+    d, sent = world(map_every=0, platform_every=0, depart_hold=40)
     a, t = team(), 1000
+    for k in range(3):
+        d.step(snap(a, [plat("Swiftlet", at="nauvis", view=SWIFTLET)]), t + k)
     rows = [plat("Swiftlet", at="nauvis->vulcanus 20%", view=SWIFTLET, toward="vulcanus")]
     d.cfg["platform_hold"] = 40
-    for k in range(0, 60):
+    for k in range(3, 60):
         d.step(snap(a, rows), t + k)
         if (d.state.get(d.onair) or {}).get("platform"):
             break

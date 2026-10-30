@@ -40,8 +40,8 @@ def framing():
     assert left <= reach[0] and right >= reach[2], (left, right, reach)  # the guns' reach across, whole
     _, _, _, bottom = frame(dict(fly, position={"x": 0, "y": p["y1"]}), 1.0)
     assert abs(bottom - (reach[3] + 2)) < 0.2, (bottom, reach)  # at the stern: the reach aft
-    vh = 34 / fly["zoom"]
-    assert round(vh) == 113 and abs(p["y1"] - p["y0"]) / vh > 2, (vh, p)
+    vh = 33.75 / fly["zoom"]
+    assert vh == 112.5 and abs(p["y1"] - p["y0"]) / vh > 2, (vh, p)
     # the detail pan it replaced: at 0.55, 62 tiles high, more than LONG_VIEWS of them from bow to stern
     detail_vh = 34 / model.DETAIL_ZOOM[0]
     assert (ASTERION["bounds"]["bottom"] + 2) - (reach[1] - 2) - detail_vh > model.LONG_VIEWS * detail_vh

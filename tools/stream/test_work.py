@@ -153,7 +153,7 @@ def platform_lua_tests():
     z = platform_shot({"surface": "s", "hub": {"x": 0, "y": 0}, "bounds": {"left": -100, "top": -5, "right": 100, "bottom": 5}})
     assert z["zoom"] == 0.3  # 210 tiles wide: clamped to the camera's minimum
     small = platform_shot({"surface": "s", "hub": {"x": 0, "y": 0}})  # the hub alone (default bounds +-6)
-    assert small["zoom"] == round(min(2.0, 60 / 22, 34 / 22), 2) and small["position"] == {"x": 0, "y": 0}
+    assert small["zoom"] == 1.53 and small["position"] == {"x": 0, "y": 0}
 
 
 def main():

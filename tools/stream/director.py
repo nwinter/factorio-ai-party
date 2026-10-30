@@ -246,7 +246,7 @@ class Director:
             self.work_seen.add(w["id"])
             if now - w["t"] > self.cfg["work_fresh"]:
                 continue
-            shot = platform_shot(w["view"]) if w.get("view") else \
+            shot = platform_shot(w["view"], frac=self.cfg.get("platform_frac") or self.cfg.get("view_frac", 1.0)) if w.get("view") else \
                 {"position": w["position"], "surface": w.get("surface") or "nauvis", "zoom": self.cfg["work_zoom"]}
             # `work`, not `label`: public() reads a label as an attack banner
             return dict(shot, agents=[w["agent"]], subject="@work", until=now + self.cfg["work_hold"], work=w["label"])
@@ -517,7 +517,7 @@ class Director:
             self.state[name] = target
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
-                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did") if k in target},
+                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame") if k in target},
                  "cmd": body, "result": result, "acknowledged": bool(ok), "scores": dict(top)}
         if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
             entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})

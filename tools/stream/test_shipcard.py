@@ -26,7 +26,7 @@ CINDER = {"surface": "platform-5", "hub": {"x": 0, "y": 0}, "bounds": {"left": -
 def shots():
     fly = platform_shot(BASTION, travelling=True, frac=0.658)
     assert fly["zoom"] == 0.3 and fly["pan"]["y0"] < fly["pan"]["y1"], fly
-    vh = 34.0 / 0.3
+    vh = 33.75 / 0.3
     # the view's top edge at the bow is the flight framing's top (32 tiles ahead and half the margin), its bottom edge
     # at the stern the build's bottom with 8 and half the margin
     assert abs((fly["pan"]["y0"] - vh / 2) - (-62 - 32 - 5)) < 0.2 and abs((fly["pan"]["y1"] + vh / 2) - (62 + 8 + 5)) < 0.2, fly
