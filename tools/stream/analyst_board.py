@@ -15,7 +15,7 @@ The point's text is written for a voice and its facts hold every name and number
 it passes the caster's fact check.
 """
 import re, threading, time
-from freshness import TTL, TRANSIENT, current_analyst, scoped
+from commentary_freshness import TTL, TRANSIENT, current_analyst, scoped
 
 MAX_POINTS = 60
 MAX_ANSWERS = 6
