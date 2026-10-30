@@ -49,7 +49,19 @@
   a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
   met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
-  platform lanes, inside all/any too);
+  platform lanes, inside all/any too; optional `windows:[60,180,300,600,"leg"]` (any distinct subset) and
+  `require:"all"` (default with windows) or a count: **one same item** must bind under `km` in that many windows.
+  Different binding items across windows do not combine. Every fixed window needs its full duration on the current
+  leg, keyed by platform, connection, endpoints and direction; no cross-leg history or shorter fallback. The native
+  oldest bucket must also lie on this leg (up to one bucket after the nominal duration). Whole-leg counters need a
+  complete recorded baseline for this leg. `missing:"binding"` is the default: no data counts as binding, NET unknown.
+  `missing:"pending"` neither binds nor clears: with `require:"all"`, an item with any pending window cannot meet it.
+  `saw` says each item's NET/state per window and the eligibility tick; missing baselines say ready tick unknown.
+  The cache refreshes at that tick or after 10 s. An entire failed read still says not met.
+  `saw` and `evidence.window_check` name the corroborated item; `return_budget.window_budgets` keeps every item and
+  rate basis. Stock, reserve, margin, speed and caller allowance retain the existing formula; no gate state makes
+  NET zero. Omitting the options keeps the default calculation. Set `windows`/`require`/`missing` here or inside
+  `turnaround`, not both; changing them reads fresh);
   `launches_at_least` (`platform`, `n`, `window` seconds back or `since_tick`, `origin?` planet: the rockets sent up to
   that platform then, launched (landed, in flight) plus loaded in silos with a rocket ready aimed at it, met at n; saw
   and a fired guard's evidence give each count; counted every 1 s; read only: the harness stops nothing, so a cap is

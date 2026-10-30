@@ -1,4 +1,5 @@
 local budgetrates = require('budgetrates')
+local budgetwindows = require('budgetwindows')
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
@@ -851,6 +852,7 @@ return function(api)
     -- including a failed read. A new leg reads immediately; without a successful read it is not met, said in saw.
     budget_below=function(p,c,estimate,record)
       (record or c).evidence=nil
+      local turnaround,window_config=budgetwindows.arguments(c)
       local now=game.tick
       local pl
       for _,each in pairs(p.force and p.force.platforms or {}) do if each.valid and each.name==c.platform then pl=each; break end end
@@ -858,23 +860,26 @@ return function(api)
       local at=pl and pl.space_location
       if at then
         budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now) end
         return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met); cached budget cleared',c.platform,at.name)
       end
       local l=api.leg and api.leg(pl)
       if not l then
         budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now) end
         return false,string.format('platform %s: no flight leg: no fresh return budget (not met); cached budget cleared',c.platform)
       end
       local connection=pl.space_connection and pl.space_connection.name
       local kept=budget_kept[c]
       if kept and (kept.platform~=pl or kept.name~=c.platform or kept.connection~=connection or kept.from~=l.from
-        or kept.to~=l.to or kept.back~=l.back or not budget_same(kept.args,c.turnaround)) then
+        or kept.to~=l.to or kept.back~=l.back or not budget_same(kept.args,turnaround)) then
         budget_kept[c]=nil; kept=nil
       end
-      if not kept or now-kept.tick>=M.BUDGET_EVERY then
-        local ok,b=pcall(api.return_budget,p,c.platform,c.turnaround)
+      local ready=kept and kept.b and kept.b.window_budgets and kept.b.window_budgets.next_ready_tick
+      if not kept or now-kept.tick>=M.BUDGET_EVERY or (window_config and ready and now>=ready) then
+        local ok,b=pcall(api.return_budget,p,c.platform,turnaround)
         kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil,platform=pl,name=c.platform,
-          connection=connection,from=l.from,to=l.to,back=l.back,args=budget_copy(c.turnaround)}
+          connection=connection,from=l.from,to=l.to,back=l.back,args=budget_copy(turnaround)}
         budget_kept[c]=kept
       end
       local source=string.format('; cached leg %s->%s (connection %s, direction %s), read at tick %d',
@@ -883,6 +888,14 @@ return function(api)
       if kept.err or not b then
         return false,string.format('platform %s: no fresh return budget for this leg (not met): %s%s',
           c.platform,kept.err or 'read returned no budget',source)
+      end
+      if window_config then
+        local check=budgetwindows.evaluate(b.window_budgets,window_config,c.km)
+        check.scope='budget_below km'
+        (record or c).evidence=check.met and {tick=kept.tick,platform=c.platform,
+          cached_leg={from=kept.from,to=kept.to,connection=kept.connection,back=kept.back},
+          return_budget=budgetrates.copy(b),window_check=check} or nil
+        return check.met,'platform '..c.platform..': '..check.line..source
       end
       if not (b and b.binds and b.binds.out_km_max) then
         return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)..source
@@ -1433,6 +1446,7 @@ return function(api)
     if kind=='budget_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'budget_below requires platform (a platform of ours in flight, by name)')
       assert(type(c.turnaround)=='table','budget_below turnaround: as platform_endurance\'s ({km | fraction, back_to?, speed_floor?, margin?, reserve?})')
+      budgetwindows.arguments(c)
       assert(type(c.km)=='number' and c.km>=0 and c.km<=1e8,'budget_below km: met once the binding item can go out less than this many km farther (0..100000000)')
     end
     if kind=='launches_at_least' then
