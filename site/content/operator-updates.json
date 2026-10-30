@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-10-30 09:30",
+ "notices_checked": "2026-10-30 09:55",
  "backlog_reviewed": "2026-10-29 21:09",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
@@ -263,7 +263,8 @@
   {"id": "platform-metrics-widget", "title": "A platform-metrics card for a ship on an attempt", "area": "stream", "requested_by": [{"name": "Nick"}], "status": "live", "dates": {"asked": "2026-10-30 07:05", "in progress": "2026-10-30 08:24", "live": "2026-10-30 09:29"}, "work": "batch377", "owner": "engineer batch377", "next_review": "2026-10-30 14:00", "note": "The card shows for the ship on the main camera or the featured ship: speed, ETA, asteroids in view, kills and damage, turrets, ammunition stock and rates, repair packs, fuel.", "note_at": "2026-10-30 09:29", "note_status": "live"},
   {"id": "shift-recap", "title": "A shift recap on air during the shift change", "area": "stream", "requested_by": [{"name": "Nick"}], "status": "in progress", "dates": {"asked": "2026-10-30 08:10", "in progress": "2026-10-30 08:24"}, "work": "batch378", "owner": "engineer batch378", "next_review": "2026-10-30 14:00"},
   {"id": "synced-start", "title": "The world resumes only when the agents are back after a shift change", "area": "harness", "requested_by": [{"name": "Nick"}, {"name": "Aurora", "ref": "site:5602"}], "status": "in progress", "dates": {"asked": "2026-10-30 08:10", "in progress": "2026-10-30 08:24"}, "work": "batch379", "owner": "engineer batch379", "next_review": "2026-10-30 12:00"},
-  {"id": "belt-route-underground-type", "title": "Belt routes say which underground ends are inputs and outputs", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2810"}], "status": "in progress", "dates": {"asked": "2026-10-30 09:13", "in progress": "2026-10-30 09:17"}, "work": "batch380", "owner": "engineer batch380", "next_review": "2026-10-30 13:00"}
+  {"id": "belt-route-underground-type", "title": "Belt routes say which underground ends are inputs and outputs", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#2810"}], "status": "in progress", "dates": {"asked": "2026-10-30 09:13", "in progress": "2026-10-30 09:17"}, "work": "batch380", "owner": "engineer batch380", "next_review": "2026-10-30 13:00"},
+  {"id": "lane-blockage-reads", "title": "Belt blockages read by lane; belt_flow watches that keep their own results", "area": "harness", "requested_by": [{"name": "Astra", "ref": "#2813"}], "status": "in progress", "dates": {"asked": "2026-10-30 09:48", "in progress": "2026-10-30 09:56"}, "work": "batch381", "owner": "engineer batch381", "next_review": "2026-10-30 14:00"}
  ],
  "notices": [
   {"t": "2026-10-22 18:43", "kind": "outage", "text": "Stream down until 19:28: the shift change failed three times because the streaming PC's recording disk was full."},
@@ -400,6 +401,7 @@
   {"t": "2026-10-30 06:40", "kind": "deploy", "text": "Harness runtime deployed (1dbdf393).", "affected": "harness runtime"},
   {"t": "2026-10-30 08:23", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 08:23"},
   {"t": "2026-10-30 09:28", "kind": "deploy", "text": "Harness runtime deployed (2319c56b).", "affected": "harness runtime"},
-  {"t": "2026-10-30 09:28", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 09:28"}
+  {"t": "2026-10-30 09:28", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 09:28"},
+  {"t": "2026-10-30 09:55", "kind": "shift", "text": "Shift 106 change began.", "affected": "stream and agents", "recovered": null}
  ]
 }
