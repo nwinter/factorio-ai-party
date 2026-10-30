@@ -50,12 +50,15 @@ def commands():
 def real_shots():
     d, sent = setup(SLOTS)
     ship = copy.deepcopy(SHIP)
-    ship['view'].update(left=-600, right=600, top=-1000, bottom=1000)
+    huge = dict(left=-600, right=600, top=-1000, bottom=1000)
+    ship['view'].update(bounds=huge, hull=huge, bow=dict(huge, bottom=-920))
     rows = run(d, 1000, 1500, ship=ship)
     assert any((r.get('inset') or {}).get('platform') for _, r in rows)
     assert {'bow defense', 'whole ship'} <= {
         (r.get('main', {}).get('platform') or {}).get('framing') for _, r in rows}
     assert any(b.get('panel') for b in sent)
+    assert any(not b.get('panel') and b.get('zoom') == WORLD_ZOOM_MIN for b in sent)
+    assert any(b.get('panel') and b.get('zoom') == PANEL_ZOOM_MIN for b in sent)
     for b in sent:
         if not b.get('map') and 'zoom' in b:
             floor = PANEL_ZOOM_MIN if b.get('panel') else WORLD_ZOOM_MIN
