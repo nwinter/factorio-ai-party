@@ -860,11 +860,13 @@ return function(api)
       local at=pl and pl.space_location
       if at then
         budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now) end
         return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met); cached budget cleared',c.platform,at.name)
       end
       local l=api.leg and api.leg(pl)
       if not l then
         budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now) end
         return false,string.format('platform %s: no flight leg: no fresh return budget (not met); cached budget cleared',c.platform)
       end
       local connection=pl.space_connection and pl.space_connection.name
@@ -873,7 +875,8 @@ return function(api)
         or kept.to~=l.to or kept.back~=l.back or not budget_same(kept.args,turnaround)) then
         budget_kept[c]=nil; kept=nil
       end
-      if not kept or now-kept.tick>=M.BUDGET_EVERY then
+      local ready=kept and kept.b and kept.b.window_budgets and kept.b.window_budgets.next_ready_tick
+      if not kept or now-kept.tick>=M.BUDGET_EVERY or (window_config and ready and now>=ready) then
         local ok,b=pcall(api.return_budget,p,c.platform,turnaround)
         kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil,platform=pl,name=c.platform,
           connection=connection,from=l.from,to=l.to,back=l.back,args=budget_copy(turnaround)}
