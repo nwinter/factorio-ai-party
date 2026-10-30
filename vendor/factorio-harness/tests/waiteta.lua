@@ -84,9 +84,11 @@ do
   local c={['until']='platform_arrived',platform='Sunward',location='nauvis',timeout=17280000}
   local function estimate() local _,_,r=LW.check(p,c,{}); return r end
   has(estimate().no_estimate,'before departure'); eq(projections,0); eq(predicates,1)
-  where.stopped=false; where.leg={to='gleba',eta_ticks=600}
+  -- The current-speed ETA is 10s; the historical freight projection deliberately differs (2s).
+  where.stopped=false; where.leg={to='gleba',left_km=100,speed_now_kms=10,eta_ticks=120}
   has(estimate().no_estimate,'beyond the current flight leg'); eq(projections,0); eq(predicates,2)
   where.leg.to='nauvis'; eq(estimate().eta_s,10); eq(projections,0); eq(predicates,3)
+  where.leg.speed_now_kms=nil; has(estimate().no_estimate,'current platform speed is zero or unavailable'); eq(projections,0)
   where.leg=nil; c.timeout=54000; eq(estimate().eta_s,120); eq(projections,1)
   c.timeout=nil; eq(estimate().eta_s,120); eq(projections,2)
   where.stopped=true; where.at='gleba'
