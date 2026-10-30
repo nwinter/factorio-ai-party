@@ -92,7 +92,7 @@
   reads those too). The game's record then holds a circuit wait that never holds. `waits_run` says which way each
   condition runs, and `harness_waits` (also in `platforms {platform}`) gives the harness's conditions now and its last
   send. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
-  `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
+  `circuit_signal` (`signal, at_least | below`: hub wires, or `position, wire` for an entity's network), the remote lane too.
   Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
 - Supply left without a path: a `requests` call that changes a hub's or landing pad's slots or sections, a
   `platform_schedule` call and a `platform_delete` call read the delivery paths of the items involved before and

@@ -17895,7 +17895,7 @@ M.scheduler_api={snapshots=function(p,a) return M.turretsnap.read(p,a) end,colle
   state=state,player=player,player_check=function(index,seated) return player(index,seated,true) end,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
-  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args); M.step_length_check(action,args) end end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args); M.step_length_check(action,args) end end,validate_condition=function(c,p) return conditions.validate(c,p) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
@@ -17988,7 +17988,7 @@ M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=
       if distance(d,q)<d.r then return string.format('%s at (%d,%d)',d.name,math.floor(d.x+0.5),math.floor(d.y+0.5)) end
     end
   end,
-  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c,p) return conditions.validate(c,p) end,
   busy=function(index)
     local action=state().active[index]
     if action then return action.kind end
@@ -18095,7 +18095,7 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   dead_until=function(index) local b=M.bots.record(index); return b and not b.travel and not M.bots.alive(b) and b.dead_until_tick or nil end,
   board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end,
   egg_seq=function() return M.spoil.seq() end,egg_news=function(p,seq,carried_only) return M.spoil.news(p,seq,M.board.who(p),carried_only) end,
-  condition=function(p,c,record) return M.waiteta.check(p,c,record) end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c,record) return M.waiteta.check(p,c,record) end,validate_condition=function(c,p) return conditions.validate(c,p) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   -- chosen alert kinds (Luna, 19:50): the push alert groups of those kinds for p, and machines starving in its claims
   alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,held_note=function(e) return M.supply.held_note(e) end,
@@ -18482,7 +18482,7 @@ function handlers.wait_until(p,a)
     for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' and k~='wake_local' then copy[k]=v end end
     a=copy
   end
-  conditions.validate(a)
+  conditions.validate(a,p)
   local timeout=integer(a.timeout,3600,1,54000,'timeout (1..54000 ticks)')
   -- (d27 batch261 AD) no timeout given: a tick_at_least (alone or in any) ends it by its tick, up to 54000 ticks
   local due=a.timeout==nil and conditions.deadline(a)

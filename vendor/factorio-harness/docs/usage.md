@@ -10969,7 +10969,7 @@ fh watch    # deploy on every change
   any wait_until with `surface` or `platform`.
 - Still refused with `surface`: `no_enemy_structures`, `no_enemies`, `units_clear` (enemies, not ours), `health_below`,
   `health_above`, `crafting_done` (the character), `researched` (the force), `turrets_idle` (turrets firing),
-  `damaged` (health), `ghosts_waiting` (ghosts, `platform` only), `circuit_signal` (a platform hub's wires), and the
+  `damaged` (health), `ghosts_waiting` (ghosts, `platform` only), `circuit_signal` (platform hub wires, or `position` and `wire` for an entity's native networks), and the
   platform conditions.
 - Tests: tests/d20_batch62c.lua (fails on main's conditions.lua); tests/d20_batch52.lua and d20_batch62b.lua quote the
   widened refusals.
@@ -18301,6 +18301,27 @@ For a turnaround read, put all three options inside `turnaround`. A guard accept
 Batch364 label corrections (Sol tick 84054702): `usable_after_reserve_margin` replaces the ambiguous `usable_stock_extrema` name. Its `measure` and `formula` explicitly identify budget usable after reserve and margin: `(stock - reserve) / (1 + margin)`. For stock 5908, reserve 3600 and margin 0.2, the observed value is 1923.333333, not raw stock 5908. Existing observations retain their values. An item's legacy `window` follows authoritative `rate_basis.window`; `recent_window` preserves the separately labeled comparison candidate, including in the explanatory line. No budget arithmetic changes.
 
 
+## d29 batch368 CP: circuit_signal at an entity on a platform
+
+Sol #2777: "circuit_signal reads hub wires only; Resolute M/R/L loop reader13.5,31.5 has independent count."
+
+`wait_until {until:"circuit_signal", platform:"Resolute", position:[13.5,31.5], wire:"red", signal:"rocket", below:2300}`
+reads the native red circuit network of the entity at that platform position. The same condition works in queue
+steps, lane guards, `all`/`any`, sleep conditions, standing orders and repeat conditions. No position selects the hub.
+No wire selects both; `red`, `green`, `both`, `red+green` and `green+red` are accepted, ignoring spaces and case.
+Combinators read their input connectors. A position must identify one of our entities with a circuit connector.
+
+An explicit position or wire requires every selected network to exist and be readable. Missing entities, entities
+without circuit connectors, ambiguous positions and missing selected wires refuse submission, including dry runs;
+the refusal names what stands there. A network that disappears during a wait is unreadable, with its reason in
+`saw`; the condition remains unmet and is read again. An existing network with no such signal reads zero. Without
+either selector, the hub keeps its existing unwired-zero behavior (and positive `at_least` guards are refused there).
+
+`saw` gives the entity/position, each selected network's ID and count, total count and read tick. A fired guard's
+`evidence` gives `entity {name, position, unit_number}`, `platform`, `signal`, `wire`, `networks [{wire,id,count}]`,
+`count`, `tick` and `circuit_signal:true`. Compound guards retain these under `circuit_conditions` alongside other
+evidence. Guard status also exposes the latest `saw`. Network identities and signal values are read afresh at each
+check; no hub fallback or cached zero is substituted for an unreadable entity network.
 ## d29 batch365 FL (eng/d20-batch365)
 
 `flight_watch {platform, from:"leg"}` arms at the current leg and begins on the next observed connection, oriented
