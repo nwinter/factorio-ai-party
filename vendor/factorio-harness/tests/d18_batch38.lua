@@ -368,7 +368,7 @@ do
   local out={}
   BA.sideloads(target,out,{})
   eq(#out,1)
-  has(out[1],'side-loads both its lanes (left 3 iron-ore, right 2 iron-ore) onto transport-belt (0,0) left lane only: at most half of what it carries gets on (that lane is full: 8 coal)')
+  has(out[1],'side-loads both its lanes (left 3 iron-ore, right 2 iron-ore) onto transport-belt (0,0) left lane only (that lane is full: 8 coal)')
 end
 print('d18_batch38 D3 full lanes say what fills them: ok')
 print('d18 batch38 ok')

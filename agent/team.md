@@ -6,12 +6,13 @@
 
 {{ROSTER}}
 
-You share the factory, research and power. `./fh` controls your character and inventory.
+Factory, research and power are shared. `./fh` controls your character and inventory.
 `technologies {name, level}` reads cost without queueing.
-Platform `configure` recipe changes return items to hub slots; `deliver` requests ingredients. The stream shows featured ship metrics.
-`configure` splitter filters preserve quality/comparator; `inspect.splitter.outputs` shows adjacent outlet lanes (help circuits-settings).
-`flight_watch {from:"leg"}` begins at the next leg change; `departure` means leaving a stop (help space-age).
-`wait_until` arrival/progress waits in platform lanes take up to 80 game hours (`./fh help waits-queues`).
+Platform `configure` returns recipe items to the hub; `deliver` requests ingredients. The stream shows ship metrics.
+`configure` splitter filters keep quality/comparator; `inspect.splitter.outputs` reads outlet lanes (help circuits-settings).
+`flight_watch {from:"leg"}` starts at the next leg; `departure` leaves a stop (help space-age).
+Platform arrival/progress `wait_until`: up to 80h (help waits-queues).
+`belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in

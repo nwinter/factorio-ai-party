@@ -658,7 +658,10 @@ export function stillRunningLine(reply: Reply): string | undefined {
   const what = ends.map(r => r && typeof r === 'object' ? r.still_running : undefined).find(v => v !== undefined && v !== false);
   const label = typeof what === 'string' ? what : typeof what === 'object' && what && typeof (what as any).kind === 'string' ? (what as any).kind : 'the action';
   // a belt_flow sample fh wait waited for (d22 batch106 BP1) is no character action: nothing ends it before its end tick
-  if (label.startsWith('belt_flow sample ')) return `still running (exit 3): ${label} goes on after this wait ended; fh wait resumes waiting for it. No action of yours or stop ends it (it ends at its until_tick); belt_flow {} reads its result then`;
+  if (label.startsWith('belt_flow sample ')) {
+    const read = `belt_flow ${JSON.stringify({id:label.slice('belt_flow sample '.length).split(',')[0]})}`;
+    return `still running (exit 3): ${label} goes on after this wait ended; fh call ${read} waits for it. No action of yours or stop ends it (it ends at its until_tick); ${read} reads its result then`;
+  }
   return `still running (exit 3): ${label} goes on after this wait ended (a walk keeps walking); fh wait resumes waiting for it. A call that drives your character (move_to, transfer, collect, feed, build, mine, rearm, refuel ...) stops it; reads (observe, inspect, status, trace, supply ...), say, tell, chat, craft, planners (place_ghosts, deconstruct, requests) and calls by remote view or on another surface leave it running`;
 }
 function setExit(reply: Reply) {
@@ -1615,9 +1618,10 @@ async function main() {
     const shown = compactWaits ? await brief(base, started, before, action) : await finalReply(base);
     const tick = shown.tick ?? done.tick;
     const left = active?.until_tick !== undefined && tick !== undefined ? `, up to ${Math.max(0, Math.ceil((active.until_tick-tick)/60))} s more` : '';
+    const resume = action === 'belt_flow' ? `fh call belt_flow ${JSON.stringify({id:active.watch_id})}` : 'fh wait';
     return {...shown, ok:true, error:undefined, result:{...shown.result, last:undefined, outcome:inbox.woke, from:inbox.from, action:undefined,
       still_running:`${active.kind}${left}`,
-      note:`a ${inbox.woke === 'told' ? 'tell' : 'mention'} from ${inbox.from} ended this wait (the team block has it); your ${active.kind} keeps going: fh wait waits for it again`}};
+      note:`a ${inbox.woke === 'told' ? 'tell' : 'mention'} from ${inbox.from} ended this wait (the team block has it); your ${active.kind} keeps going: ${resume} waits for it again`}};
   }
   // A timed action that hit its own limit says so first (timed_out), with the
   // condition a wait_until was still waiting for.
@@ -1832,14 +1836,15 @@ async function main() {
   // wait action returns a stale completed gather rather than waiting.") A bounded watch (belt_flow, uptime,
   // turret_tally, collector_tally, asteroid_watch, flight_watch) is no character action: fh wait, finding none, gave the
   // last action that ended. The watches running now (status {brief, work}) and the read that gives each one's result.
-  const WATCH_READ: Record<string, string> = {belt_flow:'belt_flow {} (fh call belt_flow {} waits for it)',
-    collector_tally:'platform_supply {platform, collection: true}', asteroid_watch:'platform_defense {platform, asteroids: true}'};
+  const WATCH_READ: Record<string, string> = {collector_tally:'platform_supply {platform, collection: true}',
+    asteroid_watch:'platform_defense {platform, asteroids: true}'};
   function runningWatches(status: Reply): any[] {
     const rows = status.result?.watches;
     return Array.isArray(rows) ? rows.filter((r: any) => r && r.state === 'running') : [];
   }
   function watchRead(r: any): string {
     if (r.kind === 'flight_watch') return `flight_watch {id: ${String(r.id).replace(/^flight#/, '')}}`;
+    if (r.kind === 'belt_flow') return `belt_flow ${JSON.stringify({id:r.id})}`;
     return WATCH_READ[r.kind] ?? `${r.kind} {}`;
   }
   function secondsLeft(r: any, tick: unknown): number | undefined {
@@ -1857,13 +1862,13 @@ async function main() {
     const said = `no action runs; ${running.map(r => watchLine(r, tick)).join('; ')}`;
     return {...status, result:{...status.result, watches:running, note:status.result.note ? `${status.result.note}; ${said}` : said}};
   }
-  // The belt_flow sample this wait waited for has ended: its result, read once (belt_flow {}).
+  // The belt_flow sample this wait waited for has ended: its result, read once by ID.
   async function sampleEnded(sample: any, status: Reply, started: number): Promise<Reply> {
-    const read = await harness.request('belt_flow', {});
+    const read = await harness.request('belt_flow', {id:sample.id});
     if (!read.ok) return read;
     const row = Array.isArray(status.result?.watches) ? status.result.watches.find((r: any) => r && r.id === sample.id) : undefined;
     const note = read.result?.sampling
-      ? `no action ran when this wait began; it waited for your belt_flow sample ${sample.id}, which is no longer running${row?.state ? ` (${row.state})` : ''} and has no result yet: belt_flow {} reads it`
+      ? `no action ran when this wait began; it waited for your belt_flow sample ${sample.id}, which is no longer running${row?.state ? ` (${row.state})` : ''} and has no result yet: ${watchRead(sample)} reads it`
       : `no action ran when this wait began; it waited for your belt_flow sample ${sample.id} (until tick ${sample.end_tick}): this is its result`;
     return withSlow(withTells({...read, result:{...read.result, waited_for:sample.id, waited_ms:Date.now()-started, note}}));
   }
@@ -1875,7 +1880,7 @@ async function main() {
     return {...status, ok:false,
       result:{timed_out:true, still_running:`belt_flow sample ${sample.id}${left !== undefined ? `, up to ${left} s more` : ''}`, waited_ms:waitedMs, ...(slow ? {slow_game:slow} : {})},
       error:{code:'wait_timeout', message:`your belt_flow sample ${sample.id} is STILL SAMPLING: the wait gave up after ${Math.round(waitedMs/1000)} s${why}`
-        + `${left !== undefined ? `, up to ${left} s more, until tick ${sample.end_tick}` : ''}. No action of yours or stop ends it; belt_flow {} reads its result once it ends (fh call belt_flow {} waits for it)`}};
+        + `${left !== undefined ? `, up to ${left} s more, until tick ${sample.end_tick}` : ''}. No action of yours or stop ends it; ${watchRead(sample)} reads its result once it ends (fh call ${watchRead(sample)} waits for it)`}};
   }
   async function waitForIdle(capMs?: number): Promise<Reply> {
     const started = Date.now();
@@ -1902,7 +1907,7 @@ async function main() {
     while (!stopping) {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
-        const flow = runningWatches(status).find(r => r.kind === 'belt_flow');
+        const flow = runningWatches(status).find(r => r.kind === 'belt_flow' && (!sample || r.id === sample.id));
         if (flow && (sample || (status === first && !(typeof last?.tick === 'number' && typeof flow.start_tick === 'number' && last.tick >= flow.start_tick)))) {
           if (!sample && !explicit) {
             budget = waitBudget(flow.end_tick, first.tick ?? first.result?.tick);
@@ -1911,7 +1916,7 @@ async function main() {
           sample = flow;
           if (status !== first && told(status, since)) {
             const inbox = wakeInbox(status, since);
-            if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox, active:{kind:`belt_flow sample ${flow.id}`, until_tick:flow.end_tick}}}}, started, undefined, 'belt_flow');
+            if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox, active:{kind:`belt_flow sample ${flow.id}`, watch_id:flow.id, until_tick:flow.end_tick}}}}, started, undefined, 'belt_flow');
             noteTell(inbox);
           }
           ending = overtime(pacer, deadline, cap);
@@ -2098,17 +2103,18 @@ async function main() {
           ...(done || !slept.ok ? {} : {still_running:'hand crafting'}), wait:slept.result}};
       }
     }
-    // belt_flow (batch24 B2): the sampling runs in the game over seconds; the call reads belt_flow {} each second until
+    // belt_flow (batch24 B2): the sampling runs in the game over seconds; the call reads its ID each second until
     // the result is in (--no-wait: the start only).
     if (action === 'belt_flow' && reply.ok && reply.result?.sampling && values['no-wait'] !== true && !bridged) {
+      const id = reply.result.id;
       const seconds = typeof reply.result.seconds === 'number' ? reply.result.seconds : 10;
       const until = Date.now() + (seconds * 4 + 20) * 1000;
       while (Date.now() < until) {
         await delay(1000);
-        const read = await harness.request('belt_flow', {});
+        const read = await harness.request('belt_flow', id ? {id} : {});
         if (!read.ok || !read.result?.sampling) return read;
       }
-      return {...reply, ok:false, error:{code:'wait_timeout', message:`belt_flow still sampling after ${seconds * 4 + 20} s (a slow game); belt_flow {} reads it when done`}};
+      return {...reply, ok:false, error:{code:'wait_timeout', message:`belt_flow still sampling after ${seconds * 4 + 20} s (a slow game); belt_flow ${JSON.stringify(id ? {id} : {})} reads it when done`}};
     }
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).
