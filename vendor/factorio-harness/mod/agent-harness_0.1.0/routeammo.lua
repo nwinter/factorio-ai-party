@@ -428,8 +428,16 @@ return function(api)
   end
   -- (BO2) the turrets aboard, read once: the turret that fires each ammunition (the first of its category) and the
   -- ammunition's quality (the first holding it), as turret_for; and what each targets. Returns turrets, fire_of, aim_of.
-  local function aiming(pl)
-    local turrets = scan_turrets(pl)
+  local function aiming(pl, selected, scanned)
+    local turrets = scanned or scan_turrets(pl)
+    if selected then
+      local cats, chosen = {}, {}
+      for _, n in ipairs(selected) do local c = category(n); if c then cats[c] = true end end
+      for _, t in ipairs(turrets) do
+        for _, c in ipairs(t.cats) do if cats[c] then chosen[#chosen+1] = t; break end end
+      end
+      turrets = chosen
+    end
     local fire = {}  -- ammunition -> {turret, quality}
     local function fire_of(ammo)
       if not fire[ammo] then
@@ -459,7 +467,7 @@ return function(api)
     local aims = {}
     -- an ammunition's aim (tree_shots): its turrets and the kinds they target; nil with no turret aboard read
     local function aim_of(ammo)
-      if #turrets == 0 then return nil end
+      if #turrets == 0 and not selected then return nil end
       if not aims[ammo] then
         local cat = category(ammo)
         local mine, tg = {}, {}
@@ -475,6 +483,20 @@ return function(api)
       return aims[ammo]
     end
     return turrets, fire_of, aim_of
+  end
+  -- Current GUI settings, separate from the ammunition selected for a design. Group identical settings.
+  local function target_settings(turrets)
+    local out, groups = {}, {}
+    for _, t in ipairs(turrets) do
+      local names = {}; for _, n in ipairs(t.list or {}) do names[#names+1] = n end; table.sort(names)
+      local sig = t.name .. '|' .. (t.unknown and '?' or not t.set and '*' or table.concat(names, ','))
+      if not groups[sig] then
+        groups[sig] = {turret=t.name, count=0, targets=t.unknown and 'unknown' or not t.set and 'any' or names}
+        out[#out+1] = groups[sig]
+      end
+      groups[sig].count = groups[sig].count + 1
+    end
+    return out
   end
   -- (d24 batch183 QZ1, Sol #2055: a forecast for a hull not built yet) How many asteroids a box flying a part of a
   -- connection meets, by the game's spawn rule as read on a copy of world n (2.0.77): asteroids spawn on a line 72
@@ -522,7 +544,27 @@ return function(api)
     local aimed = M.aimed
     M.aimed = nil
     local cache = {}
-    if aimed and aimed.pl == pl.index and aimed.tick == game.tick then
+    local current
+    if o.ammo then
+      hits = {}
+      current = scan_turrets(pl)
+      local _, all_fire = aiming(pl, nil, current)
+      local accepted, allowed = {}, {}
+      -- Prototypes plus compatible turrets aboard define the supported names; no player inventory is changed.
+      for n, ip in pairs(prototypes.item) do
+        if ip.type == 'ammo' then
+          local turret, quality = all_fire(n)
+          local h = turret and M.hit(n, quality, pl.force, turret)
+          if h and h.total > 0 then accepted[#accepted+1] = n; allowed[n] = true end
+        end
+      end
+      table.sort(accepted)
+      for _, n in ipairs(o.ammo) do
+        assert(allowed[n], 'design.ammo: ' .. tostring(n) .. ' is not an ammunition supported by the turrets aboard and damage model; accepted: '
+          .. (#accepted > 0 and table.concat(accepted, ', ') or 'none'))
+      end
+      turrets, fire_of, aim_of = aiming(pl, o.ammo, current)
+    elseif aimed and aimed.pl == pl.index and aimed.tick == game.tick then
       turrets, fire_of, aim_of, cache = aimed.turrets, aimed.fire_of, aimed.aim_of, aimed.cache
     else
       turrets, fire_of, aim_of = aiming(pl)
@@ -530,7 +572,9 @@ return function(api)
     end
     local ammo, seen = {}, {}
     for _, n in ipairs(o.ammo or {}) do if not seen[n] then seen[n] = true; ammo[#ammo+1] = n end end
-    for _, t in ipairs(turrets) do for _, c in ipairs(t.held or {}) do if not seen[c.name] then seen[c.name] = true; ammo[#ammo+1] = c.name end end end
+    if not o.ammo then
+      for _, t in ipairs(turrets) do for _, c in ipairs(t.held or {}) do if not seen[c.name] then seen[c.name] = true; ammo[#ammo+1] = c.name end end end
+    end
     table.sort(ammo)
     local rows, lines = {}, {}
     local p0, p1 = o.progress and o.progress[1] or 0, o.progress and o.progress[2] or 1
@@ -603,7 +647,39 @@ return function(api)
       'shots: every asteroid counted destroyed by that one ammunition, each shot hitting; misses and shots at an asteroid already dying not modelled',
       'chunks: not entities, not counted (collectors)',
     }
-    return {basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines}
+    local details, stock_read
+    if o.ammo then
+      details = {}
+      local want = {}
+      for _, a in ipairs(ammo) do if not o.stock or o.stock[a] == nil then want[a] = true end end
+      local places
+      if next(want) then
+        assert(o.stock_places, 'design.ammo: platform stock reader unavailable; design.stock supplies item counts')
+        places = o.stock_places(pl, want)
+        assert(places and places.total, 'design.ammo: platform stock unavailable')
+        stock_read = {as_of=places.as_of, capped=places.capped,
+          scope='hub, turrets, belts, inserter hands and machine outputs; belt/hand counts at as_of when present; reachability and production not modelled'}
+      end
+      for _, a in ipairs(ammo) do
+        local turret, quality = fire_of(a)
+        local h = M.hit(a, quality, pl.force, turret)
+        local shots = 0
+        for _, row in ipairs(rows) do shots = shots + (row.shots and row.shots[a] or 0) end
+        local mag = try(function() return prototypes.item[a].magazine_size end) or 1
+        local stock = o.stock and o.stock[a]
+        local source = stock ~= nil and 'design.stock' or 'platform'
+        stock = stock or (places and places.total[a]) or 0
+        local needed = math.ceil(shots / math.max(1, mag))
+        details[#details+1] = {ammo=a, turret=turret, quality=quality, damage_per_shot=h.total, damage=h.by,
+          targets=target_settings(aim_of(a).mine), stock=stock, stock_source=source, shots_per_item=mag,
+          shots=shots, items_required=needed, stock_after=stock-needed}
+      end
+      basis.ammo = 'design.ammo exclusively; only compatible turrets aboard participate, with their current target settings and ammo quality (normal if unloaded); current_targets records all built turrets separately'
+      basis.stock = 'selected ammunition only; design.stock item counts where given, otherwise stock aboard; items_required = ceil(shots / magazine_size); stock_after = stock - items_required; production, feed reachability and partial magazines not modelled'
+    end
+    return {basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines,
+      ammo_source=o.ammo and 'design.ammo' or nil, ammo_details=details, stock_read=stock_read,
+      current_targets=current and target_settings(current) or nil}
   end
   -- (QZ1) What the forecast (M.forecast) assumes, as lines.
   function M.basis(opts, speed_from)
