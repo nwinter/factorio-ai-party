@@ -852,6 +852,8 @@ class OneCam(Director):
         self.follow = None    # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
         self.platform_follow = None  # POST /platform: {name, until, label, by}; kept by PlatformControl
+        from featured import Featured
+        self.featured = Featured()  # soft platform preference; never an operator pin
         self.plat = None       # the operator's platform available to pin this step (takes priority over fol)
         self.look_hold = None  # POST /look: {surface, position, zoom, until, label, by}; kept by LookControl (lookcam.py)
         self.host_hold = None  # POST /hostview or the host's !view: {until, caption, label, by}; HostControl (hostview.py)
@@ -1157,7 +1159,8 @@ class OneCam(Director):
             else:
                 target.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True)
         target.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
-        big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
+        big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"])) or bool(
+            self.featured.active and al["kind"] == "attack" and "friendly fire" not in al["text"])
         if self.look or self.plat or (self.fol and subject != self.fol):
             big = False  # an operator follow: other agents' urgent events are insets or toasts, never cuts
         elif self.battle and not self.fol and not (subject and subject == self.battle.get("agent")) and \
@@ -1884,6 +1887,7 @@ class OneCam(Director):
         if not self.slots:
             return {}
         self.watch_platforms(snapshot, now)
+        self.featured.prepare(self, snapshot, now)
         # Host view (hostview.py; Nick 16:39: "it would be interesting for the stream viewers to also see my view"):
         # his own client's capture is on air over the cameras; nothing cuts, no inset (it would sit over his view), no
         # trio, segments and cues wait. The cameras stay where they are and the story goes on after it.
@@ -1952,6 +1956,7 @@ class OneCam(Director):
             self.cloud_operator(scores, now, segment)
         # (batch245 MB) a battle takes the camera from a tour's look; an operator's look holds it
         look_holds = self.look and not (self.battle and self.cfg["battle_all"] and self.look.get("by") in AUTO_LOOKS)
+        featured = self.featured.main(self, snapshot, scores, now, pinned, segment, attack)
         if pinned:  # an operator follow, or a key battle: on air, nothing else takes the camera
             self.leave_trio("look" if self.look else f"platform {self.plat}" if self.plat else f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
                             else f"incoming: {self.incoming['label']}", now)
@@ -1968,6 +1973,8 @@ class OneCam(Director):
                 self.incoming_direct(snapshot, by_name, scores, now)
                 if self.battle:  # contact: the battle hold from this step on
                     self.battle_direct(by_name, scores, now)
+        elif featured:
+            pass  # the ship holds its readable dwell; urgent coverage was processed above
         elif self.mode == "trio":
             self.maybe_danger(scores, now, segment)
             self.maybe_edge(scores, now, segment)
@@ -1995,6 +2002,7 @@ class OneCam(Director):
         self.maybe_artillery(snapshot, by_name, scores, now, segment)
         self.maybe_enemy_pip(snapshot, by_name, scores, now)
         self.maybe_group_pip(snapshot, by_name, scores, now)
+        self.featured.inset(self, scores, now)
         self.release_maps(now)
         self.pan_step(now)
         self.closeup_step(now)

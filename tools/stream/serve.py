@@ -859,6 +859,8 @@ def main():
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
         from platformcam import PlatformControl
+        from featured import Featured
+        director.featured = Featured(os.path.dirname(os.path.abspath(a.run)) if a.run and not a.mock else None)
         follow = FollowControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-follow.json")
                                if a.run and not a.mock else None, roster)
         platform = PlatformControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-platform.json")
@@ -982,6 +984,7 @@ def main():
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
                 if platform:
                     snap["platform_hold"] = director.platform_info(now)
+                    snap["featured_platform"] = director.featured.data
                 if look:
                     snap["look"] = director.look_info(now)
                 if host:
