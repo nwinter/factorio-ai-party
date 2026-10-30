@@ -36,7 +36,7 @@ def shots():
 
 
 def pan():
-    d, sent = world(map_every=0)
+    d, sent = world(auto_feature=False, map_every=0)
     a, t = team(), 1000
     rows = [plat("Bastion", at="aquilo->solar-system-edge 20%", view=BASTION, toward="solar-system-edge")]
     d.cfg["platform_hold"] = 30
@@ -60,7 +60,7 @@ def pan():
 
 
 def facts():
-    d, sent = world(map_every=0)
+    d, sent = world(auto_feature=False, map_every=0)
     a, t = team(), 1000
     rows = [plat("Cinder", at="nauvis->gleba 57%", view=CINDER, toward="nauvis"), plat("Swiftlet", at="fulgora",
             view=dict(CINDER, surface="platform-6")), plat("Drift", at="nauvis->vulcanus 10%", view=dict(CINDER, surface="platform-7"),

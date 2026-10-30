@@ -231,7 +231,7 @@ def director_rules():
     d.cut(d.next_slot()["slot"], "test", t + 73)
     d.step({"agents": team, "alerts": []}, t + 73.5)
     assert not d.inset and d.last_attn == t + 73.5, d.inset
-    # a platform: the platform's view in the inset
+    # A remote platform is now the main work shot, with no parked-body or duplicate-work inset.
     d2, sent2 = world(map_every=0, platform_every=0)
     t = on_air(d2, team, 5000)
     team[0]["attention"] = dict(att(-2.5, -4.5, "configuring on Sunward", kind="configuring"), platform="Sunward",
@@ -239,9 +239,8 @@ def director_rules():
     view = {"surface": "platform-3", "hub": {"x": 0, "y": 0}, "bounds": {"left": -14, "top": -10, "right": 14, "bottom": 12}}
     for k in range(1, 30):
         d2.step({"agents": team, "alerts": [], "space": {"platforms": [{"name": "Sunward", "view": view}]}}, t + k)
-        if d2.inset:
-            break
-    assert d2.inset and sent2[-1]["surface"] == "platform-3", sent2[-1]
+    assert not d2.inset and d2.public(t + 29)["main"]["frame"]["surface"] == "platform-3"
+    assert "Sol configuring" in d2.public(t + 29)["main"]["work"]
     print("director rules: ok (in frame, stale, fight, off air, moves along, ends with the story, platform)")
 
 

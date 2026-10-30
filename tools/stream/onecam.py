@@ -1031,6 +1031,12 @@ class OneCam(Director):
 
     def ready(self, slot, now):
         t = self.state.get(slot)
+        if t and (t.get("follow") or t.get("remote_work")):
+            import remotework
+            who = t.get("follow") or (t.get("agents") or [None])[0]
+            remote, shot = remotework.shot(self, getattr(self, "agents_now", {}).get(who), now)
+            if remote and (not shot or not remotework.same(t, shot)):
+                return False  # an old acknowledged body/destination cannot satisfy the new remote request
         need = self.pending.get("ready_s") if self.pending and self.pending["slot"] == slot else None
         return slot not in self.send_pending and bool(t) and now - t.get("framed", t.get("since", now)) >= (self.cfg["ready_s"] if need is None else need)
 
@@ -1117,6 +1123,19 @@ class OneCam(Director):
 
     def apply(self, slot, target, reason, scores, now, quiet=False):
         """(BC2) A follow shot of an agent whose spidertron fires (fire_zoom): sent at the wider fit."""
+        if target and target.get("follow") and target.get("subject") != "@attack":
+            import remotework
+            a = (getattr(self, "agents_now", None) or {}).get(target["follow"])
+            remote, shot = remotework.shot(self, a, now)
+            if remote:
+                if not shot:
+                    raise CameraPending(slot["slot"])  # wait for the surface; never send a parked-body substitute
+                target = {k: v for k, v in target.items() if k not in ("follow", "position", "surface", "plan_fit", "pan")}
+                held = {k: target[k] for k in ("subject", "until") if k in target}
+                target.update(shot)
+                target.update(held)
+        if target and target.get("remote_work") and target["work"] not in reason:
+            reason += " · " + target["work"]
         if target is not None and target.get("follow") and not target.get("exact_zoom") and not target.get("map"):
             a = (getattr(self, "agents_now", None) or {}).get(target["follow"])
             fit = self.fire_zoom(a) if a else None
@@ -1592,6 +1611,10 @@ class OneCam(Director):
     def body_shot(self, name, by_name, zoom, now, fit=None):
         """The shot of an agent: its character followed, or (batch222) its vehicle by remote view, or (batch240) where
         its latest build landed away from it."""
+        import remotework
+        remote, shot = remotework.shot(self, by_name.get(name), now)
+        if shot:
+            return shot
         spot = self.vehicle_spot(by_name.get(name), now)
         if spot:
             z = self.cfg["vehicle_zoom"]
@@ -1607,12 +1630,48 @@ class OneCam(Director):
             shot.update(exact_zoom=True, plan_fit=fit)
         return shot
 
+    def refresh_remote(self, by_name, now):
+        """Keep staged, main and inset work shots on the latest destination, including during speech/follow holds."""
+        import remotework
+        for slot in self.slots:
+            old = self.state.get(slot["slot"]) or {}
+            who = old.get("follow") or ((old.get("agents") or [None])[0] if old.get("remote_work") else None)
+            if not who or who not in by_name or old.get("subject") == "@attack":
+                continue
+            remote, shot = remotework.shot(self, by_name[who], now)
+            if remote and not shot:
+                continue  # the acknowledged view stays until the new surface is available
+            if shot and not remotework.same(old, shot):
+                target = dict(shot, subject=old.get("subject", who), since=old.get("since", now), framed=now, jump=True)
+                for key in ("seg", "segment", "until", "hold_until"):
+                    if key in old:
+                        target[key] = old[key]
+                try:
+                    self.apply(slot, target, "remote work: " + shot["work"], {}, now)
+                except CameraPending:
+                    continue  # another camera may still be available for an urgent cut
+            elif not remote and old.get("remote_work"):
+                target = self.body_shot(who, by_name, self.cfg["solo_zoom"], now)
+                target.update(subject=old.get("subject", who), since=old.get("since", now), framed=now, jump=True)
+                for key in ("seg", "segment", "until", "hold_until"):
+                    if key in old:
+                        target[key] = old[key]
+                try:
+                    self.apply(slot, target, "remote work ended: " + who, {}, now)
+                except CameraPending:
+                    continue
+
     def scores(self, agents, now):
         out = super().scores(agents, now)
         cfg = self.cfg
         for a in agents:
             n = a["name"]
             if n not in out:
+                continue
+            import remotework
+            remote, shot = remotework.shot(self, a, now)
+            if remote and not shot:
+                out.pop(n)
                 continue
             k = plan_kind(a)
             loop = self.loop_s(n, now)
@@ -1647,12 +1706,13 @@ class OneCam(Director):
     def surface_of(a):
         return str((a or {}).get("surface") or "nauvis").lower()
 
-    @staticmethod
-    def balance_surface(a):
-        """The planet an agent stands on, for the surface balance: its body's surface (the harness reads the body, not
-        a remote view); None aboard a platform or riding a cargo pod (no body on a planet: a platform has its own
-        shots, a pod is in the sky) and on a platform's surface (platform-N)."""
+    def balance_surface(self, a):
+        """The work planet for remote shots, otherwise the body's; platform and cargo-pod shots have no planet quota."""
         a = a or {}
+        import remotework
+        remote = remotework.focus(a, self.plat_rows)
+        if remote:
+            return None if remote.get("platform") else remote.get("surface")
         s = str(a.get("surface") or "nauvis").lower()
         if a.get("travel") or a.get("on_platform") or s.startswith("platform-"):
             return None
@@ -1663,6 +1723,8 @@ class OneCam(Director):
         cur = self.state.get(self.onair)
         if not cur:
             return None
+        if cur.get("surface"):
+            return str(cur["surface"]).lower()
         who = cur.get("follow") or (cur.get("agents") or [None])[0]
         if who and who in by_name:
             return self.surface_of(by_name[who])
@@ -1882,11 +1944,11 @@ class OneCam(Director):
         self.watch_clouds(snapshot, now)
         self.fight_list = list(snapshot.get("fights") or [])
         self.watch_silos(snapshot, now)  # (batch257) launches due
+        self.watch_platforms(snapshot, now)
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
             return {}
-        self.watch_platforms(snapshot, now)
         self.featured.prepare(self, snapshot, now)
         # Host view (hostview.py; Nick 16:39: "it would be interesting for the stream viewers to also see my view"):
         # his own client's capture is on air over the cameras; nothing cuts, no inset (it would sit over his view), no
@@ -1895,6 +1957,8 @@ class OneCam(Director):
             self.inset, self.pending, self.trio_pending = None, None, None
             self.leave_trio("host view", now)
             return self.public(now)
+        if not self.hold_layout:
+            self.refresh_remote(by_name, now)
         # (after host view: a maiden flight waits for it like a segment, and is shown after if still within maiden_late)
         self.watch_maiden(snapshot, now)
         self.look = self.looking(now)
@@ -3402,6 +3466,10 @@ class OneCam(Director):
         cur = self.state.get(self.onair) or {}
         subj = cur.get("subject")
         ins = self.inset
+        if cur.get("remote_work"):
+            if ins and ins.get("why") == "attention":
+                self.inset = None
+            return  # the work is already the main shot; do not add the parked body or duplicate work in a panel
         if ins and ins.get("why") == "attention":
             a = by_name.get(ins["agent"])
             if subj != ins["agent"] or not a or self.hold_layout or self.pending:
@@ -5243,7 +5311,7 @@ class OneCam(Director):
     def keep(self, cur, by_name, now):
         """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big
         action with bounds runs, the zoom fits them."""
-        if self.keep_vehicle(cur, by_name, now) or self.keep_did(cur, by_name, now):
+        if cur.get("remote_work") or self.keep_vehicle(cur, by_name, now) or self.keep_did(cur, by_name, now):
             return
         subj = cur["subject"]
         # (BC2) its spidertron fires: framed to its farthest target while it does, then back to the activity's zoom

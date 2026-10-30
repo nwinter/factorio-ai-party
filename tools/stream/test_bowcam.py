@@ -34,7 +34,7 @@ BOW = {"left": -51, "top": -50, "right": 51, "bottom": -26}
 HULL = {"left": -51, "top": -50, "right": 71, "bottom": 230}  # Asterion on the d24 shift70 copy (PLATFORM_HULL_LUA)
 BOW_VIEW = dict(VIEW, surface="platform-16", bounds={"left": -49.5, "top": -46, "right": 6, "bottom": 229.5},
                 hull=HULL, bow=BOW)
-FAST = dict(map_every=0, platform_every=0, onair_dwell=20, onair_max=30, rotate_ratio=0.1)
+FAST = dict(auto_feature=False, map_every=0, platform_every=0, onair_dwell=20, onair_max=30, rotate_ratio=0.1)
 
 
 def ship(at="solar-system-edge->aquilo 1%", view=BOW_VIEW, **kw):
