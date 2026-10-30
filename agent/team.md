@@ -8,10 +8,10 @@
 
 You share the factory, research and power. `./fh` controls your character and inventory.
 `technologies {name, level}` reads cost without queueing.
-`circuit_signal` takes `position` and `wire` on a platform; help waits-queues.
+`circuit_signal` position/wire, `budget_below` windows/require: help waits-queues.
+`platform_defense` asteroid start `track_filter`: help space-age.
 `configure` splitter filters preserve quality/comparator; `inspect.splitter.outputs` shows adjacent outlet lanes (help circuits-settings).
 `flight_watch {from:"leg"}` begins at the next leg change; `departure` means leaving a stop (help space-age).
-`budget_below` takes explicit `windows`/`require` (help waits-queues).
 `wait_until` arrival/progress waits in platform lanes take up to 80 game hours (`./fh help waits-queues`).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you

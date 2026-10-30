@@ -268,11 +268,18 @@
   projection, not what happened), and its outcome from the game's events (destroyed and by what, hit an entity of
   ours, left the view, still in view); `class_lines`, `platform_hit_lines`. Each turret: hits, kills and damage on
   asteroids by those classes, ammo used; `turret_group_lines` by name and hull region. `trajectories`: every tracked
-  asteroid (the first 3000 seen), 24 a page, the rarest names first by the watch's `by_name` counts: first and last
+  asteroid (the first 3000 matching the start filter), 24 a page, the rarest names first by the watch's `by_name` counts: first and last
   tick and position, outcome, `by` (the turret that destroyed it), `hit_by` (the turrets that hit it), and `points`
   (one a second) for the first 24 tracked only. Reading it: `asteroid_names: ["*promethium*"]` (1..16 names or
   patterns with *), `trajectory_page`, `trajectory_limit` (1..100); `trajectory_untracked` counts a picked name's
-  asteroids past the 3000, which have no record.
+  untracked asteroids, which have no record.
+  Start-only `track_filter: {asteroid_names:["small-promethium-asteroid"], area:[[-20,-80],[20,-40]]}`:
+  optional names (same patterns) and/or rectangle; both must match at first observation, before the 3000 cap.
+  Coordinates are on the platform, north is negative y; left/top included, right/bottom excluded, finite within
+  +/-1000000. A rejected asteroid stays untracked; an admitted one stays tracked after leaving the rectangle.
+  Every start/read names `track_filter` (expanded names, or `all:true`) and `track_scope`. `filtered_out` and
+  `past_cap` split `untracked`. Global `by_name`, turret totals and `platform_hits_all` include excluded asteroids;
+  `platform_hits`, classes and trajectories cover tracked asteroids. Read-only `asteroid_names` still filters pages.
   `by_name` also splits `in_first_sample` (in view at the first read) from `later`: `later_fragments` (first seen
   where an asteroid that breaks into that name died just before: by name, place and time, as no game event links
   them) and `later_other`. Past the cap the line says from what second (`capped_at_s`); `untracked` counts unique

@@ -9099,6 +9099,7 @@ M.preflight=M.preflight or {}
 -- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
+  platform_defense=function(a) M.asteroidwatch.filter_args(a) end,
   -- (d29 batch348 CS, Sol #2758) circuit_set's values as the live call parses them (circuits.lua check_args)
   circuit_set=function(a) M.circuits.check_args(a) end,
   flight_watch=function(a) M.flightwatch.check(a) end,  -- (d25 batch205 QR2) read: true with platform alone
@@ -20240,6 +20241,7 @@ do
   end
 end
 function handlers.platform_defense(p,a)
+  assert(a.track_filter == nil or a.asteroids == true, 'track_filter is for starting an asteroid watch (asteroids: true, seconds)')
   -- (d22 batch82 AR1) asteroids: true: the asteroid watch (asteroidwatch.lua)
   if a.asteroids~=nil then return M.asteroidwatch.handler(p,a) end
   -- (d29 batch332 RT) aim: true: the railgun aim watch (railaim.lua)
