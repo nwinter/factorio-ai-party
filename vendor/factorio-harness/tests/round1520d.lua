@@ -531,5 +531,8 @@ do
     guard_lines={'guard-1 ammo_below (kept): read at each check'},line='guards edited (revision 5): 1 kept'})
   eq(b.guards[1].edit,'kept'); eq(b.guard_lines[1],'guard-1 ammo_below (kept): read at each check'); eq(b.line,'guards edited (revision 5): 1 kept'); eq(b.guard_ids,nil)
   eq(runtime.queue_brief({revision=1,pending={},history={}}).guard_ids,nil)
+  -- batch361: the normal live submission reply keeps the scheduler's game/wall deadline projections too.
+  local deadlines={{state='if_started_now',tick=17280100,wall_unix_ms=1800288000000}}
+  eq(runtime.queue_brief({revision=1,pending={},history={},wait_deadlines=deadlines}).wait_deadlines,deadlines)
 end
 print('round1520d: ok')

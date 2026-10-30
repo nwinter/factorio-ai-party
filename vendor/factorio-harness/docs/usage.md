@@ -1630,6 +1630,20 @@ fh queue repeat --file plan.json
 
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
+- In a `platform:NAME` lane, a `wait_until` step with `until: "platform_arrived"` or `"platform_progress"` accepts
+  `timeout: 1..17280000` ticks (80 game hours). Dry and live submissions share the bound, including guard steps.
+  Other conditions, `all`/`any`, body/remote lanes, direct calls and `wait_ticks` retain their limits. The 3600-tick
+  default and its existing ETA extension stay unchanged. One long wait is one step; checks still run every 10 ticks,
+  guards interrupt as before, and the realtime clock keeps running. Pending steps remain capped at 128.
+  Submission (including dry run) and `queue_status` return `wait_deadlines` for these platform waits: deadline `tick`
+  and `game_seconds`, `ticks_left`, `wall_unix_ms` and `wall_seconds_left`. Wall time is a projection at 60 ticks/s from
+  the request timestamp; pauses and slower UPS delay it. Requests without a wall timestamp say `wall_unavailable`.
+  A pending step has `state: "if_started_now"`: its projected deadline depends on when preceding work finishes or the
+  queue resumes. An active step has `state: "waiting"` and its actual game deadline (also in `waiting.deadline` and the
+  platform lane summary). Guard reactions, arrival, explicit cancellation or failure can end it earlier.
+  For an explicit timeout over 54000, the arrival ETA uses only the current flight leg; before departure or for a
+  later destination it reports `no_estimate`. The full schedule projection is excluded from these long waits to
+  keep a check below the tick-work budget; arrival checks themselves still run every 10 ticks.
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
   `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With
