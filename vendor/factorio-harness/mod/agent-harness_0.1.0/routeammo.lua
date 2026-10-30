@@ -485,16 +485,57 @@ return function(api)
     return turrets, fire_of, aim_of
   end
   -- Current GUI settings, separate from the ammunition selected for a design. Group identical settings.
-  local function target_settings(turrets)
+  local function target_settings(turrets, with_source)
     local out, groups = {}, {}
     for _, t in ipairs(turrets) do
       local names = {}; for _, n in ipairs(t.list or {}) do names[#names+1] = n end; table.sort(names)
       local sig = t.name .. '|' .. (t.unknown and '?' or not t.set and '*' or table.concat(names, ','))
       if not groups[sig] then
-        groups[sig] = {turret=t.name, count=0, targets=t.unknown and 'unknown' or not t.set and 'any' or names}
+        groups[sig] = {turret=t.name, count=0, targets=t.unknown and 'unknown' or not t.set and 'any' or names,
+          source=with_source and (t.target_source or 'platform') or nil}
         out[#out+1] = groups[sig]
       end
       groups[sig].count = groups[sig].count + 1
+    end
+    return out
+  end
+  -- Paper target profiles apply to detached scan records, never LuaEntity fields. Keys must name turrets
+  -- participating in this model, so an override for an unselected weapon is refused rather than discarded.
+  local function design_targets(turrets, overrides)
+    local used, accepted, profiles = {}, {}, {}
+    for _, t in ipairs(turrets) do if not used[t.name] then used[t.name] = true; accepted[#accepted+1] = t.name end end
+    table.sort(accepted)
+    local function asteroid_error(n)
+      local names = {}
+      for name, p in pairs(prototypes.entity) do if p.type == 'asteroid' then names[#names+1] = name end end
+      table.sort(names)
+      error('design.targets: ' .. tostring(n) .. ' is not an asteroid; accepted: ' .. table.concat(names, ', '), 0)
+    end
+    for name, targets in pairs(overrides) do
+      assert(used[name], 'design.targets: ' .. tostring(name) .. ' is not a turret used by this model; accepted: '
+        .. (#accepted > 0 and table.concat(accepted, ', ') or 'none'))
+      if targets == 'any' then profiles[name] = {any=true}
+      else
+        assert(type(targets) == 'table' and #targets <= 64, 'design.targets.' .. name .. ' is "any" or a list of 0..64 asteroid names (empty: nothing)')
+        local set, list, entries = {}, {}, 0
+        for k, n in pairs(targets) do
+          assert(type(k) == 'number' and k >= 1 and k <= #targets and k % 1 == 0,
+            'design.targets.' .. name .. ' is a list without gaps or named keys')
+          if type(n) ~= 'string' or not prototypes.entity[n] or prototypes.entity[n].type ~= 'asteroid' then asteroid_error(n) end
+          if not set[n] then set[n] = true; list[#list+1] = n end
+          entries = entries + 1
+        end
+        assert(entries == #targets, 'design.targets.' .. name .. ' is a list without gaps')
+        table.sort(list)
+        profiles[name] = {set=set, list=list}
+      end
+    end
+    local out = {}
+    for _, t in ipairs(turrets) do
+      local profile = profiles[t.name]
+      if profile then
+        out[#out+1] = {name=t.name, cats=t.cats, held=t.held, set=profile.set, list=profile.list, target_source='design.targets'}
+      else out[#out+1] = t end
     end
     return out
   end
@@ -564,11 +605,16 @@ return function(api)
           .. (#accepted > 0 and table.concat(accepted, ', ') or 'none'))
       end
       turrets, fire_of, aim_of = aiming(pl, o.ammo, current)
-    elseif aimed and aimed.pl == pl.index and aimed.tick == game.tick then
+    elseif not o.targets and aimed and aimed.pl == pl.index and aimed.tick == game.tick then
       turrets, fire_of, aim_of, cache = aimed.turrets, aimed.fire_of, aimed.aim_of, aimed.cache
     else
       turrets, fire_of, aim_of = aiming(pl)
       hits = {}
+    end
+    if o.targets then
+      current = current or turrets
+      turrets, fire_of, aim_of = aiming(pl, o.ammo, design_targets(turrets, o.targets))
+      cache = {}
     end
     local ammo, seen = {}, {}
     for _, n in ipairs(o.ammo or {}) do if not seen[n] then seen[n] = true; ammo[#ammo+1] = n end end
@@ -638,14 +684,16 @@ return function(api)
       mass = o.mass and string.format('%g (not used: the speed is given, and the count is per km)', o.mass) or nil,
       speed = o.speed and string.format('%g km/s (%s)', math.floor(o.speed / 60 * 100 + 0.5) / 100, o.speed_from or '?') or 'unknown',
       progress = o.progress and string.format('%g-%g%% of each leg\'s connection, the way it is flown', pct2(p0), pct2(p1)) or nil,
-      shots = 'shots per asteroid as the forecast counts them: its health against a shot\'s damage after resistances and our bonuses, its fragments it can hurt, only what its turrets aboard target',
+      shots = 'shots per asteroid as the forecast counts them: its health against a shot\'s damage after resistances and our bonuses, its fragments it can hurt, only what '
+        .. (o.targets and 'effective_targets specifies' or 'its turrets aboard target'),
     }
     local estimated = {
       'the count: a fit on test platforms with no schedule, about 6% off in those runs; one flight varies further (the game spawns at random: a count N varies by about its square root)',
       string.format('on a schedule: platforms flying their routes met %g to %g times the fit (Spindle 1.27, Kestrel II 1.57, Anvil 1.64, Asterion 2.53 in 120 s each; Asterion held at one place and speed 1.8 with its schedule, 1.03 without): on_path gives that range; what sets the factor is not known', M.ON_PATH[1], M.ON_PATH[2]),
       'which spawned asteroids come within a turret\'s range or reach the hull: not modelled (the line is wider than the hull by 96 tiles, and asteroids drift)',
-      'shots: every asteroid counted destroyed by that one ammunition, each shot hitting; misses and shots at an asteroid already dying not modelled',
+      'shots: each ammunition counts the asteroids and fragments its effective turrets target, each shot hitting; misses and shots at an asteroid already dying not modelled',
       'chunks: not entities, not counted (collectors)',
+      'piercing through multiple asteroids and interception order between turrets: not modelled; each ammunition independently counts full shots for its targets and their targeted fragments',
     }
     local details, stock_read
     if o.ammo then
@@ -671,14 +719,19 @@ return function(api)
         stock = stock or (places and places.total[a]) or 0
         local needed = math.ceil(shots / math.max(1, mag))
         details[#details+1] = {ammo=a, turret=turret, quality=quality, damage_per_shot=h.total, damage=h.by,
-          targets=target_settings(aim_of(a).mine), stock=stock, stock_source=source, shots_per_item=mag,
+          targets=target_settings(aim_of(a).mine, true), stock=stock, stock_source=source, shots_per_item=mag,
           shots=shots, items_required=needed, stock_after=stock-needed}
       end
-      basis.ammo = 'design.ammo exclusively; only compatible turrets aboard participate, with their current target settings and ammo quality (normal if unloaded); current_targets records all built turrets separately'
+      basis.ammo = 'design.ammo exclusively; only compatible turrets aboard participate, with effective_targets and current ammo quality (normal if unloaded); current_targets records all built turrets separately'
       basis.stock = 'selected ammunition only; design.stock item counts where given, otherwise stock aboard; items_required = ceil(shots / magazine_size); stock_after = stock - items_required; production, feed reachability and partial magazines not modelled'
+    end
+    if current then
+      basis.targets = 'effective_targets: design.targets replaces the target set for every participating turret of each named prototype; omitted prototypes retain current settings; an empty list targets nothing, "any" targets every asteroid; current_targets is the native profile, unchanged'
     end
     return {basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines,
       ammo_source=o.ammo and 'design.ammo' or nil, ammo_details=details, stock_read=stock_read,
+      target_source=current and (o.targets and next(o.targets) and 'design.targets' or 'platform') or nil,
+      effective_targets=current and target_settings(turrets, true) or nil,
       current_targets=current and target_settings(current) or nil}
   end
   -- (QZ1) What the forecast (M.forecast) assumes, as lines.

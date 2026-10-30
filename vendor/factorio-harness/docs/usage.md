@@ -18496,3 +18496,28 @@ with ingredient counts at recipe quality, zero-held ingredient names, input/outp
 An inserter counts by native target or, when unset, its pickup/drop point on the machine footprint. Loaders count
 by native container and direction. The nearby arm search is bounded at 256 and says when capped. A machine
 without arms or ingredient stock says so beside capacity; no achievable rate is inferred.
+
+## d30 batch385 (Sol #2825): paper turret targets
+
+`platform_endurance design.targets` is `{turret-prototype: [asteroid-names] | "any"}`. Overrides replace the target
+set for every participating turret of each named prototype, only in the forecast. With explicit `design.ammo`, only
+compatible selected turrets participate; otherwise the existing loaded-ammunition model is used. Lists hold 0..64
+asteroid names; duplicates form one set, an empty list targets nothing, and `"any"` targets every asteroid. Omitted
+prototypes retain their native settings. Unknown or nonparticipating turret names and unknown/non-asteroid target
+names are refused with accepted lists. Malformed mappings and sparse lists are refused.
+
+The reply returns `target_source` (`design.targets` when overrides are present, otherwise `platform`),
+`effective_targets [{turret, count, targets, source}]` for participating turrets, and `current_targets` for all native
+turrets separately. A partial mapping has per-group sources; `ammo_details.targets` also uses effective settings.
+No entity, native priority list, ignore-unprioritised flag, inventory or route is changed. Overrides do not carry
+into later reads. Empty mappings retain platform settings.
+
+The same damage and fragment model is used. Reply `estimated` states that piercing through multiple asteroids and
+interception order between turrets are not modelled: each ammunition independently counts full shots for its own
+targets and their targeted fragments. This does not simulate target allocation between weapons or firing order.
+
+`tests/d30_batch385.lua` compares width 35, speed 40, the full edge-to-Shattered-Planet connection, 41 huge-only rails
+and medium-targeting guns, against rails targeting huge and big asteroids. It checks shots and gun fragment demand,
+native settings before/after, later reads without overrides, explicit/implicit ammunition, partial/empty/any
+profiles, duplicate targets, invalid keys and target names, and the model-limit text. Existing batch384 and design
+tests retain their numerical results.

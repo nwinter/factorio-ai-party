@@ -11,7 +11,7 @@ Factory, research and power are shared. `./fh` controls your character and inven
 Platform `configure` returns recipe items to the hub; `deliver` requests ingredients. The stream shows ship metrics.
 `configure` splitter filters keep quality/comparator; `inspect.splitter.outputs` reads outlet lanes (help circuits-settings).
 `flight_watch {from:"leg"}` starts at the next leg; `departure` leaves a stop (help space-age).
-`platform_endurance design.ammo` selects ammunition exclusively; `design.stock` supplies item counts (help space-age).
+`platform_endurance design`: `ammo` selects types, `stock` sets counts, `targets` sets model targets (help space-age).
 Platform arrival/progress `wait_until`: up to 80h (help waits-queues).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 
