@@ -12,6 +12,7 @@ import threading
 import time
 
 import shift_recap as recap
+import shift_recap_visuals as visuals
 
 
 def agents_started(run):
@@ -65,7 +66,7 @@ class Player:
         if self.mtime != modified:
             manifest = recap.read_json(self.root / "manifest.json")
             if isinstance(manifest, dict) and manifest.get("version") == 1 and manifest.get("run") == self.source.name:
-                self.manifest, self.mtime = manifest, modified
+                self.manifest, self.mtime = visuals.bind(manifest), modified
 
     def step(self, now):
         if self.phase == "recap" and agents_started(self.run):
@@ -120,23 +121,14 @@ class Player:
                                            "rank": "urgent", "segment": {"id": self.segment, "part": 1, "parts": 2},
                                            "recap": {"source": self.source.name, "phase": self.phase, "line": line["id"]}},
                                           audio, line["ctype"])
-                    self.current = {"clip": meta["id"], "line": line, "deadline": at + line["duration"] + 10}
+                    self.current = {"clip": meta["id"], "line": line, "deadline": at + line["duration"] + 10, "at": at}
         if not line and self.phase == "transition":
             self.finish("transition completed")
             return None
-        # A long launch holds recorded cards without looping the narration or claiming the team is ready.
+        # Keep the receipt/audio hold until startup ends; the page restores once narration is exhausted.
         held = line or (lines[-1] if lines else {})
-        refs = set(held.get("sources") or [])
-        selected = [r for r in manifest["evidence"]["rows"] if r["id"] in refs]
-        timeline = [r for r in manifest["evidence"]["rows"] if r["kind"] in ("milestone", "loss", "research")]
-        pictures = manifest.get("stills") or []
-        picture = pictures[len(self.state["completed"]) % len(pictures)] if pictures else None
-        self.public = {"active": True, "phase": self.phase, "run": manifest["run"],
-                       "title": held.get("title", "Shift recap"), "speaker": held.get("speaker"),
-                       "text": held.get("text", ""), "holding": not bool(line),
-                       "sources": [{k: r[k] for k in ("source", "row", "game_time", "wall_time")} for r in selected],
-                       "timeline": [{k: r[k] for k in ("kind", "text", "game_time", "wall_time")} for r in timeline[-8:]],
-                       "still": dict(picture, url="/shift-recap/assets/" + picture["asset"]) if picture else None}
+        self.public = visuals.public(manifest, held, self.phase, holding=not bool(line),
+                                     elapsed=now - self.current["at"] if self.current else 0)
         return self.public
 
 
@@ -215,7 +207,7 @@ class ShiftRecap:
         return self.public
 
     def asset(self, name):
-        if not re.fullmatch(r"[a-f0-9]{24}\.webp", name):
+        if not visuals.ASSET.fullmatch(name):
             return None
         root = self.player.root if self.player else self.root
         path = root / "assets" / name

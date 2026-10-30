@@ -1,4 +1,4 @@
-// Prepared cards only: no game queries. Both aspect ratios use the main camera's box.
+// Full broadcast-canvas presentation of prepared records. No live game/media requests.
 (() => {
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -6,50 +6,80 @@
     if (text != null) node.textContent = text;
     return node;
   };
-  let panel, key;
+  let panel, key, video;
+  function release() {
+    if (video) { video.pause(); video.removeAttribute("src"); video.load(); video = null; }
+  }
   function render(s) {
     const recap = s && s.shift_recap;
+    // A finished narration may remain in the server's receipt state until the agents start.
+    // That hold is not an on-air beat: restore the normal canvas while it lasts.
+    const active = !!(recap && recap.active && !recap.holding);
+    document.body.classList.toggle("recap-active", active);
     if (!panel) {
-      const camera = document.getElementById("cam-main");
-      if (!camera) return;
+      const stage = document.getElementById("stage");
+      if (!stage) return;
       panel = el("section", "shift-recap");
+      panel.id = "shift-recap";
       panel.setAttribute("aria-label", "Recorded shift recap");
-      camera.appendChild(panel);
+      panel.hidden = true;
+      stage.appendChild(panel);
     }
-    panel.hidden = !recap || !recap.active;
-    if (panel.hidden) { key = null; return; }
-    const next = JSON.stringify(recap);
+    panel.hidden = !active;
+    if (!active) { release(); panel.replaceChildren(); key = null; return; }
+    const media = recap.media || null;
+    // Elapsed time changes on service ticks; it must not recreate the image/video every tick.
+    const next = JSON.stringify([recap.run, recap.phase, recap.id, recap.title, recap.text,
+      recap.speaker, recap.time_label, media]);
     if (next === key) return;
     key = next;
+    release();
     panel.replaceChildren();
-    panel.append(el("div", "sr-kicker", `${recap.run} · ${recap.phase === "transition" ? "SHIFT CHANGE" : "SHIFT RECAP"}`));
-    panel.append(el("h2", "sr-title", recap.title));
-    if (recap.still) {
-      const figure = el("figure", "sr-still");
-      const img = el("img", "");
-      img.src = recap.still.url;
-      img.alt = recap.still.caption;
-      figure.append(img, el("figcaption", "", recap.still.caption));
-      panel.append(figure);
-    }
-    const spoken = el("p", "sr-text");
-    if (recap.speaker) spoken.append(el("b", "sr-speaker", recap.speaker + "  "));
-    spoken.append(document.createTextNode(recap.text || ""));
-    panel.append(spoken);
-    const sources = (recap.sources || []).map(r => `${r.game_time ? "Game " + r.game_time : r.wall_time} · ${r.source}:${r.row}`);
-    if (sources.length) panel.append(el("p", "sr-source", sources.join(" / ")));
-    if (recap.phase !== "transition" && recap.timeline && recap.timeline.length) {
-      const list = el("ol", "sr-timeline");
-      // Latest three turns are readable at either canvas size; the offline sheet keeps all entries.
-      for (const row of recap.timeline.slice(-3)) {
-        const li = el("li", "");
-        li.append(el("time", "", row.game_time ? "Game " + row.game_time : row.wall_time),
-                  el("span", "", row.text));
-        list.append(li);
+    panel.classList.toggle("sr-neutral", !media);
+    const header = el("header", "sr-head");
+    header.append(el("div", "sr-kicker", `${recap.run || ""} · ${recap.phase === "transition" ? "SHIFT CHANGE" : "SHIFT RECAP"}`),
+      el("h2", "sr-title", recap.title || "Shift recap"));
+    panel.append(header);
+    const figure = el("figure", "sr-media");
+    if (media) {
+      const node = el(media.kind === "video" ? "video" : "img", "sr-picture");
+      const failed = () => { if (!node.isConnected) return; release(); figure.replaceChildren();
+        panel.classList.add("sr-neutral"); label.textContent = "Recorded shift"; };
+      node.addEventListener("error", failed, { once: true });
+      if (media.kind === "video") {
+        video = node;
+        node.muted = true; node.autoplay = true; node.playsInline = true;
+        node.addEventListener("loadedmetadata", () => {
+          const offset = Math.max(0, Number(recap.elapsed || 0) + Number(media.offset || 0));
+          if (Number.isFinite(node.duration)) node.currentTime = Math.min(offset, Math.max(0, node.duration - 0.1));
+          const play = node.play(); if (play && play.catch) play.catch(failed);
+        }, { once: true });
+      } else {
+        node.alt = `Recorded ${media.subject || "shift"} still`;
       }
-      panel.append(list);
+      node.src = media.url;
+      figure.append(node);
     }
-    if (recap.holding) panel.append(el("p", "sr-holding", "The recap is complete. Waiting for the next team to finish starting."));
+    panel.append(figure);
+    const caption = el("footer", "sr-caption");
+    const meta = el("div", "sr-meta");
+    meta.append(el("b", "sr-speaker", recap.speaker || "Rook & Vale"),
+      el("span", "sr-time", recap.time_label || "Recorded shift"));
+    const spoken = el("p", "sr-text", recap.text || "");
+    const label = el("div", "sr-recorded", media ?
+      `Recorded ${media.kind === "video" ? "clip" : "still"} · ${media.subject || "shift"} · ${media.recorded_time || ""} · Graphics copyright Wube Software` : "Recorded shift");
+    caption.append(meta, spoken, label);
+    panel.append(caption);
+    // Long record quotes still fit without losing words; normal narrative uses the larger type.
+    const fit = () => {
+      if (!caption.isConnected || !caption.clientHeight) return;
+      let size = parseFloat(getComputedStyle(spoken).fontSize);
+      while (caption.scrollHeight > caption.clientHeight + 1 && size > 18) {
+        spoken.style.fontSize = --size + "px";
+      }
+    };
+    requestAnimationFrame(fit);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
   }
   window.PogShiftRecap = { render };
 })();

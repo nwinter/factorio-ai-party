@@ -1661,6 +1661,9 @@
 
   function render(s) {
     if (staleCheck(s)) return;
+    // The prepared recap is available before an agent/model snapshot at startup.
+    if (window.PogShiftRecap) window.PogShiftRecap.render(s);
+    if (!Array.isArray(s.agents)) return;
     state = s;
     const holes = (s.program && s.program.layout === "trio" && s.program.holes) || null;
     const mode = onecam && (trioCams || holes) && s.program && s.program.layout === "trio" ? "trio" : "onecam";
@@ -1681,7 +1684,6 @@
       $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics);
     }
     renderSegment(s);
-    if (window.PogShiftRecap) window.PogShiftRecap.render(s);
     renderLoadouts(s);
     renderPollStrip(s);
     rotateWidgets();
@@ -1804,6 +1806,6 @@
   connect();
   setInterval(() => {
     if (Date.now() - lastMsg < 6000) return;
-    fetch("/state.json", { cache: "no-store" }).then((r) => r.json()).then((s) => { if (s && s.agents) render(s); }).catch(() => {});
+    fetch("/state.json", { cache: "no-store" }).then((r) => r.json()).then((s) => { if (s && (s.agents || Object.prototype.hasOwnProperty.call(s, "shift_recap"))) render(s); }).catch(() => {});
   }, 3000);
 })();
