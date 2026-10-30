@@ -2256,7 +2256,7 @@
 {"id":"doc:space-age#shot-name-platform-name","kind":"doc","topic":"space-age","lead":"- `./shot NAME platform=NAME [at=X,Y]`","condition":{"world":[],"any":["research:rocket-silo","built:rocket-silo","research:space-platform","built:space-platform-hub"]},"bytes":225},
 {"id":"doc:space-age#platform_production","kind":"doc","topic":"space-age","lead":"- `platform_production {platform, item?}`","condition":{"world":[],"any":["with:action:platform_production"]},"bytes":1515},
 {"id":"doc:space-age#platform_defense","kind":"doc","topic":"space-age","lead":"- `platform_defense {platform, asteroids","condition":{"world":[],"any":["with:action:platform_defense"]},"bytes":1996},
-{"id":"doc:space-age#platform_defense-aim-watch","kind":"doc","topic":"space-age","lead":"- `platform_defense`, aim watch","condition":{"world":[],"any":["with:action:platform_defense"]},"bytes":1148},
+{"id":"doc:space-age#platform_defense-aim-watch","kind":"doc","topic":"space-age","lead":"- `platform_defense`, aim watch","condition":{"world":[],"any":["with:action:platform_defense"]},"bytes":1869},
 {"id":"doc:space-age#platform_defense-2","kind":"doc","topic":"space-age","lead":"- `platform_defense {platform, feed?, route?, ammo_use?, planned?}`","condition":{"world":[],"any":["with:action:platform_defense"]},"bytes":6442},
 {"id":"doc:space-age#platform_digest","kind":"doc","topic":"space-age","lead":"- `platform_digest {platform}`","condition":{"world":[],"any":["with:action:platform_digest"]},"bytes":691},
 {"id":"doc:space-age#platform_tiles","kind":"doc","topic":"space-age","lead":"- `platform_tiles {platform, positions | area}`","condition":{"world":[],"any":["with:action:platform_tiles"]},"bytes":672},
