@@ -159,3 +159,12 @@ end
 -- the step label (64 bytes) was already checked at submit; it still is
 has(refused(plan({{action='wait_ticks',label=string.rep('l',65),args={ticks=60}}},true)),'label must be a string of at most 64 bytes')
 print('d25_batch208 QU1 queue step lengths: ok ('..n..' entries)')
+-- d30 batch372: the start filter is validated at queue submission and dry_run, before a watch can be replaced.
+for _,dry in ipairs({true,false}) do
+  local args={platform='Peregrine',asteroids=true,seconds=1200,track_filter={area={{0,0},{0,1}}}}
+  has(refused(plan({{action='platform_defense',args=args}},dry)),'track_filter.area needs left_top < right_bottom')
+  args.track_filter={area={{-5,-30},{5,-10}}}; args.seconds=nil
+  has(refused(plan({{action='platform_defense',args=args}},dry)),'track_filter is for starting an asteroid watch')
+end
+runtime.step_checks.platform_defense{platform='Peregrine',asteroids=true,seconds=1200,track_filter={area={{-5,-30},{5,-10}}}}
+has(refused(function() astra('platform_defense',{platform='Peregrine',track_filter={area={{0,0},{1,1}}}}) end),'track_filter is for starting an asteroid watch')

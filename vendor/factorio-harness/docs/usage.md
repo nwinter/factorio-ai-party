@@ -18334,3 +18334,28 @@ The read and start alert identify the change. `watch.start_change` keeps `kind` 
 `before` and `after` (location or connection/from/to/back), and the observation ticks `from_tick` and `tick`.
 The reason survives a mixed split and remains in the final read. Registration captures the baseline immediately;
 changes between samples can be missed. Distance and speed changes within a leg do not start a watch.
+
+## d30 batch372 AW: asteroid-watch admission filter (Sol #2778)
+
+`platform_defense {platform, asteroids:true, seconds:1200,
+track_filter:{asteroid_names:["small-promethium-asteroid"], area:[[-20,-80],[20,-40]]}}`
+selects detailed records before the 3000-asteroid cap. Either names or area may be omitted;
+when both are present both must match. Names accept the same 1..16 exact names or `*` patterns
+as the read's `asteroid_names`, compiled to a name set once at start. The rectangle uses
+platform coordinates (north is negative y), includes left/top and excludes right/bottom;
+coordinates must be finite within +/-1000000, with positive width and height. Named corners
+`{left_top:{x,y},right_bottom:{x,y}}` also work.
+
+Admission is decided at the first observation (sample or damage/death event). Excluded
+asteroids remain untracked even if they later enter the rectangle; admitted records keep
+following them outside it. No extra scan is added. Global `by_name` seen, hit, destroyed,
+left/in-view and cohort counts and turret hits/kills/damage cover all asteroids as before.
+Turret kills of untracked asteroids now count too (previously omitted after the cap).
+`platform_hits_all` counts every distinct asteroid that hit the platform; existing
+`platform_hits` and its detailed lines, classes and trajectories cover only tracked records.
+
+Every start and read, including completed watches and segments, names `track_filter`
+(expanded names, or `{all:true}` without a filter) and `track_scope`. `filtered_out` and
+`past_cap` split the untracked count. Read-only `asteroid_names` continues to select pages;
+it does not alter admission. The cap still applies to matching asteroids. A filter does
+not guarantee that any given duration stays below the cap.
