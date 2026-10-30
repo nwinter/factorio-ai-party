@@ -2208,7 +2208,7 @@ function handlers.describe(_,a)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live','library_areas','net_map','chart'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live','library_areas','net_map','chart','platform_metrics'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, and their reach and sight come from its position; reads see by remote view, as the map does: inspect, belt_flow, trace and screenshot with position in any chunk our force sees now on your surface, scan, observe and nearest centred on any charted chunk, surface= and platform= elsewhere',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -19282,6 +19282,7 @@ function M.dispatch_inner(request)
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action])
       relay=relay or (M.disclosure and M.disclosure.operator[request.action])
+      relay=relay or (M.platformmetrics and M.platformmetrics.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -20649,6 +20650,10 @@ space=space_module{made=function(t) return M.made.mark(t) end,floor_read=functio
   -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
   defense=function(pl) return M.platalerts.defense(pl) end}
 M.space=space  -- tests reach its limits (GHOST_CAP)
+M.platformmetrics=require('platformmetrics'){state=state,platform=function(name) return space.platform({force=game.forces.player},name) end,
+  leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,
+  hits=function(pl) return M.platalerts.hits(pl) end,
+  losses=function(f,s,t) return M.lostlog.since(f,s,t,nil,0) end}
 -- A full drop's pods that wait for a hatch (space.lua), every 10 ticks: sent
 -- as hatches free up, then the result kept as last_drop (status shows it,
 -- and drop_pending while pods wait; --wait follows them as it does shoot).

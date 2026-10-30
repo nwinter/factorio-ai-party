@@ -18413,3 +18413,13 @@ Copying only name/position/direction passed both calls; the real call placed sev
 ends, (1.5,0.5) and (6.5,0.5), were input and unpaired. `place_ghosts` passes `type=spec.type` to create_entity;
 when omitted, Factorio creates an input ghost. With this change the unchanged route entries pass both calls
 and those endpoints are input/output with mutual neighbours. Regression suite: `tests/d30_batch380.lua`.
+## d30 batch377: stream platform metrics
+
+The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns
+directed leg geometry, turret tooltip counters and shooting targets, existing platform hit counters, ammunition
+in hub/turrets and surface production totals, repair packs, thruster/storage-tank fluids, and recorded entity
+losses on a fully observed leg. Optional `area` is two numeric corners, at most 512 tiles per side; asteroid counts
+are for that sampled camera rectangle. Turret/tank and count limits omit incomplete figures. This starts no watch
+and adds no game-tick work. The stream converts matching samples to wall-minute rates and wall-time ETA. Stock
+locations and the current-speed/rate assumptions remain explicit; the read performs no endurance calculation.
+The field definitions and freshness rules are in `tools/stream/platformmetrics.md` in the enclosing repository.
