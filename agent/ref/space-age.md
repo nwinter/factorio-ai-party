@@ -257,7 +257,10 @@
   line, as every shot's, says where it was rendered: surface, centre, frame and what of ours stands in it.
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h):
   what every machine on it made, productivity included. With `item`, `makers`: each crafting machine there whose recipe
-  makes it, at full speed as `inspect` gives it (one machine alone), and their sum.
+  makes it, at full speed as `inspect` gives it (one machine alone), and their sum. Each maker also gives native
+  status and `input`: ingredient counts at recipe quality, names absent from input, input/output inserter and loader
+  counts. Inserter targets count, or their pickup/drop point on the footprint when the native target is unset.
+  Zero arms and missing ingredients are stated beside nominal capacity; these are current facts, not a future rate.
   `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
   loaded and dropped, totals and a minute.
   `legs: N` (1..16, with `platform` alone): completed flights, oldest first, retained during the next flight and

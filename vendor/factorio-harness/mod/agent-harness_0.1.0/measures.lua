@@ -11,6 +11,7 @@
 --            sample (running or done); not work
 return function(api)
   local M = {}
+  local watches = require('beltwatches')
   M.LATE, M.STALE = 300, 600
   M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally', 'asteroid_watch', 'signal_watch'}
   -- how each kind's final is read (default: KIND {})
@@ -177,7 +178,7 @@ return function(api)
     local left = math.max(0, math.ceil((job.until_tick - tick) / 60))
     local why = {
       running=string.format('running in the background until tick %d (%d s more): your actions meanwhile do not end it', job.until_tick, left),
-      done=string.format('done at tick %d, its final %s', job.until_tick, r.final_read and 'read' or 'not read yet (' .. (M.READ[kind] or kind .. ' {}') .. ' reads it)'),
+      done=string.format('done at tick %d, its final %s', job.until_tick, r.final_read and 'read' or 'not read yet (' .. (kind == 'belt_flow' and 'belt_flow {id: "' .. r.id .. '"}' or M.READ[kind] or kind .. ' {}') .. ' reads it)'),
       late=string.format('late: its end tick %d passed %d s ago and no final result came; it is not counted as work', job.until_tick, math.floor((tick - job.until_tick) / 60)),
       stalled=string.format('stalled: no sample for %d s before its end tick %d; it is not counted as work', math.floor((tick - (sampled or job.start)) / 60), job.until_tick),
       invalid=d.empty and 'invalid: it reads nothing' or (job.samples or 0) == 0 and 'invalid: no sample taken'
@@ -197,10 +198,11 @@ return function(api)
     tick = tick or game.tick
     local out = {}
     for _, kind in ipairs(M.KINDS) do
-      local job = jobs(kind)[index]
-      if type(job) == 'table' and job.start and job.until_tick and tick - job.until_tick <= M.KEEP then
-        local ok, r = pcall(row, kind, job, tick, index)
-        if ok then out[#out+1] = r end
+      for _, job in ipairs(watches.list(api.state(), kind, index)) do
+        if type(job) == 'table' and job.start and job.until_tick and tick - job.until_tick <= M.KEEP then
+          local ok, r = pcall(row, kind, job, tick, index)
+          if ok then out[#out+1] = r end
+      end
       end
     end
     table.sort(out, function(a, b)
@@ -214,10 +216,11 @@ return function(api)
   function M.running(index, tick)
     tick = tick or game.tick
     for _, kind in ipairs(M.KINDS) do
-      local job = jobs(kind)[index]
-      if type(job) == 'table' and not job.result and job.until_tick and tick <= job.until_tick
-        and not (job.sampled and tick - job.sampled > M.STALE) and not job.all_gone then
-        return M.id(kind, job, index), job
+      for _, job in ipairs(watches.list(api.state(), kind, index)) do
+        if type(job) == 'table' and not job.result and job.until_tick and tick <= job.until_tick
+          and not (job.sampled and tick - job.sampled > M.STALE) and not job.all_gone then
+          return M.id(kind, job, index), job
+      end
       end
     end
   end

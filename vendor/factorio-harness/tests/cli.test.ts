@@ -45,6 +45,14 @@ test('CLI help works without a server or credentials',async()=>{
   const {stdout}=await exec(process.execPath,['dist/host/cli.js','--help']);
   assert.match(stdout,/queue submit/);assert.match(stdout,/blueprint import/);
 });
+test('trace lane-facts coverage and paging options survive first-page output truncation',async()=>{
+  const coverage='lane_facts: 32 of 300 walked lane tiles included, 268 omitted (limit 32, offset 0); lane_facts_limit=256 (maximum 256); lane_facts_offset=32 reads the next page';
+  await engine(()=>({ok:true,result:{lane_facts_coverage:coverage,routes:Array.from({length:100},(_,i)=>({route:i,path:'a long belt route '.repeat(30)}))}}),async port=>{
+    const {stdout}=await compact(port,['call','trace','--args','{"position":{"x":0,"y":0},"forward":true,"audit":true}']);
+    assert.match(stdout,/268 omitted/); assert.match(stdout,/lane_facts_limit=256/); assert.match(stdout,/lane_facts_offset=32/);
+    assert.match(stdout,/more lines|more bytes|fh more/);
+  });
+});
 test('fh help ACTION and fh call ACTION --help print that action from describe (help was an unknown command)',async()=>{
   await engine(request=>{
     assert.equal(request.action,'describe');
@@ -893,6 +901,19 @@ test('belt_flow waits for its sampling: it reads belt_flow {} until the result i
     });
   }
 });
+test('belt_flow polling retains its watch id when another call becomes latest',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action!=='belt_flow')return {ok:true,result:{}};
+    if(request.args.position)return {ok:true,result:{id:'belt_flow@10/astra:1',sampling:true,seconds:2}};
+    assert.equal(request.args.id,'belt_flow@10/astra:1');
+    polls++;
+    return {ok:true,result:polls<2?{id:request.args.id,sampling:true}:{id:request.args.id,done:true,lines:['first watch result']}};
+  },async port=>{
+    const {stdout}=await cli(port,['call','belt_flow','--args','{"position":{"x":1,"y":1},"seconds":2}']);
+    const reply=JSON.parse(stdout); assert.equal(reply.result.id,'belt_flow@10/astra:1'); assert.equal(polls,2);
+  });
+});
 test('a build that waited for a hand craft and then failed keeps the blocker on the error line',async()=>{
   // Sol, shift09: the silo build hit trees after its craft and read "Control ended: failed".
   let polls=0;
@@ -1080,6 +1101,22 @@ test('a flag the command does not read is refused before anything is sent, namin
 // sample ran): fh wait's polls ask for the watches (status {brief, work}); with no action running and a belt_flow sample
 // begun after the last action ended, it waits for the sample and gives its result.
 const flowRow=(state:string,end=160)=>({id:'belt_flow@100',kind:'belt_flow',scope:'5 points',state,start_tick:100,end_tick:end,line:'belt_flow@100 5 points: '+state});
+test('fh wait stays with its first watch while a newer watch remains running',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='status') {
+      polls++;
+      const first=flowRow(polls<3?'running':'done');
+      const newer={...flowRow('running',600),id:'belt_flow@120/astra:2',start_tick:120};
+      return {ok:true,tick:100+polls*20,result:{active:false,combat:false,last:false,watches:polls===1?[first]:[newer,first]}};
+    }
+    if(request.action==='belt_flow') { assert.equal(request.args.id,'belt_flow@100'); return {ok:true,result:{id:request.args.id,done:true}}; }
+    return {ok:true,result:{}};
+  },async port=>{
+    const r=JSON.parse((await cli(port,['wait'])).stdout);
+    assert.equal(r.result.id,'belt_flow@100'); assert.equal(r.result.waited_for,'belt_flow@100'); assert.equal(polls,3);
+  });
+});
 test('fh wait with no action running waits for a running belt_flow sample and gives its result; its polls ask for work',async()=>{
   const seen:any[]=[]; let polls=0;
   await engine(request=>{
@@ -1117,7 +1154,7 @@ test('fh wait on a belt_flow sample keeps --max and the wake rules: STILL SAMPLI
     await assert.rejects(cli(port,['wait','--max','1']),(error:any)=>{
       const reply=JSON.parse(error.stdout);
       assert.equal(reply.error.code,'wait_timeout');
-      assert.match(reply.error.message,/^your belt_flow sample belt_flow@100 is STILL SAMPLING: the wait gave up after \d+ s, up to \d+ s more, until tick 100000\. No action of yours or stop ends it; belt_flow \{\} reads its result once it ends/);
+      assert.match(reply.error.message,/^your belt_flow sample belt_flow@100 is STILL SAMPLING: the wait gave up after \d+ s, up to \d+ s more, until tick 100000\. No action of yours or stop ends it; belt_flow \{"id":"belt_flow@100"\} reads its result once it ends/);
       assert.match(reply.result.still_running,/^belt_flow sample belt_flow@100, up to \d+ s more$/); return true;
     });
   });
@@ -1133,8 +1170,8 @@ test('fh wait on a belt_flow sample keeps --max and the wake rules: STILL SAMPLI
       const json=JSON.parse(error.stdout);
       assert.equal(json.ok,true); assert.equal(json.result.outcome,'told'); assert.equal(json.result.from,'sol');
       assert.match(json.result.still_running,/^belt_flow sample belt_flow@100, up to \d+ s more$/);
-      assert.match(json.result.note,/a tell from sol ended this wait \(the team block has it\); your belt_flow sample belt_flow@100 keeps going: fh wait waits for it again/);
-      assert.match(error.stderr,/still running \(exit 3\): belt_flow sample belt_flow@100, up to \d+ s more goes on after this wait ended; fh wait resumes waiting for it\. No action of yours or stop ends it \(it ends at its until_tick\)/);
+      assert.match(json.result.note,/a tell from sol ended this wait \(the team block has it\); your belt_flow sample belt_flow@100 keeps going: fh call belt_flow \{"id":"belt_flow@100"\} waits for it again/);
+      assert.match(error.stderr,/still running \(exit 3\): belt_flow sample belt_flow@100, up to \d+ s more goes on after this wait ended; fh call belt_flow \{"id":"belt_flow@100"\} waits for it\. No action of yours or stop ends it \(it ends at its until_tick\)/);
       assert.doesNotMatch(error.stderr,/A call that drives your character/); return true;
     });
   });
@@ -1161,7 +1198,7 @@ test('fh wait names the other watches running, and a sample begun before the act
   },async port=>{
     const json=JSON.parse((await cli(port,['wait'])).stdout);
     assert.equal(json.result.last.outcome,'arrived'); assert.equal(json.result.waited_for,undefined);
-    assert.match(json.result.note,/your belt_flow belt_flow@100 runs until tick 1000 \(10 s more\): no action of yours or stop ends it; belt_flow \{\} \(fh call belt_flow \{\} waits for it\) reads its result/);
+    assert.match(json.result.note,/your belt_flow belt_flow@100 runs until tick 1000 \(10 s more\): no action of yours or stop ends it; belt_flow \{"id":"belt_flow@100"\} reads its result/);
     const {stdout}=await compact(port,['wait']);
     assert.match(stdout,/your belt_flow belt_flow@100 runs until tick 1000/);
   });
