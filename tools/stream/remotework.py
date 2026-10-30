@@ -34,10 +34,25 @@ def shot(d, agent, now):
     att["text"] = att.get("text") or attention.text(att)
     target = d.attention_target(att, name, who, now + FRESH_S)
     target.update(subject=name, remote_work=True, solo_zoom=target["zoom"])
+    # The resolved destination is fixed while pan_step moves the acknowledged camera position.
+    target["remote_position"] = dict(target["position"])
+    if target["attention"].get("position"):
+        target["attention"]["position"] = dict(target["attention"]["position"])
+    if target.get("pan"):
+        target["position"] = dict(target["position"], y=target["pan"]["y0"])
+        # Remote work can outlive this attention sample, or enter during an older story/hold.
+        # Give its pan its own clock and a fixed leg, independent of since/until being retained.
+        target["pan_since"] = now
+        target["pan"] = dict(target["pan"], speed=d.pan_speed(dict(target, since=now)),
+                             bow_s=target["pan"].get("bow_s", d.PAN_END_S))
     if att.get("platform"):
         target["platform"] = dict(name=att["platform"], why="remote", agent=name, label=target["work"])
     return True, target
 
 
 def same(a, b):
-    return all(a.get(k) == b.get(k) for k in ("remote_work", "position", "surface", "zoom"))
+    """Same requested work destination, not the pan's current view or a changing caption."""
+    return all(a.get(k) == b.get(k) for k in ("remote_work", "surface", "zoom")) and \
+        a.get("remote_position", a.get("position")) == b.get("remote_position", b.get("position")) and \
+        (a.get("platform") or {}).get("name") == (b.get("platform") or {}).get("name") and \
+        (a.get("attention") or {}).get("position") == (b.get("attention") or {}).get("position")
