@@ -77,19 +77,21 @@ end
 -- 3. budget_below with and without the allowance: the turnaround (and its allowance) goes to the read as given; it binds on what the read says
 do
   local seen
-  local C=require('conditions'){return_budget=function(p,name,t)
+  local pl={name='Resolute',valid=true,space_connection={name='edge-shattered'}}
+  local p={force={platforms={pl}}}
+  local C=require('conditions'){leg=function() return {from='solar-system-edge',to='shattered-planet',back=false} end,return_budget=function(p,name,t)
     seen=t
     if t.return_allowance then return {binds={name='rocket',out_km_max=1356927}} end
     return {binds={name='railgun-ammo',out_km_max=-15148}}
   end}
   local plain={['until']='budget_below',platform='Resolute',turnaround={km=10000,back_to='aquilo'},km=1000}
   C.validate(plain)
-  local met,saw=C.check({},plain)
+  local met,saw=C.check(p,plain)
   eq(met,true); has(saw,'railgun-ammo binds first'); eq(seen.return_allowance,nil)
   local with={['until']='budget_below',platform='Resolute',km=1000,
     turnaround={km=10000,back_to='aquilo',return_allowance={legs={'solar-system-edge->aquilo'},items={['railgun-ammo']=0},label='FULL36'}}}
   C.validate(with)
-  met,saw=C.check({},with)
+  met,saw=C.check(p,with)
   eq(met,false); has(saw,'rocket binds first'); eq(seen.return_allowance.label,'FULL36')
   print('d29_batch351 3. budget_below with and without the allowance: the read decides, as given: ok')
 end
