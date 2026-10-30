@@ -1472,6 +1472,61 @@ do
   eq(runtime.remote(nobody,'configure',{platform='Sunward',position=am.position,modules={'productivity-module'}}),true)
 end
 
+-- batch375: platform recipe refusals describe hub room, and ingredient hand-move errors name deliver without
+-- offering an example that silently drops the requested platform.
+do
+  local before=defines.inventory.hub_main
+  defines.inventory.hub_main=71
+  local free=0
+  local hub_inv={count_empty_stacks=function(bar,filters) eq(bar,true); eq(filters,false); return free end}
+  local input={{valid_for_read=true,name='metallic-asteroid-chunk',count=1,quality={name='normal'}}}
+  local output={{valid_for_read=true,name='iron-ore',count=20,quality={name='uncommon'}}}
+  input.valid=true; output.valid=true
+  input.is_empty=function() return false end; output.is_empty=function() return false end
+  local cur={name='iron-gear-wheel',ingredients={{type='item',name='metallic-asteroid-chunk'},{type='fluid',name='water'}}}
+  local e={name='crusher',type='assembling-machine',position={x=5,y=-7.5},crafting_progress=0,
+    prototype={crafting_categories={crafting=true}},get_recipe=function() return cur end,
+    get_inventory=function(i) return i==5 and input or i==6 and output or nil end,
+    surface={name='platform-test',platform={hub={valid=true,get_inventory=function(i) eq(i,71); return hub_inv end}}}}
+  for _,n in ipairs({0,1}) do
+    free=n
+    local why=runtime.configure_check(p,{recipe='copper-cable'},e,false)
+    assert(why:find('the hub has '..n..' empty slots under its bar',1,true),why)
+    assert(why:find('reserves 2 empty slots',1,true),why)
+    assert(why:find('input 1 metallic-asteroid-chunk (1 slot)',1,true),why)
+    assert(why:find('output 20 iron-ore@uncommon (1 slot)',1,true),why)
+    assert(why:find('each asteroid chunk takes one hub slot',1,true),why)
+    assert(why:find('the recipe and held items are unchanged',1,true),why)
+    assert(not why:find('character in reach',1,true),why)
+    eq(runtime.with_example('configure',{platform='platform-test'},why),why)
+    eq(input[1].count,1); eq(output[1].count,20); eq(cur.name,'iron-gear-wheel')
+  end
+  free=2; eq(runtime.configure_check(p,{recipe='copper-cable'},e,false),nil)
+  free=0; eq(runtime.configure_check(p,{recipe='iron-gear-wheel'},e,false),nil,'same recipe needs no return space')
+  e.crafting_progress=0.5
+  local why=runtime.recipe_hub_why(e)
+  assert(why:find('reserves 3 empty slots',1,true),why)
+  assert(why:find('in-progress metallic-asteroid-chunk (1 reserved slot)',1,true),why)
+  assert(not why:find('in-progress water',1,true),why)
+  defines.inventory.hub_main=before
+  for _,action in ipairs({'transfer','pickup'}) do
+    for _,scope in ipairs({'platform','surface'}) do
+      local ok,err=pcall(call,action,{[scope]='platform-test',position={x=5,y=-7.5},item='metallic-asteroid-chunk'})
+      eq(ok,false); local text=tostring(err)
+      assert(text:find('remote view has no hands',1,true),text)
+      assert(text:find('deliver {platform, position, items}',1,true),text)
+      assert(text:find('actual configure recipe change',1,true),text)
+      assert(not text:find('dropped',1,true),text)
+      assert(not text:find('for this call',1,true),text)
+    end
+  end
+  local docs=call('describe',{}).actions
+  local note=require('argforms').PLATFORM_ITEMS
+  eq(runtime.surface_hint('transfer',{surface='platform-test'},note),note)
+  assert(docs.configure.position:find('platform recipe changes return held items',1,true))
+  assert(docs.configure.recipe:find('same recipe and quality leave them in place',1,true))
+  assert(docs.deliver.returns:find('platform recipe ingredients: the hub fills the request',1,true))
+end
 -- A turret's priority targets and Ignore unprioritised targets (Astra, shift12 15:02: Sunward's rocket turrets on big
 -- asteroids only), built and ghost. The fake keeps slots as 2.0.77 does: a set past the end appends; a cleared slot
 -- leaves a gap that get_priority_target reads as nil and priority_targets skips; trailing gaps shrink the list.

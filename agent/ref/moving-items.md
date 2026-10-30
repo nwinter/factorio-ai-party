@@ -8,6 +8,10 @@
   reactor's fuel cells go in and out as any burner's; a roboport's robots come out with `{position, direction:
   "to_player", item: "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup
   {belt: true}`.
+  - `transfer` and `pickup` are hand moves, with no platform/surface argument. On a platform,
+    `deliver {platform, position, items}` requests ingredients of a machine's current recipe from its hub.
+    An actual `configure` recipe/quality change returns held input/output items to the hub when its empty slots
+    cover them; the same recipe and quality leave them in place. Each asteroid chunk takes one hub slot.
   - `to_player: "haiku"` hands items to a teammate within your reach: dropped at its feet as loot its character picks
     up (`players` gives teammates' positions).
   - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
