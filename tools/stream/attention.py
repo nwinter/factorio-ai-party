@@ -101,10 +101,11 @@ def point(action, args):
         plat = lane[len("platform:"):].strip() or None
     # New platform tools and platform queue lanes also say where the agent is looking. Do not infer a
     # destination from prose, or treat a local unrecognised command's coordinates as attention.
-    remote = bool(plat or (args.get("surface") and pos))
+    surface = args.get("surface") if isinstance(args.get("surface"), str) else None
+    remote = bool(plat or surface)
     if action not in ACTIONS and not remote:
         return None
-    if not pos and not plat:
+    if not pos and not plat and not surface:
         return None
     kind, verb = ACTIONS.get(action, ("looking", "checking " + human(action)))
     what = ""

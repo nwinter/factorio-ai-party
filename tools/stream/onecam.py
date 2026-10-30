@@ -1641,7 +1641,12 @@ class OneCam(Director):
             remote, shot = remotework.shot(self, by_name[who], now)
             if remote and not shot:
                 continue  # the acknowledged view stays until the new surface is available
-            if shot and not remotework.same(old, shot):
+            if shot and remotework.same(old, shot):
+                # A new verb on the same frame is a caption change, not a new camera readiness interval.
+                for key in ("work", "attention", "platform"):
+                    if key in shot:
+                        old[key] = shot[key]
+            elif shot:
                 target = dict(shot, subject=old.get("subject", who), since=old.get("since", now), framed=now, jump=True)
                 for key in ("seg", "segment", "until", "hold_until"):
                     if key in old:

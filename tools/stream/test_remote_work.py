@@ -20,7 +20,7 @@ def director(**cfg):
     d = OneCam([{'slot':'main','player':1}, {'slot':'panel','player':1,'panel':1,
                  'rect':[2388,0,492,277],'scale':.171}],
                lambda b: sent.append(b) or {'ok':True}, None,
-               **dict(dict(auto_feature=False, platform_every=0, map_every=0, quiet_views=False,
+               **dict(dict(auto_feature=False, platform_every=0, map_every=0, quiet_story=100000,
                            tours=False, bow=False, trio=False), **cfg))
     return d, sent
 
@@ -40,6 +40,7 @@ def work_shots():
                   ('platform_endurance',{'platform':'Resolute'}),
                   ('configure',{'surface':'nauvis','position':{'x':300,'y':400}}),
                   ('remote_view',{'surface':'gleba','position':{'x':20,'y':50}}),
+                  ('inspect',{'surface':'Resolute'}),
                   ('inspect',{'surface':'platform-1','position':{'x':1,'y':2}})]
         for action,args in requests:
             with journal.open('a') as f:
@@ -77,6 +78,10 @@ def work_shots():
         s['space']['platforms'][0]['view']=VIEW
         for now in range(t+25,t+30):d.step(s,now)
         assert d.public(t+29)['main']['frame']['surface']=='platform-1'
+        # Surface-only planetary reads lack a frame position. Keep the last valid view, never the body.
+        s['agents'][0]['attention']=dict(attention.point('observe',{'surface':'gleba'}),age_s=0)
+        before=len(sent);d.step(s,t+30)
+        assert len(sent)==before and not d.state[d.onair].get('follow')
         # A newer local call and an expired remote call release the remote view.
         for att in (dict(attention.point('inspect',{'surface':'aquilo','position':a['position']}),age_s=0),
                     dict(attention.point('platform',{'platform':'Resolute'}),age_s=121)):
@@ -161,7 +166,18 @@ def recorded_replay():
     print(json.dumps(result,indent=2))
 
 
+def rapid_captions():
+    from test_onecam import world
+    d,_=world(auto_feature=False,platform_every=0,map_every=0)
+    a=dict(agent('astra',40,10,20),surface='aquilo')
+    for t in range(1000,1005):
+        a['attention']=dict(attention.point('platform',{'platform':'Resolute'}),age_s=0,text=f'checking item {t}')
+        d.step(snap([a],[plat('Resolute',view=VIEW)]),t)
+    assert d.public(1004)['main']['frame']['surface']=='platform-1'
+    assert '1004' in d.public(1004)['main']['work']  # captions cannot continually restart standby readiness
+
+
 if __name__=='__main__':
-    with contextlib.redirect_stdout(io.StringIO()):work_shots();automatic();auto_airtime_and_urgent()
+    with contextlib.redirect_stdout(io.StringIO()):work_shots();automatic();auto_airtime_and_urgent();rapid_captions()
     recorded_replay()
     print('remote work and automatic feature: all passed')

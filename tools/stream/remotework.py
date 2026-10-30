@@ -18,7 +18,7 @@ def focus(agent, platforms):
         if a.get("platform") == name:
             return None
         surface = ((platforms.get(name) or {}).get("view") or {}).get("surface")
-    elif not surface or surface == (a.get("surface") or "nauvis") or not att.get("position"):
+    elif not surface or surface == (a.get("surface") or "nauvis"):
         return None
     return dict(att, platform=name, surface=surface)
 
@@ -28,7 +28,7 @@ def shot(d, agent, now):
     att = focus(agent, d.plat_rows)
     if not att:
         return False, None
-    if not att.get("surface"):
+    if not att.get("surface") or (not att.get("platform") and not att.get("position")):
         return True, None
     name, who = agent["name"], agent.get("display_name") or agent["name"]
     att["text"] = att.get("text") or attention.text(att)
@@ -40,4 +40,4 @@ def shot(d, agent, now):
 
 
 def same(a, b):
-    return all(a.get(k) == b.get(k) for k in ("remote_work", "position", "surface", "zoom", "work"))
+    return all(a.get(k) == b.get(k) for k in ("remote_work", "position", "surface", "zoom"))
