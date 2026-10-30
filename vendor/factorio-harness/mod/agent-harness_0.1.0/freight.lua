@@ -151,6 +151,7 @@ return function(api)
     w.departed = st and st.schedule_departures and st.schedule_departures[pl.name] or nil
     return w
   end
+  M.productionlegs = require('productionlegs'){state=api.state, where=M.where}
 
   -- Counting -----------------------------------------------------------------
   local function store()
@@ -1159,13 +1160,14 @@ return function(api)
   -- The platform's segments on record, oldest first (endurance.lua reads the last finished leg's time).
   function M.segments(pl) local rec = store()[pl.index]; return rec and rec.segs or {} end
   function M.track(pl, tick)
+    local w = M.where(pl)
+    M.productionlegs.watch_one(pl, tick)
     local counts = M.hub_counts(pl)
     if not counts then return end
     local all = store()
     local rec = all[pl.index]
     if not rec then rec = {segs={}}; all[pl.index] = rec end
     rec.name = pl.name
-    local w = M.where(pl)
     local key = key_of(w)
     local seg = rec.segs[#rec.segs]
     if key and key ~= rec.key then
@@ -1483,6 +1485,7 @@ return function(api)
     for index in pairs(all) do if not seen[index] then all[index] = nil end end
     -- (BT1) the kept hubs and statistics of platforms gone
     for index in pairs(plats) do if not seen[index] then plats[index] = nil end end
+    M.productionlegs.prune(seen)
   end
   -- Built at once from the delivery (d17 batch16 A2, Grok/Wren: rocket-turret "came aboard 0" while the hull went from
   -- 9 turrets to 14: construction robots took each turret from the hub to a ghost within the second it arrived, so
