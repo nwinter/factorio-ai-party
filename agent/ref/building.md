@@ -227,6 +227,8 @@
   `belt` (inspect, observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed
   from (-22.5,-30.5)`; at a line's end it names what stands on the tile it stops at: `(no belt takes them there:
   they stop at its end; medium-electric-pole (353.5,95.5) stands there)`.
+  `details: true` returns `entities` accepted unchanged by `place_ghosts` (within its entry limit), including
+  `type: input|output` on every underground belt. Dry-run placement diagnostics are in `entity_checks`.
   `feeders` (dry runs, replies; build_path's too): our inserters whose drop point is on a planned belt or underground
   end (what each holds, what it takes from and what is there) and belts, underground exits and splitters running into
   the line; with `item`, feeders of other items are conflicts (the line is still placed; `refuse_mixed: true` refuses it).
@@ -328,6 +330,11 @@
   `status_note`). Nothing sets it by itself: not age, not `blueprint_retire`. The site's blueprint page shows it as a
   mark and a filter; an entry with none reads "not marked".
   Example: `./fh call blueprint_status --args '{"name":"smelter-row-v2","status":"current"}'`
+- `place_ghosts` and `belt_route` dry runs return `undergrounds`: counts of checked ends, paired ends,
+  unpaired ends, partners outside the request, and mismatched flow. `rows` names each problem's endpoints;
+  `details: true` also lists ordinary pairs. These are connections after the placeable ghosts are built;
+  built ends and existing ghosts outside the request are labelled separately. Placement success alone does not
+  assert paired flow. Pipe-to-ground ends use direction, with no input/output type.
 - Dry runs (`"dry_run": true` on `build`, `place_ghosts`, `paste`) place nothing and report the plan: per entity
   whether it fits or what blocks it and where, blocked entities first and all of them in `blocked` (up to 200) apart
   from those needing tiles; the tiles an entry needs (landfill, foundation, shallow oil, water, and on a platform the

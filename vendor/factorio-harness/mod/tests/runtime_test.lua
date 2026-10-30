@@ -3930,7 +3930,8 @@ end
 -- underground ends typed; dry_run only plans; missing items are counted.
 prototypes.entity['transport-belt']={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
   related_underground_belt={name='underground-belt',type='underground-belt',max_underground_distance=5}}
-prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',items_to_place_this={{name='underground-belt',count=1}}}
+prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',max_underground_distance=5,items_to_place_this={{name='underground-belt',count=1}}}
+p.surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={}}}} end
 local made={ghosts={}}
 p.surface.find_entities_filtered=function(f)
   -- (the search for belts and belt ghosts around the last belt ghost placed: last_belt)
