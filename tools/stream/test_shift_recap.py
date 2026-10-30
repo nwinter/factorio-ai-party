@@ -175,6 +175,25 @@ class RecapTest(unittest.TestCase):
             self.assertEqual(saved["accepted"], [1])
             self.assertIn("raw_review", saved)
 
+    def test_repaired_citation_outside_selection_reaches_reviewer(self):
+        e = {"rows": [{"id": "a", "text": "The recorded total was 20 launches."},
+                      {"id": "b", "text": "The recorded total was 57 launches."}]}
+        class Writer:
+            drafts = 0
+            def complete(inner, system, user, **kw):
+                if system.startswith("Fact-check"):
+                    rows = {r["id"]: r for r in json.loads(user)["evidence"]["rows"]}
+                    self.assertIn("b", rows)
+                    return json.dumps({"lines": [{"line": 1, "ok": True}]})
+                inner.drafts += 1
+                return json.dumps({"lines": [{"speaker": "Rook", "title": "Launches",
+                    "text": "The recorded total was 57 launches.", "sources": ["a" if inner.drafts == 1 else "b"]}]})
+        with patch.object(R, "selection", return_value=e["rows"][:1]):
+            script, review = R.write_script(e, Writer())
+        self.assertEqual(review["mode"], "model plus evidence review")
+        self.assertEqual(script[0]["sources"], ["b"])
+        self.assertEqual(review["attempts"][0]["failures"][0]["uncited_matches"][0]["id"], "b")
+
     def test_readable_extracts_and_headline_titles(self):
         R.save_json(self.old / "host-memo.json", {"headlines": [
             {"t": T0 + 50, "text": "Rocket 76912 launched, the first this shift"},

@@ -421,7 +421,12 @@ def write_script(evidence, writer=None, audit_dir=None):
             persist()
             if candidates:
                 # Review all surviving lines, even if another line failed the local check.
-                payload = {"evidence": material, "script": candidates}
+                # A repair may cite a row surfaced in the previous refusal's diagnostics.
+                # Include those exact rows even when they were outside the research selection.
+                refs = {ref for line in candidates for ref in line["sources"]}
+                review_rows = {r["id"]: r for r in material["rows"]}
+                review_rows.update({r["id"]: r for r in evidence["rows"] if r["id"] in refs})
+                payload = {"evidence": dict(material, rows=list(review_rows.values())), "script": candidates}
                 audit["review_input"] = payload
                 audit["review_system"] = REVIEW
                 audit["raw_review"] = writer.complete(REVIEW, json.dumps(payload), max_tokens=2000)
