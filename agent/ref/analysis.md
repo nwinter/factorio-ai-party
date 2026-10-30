@@ -130,6 +130,10 @@
   missing tiles with the run going on within 4 tiles, what it carries). `lane_facts` adds native contents and the front
   item per lane, two source lanes connected to one destination lane, and inserters along the line: status, held item,
   pickup switches, near/far lanes. Belts and inserters include their circuit/logistic conditions and current values.
+  These facts cover 32 walked lane tiles by default; `lane_facts_limit: 1..256` sets the page size and
+  `lane_facts_offset` skips walked lane tiles. The reply counts total/included/omitted lane tiles and names `more`
+  and `next` arguments. Pages are current reads. `lane_facts:false` omits these extra reads; the original trace
+  and audit remain. Its lane-tile count is walked (belt, lane) pairs; included belts report all native lines.
   `max_tiles: N` caps a forward walk at N lane tiles (1..3000); `continue_at` names where the capped route stops. `upstream: true` goes the other way: from a
   machine, lab, thruster, hub or belt tile back along what feeds it, naming per ingredient the first place it stops or
   goes elsewhere (a filter, a circuit condition, an inserter taking it onto another belt, a jammed mixed lane, a

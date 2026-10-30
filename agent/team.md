@@ -12,7 +12,7 @@ Platform `configure` returns recipe items to the hub; `deliver` requests ingredi
 `configure` splitter filters keep quality/comparator; `inspect.splitter.outputs` reads outlet lanes (help circuits-settings).
 `flight_watch {from:"leg"}` starts at the next leg; `departure` leaves a stop (help space-age).
 Platform arrival/progress `wait_until`: up to 80h (help waits-queues).
-`belt_flow {id}` reads one of four watches; `trace` audits lanes (help analysis).
+`belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in

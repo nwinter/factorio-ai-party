@@ -18446,6 +18446,15 @@ These are snapshots: a full lane is not a measurement that it stopped, and permi
 Inserters with unset targets are included by pickup/drop points on the belt tile. No current contents are read
 past visibility. `max_tiles` (1..3000, with forward) bounds lane tiles read; a stopped route names `continue_at`.
 
+Lane facts cover 32 walked lane tiles by default. `lane_facts_limit` accepts 1..256; `lane_facts_offset` accepts
+0..2999 (default 0), with `forward:true, audit:true`. These only page the added facts; the original routes and
+audit keep their coverage. `lane_facts:false` skips the extra contents, controls and inserter-position lookups.
+`lane_tiles_total`, `lane_tiles_included`, `lane_tiles_omitted` and `truncated` state the facts coverage. `more`
+names the limit/offset for the first up-to-256 lane tiles; `next` names the next page when one remains. The note
+also names omitted counts and those options. Counts are walked (belt, lane) pairs, including repeat belts on
+different lanes; the included belts report all their native transport lines. Each page is a current read, not a
+stored snapshot. `max_tiles` still independently limits the original walk, so facts counts cover that walk only.
+
 `platform_production {platform,item}` retains nominal maker capacity and native status, adding each maker input
 with ingredient counts at recipe quality, zero-held ingredient names, input/output inserter and loader counts.
 An inserter counts by native target or, when unset, its pickup/drop point on the machine footprint. Loaders count

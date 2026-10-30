@@ -94,8 +94,9 @@ return function(api)
     error(tostring(e):gsub('^[^:]*:%d+: ', ''), 0)
   end
   -- Inserters in an area, indexed by what they pick up from and drop into.
-  local function index(surface, force, area)
-    local idx = {by_pick={}, by_drop={}, by_pick_tile={}, by_drop_tile={}, n=0}
+  local function index(surface, force, area, points)
+    local idx = {by_pick={}, by_drop={}, n=0}
+    if points then idx.by_pick_tile, idx.by_drop_tile = {}, {} end
     for _, i in ipairs(surface.find_entities_filtered{type='inserter', force=force, position=area.position, radius=area.radius, limit=MAX_INSERTERS}) do
       local ok, pick, drop = pcall(targets, i)
       if ok then
@@ -105,27 +106,27 @@ return function(api)
         if k then idx.by_pick[k] = idx.by_pick[k] or {}; table.insert(idx.by_pick[k], row) end
         k = drop and drop.unit_number
         if k then idx.by_drop[k] = idx.by_drop[k] or {}; table.insert(idx.by_drop[k], row) end
-        for _, mode in ipairs({'pick','drop'}) do
+        if points then for _, mode in ipairs({'pick','drop'}) do
           local q = try(function() return mode == 'pick' and i.pickup_position or i.drop_position end)
           if q then
             local map = idx['by_'..mode..'_tile']
             local tile = math.floor(q.x)..','..math.floor(q.y)
             map[tile] = map[tile] or {}; map[tile][#map[tile]+1] = row
           end
-        end
+        end end
       end
     end
     return idx
   end
   -- The inserters around an entity, read once per 32-tile cell (a walk crosses few cells).
-  local function cells(surface, force)
+  local function cells(surface, force, points)
     local cache, n = {}, 0
     local function of(e)
       local cx, cy = math.floor(e.position.x / 32), math.floor(e.position.y / 32)
       local key = cx .. ',' .. cy
       local c = cache[key]
       if not c then
-        c = index(surface, force, {position={x=cx * 32 + 16, y=cy * 32 + 16}, radius=26})
+        c = index(surface, force, {position={x=cx * 32 + 16, y=cy * 32 + 16}, radius=26}, points)
         cache[key] = c
         n = n + 1
       end
@@ -803,7 +804,10 @@ return function(api)
         end
         visited[key] = n
         budget.tiles = budget.tiles + 1
-        route.tiles[#route.tiles+1] = e
+        if #route.tiles < 400 then route.tiles[#route.tiles+1] = e end
+        if budget.fact_tiles and budget.tiles > budget.fact_offset and #budget.fact_tiles < budget.fact_limit then
+          budget.fact_tiles[#budget.fact_tiles+1] = e
+        end
         if last and last ~= e and not dark then
           merges_at(route, e, k, last)
           if route.join_open then route.joins = route.joins or {}; route.joins[route.join_open.at] = route.join_open end
@@ -950,9 +954,30 @@ return function(api)
   end
   -- audit=true (beltaudit.lua; Opus 18:20): where the walked lanes lose capacity.
   local audit_mod, facts_mod
-  local function facts_of(budget, idx_of)
+  local function facts_setup(budget, a)
+    budget.limit = a.max_tiles
+    if a.audit and a.lane_facts ~= false then
+      budget.fact_tiles, budget.fact_limit, budget.fact_offset = {}, a.lane_facts_limit or 32, a.lane_facts_offset or 0
+    end
+  end
+  local function facts_of(budget, p)
+    if not budget.fact_tiles then return nil end
     facts_mod = facts_mod or require('lanefacts'){circuits=api.circuits, status_name=status, lane_near=lane_near, is_belt=function(e) return BELT[e.type] end}
-    return facts_mod.read(budget.routes, idx_of, budget.seen)
+    local out = facts_mod.read({{tiles=budget.fact_tiles}}, cells(p.surface, p.force, true), budget.seen)
+    out.limit, out.offset = budget.fact_limit, budget.fact_offset
+    out.lane_tiles_total, out.lane_tiles_included = budget.tiles, #budget.fact_tiles
+    out.lane_tiles_omitted = budget.tiles - #budget.fact_tiles
+    out.truncated = out.lane_tiles_omitted > 0
+    out.note = out.note .. '; lane tiles count walked (belt, lane) pairs; included belts report all native lines'
+    if out.truncated then
+      out.more = {lane_facts_limit=math.min(256, budget.tiles), lane_facts_offset=0}
+      local next_offset = budget.fact_offset + #budget.fact_tiles
+      if next_offset < budget.tiles then out.next = {lane_facts_limit=budget.fact_limit, lane_facts_offset=next_offset} end
+      out.note = out.note .. string.format('; %d of %d walked lane tiles omitted from lane_facts: lane_facts_limit=%d (maximum 256), lane_facts_offset=0 reads the first %d',
+        out.lane_tiles_omitted, budget.tiles, out.more.lane_facts_limit, out.more.lane_facts_limit)
+      if out.next then out.note = out.note .. string.format('; lane_facts_offset=%d reads the next page at this limit', out.next.lane_facts_offset) end
+    end
+    return out
   end
   local function audit_of(budget)
     audit_mod = audit_mod or require('beltaudit'){try=try, place=place, at=at, side=side, lanes_of=lanes_of, lane_text=lane_text, lane_near=lane_near, lane_full=lane_full}
@@ -972,12 +997,12 @@ return function(api)
       for k = 1, 2 do starts[#starts+1] = {e=e, k=k, from=place(e) .. ' ' .. side(k) .. ' lane', hops=0} end
     end
     local budget = new_budget(sight(p, p.surface))
-    budget.limit = a.max_tiles
+    facts_setup(budget, a)
     walk(starts, idx_of, p, nil, budget, packs(p))
     out.routes = {}
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     out.merges = all_merges(out.routes)
-    if a and a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, idx_of) end
+    if a and a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, p) end
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas(),
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out
@@ -1026,13 +1051,13 @@ return function(api)
     end
     if #out.takers == 0 then out.takers = nil; if #starts == 0 then out.note = 'no inserter takes from it' end end
     local budget = new_budget(sight(p, p.surface))
-    budget.limit = a.max_tiles
+    facts_setup(budget, a)
     walk(starts, idx_of, p, nil, budget, packs(p))
     out.routes = {}
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     if #out.routes == 0 then out.routes = nil end
     out.merges = out.routes and all_merges(out.routes) or nil
-    if a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, idx_of) end
+    if a.audit then out.audit = audit_of(budget); out.lane_facts = facts_of(budget, p) end
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas() + 1,
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out
@@ -1249,6 +1274,9 @@ return function(api)
   local beltrate
   function M.trace(p, a)
     if a.max_tiles ~= nil then need(a.forward == true and type(a.max_tiles)=='number' and a.max_tiles%1==0 and a.max_tiles>=1 and a.max_tiles<=MAX_TILES, 'max_tiles: 1..3000 with forward') end
+    if a.lane_facts ~= nil then need(a.forward == true and a.audit == true and type(a.lane_facts)=='boolean', 'lane_facts: true or false with forward and audit') end
+    if a.lane_facts_limit ~= nil then need(a.forward == true and a.audit == true and a.lane_facts ~= false and type(a.lane_facts_limit)=='number' and a.lane_facts_limit%1==0 and a.lane_facts_limit>=1 and a.lane_facts_limit<=256, 'lane_facts_limit: 1..256 with forward and audit, lane_facts enabled') end
+    if a.lane_facts_offset ~= nil then need(a.forward == true and a.audit == true and a.lane_facts ~= false and type(a.lane_facts_offset)=='number' and a.lane_facts_offset%1==0 and a.lane_facts_offset>=0 and a.lane_facts_offset<MAX_TILES, 'lane_facts_offset: 0..2999 with forward and audit, lane_facts enabled') end
     if a.upstream ~= nil then
       need(type(a.upstream) == 'boolean', 'upstream must be true or false')
       need(a.forward == nil, 'upstream and forward go one way each: give one')
@@ -1335,6 +1363,9 @@ return function(api)
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
     throughput='true, with position on a belt tile: the line through it (every belt feeding it back, on to its end): per lane the mining drills dropping onto it (how many, working, on what) and what they put on at full speed against the slowest belt\'s lane capacity, and what the last 10 tiles hold; lines, lanes, tiles, lane_capacity_per_min, end',
     max_tiles='optional integer 1..3000 with forward: cap the lane-tile walk; routes.continue_at names the position and lane where it stops',
+    lane_facts='boolean with forward and audit (default true): false skips the added native lane facts and their inserter-position lookups; the original trace and audit remain',
+    lane_facts_limit='integer 1..256 with forward and audit (default 32): maximum walked lane tiles included in lane_facts; lane_tiles_total/included/omitted and truncated name its coverage, more and next name limit/offset arguments for the same trace; original route walk unchanged',
+    lane_facts_offset='integer 0..2999 with forward and audit (default 0): skip this many walked lane tiles before the lane_facts page; counts and pages describe this read, not a saved snapshot',
     audit='boolean, with forward: lane_facts lists native lane contents, front item (nearest exit), can_insert_at_back, two source lanes connected to one destination lane, inserter statuses/held items/pickup switches and near/far lanes, belts and inserters with circuit/logistic conditions and current signal values; a snapshot does not measure motion. Also  where the walked lanes lose capacity: a belt side-loading both its carried lanes onto one lane, a curve made a side-load by an empty stub behind the turn tile (both lanes onto one), a route ending at missing tiles with the run going on within 4 tiles ahead (what it carries; a ghost waiting there), or against a belt facing another way; returns audit (lines; one line saying none were found)',
     circuit='true, with position (a machine, chest or inserter): its state, each inserter feeding it or taking from it (enable condition and its value now, filters, hand, pickup and drop), and the red and green networks on each one\'s wires followed back through combinators (3 levels) to what drives them: each network\'s signals, the combinators putting out onto it (settings, output) and their input networks, constant combinators, entities reading into it (lines)',
     upstream='boolean, with position: from the target back along what feeds it to the first place each ingredient it lacks (all: every one; item: that one) stops or goes elsewhere: a feeder whose filter does not let it through or that is off by its circuit condition (the condition, the signal on its wires), each lane a feeder picks walked back through undergrounds, splitters and side-loads (the lane at the feeder: full, front item, a jammed mixed lane; the first tile back holding it; inserters taking it elsewhere on the way, with status, filter and what each holds; a splitter filter sending it to the other output; where it comes onto the lane; the first tile where another item joins), a chest it reads and what fills it, and a machine making it that is not working, traced the same way one level down. A thruster: each fluid by pipe to the machines making it, each traced so (back through crushers to the collectors). A hub, chest or belt tile: every lane feeding it',
