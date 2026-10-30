@@ -57,6 +57,7 @@ class Featured:
         self.away_until = 0
         self.current_id = None
         self.news_seen = set()
+        self.repairs = set()
 
     @property
     def active(self):
@@ -175,6 +176,7 @@ class Featured:
             self.started, self.away_until = None, 0
             self.current_id = identity
             self.news_seen.clear()
+            self.repairs.clear()
             for t in d.state.values():
                 if t and t.get("featured"):
                     t["until"] = 0
@@ -194,15 +196,21 @@ class Featured:
             candidates.append(("encounter", danger.get("last")))
         for w in snapshot.get("work") or []:
             if w.get("platform") == name and now - w.get("t", 0) <= 30 and any(
-                    k in str(w.get("kind") or w.get("action") or w.get("label") or "").lower()
+                    k in " ".join(str(w.get(field) or "") for field in ("kind", "action", "verb", "label")).lower()
                     for k in ("repair", "build", "construct")):
                 candidates.append(("repair/build", w.get("id") or w.get("t")))
         for m in (snapshot.get("space") or {}).get("moments") or []:
-            if m.get("platform") == name and now - m.get("t", 0) <= 30:
+            if (m.get("facts") or {}).get("platform") == name and now - m.get("t", 0) <= 30:
                 candidates.append(("milestone", m.get("id") or m.get("t")))
+        surface = ((d.plat_rows.get(name) or {}).get("view") or {}).get("surface")
+        repairing = {a["name"] for a in snapshot.get("agents") or [] if a.get("alive") and
+                     str(a.get("active") or "").split(":")[0] == "repair" and
+                     (a.get("surface") == surface or (a.get("attention") or {}).get("platform") == name)}
+        repair_started = bool(repairing - self.repairs)
+        self.repairs = repairing
         fresh = [x for x in candidates if x not in self.news_seen]
         self.news_seen.update(candidates)
-        return fresh[0][0] if fresh else None
+        return "repair" if repair_started else fresh[0][0] if fresh else None
 
     def shot(self, d, name, now, context=False):
         shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S)

@@ -101,7 +101,7 @@ def urgent_and_news():
         for t in range(1250,1256):
             s=snap(TEAM,[ship])
             if kind=='milestone':
-                s['space']['moments']=[{'id':'m1','t':1250,'platform':'Resolute','text':'new distance milestone'}]
+                s['space']['moments']=[{'id':'m1','t':1250,'facts':{'platform':'Resolute'},'text':'new distance milestone'}]
             d.step(s,t)
         assert name(d.public(1255))=='Resolute',kind
 
@@ -179,7 +179,32 @@ def failures():
     assert d.state[d.onair]['position']==old['position']
 
 
+def model_contract():
+    from model import Model
+    m=Model({'agents':{'sol':{}}})
+    m.ingest({'tick':100,'agents':[dict(TEAM[0],surface='nauvis')],
+              'space':{'platforms':[{'name':'Resolute','at':'solar-system-edge->shattered-planet 20%',
+                                    'state':'on_the_path','view':BOW_VIEW}]}},1200)
+    m._ingest_work({'agent':'sol','action':'place_ghosts','verb':'building','platform':'Resolute','at':'1250'},1250)
+    d,_=setup();d.watch_platforms(m.snapshot(1250),1250)
+    assert d.featured.news(d,m.snapshot(1250),'Resolute',1250)=='repair/build'
+    m.platform_history={'Resolute':{'created':100,'by':'sol','at':'solar-system-edge','left':[]}}
+    m.ingest({'tick':200,'agents':[], 'chronicle':{'entries':[], 'events':[
+        {'type':'event','kind':'platform_left','platform':'Resolute','tick':200,'id':8,
+         'at':'solar-system-edge','to':'shattered-planet'}]}},1251)
+    assert m.moments and m.moments[-1]['facts']['platform']=='Resolute'
+    assert d.featured.news(d,m.snapshot(1251),'Resolute',1251)=='milestone'
+    s=m.snapshot(1252);s['agents'][0].update(active='repair',surface=BOW_VIEW['surface'],alive=True)
+    assert d.featured.news(d,s,'Resolute',1252)=='repair'
+    assert d.featured.news(d,s,'Resolute',1253) is None
+    # Log the feature's name for operators even when no agent is aboard.
+    with tempfile.TemporaryDirectory() as tmp:
+        d,_=setup();d.log_path=str(Path(tmp)/'director.jsonl');run(d,1000,1004)
+        logs=[json.loads(x) for x in Path(d.log_path).read_text().splitlines()]
+        assert any('featured platform Resolute' in r['reason'] for r in logs)
+
+
 if __name__=='__main__':
     with contextlib.redirect_stdout(io.StringIO()) as captured:
-        share_dwell_inset();urgent_and_news();lifecycle();failures()
+        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract()
     print('featured: ok (share, dwell, framing, inset, urgent, repair, arrival, loss, reversal, time, restart, carry, clear, CLI, send failure)')
