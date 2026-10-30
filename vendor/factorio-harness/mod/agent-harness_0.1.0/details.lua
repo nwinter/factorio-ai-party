@@ -367,8 +367,15 @@ return function(api)
     local inp = try(function() return e.splitter_input_priority end) or 'none'
     local outp = try(function() return e.splitter_output_priority end) or 'none'
     local f = try(function() return e.splitter_filter end)
-    local filter = item_name(f)
-    if filter and f.comparator and f.comparator ~= '=' then filter = filter .. ' (quality ' .. tostring(f.comparator) .. ')' end
+    local filter = M.filter_text(f)
+    local quality, comparator
+    if filter then
+      quality = type(f) == 'table' and f.quality or type(f) == 'string' and 'normal' or nil
+      if quality and type(quality) ~= 'string' then quality = try(function() return quality.name end) end
+      comparator = quality and (type(f) == 'table' and f.comparator or '=') or 'none'
+      comparator = comparator or '='
+      quality = quality or 'any'
+    end
     local parts = {}
     if inp == 'none' then parts[#parts+1] = 'input priority: none (both inputs alike)'
     else parts[#parts+1] = string.format('input priority: %s (the %s input %s first, the other when it has none)', inp, inp, at(sides(e, inp).input)) end
@@ -380,7 +387,30 @@ return function(api)
       else parts[#parts+1] = string.format('output priority: %s (the %s output %s first, the other when it is full)', outp, outp, at(sides(e, outp).output)) end
       if filter then parts[#parts+1] = 'filter: ' .. filter .. ' (does nothing while output priority is none)' end
     end
-    return {input_priority=inp, output_priority=outp, filter=filter, line=table.concat(parts, '; ')}
+    if filter then parts[#parts+1] = 'filter quality: ' .. quality .. '; comparator: ' .. comparator end
+    return {input_priority=inp, output_priority=outp, filter=filter, filter_quality=quality, filter_comparator=comparator, line=table.concat(parts, '; ')}
+  end
+  -- (d30 batch370 SF) two adjacent output tiles, not a downstream route scan. A packed non-filter outlet can
+  -- hold up items behind its waiting items even when the filter outlet is empty. Report the native lane facts.
+  function M.splitter_outputs(e)
+    if e.type == 'entity-ghost' then return nil end
+    local rows = {}
+    for _, side in ipairs({'left', 'right'}) do
+      local pos = sides(e, side).output
+      local target = try(function() return e.surface.find_entities_filtered{position=pos,
+        type={'transport-belt', 'underground-belt', 'splitter'}, limit=1}[1] end)
+      local row = {side=side, position=pos, name=target and target.name or 'none', direction=target and target.direction}
+      if target and (target.type == 'transport-belt' or target.type == 'underground-belt') then
+        row.lanes = {}
+        for i = 1, 2 do
+          local line = try(function() return target.get_transport_line(i) end)
+          row.lanes[i] = {lane=i, can_insert_at_back=try(function() return line.can_insert_at_back() end),
+            items=try(function() return line.get_contents() end)}
+        end
+      end
+      rows[#rows+1] = row
+    end
+    return rows
   end
   local PRIORITY = {left=true, right=true, none=true}
   -- configure {input_priority?, output_priority?, filter?} on a splitter or its ghost.
@@ -394,11 +424,9 @@ return function(api)
     if a.filter ~= nil then
       if a.filter == false or a.filter == 'none' or a.filter == '' then clear = true
       else
-        local item, quality = a.filter, nil
-        if type(a.filter) == 'table' then item, quality = a.filter.name, a.filter.quality end
-        if not (type(item) == 'string' and prototypes.item[item]) then error('filter: unknown item ' .. tostring(item), 0) end
-        if quality ~= nil and not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
-        filter = {name=item, quality=quality or 'normal'}
+        filter = M.parse_filter(a.filter)
+        -- The game's string form means normal/=; a table without quality means every quality.
+        if type(filter) == 'string' then filter = {name=filter, quality='normal', comparator='='} end
       end
     end
     local before = M.splitter(e)
@@ -411,7 +439,7 @@ return function(api)
     if clear then e.splitter_filter = nil elseif filter then e.splitter_filter = filter end
     local now = M.splitter(e)
     return {name=name, position=e.position, ghost=e.type == 'entity-ghost' or nil, input_priority=now.input_priority, output_priority=now.output_priority,
-      filter=now.filter or 'none', line=now.line, before=before.line}
+      filter=now.filter or 'none', filter_quality=now.filter_quality, filter_comparator=now.filter_comparator, line=now.line, before=before.line}
   end
 
   M.COLLECTOR_NOTE = 'filters are asteroid chunk names (configure {position, filters}); the game has no whitelist/blacklist mode for collectors'
@@ -553,7 +581,7 @@ return function(api)
       local f = filters(e)
       if f then out.filters = f.filters; out.filter_mode = f.filter_mode; out.use_filters = f.use_filters; out.filter_slots = f.filter_slots end
     end
-    if splitter_entity(e) then out.splitter = M.splitter(e) end
+    if splitter_entity(e) then out.splitter = M.splitter(e); out.splitter.outputs = M.splitter_outputs(e) end
     -- A collector: chunks its arms hold on the way in (output is in inventories).
     if e.type == 'asteroid-collector' then
       out.arm = try(function() return e.get_inventory(defines.inventory.asteroid_collector_arm).get_contents() end)

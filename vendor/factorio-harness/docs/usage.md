@@ -18359,3 +18359,20 @@ Every start and read, including completed watches and segments, names `track_fil
 `past_cap` split the untracked count. Read-only `asteroid_names` continues to select pages;
 it does not alter admission. The cap still applies to matching asteroids. A filter does
 not guarantee that any given duration stays below the cap.
+
+## d30 batch370 SF (eng/d20-batch370)
+
+Resolute's filtered splitter (-18,-61.5) had normal/= railgun-ammo and normal incoming rail ammo. On the private
+copy, its packed left (non-filter) outlet held up the input despite an empty right outlet. Keeping only the left
+outlet clear sent normal rail ammo through the unchanged right underground. Rail already sitting on the left output
+is not evidence that the current filter routes new rail there.
+
+Native 2.0.77 splitter_filter="railgun-ammo" and {name="railgun-ammo",quality="normal"} both read normal/"=".
+{name="railgun-ammo"} has no quality condition. Configure previously forced that table to normal and discarded
+comparators. It now uses the same filter parser as inserters/loaders: strings retain normal/=, name@quality and
+name@>=quality preserve conditions, name@any or a table without quality matches all qualities. Invalid quality,
+comparator or extra filter keys refuse before either priority changes. Clear and ghost behavior remain supported.
+
+Configure and inspect.splitter expose filter_quality and filter_comparator, including normal/= and any/none, and
+state both in the line. Inspect adds outputs: at most two adjacent belt lookups, with two surface lanes per straight
+belt or underground mouth (items by quality, can_insert_at_back). It does no downstream traversal or background work.
