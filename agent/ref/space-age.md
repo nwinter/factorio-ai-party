@@ -151,7 +151,7 @@
   With forecast, `basis` says what the forecast assumes, and `forecast_model` counts asteroids by the hull's box. They
   spawn on a line 72 tiles ahead of the box, across its width + 96, not its height. Per km flown: 0.0100 x (width + 116)
   x each kind's spawn chance; this is fitted on test platforms with no schedule, and ships flying on a schedule met 1.2
-  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?, stock?}` gives the same for a hull
+  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?, stock?, targets?}` gives the same for a hull
   not built yet, read only, on this platform's route and turrets. `progress: {from, to}` cuts each leg to that part of
   its connection. Each leg gives asteroids by kind, a 600 s window's, and shots per ammunition; `estimated` lists what
   is not modelled. `design.ammo` is an exclusive list of 1..8 ammunition names; only compatible turrets aboard
@@ -164,6 +164,14 @@
   uses loaded types and reads no stock. Width affects asteroid counts; speed affects minutes and the 600 s window;
   height and mass are reported with their non-use stated (spawn count uses width, and speed is given). `tiles` supplies
   the bounding box; combining it with width or height is refused, as are unknown design fields.
+  `design.targets: {turret-prototype: [asteroid-names] | "any"}` overrides target sets in the model only. Each named
+  prototype must participate in that model; with `design.ammo`, that means compatible selected turrets only. A list
+  has 0..64 names; an empty list targets nothing, `"any"` targets every asteroid. Omitted prototypes keep their native
+  settings. Unsupported turret or asteroid names are refused with accepted lists. `target_source` names the override
+  or platform; `effective_targets` gives each participating turret group and its source, beside unchanged
+  `current_targets`. `ammo_details.targets` uses the effective settings too. This also works with implicit loaded ammo
+  when `design.ammo` is omitted. Piercing through multiple asteroids and interception order between weapons are not
+  modelled: each ammunition independently counts full shots for its targets and their targeted fragments.
 - `platform_endurance`, return allowance: `turnaround.return_allowance {legs, items: {item: count}, label,
   evidence_ticks?}` is your own count of each item over legs back after the connection's start (`legs`: "from->to" as
   the reply's legs name them), used there in place of the net rate x time; the turn itself, out and back on the
