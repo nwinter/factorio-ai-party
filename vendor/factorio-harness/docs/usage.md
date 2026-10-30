@@ -257,6 +257,12 @@ fh call status
   another date of the shift clock than the day it was pushed, and the label then names it: `resting until Sat 15:59
   (quota)`. Any agent's quota rest: `tools/quota_rest.py RUN AGENT --until "YYYY-MM-DD HH:MM" [--reason quota|pace]`
   (resting.json and this push; `--done` ends it); start-team writes one for an agent whose account is at its limit.
+  At a shift change, `--carry` preserves the full `resting.json`, including `firm` and the original start. A firm
+  operator rest stays effective for supervisors and idle nudges despite fresh quota room or an agent request; it ends
+  at its wall-clock time or `--done`. A later quota reset may extend its scheduling fields; other metadata is retained.
+  Resumed `start-team.sh` runs hold the world tick-paused from before deployment through stream/OBS/helpers and all
+  launches, then resume immediately after `started: N/M`, even with failed launches. Startup failure also releases
+  the pause; `start.log` records the paused duration and failures. See `docs/LAUNCH-NOTES.md`.
   An agent's own next request is one whose reply carries its clock line: describe (launch-agent.sh), profiles,
   cameras and peeks do not end a rest; its first status does.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
