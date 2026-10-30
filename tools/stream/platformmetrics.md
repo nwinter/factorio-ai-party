@@ -9,6 +9,8 @@ The service calls the operator read `platform_metrics` at most once per 20 wall 
 The runtime must advertise it in `describe.operator_reads`; earlier runtimes show no card. It starts no watch,
 does no background work, and does not call endurance, hull coverage, ammunition-feed tracing or ingredient
 planning. A failed read hides the card; successful readings expire after 45 seconds. Unknown fields are omitted.
+While the simulation is paused, the collector sends no metric reads, hides rates/ETA, and lets cached facts expire.
+Resume begins with a new baseline, so paused time does not dilute the rates.
 
 The card reports:
 

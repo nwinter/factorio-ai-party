@@ -112,7 +112,9 @@ class Metrics:
         if observed != self.observed:
             self.previous = self.value = None
             self.observed = observed
-        if now >= self.next_read:
+        if snapshot.get("paused"):
+            self.previous = None  # no repeated reads of a frozen game, and no rates across the pause
+        elif now >= self.next_read:
             self.next_read = now + EVERY  # global limit also applies to rapid camera switches and read failures
             args = {"platform": row["name"]}
             area = view_area(snapshot, row)
@@ -132,6 +134,11 @@ class Metrics:
         result = dict(self.value, age_s=max(0, round(now - self.seen)), featured=
                     (snapshot.get("featured_platform") or {}).get("status") == "active" and
                     (snapshot.get("featured_platform") or {}).get("name") == row["name"])
+        if snapshot.get("paused"):
+            result["paused"] = True
+            for key in ("window_s", "eta_wall_s", "kills_min", "hits_min", "damage_taken", "damage_dealt_min"):
+                result.pop(key, None)
+            result["ammo"] = [{k: v for k, v in r.items() if k in ("name", "hub", "turrets")} for r in result.get("ammo") or []]
         if not view_area(snapshot, row):
             result.pop("asteroids", None)
         return result

@@ -78,6 +78,16 @@ def main():
         assert m.step(s, read, t)["tick"] == old["tick"]
     assert len(reads) == 1
     assert m.step(s, read, 120)["kills_min"] == 30 and len(reads) == 2
+    pm, ps, paused_reads = copy.deepcopy(m), copy.deepcopy(s), []
+    def pause_read(*args):
+        paused_reads.append(args); return new, new["tick"]
+    ps["paused"] = True
+    paused = pm.step(ps, pause_read, 121)
+    assert paused["paused"] and "kills_min" not in paused and "eta_wall_s" not in paused
+    assert "net_min" not in paused["ammo"][0] and not paused_reads
+    assert pm.step(ps, pause_read, 166) is None and not paused_reads  # cached facts expire; no paused polling
+    ps["paused"] = False
+    assert "kills_min" not in pm.step(ps, pause_read, 167) and len(paused_reads) == 1
     s["onair"] = {}; s["cameras"] = {}
     assert "asteroids" not in m.step(s, read, 121)
     s["space"]["platforms"][0].update(route_ids=["shattered-planet", "solar-system-edge"])
