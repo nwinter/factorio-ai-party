@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import caster
 from analyst_board import AnalystBoard
-from freshness import stamp, current_analyst, scoped, invalid
+from commentary_freshness import stamp, current_analyst, scoped, invalid, fingerprint
 from playback_memory import PlaybackMemory
 from serve import AudioHub
 
@@ -177,7 +177,7 @@ def freshness(clock):
     for change in ('loss', 'retreat', 'correction', 'point revision', 'expiry'):
         c, hub = host(clock); e = event(c, clock)
         e['_analyst_source'] = dict(stamp(c.source_snap, clock.t),
-            correction_revision=__import__('freshness').fingerprint(c.source_snap['analyst']['corrections']))
+             correction_revision=fingerprint(c.source_snap['analyst']['corrections']))
         def slow(*a, **kw):
             if change == 'loss': c.source_snap['alerts'] = [{'kind': 'loss', 'id': 'new-loss'}]
             if change == 'retreat': c.source_snap['board']['plan']['goals'] = 'Retreat for repairs'

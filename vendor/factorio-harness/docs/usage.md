@@ -18400,3 +18400,12 @@ are for that sampled camera rectangle. Turret/tank and count limits omit incompl
 and adds no game-tick work. The stream converts matching samples to wall-minute rates and wall-time ETA. Stock
 locations and the current-speed/rate assumptions remain explicit; the read performs no endurance calculation.
 The field definitions and freshness rules are in `tools/stream/platformmetrics.md` in the enclosing repository.
+
+
+## d30 batch382: analyst helper import collision
+
+The stream's commentary TTL/provenance module is `tools/stream/commentary_freshness.py`; the public-site/repo
+freshness alarm remains `tools/freshness.py`. The analyst, analyst board and caster import the commentary module
+by its distinct name, including after the analyst's game module puts `tools/` first on Python's import path.
+`tools/stream/test_analyst_startup.py` launches the analyst entry script with replay data, a temporary local /ask
+listener and digest-only mode, then checks both module import orders. It makes no live game or model call.
