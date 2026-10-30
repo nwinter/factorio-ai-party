@@ -21575,6 +21575,7 @@ function M.tick_body(event)
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
   if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
+  if M.freight then pcall(M.timed,'productionlegs.tick',M.freight.productionlegs.tick,event.tick) end
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
   -- (d22 batch96 BF1) the platforms read lately: their belts and inserter hands, a band every few ticks (freight.lua)
   if M.freight and M.freight.belt_tick and event.tick%M.freight.BELT_STEP==0 then pcall(M.timed,'freight.belts',M.freight.belt_tick,event.tick) end

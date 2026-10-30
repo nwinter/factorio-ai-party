@@ -251,7 +251,7 @@
   `legs: N` (1..16, with `platform` alone): completed flights, oldest first, retained during the next flight and
   across reversals. `from/to` are boundary ticks; `from_location/to_location/heading` name directed connection ends;
   `start_position/end_position` distinguish a mid-leg turn from reaching a station. Ammo/fuel made and used come
-  from native counters at state events or the tick the once-a-second watch sees a change. Cargo is rockets launched
+  from native counters at state events or the tick the position watch sees a change. Cargo is rockets launched
   to it and hub pods sent down, not deliveries. Partial/failed/capped records say `incomplete`. Last 16 kept.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`

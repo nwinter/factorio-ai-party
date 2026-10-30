@@ -1,7 +1,7 @@
 -- Completed flight production, independent of freight's shorter stop/leg ring.
 -- Native counters are read only at a boundary (or the first observation). The
--- state event supplies its tick; freight's existing second watch is the fallback
--- for heading/connection changes which raise no state event.
+-- state event supplies its tick; a small position watch detects direction and
+-- connection changes which raise no state event, without collecting counters.
 local qflow = require('qflow')
 return function(api)
   local M = {KEEP=16, CARGO_ITEMS=64}
@@ -69,7 +69,7 @@ return function(api)
     local all = store()
     local r = all[pl.index]
     if not r then r = {completed={}, seq=0}; all[pl.index] = r end
-    r.name = pl.name
+    r.name, r.pl = pl.name, pl
     if r.key == key then return end
     local now = snapshot(pl)
     local old = r.active
@@ -92,12 +92,49 @@ return function(api)
       from_location=leg and leg.from, to_location=leg and leg.to, heading=leg and leg.to,
       partial=r.key == nil and leg ~= nil or nil, loaded={}, dropped={}}
     r.key = key
+    r.motion_connection, r.motion_distance, r.motion_tick = pos.connection, pos.distance, tick
+  end
+  -- 2.0.77 raises no state event for a mid-connection reversal. Only position
+  -- properties are read here. Direction is the observed change in native distance,
+  -- not the next schedule station, which may lie beyond this connection.
+  function M.watch_one(pl, tick)
+    local r = store()[pl.index]
+    local at = pl.space_location
+    if at then
+      if not r or r.key ~= 'at:' .. at.name then M.observe(pl, tick, 'watch', {at=at.name}) end
+      r = store()[pl.index]
+      if r then r.motion_connection, r.motion_distance = nil, nil end
+      return
+    end
+    local c, d = pl.space_connection, pl.distance
+    if not (c and d) then return end
+    local heading, from
+    if r and r.motion_tick ~= tick and r.motion_connection == c.name and r.motion_distance ~= nil and d ~= r.motion_distance then
+      local back = d < r.motion_distance
+      from, heading = back and c.to.name or c.from.name, back and c.from.name or c.to.name
+    elseif r and r.active and r.active.heading and r.active.position.connection == c.name then
+      from, heading = r.active.from_location, r.active.heading
+    else
+      local w = api.where(pl)
+      if w.leg then from, heading = w.leg.from, w.leg.to end
+    end
+    if heading and (not r or not r.active or r.active.heading ~= heading or r.active.position.connection ~= c.name) then
+      M.observe(pl, tick, 'watch', {leg={from=from, to=heading}})
+      r = store()[pl.index]
+    end
+    if r then r.motion_connection, r.motion_distance, r.motion_tick = c.name, d, tick end
+  end
+  function M.tick(tick)
+    for _, r in pairs(store()) do
+      local pl = r.pl
+      if pl and pl.valid then M.watch_one(pl, tick) end
+    end
   end
   -- Cargo means rockets launched to the platform and hub pods sent down, at
   -- their engine event ticks. Delivery at the far end is a different ledger.
   function M.cargo(pl, pod, side, tick)
     if not (pl and pl.valid) then return end
-    M.observe(pl, tick, 'cargo_event', api.where(pl))
+    M.watch_one(pl, tick)
     local r = store()[pl.index]
     local a = r and r.active
     if not a then return end
@@ -158,7 +195,7 @@ return function(api)
     end
     if #lines == 0 then lines[1] = 'no completed legs recorded for ' .. pl.name end
     return {platform=pl.name, legs=rows, kept=#kept, limit=M.KEEP, lines=lines,
-      note='Completed flights, oldest first; last 16 kept. from/to are ticks; locations and heading name the directed connection ends, not a claim that either end was reached (start_position/end_position give the boundary). Native ammo counters sum every quality; fuel retains native precision. Event boundaries use their tick; otherwise the once-a-second platform watch uses the tick it observes the change. partial means first seen during flight. loaded counts rockets launched to it; dropped counts hub pods sent down, not deliveries; cargo keys include quality, at most 64 each. Reads do not take samples.'}
+      note='Completed flights, oldest first; last 16 kept. from/to are ticks; locations and heading name the directed connection ends, not a claim that either end was reached (start_position/end_position give the boundary). Native ammo counters sum every quality; fuel retains native precision. Event boundaries use their tick; otherwise a position watch uses the tick it observes the location, connection or distance direction change. partial means first seen during flight. loaded counts rockets launched to it; dropped counts hub pods sent down, not deliveries; cargo keys include quality, at most 64 each. Reads do not take samples.'}
   end
   return M
 end

@@ -102,6 +102,17 @@ F.track(pl,400)
 pl.space_location=nil; pl.space_connection={name='nauvis-gleba',from={name='nauvis'},to={name='gleba'},length=1000}
 pl.schedule={current=1,records={{station='gleba'}}}; pl.distance=.1
 F.track(pl,460)
-pl.schedule.records[1].station='nauvis'; F.track(pl,520)
+pl.schedule.records[1].station='nauvis'; pl.distance=.09; F.track(pl,520)
 eq(F.productionlegs.read(pl,1).legs[1].to,520)
+-- A schedule can point beyond this connection. Actual distance direction closes
+-- a one-tick reversal, with no state event and no intervening one-second sample.
+local P=F.productionlegs
+pl.distance=.091; P.tick(521)
+pl.distance=.09; P.tick(522)
+local actual=P.read(pl,16).legs
+eq(actual[#actual-1].to,521); eq(actual[#actual-1].heading,'nauvis')
+eq(actual[#actual].from,521); eq(actual[#actual].to,522); eq(actual[#actual].heading,'gleba')
+local no_reads=reads
+pl.distance=.089; P.tick(523); pl.distance=.088; P.tick(524)
+eq(reads,no_reads,'unchanged native direction never reads counters')
 print('d29_batch362 completed production ledger: ok')

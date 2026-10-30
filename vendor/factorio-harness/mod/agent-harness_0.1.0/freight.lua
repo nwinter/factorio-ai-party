@@ -1161,7 +1161,7 @@ return function(api)
   function M.segments(pl) local rec = store()[pl.index]; return rec and rec.segs or {} end
   function M.track(pl, tick)
     local w = M.where(pl)
-    M.productionlegs.observe(pl, tick, 'watch', w)
+    M.productionlegs.watch_one(pl, tick)
     local counts = M.hub_counts(pl)
     if not counts then return end
     local all = store()
