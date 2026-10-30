@@ -20,7 +20,7 @@
 return function(api)
   local M = {}
   M.MAX, M.MIN_S, M.MAX_S, M.KEEP_SHOTS, M.KEEP_TICKS = 8, 10, 120, 24, 216000
-  M.ARGS = {aim='optional true: a railgun aim watch on that platform instead (d29 batch332): with seconds (10..120) it starts one, without it reads yours: 1..8 railguns (positions, else the first 8 by position) read every tick: per railgun shots and ammo used, each shot\'s aimed target (the one it read the tick before) as exact when that shot hit it, else uncertain, aimed hits by size (killed or survived), the shot\'s other hits as collateral by size, hits on no seen shot (unattributed), the last 24 shots; one watch an agent, a new one replaces it; read only'}
+  M.ARGS = {aim='optional true: a railgun aim watch on that platform instead (d29 batch332/359): with seconds (10..120) it starts one, without it reads yours: 1..8 railguns (positions, else the first 8 by position) read every tick: per railgun shots and ammo used, each shot\'s aimed target (the one it read the tick before) as exact when that shot hit it, else uncertain, aimed hits by size (killed or survived), the shot\'s other hits as collateral by size, hits on no seen shot (unattributed), the last 24 shots; all-shot interval count/min/max/mean and bounded tick histogram, shots by second and target size, prototype nominal cooldown and full-buffer/target-present sample shares; one watch an agent, a new one replaces it; read only'}
   local SIZES = {'small', 'medium', 'big', 'huge'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store() local s = api.state(); s.rail_aim = s.rail_aim or {}; return s.rail_aim end
@@ -37,6 +37,30 @@ return function(api)
     for _, k in ipairs{'small', 'medium', 'big', 'huge', 'other'} do if m[k] then o[#o+1] = k .. ' ' .. m[k] end end
     return #o > 0 and table.concat(o, ', ') or 'none'
   end
+  -- Constant-size counters apart from at most 120 seconds and a bounded set of interval buckets. No shot history
+  -- beyond recent is retained. Prototype cooldown is a nominal value, not the turret's remaining cooldown/aim phase.
+  local function statistics(t, tick)
+    local nominal = try(function() return t.e.prototype.attack_parameters.cooldown end)
+    if type(nominal) ~= 'number' or nominal < 0 then nominal = nil end
+    local limit = math.min(M.MAX_S * 60, nominal and math.ceil(nominal) + 1 or 1)
+    t.stats = {since_tick=tick, prior_shots=t.shots, shots=0, nominal_cooldown_ticks=nominal,
+      intervals={count=0, sum_ticks=0, histogram={exact_through_ticks=limit, ticks={}, wider={
+        {min_ticks=limit+1, max_ticks=limit*2, count=0},
+        {min_ticks=limit*2+1, max_ticks=limit*4, count=0}, {min_ticks=limit*4+1, count=0}}}},
+      by_second={}, by_target_size={}, samples=0, energy_ready=0, target_present=0, ammo_present=0,
+      multi_shot_observations=0}
+    return t.stats
+  end
+  local function interval(s, dt, n)
+    local v = s.intervals
+    v.count, v.sum_ticks = v.count + n, v.sum_ticks + dt * n
+    v.min_ticks, v.max_ticks = math.min(v.min_ticks or dt, dt), math.max(v.max_ticks or dt, dt)
+    local h = v.histogram
+    if dt <= h.exact_through_ticks then bump(h.ticks, tostring(dt), n)
+    else
+      for _, b in ipairs(h.wider) do if not b.max_ticks or dt <= b.max_ticks then b.count = b.count + n; break end end
+    end
+  end
   local function new_row(e, i)
     return {i=i, e=e, un=e.unit_number, position={x=e.position.x, y=e.position.y}, quality=try(function() return e.quality.name end) or 'normal',
       inv=e.get_inventory(defines.inventory.turret_ammo), cap=try(function() return e.electric_buffer_size end) or 0,
@@ -50,6 +74,7 @@ return function(api)
       if not t.gone then t.gone = tick end
       return
     end
+    local s = t.stats or statistics(t, tick) -- old watches survive a runtime deploy, with explicit partial coverage
     local n = t.inv.valid and t.inv.get_item_count() or 0
     local en = e.energy
     if t.n ~= nil then
@@ -62,6 +87,10 @@ return function(api)
     if #t.pending > 0 then t.unattributed = t.unattributed + #t.pending; t.pending = {} end
     -- the target kept (unit number, name, position), re-read only when it changed: the next read's shot was aimed at it
     local tg = e.shooting_target
+    s.samples = s.samples + 1
+    if t.cap > 0 and en >= t.cap then s.energy_ready = s.energy_ready + 1 end
+    if tg and tg.valid then s.target_present = s.target_present + 1 end
+    if n > 0 then s.ammo_present = s.ammo_present + 1 end
     if tg and tg.valid then
       if not (t.kept and t.kept_ref and t.kept_ref.valid and t.kept_ref == tg) then
         t.kept_ref = tg
@@ -74,12 +103,22 @@ return function(api)
   end
   -- a shot seen at tick: its hits are the ones gathered since the last read (the tick before)
   function M.shot(job, t, tick, shots)
+    local s = t.stats or statistics(t, tick)
+    local shot_tick = tick - 1
+    if s.last_tick then interval(s, shot_tick - s.last_tick, 1) end
+    if shots > 1 then
+      interval(s, 0, shots - 1)
+      s.multi_shot_observations = s.multi_shot_observations + 1
+    end
+    s.last_tick, s.shots = shot_tick, s.shots + shots
+    bump(s.by_second, math.floor((shot_tick - job.start) / 60) + 1, shots)
+    bump(s.by_target_size, t.kept and M.size(t.kept.name) or 'unknown', shots)
     t.shots = t.shots + shots
     t.ammo_used = t.ammo_used + shots
     local aim, ref = t.kept, t.kept_ref
     local hits = t.pending
     t.pending = {}
-    local row = {tick=tick - 1, hits=#hits}
+    local row = {tick=shot_tick, hits=#hits, shots=shots}
     local found
     if aim then
       for _, h in ipairs(hits) do if h.un == aim.un then found = h end end
@@ -131,8 +170,10 @@ return function(api)
   function M.tick(tick)
     for idx, job in pairs(store()) do
       if job.live then
-        for _, t in ipairs(job.rails) do M.read(job, t, tick) end
-        job.samples = job.samples + 1
+        if job.last_sample_tick ~= tick then
+          for _, t in ipairs(job.rails) do M.read(job, t, tick) end
+          job.samples, job.last_sample_tick = job.samples + 1, tick
+        end
         if tick >= job.until_tick then job.live, job.ended = false, tick end
       elseif job.ended and tick > job.ended + M.KEEP_TICKS then
         store()[idx] = nil
@@ -144,6 +185,21 @@ return function(api)
       aimed_killed=0, aimed_survived=0, aimed_not_hit_alive=0, collateral_killed=0}
     local lines = {}
     for _, t in ipairs(job.rails) do
+      local stats
+      local s = t.stats
+      if s then
+        local v, per_second = s.intervals, {}
+        for second=1,job.seconds do per_second[second] = s.by_second[second] or 0 end
+        stats = {since_tick=s.since_tick, prior_shots=s.prior_shots, shots=s.shots,
+          nominal_cooldown={ticks=s.nominal_cooldown_ticks, source='LuaEntityPrototype.attack_parameters.cooldown', prototype='railgun-turret'},
+          intervals={count=v.count, sum_ticks=v.sum_ticks, min_ticks=v.min_ticks, max_ticks=v.max_ticks,
+            mean_ticks=v.count > 0 and v.sum_ticks / v.count or nil, histogram=v.histogram},
+          shots_by_second=per_second, shots_by_target_size=s.by_target_size, multi_shot_observations=s.multi_shot_observations,
+          samples={count=s.samples, energy_ready_ticks=s.energy_ready, target_present_ticks=s.target_present, ammo_present_ticks=s.ammo_present,
+            energy_ready_share=t.cap > 0 and s.samples > 0 and s.energy_ready / s.samples or nil,
+            target_present_share=s.samples > 0 and s.target_present / s.samples or nil,
+            ammo_present_share=s.samples > 0 and s.ammo_present / s.samples or nil, energy_threshold_j=t.cap}}
+      end
       for _, k in ipairs{'shots', 'ammo_used', 'exact', 'uncertain', 'hits', 'unattributed', 'aimed_killed', 'aimed_survived', 'aimed_not_hit_alive', 'collateral_killed'} do
         tot[k] = tot[k] + t[k]
       end
@@ -152,11 +208,18 @@ return function(api)
       rows[#rows+1] = {position=t.position, quality=t.quality, shots=t.shots, ammo_used=t.ammo_used, exact=t.exact, uncertain=t.uncertain,
         no_target=t.no_target, aimed_by_size=t.aimed_by_size, aimed_killed=t.aimed_killed, aimed_survived=t.aimed_survived,
         aimed_not_hit_alive=t.aimed_not_hit_alive, collateral_by_size=t.collateral_by_size, collateral_killed=t.collateral_killed,
-        hits=t.hits, unattributed=t.unattributed, gone_tick=t.gone, recent=t.recent, recent_more=t.recent_more}
+        hits=t.hits, unattributed=t.unattributed, gone_tick=t.gone, recent=t.recent, recent_more=t.recent_more, statistics=stats}
       lines[#lines+1] = string.format('railgun %s (%s): %d shots (%d ammo); aimed, exact %d: %s (killed %d, survived %d); uncertain %d; collateral hits: %s (killed %d)%s%s',
         at(t.position), t.quality, t.shots, t.ammo_used, t.exact, sizes(t.aimed_by_size), t.aimed_killed, t.aimed_survived, t.uncertain,
         sizes(t.collateral_by_size), t.collateral_killed, t.unattributed > 0 and string.format('; %d hits on no seen shot', t.unattributed) or '',
         t.gone and string.format('; gone at tick %d', t.gone) or '')
+      if stats then
+        local v, sm = stats.intervals, stats.samples
+        lines[#lines] = lines[#lines] .. string.format('; intervals %d%s; nominal cooldown %s ticks (prototype); samples %d: full buffer %d, target present %d, ammo present %d%s',
+          v.count, v.count > 0 and string.format(' min %d, max %d, mean %.3f ticks', v.min_ticks, v.max_ticks, v.mean_ticks) or '',
+          tostring(s.nominal_cooldown_ticks or 'unavailable'), sm.count, sm.energy_ready_ticks, sm.target_present_ticks, sm.ammo_present_ticks,
+          s.since_tick > job.start and string.format('; statistics since tick %d exclude %d earlier shots', s.since_tick, s.prior_shots) or '')
+      end
     end
     table.insert(lines, 1, string.format('%s: %d railguns, ticks %d..%d (%s): %d shots, %d ammo used; aimed (exact) %s; uncertain %d; collateral %s; hits %d (%d unattributed)',
       job.platform, #job.rails, job.start, job.until_tick, job.live and 'running' or 'done', tot.shots, tot.ammo_used, sizes(tot.aimed_by_size),
@@ -164,6 +227,7 @@ return function(api)
     return {aim=true, platform=job.platform, start_tick=job.start, end_tick=job.until_tick, seconds=job.seconds, every_ticks=1, samples=job.samples,
       done=not job.live, picked=job.picked, railguns_total=job.total, railguns=rows, totals=tot, lines=lines, reason=job.reason,
       attribution='per shot: exact when the target the railgun read the tick before the shot is among that shot\'s hits (on_entity_damaged with the railgun as cause); the other hits are collateral; uncertain otherwise (no target read, or it was not hit: changed target within the tick, or missed). ammo_used: items that left its ammo slots at a shot (one a shot)',
+      statistics_note='all detected shots since statistics.since_tick, including ones dropped from recent; intervals use the detected shot tick (read tick minus 1), no interval before the first shot. Histogram: each integer tick 0..exact_through_ticks (ceil(prototype cooldown)+1, capped at 7200; 1 if unavailable), absent counts zero, then the three wider ranges. shots_by_second[1] covers start_tick..start_tick+59. shots_by_target_size uses the previous tick\'s target even when attribution is uncertain; unknown means none read. Multiple ammo items lost in one read are assigned that same tick (zero internal intervals); multi_shot_observations counts these ambiguous reads. Nominal cooldown excludes force/ammo modifiers, aim/turn time and power limits. Samples read once per valid turret tick; energy_ready means full electric buffer (2.0.77 railgun game data: 10 MJ buffer and 10 MJ/shot), target_present means shooting_target valid, ammo_present means inventory count > 0. These are independent sample shares, not causes of delay; remaining cooldown and ready-to-fire state are not exposed by 2.0.77.',
       not_given='the game\'s reason for a target choice; shots of railguns not watched'}
   end
   function M.handler(p, a)
@@ -221,7 +285,7 @@ return function(api)
     local replaced = st[idx] ~= nil
     st[idx] = job
     for _, t in ipairs(job.rails) do M.read(job, t, game.tick) end
-    job.samples = 1
+    job.samples, job.last_sample_tick = 1, game.tick
     return {aim=true, started=true, platform=pl.name, railguns=#job.rails, picked=job.picked, start_tick=job.start, end_tick=job.until_tick, seconds=seconds,
       replaced=replaced or nil, line=string.format('railgun aim watch on %s: %d railguns %s, every tick for %d s (to tick %d)%s; platform_defense {aim: true} reads it',
         pl.name, #job.rails, table.concat((function() local o = {} for _, t in ipairs(job.rails) do o[#o+1] = at(t.position) end return o end)(), ' '),
