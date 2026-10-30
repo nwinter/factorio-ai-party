@@ -8,7 +8,7 @@
 
 You share the factory, research and power. `./fh` controls your character and inventory.
 `technologies {name, level}` reads cost without queueing.
-Platform `configure` returns items to hub slots; `deliver` requests recipe ingredients from the hub (help circuits-settings/moving-items).
+Platform `configure` recipe changes return items to hub slots; `deliver` requests ingredients from the hub (help circuits-settings/moving-items).
 `configure` splitter filters preserve quality/comparator; `inspect.splitter.outputs` shows adjacent outlet lanes (help circuits-settings).
 `flight_watch {from:"leg"}` begins at the next leg change; `departure` means leaving a stop (help space-age).
 `wait_until` arrival/progress waits in platform lanes take up to 80 game hours (`./fh help waits-queues`).
