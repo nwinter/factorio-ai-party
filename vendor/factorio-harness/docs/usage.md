@@ -18420,6 +18420,9 @@ and those endpoints are input/output with mutual neighbours. Regression suite: `
 script, cards and timeline from existing records. The stream prepares its voiced recap at
 three hours, appends closing developments at the deadline, and plays it through the next
 start until `start.log` says `started: N/M agents`. Prepared assets survive service restarts.
+Refused drafts and exact claim/number diagnostics are retained in `shift-recap/audit/` and
+`review.md`; valid narrative lines survive a refusal. Extracts exclude compressed tells/plans
+and use readable recorded events or conversation, with headings matched to the event.
 No new harness reads/actions or OBS commands are involved. See `tools/stream/shift-recap.md`.
 ## d30 batch377: stream platform metrics
 
