@@ -151,10 +151,19 @@
   With forecast, `basis` says what the forecast assumes, and `forecast_model` counts asteroids by the hull's box. They
   spawn on a line 72 tiles ahead of the box, across its width + 96, not its height. Per km flown: 0.0100 x (width + 116)
   x each kind's spawn chance; this is fitted on test platforms with no schedule, and ships flying on a schedule met 1.2
-  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same for a hull
+  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?, stock?}` gives the same for a hull
   not built yet, read only, on this platform's route and turrets. `progress: {from, to}` cuts each leg to that part of
   its connection. Each leg gives asteroids by kind, a 600 s window's, and shots per ammunition; `estimated` lists what
-  is not modelled.
+  is not modelled. `design.ammo` is an exclusive list of 1..8 ammunition names; only compatible turrets aboard
+  participate, using their current target settings, ammo quality and researched damage. Unsupported names are refused
+  with the accepted list. `ammo_source: "design.ammo"` identifies the override; `current_targets` separately records
+  all built turrets' settings. `ammo_details` gives selected damage per shot, targets, stock, total shots, shots per
+  item, items required and stock after subtracting that requirement. `design.stock: {ammo: count}` supplies item counts
+  for selected types; omitted counts use stock aboard (`stock_source`, `stock_read` scope and belt/hand reading age).
+  Production, feed reachability and partial magazines are not modelled. With no `design.ammo`, the prior light model
+  uses loaded types and reads no stock. Width affects asteroid counts; speed affects minutes and the 600 s window;
+  height and mass are reported with their non-use stated (spawn count uses width, and speed is given). `tiles` supplies
+  the bounding box; combining it with width or height is refused, as are unknown design fields.
 - `platform_endurance`, return allowance: `turnaround.return_allowance {legs, items: {item: count}, label,
   evidence_ticks?}` is your own count of each item over legs back after the connection's start (`legs`: "from->to" as
   the reply's legs name them), used there in place of the net rate x time; the turn itself, out and back on the

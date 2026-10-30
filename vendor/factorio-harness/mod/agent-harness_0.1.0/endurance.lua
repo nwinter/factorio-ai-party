@@ -651,15 +651,29 @@ return function(api)
     local design = a.design
     if design ~= nil then
       assert(type(design) == 'table', 'design is {width, height | tiles, mass?, speed, ammo?}')
+      local fields = {width=true, height=true, tiles=true, mass=true, speed=true, ammo=true, stock=true}
+      for k in pairs(design) do assert(fields[k], 'unsupported design field: ' .. tostring(k) .. '; accepted: width, height, tiles, mass, speed, ammo, stock') end
       assert(type(design.speed) == 'number' and design.speed > 0 and design.speed <= 10000, 'design.speed is km/s, above 0 (as the platform GUI shows it)')
-      assert(design.tiles == nil or design.width == nil, 'design: give width (and height) or tiles, not both')
+      assert(design.tiles == nil or (design.width == nil and design.height == nil), 'design: give width (and height) or tiles, not both')
       if design.tiles == nil then
-        assert(type(design.width) == 'number' and design.width >= 1 and design.width <= 2000, 'design.width is tiles, 1..2000 (or give tiles)')
-        assert(design.height == nil or (type(design.height) == 'number' and design.height >= 1), 'design.height is tiles')
+        assert(type(design.width) == 'number' and design.width >= 1 and design.width <= 2000 and design.width % 1 == 0, 'design.width is tiles, 1..2000 whole tiles (or give tiles)')
+        assert(design.height == nil or (type(design.height) == 'number' and design.height >= 1 and design.height < math.huge and design.height % 1 == 0), 'design.height is a finite positive number of whole tiles')
       end
-      assert(design.mass == nil or (type(design.mass) == 'number' and design.mass > 0), 'design.mass is a number above 0')
-      assert(design.ammo == nil or (type(design.ammo) == 'table' and #design.ammo <= 8), 'design.ammo is a list of up to 8 ammunition names')
-      for _, n in ipairs(design.ammo or {}) do assert(type(n) == 'string' and prototypes.item[n] and prototypes.item[n].type == 'ammo', 'design.ammo: ' .. tostring(n) .. ' is not an ammunition') end
+      assert(design.mass == nil or (type(design.mass) == 'number' and design.mass > 0 and design.mass < math.huge), 'design.mass is a finite number above 0')
+      assert(design.ammo == nil or (type(design.ammo) == 'table' and #design.ammo >= 1 and #design.ammo <= 8), 'design.ammo is a list of 1..8 ammunition names')
+      local selected, entries = {}, 0
+      for k, n in pairs(design.ammo or {}) do
+        assert(type(k) == 'number' and k >= 1 and k <= #design.ammo and k % 1 == 0 and type(n) == 'string', 'design.ammo is a list of 1..8 ammunition names')
+        selected[n] = true
+        entries = entries + 1
+      end
+      assert(design.ammo == nil or entries == #design.ammo, 'design.ammo is a list without gaps')
+      assert(design.stock == nil or design.ammo ~= nil, 'design.stock requires design.ammo')
+      assert(design.stock == nil or type(design.stock) == 'table', 'design.stock is {selected-ammunition: item count}')
+      for n, count in pairs(design.stock or {}) do
+        assert(selected[n], 'design.stock: ' .. tostring(n) .. ' is not selected in design.ammo')
+        assert(type(count) == 'number' and count >= 0 and count < math.huge and count % 1 == 0, 'design.stock: item counts are finite nonnegative integers')
+      end
     end
     local progress = check_progress(a.progress)
     local ta = a.turnaround
@@ -773,8 +787,7 @@ return function(api)
       from = to
     end
     if design then
-      -- the design: its box and speed in place of the platform's; nothing else of the platform read but its route, its
-      -- turrets' ammunition and our bonuses (a light read)
+      -- The design replaces the box and speed. Explicit ammo also reads selected stock unless supplied by the design.
       v, v_by = design.speed * 60, 'the design\'s'
     end
     local total_min = v and v > 0 and total_km / v or nil
@@ -783,9 +796,11 @@ return function(api)
       routeammo = routeammo or require('routeammo'){segments=api.segments, ammorate=api.ammorate, damages=api.ammo_damages}
       local w, h, from = design.width, design.height, 'the design\'s width'
       if design.tiles then w, h, from = tiles_box(design.tiles) end
-      local m = routeammo.model(pl, legs, {width=w, width_from=from, height=h, speed=v, speed_from='the design\'s', mass=design.mass, progress=progress, ammo=design.ammo})
+      local m = routeammo.model(pl, legs, {width=w, width_from=from, height=h, speed=v, speed_from='the design\'s', mass=design.mass,
+        progress=progress, ammo=design.ammo, stock=design.stock, stock_places=api.stock_places})
       return {platform=pl.name, design={width=w, height=h, speed_km_s=design.speed, mass=design.mass, from=from}, route=route_by, route_note=route_note, legs=m.legs,
         total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil, basis=m.basis, estimated=m.estimated, ammo=m.ammo, lines=m.lines,
+        ammo_source=m.ammo_source, ammo_details=m.ammo_details, current_targets=m.current_targets, stock_read=m.stock_read,
         note='read only: nothing built, placed or imported; the route is the platform\'s (route or its schedule), the shots its turrets\' ammunition and settings and our bonuses'}
     end
     -- Rates and stock.
@@ -1338,7 +1353,7 @@ return function(api)
     return M.read(p, a)
   end
   M.schema = {platform_endurance = {turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, speed_floor?, margin?, reserve?, items?}: (d29 batch339) items: the item or fluid names that may bind (e.g. the ammunition and repair packs), the rest listed, not binding; thruster fuel and oxidizer counted as fuel_outlook counts them (everything aboard, its clean sample of the last 180 or 60 s in the leg; a deficit within a batch a maker: none); the 10-minute rate only when it lies wholly after the leg\'s first 60 s, else the last 5 or 1 minute that does (window); each row\'s stock_scope, usable and usable_basis. a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. (d29 batch351) return_allowance {legs (1..8 "from->to" among the legs back after the connection\'s start, as legs names them), items {item: count (0 or more)}, label, evidence_ticks?}: the caller\'s own count of each item over those legs, in place of net x time there; taken as given (not measured or checked), refused when a leg is not one of them or names more than one; each such item: allowance, allowance_replaces (what the net rate gave there), costs {turn, legs_at_net, allowance} and unadjusted {out_km_max, spare_km, left_at_return}; return_budget.allowance {by, label, evidence_ticks, legs, km, items} and binds_unadjusted. Optional windows=[60,180,300,600,"leg"] (any distinct subset), require="all" (default) or a count, missing="binding" (default) or "pending": one same item must bind in enough full same-leg windows. Windows never cross a connection/direction/leg boundary or use a shorter fallback. Missing data binds or remains pending as requested; pending says its eligibility tick, or unknown when no baseline exists. window_budgets keeps each item and measured NET; window_check compares against the planned turnaround km. Omitting windows keeps the default unchanged. Each budget item also gives rate_basis, windows (whole_leg, last_1_min, last_3_min, last_5_min; made/used/NET=made-used and measured endpoints), cap_conditions as read, and usable_after_reserve_margin: budget usable (stock - reserve) / (1 + margin), with extrema observed at reads only; item window follows authoritative rate_basis.window, recent_window labels the comparison candidate; unavailable endpoints/baselines are explicit. The conservative formula is unchanged. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
-    design='optional {width, height | tiles, mass?, speed, ammo?}: a hull not built yet, read only (nothing built, placed or imported), on the platform\'s route with its turrets\' ammunition and settings (or ammo: up to 8 names) and our bonuses: width and height in tiles, or tiles (up to 256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; speed km/s as the GUI shows it; mass is said and not used (the speed is given; asteroids come per km). Returns design, legs [{from, to, part {f0, f1}, km, minutes, asteroids {kind: count}, total, per_600s, total_per_600s, shots {ammo: shots}}], basis (the spawn line, the count rule and its fit, distance not time, width, speed, progress, shots), estimated (what is not modelled exactly), ammo, lines; a light read: no rates, stock or production read',
+    design='optional {width, height | tiles, mass?, speed, ammo?, stock?}: a hull not built yet, read only. Width 1..2000 whole tiles, optional positive whole height, or tiles (1..256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; tiles with width or height refused. Speed >0..10000 km/s sets minutes; height is reported but does not enter the spawn count; mass is reported but does not enter the calculation at a given speed. Unknown fields refused. Without ammo: current loaded ammunition, no stock or production read. Ammo: 1..8 names, exclusively those types, with compatible turrets aboard and their current target settings, ammo quality and researched bonuses; unknown or unsupported names refused with accepted names. Stock: optional {selected-ammunition: nonnegative integer item count}, requires ammo; unspecified types use stock aboard. Returns ammo and ammo_source=design.ammo, ammo_details [{ammo, turret, quality, damage_per_shot, damage, targets, stock, stock_source, shots_per_item, shots, items_required, stock_after}], current_targets (all built turrets separately), stock_read (scope, belt/hand as_of, capped), design, legs [{from, to, part, km, minutes, asteroids, total, per_600s, total_per_600s, shots}], basis, estimated, lines. Items required are ceil(shots / magazine_size); stock_after subtracts them. Production, feed reachability, partial magazines and ammunition shared between alternatives are not modelled; target settings are never changed',
     fresh='optional; every call reads now',
     progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',
     pessimistic='with forecast: {speed: 0.1..1 (a share of the speed read: slower, longer legs), dwell_s: 0..36000 (extra time at each stop at the stopped rate)}',

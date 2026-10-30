@@ -18441,3 +18441,23 @@ freshness alarm remains `tools/freshness.py`. The analyst, analyst board and cas
 by its distinct name, including after the analyst's game module puts `tools/` first on Python's import path.
 `tools/stream/test_analyst_startup.py` launches the analyst entry script with replay data, a temporary local /ask
 listener and digest-only mode, then checks both module import orders. It makes no live game or model call.
+
+## d30 batch384 (Sol #2820): design ammunition
+
+`platform_endurance` with `design.ammo` uses exactly the selected 1..8 names, deduplicated and sorted. The model
+uses compatible turrets aboard with their current target settings, ammo quality (normal when unloaded), researched
+damage and magazine sizes. Unselected turret categories do not generate asteroid fragments in this model.
+Unknown ammunition, types without compatible turrets aboard, and types whose damage cannot be read are refused;
+the error lists accepted names. Without `design.ammo`, the previous light model and ordinary forecast are unchanged.
+
+The reply names the effective set in `ammo`, its source in `ammo_source`, and gives `ammo_details` with damage per
+shot, compatible target settings, stock and its source, shots per item, total shots, items required and stock after
+subtracting that requirement. Optional `design.stock: {ammo: count}` supplies nonnegative integer item counts for
+selected ammunition. Omitted counts use stock aboard; `stock_read` states scope, cached belt/hand tick and any cap.
+Production, feed reachability and partial magazines are not modelled. `current_targets` separately records all
+built turrets' current settings; the read changes no turret, inventory, route or platform.
+
+Design field audit: width sets spawn frontage; speed sets minutes and the 600-second window; tiles supplies the
+bounding box. Height and mass are echoed with their non-use stated: height does not enter the spawn line, and mass
+does not enter this model at a supplied speed. Width/height with tiles is refused. Unknown fields are refused.
+Tests: `tests/d30_batch384.lua` and the existing design/forecast suites, including `tests/d24_batch183.lua`.

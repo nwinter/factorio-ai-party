@@ -11,6 +11,7 @@ You share the factory, research and power. `./fh` controls your character and in
 Platform `configure` recipe changes return items to hub slots; `deliver` requests ingredients. The stream shows featured ship metrics.
 `configure` splitter filters preserve quality/comparator; `inspect.splitter.outputs` shows adjacent outlet lanes (help circuits-settings).
 `flight_watch {from:"leg"}` begins at the next leg change; `departure` means leaving a stop (help space-age).
+`platform_endurance design.ammo` selects ammunition exclusively; `design.stock` supplies item counts (help space-age).
 `wait_until` arrival/progress waits in platform lanes take up to 80 game hours (`./fh help waits-queues`).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
