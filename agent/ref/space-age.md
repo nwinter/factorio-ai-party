@@ -4,6 +4,9 @@
   sends the platform on sooner). `departure`: the agents' queue steps and standing orders that send a platform on
   beside its schedule. `freshness` gives spoilable science's effective research units now and, when the leg's ETA is
   known, at arrival, as `science` and `preflight` count them. `inspect` of a hub shows the same speed and ETA fields.
+  Current-leg arrival also gives `eta_s`, `eta_basis`, `speed_trend` and `eta_uncertain`: direction-aware distance
+  divided by speed now, assuming that speed is maintained. Acceleration/deceleration or missing fresh speed
+  observations mark it uncertain; a turnback uses the distance back to its current destination.
   With `platform`: one platform with its full hub inventory, `thrust_inputs` (a line per thruster input under half
   full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
   naming them), `after_pumps` and `thruster_burn` (what the thrusters burn at full thrust and how long the fluid behind

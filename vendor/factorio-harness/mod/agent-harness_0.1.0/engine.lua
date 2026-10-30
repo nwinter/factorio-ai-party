@@ -155,16 +155,27 @@ return function(api)
     if type(v) ~= 'number' then return nil end
     local rec = store()[pl.index]
     local w = rec and rec.samples and #rec.samples >= 2 and window(rec, 60) or nil
+    -- (d29 batch358 ER) A fresh speed comparison for current-speed arrival estimates. Reuse existing samples;
+    -- no new sampler. If the latest sample is this tick, compare the previous one with the current speed.
+    local samples = rec and rec.samples
+    local sample = samples and samples[#samples]
+    if sample and sample[1] == game.tick then sample = samples[#samples-1] end
+    local motion
+    if sample and game.tick > sample[1] and game.tick-sample[1] <= 120 then
+      local delta = v*60-sample[2]
+      motion = {state=delta>0.000001 and 'accelerating' or delta< -0.000001 and 'decelerating' or 'steady',
+        from_kms=sample[2],to_kms=v*60,seconds=(game.tick-sample[1])/60}
+    end
     local inleg = w and w.seconds >= 60 and (since == nil or since >= 3600)
     local rising = w and (w.speed_last - w.speed_first) > math.max(1, 0.05 * math.abs(w.speed_last))
     if not w and since and since < 3600 then rising = true end
     if inleg and not rising and w.speed_mean > 0 then
-      return w.speed_mean / 60, string.format('this leg: its last 60 s mean, %g km/s (lowest %g, highest %g)', w.speed_mean, w.speed_low, w.speed_high), true
+      return w.speed_mean / 60, string.format('this leg: its last 60 s mean, %g km/s (lowest %g, highest %g)', w.speed_mean, w.speed_low, w.speed_high), true, motion
     end
     if past and past > 0 and v < past * 0.9 and (rising or (since and since < 3600)) then
-      return past, string.format('%s (it speeds up now: %g km/s)', past_by or string.format('a past leg\'s %g km/s', r1(past * 60)), r1(v * 60)), false
+      return past, string.format('%s (it speeds up now: %g km/s)', past_by or string.format('a past leg\'s %g km/s', r1(past * 60)), r1(v * 60)), false, motion
     end
-    return v, string.format('this leg: its speed now, %g km/s', r1(v * 60)), true
+    return v, string.format('this leg: its speed now, %g km/s', r1(v * 60)), true, motion
   end
   -- The windows for a platform: {lines, windows}, nil before its first two samples.
   function M.read(pl)
