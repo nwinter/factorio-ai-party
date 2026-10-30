@@ -94,11 +94,13 @@ def pan_y(d):
 
 
 def onair():
-    d, sent = world(map_every=0)
+    d, sent = world(map_every=0, platform_every=0, depart_hold=40)
     a, t = team(), 1000
+    for k in range(3):
+        d.step(snap(a, [plat("Swiftlet", at="nauvis", view=SWIFTLET)]), t + k)
     rows = [plat("Swiftlet", at="nauvis->vulcanus 20%", view=SWIFTLET, toward="vulcanus")]
     d.cfg["platform_hold"] = 40
-    for k in range(0, 60):
+    for k in range(3, 60):
         d.step(snap(a, rows), t + k)
         if (d.state.get(d.onair) or {}).get("platform"):
             break

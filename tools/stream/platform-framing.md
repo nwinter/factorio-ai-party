@@ -18,7 +18,8 @@ At the measured 2880x1620 capture, the 1208x1032 landscape hole removes 492 px p
 removes 493. `serve.py` derives `platform_frac` from those layouts and `cams.CLIENT`, independently of other
 shots' `view_frac`. Remote platform attention, work overview entries, platform holds/visits, featured context and
 space segments receive that fraction. Explicit featured context omits the flight detail framing and turret reach.
-Whole-ship zoom is rounded down to hundredths, preserving the default five-tile margin on each side.
+Visit and work openings, operator holds and aboard follows also explicitly select hull overview framing.
+Space segments retain a tall hull's pan rather than discarding it. Whole-ship zoom is rounded down to hundredths, preserving the default five-tile margin on each side.
 
 The batch376 main zoom floor remains 0.3, and the panel floor remains 0.06. A main frame at 0.3 spans 112.5 tiles
 vertically: neither the brief's 160-tile refit nor the copied 442-tile Asterion hull can fit in one still. Oversized

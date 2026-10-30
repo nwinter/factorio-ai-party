@@ -2018,6 +2018,11 @@ class OneCam(Director):
                 elif segment.get("position"):
                     target.update(position=segment["position"], surface=segment.get("surface"),
                                   exact_zoom=bool(segment.get("exact_zoom")))
+                    if segment.get("platform_frame"):
+                        target["platform_frame"] = segment["platform_frame"]
+                    if segment.get("pan"):
+                        target["pan"] = segment["pan"]
+                        target["position"] = dict(target["position"], y=target["pan"]["y0"])
                 if follow or "position" in target:
                     self.urgent(target, f"segment: {segment['label']}", scores, now)
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
@@ -4074,7 +4079,7 @@ class OneCam(Director):
             label = self.platform_label(self.plat)
             if p.get("label"):
                 label += f" · {p['label']}"
-            t = self.platform_target(self.plat, "operator", p["until"], label=label)
+            t = self.platform_target(self.plat, "operator", p["until"], label=label, overview=True)
             if t:
                 t["platform"].update(by=p["by"], requested_label=p.get("label"))
             return t
@@ -4088,7 +4093,7 @@ class OneCam(Director):
             label = f"{a.get('display_name') or self.fol} · aboard {self.platform_label(name)}"
             if f.get("label"):
                 label += f" · {f['label']}"
-            return self.platform_target(name, "follow", f["until"], agent=self.fol, label=label)
+            return self.platform_target(name, "follow", f["until"], agent=self.fol, label=label, overview=True)
         return None
 
     PAN_END_S = 3.0    # a tall ship's pan rests this long at the bow and at the stern
@@ -4598,7 +4603,7 @@ class OneCam(Director):
         """A visit's shot: the whole ship for `hold` (a long ship: until its pan has gone bow to stern, BI4); with one
         client (batch318) its framings in turn (visit_beats) for as long as they have something to show."""
         cfg = self.cfg
-        t = self.platform_target(name, "visit", now + cfg["ready_s"] + hold)
+        t = self.platform_target(name, "visit", now + cfg["ready_s"] + hold, overview=True)
         if not t:
             return None
         if self.pan_hold(t) > hold:  # (BI4) a long ship: bow to stern within the shot
@@ -4768,7 +4773,7 @@ class OneCam(Director):
                      "zoom": close["zoom"], "solo_zoom": close["zoom"], "exact_zoom": True, "until": until,
                      "platform": {"name": name, "why": "work", "label": label, "agent": agent}, "work": close["caption"]}
             else:
-                t = self.platform_target(name, "work", until, agent=agent, label=label)
+                t = self.platform_target(name, "work", until, agent=agent, label=label, overview=True)
                 if t and close:  # (batch312) a first visit: the whole ship work_overview_s, then the work (closeup_step)
                     t["closeup"] = close
                     t["work"] = close["overview"]

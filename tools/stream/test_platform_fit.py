@@ -104,5 +104,39 @@ def freshness():
     print('one hull read per poll, all ships refreshed fairly, cold start and shrinking/empty refits')
 
 
+def overview_paths():
+    from onecam import OneCam
+    from test_onecam import world
+    from test_platformcam import plat, snap, team
+    d, _ = world(platform_frac=FRAC, auto_feature=False, map_every=0)
+    ships=[plat(r['name'],at='nauvis->vulcanus 20%',view=dict(r['before_view'],hull=r['hull'])) for r in FIXTURE['ships']]
+    snapshot=snap(team(),ships)
+    d.watch_platforms(snapshot,1000)
+    for row in FIXTURE['ships']:
+        name=row['name'];b=row['hull'];cx=(b['left']+b['right'])/2
+        visit=d.visit_target(name,40,1000)
+        assert visit['position']['x']==cx and not (visit.get('pan') or {}).get('detail')
+        d.platform_follow=dict(name=name,until=1200,by='operator');d.plat=name
+        hold=d.operator_platform_target({},1000)
+        assert hold['position']['x']==cx and hold['zoom']==visit['zoom']
+        d.featured.data=dict(id='test',status='active')
+        context=d.featured.shot(d,name,1000,context=True)
+        assert context['position']['x']==cx and context['zoom']==visit['zoom']
+    sent=[]
+    d=OneCam([dict(slot='main',player=1)],lambda body:sent.append(body) or {'ok':True},None,
+             auto_feature=False,map_every=0,platform_every=0,platform_frac=FRAC)
+    r=FIXTURE['ships'][0]
+    segment=dict(model.platform_shot(dict(r['before_view'],hull=r['hull']),frac=FRAC,overview=True),
+                 id='space-fit',label='Space progress',until=1100)
+    for now in range(1000,1045):
+        d.step(snapshot,now,segment)
+    assert d.state['main']['pan']==segment['pan']
+    assert d.state['main']['platform_frame']['source']=='foundation'
+    glides=[b for b in sent if b.get('speed')]
+    assert glides and all(b['position']['x']==0 and 0<b['speed']<=60 for b in glides)
+    assert any(b['position']['y']==segment['pan']['y1'] for b in sent)
+    print('in-flight visit/hold/context are hull overviews; space segment retains the full sweep')
+
+
 if __name__=='__main__':
-    real_ships();fit_properties();freshness()
+    real_ships();fit_properties();freshness();overview_paths()
