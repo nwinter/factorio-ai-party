@@ -61,12 +61,16 @@ def destination_changes():
     d.pan_step(1015)
     original = copy.deepcopy(d.state['main'])
     assert remotework.same(original, remotework.shot(d, a, 1016)[1])
-    # An explicit new point, platform, surface, or framing zoom is still a new destination.
-    for field, value in [('position', dict(x=1, y=2)), ('platform', 'Other')]:
-        changed = copy.deepcopy(a)
-        changed['attention'][field] = value
-        d.plat_rows['Other'] = copy.deepcopy(d.plat_rows['Asterion'])
-        assert not remotework.same(original, remotework.shot(d, changed, 1016)[1]), field
+    # A request elsewhere on the same whole-ship view is metadata, not a new camera destination.
+    a['attention']['position'] = dict(x=1, y=2)
+    before = len(sent)
+    d.refresh_remote(d.agents_now, 1016)
+    assert len(sent) == before and d.state['main']['position'] == original['position']
+    original = copy.deepcopy(d.state['main'])
+    changed = copy.deepcopy(a)
+    changed['attention']['platform'] = 'Other'
+    d.plat_rows['Other'] = copy.deepcopy(d.plat_rows['Asterion'])
+    assert not remotework.same(original, remotework.shot(d, changed, 1016)[1])
     for field, value in [('surface', 'platform-99'), ('zoom', .5), ('remote_work', False)]:
         changed = copy.deepcopy(remotework.shot(d, a, 1016)[1])
         changed[field] = value
