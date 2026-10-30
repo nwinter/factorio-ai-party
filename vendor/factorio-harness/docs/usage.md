@@ -18389,3 +18389,14 @@ comparator or extra filter keys refuse before either priority changes. Clear and
 Configure and inspect.splitter expose filter_quality and filter_comparator, including normal/= and any/none, and
 state both in the line. Inspect adds outputs: at most two adjacent belt lookups, with two surface lanes per straight
 belt or underground mouth (items by quality, can_insert_at_back). It does no downstream traversal or background work.
+
+## d30 batch377: stream platform metrics
+
+The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns
+directed leg geometry, turret tooltip counters and shooting targets, existing platform hit counters, ammunition
+in hub/turrets and surface production totals, repair packs, thruster/storage-tank fluids, and recorded entity
+losses on a fully observed leg. Optional `area` is two numeric corners, at most 512 tiles per side; asteroid counts
+are for that sampled camera rectangle. Turret/tank and count limits omit incomplete figures. This starts no watch
+and adds no game-tick work. The stream converts matching samples to wall-minute rates and wall-time ETA. Stock
+locations and the current-speed/rate assumptions remain explicit; the read performs no endurance calculation.
+The field definitions and freshness rules are in `tools/stream/platformmetrics.md` in the enclosing repository.
