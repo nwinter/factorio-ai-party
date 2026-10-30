@@ -112,7 +112,10 @@
   with `timed_out`; a queue step with `on_timeout: "hold"` stays first in pending instead and the queue pauses with
   it (`paused_why` names the condition still unmet and what it saw; `queue_resume` waits for it again with a fresh
   timeout). Status and `last` show `saw`, `wait_estimates` (each condition's ETA with its rate basis, or no
-  estimate) and `idle_s` (idle seconds in this wait). A direct call takes the wake options below and `pause_queue` (as
+  estimate) and `idle_s` (idle seconds in this wait). Arrival waits use distance left toward the current destination
+  divided by speed now, including turnbacks. `leg_left_km`, `speed_kms`, `heading_to`, `speed_trend` and
+  `eta_uncertain` name the inputs; the basis states the unchanged-speed assumption and any measured acceleration
+  or deceleration. No fresh speed comparison is explicitly uncertain. A direct call takes the wake options below and `pause_queue` (as
   `wait_ticks`). Example: `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait`
 - `./fh sleep SECONDS --until COND` and `./fh wait --until COND`: COND in words, several joined by `|` (or a JSON
   list) waking on whichever holds first and naming it: `item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5` (those

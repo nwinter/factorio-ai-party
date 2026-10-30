@@ -1,3 +1,4 @@
+local arrival_eta=require('arrivaleta')
 -- freight: what a space platform carried, stop by stop and leg by leg (Luna,
 -- shift12 12:47: of 995 agricultural science packs Sunward took from Gleba,
 -- 200 spoiled on the way and 200 more at Nauvis, 595 went down; she put that
@@ -116,18 +117,19 @@ return function(api)
     local v = at_cruise and cruise or speed
     -- (d20 batch54 N5, Sol #1390) a leg under way at its own measured speed once it has one, the cruise only while it
     -- speeds up (engine.lua leg_speed); speed_from says which
-    local speed_from
+    local speed_from, motion
     if api.leg_speed and type(speed) == 'number' then
       local segs = M.segments and M.segments(pl) or {}
       local sg = segs[#segs]
       local since = sg and sg.kind == 'leg' and not sg['end'] and sg.start and game.tick - sg.start or nil
-      local s, by, own = api.leg_speed(pl, since, cruise, cruise and string.format('its cruise on the legs before, %.0f km/s', cruise * 60))
+      local s, by, own, observed = api.leg_speed(pl, since, cruise, cruise and string.format('its cruise on the legs before, %.0f km/s', cruise * 60))
+      motion = observed
       if s then v, at_cruise, speed_from = s, not own, by end
     end
     -- turned_back: it left the end it flies to now (a turn back mid-connection, its from never reached)
     local heading = back and from or to
     local turned = pget(pget(pl, 'last_visited_space_location'), 'name') == heading or nil
-    return {from=back and to or from, to=heading, flown=flown, length=length, left_km=left, turned_back=turned,
+    return {from=back and to or from, to=heading, flown=flown, length=length, left_km=left, turned_back=turned, speed_now_kms=type(speed)=='number' and speed*60 or nil, motion=motion,
       eta_ticks=type(v) == 'number' and v > 0 and left / v or nil, back=back, speed_from=speed_from,
       eta_from=at_cruise and string.format('about: it speeds up (%.0f km/s now), the rest at its cruise of %.0f km/s', speed * 60, cruise * 60) or nil}
   end
@@ -1375,11 +1377,11 @@ return function(api)
     if w.leg then
       -- In flight: the rest of this leg at its speed now, then on from its end.
       local leg = w.leg
-      if not leg.eta_ticks then return nil, 'its speed is zero or unread now' end
-      secs = leg.eta_ticks / 60
-      speed = speed or (leg.left_km > 0 and leg.left_km / leg.eta_ticks) or nil
-      parts[#parts+1] = string.format('flying %s->%s: %d km left at %s: %ds', leg.from, leg.to, math.floor(leg.left_km + 0.5),
-        leg.speed_from or (leg.eta_from and 'its cruise (it speeds up now)' or 'its speed now'), math.floor(secs + 0.5))
+      local now, why = arrival_eta(leg)
+      if not now then return nil, why end
+      secs = now.seconds
+      speed = speed or leg.speed_now_kms/60
+      parts[#parts+1] = string.format('flying %s->%s: %s: %ds', leg.from, leg.to, now.basis, math.floor(secs + 0.5))
       at = leg.to
       if leg.to == location then
         return {eta_s=math.ceil(secs), after_s=math.ceil(secs), line=string.format('ETA %ds: %s', math.ceil(secs), table.concat(parts, '; '))}

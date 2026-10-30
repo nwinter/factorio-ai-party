@@ -1,3 +1,4 @@
+local arrival_eta=require('arrivaleta')
 -- Wait estimates from the predicate's own observation and existing rate/queue reads. No entity searches here.
 return function(api)
   local M={}
@@ -113,8 +114,14 @@ return function(api)
         elseif est then unknown=est.line
         else unknown='current flight leg ends at '..leg.to..', not '..c.location..(why and '; '..why or '') end
       elseif o.paused then unknown='platform is paused; arrival rate is unavailable'
-      elseif not leg.eta_ticks or leg.eta_ticks<=0 then unknown='current platform speed is zero or unavailable'
-      else seconds=leg.eta_ticks/60; basis='distance left on current connection / current speed; unchanged speed, excludes later legs' end
+      else
+        local now, why=arrival_eta(leg)
+        if now then
+          seconds,basis=now.seconds,now.basis
+          row.leg_left_km,row.speed_kms,row.heading_to=now.leg_left_km,now.speed_kms,now.heading_to
+          row.eta_uncertain,row.speed_trend=now.uncertain,now.speed_trend
+        else unknown=why end
+      end
     elseif c['until']=='tick_at_least' and type(c.tick)=='number' then seconds,basis=(c.tick-game.tick)/60,'the game tick it names'
     else unknown='no measured rate for this condition' end
     if type(seconds)=='number' and seconds==seconds and seconds>=0 and seconds<math.huge then
