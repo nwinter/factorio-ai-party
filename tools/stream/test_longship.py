@@ -66,7 +66,7 @@ def holds(d):
 
 
 def onair():
-    d, sent = world(map_every=0)
+    d, sent = world(auto_feature=False, map_every=0)
     a, t = team(), 1000
     rows = [plat("Asterion", at="aquilo->solar-system-edge 7%", view=ASTERION, toward="solar-system-edge")]
     d.cfg["platform_hold"] = 20
@@ -93,7 +93,7 @@ def onair():
 
 def main():
     framing()
-    d, _ = world(map_every=0)
+    d, _ = world(auto_feature=False, map_every=0)
     holds(d)
     onair()
     print("long ship: ok (past LONG_VIEWS the whole frame at 0.3 pans bow to stern; a visit held for its length; "

@@ -179,12 +179,11 @@ def new_planet():
 
 
 def surfaces_read():
-    """The balance reads the planet an agent's body stands on: the harness reports the body's surface, not a remote
-    view; aboard a platform or riding a cargo pod there is no body on a planet (a platform has its own shots)."""
-    b = OneCam.balance_surface
+    """The balance follows the work surface for remote shots, and the body for local shots."""
+    b = OneCam(SLOTS, lambda body: {"ok": True}, None).balance_surface
     assert b({"surface": "gleba"}) == "gleba" and b({}) == "nauvis"
-    # remote view: an agent on Nauvis working on Gleba (attention, platform= calls) still counts for Nauvis
-    assert b({"surface": "nauvis", "attention": {"surface": "gleba", "kind": "place_ghosts"}}) == "nauvis"
+    assert b({"surface": "nauvis", "attention": {"surface": "gleba", "kind": "place_ghosts", "position": {"x": 10, "y": 20}}}) == "gleba"
+    assert b({"surface": "nauvis", "attention": {"platform": "Sunward", "age_s": 0}}) is None
     assert b({"surface": "platform-1", "platform": "Sunward", "on_platform": True, "travel": "aboard"}) is None
     assert b({"surface": "platform-3", "on_platform": True}) is None  # a player standing on a platform
     assert b({"surface": "gleba", "travel": "descending"}) is None and b({"surface": "nauvis", "travel": "ascending"}) is None

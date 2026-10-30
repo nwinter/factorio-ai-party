@@ -21,6 +21,27 @@ import uuid
 
 NAME = "director-featured.json"
 MAIN_S, CONTEXT_S, AWAY_S = 180.0, 60.0, 90.0
+AUTO_KM = 100_000
+DEEP = {"solar-system-edge", "shattered-planet"}
+
+
+def long_run(row, threshold=AUTO_KM):
+    route = row.get("route_ids") or []
+    if len(route) != 2 or not row.get("route"):
+        return False
+    return bool(DEEP.intersection(route) or (row.get("leg_km") or 0) >= threshold)
+
+
+def distance_out(row):
+    """Rank known deep connections by distance out, in either direction; generic long legs by progress."""
+    route = row.get("route_ids") or []
+    pct = max(0, min(100, (row.get("route") or {}).get("pct", 0))) / 100
+    if row.get("leg_km") and row.get("leg_progress_km") is not None:
+        pct = max(0, min(1, row["leg_progress_km"] / row["leg_km"]))
+    depths = {"aquilo": 0, "solar-system-edge": 100_000, "shattered-planet": 4_100_000}
+    if len(route) == 2 and all(n in depths for n in route):
+        return depths[route[0]] * (1 - pct) + depths[route[1]] * pct
+    return row.get("leg_progress_km") or (row.get("leg_km") or 0) * pct
 
 
 def validate(data):
@@ -96,6 +117,8 @@ class Featured:
         except (OSError, ValueError):
             data = None
         self.data = validate(data) or (data if isinstance(data, dict) and data.get("status") in ("ended", "cleared") else None)
+        if stamp is not None and self.data is None:
+            self.data = {"source": "operator", "status": "cleared", "reason": "invalid setting"}
         self.stamp, self.loaded = stamp, True
         if path != self.path and self.data is not None:
             self.save()  # carry to the new run once; later changes/clears are this run's own
@@ -113,7 +136,7 @@ class Featured:
     def set(self, name, *, arrival=None, attempt_end=False, at=None, now=None):
         now = time.time() if now is None else now
         end = {k: v for k, v in dict(arrival=arrival, attempt_end=attempt_end, at=at).items() if v is not None and v is not False}
-        data = dict(id=uuid.uuid4().hex, name=name.strip(), status="active", until=end, created=now, observed={})
+        data = dict(id=uuid.uuid4().hex, name=name.strip(), source="operator", status="active", until=end, created=now, observed={})
         if not validate(data) or (at is not None and at <= now):
             raise ValueError("give a platform and --arrival LOCATION, --attempt-end, or a future --at time")
         self.data = data
@@ -121,8 +144,43 @@ class Featured:
 
     def finish(self, reason, now, cleared=False):
         self.data = dict(self.data or {}, status="cleared" if cleared else "ended", ended=now, reason=reason)
+        if cleared:
+            self.data["source"] = "operator"  # an explicit clear suppresses automatic selection too
+        elif self.data.get("source") == "auto" and self.data.get("name"):
+            self.data.setdefault("auto_blocked", {})[self.data["name"]] = True
         self.save()
         print(f"[director] featured platform {self.data.get('name', '-')}: {reason}", flush=True)
+
+    def automatic(self, snapshot, now, threshold=AUTO_KM):
+        """One auto feature, furthest out. A turned-back attempt cannot immediately select its return leg."""
+        data = self.data or {}
+        if data and data.get("source") != "auto":
+            if data.get("status") != "ended":
+                return  # includes legacy active operator settings and explicit clear records
+            # The operator's deadline/arrival/attempt has ended. Do not reselect that same ongoing attempt,
+            # but allow other ships and future departures to qualify automatically.
+            data = dict(data, source="auto", auto_blocked={**(data.get("auto_blocked") or {}), data.get("name"): True})
+            self.data = data
+            self.save()
+        rows = (snapshot.get("space") or {}).get("platforms") or []
+        blocked = dict(data.get("auto_blocked") or {})
+        for row in rows:
+            if not row.get("route") and row.get("where") not in (None, "", "in transit"):
+                blocked.pop(row.get("name"), None)  # arrival permits a later, new departure
+        candidates = [p for p in rows if p.get("name") not in blocked and long_run(p, threshold)
+                      and not (p.get("route") or {}).get("turned_back")]
+        if self.active and not any(p.get("name") == data["name"] for p in rows):
+            return  # a missing read is not an ended leg
+        row = max(candidates, key=lambda p: (distance_out(p), p["name"]), default=None)
+        if row and (not self.active or row["name"] != data.get("name")):
+            self.data = dict(id=uuid.uuid4().hex, name=row["name"], source="auto", status="active", created=now,
+                             until={"attempt_end": True, "arrival": row["route_ids"][1]},
+                             observed={"departed": True, "route": row["route_ids"]}, auto_blocked=blocked)
+            self.save()
+            print(f"[director] featured platform {row['name']}: auto long run", flush=True)
+        elif blocked != data.get("auto_blocked", {}):
+            self.data = dict(data, auto_blocked=blocked)
+            self.save()
 
     def sync(self, snapshot, now):
         self.load()
@@ -170,6 +228,8 @@ class Featured:
 
     def prepare(self, d, snapshot, now):
         self.sync(snapshot, now)
+        if d.cfg.get("auto_feature", True):
+            self.automatic(snapshot, now, d.cfg.get("auto_feature_km", AUTO_KM))
         identity = self.active and self.active["id"]
         name = self.resolve(d)
         if identity != self.current_id or not name:
@@ -222,7 +282,8 @@ class Featured:
             shot.pop("pan", None)
             shot.update(position=detail["position"], zoom=detail["zoom"], exact_zoom=True)
         shot["featured"] = self.active["id"]
-        shot["platform"].update(framing=framing, label=f"Featured: {d.platform_label(name)} · {framing}")
+        source = self.active.get("source", "operator")
+        shot["platform"].update(framing=framing, source=source, label=f"Featured: {d.platform_label(name)} · {framing}")
         return shot
 
     @staticmethod
@@ -310,6 +371,7 @@ def main(argv=None):
     setp.add_argument("--attempt-end", action="store_true")
     setp.add_argument("--at", help="ISO timestamp with timezone, e.g. 2026-10-30T12:00:00Z")
     sub.add_parser("clear")
+    sub.add_parser("auto", help="release the operator override and enable automatic long-run selection")
     sub.add_parser("status")
     a = p.parse_args(argv)
     f = Featured(a.run_dir)
@@ -324,6 +386,9 @@ def main(argv=None):
             p.error(str(e))
     elif a.command == "clear":
         f.finish("cleared by operator", time.time(), cleared=True)
+    elif a.command == "auto":
+        f.data = {"source": "auto", "status": "ended", "reason": "automatic coverage enabled"}
+        f.save()
     print(json.dumps(f.data, indent=2))
 
 

@@ -92,13 +92,22 @@ def human(name):
 def point(action, args):
     """One request -> {kind, action, verb, what, position, extent, platform, surface?} or None (no position, not an attention
     action)."""
-    if action not in ACTIONS or not isinstance(args, dict):
+    if not isinstance(args, dict):
         return None
     pos, extent = where(args)
     plat = args.get("platform") if isinstance(args.get("platform"), str) else None
-    if not pos and not plat:
+    lane = args.get("lane")
+    if not plat and isinstance(lane, str) and lane.startswith("platform:"):
+        plat = lane[len("platform:"):].strip() or None
+    # New platform tools and platform queue lanes also say where the agent is looking. Do not infer a
+    # destination from prose, or treat a local unrecognised command's coordinates as attention.
+    surface = args.get("surface") if isinstance(args.get("surface"), str) else None
+    remote = bool(plat or surface)
+    if action not in ACTIONS and not remote:
         return None
-    kind, verb = ACTIONS[action]
+    if not pos and not plat and not surface:
+        return None
+    kind, verb = ACTIONS.get(action, ("looking", "checking " + human(action)))
     what = ""
     if action == "transfer":
         verb = "taking" if args.get("direction") == "to_player" else "loading"
