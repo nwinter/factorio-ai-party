@@ -71,15 +71,24 @@ entities={}; eq(#D.gates(pl,{rocket=true},game.tick).rocket.conditions,0); eq(fi
 print('d29_batch363: short deficit/leg surplus, unchanged formula, endpoints, qualities, extrema and caps: ok')
 -- Every row survives firing, including unselected and nonbinding items. No cache alias or stale evidence.
 local payload={items=rows,binds={name='firearm-magazine',out_km_max=4086}}
-local C=require('conditions'){return_budget=function() return payload end}
+local budget_pl={valid=true,name='Resolute',space_connection={name='edge'}}
+local budget_player={force={platforms={budget_pl}}}
+local budget_leg={from='solar-system-edge',to='shattered-planet',back=false}
+local C=require('conditions'){return_budget=function() return payload end,leg=function() return budget_leg end}
 local c={['until']='budget_below',platform='Resolute',turnaround={km=25000},km=5000}
-local met,saw=C.check({},c); eq(met,true); has(saw,'whole_leg: whole leg [83500140..83512604] made 276 used 154 NET +122'); has(saw,'rate used: last 1 min')
+local met,saw=C.check(budget_player,c); eq(met,true); has(saw,'whole_leg: whole leg [83500140..83512604] made 276 used 154 NET +122'); has(saw,'rate used: last 1 min')
 eq(#c.evidence.return_budget.items,2); eq(c.evidence.return_budget.items[2].rate_basis.window,'last 1 min')
 payload.items[2].stock=999; eq(c.evidence.return_budget.items[2].stock,3000)
-game.tick=game.tick+600; payload.binds=nil; eq(C.check({},c),false); eq(c.evidence,nil)
+game.tick=game.tick+600; payload.binds=nil; eq(C.check(budget_player,c),false); eq(c.evidence,nil)
+payload.binds={name='firearm-magazine',out_km_max=4086}
+eq(C.check(budget_player,c),true)
+budget_pl.space_location={name='aquilo'}
+eq(C.check(budget_player,c),false); eq(c.evidence,nil,'stop clears fired evidence as well as leg cache')
+budget_pl.space_location=nil; budget_leg={from='aquilo',to='solar-system-edge',back=false}
+eq(C.check(budget_player,c),true); eq(c.evidence.cached_leg.from,'aquilo')
 -- A progress member first in all must not hide the budget's snapshot in scheduler history.
 payload.binds={name='firearm-magazine',out_km_max=4086}
-local state={active={}}; local player={index=1,valid=true,force={}}
+local state={active={}}; local player={index=1,valid=true,force=budget_player.force}
 local W=require('waiteta'){}
 local S=require('scheduler'){state=function() return state end,player=function() return player end,handlers={},
  busy=function() return false end,stop=function() end,stop_index=function() end,claim=function() end,direct_action=function() end,
