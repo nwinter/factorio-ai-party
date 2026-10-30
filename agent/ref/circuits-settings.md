@@ -101,8 +101,12 @@
   `by`, `quality`, `fluid` or `force` given without what they modify); settings that do not go together, or one the
   entity has not, refuse the call before anything changes.
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
-    where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
-    what it held comes to your inventory (the reply says `moved` and ends with `inv`). A remote refusal never walks the body. Aboard,
+    off a platform it needs an empty idle machine; a local machine holding items or mid-craft is walked into reach,
+    and what it held comes to your inventory (`moved`, `inv`). On a platform an actual recipe/quality change returns
+    held input/output items and interrupted-craft items to its hub (`to_hub`). The hub needs empty slots reserved for
+    those stacks and in-progress item ingredients; a refusal names free slots and what needs them. Each asteroid chunk
+    takes one hub slot. The same recipe and quality leave items in place. `deliver {platform, position, items}` requests
+    ingredients of the current recipe from the hub into the machine. A remote refusal never walks the body. Aboard,
     `configure {position, recipe}` uses the platform you are on. A fluid the machine holds that the new recipe takes
     none of: the change is refused naming it. In 2.0.77 a recipe change drops such a fluid (input or output box) and
     keeps one the new recipe takes; a machine's box has no pipe segment to flush. `fluid: "drain"` (or `"keep"`,

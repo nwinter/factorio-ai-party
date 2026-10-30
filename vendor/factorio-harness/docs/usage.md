@@ -2789,8 +2789,13 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   whitelist/blacklist mode for collectors, so `filter_mode` is refused there. With `platform` it works through remote
   view like the other configure paths.
 - `inspect {platform, position}` and `configure {platform, position, ...}` act on your own space platform by name
-  (platform coordinates, hub at 0,0; the whole platform is in sight; configure works through remote view, so a recipe
-  change needs an empty, idle machine). There `inspect` adds `construction_blocked` when the entity is marked or has a
+  (platform coordinates, hub at 0,0; the whole platform is in sight). A platform recipe/quality change returns held
+  input/output items and interrupted-craft items to the hub (`to_hub`). The current check reserves one empty hub slot
+  per occupied input/output stack and per in-progress item ingredient; partial hub stacks are not counted as empty
+  slots. The refusal names free slots under the hub's bar, the reservation and its items, leaving the recipe and
+  held items unchanged. Each asteroid chunk takes one hub slot. Reapplying the same recipe and quality leaves its
+  contents in place. `deliver {platform, position, items}` requests the current recipe's ingredients from the hub
+  into the machine; `transfer` and `pickup` require a character's hands. There `inspect` adds `construction_blocked` when the entity is marked or has a
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
@@ -3094,8 +3099,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     buffer chest's (or a landing pad's) requests there the same way and reads them back: `target: "requester-chest at
     (5.5,135.5) on vulcanus"`, `sections`. With `surface` it needs `position` (never your character's requests).
   - `configure {surface, position, recipe}` sets an assembler's recipe there as a remote recipe change does in reach
-    of nothing: an empty, idle machine takes it (`remote: true`); occupied input or output slots, or crafting
-    progress, produce a refusal naming the machine, surface and blocking state. Modules stay as in the game (Astra,
+    of nothing: off a platform an empty, idle machine takes it (`remote: true`); occupied input or output slots, or
+    crafting progress, produce a refusal naming the machine, surface and blocking state. A platform is the exception:
+    a real recipe/quality change returns held items to its hub when enough empty slots are free (as above), with
+    `to_hub` naming the returned items. `deliver` requests its current recipe's ingredients from that hub. Modules stay as in the game (Astra,
     shift17 10:50: an idle crusher holding efficiency modules was refused; checked on a private 2.0.77 server): a
     module stays unless the new recipe forbids one of its positive effects or its category (productivity modules out
     for wooden-chest, a quality module out for a barrel recipe; a speed module's negative quality and an efficiency
