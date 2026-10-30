@@ -12,6 +12,7 @@
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
   tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients), then cropped
   tools/.venv/bin/python tools/obs.py cams                # read only: each camera's hole, crop and the crop it takes
+  tools/.venv/bin/python tools/obs.py enable-overlay      # the "stream overlay" scene item read, on if it was off (batch349)
   tools/.venv/bin/python tools/obs.py toggle-overlay      # the "stream overlay" scene item off and on (d29 batch347: a
       blank overlay a refreshnocache did not bring back came back at once; tools/overlay_check.py calls it)
   tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
@@ -267,6 +268,17 @@ def toggle_overlay(c, scene="stream", name="stream overlay", sleep=None):
     return f"{name}: toggled off and on (item {item})"
 
 
+def enable_overlay(c, scene="stream", name="stream overlay"):
+    """(d29 batch349 cp2, viewer Aurora site:5516) The overlay's scene item read, and switched on when it is off (a toggle
+    leaves an item that was off as it was): "stream overlay: on in stream (item N)" or "...: was off in stream, enabled
+    (item N)"."""
+    item = c.get_scene_item_id(scene, name).scene_item_id
+    if c.get_scene_item_enabled(scene, item).scene_item_enabled:
+        return f"{name}: on in {scene} (item {item})"
+    c.set_scene_item_enabled(scene, item, True)
+    return f"{name}: was off in {scene}, enabled (item {item})"
+
+
 # ---- audio (docs/AUDIO-NOTES.md) ------------------------------------------------------------------------------------
 GAME_DB = 4.0      # cam1 spectating a base peaks near -28 dBFS raw (metered 2026-10-10); music off (-Sound)
 GAME_LIMIT = -12.0  # limiter on the game so a nearby explosion can't jump over the voices
@@ -520,7 +532,7 @@ def main():
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
                                     "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams", "cams",
-                                    "host-view-source", "stats", "toggle-overlay"])
+                                    "host-view-source", "stats", "toggle-overlay", "enable-overlay"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
@@ -561,6 +573,8 @@ def main():
         c.press_input_properties_button("stream overlay", "refreshnocache"); print("reloaded")
     elif a.cmd == "toggle-overlay":
         print(toggle_overlay(c))
+    elif a.cmd == "enable-overlay":
+        print(enable_overlay(c))
     elif a.cmd == "start":
         c.start_record(); print("recording")
     elif a.cmd == "stop":
