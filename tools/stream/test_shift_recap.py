@@ -123,6 +123,111 @@ class RecapTest(unittest.TestCase):
         _, review = R.write_script(e, Writer())
         self.assertEqual(review["mode"], "record extracts")
 
+    def test_exact_number_forms_and_citation_scope(self):
+        e = {"rows": [{"id": "a", "text": "Astra reported four new stern railguns and two aft engines. "
+                       "Sol reported sixMIL resumed, a twenty-minute test, zero active reminders, and 4,000 bricks.",
+                       "source": "chat.jsonl", "row": 38, "wall_time": "09:42 PDT"},
+                      {"id": "b", "text": "There were 57 launches.", "source": "scores.jsonl", "row": 2}]}
+        line = {"speaker": "Vale", "title": "Progress", "sources": ["a"],
+                "text": "Astra reported 4 new stern railguns and 2 aft engines. Sol reported 6 military science makers, "
+                        "a 20-minute test, 0 active reminders and 4000 bricks."}
+        self.assertIsNone(R.check([line], e))
+        e["run"] = "shift106"
+        line["text"] = "In shift 106, Astra reported 4 new stern railguns."
+        self.assertIsNone(R.check([line], e))
+        line["text"] = "Astra reported 106 railguns."
+        self.assertEqual(R.claim_issues([line], e)[0]["number"], "106")
+        line["text"] = "Sol reported fifty-seven launches."
+        issue = R.claim_issues([line], e)[0]
+        self.assertEqual(issue["number"], "fifty-seven")
+        self.assertEqual(issue["value"], "57")
+        self.assertEqual(issue["claim"], line["text"])
+        self.assertEqual(issue["uncited_matches"][0]["id"], "b")
+        line["text"] = "Sol reported 42 launches."  # clock components are not quantities
+        self.assertEqual(R.claim_issues([line], e)[0]["number"], "42")
+        line["text"], line["title"] = "Astra reported 4 new stern railguns.", "Eight engines"
+        self.assertEqual(R.claim_issues([line], e)[0]["field"], "title")
+        line["title"], line["text"] = "Progress", "Astra reported progress at 09:43."
+        self.assertEqual(R.claim_issues([line], e)[0]["number"], "09:43")
+
+    def test_refusals_keep_drafts_and_surviving_narrative(self):
+        e = R.gather(self.old, T0 + 10800)
+        source = next(r["id"] for r in e["rows"] if r["kind"] == "research")
+        lines = [{"speaker": "Rook", "title": "Research", "text": "Research finished: logistics 2.", "sources": [source]},
+                 {"speaker": "Vale", "title": "Research", "text": "Research finished: logistics 53.", "sources": [source]},
+                 {"speaker": "Rook", "title": "Research", "text": "The research caused the ship's destruction.", "sources": [source]}]
+        class Writer:
+            def complete(self, system, *a, **kw):
+                if system.startswith("Fact-check"):
+                    return json.dumps({"lines": [{"line": 1, "ok": True}, {"line": 3, "ok": False,
+                        "claim": lines[2]["text"], "reason": "no causal evidence"}]})
+                return json.dumps({"lines": lines})
+        script, review = R.write_script(e, Writer(), self.out / "audit")
+        self.assertEqual(script, lines[:1])
+        self.assertEqual(review["mode"], "model plus evidence review")
+        self.assertEqual(review["attempts"][0]["failures"][0]["number"], "53")
+        self.assertEqual(review["attempts"][0]["failures"][1]["claim"], lines[2]["text"])
+        audits = list((self.out / "audit").glob("*.json"))
+        self.assertEqual(len(audits), 2)
+        for path in audits:
+            saved = R.read_json(path)
+            self.assertEqual(json.loads(saved["raw_draft"])["lines"], lines)
+            self.assertEqual(saved["accepted"], [1])
+            self.assertIn("raw_review", saved)
+
+    def test_readable_extracts_and_headline_titles(self):
+        R.save_json(self.old / "host-memo.json", {"headlines": [
+            {"t": T0 + 50, "text": "Rocket 76912 launched, the first this shift"},
+            {"t": T0 + 55, "text": "Swift was lost to asteroids"}]})
+        e = R.gather(self.old, T0 + 10800)
+        for text in ("Laneinjection nowindependentFe rightjam", "CellA2818 retained. 2821 sixMIL",
+                     "sol said: Fuel4/Fe5000 all8guarded, next5min proof."):
+            e["rows"].append({"kind": "chat", "text": text, "id": text, "weight": 10, "t": T0})
+        e["rows"].append({"kind": "tell", "text": "This is a perfectly readable tell but still excluded.",
+                          "id": "tell", "weight": 10, "t": T0})
+        script = R.fallback(e)
+        refs = {r["id"]: r for r in e["rows"]}
+        self.assertTrue(script)
+        self.assertTrue(all(refs[l["sources"][0]]["kind"] in {"chat", "chronicle", "milestone", "loss", "research"} for l in script))
+        self.assertFalse(any("Laneinjection" in l["text"] or "CellA" in l["text"] or "Fuel4" in l["text"] for l in script))
+        launch = next(l for l in script if "Rocket 76912" in l["text"])
+        self.assertEqual(launch["title"], "Rocket launches")
+        self.assertEqual(refs[launch["sources"][0]]["kind"], "milestone")
+        self.assertEqual(next(l["title"] for l in script if "Swift" in l["text"]), "Recorded loss")
+
+    def test_shift106_saved_record_replays_as_narrative(self):
+        fixture = R.read_json(Path(__file__).parent / "fixtures" / "shift106-recap.json")
+        class Writer:
+            def complete(self, system, *a, **kw):
+                return json.dumps(fixture["review"] if system.startswith("Fact-check") else fixture["draft"])
+        script, review = R.write_script(fixture["evidence"], Writer(), self.out / "audit")
+        self.assertEqual(review["mode"], "model plus evidence review")
+        self.assertEqual(review["attempts"][0]["accepted"], fixture["expected_accepted"])
+        self.assertGreaterEqual(len(script), 24)
+        self.assertIsNone(R.check(script, fixture["evidence"]))
+        self.assertTrue(any("Asterion" in line["text"] for line in script))
+        self.assertTrue(any(f.get("number", "").lower() == "three" for f in review["attempts"][0]["failures"]))
+
+    def test_pre_cp3_manifest_can_receive_final_pass(self):
+        m = self.prepare()
+        m["review"] = {"mode": "record extracts", "attempts": ["number absent from cited record"]}
+        R.save_json(self.out / "manifest.json", m)
+        final = self.prepare(final=True)
+        self.assertTrue(final["final"])
+        self.assertIn("original draft was not retained", (self.out / "review.md").read_text())
+
+    def test_malformed_draft_is_durable_before_fallback(self):
+        e = R.gather(self.old, T0 + 10800)
+        class Writer:
+            def complete(self, *a, **kw):
+                return '{"lines": [cut off'
+        script, review = R.write_script(e, Writer(), self.out / "audit")
+        self.assertEqual(review["mode"], "record extracts")
+        self.assertTrue(script)
+        self.assertEqual(len(list((self.out / "audit").glob("*.json"))), 2)
+        for path in (self.out / "audit").glob("*.json"):
+            self.assertEqual(R.read_json(path)["raw_draft"], '{"lines": [cut off')
+
     def test_firsts_dedup_chain_and_rename(self):
         before = self.root / "shift0"
         before.mkdir()

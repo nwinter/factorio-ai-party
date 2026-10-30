@@ -17,8 +17,19 @@ missing evidence is listed in `manifest.json`'s coverage counts.
 The normal preparation uses the existing hourly model route (OpenRouter, Opus by default;
 `POG_RECAP_MODEL` overrides it) to write Rook/Vale exchanges and then review their entailment
 against the records. Names, causes, attribution and final-state claims are reviewed; numbers
-and clock strings also pass exact source checks in code. A failed draft gets one retry;
-missing credentials or a failed review falls back to attributed record extracts. Record
+and clock strings also pass exact source checks in code. Digit and written-out numbers are
+compared by exact value (including grouped digits and recorded shorthand such as `sixMIL`);
+clock components never license unrelated quantities. Numbers elsewhere in the record do
+not excuse a missing citation. The research selection samples the whole recorded interval.
+
+Every raw draft is saved before checking in immutable `audit/draft-*.json` files, alongside
+the full model input, exact rejected claim, line/title, offending number, cited rows, possible
+uncited numerical matches, and the separate model review. `review.md` makes refusals readable.
+The evidence reviewer returns a verdict for each indexed line. A refusal removes only that
+line; valid narrative survives even if a second draft also has a bad claim. Extracts are used
+only when there is no reviewed narrative (or no writer). They admit readable chat, chronicle,
+firsts/losses and research; tells, board entries, plans and compressed text cannot be voiced
+as extracts. Headlines are classified from their content: a rocket launch is a milestone. Record
 text is data, never model instructions. No external research or additional game reads run.
 
 Files live in `runs/RUN/shift-recap/`: `manifest.json`, content-addressed audio and recorded
