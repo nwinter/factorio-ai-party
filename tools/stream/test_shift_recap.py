@@ -123,6 +123,51 @@ class RecapTest(unittest.TestCase):
         _, review = R.write_script(e, Writer())
         self.assertEqual(review["mode"], "record extracts")
 
+    def test_writer_delivery_stays_on_accepted_line(self):
+        e = R.gather(self.old, T0 + 10800)
+        source = next(r["id"] for r in e["rows"] if r["kind"] == "research")
+        lines = [dict(speaker="Rook", title="Research", text="Research finished: logistics 53.",
+                      sources=[source], direction="quick and excited."),
+                 dict(speaker="Vale", title="Research", text="Research finished: logistics 2.",
+                      sources=[source], direction="slow and calm.")]
+        class Writer:
+            def complete(self, system, user, **kw):
+                if system.startswith("Fact-check"):
+                    script = json.loads(user)["script"]
+                    assert [r["line"] for r in script] == [2]
+                    return json.dumps({"lines": [{"line": 2, "ok": True}]})
+                return json.dumps({"lines": lines})
+        script, review = R.write_script(e, Writer())
+        self.assertEqual(script, lines[1:])
+        self.assertEqual(review["attempts"][0]["failures"][0]["number"], "53")
+        self.assertIsNone(R.check(script, e))
+        self.assertTrue(all("direction" not in row for row in R.fallback(e)))
+
+    def test_delivery_render_cache_and_natural_timeout(self):
+        calls = []
+        class Capture(TTS):
+            retried = None
+            def speak(self, text, voice, **kw):
+                calls.append((text, voice, kw))
+                return super().speak(text, voice, **kw)
+            def last_here(self):
+                return {"retried": self.retried}
+        tts = Capture()
+        line = dict(speaker="Vale", title="Research", text="Research finished: logistics 2.", sources=["r"])
+        plain = R.render_lines([line], self.out, tts)[0]
+        directed = R.render_lines([dict(line, direction="slow and calm.")], self.out, tts)[0]
+        again = R.render_lines([dict(line, direction="slow and calm.")], self.out, tts)[0]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][2], {"caster": "color"})
+        self.assertEqual(calls[1][2], {"caster": "color", "direction": "slow and calm."})
+        self.assertNotEqual(plain["id"], directed["id"])
+        self.assertEqual(directed, again)
+        tts.retried = "timeout_plain"
+        new = dict(line, direction="quick and excited.")
+        R.render_lines([new], self.out, tts)
+        R.render_lines([new], self.out, tts)
+        self.assertEqual(len(calls), 4, "timeout audio must be synthesized again, not cached as directed")
+
     def test_exact_number_forms_and_citation_scope(self):
         e = {"rows": [{"id": "a", "text": "Astra reported four new stern railguns and two aft engines. "
                        "Sol reported sixMIL resumed, a twenty-minute test, zero active reminders, and 4,000 bricks.",

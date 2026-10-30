@@ -370,7 +370,10 @@ a duration from shorthand such as clean300 unless a cited row explicitly gives i
 explicitly establishes it.
 No private paths, accounts, quota, email, or credentials. Pronouns they/them.
 Return JSON only: {"lines":[{"speaker":"Rook"|"Vale","title":"short card heading",
-"text":"20 to 45 spoken words","sources":["id"]}]}. Write 24 to 32 lines.
+"text":"20 to 45 spoken words","sources":["id"],"direction":"natural"}]}. Write 24 to 32 lines.
+For each line, direction may give at most 16 words of delivery (tone, emphasis, pacing),
+or natural when unsure. Keep each host's own voice, persona and accent. Never request an
+impression, a different voice, or additional spoken words. Directions are not spoken text.
 Each line must stand alone if a neighboring line is removed by the fact checker. Do not open
 with an unexplained pronoun or rely on the preceding speaker's claim for its meaning.
 """
@@ -447,6 +450,11 @@ def write_script(evidence, writer=None, audit_dir=None):
                                                   "stage": "evidence review"})
                 accepted = [{k: lines[i - 1][k] for k in ("speaker", "title", "text", "sources")}
                             for i in audit["accepted"]]
+                import voices
+                for row, i in zip(accepted, audit["accepted"]):
+                    direction = voices.clean_direction(lines[i - 1].get("direction"))
+                    if direction:
+                        row["direction"] = direction
                 if len(accepted) > len(best):
                     best = accepted
         except Exception as exc:
@@ -510,17 +518,28 @@ def render_lines(lines, out, tts=None):
     rendered = []
     for line in lines:
         role = "pbp" if line["speaker"] == "Rook" else "color"
-        key = hashlib.sha256((str(getattr(tts, "backend", "none")) + line["speaker"] + line["text"]).encode()).hexdigest()[:24]
+        direction = voices.clean_direction(line.get("direction"))
+        route = tts.route(voices.CASTERS[role], role) if hasattr(tts, "route") else None
+        provider = getattr(tts, "providers", {}).get(route[0]) if route else None
+        model = getattr(provider, "model", None)
+        key = hashlib.sha256(json.dumps(["delivery-v2", getattr(tts, "backend", "none"), route, model,
+                                        line["speaker"], line["text"], direction]).encode()).hexdigest()[:24]
         row = dict(line, id=key)
         meta = read_json(Path(out) / "assets" / (key + ".json"))
         if tts and meta and (Path(out) / "assets" / meta["asset"]).is_file():
             row.update(meta)
         elif tts:
-            data, ctype, duration, _ = tts.speak(line["text"], voices.CASTERS[role], caster=role)
+            data, ctype, duration, _ = tts.speak(line["text"], voices.CASTERS[role], caster=role,
+                                              **({"direction": direction} if direction else {}))
             asset = key + ".audio"
             atomic(Path(out) / "assets" / asset, data)
             meta = {"asset": asset, "ctype": ctype, "duration": duration}
-            save_json(Path(out) / "assets" / (key + ".json"), meta)
+            # A plain timeout retry is playable now, but must not become the cached directed rendition.
+            actual = tts.last_here() if hasattr(tts, "last_here") else {}
+            same_voice = not route or (actual.get("provider"), actual.get("voice")) == tuple(route)
+            if (actual.get("retried") != "timeout_plain" and same_voice
+                    and getattr(provider, "model", None) == model):
+                save_json(Path(out) / "assets" / (key + ".json"), meta)
             row.update(meta)
         else:
             row["duration"] = max(5, len(line["text"].split()) / 2.6)

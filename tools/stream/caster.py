@@ -1352,23 +1352,8 @@ DELIVERY_RULE = (
     "emotion, emphasis (which word), pacing, and its arc, in at most 16 words, from what the moment is (a fight, a "
     "loss, a first, a joke, a routine trip). The host keeps their own voice, persona and accent: never ask for another "
     "accent, character or impression. Never put words to say in it. When unsure, write 'Delivery: natural'.")
-DELIVERY_MAX = 160
-NOT_DIRECTION = re.compile(r"\b(?:accents?|impressions?|imitat\w*|impersonat\w*|persona|character voice|another voice|"
-                           r"different voice|british|american|australian|irish|scottish|french|german)\b",
-                           re.I)
-
-
-def clean_direction(text):
-    """A writer's delivery direction as the TTS instruction takes it: one line, at most DELIVERY_MAX characters; None
-    for 'natural', for none, or for one that asks for another accent, persona or words (the voice's own stays)."""
-    d = re.sub(r"\s+", " ", str(text or "")).strip().strip("*\"'").strip()
-    d = re.sub(r"^(?:delivery|direction)\s*[:\-–]\s*", "", d, flags=re.I)
-    if not d or re.fullmatch(r"(?:natural|neutral|normal|plain)\W*(?:delivery\W*)?", d, re.I) or NOT_DIRECTION.search(d):
-        return None
-    if len(d) > DELIVERY_MAX:
-        d = d[:DELIVERY_MAX].rsplit(" ", 1)[0]
-    return d.rstrip(",;:") + ("" if d.endswith(".") else ".")
-
+DELIVERY_MAX = voices.DELIVERY_MAX
+clean_direction = voices.clean_direction
 
 EXCHANGE_RULES = (
     "Write the next moment of the broadcast as a quick back-and-forth between the two hosts: {n} lines, alternating, "
@@ -2374,7 +2359,7 @@ def spoke_by(tts):
     """{provider, voice, cached, mood} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS
     objects)."""
     last = tts.last_here() if hasattr(tts, "last_here") else dict(getattr(tts, "last", None) or {})
-    return {k: last[k] for k in ("provider", "voice", "cached", "mood") if last.get(k) is not None} or {"provider": tts.backend}
+    return {k: last[k] for k in ("provider", "voice", "cached", "mood", "retried") if last.get(k) is not None} or {"provider": tts.backend}
 
 
 # (d22 batch99 BI1, viewer Aurora site:4295: "Routine words like still or broken can trigger frustration. Use a natural
@@ -3290,7 +3275,9 @@ class Caster:
             self.caster_free = max(self.caster_free, time.time()) + est
             return
 
-        direction = {i: d for i, d in enumerate(e.get("directions") or []) if d}
+        group = memory.groups[gid]
+        line_ids = [group["lines"][index]["id"] for index in indices]
+        direction = {i: group["directions"].get(line_id) for i, line_id in enumerate(line_ids)}
 
         def synth(item):
             i, (who, line) = item
@@ -3343,7 +3330,7 @@ class Caster:
             try:
                 pushed = self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
                        "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
-                       "rank": clip_rank(e), "exchange": base.get("exchange"),
+                       "rank": clip_rank(e), "exchange": base.get("exchange"), "line_id": line_ids[i],
                        "subjects": subjects_of(facts, e)}, audio, ctype)  # (batch324 SF) for the camera
                 memory.queued(gid, indices[i], pushed)
             except Exception as x:
@@ -3351,7 +3338,7 @@ class Caster:
                 self.record(**base, who=who, line=line, pushed=False, error=str(x)[:200])
                 continue
             self.caster_free = time.time() + dur
-            self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
+            self.record(**base, who=who, line=line, line_id=line_ids[i], pushed=True, tts=tts.backend, **spoke,
                         **({"delivery": direction[i]} if direction.get(i) else {}),
                         tts_latency=round(tlat, 2), seconds=round(dur, 2), **({"facts": facts} if i == 0 else {}))
 

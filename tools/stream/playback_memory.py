@@ -15,12 +15,22 @@ class PlaybackMemory:
             try:
                 with open(path) as f:
                     self.groups = json.load(f).get('groups', {})
-                for group in self.groups.values():
+                for gid, group in self.groups.items():
+                    self._bind_directions(gid, group)
                     for row in group['lines']:
                         if row['state'] == 'generated':
                             row.update(state='error', reason='generation interrupted by restart')
             except (OSError, ValueError):
                 pass
+
+    @staticmethod
+    def _bind_directions(gid, group):
+        """Migrate the old event-wide list once, against the FULL original exchange, never a resume subset."""
+        old = group['event'].pop('directions', None) or []
+        directions = group.setdefault('directions', {})
+        for i, row in enumerate(group['lines']):
+            row.setdefault('id', f'{gid}:{i}')
+            directions.setdefault(row['id'], old[i] if i < len(old) else None)
 
     def save(self):
         with self.lock:
@@ -38,11 +48,12 @@ class PlaybackMemory:
     def generated(self, lines, event, facts, backend, now=None):
         with self.lock:
             gid = uuid.uuid4().hex
-            self.groups[gid] = {'event': event, 'facts': facts, 'backend': backend,
+            self.groups[gid] = {'event': dict(event), 'facts': facts, 'backend': backend,
                                 't': time.time() if now is None else now, 'topic_heard': False,
                                 'lines': [{'who': who, 'text': text, 'state': 'generated', 'attempt': 0,
                                            'generated': time.time() if now is None else now}
                                           for who, text in lines]}
+            self._bind_directions(gid, self.groups[gid])
             # Bound disk/memory, retaining active and interrupted explanations first.
             for key, group in list(self.groups.items()):
                 if len(self.groups) <= 200:
