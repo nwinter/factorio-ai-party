@@ -343,7 +343,10 @@
   oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines
   on no power), then the route and arrival, hub slots and the chunks in it, chunks made and where each goes,
   crushers and makers (state, in and out), thrusters, the fuel outlook, tanks and ammunition (stock, made and used, run-out, stranded),
-  turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
+  turrets and power; `errors` names a read that failed. `turret_counts` uses the whole-ship structured defense counts,
+  before row filters or pages: `status` complete/capped/unknown, `read`, `total` (complete only), `empty`, `armed`,
+  `unarmed`, `unread`, `by_hand`, `capped`. `check {status, incomplete}` marks incomplete reads; they never report a
+  clear stopped/blocked check. Each of the four reads gives the detail.
 - `platform_tiles {platform, positions | area}`: up to 64 tiles at exact coordinates: the tile, marked for removal, a
   tile ghost, what stands on it; for foundation whether the hub takes it away now once marked (`remove {now, why}`: one
   run of empty space beside it, nothing on it, room in the hub), for empty space whether the hub builds foundation
@@ -744,3 +747,5 @@
   iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0`; dry runs say the same, and
   `load_silo` with `platform` lists such items in `unplaceable`. `gamedata/entities.json` has each entity's
   `surface_conditions`, `gamedata/locations.json` each planet's and the platform's `surface_properties`.
+
+Return-budget diagnostics (batch363): every `platform_endurance` turnaround item has `rate_basis`, whole-leg and last 1/3/5-minute `windows` (NET = made minus used), cap conditions as read, and usable-stock extrema observed at reads. Missing departure counters or noncontiguous moving-phase endpoints are explicitly unavailable. These fields do not change the conservative rate or infer future refill from an off gate. `budget_below` says the binding item's windows and retains every budget item in fired evidence, including within `all`/`any`; see the harness usage topic for bucket timing and coverage.

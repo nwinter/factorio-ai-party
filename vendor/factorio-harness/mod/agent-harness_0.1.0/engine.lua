@@ -122,7 +122,7 @@ return function(api)
     if n == 1 and last[7] then on, pumps, ps = last[6], last[7], 1 end
     local npumps = last[7] or #(rec.pumps or {})
     local span = math.floor((last[1] - first[1]) / 60 + 0.5)
-    local out = {seconds=span, samples=n, speed_mean=r1(sum / n), speed_low=r1(low), speed_high=r1(high), speed_first=r1(first[2]),
+    local out = {seconds=span, start_tick=first[1], end_tick=last[1], samples=n, speed_mean=r1(sum / n), speed_low=r1(low), speed_high=r1(high), speed_first=r1(first[2]),
       speed_last=r1(last[2]), fluids={}, pumps=npumps, pump_duty=pumps > 0 and math.floor(on / pumps * 100 + 0.5) or nil,
       pump_samples=ps}
     local parts = {}
@@ -130,7 +130,8 @@ return function(api)
       local u = (last[3][i] or 0) - (first[3][i] or 0)
       local m = (last[4][i] or 0) - (first[4][i] or 0)
       local t0, t1 = first[5][i] or 0, last[5][i] or 0
-      out.fluids[name] = {used=math.floor(u + 0.5), made=math.floor(m + 0.5), tanks_first=math.floor(t0 + 0.5), tanks_last=math.floor(t1 + 0.5)}
+      out.fluids[name] = {used=math.floor(u + 0.5), made=math.floor(m + 0.5), used_exact=u, made_exact=m,
+        tanks_first=math.floor(t0 + 0.5), tanks_last=math.floor(t1 + 0.5)}
       parts[#parts+1] = string.format('%s used %d, made %d, thruster tanks %d -> %d', name, math.floor(u + 0.5), math.floor(m + 0.5),
         math.floor(t0 + 0.5), math.floor(t1 + 0.5))
     end

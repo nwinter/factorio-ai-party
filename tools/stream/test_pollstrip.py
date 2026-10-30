@@ -92,7 +92,7 @@ def hosts():
     assert not pollstrip.mentioned(["Luna polled the furnaces"]) and not pollstrip.mentioned(["Iron is flowing again."])
     # the caster offers it on a beat and stops for 20 minutes once a line mentions it
     src = open(os.path.join(HERE, "caster.py")).read()
-    assert 'facts["site_poll"] = poll' in src and "self.poll_said = time.time()" in src
+    assert 'facts["site_poll"] = poll' in src and 'self.poll_said = row.get("completed"' in src
 
 
 OVERLAY_JS = r"""

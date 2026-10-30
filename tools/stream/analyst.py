@@ -456,12 +456,16 @@ def cycle(a, dg, prev, logf):
     feed = fetch_feed(a.feed) if a.feed else None
     t0 = time.time()
     text, facts, snap = dg.build(prev, feed)
+    from freshness import stamp
+    provenance = stamp(feed or snap, t0)
+    provenance["source_tick"] = snap["tick"]
     t_digest = time.time() - t0
     raw, meta = run_claude(a, text)
     reply = parse_json(raw)
     reply, dropped = clean_reply(reply, facts.get("game_minute"))
     meta.update(digest_s=round(t_digest, 1), digest_chars=len(text), dropped=len(dropped))
     reply.update(game_minute=facts["game_minute"], tick=snap["tick"], meta=meta, t=time.time())
+    reply.update(provenance)
     if getattr(a, "viewer_questions", False):  # the hosts leave viewer questions to the analyst (analyst_board.questions_on)
         reply["viewer_questions"] = {"on": True, "every_s": a.ask_every}
     if a.feed and not a.dry_run:

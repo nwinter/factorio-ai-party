@@ -5,6 +5,7 @@
 -- players); the queue view gives each entry's progress and time to finish at
 -- the lab throughput measured over the last minute (longer when it had no progress).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
+local researchcost = require('researchcost')
 return function(api)
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
@@ -380,7 +381,7 @@ return function(api)
       local work, ticks = 0, 0
       for k = 2, #list do
         local a, b = list[k - 1], list[k]
-        if a.tick >= since and a.name and a.name == b.name and b.progress >= a.progress then
+        if a.tick >= since and a.name and a.name == b.name and a.work == b.work and b.progress >= a.progress then
           work = work + (b.progress - a.progress) * b.work
           ticks = ticks + (b.tick - a.tick)
         end
@@ -389,11 +390,11 @@ return function(api)
     end
     for i, window in ipairs(WINDOWS) do
       local work, ticks = over(now - window)
-      if ticks >= SAMPLE_TICKS * 3 and work > 0 then return work / ticks, ticks, i > 1 or nil end
+      if ticks >= SAMPLE_TICKS * 3 and work > 0 then return work / ticks, ticks, i > 1 or nil, now end
     end
     local work, ticks = over(-math.huge)
     if ticks < SAMPLE_TICKS * 3 then return nil end
-    return work / ticks, ticks, true
+    return work / ticks, ticks, true, now
   end
 
   local function minutes(ticks)
@@ -509,13 +510,14 @@ return function(api)
     local unmade = {}
     for _, name in ipairs(needed) do if (made[name] or 0) <= 0 then unmade[#unmade+1] = name end end
     local stock = packs_stock(force, unmade)
+    local occurrences={}
     for i, t in ipairs(queue) do
-      local progress = 0
-      if i == 1 and current and current.name == t.name then progress = force.research_progress or 0
-      else
-        local ok, saved = pcall(function() return t.saved_progress end)
-        if ok and type(saved) == 'number' then progress = saved end
-      end
+      local occurrence=occurrences[t.name] or 0
+      occurrences[t.name]=occurrence+1
+      local level=(t.level or 1)+occurrence
+      local ok,cost=pcall(researchcost.summary,force,t,level)
+      local progress=ok and cost.progress_fraction or 0
+      if not ok then stalled=stalled or t.name end
       local packs, missing, stocked, missing_text = {}, {}, {}, {}
       for _, ing in ipairs(t.research_unit_ingredients or {}) do
         packs[#packs+1] = ing.name
@@ -529,7 +531,9 @@ return function(api)
       end
       local by = M.queued_by(force.name, t.name)
       local entry = {name=t.name, progress=math.floor(progress * 1000 + 0.5) / 10, queued_by=by and by.by,
-        packs=table.concat(packs, '+')}
+        packs=table.concat(packs, '+'),level=level,full_units=ok and cost.full_units or nil,
+        remaining_units=ok and cost.remaining_units or nil,progress_source=ok and cost.progress_source or nil,
+        cost_unavailable=not ok and tostring(cost) or nil}
       -- Not made lately with some in stock where the labs are: the labs can run on it (not_made_recently); none made
       -- and none in the labs or logistic networks of the labs' surfaces: they cannot (waits_for; the clock stops
       -- there), whatever other surfaces hold (named, with no labs there).
@@ -540,7 +544,7 @@ return function(api)
         stalled = stalled or t.name
       end
       if rate and rate > 0 and not stalled then
-        at = at + (1 - progress) * t.research_unit_count * t.research_unit_energy / rate
+        at = at + cost.remaining_units * t.research_unit_energy / rate
         entry.done_in = minutes(at)
       end
       entries[#entries+1] = entry

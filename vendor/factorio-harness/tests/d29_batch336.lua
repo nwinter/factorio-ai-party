@@ -180,6 +180,39 @@ eq(by['planet-discovery-fulgora'].takes,nil); eq(by['planet-discovery-fulgora'].
 assert(r.lab_rate:find('7.5 research work a tick',1,true),r.lab_rate)
 assert(runtime.dispatch{action='describe',args={},player=1}.actions.technologies.returns:find('packs_short',1,true))
 
+-- batch355: explicit-level reads through real dispatch, including refusals, preserve every research field.
+do
+  local function snap()
+    local out={names(queue),force.current_research and force.current_research.name or '',tostring(force.research_progress)}
+    local order={} for name in pairs(techs) do order[#order+1]=name end table.sort(order)
+    for _,name in ipairs(order) do local t=techs[name]
+      out[#out+1]=table.concat({name,tostring(t.level),tostring(t.researched),tostring(t.saved_progress)},':')
+    end
+    local ts=storage.agent_harness.research_targets
+    out[#out+1]=ts and tostring(ts) or 'nil'
+    for _,name in ipairs(order) do out[#out+1]=tostring(ts and ts.player and ts.player[name]) end
+    return table.concat(out,'|')
+  end
+  local function read(args,refusal)
+    local before=snap()
+    local ok,r=pcall(astra,'technologies',args)
+    eq(snap(),before)
+    eq(ok,not refusal)
+    return r
+  end
+  local e=read({name='toolbelt',level=1}).entries[1]
+  eq(e.full_units,150); eq(e.remaining_units,135); eq(e.progress_source,'current research'); eq(e.takes,'9m00s')
+  e=read({name='laser-turret',level=1}).entries[1]
+  eq(e.remaining_units,75); eq(e.progress_source,'saved progress')
+  e=read({name='steel-processing',level=1}).entries[1]
+  eq(e.remaining_units,0); eq(e.researched,true); eq(e.takes,'0s')
+  for _,a in ipairs({{level=16},{name={'toolbelt'},level=1},{name='toolbelt',level=2},
+    {name='toolbelt',level=1,prefix='tool'}, {name='toolbelt',level=0},
+    {name='toolbelt',level='1'}, {name='toolbelt',level=1.1},
+    {name='planet-discovery-fulgora',level=1}, {name='absent',level=1}}) do read(a,true) end
+  assert(runtime.dispatch{action='describe',args={},player=1}.actions.technologies.level)
+end
+
 -- 3. (FL5) rates {item}: one row a producer, full speed beside what its crafts counter made over the efficiency anchor
 do
   local cable={name='copper-cable',energy=0.5,productivity_bonus=0,prototype={maximum_productivity=3},ingredients={{type='item',name='copper-plate',amount=1}},

@@ -101,11 +101,12 @@ class AudioHub:
     EARLY_S = 0.5
     WINDOW = 3600.0
 
-    def __init__(self, log_path=None):
+    def __init__(self, log_path=None, require_capture=False):
         self.cond = threading.Condition()
         self.clips = {}  # id -> (bytes, ctype, meta)
         self.order = []
         self.seq = 0
+        self.clip_epoch = f"{time.time_ns():x}"  # distinct across service restarts, even within the same second
         self.playing = {}  # id -> {meta, started}
         self.done = set()  # ids started, ended, skipped or cancelled (not queued any more)
         self.skipped = set()  # ids whose skip was logged (two pages report each)
@@ -114,6 +115,11 @@ class AudioHub:
         self.log_path = log_path
         self.ended = deque()  # (t, row) of the last hour's ends: {id, channel, speaker, agent, state, played, duration, early, reason}
         self.loads = deque()  # times the page loaded
+        self.receipts = deque(maxlen=2000)
+        self.completed = set()
+        self.capture_session = None
+        self.require_capture = require_capture
+        self.capture_receipt = False
         # (d29 batch347 OR) each page's event streams by its name (/events?page=main|portrait): open now, the last
         # connect and the last write, for tools/overlay_check.py (shift100: the main overlay blank 26 min after a start)
         self.pages = {}
@@ -141,8 +147,15 @@ class AudioHub:
                 self.loads.append(r["t"])
             elif r.get("ended"):
                 self.ended.append((r["t"], r))
+            if r.get("id"):
+                self.receipts.append(r)
+                if r.get("completed"):
+                    self.completed.add(r["id"])
 
     def _log(self, row):
+        if row.get("id"):
+            row.update(page="main", session=self.capture_session, capture=self.capture_receipt)
+            self.receipts.append(dict(row))
         if not self.log_path:
             return
         try:
@@ -165,6 +178,9 @@ class AudioHub:
                "agent": v.get("agent"), "played": round(float(played), 2) if played is not None else None,
                "duration": round(float(length), 2) if length is not None else None,
                "early": bool(early), "reason": (reason or state) if early else None}
+        row["completed"] = state == "end" and not early
+        if row["completed"]:
+            self.completed.add(cid)
         self.ended.append((now, row))
         self._log(row)
 
@@ -201,7 +217,7 @@ class AudioHub:
     def push(self, meta, audio, ctype):
         with self.cond:
             self.seq += 1
-            cid = f"{int(time.time())}-{self.seq}"
+            cid = f"{self.clip_epoch}-{self.seq}"
             meta = dict(meta, id=cid, url=f"/audio/clip/{cid}", t=time.time())
             meta["expires"] = meta["t"] + float(meta.pop("expires_in", 30))
             if isinstance(meta.get("at"), (int, float)):  # a scheduled clip: never expires before its moment
@@ -257,11 +273,23 @@ class AudioHub:
     def played(self, report, now=None):
         cid, st = report.get("id"), report.get("state")
         now = now or time.time()
+        # Only the landscape capture establishes what the stream heard. A portrait/preview reload must not
+        # interrupt its speech; late reports from an old capture session cannot complete a resumed line.
+        if report.get("page", "main") != "main":
+            return
+        if self.require_capture and report.get("capture") is not True:
+            return
 
         def num(k):
             v = report.get(k)
             return float(v) if isinstance(v, (int, float)) else None
         with self.cond:
+            session = report.get("session")
+            if session and st != "load" and self.capture_session not in (None, session):
+                return
+            if st == "load" and session:
+                self.capture_session = session
+            self.capture_receipt = report.get("capture") is True
             self.last_report = now
             if st == "load":  # the page (re)loaded: what it was playing ended there
                 self.loads.append(now)
@@ -269,21 +297,23 @@ class AudioHub:
                 for k, v in list(self.playing.items()):
                     self._end(k, v, "reload", now)
                     self.playing.pop(k)
-            elif cid in self.clips and st == "start":
+            elif cid in self.clips and st == "start" and cid not in self.done:
                 at = num("started_at")  # (CK1) the moment the page started it, on the service's clock
                 self.playing[cid] = {"started": at if at and abs(at - now) < 30 else now, **self.clips[cid][2],
                                      "audio_s": num("duration")}
                 self.done.add(cid)
-                if at:
-                    self._log({"t": round(now, 2), "id": cid, "state": "start", "started_at": round(at, 3),
-                               "channel": self.clips[cid][2].get("channel"), "at": self.clips[cid][2].get("at")})
+                self._log({"t": round(now, 2), "id": cid, "state": "start",
+                           "started_at": round(self.playing[cid]["started"], 3),
+                           "channel": self.clips[cid][2].get("channel"), "at": self.clips[cid][2].get("at")})
             elif st in ("end", "error", "cut"):  # cut: a line that mattered more faded this one out
                 self.done.add(cid)
                 v = self.playing.pop(cid, None)
                 if v:
                     self._end(cid, v, st, now, num("played"), num("duration"))
+                elif st == "error" and cid in self.clips and cid not in self.completed:
+                    self._end(cid, dict(self.clips[cid][2], started=now), st, now, 0, num("duration"))
             elif st == "skip":  # expired in the page's queue: never played
-                if cid in self.skipped:
+                if cid in self.skipped or cid in self.completed:
                     return  # (batch319) a second page's report of the same skip: logged once
                 self.skipped.add(cid)
                 self.done.add(cid)
@@ -302,8 +332,9 @@ class AudioHub:
                     self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 
-    def page_event(self, page, what, now=None):
-        """A page's event stream: what = open (it connected), seen (a write went out to it) or close."""
+    def page_event(self, page, what, now=None, height=None):
+        """A page's event stream: what = open (it connected), seen (a write went out to it) or close; render (d29
+        batch349: the page drew a state frame, with its right panel's height in px, POST /overlay/render)."""
         now = now or time.time()
         with self.cond:
             r = self.pages.setdefault(page, {"open": 0, "connects": 0, "connected": None, "seen": None, "closed": None})
@@ -313,15 +344,42 @@ class AudioHub:
                 r["seen"] = now
             elif what == "close":
                 r["open"] = max(0, r["open"] - 1); r["closed"] = now
+            elif what == "render":
+                r["rendered"] = now
+                r["panel_px"] = int(height) if isinstance(height, (int, float)) else None
+
+    WHOLE_S = 0.5  # (batch349) a clip played whole: state end, played within this of its length, not early
+
+    def speech(self, now=None):
+        """(d29 batch349 SP, viewer Aurora: shift100's blank overlay played no voice and nothing said so) the page's
+        voices: the last clip played whole (state end, played >= its length - WHOLE_S, not early) and how many in the
+        last 30 min; clips posted in the last 15 min (not control) whose time is up (ended, skipped or expired), and how
+        many of those played whole."""
+        now = now or time.time()
+        with self.cond:
+            self._trim(now)
+            whole = [r for _, r in self.ended if r.get("state") == "end" and not r.get("early")
+                     and isinstance(r.get("played"), (int, float)) and isinstance(r.get("duration"), (int, float))
+                     and r["played"] >= r["duration"] - self.WHOLE_S]
+            ids = {r["id"] for r in whole}
+            due = [c for c in self.order if c in self.clips for m in [self.clips[c][2]]
+                   if m.get("channel") != "control" and now - m.get("t", 0) <= 900 and (c in self.done or m["expires"] <= now)]
+            return {"last_whole": round(max((r["t"] for r in whole), default=0), 2) or None,
+                    "whole_30m": sum(1 for r in whole if now - r["t"] <= 1800),
+                    "due_15m": len(due), "due_15m_whole": sum(1 for c in due if c in ids),
+                    "due_15m_skipped": sum(1 for c in due if c in self.skipped)}
 
     def pages_status(self, now=None):
-        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed}}}
-        (epoch seconds)."""
+        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed,
+        rendered, panel_px}}, speech} (epoch seconds)."""
+        now = now or time.time()
         with self.cond:
-            return {"now": round(now or time.time(), 2), "up": round(self.up, 2),
-                    "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+            out = {"now": round(now, 2), "up": round(self.up, 2),
+                   "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+        out["speech"] = self.speech(now)
+        return out
 
-    def status(self):
+    def status(self, receipts_after=0):
         now = time.time()
         with self.cond:
             playing = [{"id": k, "channel": v.get("channel"), "speaker": v.get("speaker"),
@@ -333,6 +391,8 @@ class AudioHub:
                       for c in self.order if c in self.clips and c not in self.done
                       for m in [self.clips[c][2]] if m.get("channel") != "control" and m["expires"] > now]
             out = {"listeners": self.listeners, "playing": playing, "queued": queued,
+                   "receipts": [r for r in self.receipts if r.get("t", 0) >= receipts_after],
+                   "receipt_t": self.receipts[-1]["t"] if self.receipts else None,
                    "last_report": self.last_report, "clips": len(self.order)}
         out["voice"] = self.early(now)
         return out
@@ -406,7 +466,12 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             if path == "/segments":
                 return self.send(200, json.dumps(segments.types()).encode(), "application/json")
             if path == "/audio/status":
-                return self.send(200, json.dumps(audio.status()).encode(), "application/json")
+                match = re.search(r"[?&]receipts_after=([0-9.]+)", self.path)
+                try:
+                    after = float(match.group(1)) if match else 0
+                except ValueError:
+                    after = 0
+                return self.send(200, json.dumps(audio.status(after)).encode(), "application/json")
             if path == "/overlay/status":  # (batch347) which overlay pages hold their event stream, since when
                 return self.send(200, json.dumps(audio.pages_status()).encode(), "application/json")
             if path == "/analyst.json":
@@ -447,6 +512,11 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(code, json.dumps(reply, ensure_ascii=False).encode(), "application/json")
             if path == "/audio/played":
                 audio.played(body)
+                return self.send(200, b"{}", "application/json")
+            if path == "/overlay/render":  # (batch349) a page drew a state frame: its right panel's height
+                name = str(body.get("page") or "unnamed")
+                if re.fullmatch(r"[A-Za-z0-9_-]{1,24}", name):
+                    audio.page_event(name, "render", height=body.get("height"))
                 return self.send(200, b"{}", "application/json")
             if path == "/audio/release":  # (batch319 SU) the tour ends its segment's hold
                 ok = audio.release(body.get("segment"))
@@ -783,7 +853,8 @@ def main():
     tour = TourOverlay()  # (CK3) the tour's overlay entries (tourlay.py)
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
-    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
+    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None,
+                     require_capture=not a.mock)
     follow = platform = look = host = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
@@ -892,6 +963,21 @@ def main():
                                       if v.get("channel") in ("caster", "agent", "operator", "narrator")]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 cams = director.step(snap, now, segments.camera())
+                if cuts:
+                    program = director.program()
+                    program["cameras"] = {s["slot"]: {"pending": s["slot"] in director.send_pending,
+                                                       "shot": director.state[s["slot"]]} for s in director.slots}
+                    program["frames"] = cams
+                    program["layout_info"] = director.layout_info()
+                    cuts.set(program)
+                    cut_state = cuts.public()
+                    aired = cut_state.get("on_air") or {}
+                    cams = aired.get("frames") or {}
+                    director.on_air = {s["slot"]: (aired.get("cameras", {}).get(s["slot"]) or {}).get("shot")
+                                       if s["slot"] in {r.get("client") for r in cams.values()} else None
+                                       for s in director.slots}
+                    snap["program"], snap["cuts"] = aired, cut_state
+                    snap["camera_states"] = director.camera_states()
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
                 if platform:
@@ -900,6 +986,8 @@ def main():
                     snap["look"] = director.look_info(now)
                 if host:
                     snap["hostview"] = director.host_info(now)  # the page's on-air card, the hosts
+                    if cuts and not snap["program"].get("host"):
+                        snap["hostview"] = None
                 if show:
                     snap["show"] = show.public()  # an image over the main camera: the page's caption, the hosts
                 if hasattr(director, "battle_info"):
@@ -923,14 +1011,12 @@ def main():
                     snap["onair"] = onair_info(snap, cams)  # who viewers watch: the label, the hosts' beats
                     if snap.get("hostview"):  # Nick's own view on air, not a camera (hostview.py): no agent is on air
                         snap["onair"].update(host=snap["hostview"], agent=None, display_name=None, doing=snap["hostview"]["label"])
-                    snap["onair"]["layout"] = director.layout_info()  # one camera or three tiles (the hosts, the page)
+                    snap["onair"]["layout"] = (snap["program"].get("layout_info") or {"mode": "onecam"}) if cuts else director.layout_info()
                     for row in cams.values():  # each tile's label: "Luna · fixing the north wall"
                         if len(row.get("agents") or []) == 1:
                             row["doing"] = onair_doing(snap, row["agents"][0])
-                    snap["program"] = director.program()
-                    if cuts:
-                        cuts.set(snap["program"])
-                        snap["cuts"] = cuts.public()
+                    if not cuts:
+                        snap["program"] = director.program()
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                     if snap.get("hostview") and ag["camera"] == "main":  # (behind Nick's view: not on air)

@@ -64,6 +64,67 @@ function M.check_direction(proto,dir)
   for _,d in ipairs(list) do names[#names+1]=string.format('%s (%d)',M.direction_name(d),d) end
   error(string.format('%s is built facing %s only; %s (%d) is not one',proto.name,table.concat(names,', '),M.direction_name(dir),dir),0)
 end
+-- (d29 batch352 RR, Astra #2764: Resolute's corner railguns face north, impacts come 53-63 degrees outboard) a placed
+-- turret facing another way, as measured on a copy of world n (2.0.77):
+-- - R and Shift+R (LuaEntity.rotate) refuse every placed turret and its ghost, on a platform or a planet; blueprint
+--   pastes (normal or shift, by a player too) facing another way leave it.
+-- - In person: the same turret built over it facing another way is the game's fast replace (can_fast_replace true for
+--   another direction, false for its own): a new unit facing there with its ammo, quality, priority list, ignore
+--   setting, circuit wire and control settings; create_entity{fast_replace, character} gives the old one back to the
+--   character's inventory and takes none, so the item the player spends is taken here.
+-- - The turned footprint must be free: side by side in a row a railgun turret (3x5) facing a diagonal needs 4 tiles to
+--   one facing north or the same diagonal, 5 to one facing the other diagonal (two facing north fit at 3);
+--   can_fast_replace refuses it otherwise (Resolute's row is 3 apart).
+-- - By remote view (ghosts only) a rebuild: a superforced paste marks it (and whatever the new footprint meets) for
+--   deconstruction; on Resolute the hub took each turret and its 10 rounds at once and built the new one 46-121 ticks
+--   later, with no priority list, ignore setting, wires or control; its feeder refilled it, and twice the inserter
+--   feeding it dropped what it held on the floor.
+M.TURRET_TYPES={['ammo-turret']=true,['electric-turret']=true,['fluid-turret']=true,turret=true,['artillery-turret']=true}
+local function turret_item(e)
+  local it=e.prototype.items_to_place_this and e.prototype.items_to_place_this[1]
+  return it and (type(it)=='table' and it.name or it) or e.name
+end
+local function footprint_line(e,target)
+  return e.name=='railgun-turret' and target and target%4~=0 and string.format('. Facing %s its 3x5 box turns 45 degrees: side by side in a row it needs '
+    ..'4 tiles to a railgun turret facing north or the same diagonal, 5 to one facing the other diagonal (two facing north fit at 3)',M.direction_name(target)) or ''
+end
+function M.turret_turn_note(e,target)
+  local want=target and M.direction_name(target) or 'another way'
+  local q=e.quality and e.quality.name~='normal' and ' ('..e.quality.name..')' or ''
+  return string.format('%s at (%g,%g) faces %s: the game does not turn a placed turret with R or Shift+R. A player turns it in person: a %s%s in hand, '
+    ..'built over it facing %s, is a fast replace that keeps its ammo, priority list, ignore setting, wires and circuit settings (rotate with direction '
+    ..'does that when you stand in reach holding one; the old one comes back to your inventory). By remote view only a rebuild: blueprint_place with '
+    ..'mode superforced (its dry_run names what it would mark), or deconstruct, then place_ghosts with the direction; on a platform the hub takes the '
+    ..'turret and its ammo at once and builds the new one 1-2 s later, with no priority list, ignore setting, wires or control settings unless the '
+    ..'blueprint carries them (configure priority_targets and ignore_unprioritised set them again), and an inserter holding ammo for it may drop that '
+    ..'on the floor%s',
+    e.name,e.position.x,e.position.y,M.direction_name(e.direction),turret_item(e),q,want,footprint_line(e,target))
+end
+-- In person, holding the item: the fast replace a player's build over it is. Returns the new turret and the reply's line.
+function M.turret_fast_replace(p,e,target)
+  local want=M.direction_name(target)
+  local surface,pos,name,force=e.surface,e.position,e.name,e.force
+  local q=e.quality and e.quality.name or 'normal'
+  local item=turret_item(e)
+  local inv=p.get_main_inventory and p.get_main_inventory()
+  local held=inv and inv.get_item_count{name=item,quality=q} or 0
+  if held<1 then error(M.turret_turn_note(e,target)..string.format('. You hold no %s%s',item,q~='normal' and ' of '..q..' quality' or ''),0) end
+  if not surface.can_fast_replace{name=name,position=pos,direction=target,force=force} then
+    error(string.format('%s at (%g,%g) cannot face %s here: the game refuses the fast replace, its turned footprint meets an entity beside it%s; nothing was changed',
+      name,pos.x,pos.y,want,footprint_line(e,target)),0)
+  end
+  local ch=p.character
+  assert(ch and ch.valid,'a fast replace goes through your character, and there is none here; nothing was changed')
+  local unit=e.unit_number
+  assert(inv.remove{name=item,quality=q,count=1}==1,'the '..item..' could not be taken from your inventory; nothing was changed')
+  local n=surface.create_entity{name=name,position=pos,direction=target,force=force,quality=q,fast_replace=true,character=ch,spill=false}
+  if not (n and n.valid) then
+    inv.insert{name=item,quality=q,count=1}
+    error(string.format('the game did not replace %s at (%g,%g) facing %s; nothing was changed',name,pos.x,pos.y,want),0)
+  end
+  return n,string.format('turned as a player does in person: built over it facing %s with the %s you held, a fast replace (the old one came back to your inventory): '
+    ..'unit %d now (was %d), its ammo, priority list, ignore setting, wires and circuit settings kept',want,item,n.unit_number,unit)
+end
 -- A ghost facing another way (N8): the game's rotate does not turn a railgun turret's ghost; a player removes it and
 -- places a new one. The new ghost keeps the name, quality, tags and item requests; one with circuit wires is refused.
 function M.reghost(e,dir)
@@ -2257,7 +2318,7 @@ function handlers.describe(_,a)
         pick='first_with_stock|most_stock with positions and item or items: as transfer\'s pick (one listed place that holds it now; empty ones skipped, never short)',items='with pick: 1..16 item names',to='with pick: {x,y} or {item: {x,y}}: carry what was taken there and give it (as transfer\'s to)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
-      research={target_level='{technology: level, ...} (a leveled technology, e.g. physical-projectile-damage-7: 10): keeps it coming until that level is researched: the next level goes to the end of the queue whenever it is neither researching nor queued and the queue has room; 0 removes a target; at most 16, 100 levels past the one researching; returns targets (each: target, now researching / queued at N / waiting for room, levels left)',targets='true: read the target levels',technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue (a leveled technology may stand in it several times, each entry the next level, as the research GUI queues them: research_queue and append keep repeats up to the levels left; front puts one in front); over_levels: a technology named more times than it has levels left, queued that many times; targets (the report): target levels as targets=true reads them; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={name='optional: one recipe name, or a list of 1..64: those only (unknown or not enabled is refused, with names like it)',prefix='optional',limit='1..256 (default 64)',from='optional: the entry to start at, in name order (next_from gives the next page)',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={name='optional: one technology name, or a list of 1..64: those only',prefix='optional',limit='1..32 (default 32): a page',from='optional: the entry to start at, in name order (next_from gives the next page; total counts them all)',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those; a technology with levels: level (the one researching next), levels_done and max_level (an infinite one reads researched false for ever); effects: what it gives as the research screen lists them, in prototype names (unlock recipes, travel to a place, a quality, items given, modifiers such as ammo-damage (bullet) +40% or low-density-structure productivity +10%); next_level (a technology with levels not all done): "level 8 adds ...; N units"; each one not researched (labs research it): progress % kept, takes (the time it alone would take at the labs\' measured rate, as research\'s done_in), packs_needed (each pack for its units left, with the count where the labs are: the labs the census pass listed and the logistic networks of their surfaces) and packs_short (those under it); lab_rate: the rate and its window'},
+      research={target_level='{technology: level, ...} (a leveled technology, e.g. physical-projectile-damage-7: 10): keeps it coming until that level is researched: the next level goes to the end of the queue whenever it is neither researching nor queued and the queue has room; 0 removes a target; at most 16, 100 levels past the one researching; returns targets (each: target, now researching / queued at N / waiting for room, levels left)',targets='true: read the target levels',technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with level, full_units, remaining_units, progress_source, progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue (a leveled technology may stand in it several times, each entry the next level, as the research GUI queues them: research_queue and append keep repeats up to the levels left; front puts one in front); over_levels: a technology named more times than it has levels left, queued that many times; targets (the report): target levels as targets=true reads them; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={name='optional: one recipe name, or a list of 1..64: those only (unknown or not enabled is refused, with names like it)',prefix='optional',limit='1..256 (default 64)',from='optional: the entry to start at, in name order (next_from gives the next page)',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={level='optional integer with one exact name: read that level without queueing or changing it; cost gives full/remaining units, current or saved progress, ETA at measured rate, nominal packs per unit and physical demand for the stated lab cohort',name='optional: one technology name, or a list of 1..64: those only',prefix='optional',limit='1..32 (default 32): a page',from='optional: the entry to start at, in name order (next_from gives the next page; total counts them all)',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those; a technology with levels: level (the one researching next), levels_done and max_level (an infinite one reads researched false for ever); effects: what it gives as the research screen lists them, in prototype names (unlock recipes, travel to a place, a quality, items given, modifiers such as ammo-damage (bullet) +40% or low-density-structure productivity +10%); next_level (a technology with levels not all done): "level 8 adds ...; N units"; each one not researched (labs research it): progress % kept, takes (the time it alone would take at the labs\' measured rate, as research\'s done_in), packs_needed (nominal packs before lab drain/productivity for its units left, with the count where the labs are: the labs the census pass listed and the logistic networks of their surfaces) and packs_short (those under it); lab_rate: the rate and its window'},
       blueprint_import={blueprint='export string (fh blueprint import --file F reads it from a file)',slot='default clipboard',name='or a team library entry: the string goes into the team library under that name, you its author (the same name replaces an entry as blueprint_save does: its author any time, anyone after 24 game hours unused); one blueprint, not a book',description='with name: optional text up to 300 characters (default: the string\'s own description)',anchor='with name: optional {x,y} in blueprint coordinates, as blueprint_export gives it: blueprint_place {name, position} puts this point at position'},
       blueprint_export={slot='default clipboard',name='or a team library entry (blueprint_save): its string (label the name, the entry\'s description) with name, author, entities, tiles, description, anchor and size_kb; fh call blueprint_export writes the string to blueprints/NAME.txt in your workspace (--out FILE: there) and replies with its path',layout='true returns normalized relative layout and material costs instead of export string',from='with name: a string over 262144 bytes (a whole platform) comes in pages: blueprint_page, blueprint_bytes and next_from, the byte the next page starts at (fh call blueprint_export reads every page into the file)'},
       blueprint_list={name='optional team library entry: that entry in full (all entity counts, description, anchor, captured area)',limit='optional 1..256 entries a page (default 64)',from='optional 1-based: the page starts at this entry by name (default 1)',returns='slots (your own); library: the team\'s entries by name {name, author, entities, tiles, footprint WxH tiles, counts (largest 4), saved, last_used (ago, by whom) or never, uses, surface, anchor, description, size_kb (its string), imported}; library_size (entries and KB of strings of the limits), library_bytes, library_bytes_limit, library_limit; library_page when entries are left out'},
@@ -8694,8 +8755,10 @@ function handlers.rotate(p,a)
     M.check_direction(proto,target)
   end
   local replaced
+  local turret=not ghost and proto and M.TURRET_TYPES[proto.type]
   if target==nil then
     if e.rotate{reverse=a.reverse==true,by_player=real(p)} then turns=1 end
+    if turns==0 and turret then error(M.turret_turn_note(e,nil),0) end
   elseif before~=target then
     -- The shorter way round: clockwise up to 180 degrees, else counter-clockwise.
     local back=(target-before)%16>8
@@ -8707,6 +8770,10 @@ function handlers.rotate(p,a)
     if e.direction~=target and turns==0 and ghost then
       e=M.reghost(e,target)
       replaced=string.format('the game does not turn a %s ghost (its rotate, as R, refuses it): replaced by a ghost facing %s, as removing it and placing a new one does',kind,name(target))
+    end
+    if e.direction~=target and turns==0 and turret then
+      if remote then error(M.turret_turn_note(e,target),0) end
+      e,replaced=M.turret_fast_replace(p,e,target)
     end
     assert(e.direction==target,turns==0 and string.format('%s at (%g,%g) faces %s: the game does not turn a placed %s (its rotate, as R, refuses it); it faces another way only as built (build or place_ghosts with direction %s)',
       kind,e.position.x,e.position.y,name(e.direction),kind,name(target))
@@ -13810,7 +13877,9 @@ local function tech_times(p,list,out)
         need[#need+1]=string.format('%s %d (%d where the labs are)',ing.name,n,have)
         if have<n then short[#short+1]=string.format('%s %d',ing.name,n-have) end
       end
-      rows[i]={progress=progress>0 and math.floor(progress*1000+0.5)/10 or nil,
+      rows[i]={full_units=t.research_unit_count,remaining_units=units,
+        progress_source=cur and cur.name==t.name and 'current research' or 'saved progress',
+        progress=progress>0 and math.floor(progress*1000+0.5)/10 or nil,
         takes=rate and rate>0 and M.research.minutes(units*(t.research_unit_energy or 0)/rate) or nil,
         packs_needed=table.concat(need,', '),packs_short=#short>0 and table.concat(short,', ') or nil}
     end
@@ -13818,6 +13887,7 @@ local function tech_times(p,list,out)
   out.lab_rate=rate and string.format('%.4g research work a tick (units x unit time), measured over the last %s%s; takes is one technology alone at it',
     rate,M.research.minutes(window),fell_back and ' (no research progress in the last minute)' or '')
     or 'not measured yet (needs 30 s of research progress): no takes'
+  out.packs_basis='packs_needed and packs_short are nominal remaining units x recipe amounts, before lab drain/productivity; stock counts inventory items. Explicit name and level also give physical demand for the stated cohort'
   return rows
 end
 local function catalog(p,a,kind)
@@ -13893,14 +13963,30 @@ local function catalog(p,a,kind)
         e.next_level=string.format('level %d adds %s; %d units',entry.level or 1,#fx>0 and table.concat(fx,', ') or 'nothing listed',entry.research_unit_count or 0)
       end
       local tr=times and times[i]
-      if tr then e.progress,e.takes,e.packs_needed,e.packs_short=tr.progress,tr.takes,tr.packs_needed,tr.packs_short end
+      if tr then
+        e.progress,e.takes,e.packs_needed,e.packs_short=tr.progress,tr.takes,tr.packs_needed,tr.packs_short
+        e.full_units,e.remaining_units,e.progress_source=tr.full_units,tr.remaining_units,tr.progress_source
+      end
     end
   end
   return out
 end
 M.TECH_PAGE,M.CATALOG_FROM=32,4096
 function handlers.recipes(p,a) return catalog(p,a,'recipes') end
-function handlers.technologies(p,a) return catalog(p,a,'technologies') end
+function handlers.technologies(p,a)
+  if a.level==nil then return catalog(p,a,'technologies') end
+  assert(type(a.name)=='string' and a.prefix==nil and a.available==nil and a.from==nil and a.limit==nil,
+    'level requires one exact technology name, without prefix, available, from or limit')
+  local t=p.force.technologies[a.name]
+  assert(t and t.enabled,'unknown or disabled technology')
+  local cost=M.research_cost.query(p.force,t,a.level,{
+    rate=M.research.rate,minutes=M.research.minutes,
+    labs_of=function(f,sf) return M.census.typed(f,sf,'lab') end,
+    lab_rate=M.labs.rate,working=function(e) return entity_status_names[e.status]=='working' end})
+  return {entries={{name=t.name,level=cost.level,force_level=t.level,researched=cost.completed,
+    count=cost.full_units,full_units=cost.full_units,remaining_units=cost.remaining_units,
+    progress=cost.progress_fraction*100,progress_source=cost.progress_source,takes=cost.eta,cost=cost}},total=1,truncated=false}
+end
 end -- The client that renders a screenshot: a player's own. A bot has none, and
 -- without by_player every connected client rendered it into its own
 -- script-output (shake1/2: ./shot never delivered), so one is chosen: the
@@ -17801,6 +17887,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
 M.scheduler_api={snapshots=function(p,a) return M.turretsnap.read(p,a) end,collect_waiting=function(index) return M.waits.collect_waiting(index) end,
+  wall=function() return M.wall_ms end,
   -- (d22 batch112 BV1) a build's entries its running action had left (a walk for the rest, a step aside): {count, line}
   left_undone=function(index) return M.left_undone(index) end,
   guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,deadline=function(c) return conditions.deadline(c) end,
@@ -17967,7 +18054,7 @@ function M.queue_brief(q)
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guard_lines and q.guards or q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
-    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,
+    waiting=q.waiting,wait_deadlines=q.wait_deadlines,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,
     kept_wait=q.kept_wait,cancelled_wait=q.cancelled_wait,guards_after_plan=q.guards_after_plan,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume','queue_pause'} do
@@ -18057,6 +18144,7 @@ for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,labs_of=function(f,sf) return M.census and M.census.typed(f,sf,'lab') end,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end,
   use_lines=function(force) return M.research_use.lines(force) end}
+M.research_cost=require('researchcost')
 function handlers.research_done(p,a) return M.research.done(p,a) end
 function handlers.research_options(p,a) return M.research.options(p.force,a) end
 -- Where an item is stored, nearest first (stores.lua).
@@ -21682,6 +21770,11 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d29 batch356 DL) confirm the original damaged unit's removal before mined events return below.
+  if M.damagelog.removal_events[event.name] then
+    local ok,err=pcall(M.damagelog.on_removed,event)
+    if not ok then local s=state(); s.damage_log_errors={count=((s.damage_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+  end
   -- (d28 batch317) the force's first research, attack, loss, death, enemies of a kind, freight (disclosure.lua)
   if M.disclosure then pcall(M.disclosure.on_event,event) end
   -- (d25 batch216 QAA1) a tile the platform built (its hub, from its own foundation): flight watches and the platform's record

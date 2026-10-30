@@ -75,6 +75,22 @@ where.leg.to='gleba'; has(row(c).no_estimate,'ends at gleba')
 where.leg=nil; has(row(c).no_estimate,'not departed')
 where.stopped=true; where.at='nauvis'; eq(row(c).eta_s,0)
 where.at='gleba'; has(row({['until']='platform_left',platform='Sunward',location='gleba'}).no_estimate,'no measured rate')
+-- Long platform waits never invoke the full schedule/departure projection on a 10-tick check. The predicate still
+-- runs, a current-leg ETA is kept, and ordinary waits keep their existing projection.
+do
+  local projections,predicates=0,0
+  local LW=require('waiteta'){check=function(p,c,record) predicates=predicates+1; return C.check(p,c,true,record) end,
+    before_departure=function() projections=projections+1; return {eta_s=120,line='ETA 120s: schedule'} end}
+  local c={['until']='platform_arrived',platform='Sunward',location='nauvis',timeout=17280000}
+  local function estimate() local _,_,r=LW.check(p,c,{}); return r end
+  has(estimate().no_estimate,'before departure'); eq(projections,0); eq(predicates,1)
+  where.stopped=false; where.leg={to='gleba',eta_ticks=600}
+  has(estimate().no_estimate,'beyond the current flight leg'); eq(projections,0); eq(predicates,2)
+  where.leg.to='nauvis'; eq(estimate().eta_s,10); eq(projections,0); eq(predicates,3)
+  where.leg=nil; c.timeout=54000; eq(estimate().eta_s,120); eq(projections,1)
+  c.timeout=nil; eq(estimate().eta_s,120); eq(projections,2)
+  where.stopped=true; where.at='gleba'
+end
 -- Idle is per wait, not reset by a status request; work during sleep and no-body time do not count.
 local sleep={until_tick=game.tick+600}; state.sleeps[1]=sleep
 for _=1,60 do W.idle_tick(1) end; eq(W.info({},sleep).idle_s,1)

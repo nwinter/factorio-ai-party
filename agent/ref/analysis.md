@@ -80,13 +80,25 @@
   machine making it (the first 48): `full_per_min` (full speed, as `inspect`) beside `measured_per_min`, what it made
   by its own crafts counter over `measured_over` (10-20 min; "not counted yet" for a machine the harness's background
   count has not reached).
-- `technologies {name? | prefix?, available?, limit?}`: each technology's `effects` as the research screen lists them
+- `technologies {name? | prefix?, level?, available?, limit?}`: each technology's `effects` as the research screen lists them
   (recipes unlocked, places, qualities, modifiers such as `ammo-damage (bullet) +40%` or `low-density-structure
   productivity +10%`) and, for one with levels, `next_level` ("level 8 adds ...; N units"). Each one not researched:
   `progress`, `takes` (the time it alone would take at the labs' rate measured over the last minute, as the research
   queue's `done_in`; `lab_rate` gives the rate), `packs_needed` (each pack for its units left, with the count where the
   labs are: the labs the census pass listed and the logistic networks of their surfaces) and `packs_short`. Example:
-  `./fh call technologies --args '{"name":"physical-projectile-damage-7"}'`
+  `./fh call technologies --args '{"name":"physical-projectile-damage-7"}'`.
+  With one exact `name` and `level` (no list/filter/page arguments), reads that level without changing research:
+  `./fh call technologies --args '{"name":"low-density-structure-productivity","level":16}'`.
+  `level` is the requested level; `force_level` is the engine's current/next level. `full_units`, `remaining_units`,
+  `progress_source` and `takes` distinguish the full cost from current or saved progress. `cost.eta_seconds` uses
+  measured lab progress, includes productivity and excludes queue wait. Completed levels have zero remaining units.
+  `cost.nominal_packs_per_unit/full/remaining` are the research recipe, before lab drain and productivity;
+  `cost.physical_packs_remaining` estimates fresh normal-quality full-durability pack equivalents at the working
+  compatible cohort's speed shares. `cost.cohort` states census age, lab counts/groups, drain and productivity.
+  Missing/incomplete census or no working compatible labs makes physical demand unavailable. Changed supply,
+  freshness, quality and partial pack durability change physical item demand. Plain `packs_needed`/`packs_short`
+  also remain nominal. Repeated infinite `research` entries carry successive `level`, `full_units`, `remaining_units`
+  and `progress_source`; only the first occurrence can use saved/current progress.
 - `bottleneck {item, per_min?, all_stopped?, surface?}` (or `area`, `positions`): follows a shortage down its ingredient
   chain to where it starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved
   maker, the nearest chest within 64 tiles holding what it lacks and one `transfer` call that carries it there.
@@ -492,11 +504,14 @@
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines. Short machines are missing stock, or held back by
   their feeder's condition (its source holds the ingredient: the inserter, condition, value now, source stock).
-- `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), for hits our force saw:
+- `damage_log {position?, radius?, surface?}`: what hit our entities there, for hits our force saw:
   what dealt each hit (a fire, projectile or stream) and the game's cause with its position, facing and distance against
   its range, both from the game's event. A fire's cause is the turret whose stream lit the first fire; a hit past its
-  range is a fire that spread. Empty ground says if its chunk was never charted, is charted and out of sight
-  (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
+  range is a fire that spread. Rows identify the original unit ID; `hit_rows` retains target name, tick/last_tick and
+  position. State is alive by original ID in current sight, destroyed/removed by a recorded event, otherwise unknown
+  (`alive` omitted). `current_position` can differ from the hit position. `current_occupants` separately lists IDs now
+  standing at the returned historical position when visible, with complete/capped/unknown status. Legacy hits have
+  unknown per-hit positions and a labelled first-observation search anchor. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
   or ok each; feasible, sustained and the first unsatisfied. An item that spoils gives the residual supply measured in

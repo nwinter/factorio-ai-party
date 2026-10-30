@@ -68,7 +68,7 @@ def speak_lines_path(tmp):
     cs.breakers = {"tts": caster.Breaker("tts")}
     cs.caster_free = cs.agent_free = 0.0
     cs.next_gap, cs.snap, cs.log_path, pushed = 0.0, None, os.path.join(tmp, "caster.jsonl"), []
-    cs.push = lambda meta, audio, ctype: pushed.append(meta)
+    cs.push = lambda meta, audio, ctype: pushed.append(meta) or dict(meta, id=f"clip-{len(pushed)}")
     lines = [("pbp", "Biters are hitting Nauvis."), ("color", "That wall has held all shift.")]
     e = {"kind": "attack", "prio": caster.PRIORITY["attack"], "t": 0, "directions": ["quick and urgent.", None]}
     cs.speak_lines(lines, e, {}, "fake", None, 0.0, 0.0)
