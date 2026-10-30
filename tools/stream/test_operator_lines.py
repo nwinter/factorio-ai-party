@@ -81,8 +81,15 @@ def main():
 
     # operator_tick: voiced at once in its own voice, channel operator, ranked like an agent line; the hosts may react
     pushed = []
-    c.voice = lambda text, voice_id, cst, meta, rec, hold=None: pushed.append((text, voice_id, meta, rec)) or 4.0
+    def voice_stub(text, voice_id, cst, meta, rec, hold=None):
+        pushed.append((text, voice_id, meta, rec))
+        gid = c.playback().generated([('Operator', text)], {'kind': 'operator', 'reaction': meta['heard_reaction']},
+                                    {'game_time': meta['heard_game_time']}, 'voice')
+        c.playback().queued(gid, 0, {'id': 'operator-1', 'duration': 4})
+        return 4.0
+    c.voice = voice_stub
     c.stats, c.history, c.rng = {"agent_lines": 0}, deque(maxlen=12), random.Random(1)
+    c.recent = deque(maxlen=8)
     c.a = argparse.Namespace(react=1.0, yield_s=30)
     c.agent_free = c.caster_free = 0.0
     c.snap = {"game_time": "4h10m"}
@@ -91,7 +98,9 @@ def main():
     text, vid, meta, rec = pushed[0]
     assert vid == voices.OPERATOR_VOICE and meta["channel"] == "operator" and meta["speaker"] == "Operator"
     assert meta["rank"] == "agent" and rec["type"] == "operator" and text.startswith("Thanks Craig")
-    assert not c.op_q and c.stats["operator_lines"] == 1 and c.history[-1].startswith("operator at")
+    assert not c.op_q and c.stats["operator_lines"] == 1 and not c.history
+    c.playback_receipts({'receipts': [{'id': 'operator-1', 'state': 'end', 'completed': True, 't': now}]})
+    assert c.history[-1].startswith("operator at")
     e = c.yielding["event"]
     assert e["operator"] and e["react"] and e["kind"] == "chat"
     f = caster.facts_for(dict(e, t=now), {"agents": [], "game_time": "4h10m"})

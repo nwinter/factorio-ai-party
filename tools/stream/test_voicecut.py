@@ -87,7 +87,7 @@ check(e["line"] == "voice: 4 of 5 clips ended early in the last hour (cut 1, no_
 # the log holds every report's end, and a restart reads the last hour back
 rows = [json.loads(line) for line in open(log)]
 check(sum(1 for r in rows if r.get("ended")) == 6 and sum(1 for r in rows if r.get("state") == "load") == 1, len(rows))
-check(next(r for r in rows if r.get("id") == short)["reason"] == "short_end", "short_end logged")
+check(next(r for r in rows if r.get("id") == short and r.get("ended"))["reason"] == "short_end", "short_end logged")
 hub2 = serve.AudioHub(None)
 hub2.log_path = log
 hub2.WINDOW = 1e12  # (the rows' T is far in the past of the real clock)
