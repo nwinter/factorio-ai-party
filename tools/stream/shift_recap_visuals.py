@@ -22,7 +22,7 @@ def media_record(row):
     """Accept cp3's saved stills too; its caption contains the original surface metadata."""
     if not ASSET.fullmatch(str(row.get("asset", ""))) or not isinstance(row.get("t"), (int, float)) or not math.isfinite(row["t"]):
         return None
-    subject = label(row.get("platform") or row.get("surface") or row.get("subject"))
+    subject = label(row.get("platform") or row.get("subject") or row.get("surface"))
     if not subject:
         legacy = re.match(r"^Recorded still: ([^·]+) ·", row.get("caption", ""))
         subject = label(legacy[1]) if legacy else ""
@@ -50,13 +50,21 @@ def bind(manifest):
     evidence = manifest.get("evidence") or {}
     rows = {r["id"]: r for r in evidence.get("rows", [])}
     start, end = evidence.get("start", 0), manifest.get("through", evidence.get("until", 0))
-    media = [m for row in manifest.get("stills", []) if (m := media_record(row)) and start <= m["t"] <= end]
+    media = [m for row in manifest.get("stills", []) if not row.get("error")
+             and (m := media_record(row)) and start <= m["t"] <= manifest.get("media_through", end)]
     ships = {m["subject"] for m in media if m["subject_type"] == "platform"}
+    ships.update(label(r.get("platform") or r.get("subject")) for r in manifest.get("media_errors", [])
+                 if r.get("platform") or r.get("subject_type") == "platform")
+    ships.discard("")
     for row in rows.values():
+        if row.get("platform"):
+            ships.add(label(row["platform"]))
         match = re.search(r"\bplatform (.+?) (?:left|arrived|was|is|created|renamed|lost|deleted)\b", row["text"], re.I)
         if match:
             ships.add(match[1].strip())
     surfaces = set(PLANETS) | {m["subject"] for m in media if m["subject_type"] == "surface"}
+    surfaces.update(label(r["surface"]) for r in rows.values() if r.get("surface") and not r.get("platform"))
+    surfaces.update(label(r["surface"]) for r in manifest.get("media_errors", []) if r.get("surface") and not r.get("platform"))
     visuals = {}
     for phase in ("transition", "recap"):
         for line in manifest.get("transition" if phase == "transition" else "lines", []):
@@ -66,27 +74,44 @@ def bind(manifest):
             time_label = ("Record · " + clock(stamp)) if times else ("Record through " + clock(end))
             text = line.get("title", "") + " " + line.get("text", "")
             context = " ".join(r["text"] for r in refs)
-            targets, subject_type = mentioned(text, ships), "platform"
+            targets = mentioned(line.get("title", ""), ships) or mentioned(text, ships)
+            subject_type = "platform"
             if not targets:
                 targets = mentioned(context, ships)
+            if not targets:
+                targets = {label(r["platform"]) for r in refs if r.get("platform")}
             if not targets:
                 targets, subject_type = mentioned(text, surfaces), "surface"
             if not targets:
                 targets, subject_type = mentioned(context, surfaces), "surface"
+            if not targets:
+                targets = {label(r["surface"]) for r in refs if r.get("surface") and not r.get("platform")}
+                subject_type = "surface"
             # A planet mentioned as a ship's dock/route is not a picture of that ship.
             # When its identity is absent, prefer a neutral card to a generic factory view.
             if subject_type == "surface" and re.search(r"\b(?:hull|propulsion|aft|stern|flight|shakedown|refit|dock(?:ed)?|departure)\b", text, re.I):
                 targets = set()
-            if len(targets) > 1:
+            if len({s.casefold() for s in targets}) > 1:
                 targets = set()
             choices = [m for m in media if m["subject_type"] == subject_type
                        and m["subject"].casefold() in {s.casefold() for s in targets}]
             chosen = min(choices, key=lambda m: (abs(m["t"] - stamp), m["asset"])) if choices else None
-            visuals[line["id"]] = {"media": chosen, "time_label": time_label,
+            failures = [r for r in manifest.get("media_errors", [])
+                        if (label(r.get("platform") or r.get("subject") or r.get("surface"))).casefold()
+                        in {s.casefold() for s in targets}]
+            visuals[line["id"]] = {"media": chosen, "time_label": time_label, "asset_errors": failures,
                 "binding": {"subjects": sorted(targets), "subject_type": subject_type,
                             "evidence_ids": [r["id"] for r in refs],
                             "reason": "nearest recorded view of the subject" if chosen else "no matching recorded media"}}
-    return dict(manifest, visual_version=1, visuals=visuals)
+    beats = [{"id": line["id"], "title": line.get("title", ""),
+              "status": "bound" if visuals[line["id"]]["media"] else "missing",
+              "subjects": visuals[line["id"]]["binding"]["subjects"],
+              "errors": visuals[line["id"]]["asset_errors"]}
+             for line in manifest.get("transition", []) + manifest.get("lines", [])]
+    bound = sum(b["status"] == "bound" for b in beats)
+    review = {"bound": bound, "total": len(beats), "no_media": bound == 0,
+              "beats": beats, "asset_errors": manifest.get("media_errors", [])}
+    return dict(manifest, visual_version=2, visuals=visuals, media_review=review)
 
 
 def public(manifest, line, phase, *, asset_prefix="/shift-recap/assets/", holding=False, elapsed=0):

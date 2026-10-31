@@ -8,10 +8,44 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 
 import shift_recap_visuals as visuals
 
 HERE = Path(__file__).resolve().parent
+
+
+def check_decoding(manifest, out):
+    """Offline rehearsal: fully decode images and one frame of each archived clip.
+
+    The live service stays stdlib-only. Pillow is the capture/rehearsal helper dependency;
+    ffmpeg is required only for an indexed video, as it is for prepared audio.
+    """
+    errors, stills, checked = list(manifest.get("media_errors", [])), [], {}
+    for row in manifest.get("stills", []):
+        row = dict(row)
+        asset = row.get("asset")
+        if asset not in checked and not row.get("error") and visuals.media_record(row):
+            path = Path(out) / "assets" / asset
+            try:
+                if asset.endswith((".mp4", ".webm")):
+                    result = subprocess.run(["ffmpeg", "-v", "error", "-protocol_whitelist", "file,pipe",
+                                             "-i", str(path), "-frames:v", "1", "-an", "-f", "null", "-"],
+                                            capture_output=True, timeout=15)
+                    if result.returncode:
+                        raise ValueError("video decode failed: " + result.stderr.decode(errors="replace")[:300])
+                else:
+                    from PIL import Image
+                    with Image.open(path) as image:
+                        image.load()
+                checked[asset] = None
+            except Exception as exc:
+                checked[asset] = f"decode failed: {type(exc).__name__}: {exc}"
+        if checked.get(asset):
+            row["error"] = checked[asset]
+            errors.append(dict(row, path="assets/" + asset))
+        stills.append(row)
+    return visuals.bind(dict(manifest, stills=stills, media_errors=errors))
 
 
 def js(value):
@@ -104,19 +138,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, help="refresh media from this recorded run without rewriting narration")
     args = parser.parse_args()
     import shift_recap as recap
-    manifest = visuals.bind(json.loads(args.manifest.read_text()))
+    manifest = json.loads(args.manifest.read_text())
     args.out.mkdir(parents=True, exist_ok=True)
     for row in manifest.get("stills", []):
         if visuals.media_record(row):
             src = args.manifest.parent / "assets" / row["asset"]
             dst = args.out / "assets" / row["asset"]
             dst.parent.mkdir(exist_ok=True)
-            if src.resolve() != dst.resolve():
+            if src.is_file() and src.resolve() != dst.resolve():
                 shutil.copyfile(src, dst)
+    from shift_recap_media import checked, refresh, log_review
+    manifest = refresh(args.run_dir, args.out, manifest, force=True) if args.run_dir else checked(manifest, args.out)
+    manifest = check_decoding(manifest, args.out)
     recap.save_json(args.out / "manifest.json", manifest)
     recap.export(manifest, args.out)
+    log_review(manifest, args.out)
+    if manifest["media_review"]["no_media"]:
+        print("WARNING: NO BOUND MEDIA; see review.md")
     print(args.out.resolve())
 
 

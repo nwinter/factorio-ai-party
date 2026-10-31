@@ -124,7 +124,7 @@ def gather(run, until, logs=None):
     start = float(shift.get("start") or 0)
     out, seen = [], set()
 
-    def add(kind, text, source, row, t, tick=None, weight=3):
+    def add(kind, text, source, row, t, tick=None, weight=3, surface=None, platform=None):
         text = clean(text)
         if not text or t is None or not start <= t <= until:
             return
@@ -134,7 +134,8 @@ def gather(run, until, logs=None):
         seen.add(ident)
         out.append({"id": ident, "kind": kind, "text": text, "source": source, "row": row,
                     "t": t, "wall_time": wall(t), "game_time": game_time(tick) if tick is not None else None,
-                    "weight": weight})
+                    "weight": weight, **({"surface": surface} if surface else {}),
+                    **({"platform": platform} if platform else {})})
 
     # All earlier shifts, not a fixed hop cap: only the first matching identity belongs here.
     identities, fleet = set(), {}
@@ -182,7 +183,8 @@ def gather(run, until, logs=None):
                 category, weight = "milestone", 8
             elif kind == "rocket":
                 continue  # the scores provide a checked total, rather than hundreds of launch lines
-            add(category, text, "chronicle.jsonl", no, t, r.get("tick"), weight)
+            add(category, text, "chronicle.jsonl", no, t, r.get("tick"), weight,
+                surface=r.get("surface"), platform=ship)
 
     samples = [(no, r, epoch(r.get("t"))) for no, r in rows(run / "scores.jsonl")]
     samples = [(no, r, t) for no, r, t in samples if t is not None and start <= t <= until]
@@ -214,7 +216,8 @@ def gather(run, until, logs=None):
                         text = f"Board item {item.get('id', '')} ({item.get('status', 'recorded')}): {item.get('title', item.get('text', ''))}"
                     else:
                         text = f"Recorded board: {item}"
-                    add("board", text, str(path.relative_to(run)), no, epoch(r.get("at")), res.get("tick"), 4)
+                    add("board", text, str(path.relative_to(run)), no, epoch(r.get("at")), res.get("tick"), 4,
+                        surface=item.get("surface") if isinstance(item, dict) else None)
                 p = result.get("plan") or (result if action == "board_plan" else {})
                 if isinstance(p, dict) and p.get("goals"):
                     add("plan", f"The team's recorded goals: {p['goals']}", str(path.relative_to(run)), no,
@@ -235,7 +238,7 @@ def gather(run, until, logs=None):
         for b in board.get("items") or []:
             if isinstance(b, dict):
                 add("board", f"Board item {b.get('id', '')} ({b.get('status', b.get('state', 'recorded'))}): "
-                    f"{b.get('text', b.get('title', ''))}", "recap-record.jsonl", no, t, weight=4)
+                    f"{b.get('text', b.get('title', ''))}", "recap-record.jsonl", no, t, weight=4, surface=b.get("surface"))
         for p in (r.get("analyst") or {}).get("talking_points") or []:
             add("analyst", f"The analyst's assessment: {p.get('text', '')}", "recap-record.jsonl", no, t, weight=4)
 
@@ -469,47 +472,71 @@ def write_script(evidence, writer=None, audit_dir=None):
         fallback(evidence), {"mode": "record extracts", "attempts": attempts})
 
 
-def stills(run, until, out):
+def stills(run, until, out, errors=None):
     import shift_recap_visuals as visuals
+    from shift_recap_media import header_error
     found = []
+    errors = errors if errors is not None else []
     run = Path(run)
     start = ((read_json(Path(run) / "stream.json", {}) or {}).get("shift") or {}).get("start", 0)
     for meta in sorted((Path(run) / "mapframes").glob("*.json")):
         r = read_json(meta, {}) or {}
         t = epoch(r.get("t"))
         image = meta.with_suffix(".webp")
-        if t is None or not start <= t <= until or not image.is_file():
+        if t is None or not start <= t <= until:
             continue
-        data = image.read_bytes()
+        try:
+            data = image.read_bytes()
+            error = header_error(data, image.suffix)
+            if error:
+                raise ValueError(error)
+        except (OSError, ValueError) as exc:
+            errors.append(dict(r, path=str(image.relative_to(run)), error=str(exc)))
+            continue
         asset = hashlib.sha256(data).hexdigest()[:24] + ".webp"
-        atomic(Path(out) / "assets" / asset, data)
+        if not (Path(out) / "assets" / asset).is_file():
+            atomic(Path(out) / "assets" / asset, data)
         found.append({"asset": asset, "caption": f"Recorded still: {r.get('surface', 'factory')} · {wall(t)} · Graphics copyright Wube Software",
                       "t": t, "surface": r.get("surface"), "platform": r.get("platform"),
                       "game_time": game_time(r["tick"]) if r.get("tick") is not None else None,
                       "source": str(meta.relative_to(run))})
-    # Optional explicit index of already recorded ship/surface images or archive clips.
+    # recap_capture writes this index; manually indexed archive clips remain supported.
     # Capture timestamps and subject labels are mandatory; filenames/mtime are not evidence.
-    catalog = read_json(run / "recap-media.json", [])
+    catalog = read_json(run / "recap-media.json", None if (run / "recap-media.json").exists() else [])
+    if not isinstance(catalog, list):
+        errors.append({"path": "recap-media.json", "error": "invalid media index"})
     for index, row in enumerate(catalog if isinstance(catalog, list) else []):
         if not isinstance(row, dict) or not isinstance(row.get("path"), str):
             continue
         path = (run / row["path"]).resolve()
         t = epoch(row.get("t"))
         ext = path.suffix.lower()
-        if not path.is_relative_to(run.resolve()) or not path.is_file() or t is None or not start <= t <= until:
+        if t is not None and not start <= t <= until:
             continue
-        if ext not in (".webp", ".png", ".jpg", ".jpeg", ".mp4", ".webm"):
+        if not path.is_relative_to(run.resolve()) or t is None or ext not in (".webp", ".png", ".jpg", ".jpeg", ".mp4", ".webm"):
+            errors.append(dict(row, error="invalid local path, capture time or format"))
             continue
         candidate = dict(row, asset="0" * 24 + ext, t=t)
         if not visuals.media_record(candidate):
+            errors.append(dict(row, error="missing subject metadata"))
             continue
-        data = path.read_bytes()
+        try:
+            data = path.read_bytes()
+            error = header_error(data, ext)
+            if error:
+                raise ValueError(error)
+        except (OSError, ValueError) as exc:
+            errors.append(dict(row, error=str(exc)))
+            continue
         asset = hashlib.sha256(data).hexdigest()[:24] + ext
-        atomic(Path(out) / "assets" / asset, data)
+        destination = Path(out) / "assets" / asset
+        if not destination.is_file() or destination.read_bytes() != data:
+            atomic(destination, data)
         found.append({"asset": asset, "t": t, "surface": row.get("surface"),
                       "platform": row.get("platform"), "subject": row.get("subject"),
                       "subject_type": row.get("subject_type"), "offset": row.get("offset", 0),
-                      "source": f"recap-media.json:{index + 1}", "recorded_path": row["path"]})
+                      "source": f"recap-media.json:{index + 1}", "recorded_path": row["path"],
+                      **({"receipt": row["receipt"]} if row.get("receipt") else {})})
     return found
 
 
@@ -585,7 +612,8 @@ def prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
             save_json(out / "manifest.json", old)
             export(old, out)
         if old and old.get("through", 0) >= until and (old.get("final") or not final):
-            return old
+            from shift_recap_media import refresh
+            return refresh(run, out, old)
         return _prepare(run, out, until, writer=writer, tts=tts, logs=logs, final=final)
 
 
@@ -621,19 +649,13 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
         transition = render_lines([
             {"speaker": "Rook", "title": "Shift change", "text": "The shift change is coming up. We have been going back through the record for a full recap.", "sources": []},
             {"speaker": "Vale", "title": "Coming up", "text": "We will take you through the turning points while the next team starts. The recap follows the record, right through the closing developments.", "sources": []}], out, tts)
-    pictures = {r["asset"]: r for r in (previous.get("stills", []) if previous else [])}
-    pictures.update({r["asset"]: r for r in stills(run, until, out)})
     manifest = {"version": 1, "audio_check_v": prepared_audio.VERSION if tts else None,
                 "run": run.name, "through": until, "final": final, "tts_config": voices.audio_config(tts),
                 "base_through": base_through, "base_count": base_count,
                 "evidence": evidence, "review": review, "lines": lines, "transition": transition,
-                "stills": sorted(pictures.values(), key=lambda r: r["t"])}
-    import shift_recap_visuals
-    manifest = shift_recap_visuals.bind(manifest)
-    # The manifest becomes visible only after all of its assets are durable.
-    save_json(out / "manifest.json", manifest)
-    export(manifest, out)
-    return manifest
+                "stills": previous.get("stills", []) if previous else []}
+    from shift_recap_media import refresh
+    return refresh(run, out, manifest, force=True, media_until=until)
 
 
 def export(manifest, out):
@@ -645,6 +667,17 @@ def export(manifest, out):
     script = [f"# {manifest['run']} recap", "", f"Record through {wall(manifest['through'])}; {manifest['review']['mode']}.", ""]
     base_review = manifest["review"].get("base", manifest["review"])
     diagnostics = [f"# {manifest['run']} recap review", "", f"Mode: {manifest['review']['mode']}", ""]
+    media_review = manifest["media_review"]
+    diagnostics += [f"Media: {media_review['bound']}/{media_review['total']} beats bound.", ""]
+    if media_review["no_media"]:
+        diagnostics += ["WARNING: NO BOUND MEDIA — this recap has only neutral cards.", ""]
+    for beat in media_review["beats"]:
+        if beat["status"] == "missing" or beat["errors"]:
+            diagnostics += [f"Beat {beat['id']} · {beat['title']}: {beat['status']}; subjects {beat['subjects']}"]
+            diagnostics += [f"  {r.get('path', r.get('asset', '?'))}: {r['error']}" for r in beat["errors"]]
+    for error in media_review["asset_errors"]:
+        diagnostics += [f"Asset {error.get('path', error.get('asset', '?'))}: {error['error']}"]
+    diagnostics += [""]
     for n, attempt in enumerate(base_review.get("attempts", []), 1):
         if isinstance(attempt, str):  # pre-cp3 manifests did not save their refused drafts
             diagnostics += [f"Legacy refusal: {attempt}; the original draft was not retained.", ""]
