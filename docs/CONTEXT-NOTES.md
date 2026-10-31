@@ -199,3 +199,21 @@ tools/context-probe.sh muse muse-spark-1.3 80000    # low point; loops (see abov
   `hooks/list`); a `SessionStart ^compact$` hook could be trusted the same way.
 - Grok and Muse log no token counts at compaction (their hook payloads have no transcript path).
 - The nudge exists only for Claude Code (the harness whose hook payload points at a transcript with usage).
+
+## Recovery delivery contract (batch397)
+
+The Memory and compact instructions now depend on receipt of a recovery brief. Claude receives it from
+SessionStart(compact); Grok and Muse receive it through the marked next PostToolUse (Muse also has the manual
+SessionStart hook). Until that delivery, the notes fallback still applies. Codex has no brief hook, so its
+re-injected AGENTS.md retains the notes.md fallback. Gemini's loop supplies the brief on every continuation and
+fresh conversation; native compaction inside a still-running turn retains the fallback when no new brief arrived.
+At shift start the new deadline.txt is authoritative; clients without a supplied brief read the carried notes.
+
+context.py and Gemini share a 3000 UTF-8 byte brief: identity/deadline, ground rules, ownership/open board items,
+current work, and safety/live checks each have reserved space. Optional statistics, projects and tells use only
+spare space. On overflow, the complete mandatory fields are saved in .recovery-detail.md, excerpts are explicitly
+marked incomplete, and their retrieval is required before acting. A failed save produces a source-file fallback.
+Gemini may append at most 800 bytes of its previous turn's output. These are recorded local facts, not fresh game
+observations. tools/test_token_recovery.py covers all five CLI kinds, real hook dispatch, shift notes carry, a
+changed deadline, missing-hook fallbacks, and overflow including Unicode and failed detail writes. It does not
+claim a live CLI/provider compaction test.

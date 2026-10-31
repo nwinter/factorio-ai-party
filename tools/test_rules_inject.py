@@ -33,11 +33,11 @@ def main():
         json.dump({"at": "2026-10-20T15:48:00", "lines": RULES}, open(os.path.join(d, ".ground_rules.json"), "w"))
         r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "brief.py"), "rules", d], capture_output=True, text=True)
         assert r.stdout.strip() == "2" and "rule 8 (by astra): Use big mining drills" in open(os.path.join(d, "AGENTS.md")).read()
-        # agy: the plain digest has no rules, the fresh start's does, first
+        # agy: both continuations and fresh starts carry mandatory recovery fields.
         open(os.path.join(d, "notes.md"), "w").write("## Now\nbuilding\n")
-        assert "ground rules" not in agy_rules.digest(d)
+        assert RULES[0] in agy_rules.digest(d)
         g = agy_rules.digest(d, with_rules=True)
-        assert g.startswith("The team's ground rules (as the shift start gave them):\n- rule 1 (by sol)") and "## Now" in g, g
+        assert RULES[0] in g and "## Now" in g and "deadline.txt" in g, g
         # Claude, Grok, Muse: the brief after a compaction starts with them (context.py, unchanged)
         for kind in ("claude", "grok", "muse"):
             open(os.path.join(d, context.MARKER), "w").write(f"{kind} m 100000\n")

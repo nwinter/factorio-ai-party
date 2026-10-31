@@ -57,6 +57,31 @@ test('long compact replies come in pages; the final error:/warning: line stays l
   const firstRest = rest!.split('\n')[0] ?? '';
   assert.ok(shown.includes('\n' + (lines[lines.indexOf(firstRest) - 1] ?? 'missing') + '\n'), 'pages meet at a line');
 });
+test('paging bounds oversized UTF-8 lines and diagnostics, with every original byte retrievable', () => {
+  for (const original of [
+    'x'.repeat(100000) + '\n',
+    '🙂漢'.repeat(12000) + '\nerror: ' + 'é'.repeat(30000) + '\n',
+    'warning: ' + 'w'.repeat(60000),
+    Array.from({length: 1000}, (_, i) => `row ${i}\n`).join('') + 'warning: ' + 'w'.repeat(40000) + '\n',
+  ]) {
+    let remaining = original, restored = '', pages = 0;
+    while (true) {
+      const {shown, rest} = paginate(remaining);
+      assert.ok(Buffer.byteLength(shown) <= 10000, String(Buffer.byteLength(shown)));
+      assert.ok(!shown.includes('\ufffd'), 'no split UTF-8 code point');
+      if (rest === undefined) { restored += shown; break; }
+      assert.ok(rest.length < remaining.length, 'every page progresses');
+      const consumed = remaining.slice(0, remaining.length - rest.length);
+      assert.ok(shown.startsWith(consumed), 'payload unchanged');
+      restored += consumed;
+      remaining = rest;
+      assert.ok(++pages < 100);
+    }
+    assert.equal(restored, original, 'including the full final diagnostic exactly once');
+  }
+  const tiny = paginate('🙂'.repeat(20), 1, 0);
+  assert.ok(tiny.rest && tiny.rest.length < 40, 'minimum one complete code point progresses');
+});
 test('corrected calls, empty moves and repeats reach the final warning line', () => {
   const out = formatCompact({ok:true,id:'x',result:{transferred:0,corrected:'craft {"recipe":"pipe"} (item is recipe)',
     nothing_moved:'chest at (1,1) holds no pipe',repeated:'transfer 3 times in 7 min with nothing moved'}});

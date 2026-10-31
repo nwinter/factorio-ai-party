@@ -9,7 +9,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 # A later shift (tools/start-team.sh, POG_RESUME): one neutral sentence on the prompt, no advice.
-resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them, and notes.md is where you left off.'
+resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them. Read the new deadline.txt; notes.md is where you left off, with a full read needed only if no recovery brief arrived.'
 if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
@@ -74,7 +74,7 @@ while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
 \$(mem)"
   elif [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    turn -p "\$(cat '$prompt') \${pre}This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away.
+    turn -p "\$(cat '$prompt') \${pre}This is a fresh conversation: your previous one closed at \$tokens tokens. Recovery is in the brief below; if none arrived, notes.md is the fallback. Read deadline.txt, then check ./fh call status and chat. The deadline is \$left minutes away.
 
 \$(memr)"
   elif [ -n "\$pre" ]; then
@@ -86,7 +86,7 @@ while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
 
 \$(mem)"
   else
-    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed.
+    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it), the only stop condition. Recovery is in the brief below; if none arrived, notes.md is the fallback. Check ./fh call status, ./fh call chat and ./fh board.
 
 \$(mem)"
   fi
@@ -123,7 +123,7 @@ allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
               "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)", "Bash(rg:*)", "Bash(sort:*)"'
 # Compaction settings per model: agent/context.tsv, applied by tools/context.py (docs/CONTEXT-NOTES.md).
-compact_rule='After any context compaction, read notes.md and deadline.txt before acting; notes.md is your memory.'
+compact_rule='After compaction, use a supplied recovery brief; if none arrived, read notes.md. Read deadline.txt before acting.'
 
 # Claude-style settings: Claude Code uses the sandbox; Grok Build reads the same file for its allowlist.
 claude_settings() {
