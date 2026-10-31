@@ -41,25 +41,33 @@ local function records(state)
   return state.budget_window_legs
 end
 function M.stopped(pl,now,state) records(state)[pl.index or pl]={platform=pl,stopped_tick=now} end
+function M.segment_start(l,segment)
+  if segment and segment.kind=='leg' and not segment['end'] and finite(segment.start)
+    and segment.from==l.from and segment.to==l.to then return segment.start end
+end
 function M.leg(pl,l,segment,now,state)
   local legs=records(state)
   local key=pl.index or pl
   local old=legs[key]
   local connection=pl.space_connection and pl.space_connection.name
-  local matching=segment and segment.kind=='leg' and not segment['end'] and finite(segment.start)
-    and segment.from==l.from and segment.to==l.to
+  local matching=M.segment_start(l,segment)
   local changed=old and (old.platform~=pl or old.name~=pl.name or old.connection~=connection
     or old.from~=l.from or old.to~=l.to or old.back~=l.back or old.stopped_tick)
-  local start=matching and segment.start or (old and not changed and old.start_tick or now)
+  -- An absent current baseline cannot reuse an earlier departure on the same route.
+  -- Keep only a pending first observation; no window becomes eligible until freight records this leg.
+  local start=matching or (old and not changed and old.baseline_pending and old.start_tick or now)
   if changed and (not matching or segment.start<=(old.start_tick or old.stopped_tick or now)) then start=now end
   if old and not changed then start=math.max(old.start_tick,start) end
-  local r={platform=pl,name=pl.name,connection=connection,from=l.from,to=l.to,back=l.back,start_tick=start}
+  local pending=not matching or start~=matching
+  local r={platform=pl,name=pl.name,connection=connection,from=l.from,to=l.to,back=l.back,start_tick=start,
+    baseline_pending=pending}
   legs[key]=r
-  return {platform=pl.name,connection=connection,from=l.from,to=l.to,back=l.back,start_tick=start,
-    basis=matching and start==segment.start and 'matching recorded flight segment' or 'current direction first observed at this read'}
+  return {platform=pl.name,connection=connection,from=l.from,to=l.to,back=l.back,start_tick=start,baseline_pending=pending,
+    basis=pending and 'current-leg baseline not yet recorded; first observed boundary' or 'matching recorded flight segment'}
 end
 local function availability(window,s,leg,now)
   if not leg or not finite(leg.start_tick) then return 'current-leg boundary unavailable' end
+  if leg.baseline_pending then return 'current-leg baseline not yet recorded; awaiting matching flight segment' end
   local ready
   if window~='leg' then
     -- Native windows include a weighted oldest bucket. Wait until that entire bucket is on this leg too.
@@ -170,6 +178,8 @@ function M.evaluate(report,cfg,km)
   if out.met then out.pending=false end
   out.line=string.format('same item must bind in %s windows under %g km; full same-leg windows only, no fallback; missing=%s; %s. ',
     tostring(cfg.require),km,cfg.missing,out.met and ('met by '..table.concat(out.binding_items,', ')) or out.pending and 'pending (not met)' or 'not met')..table.concat(lines,' || ')
+  if out.leg then out.line='leg '..tostring(out.leg.from)..'->'..tostring(out.leg.to)..
+    (out.leg.baseline_pending and '; current-leg baseline pending' or '; start tick '..tostring(out.leg.start_tick))..'; '..out.line end
   return out
 end
 return M
