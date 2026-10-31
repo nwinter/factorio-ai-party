@@ -83,10 +83,11 @@ def live_check():
             pass
         return s, f
 
+    opened_at = time.time()
     pages = [stream("/events?audio=1"), stream("/events?audio=1"), stream("/events?audio=1"), stream("/events")]
     for _, f in pages:  # every stream gets the snapshot first
         clock = json.loads(read_events(f, "clock"))
-        assert abs(clock["t"] - time.time()) < 3
+        assert opened_at <= clock["t"] <= time.time()
         assert json.loads(read_events(f, "message"))["tick"] == 1
     meta = audio.push({"channel": "caster", "speaker": "ada", "text": "hello", "duration": 1.0}, b"RIFFclip", "audio/wav")
     for _, f in pages[:3]:
