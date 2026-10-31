@@ -656,6 +656,8 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             page = m.group(1) if m else "unnamed"  # (batch347) a page from before names itself unnamed
             self.sse_head()
             version, seq, quiet = -1, audio.seq, time.time()
+            self.wfile.write(b"event: clock\ndata: " + json.dumps({"t": time.time()}).encode() + b"\n\n")
+            self.wfile.flush()
             audio.page_event(page, "open")
             if want_audio:
                 with audio.cond:
@@ -663,7 +665,7 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             try:
                 if want_audio:  # (batch319 SU) the clips still queued, for a page that (re)connects
                     for c in audio.pending():
-                        self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                        self.wfile.write(b"event: audio\ndata: " + json.dumps(dict(c, server_time=time.time()), ensure_ascii=False).encode() + b"\n\n")
                     self.wfile.flush()
                 while True:
                     # with audio, wake often so a clip goes out within ~0.25 s (snapshots come once a second)
@@ -671,13 +673,14 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     wrote = False
                     if new != version:
                         version = new
+                        self.wfile.write(b"event: clock\ndata: " + json.dumps({"t": time.time()}).encode() + b"\n\n")
                         self.wfile.write(b"data: " + payload + b"\n\n")
                         wrote = True
                     if want_audio:
                         seq_new, clips = audio.wait(seq, 0)
                         seq = seq_new
                         for c in clips:
-                            self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                            self.wfile.write(b"event: audio\ndata: " + json.dumps(dict(c, server_time=time.time()), ensure_ascii=False).encode() + b"\n\n")
                             wrote = True
                     if wrote:
                         quiet = time.time()

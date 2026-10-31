@@ -1800,6 +1800,9 @@
     // (d29 batch347) It names the page (body data-page: main, portrait), so the service can tell that the main overlay
     // connected after a start (tools/overlay_check.py; shift100: blank for 26 min after its reload).
     const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1&page=" + encodeURIComponent((new URLSearchParams((typeof location !== "undefined" && location.search) || "").get("page") || (document.body && document.body.dataset && document.body.dataset.page) || "main"))));
+    es.addEventListener("clock", e => {
+      try { window.pogPlaybackClock.observe(JSON.parse(e.data).t); } catch (err) { console.error(err); }
+    });
     es.onmessage = (e) => { lastMsg = Date.now(); try { render(JSON.parse(e.data)); } catch (err) { console.error(err); } };
     es.onerror = () => { /* EventSource retries by itself */ };
   }

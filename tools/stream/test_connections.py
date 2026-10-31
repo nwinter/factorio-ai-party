@@ -83,13 +83,17 @@ def live_check():
             pass
         return s, f
 
+    opened_at = time.time()
     pages = [stream("/events?audio=1"), stream("/events?audio=1"), stream("/events?audio=1"), stream("/events")]
     for _, f in pages:  # every stream gets the snapshot first
+        clock = json.loads(read_events(f, "clock"))
+        assert opened_at <= clock["t"] <= time.time()
         assert json.loads(read_events(f, "message"))["tick"] == 1
     meta = audio.push({"channel": "caster", "speaker": "ada", "text": "hello", "duration": 1.0}, b"RIFFclip", "audio/wav")
     for _, f in pages[:3]:
         clip = json.loads(read_events(f, "audio"))
         assert clip["id"] == meta["id"] and clip["url"] == meta["url"], clip
+        assert clip["server_time"] >= meta["t"]
     # a fifth connection fetches the clip while all four streams are open
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     c.request("GET", meta["url"])

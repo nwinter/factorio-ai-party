@@ -61,6 +61,7 @@ function page(search) {
   const ctx = vm.createContext({ window: {}, document, location: { search: search || "" }, URLSearchParams, console,
     requestAnimationFrame: (f) => setTimeout(f, 16), setTimeout, clearTimeout, fetch: fakeFetch, EventSource: FakeES });
   ctx.window.AudioContext = FakeCtx;
+  vm.runInContext(fs.readFileSync(path.join(here, "static", "playback-clock.js"), "utf8"), ctx);
   vm.runInContext(src, ctx);
   P.win = ctx.window;
   let seq = 0;

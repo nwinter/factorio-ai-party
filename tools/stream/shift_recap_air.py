@@ -13,6 +13,7 @@ import time
 
 import shift_recap as recap
 import shift_recap_visuals as visuals
+import prepared_audio
 
 
 def agents_started(run):
@@ -119,6 +120,9 @@ class Player:
                 except OSError:
                     self.retry_at = now + 5
                 else:
+                    if not prepared_audio.valid(line.get("audio_check"), line["text"], audio):
+                        self.retry_at = now + 5
+                        return self.public  # preparation must validate/rebuild legacy or changed bytes first
                     at = now + 2
                     meta = self.audio.push({"channel": "caster", "speaker": line["speaker"], "text": line["text"],
                                            "caster": "pbp" if line["speaker"] == "Rook" else "color",
@@ -199,14 +203,16 @@ class ShiftRecap:
             old = recap.read_json(self.previous / "shift-recap" / "manifest.json", {}) or {}
             prev_config = recap.read_json(self.previous / "stream.json", {}) or {}
             until = recap.record_end(self.previous, (prev_config.get("shift") or {}).get("end") or now)
-            if old.get("final") and old.get("through", 0) >= until and old.get("tts_config") == self.tts_config:
+            if (old.get("final") and old.get("through", 0) >= until and old.get("tts_config") == self.tts_config
+                    and old.get("audio_check_v") == prepared_audio.VERSION):
                 self.final_previous = True
             else:
                 # If the old service was killed at the deadline, the successor finishes from files.
                 self.schedule(self.previous, until, bool(old), now)
         elif start and end and now >= min(start + recap.PREPARE_AFTER, end - 120):
             own = recap.read_json(self.root / "manifest.json", {}) or {}
-            if not own or own.get("tts_config") != self.tts_config or (now >= end and not own.get("final")):
+            if (not own or own.get("tts_config") != self.tts_config or own.get("audio_check_v") != prepared_audio.VERSION
+                    or (now >= end and not own.get("final"))):
                 self.schedule(self.run, min(now, end), bool(own), now)
         if end and end - recap.TRANSITION_BEFORE <= now < end:
             if not self.player or self.player.phase != "transition":

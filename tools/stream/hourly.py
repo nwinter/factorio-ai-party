@@ -1025,7 +1025,8 @@ class Airing:
                 continue
             break
         rows = tour.checked(script_for(p)["stops"])
-        if any(s and s["narration"] and not tour.clip_for(manifest, d, s) for _, s, _ in rows):
+        if any(s and s["narration"] and not tour.clip_for(manifest, d, s)
+               and not tour.audio_skipped(manifest, s) for _, s, _ in rows):
             return {"event": "dropped", "id": p["id"], "why": "a clip is missing after prepare"}
         t, aired, skipped, log_path = self.run_tour(p, rows, manifest, d, script, "")
         out = {"event": "aired", "id": p["id"], "aired": aired, "skipped": skipped, "waited_s": round(waited),

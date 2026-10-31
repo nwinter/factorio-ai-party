@@ -25,11 +25,15 @@ class TTS:
     backend = "stub"
 
     def speak(self, text, voice, **kwargs):
-        return b"stub audio", "audio/mpeg", 6.0, 0
+        return text.encode(), "audio/mpeg", max(1, len(text) / 15), 0
 
 
 class RecapTest(unittest.TestCase):
     def setUp(self):
+        import prepared_audio
+        transcript = patch.object(prepared_audio, "transcribe", lambda audio, ctype: audio.decode())
+        transcript.start()
+        self.addCleanup(transcript.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -217,6 +221,53 @@ class RecapTest(unittest.TestCase):
         with patch.object(voices, "TTS", return_value=snapshot) as factory, patch.object(R, "prepare"):
             svc.build(self.old, T0 + 14400, True)
         factory.assert_called_once_with("auto", openai_model=snapshot.openai_model)
+
+    def test_legacy_cache_keeps_receipt_without_new_synthesis(self):
+        class Routed(TTS):
+            def __init__(self): self.last, self.calls = {}, 0
+            def route(self, voice, role): return "openai", "ballad"
+            def last_here(self): return self.last
+            def speak(self, text, voice, **kw):
+                self.calls += 1
+                self.last = {"provider": "openai", "voice": "ballad"}
+                return super().speak(text, voice, **kw)
+        line = {"speaker": "Vale", "title": "Copper", "text": "The copper line runs again.", "sources": []}
+        rendered = R.render_lines([line], self.out, Routed())[0]
+        path = (self.out / "assets" / rendered["asset"]).with_suffix(".json")
+        meta = R.read_json(path); meta.pop("audio_check"); R.save_json(path, meta)
+        fresh = Routed()
+        R.render_lines([line], self.out, fresh)
+        self.assertEqual(fresh.calls, 0)
+        self.assertTrue(R.read_json(path)["audio_check"]["passed"])
+        with patch("prepared_audio.transcribe", side_effect=AssertionError("checked cache was retranscribed")):
+            self.assertEqual(R.render_lines([line], self.out, fresh)[0]["asset"], rendered["asset"])
+        self.assertEqual(fresh.calls, 0)
+
+    def test_legacy_and_changed_audio_require_preparation(self):
+        import prepared_audio
+        manifest = self.prepare()
+        first = manifest["lines"][0]
+        first.pop("audio_check")
+        meta_path = (self.out / "assets" / first["asset"]).with_suffix(".json")
+        meta = R.read_json(meta_path)
+        meta.pop("audio_check")
+        R.save_json(meta_path, meta)
+        manifest.pop("audio_check_v")
+        R.save_json(self.out / "manifest.json", manifest)
+        audio = self.audio()
+        player = Player(self.run, self.old, audio)
+        player.step(T0 + 14401)
+        self.assertFalse(any(m[2].get("channel") == "caster" for m in audio.clips.values()))
+        rebuilt = self.prepare()
+        self.assertEqual(rebuilt["audio_check_v"], prepared_audio.VERSION)
+        self.assertTrue(R.read_json(meta_path)["audio_check"]["passed"])
+        player.step(T0 + 14407)
+        self.assertTrue(any(m[2].get("channel") == "caster" for m in audio.clips.values()))
+        # A changed file cannot be vouched for by a receipt for its old bytes.
+        audio2 = self.audio()
+        (self.out / "assets" / first["asset"]).write_bytes(b"other speech")
+        Player(self.run, self.old, audio2).step(T0 + 14408)
+        self.assertFalse(any(m[2].get("channel") == "caster" for m in audio2.clips.values()))
 
     def test_exact_number_forms_and_citation_scope(self):
         e = {"rows": [{"id": "a", "text": "Astra reported four new stern railguns and two aft engines. "

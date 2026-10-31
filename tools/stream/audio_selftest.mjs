@@ -66,6 +66,7 @@ const ctx = vm.createContext({
 });
 ctx.window.AudioContext = FakeCtx;
 ctx.AudioContext = FakeCtx;
+vm.runInContext(fs.readFileSync(path.join(here, "static", "playback-clock.js"), "utf8"), ctx);
 vm.runInContext(fs.readFileSync(path.join(here, "static", "audio.js"), "utf8"), ctx);
 
 // ---- push clips (tone TTS via voices.py) and watch

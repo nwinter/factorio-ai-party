@@ -24,6 +24,8 @@
 (() => {
   const params = new URLSearchParams(location.search);
   if (params.has("mute")) return;
+  const clock = window.pogPlaybackClock;
+  clock.enableAudio();
   const num = (k, d) => (params.has(k) && !isNaN(parseFloat(params.get(k))) ? parseFloat(params.get(k)) : d);
   const VOL = { caster: num("caster", 0.9), agent: num("agent", 1.0) };
   const FADE = num("fade", 0.25);
@@ -88,8 +90,7 @@
   let current = null;       // {clip, rank, src, gain, cut}
   const DUCK = num("duck", 0.2), GUARD = 0.4;
   const timed = new Map();  // id -> {clip, src, done, playing}: clips with `at`
-  let skew = 0;             // the service's clock minus this page's (0 on one machine; set when they differ by > 1 s)
-  const svcNow = () => Date.now() / 1000 + skew;
+  const svcNow = clock.now;
   const nextAt = () => { let m = Infinity; for (const x of timed.values()) if (!x.done && x.clip.at < m) m = x.clip.at; return m; };
   const narrating = () => { for (const x of timed.values()) if (x.playing) return true; return false; };
   let lastExchange = null;  // the exchange of the last host line, to keep Rook and Vale together
@@ -134,7 +135,7 @@
   window.pogVoiceBusy = () => current != null || narrating();
 
   const rankOf = (clip) => (clip.rank in RANK ? RANK[clip.rank] : clip.channel === "agent" ? RANK.agent : RANK.banter);
-  const expired = (clip) => clip.expires && Date.now() / 1000 > clip.expires + Math.min(HOLD_EXTEND, clip.held || 0);
+  const expired = (clip) => clip.expires && svcNow() > clip.expires + Math.min(HOLD_EXTEND, clip.held || 0);
   // (SU) a clip that matters (an agent's, the operator's, a viewer answer) gains the time a hold kept it waiting
   function heldTick() {
     const now = Date.now() / 1000, on = holding();
@@ -187,11 +188,12 @@
   async function schedule(clip) {
     const x = { clip, done: false, playing: false };
     timed.set(clip.id, x);
+    clock.track(clip.tour, x);
     holdOpen(clip);
     let cap = null, t0 = null, length = null, state = null, skipWhy = null;  // null: nothing to report (cancelled before it started)
     try {
       const c = audioCtx();
-      if (c.state === "suspended") { await c.resume().catch(() => {}); if (c.state === "suspended") unlockButton(); }
+      if (c.state === "suspended") { c.resume().catch(() => {}); unlockButton(); }
       const data = await fetch(clip.url, { cache: "no-store" }).then((r) => r.arrayBuffer());
       const buf = await c.decodeAudioData(data);
       let wait = clip.at - svcNow();
@@ -207,9 +209,19 @@
       length = buf.duration;
       wait = Math.max(0, clip.at - svcNow());
       const when = c.currentTime + wait;
+      Object.assign(x, { when, context: c, length });
       const ended = new Promise((done) => { src.onended = done; });
       src.start(when);  // sample-exact on the audio clock
       await new Promise((go) => setTimeout(go, Math.max(0, wait * 1000 - 30)));
+      // The wall timer can fire while WebAudio is suspended. Report only actual playback.
+      while (!x.done && (c.state === "suspended" || c.currentTime < when)) {
+        if (svcNow() > clip.at + 2) {
+          x.done = true; state = "skip"; skipWhy = "late";
+          src.stop();
+          return;
+        }
+        await new Promise(go => setTimeout(go, 20));
+      }
       if (x.done) return;
       x.playing = true;
       t0 = when;
@@ -232,6 +244,7 @@
       if (state) report(clip.id, state, skipWhy ? Object.assign({ reason: skipWhy }, extra || {}) : extra);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
       x.done = true; x.playing = false;
+      clock.untrack(clip.tour, x);
       holdEnd(clip, state || "skip");
       setTimeout(() => timed.delete(clip.id), 60000);
       setTimeout(playNext, 300);
@@ -260,8 +273,7 @@
       seen.add(clip.id);
       if (seen.size > 2000) seen.delete(seen.values().next().value);
     }
-    const d = typeof clip.t === "number" ? clip.t - Date.now() / 1000 : 0;
-    if (Math.abs(d) > 1) skew = d; else if (typeof clip.t === "number") skew = 0;
+    clock.observe(clip.server_time == null ? clip.t : clip.server_time);
     if (typeof clip.at === "number") { schedule(clip); return; }
     queue.push(clip);
     // No clip cuts another off (viewer craigNZ830, shift01 17:23: "when two voice chats are being read, dont have the

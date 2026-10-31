@@ -277,7 +277,7 @@ def fake_render(calls, ok=True):
             text = " ".join(s["narration"].split())
             open(os.path.join(d, s["id"] + ".mp3"), "wb").write(b"ID3")
             clips[s["id"]] = {"file": s["id"] + ".mp3", "hash": tour.clip_hash("el-brian", text), "duration": 20.0,
-                              "chars": len(text), "provider": "eleven"}
+                              "chars": len(text), "provider": "eleven", "audio_check": __import__("test_tour").accepted(text, b"ID3")}
         return {"voice": "el-brian", "clips": clips}
     return render
 
