@@ -74,7 +74,8 @@ def bind(manifest):
             time_label = ("Record · " + clock(stamp)) if times else ("Record through " + clock(end))
             text = line.get("title", "") + " " + line.get("text", "")
             context = " ".join(r["text"] for r in refs)
-            targets, subject_type = mentioned(text, ships), "platform"
+            targets = mentioned(line.get("title", ""), ships) or mentioned(text, ships)
+            subject_type = "platform"
             if not targets:
                 targets = mentioned(context, ships)
             if not targets:

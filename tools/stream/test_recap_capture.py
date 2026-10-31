@@ -185,6 +185,10 @@ class RefreshTest(unittest.TestCase):
         result = V.bind(m)
         self.assertEqual(result["visuals"]["ship"]["media"]["asset"], "b" * 24 + ".png")
         self.assertEqual(result["visuals"]["belt"]["media"]["subject"], "nauvis")
+        m["stills"].append({"asset": "e" * 24 + ".png", "t": 1000, "platform": "Lark"})
+        m["lines"][0]["text"] = "After Lark, Asterion departs Nauvis."
+        self.assertEqual(V.bind(m)["visuals"]["ship"]["media"]["subject"], "asterion",
+                         "the headline's subject wins over another ship in its background")
 
     def test_rehearsal_reports_decode_failure_even_with_valid_header_and_hash(self):
         import shift_recap_rehearsal as rehearsal
