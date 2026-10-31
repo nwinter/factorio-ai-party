@@ -67,8 +67,10 @@ the recap. A short startup can end a longer script before all lines air.
 
 The recap and transition cover the entire broadcast canvas, including cameras and sidebar,
 at 1920×1080 and 1080×1920. Each beat shows a short headline, speaker, record time and the
-spoken caption. A fitting recorded image takes the media field at its original aspect ratio;
-wide images letterbox on the portrait canvas. Its capture time and Wube credit are separate
+spoken caption. Imagery occupies a dedicated 1856×662 field (59.25% of 1920×1080) or
+1032×1238 field (61.61% of 1080×1920), including its one-pixel border. Images fill that
+field with a centered crop (`object-fit: cover`); the original uncropped files remain in
+the audit assets. Captions sit below the image. Its capture time and Wube credit are separate
 from the claim's record time. The page binds by ship/surface and nearest recorded time,
 never by rotating an unrelated still. Ship names take precedence over their dock/route;
 ambiguous subjects and missing or failed media get a neutral card. Source paths, row IDs,
@@ -85,8 +87,8 @@ service through the normal shift start.
 array can index other **already recorded** local images/clips, for example
 `{"path":"archive/lark.webm","t":1793391508,"platform":"Lark","offset":0}` (or `surface`).
 It must name an existing file inside that run, a capture time inside the recorded shift and
-a subject. Accepted formats are WebP/PNG/JPEG/MP4/WebM. No capture, remux, OBS request or
-filename/mtime inference runs. Content-addressed copies and bindings survive service restarts.
+a subject. Accepted formats are WebP/PNG/JPEG/MP4/WebM. The prep reader makes no capture, remux, OBS request or
+filename/mtime inference. Content-addressed copies and bindings survive service restarts.
 
 Offline rehearsal (no service, game or OBS):
 
@@ -114,3 +116,50 @@ python3 tools/stream/shift_recap_rehearsal.py --manifest OUT/manifest.json --out
 
 `python3 tools/stream/test_shift_recap.py` and `test_shift_recap_visuals.py` use stub records/audio
 and never need the game, model credentials, the current clock or a live service.
+
+## Automatic recorded imagery
+
+`start-team.sh` starts `tools/stream/recap_capture.py RUN` beside the service when OBS is
+allowed (`POG_OBS!=0`, `POG_RECAP_CAPTURE!=0`). It polls existing `state.json` every two
+seconds. Only fresh service state with matching acknowledged/on-air director shots and
+a connected compositor licenses a capture. The shot must have settled for three seconds;
+a post-capture receipt must still identify the same camera, shot, surface and subject.
+Host/show/replay/recap coverage, pending cameras and GUI panel slots are excluded. A named
+ship wins over its dock; unnamed platform surfaces are not labelled as planets. No game
+read or additional Factorio client is used.
+
+The sole OBS request is read-only `GetSourceScreenshot` of `stream cam1/2/3`, never a scene:
+1280px JPEG, quality 80. Maximum one attempt per 60 wall seconds across the shift and one
+saved frame per subject per 300 seconds, including helper restarts. Automatic request
+retry is disabled. A shift has a hard 128 MiB budget for `recap-frames/` plus its media
+index (with room reserved for atomic index replacement); a response is capped at 2 MiB.
+At the cap it stops requesting screenshots, preserving recorded evidence. The interval
+and cap apply to this helper, independently of existing mapframes capture.
+
+The helper stores capture start/end times, subject/type, surface/platform, camera source,
+source dimensions, byte count, and the before/after receipts with tick and state time.
+The atomic `recap-media.json` index is published after the JPEG. `recap-frames/status.json`
+retains the last attempt, its elapsed milliseconds and any failure; `recap-capture.log`
+records changes. The helper is included in start-team's normal PID/health lifecycle.
+
+Preparation refreshes media independently of script/audio. A file-only worker checks once
+per minute after preparation, and before a successor starts playback, including old final
+manifests. Indexed-file and prepared-file arrival, replacement or deletion triggers new
+bindings. Later captures in the same shift can illustrate an earlier beat; claim time
+and capture time remain distinct. The nearest subject frame wins; an unnamed surface
+beat may use the surface explicitly named by its cited record. No unrelated filler is used.
+
+`manifest.json.media_review`, `review.md` and `prep.log` flag `NO BOUND MEDIA` and list each
+missing/failed beat, its subject and asset diagnostics. Empty, missing, invalid-image and
+changed prepared bytes are rejected. Browser decode failures fall back to neutral cards
+and are exposed per beat in `PogShiftRecap.failures` for headless rehearsal checks.
+
+To refresh a reviewed script with a recorded or mock-capture run, without model/TTS calls:
+
+```sh
+python3 tools/stream/shift_recap_rehearsal.py --manifest SAVED/manifest.json --run-dir RUN --out REPLAY
+```
+
+Capture bounds/receipts and media refresh diagnostics are exercised by
+`python3 tools/stream/test_recap_capture.py`. Operator verification uses the actual exported
+overlay and `tools/stream/overlay_shot.sh`, plus browser reload and restoration checks.

@@ -409,13 +409,13 @@ class RecapTest(unittest.TestCase):
         d.mkdir()
         for name, t in (("early", T0 + 10), ("late", T0 + 13000)):
             R.save_json(d / (name + ".json"), {"t": t, "surface": "nauvis"})
-            (d / (name + ".webp")).write_bytes(b"fake image " + name.encode())
+            (d / (name + ".webp")).write_bytes(b"RIFF\x04\x00\x00\x00WEBP" + name.encode())
         manifest = self.prepare()
         self.assertEqual(len(manifest["stills"]), 1)
         svc = ShiftRecap(self.run, {}, self.audio())
         self.assertIsNone(svc.asset("../../stream.json"))
-        self.assertEqual(svc.asset(manifest["stills"][0]["asset"])[0], b"fake image early")
-        (d / "early.webp").write_bytes(b"a newer image replaced this area")
+        self.assertEqual(svc.asset(manifest["stills"][0]["asset"])[0], b"RIFF\x04\x00\x00\x00WEBPearly")
+        (d / "early.webp").write_bytes(b"RIFF\x04\x00\x00\x00WEBPnewer")
         final = self.prepare(final=True)
         self.assertIn(manifest["stills"][0], final["stills"], "the first pass's still survives the final refresh")
 

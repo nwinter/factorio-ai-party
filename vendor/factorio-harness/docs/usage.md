@@ -18454,7 +18454,10 @@ Recap/transition cover the full landscape or portrait canvas and restore the nor
 on completion/interruption. Each beat binds to a timestamped image/clip of its recorded
 ship/surface or a neutral card. Evidence paths stay offline. To replay the exact overlay
 from a reviewed manifest: `python3 tools/stream/shift_recap_rehearsal.py --manifest MANIFEST --out OUT`.
-No new harness reads/actions or OBS commands are involved. See `tools/stream/shift-recap.md`.
+`tools/stream/recap_capture.py` saves subject-tagged camera stills from existing director receipts: read-only
+OBS `GetSourceScreenshot`, at most one attempt/minute and one saved frame/subject/five minutes, 128 MiB/shift.
+Preparation refreshes media bindings without changing narration; no-media and per-beat asset failures appear
+in `prep.log` and `review.md`. No new game reads or clients. See `tools/stream/shift-recap.md`.
 ## d30 batch377: stream platform metrics
 
 The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns

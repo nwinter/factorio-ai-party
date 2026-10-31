@@ -464,6 +464,13 @@ if [ "${POG_OBS:-1}" != 0 ] && [ "${POG_MAPFRAMES:-1}" != 0 ]; then
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("mapframes:$!:$rundir/mapframes.log")
 fi
+# Subject-tagged recap stills from existing on-air receipts. Read-only camera screenshots;
+# no game reads, clients or OBS changes. POG_RECAP_CAPTURE=0 disables capture.
+if [ "${POG_OBS:-1}" != 0 ] && [ "${POG_RECAP_CAPTURE:-1}" != 0 ]; then
+  nohup python3 -u tools/stream/recap_capture.py "$rundir" --url http://127.0.0.1:8788/state.json >"$rundir/recap-capture.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("recap-capture:$!:$rundir/recap-capture.log")
+fi
 # Human players' votes (docs/PLAYERS-NOTES.md): the operator tally runs a carried kick, ban or trust; names in
 # POG_PLAYERS_PROTECT (comma-separated) are never kicked or banned.
 if [ "${POG_PLAYERS:-0}" = 1 ]; then

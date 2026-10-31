@@ -104,19 +104,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, help="refresh media from this recorded run without rewriting narration")
     args = parser.parse_args()
     import shift_recap as recap
-    manifest = visuals.bind(json.loads(args.manifest.read_text()))
+    manifest = json.loads(args.manifest.read_text())
     args.out.mkdir(parents=True, exist_ok=True)
     for row in manifest.get("stills", []):
         if visuals.media_record(row):
             src = args.manifest.parent / "assets" / row["asset"]
             dst = args.out / "assets" / row["asset"]
             dst.parent.mkdir(exist_ok=True)
-            if src.resolve() != dst.resolve():
+            if src.is_file() and src.resolve() != dst.resolve():
                 shutil.copyfile(src, dst)
+    from shift_recap_media import checked, refresh
+    manifest = refresh(args.run_dir, args.out, manifest, force=True) if args.run_dir else checked(manifest, args.out)
     recap.save_json(args.out / "manifest.json", manifest)
     recap.export(manifest, args.out)
+    if manifest["media_review"]["no_media"]:
+        print("WARNING: NO BOUND MEDIA; see review.md")
     print(args.out.resolve())
 
 

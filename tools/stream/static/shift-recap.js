@@ -7,6 +7,7 @@
     return node;
   };
   let panel, key, video;
+  const failures = [];
   function release() {
     if (video) { video.pause(); video.removeAttribute("src"); video.load(); video = null; }
   }
@@ -44,6 +45,7 @@
     if (media) {
       const node = el(media.kind === "video" ? "video" : "img", "sr-picture");
       const failed = () => { if (!node.isConnected) return; release(); figure.replaceChildren();
+        failures.push({id:recap.id, title:recap.title, asset:media.asset, url:media.url, error:'browser media load failed'});
         panel.classList.add("sr-neutral"); label.textContent = "Recorded shift"; };
       node.addEventListener("error", failed, { once: true });
       if (media.kind === "video") {
@@ -81,5 +83,5 @@
     requestAnimationFrame(fit);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
   }
-  window.PogShiftRecap = { render };
+  window.PogShiftRecap = { render, failures };
 })();

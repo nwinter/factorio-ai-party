@@ -161,6 +161,8 @@ class ShiftRecap:
         self.next_try = 0
         self.closed = threading.Event()
         self.final_previous = not bool(self.player)
+        self.next_media_check = 0
+        self.media_ready = set()
 
     def observe_snapshot(self, snap, board=None):
         self.latest = {"t": snap.get("t", time.time()), "tick": snap.get("tick"),
@@ -179,6 +181,7 @@ class ShiftRecap:
             out = source / "shift-recap"
             recap.prepare(source, out, until, writer=writer, tts=tts,
                           logs=recap.HERE / "logs", final=final)
+            self.media_ready.add(source)
             print(f"[shift-recap] {'final' if final else 'prepared'} {source.name} through {until}", flush=True)
         except Exception as exc:
             print(f"[shift-recap] preparation failed: {type(exc).__name__}: {exc}", flush=True)
@@ -191,6 +194,17 @@ class ShiftRecap:
         self.busy = True
         self.next_try = now + 60
         threading.Thread(target=self.build, args=(source, until, final), daemon=True).start()
+
+    def refresh_media(self, sources):
+        try:
+            from shift_recap_media import refresh_saved
+            for source in sources:
+                refresh_saved(source, source / "shift-recap")
+                self.media_ready.add(source)
+        except Exception as exc:
+            print(f"[shift-recap] media refresh failed: {type(exc).__name__}: {exc}", flush=True)
+        finally:
+            self.busy = False
 
     def step(self, now):
         if self.latest and now - self.last_record >= 60:
@@ -219,7 +233,20 @@ class ShiftRecap:
                 self.player = Player(self.run, self.run, self.audio, "transition", tts_config=self.tts_config)
         elif end and now >= end and self.player and self.player.phase == "transition":
             self.player.finish("shift deadline")
-        self.public = self.player.step(now) if self.player else None
+        # Files only, on the producer thread. Refresh legacy/final recaps too, including a
+        # successor's first load. Once a beat airs, keep its immutable prepared assets.
+        if not self.busy and now >= self.next_media_check:
+            sources = [s for s in (self.previous, self.run) if s and (s / "shift-recap" / "manifest.json").is_file()
+                       and not (self.player and self.player.source == s and self.player.current)]
+            self.next_media_check = now + 60
+            if sources:
+                self.busy = True
+                threading.Thread(target=self.refresh_media, args=(sources,), daemon=True).start()
+        if self.player and self.player.source not in self.media_ready and not agents_started(self.run):
+            self.public = {"active": True, "phase": self.player.phase, "run": self.player.source.name,
+                           "title": "Shift change", "text": "Preparing the recorded recap"}
+        else:
+            self.public = self.player.step(now) if self.player else None
         return self.public
 
     def asset(self, name):
