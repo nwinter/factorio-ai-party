@@ -2,6 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatCompact, actionHelp, paginate, finalLine, shortClock } from '../host/format.js';
 
+test('ammunition scope labels survive compact resource tables and supply lines', () => {
+  const line = 'firearm-magazine: aboard (whole ship) 1461; stock (reachable) 1061';
+  const out = formatCompact({ok:true,result:{resources:[
+    {name:'firearm-magazine',aboard:1461,stock:1061,line},
+    {name:'rocket',aboard:200,stock:200,line:'rocket: aboard (whole ship) 200; stock (reachable) 200'},
+  ]}});
+  assert.ok(out.includes(line));
+  const warning = 'turret magazines excluded; whole ship: platform_endurance resources.aboard';
+  for (const body of [
+    {counts_scope:'where: counted supply holders; turret magazines excluded',counts_warning:warning,where:'1061: platform hubs 1061'},
+    {counts_scope:'where: counted supply holders; turret magazines excluded',lines:[warning,'where: 1061: platform hubs 1061']},
+  ]) {
+    const text = formatCompact({ok:true,result:body});
+    assert.ok(text.includes('counts_scope: '+JSON.stringify(body.counts_scope)));
+    assert.ok(text.includes(warning));
+  }
+});
+
 test('fh help ACTION: one action in about 1 KB; an unknown name lists the actions it resembles', () => {
   const describe = {actions:{craft:{recipe:'recipe name', count:'1..1000 (default 1)', returns:'queued, '+'x'.repeat(400), note:'n'},
     craftable:{recipes:'x'}, move_to:{position:'{x,y}', tolerance:'0.25..10', ticks:'1..36000'.repeat(40)}}};

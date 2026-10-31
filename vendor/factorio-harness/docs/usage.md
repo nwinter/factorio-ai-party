@@ -18558,3 +18558,5 @@ and medium-targeting guns, against rails targeting huge and big asteroids. It ch
 native settings before/after, later reads without overrides, explicit/implicit ammunition, partial/empty/any
 profiles, duplicate targets, invalid keys and target names, and the model-limit text. Existing batch384 and design
 tests retain their numerical results.
+
+- Ammunition count scope: `supply {item}` (including `compact:true` and `stock:true`) returns `counts_scope` for its counted supply holders and a warning: turret magazines excluded; whole ship: `platform_endurance resources.aboard`. Counts and reads are unchanged. `platform_endurance` ammunition rows always expose `aboard` (whole ship, including turret magazines), and label it beside `stock` (reachable, excluding stranded) in the resource line and compact output.

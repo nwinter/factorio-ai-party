@@ -209,6 +209,33 @@ local supply_once=S.supply
 local function supply_read(pl,a) game.tick=game.tick+600; return supply_once(pl,a) end
 local r=supply_read(p,{item=AC})
 eq(r.item,AC); eq(r.surface,'nauvis')
+eq(r.counts_scope,nil); eq(r.counts_warning,nil)
+-- Ammo uses the same holders; the scope survives fresh, reused, compact and stock replies.
+do
+  local before = r.where
+  prototypes.item[AC].type = 'ammo'
+  local turret = entity{name='gun-turret',type='ammo-turret',position={x=2,y=2},
+    get_item_count=function(filter) return (type(filter)=='table' and filter.name or filter)==AC and 420 or 0 end}
+  S.forget()
+  local full = supply_read(p,{item=AC})
+  eq(full.where,before)
+  any(full.used_by,'1 of 1 turrets hold 420')
+  eq(full.counts_scope,'where: counted supply holders; turret magazines excluded')
+  eq(full.counts_warning,'turret magazines excluded; whole ship: platform_endurance resources.aboard')
+  local reused = supply_once(p,{item=AC})
+  eq(reused.read,'reused'); eq(reused.counts_scope,full.counts_scope)
+  local compact = S.compact(reused)
+  eq(compact.counts_scope,full.counts_scope)
+  eq(compact.lines[1],full.counts_warning)
+  any(compact.lines,'where: '..before)
+  local stock = supply_read(p,{item=AC,stock=true})
+  eq(stock.where,before); eq(stock.counts_scope,full.counts_scope)
+  eq(stock.counts_warning,full.counts_warning)
+  eq(S.compact(stock),stock)
+  eq(table.remove(world),turret)
+  prototypes.item[AC].type = 'item'
+  S.forget()
+end
 eq(r.flow,'made 300, used 120 in the last 10 min on nauvis')
 -- Where it sits: every kind of place, the team's characters on this surface only.
 eq(r.where,'466: belts 7, requester chests 59, passive-provider chests 3, buffer chests 50, other chests 100, landing pads 7, landed cargo pods 4, machine outputs 205, users\' inputs 5, silo rockets 10, inserter hands 1, robots 3, characters 12 (sol 12)')

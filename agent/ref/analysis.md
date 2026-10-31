@@ -22,6 +22,7 @@
   a mined or pumped step names its drills or pumps, their states (working, output full, no resource left) and what
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
+- Ammunition `supply`: `counts_scope` excludes turret magazines; whole ship: `platform_endurance resources.aboard`.
 - `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?, makers?, consumers?, stock?}`: `makers: "all"`: every machine
   making it on the surface, nearest first, 24 a call (`from`), each with status and why, rate (as inspect's: a product
   exempt from productivity, an egg breeder's returned egg, gets none; `net_per_min` when it goes back in), inputs
