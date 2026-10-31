@@ -610,7 +610,9 @@ class ElevenLabs(Provider):
         while True:
             body = {"text": text, "model_id": self.model}
             if self.model in ("eleven_v4", "eleven_v3", "eleven_v4_turbo"):
-                tag = "[" + direction + "]" if direction else V3_TAG.get(mood, "")
+                # d30 23:53 (Aurora site:5680): v4/v3 speak a bracketed prose direction aloud ("me, me, me", the
+                # narrator direction read out, emphasis words doubled); only the one-word mood tags stay inline
+                tag = V3_TAG.get(mood, "")
                 body["text"] = (tag + " " + text).strip() if tag else text
                 body["voice_settings"] = {"stability": 0.5}  # v3/v4: 0.0 creative, 0.5 natural, 1.0 robust
             else:
