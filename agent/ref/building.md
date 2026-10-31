@@ -50,6 +50,9 @@
 - `build`, check inserters: `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters
   first and places nothing if one would not work; each row's `line` (and the refusal) names both sides: `picks from
   iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`.
+  `build` and `place_ghosts` dry runs check each prototype's surface conditions against the target surface;
+  `surface_conditions` names failed entries, required bounds and actual values. `check_inserters` refuses the whole
+  batch on any surface-condition failure. A blocked planned pickup or drop target is reported with its entry and reason.
 - `build`, fast replace: Fast replace over a chest of the same group keeps its contents in the new chest; what it
   cannot hold comes to you (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps
   filters, wires, circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one

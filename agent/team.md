@@ -14,6 +14,7 @@ Platform `configure` returns recipe items to the hub; `deliver` requests ingredi
 `supply` ammo excludes turrets; `platform_endurance`: aboard (whole ship), stock (reachable) (help space-age).
 `platform_ammo_below`: `on_stale:"met"|"wait"` (default met).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
+`place_ghosts` dry runs check surface conditions; `check_inserters` refuses the whole batch on failure (help building).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in
