@@ -610,7 +610,9 @@ class ElevenLabs(Provider):
         while True:
             body = {"text": text, "model_id": self.model}
             if self.model in ("eleven_v4", "eleven_v3", "eleven_v4_turbo"):
-                tag = "[" + direction + "]" if direction else V3_TAG.get(mood, "")
+                # d30 23:53 (Aurora site:5680): v4/v3 speak a bracketed prose direction aloud ("me, me, me", the
+                # narrator direction read out, emphasis words doubled); only the one-word mood tags stay inline
+                tag = V3_TAG.get(mood, "")
                 body["text"] = (tag + " " + text).strip() if tag else text
                 body["voice_settings"] = {"stability": 0.5}  # v3/v4: 0.0 creative, 0.5 natural, 1.0 robust
             else:
@@ -984,19 +986,22 @@ class TTS:
         pool = sorted(r for p, r, _, _ in PREMIUM.values() if FAMILY.get(p) == fam)
         return pool[int(hashlib.sha1(aura.encode()).hexdigest(), 16) % len(pool)]
 
-    def speak(self, text, voice, caster=None, mood=None, direction=None):
+    def speak(self, text, voice, caster=None, mood=None, direction=None, plain=False):
         """-> (audio bytes, content type, duration seconds, latency seconds). `text` is the caption text; the
         lexicon is applied here, for the provider that speaks it. `mood`: the line's moment (MOODS; default neutral).
         `direction`: sanitized delivery only, mapped to each model's supported controls (see delivery_controls
-        and provider synth methods). Voice routing is independent of delivery."""
+        and provider synth methods). Voice routing is independent of delivery. `plain`: prepared-clip retry,
+        exact caller text, no direction/mood, text rewrites, TTS cache, fallback or further timeout retry."""
         t0 = time.time()
         self._here.retried = None
         direction = clean_direction(direction)
         prov, ref = self.route(voice, caster)
         model = getattr(self.providers.get(prov), "model", MODEL.get(prov, prov))
         m, instruction = style_for(text, caster, mood, direction)
+        if plain:
+            m, instruction, direction = "neutral", "", None
         key = None
-        if self.cache:
+        if self.cache and not plain:
             key = hashlib.sha1(json.dumps(["delivery-v2", prov, model, ref, m, instruction,
                                            text, self.target]).encode()).hexdigest()
             path = os.path.join(self.cache, key[:2], key + ".mp3")
@@ -1007,10 +1012,10 @@ class TTS:
                 self.seconds += dur
                 return audio, "audio/mpeg", dur, time.time() - t0
         try:
-            audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice, direction)
+            audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice, direction, **({"exact": True} if plain else {}))
             self.fails[FAMILY.get(prov, prov)] = 0
         except (TTSError, KeyError, ValueError) as x:  # KeyError/ValueError: a response not shaped as documented
-            if is_timeout(x) or self.backend != "auto" or prov == "aura2":
+            if plain or is_timeout(x) or self.backend != "auto" or prov == "aura2":
                 raise
             self._failed(prov, x)
             key = None  # a stand-in's clip is not cached as the voice's
@@ -1072,11 +1077,11 @@ class TTS:
             self.respacer = textprep.Respacer(ask=respace_model(self))
         return speakable(self.respacer(text), limit=100000)
 
-    def _synth(self, prov, text, ref, m, instruction, caster, voice, direction=None):
+    def _synth(self, prov, text, ref, m, instruction, caster, voice, direction=None, exact=False):
         try:
-            return self._synth_once(prov, text, ref, m, instruction, caster, voice, direction)
+            return self._synth_once(prov, text, ref, m, instruction, caster, voice, direction, **({"exact": True} if exact else {}))
         except Exception as exc:
-            if not is_timeout(exc):
+            if exact or not is_timeout(exc):
                 raise
             # Keep the resolved provider AND voice. One bounded retry, with no delivery controls.
             self._here.retried = "timeout_plain"
@@ -1085,20 +1090,20 @@ class TTS:
             except Exception as retry:
                 raise TTSTimeout("plain TTS retry failed after timeout") from retry
 
-    def _synth_once(self, prov, text, ref, m, instruction, caster, voice, direction=None):
-        text = self.prep(text)
+    def _synth_once(self, prov, text, ref, m, instruction, caster, voice, direction=None, exact=False):
+        text = text if exact else self.prep(text)
         if prov in self.providers:
             p = self.providers[prov]
             style = p.phonemes if os.environ.get("POG_TTS_IPA", "1") != "0" else "respell"  # 0: respellings only
-            said = pronounce(text, style)
+            said = text if exact else pronounce(text, style)
             # (d28 batch319 SU2, viewer Aurora site:5412: "Preserve each full supported reply part") never a silent
             # slice: past the provider's limit the shorter respellings, else an error, so the fallback says it whole
-            if len(said) > p.max_chars:
+            if len(said) > p.max_chars and not exact:
                 said = pronounce(text, "respell")
             if len(said) > p.max_chars:
                 raise TTSError(f"{prov} takes at most {p.max_chars} characters; this line has {len(said)} (not cut)")
             return p.synth(said, ref, m, instruction, **({"direction": direction} if direction else {}))
-        said = pronounce(text)
+        said = text if exact else pronounce(text)
         if prov == "aura2":
             return self.ai.run(MODEL["aura2"], {"text": said, "speaker": ref, "encoding": "mp3"}, raw=True)
         if prov == "aura1":

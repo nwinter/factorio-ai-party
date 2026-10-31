@@ -513,8 +513,10 @@ def stills(run, until, out):
     return found
 
 
-def render_lines(lines, out, tts=None):
+def render_lines(lines, out, tts=None, checker=None):
     import voices
+    import prepared_audio as PA
+    checker = checker or PA.Checker(Path(out) / "audio-checks.jsonl")
     rendered = []
     for line in lines:
         role = "pbp" if line["speaker"] == "Rook" else "color"
@@ -526,17 +528,26 @@ def render_lines(lines, out, tts=None):
         key = hashlib.sha256(json.dumps(["delivery-v2", getattr(tts, "backend", "none"), route, model,
                                         line["speaker"], line["text"], direction]).encode()).hexdigest()[:24]
         # Playback identity outlives a model switch; asset identity includes the synthesis model.
-        row = {k: v for k, v in line.items() if k not in ("asset", "ctype", "duration")}
+        row = {k: v for k, v in line.items() if k not in ("asset", "ctype", "duration", "audio_check")}
         row["id"] = line.get("id") or key
         meta = read_json(Path(out) / "assets" / (key + ".json"))
-        if tts and meta and (Path(out) / "assets" / meta["asset"]).is_file():
-            row.update(meta)
-        elif tts:
-            data, ctype, duration, _ = tts.speak(line["text"], voices.CASTERS[role], caster=role,
-                                              **({"direction": direction} if direction else {}))
+        if tts:
+            cached = None
+            if meta and (Path(out) / "assets" / meta["asset"]).is_file():
+                cached = ((Path(out) / "assets" / meta["asset"]).read_bytes(), meta["ctype"], meta["duration"], meta)
+
+            def synth(plain):
+                data, ctype, duration, _ = tts.speak(line["text"], voices.CASTERS[role], caster=role,
+                                                  **({"plain": True} if plain else {"direction": direction} if direction else {}))
+                return data, ctype, duration, {}
+
+            result = PA.prepare(line["text"], synth, checker, row["id"], cached=cached)
+            if result is None:
+                continue
+            data, ctype, duration, checked = result
             asset = key + ".audio"
             atomic(Path(out) / "assets" / asset, data)
-            meta = {"asset": asset, "ctype": ctype, "duration": duration}
+            meta = {"asset": asset, "ctype": ctype, "duration": duration, "audio_check": checked["audio_check"]}
             # A plain timeout retry is playable now, but must not become the cached directed rendition.
             actual = tts.last_here() if hasattr(tts, "last_here") else {}
             same_voice = not route or (actual.get("provider"), actual.get("voice")) == tuple(route)
@@ -552,15 +563,24 @@ def render_lines(lines, out, tts=None):
 
 def prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
     import voices
+    import prepared_audio as PA
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     with (out / ".prepare.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         old = read_json(out / "manifest.json")
-        if old and tts is not None and old.get("tts_config") != voices.audio_config(tts):
+        def checked(line):
+            path = out / "assets" / line.get("asset", "missing")
+            return path.is_file() and PA.valid(line.get("audio_check"), line["text"], path.read_bytes())
+
+        if old and tts is not None and (old.get("tts_config") != voices.audio_config(tts) or old.get("audio_check_v") != PA.VERSION
+                                       or not all(checked(r) for r in old["lines"] + old["transition"])):
             # Reuse only the already checked prose/evidence. Replace every audio asset before publishing.
+            base_ids = {r["id"] for r in old["lines"][:old.get("base_count", len(old["lines"]))]}
             old = dict(old, lines=render_lines(old["lines"], out, tts),
-                       transition=render_lines(old["transition"], out, tts), tts_config=voices.audio_config(tts))
+                       transition=render_lines(old["transition"], out, tts), tts_config=voices.audio_config(tts),
+                       audio_check_v=PA.VERSION)
+            old["base_count"] = sum(r["id"] in base_ids for r in old["lines"])
             save_json(out / "manifest.json", old)
             export(old, out)
         if old and old.get("through", 0) >= until and (old.get("final") or not final):
@@ -570,6 +590,7 @@ def prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
 
 def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
     import voices
+    import prepared_audio
     out, run = Path(out), Path(run)
     evidence = gather(run, until, logs)
     previous = read_json(out / "manifest.json")
@@ -601,7 +622,8 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
             {"speaker": "Vale", "title": "Coming up", "text": "We will take you through the turning points while the next team starts. The recap follows the record, right through the closing developments.", "sources": []}], out, tts)
     pictures = {r["asset"]: r for r in (previous.get("stills", []) if previous else [])}
     pictures.update({r["asset"]: r for r in stills(run, until, out)})
-    manifest = {"version": 1, "run": run.name, "through": until, "final": final, "tts_config": voices.audio_config(tts),
+    manifest = {"version": 1, "audio_check_v": prepared_audio.VERSION if tts else None,
+                "run": run.name, "through": until, "final": final, "tts_config": voices.audio_config(tts),
                 "base_through": base_through, "base_count": base_count,
                 "evidence": evidence, "review": review, "lines": lines, "transition": transition,
                 "stills": sorted(pictures.values(), key=lambda r: r["t"])}

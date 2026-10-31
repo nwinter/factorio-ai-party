@@ -38,6 +38,13 @@ TTS uses the same Rook/Vale roles and backend routing as the casters (`POG_RECAP
 `auto`). The manifest is replaced atomically only after assets are written. A file lock
 serializes competing preparations; a late early pass cannot overwrite a final one.
 
+Prepared speech and transitions pass the spoken-content check described in `tour-FORMAT.md`: unprompted
+Whisper transcription, normalized word error, extra leading/trailing speech and duration against characters.
+`audio-checks.jsonl` records every attempt. One exact-script retry without direction is allowed; a second
+failure removes that line from the prepared sequence. Cache receipts bind script and audio SHA-256 hashes.
+Old manifests are checked/rebuilt during preparation, including a successor finishing the previous shift;
+the player refuses unchecked or changed audio. This adds no transcription calls to live host lines.
+
 At the deadline a bounded extract pass adds the closing developments without model latency.
 The next service finishes that pass if the previous one was stopped during it. It also
 includes the interval through `stopped.json.stop_utc` when the actual stop followed the

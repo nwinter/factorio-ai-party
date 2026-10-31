@@ -339,15 +339,27 @@ def read_manifest(out):
         return None
 
 
+def audio_skipped(manifest, stop):
+    c = (manifest or {}).get("clips", {}).get(stop["id"], {})
+    return bool(c.get("skipped") and c.get("hash") == clip_hash((manifest or {}).get("voice"), stop["narration"]))
+
+
 def clip_for(manifest, out, stop):
     """The prepared clip for this stop's narration ({file, hash, duration} with path) or None (missing, stale)."""
     if not manifest or not stop["narration"]:
         return None
     c = manifest["clips"].get(stop["id"])
-    if not c or c.get("hash") != clip_hash(manifest.get("voice"), stop["narration"]):
+    if not c or c.get("skipped") or c.get("hash") != clip_hash(manifest.get("voice"), stop["narration"]):
         return None
     path = os.path.join(out, c["file"])
-    return dict(c, path=path) if os.path.exists(path) else None
+    if not os.path.exists(path):
+        return None
+    import prepared_audio as PA
+    with open(path, "rb") as f:
+        audio = f.read()
+    if not PA.valid(c.get("audio_check"), stop["narration"], audio):
+        return None
+    return dict(c, path=path)
 
 
 def voices_in_use(feed):
@@ -360,10 +372,12 @@ def voices_in_use(feed):
     return {a.get("voice"): a.get("name") for a in s.get("agents") or [] if a.get("voice")}
 
 
-def render_all(rows, out, voice, tts, manifest, speak=None):
+def render_all(rows, out, voice, tts, manifest, speak=None, checker=None):
     """Render every narration of `rows` in `voice` (kept clips stay). -> (clips {id: row}, error or None). `speak`
     (tests): text -> (audio, ctype, seconds, provider)."""
     import voices as V
+    import prepared_audio as PA
+    checker = checker or PA.Checker(os.path.join(out, "audio-checks.jsonl"))
     old = manifest.get("clips", {}) if manifest and manifest.get("voice") == voice else {}
     clips = {}
     for _, s, _ in rows:
@@ -373,26 +387,37 @@ def render_all(rows, out, voice, tts, manifest, speak=None):
         name = f"{s['id']}-{h}.mp3"
         path = os.path.join(out, name)
         prev = old.get(s["id"])
-        if prev and prev.get("hash") == h and os.path.exists(path):
-            clips[s["id"]] = prev
-            if prev.get("subs_v") != SUBS_V:  # (CK4) a clip made before its captions: timed now, nothing rendered
-                prev.update(subs=subtitles.for_clip(path, s["narration"], prev["duration"]), subs_v=SUBS_V)
-            continue
-        try:
+        cached = None
+        if prev and not prev.get("skipped") and prev.get("hash") == h and os.path.exists(path):
+            with open(path, "rb") as f:
+                cached = (f.read(), "audio/mpeg", prev["duration"], prev)
+
+        def synth(plain):
             if speak:
                 audio, ctype, dur, prov = speak(s["narration"])
             else:
-                audio, ctype, dur, _ = tts.speak(s["narration"], voice, direction=DIRECTION)
+                audio, ctype, dur, _ = tts.speak(s["narration"], voice,
+                                                **({"plain": True} if plain else {"direction": DIRECTION}))
                 prov = tts.last_here().get("provider")
+            return audio, ctype, dur, {"provider": prov}
+
+        try:
+            result = PA.prepare(s["narration"], synth, checker, s["id"], cached=cached)
         except Exception as x:  # TTSError carries the provider's reply, never the key
             return clips, f"{s['id']}: {type(x).__name__}: {str(x)[:200]}"
+        if result is None:
+            clips[s["id"]] = {"hash": h, "skipped": True, "reason": "spoken audio check failed twice"}
+            log(f"[prepare] {s['id']}: skipped after two failed spoken audio checks")
+            continue
+        audio, ctype, dur, meta = result
+        prov = meta.get("provider")
         if ctype != "audio/mpeg":
             return clips, f"{s['id']}: {ctype} from {prov} (expected audio/mpeg)"
         with open(path + ".tmp", "wb") as f:
             f.write(audio)
         os.replace(path + ".tmp", path)
         clips[s["id"]] = {"file": name, "hash": h, "duration": round(float(dur or V.duration(audio)), 2),
-                          "chars": len(s["narration"]), "provider": prov}
+                          "chars": len(s["narration"]), "provider": prov, "audio_check": meta["audio_check"]}
         clips[s["id"]].update(subs=subtitles.for_clip(path, s["narration"], clips[s["id"]]["duration"]), subs_v=SUBS_V)
         log(f"[prepare] {s['id']}: {clips[s['id']]['duration']:.1f} s ({len(s['narration'].split())} words, {prov})")
     return clips, None
@@ -434,8 +459,9 @@ def prepare(a):
              "made": time.strftime("%Y-%m-%d %H:%M:%S"), "clips": clips}
         with open(os.path.join(out, "manifest.json"), "w") as f:
             json.dump(m, f, indent=1)
-        total = sum(c["duration"] for c in clips.values())
-        log(f"[prepare] {len(clips)} clips in {voice} ({prov}), {total / 60:.1f} min of narration, in {out}")
+        total = sum(c.get("duration", 0) for c in clips.values())
+        skipped = sum(bool(c.get("skipped")) for c in clips.values())
+        log(f"[prepare] {len(clips) - skipped} clips in {voice} ({prov}), {skipped} skipped, {total / 60:.1f} min of narration, in {out}")
         print_timeline(rows, m, out)
         return 0
     log("[prepare] no voice rendered the whole tour: " + "; ".join(errors))
@@ -817,6 +843,11 @@ class Tour:
                     continue
                 clip = clip_for(self.manifest, self.out, s)
                 length = lengths[s["id"]]
+                if audio_skipped(self.manifest, s):
+                    self.record(event="skipped", id=s["id"], reason="spoken audio check failed twice")
+                    skipped += 1
+                    left -= length
+                    continue
                 video = self.videos.get(s["id"])
                 if s.get("clip") and not video:
                     log(f"[tour] skip {s['id']}: its clip is not available")
@@ -937,7 +968,8 @@ def run(a):
     rows = from_index(checked(load_script(a.script)), a.start)
     out = a.out or clip_dir(a.script)
     m = read_manifest(out)
-    missing = [s["id"] for _, s, _ in rows if s and s["narration"] and not clip_for(m, out, s)]
+    missing = [s["id"] for _, s, _ in rows if s and s["narration"] and not clip_for(m, out, s)
+               and not audio_skipped(m, s)]
     if missing:
         log(f"[tour] no prepared clip for {', '.join(missing)}: run `tour.py prepare {a.script}` first")
         return 1

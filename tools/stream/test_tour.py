@@ -79,6 +79,13 @@ class FakeTTS:
 
 
 def prepare_clips():
+    import prepared_audio
+    from unittest.mock import patch
+    with patch.object(prepared_audio, "transcribe", lambda audio, ctype: audio.removeprefix(b"ID3fake").decode()):
+        _prepare_clips()
+
+
+def _prepare_clips():
     with tempfile.TemporaryDirectory() as d:
         rows = tour.checked([LOOK, SHIP])
         fake = FakeTTS()
@@ -186,6 +193,11 @@ class FakeService:
         return {"listeners": 1, "playing": playing, "queued": queued}
 
 
+def accepted(script, audio):
+    import prepared_audio as P
+    return dict(version=P.VERSION, passed=True, script_sha256=P.digest(script.encode()), audio_sha256=P.digest(audio))
+
+
 def tour_with(d, stops, clip_s, agent_gaps=True, **kw):
     rows = tour.checked(stops)
     clips = {}
@@ -193,7 +205,8 @@ def tour_with(d, stops, clip_s, agent_gaps=True, **kw):
         if s and s["narration"]:
             h = tour.clip_hash("el-brian", s["narration"])
             open(os.path.join(d, f"{s['id']}.mp3"), "wb").write(b"ID3")
-            clips[s["id"]] = {"file": f"{s['id']}.mp3", "hash": h, "duration": clip_s}
+            clips[s["id"]] = {"file": f"{s['id']}.mp3", "hash": h, "duration": clip_s,
+                              "audio_check": accepted(s["narration"], b"ID3")}
     m = {"voice": "el-brian", "clips": clips}
     clock = Clock()
     svc = FakeService(clock, **kw)

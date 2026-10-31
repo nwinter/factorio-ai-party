@@ -25,11 +25,15 @@ class TTS:
     backend = "stub"
 
     def speak(self, text, voice, **kwargs):
-        return b"stub audio", "audio/mpeg", 6.0, 0
+        return text.encode(), "audio/mpeg", max(1, len(text) / 15), 0
 
 
 class RecapTest(unittest.TestCase):
     def setUp(self):
+        import prepared_audio
+        transcript = patch.object(prepared_audio, "transcribe", lambda audio, ctype: audio.decode())
+        transcript.start()
+        self.addCleanup(transcript.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -217,6 +221,27 @@ class RecapTest(unittest.TestCase):
         with patch.object(voices, "TTS", return_value=snapshot) as factory, patch.object(R, "prepare"):
             svc.build(self.old, T0 + 14400, True)
         factory.assert_called_once_with("auto", openai_model=snapshot.openai_model)
+
+    def test_legacy_and_changed_audio_require_preparation(self):
+        import prepared_audio
+        manifest = self.prepare()
+        first = manifest["lines"][0]
+        first.pop("audio_check")
+        manifest.pop("audio_check_v")
+        R.save_json(self.out / "manifest.json", manifest)
+        audio = self.audio()
+        player = Player(self.run, self.old, audio)
+        player.step(T0 + 14401)
+        self.assertFalse(any(m[2].get("channel") == "caster" for m in audio.clips.values()))
+        rebuilt = self.prepare()
+        self.assertEqual(rebuilt["audio_check_v"], prepared_audio.VERSION)
+        player.step(T0 + 14407)
+        self.assertTrue(any(m[2].get("channel") == "caster" for m in audio.clips.values()))
+        # A changed file cannot be vouched for by a receipt for its old bytes.
+        audio2 = self.audio()
+        (self.out / "assets" / first["asset"]).write_bytes(b"other speech")
+        Player(self.run, self.old, audio2).step(T0 + 14408)
+        self.assertFalse(any(m[2].get("channel") == "caster" for m in audio2.clips.values()))
 
     def test_exact_number_forms_and_citation_scope(self):
         e = {"rows": [{"id": "a", "text": "Astra reported four new stern railguns and two aft engines. "
