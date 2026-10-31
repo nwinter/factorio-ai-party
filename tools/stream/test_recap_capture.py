@@ -22,7 +22,7 @@ def state(now=1000, subject="Asterion", surface="platform-16", platform=True):
             **({"platform": {"name": subject}} if platform else {})}
     frame = {"client": "main", "surface": surface, **({"platform": {"name": subject}} if platform else {})}
     program = {"frames": {"main": frame}, "cameras": {"main": {"shot": shot, "pending": False}}}
-    return {"now": now - 1, "tick": 12000, "cuts": {"connected": True, "t": now - 1, "on_air": program},
+    return {"now": now, "tick": 12000, "cuts": {"connected": True, "t": now - 1, "on_air": program},
             "camera_states": {"main": {"acknowledged": shot, "on_air": shot}}}
 
 
@@ -122,6 +122,16 @@ class CaptureTest(unittest.TestCase):
         self.now += 60; self.data = b"bad JPEG"
         self.assertEqual(self.step()["status"], "failed")
         self.assertFalse((self.run / "recap-media.json").exists())
+
+    def test_post_capture_check_waits_for_new_service_snapshot(self):
+        stale, fresh = state(), state()
+        stale["now"] = 999
+        with patch.object(C.time, "sleep"), patch.object(C.time, "monotonic", side_effect=range(10)):
+            with patch("builtins.print"):
+                calls = iter([stale, fresh])
+                result = self.capture.step(stale, lambda: next(calls))
+        self.assertEqual(result["status"], "saved")
+        self.assertEqual(R.read_json(self.run / "recap-media.json")[0]["after_receipt"]["state_t"], 1000)
 
 
 class RefreshTest(unittest.TestCase):

@@ -128,7 +128,16 @@ class Capture:
                 status["elapsed_ms"] = round((time.monotonic() - started) * 1000, 1)
                 if finished - now > FRESH_SECONDS:
                     raise ValueError("screenshot exceeded receipt freshness window")
-                after = next((r for r in candidates(recheck(), finished, self.panels)
+                # state.json is published on the service tick. An immediate GET may
+                # return the pre-capture snapshot; wait for an actual later receipt.
+                deadline = time.monotonic() + SETTLE_SECONDS
+                after_state = recheck()
+                while after_state.get("now", 0) < finished and time.monotonic() < deadline:
+                    time.sleep(.2)
+                    after_state = recheck()
+                if after_state.get("now", 0) < finished:
+                    raise ValueError("no post-capture receipt")
+                after = next((r for r in candidates(after_state, self.clock(), self.panels)
                               if all(r[k] == row[k] for k in ("client", "subject", "subject_type", "surface", "identity"))), None)
                 if after is None:
                     raise ValueError("camera changed during screenshot")
