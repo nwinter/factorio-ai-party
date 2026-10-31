@@ -86,7 +86,7 @@ while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
 
 \$(mem)"
   else
-    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it), the only stop condition. Recovery is in the brief below; if none arrived, notes.md is the fallback. Check ./fh call status, ./fh call chat and ./fh board.
+    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it), the only stop condition. Recovery is in the brief below; if none arrived, notes.md is the fallback. Check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed.
 
 \$(mem)"
   fi
