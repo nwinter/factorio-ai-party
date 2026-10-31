@@ -245,6 +245,34 @@ def engines(tmp):
         for d in (direction, "quick and excited.", direction):
             tts.speak(text, "oa-ballad", direction=d)
         assert tts.last_here()["cached"]
+        # Both configured models make requests with distinct cache entries; restarting reuses only its own model.
+        model_cache = str(Path(tmp) / "model-cache")
+        start = len(sent)
+        for model in voices.OPENAI_TTS_MODELS * 2:
+            tts = make("openai", cache=model_cache, openai_model=model)
+            tts.speak(text, "thalia", caster="color", direction=direction)
+            assert tts.last_here()["model"] == model
+        assert [r["body"]["model"] for r in sent[start:]] == list(voices.OPENAI_TTS_MODELS)
+        assert len(list(Path(model_cache).rglob("*.mp3"))) == 2
+        for row in sent[start:]:
+            row.update(case="persistent-model-selector", mode="mock")
+        # Actual host startup (primary AND fallback) reads the saved setting anew, without altering it.
+        run = Path(tmp) / "run"
+        run.mkdir()
+        args = caster.parser().parse_args(["--writer", "template", "--classifier", "heuristic", "--tts", "openai",
+                                          "--tts-fallback", "openai", "--run-dir", str(run), "--log-dir", str(run)])
+        assert voices.configured_openai_model(run_dir=run) == voices.DEFAULT_OPENAI_TTS_MODEL
+        for model in voices.OPENAI_TTS_MODELS:
+            config = {"audio": {"openai_tts_model": model}}
+            (run / "stream.json").write_text(json.dumps(config))
+            host = caster.Caster(args)
+            assert host.tts.providers["openai"].model == host.tts_fallback.providers["openai"].model == model
+            assert json.loads((run / "stream.json").read_text()) == config
+        try:
+            voices.configured_openai_model({"audio": {"openai_tts_model": "typo"}})
+            assert False, "invalid setting must fail clearly"
+        except ValueError:
+            pass
     return [dict(row, keys=sorted(row.get("body", {}))) for row in sent]
 
 

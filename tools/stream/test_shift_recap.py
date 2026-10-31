@@ -168,6 +168,56 @@ class RecapTest(unittest.TestCase):
         R.render_lines([new], self.out, tts)
         self.assertEqual(len(calls), 4, "timeout audio must be synthesized again, not cached as directed")
 
+    def test_model_switch_rebuilds_final_manifest_before_playback(self):
+        import voices
+        from types import SimpleNamespace
+        class ModelTTS(TTS):
+            backend = "auto"
+            def __init__(self, model):
+                self.openai_model, self.calls, self.last = model, [], {}
+                self.providers = {"openai": SimpleNamespace(model=model)}
+            def route(self, voice, role):
+                return "openai", "cedar" if role == "pbp" else "ballad"
+            def speak(self, text, voice, **kw):
+                self.calls.append(text)
+                self.last = dict(provider="openai", voice=self.route(voice, kw["caster"])[1], model=self.openai_model)
+                return super().speak(text, voice, **kw)
+            def last_here(self):
+                return self.last
+        default, snapshot = [ModelTTS(m) for m in voices.OPENAI_TTS_MODELS]
+        old = R.prepare(self.old, self.out, T0 + 14400, tts=default, final=True)
+        audio = self.audio()
+        player = Player(self.run, self.old, audio, tts_config=voices.audio_config(snapshot))
+        player.state["completed"] = [old["lines"][0]["id"]]
+        self.assertEqual(player.step(T0 + 14401)["title"], "Shift change")
+        self.assertFalse(audio.clips, "old prepared audio must not play during replacement")
+        new = R.prepare(self.old, self.out, T0 + 14400, tts=snapshot, final=True)
+        for field in ("evidence", "review", "through", "final"):
+            self.assertEqual(old[field], new[field], field)
+        for section in ("lines", "transition"):
+            for a, b in zip(old[section], new[section]):
+                self.assertEqual(a["id"], b["id"], "heard-line identity survives an asset/model change")
+                self.assertEqual(a["text"], b["text"])
+                self.assertNotEqual(a["asset"], b["asset"])
+        count = len(snapshot.calls)
+        self.assertEqual(R.prepare(self.old, self.out, T0 + 14400, tts=snapshot, final=True), new)
+        self.assertEqual(len(snapshot.calls), count)
+        player.step(T0 + 14402)
+        self.assertTrue(audio.clips)
+        self.assertEqual(player.current["line"]["id"], old["lines"][1]["id"])
+        back = R.prepare(self.old, self.out, T0 + 14400, tts=default, final=True)
+        self.assertEqual([r["asset"] for r in back["lines"]], [r["asset"] for r in old["lines"]])
+        # The service reads the selector at startup, uses it for recap builds and waits on incompatible manifests.
+        cfg = {"audio": {"openai_tts_model": snapshot.openai_model}}
+        svc = ShiftRecap(self.run, cfg, self.audio())
+        calls = []
+        svc.schedule = lambda *args: calls.append(args)
+        svc.step(T0 + 14401)
+        self.assertTrue(calls and not svc.final_previous)
+        with patch.object(voices, "TTS", return_value=snapshot) as factory, patch.object(R, "prepare"):
+            svc.build(self.old, T0 + 14400, True)
+        factory.assert_called_once_with("auto", openai_model=snapshot.openai_model)
+
     def test_exact_number_forms_and_citation_scope(self):
         e = {"rows": [{"id": "a", "text": "Astra reported four new stern railguns and two aft engines. "
                        "Sol reported sixMIL resumed, a twenty-minute test, zero active reminders, and 4,000 bricks.",

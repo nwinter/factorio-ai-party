@@ -6,6 +6,21 @@ talks. Everything is mixed by OBS through the overlay's browser source.
 
 ## Delivery stays with the line (batch389, 2026-10-30)
 
+The operator can persist the OpenAI speech model in the run's `stream.json` (merge this field into the existing
+configuration):
+
+```json
+{"audio": {"openai_tts_model": "gpt-4o-mini-tts-2025-03-20"}}
+```
+
+Use `gpt-4o-mini-tts` or remove the field to keep the current default. Hosts read this once at process startup;
+the recap service reads the same setting at its startup, and the recap CLI reads the run's configuration. No live
+configuration is changed by this patch. The setting selects the model for OpenAI voices; it does not move Rook off
+his normal ElevenLabs voice. Host records include the actual model. TTS and recap asset cache keys include the
+actual model ID. A recap model switch rebuilds audio for already checked prose, blocks incompatible old manifests
+from playback until replacement, and preserves completed-line IDs. Existing old manifests without a model marker
+are regenerated once. Changing the setting takes effect at the operator's next normal process restart.
+
 Playback groups assign a stable `id` to each host line and store `directions[id]`. Resume and retries look up that
 ID, never the position in the unfinished subset. Old `event.directions` lists migrate against the full exchange on
 load. Queue and caster records include `line_id` for tracing across attempts.

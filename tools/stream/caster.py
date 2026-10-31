@@ -2359,7 +2359,7 @@ def spoke_by(tts):
     """{provider, voice, cached, mood} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS
     objects)."""
     last = tts.last_here() if hasattr(tts, "last_here") else dict(getattr(tts, "last", None) or {})
-    return {k: last[k] for k in ("provider", "voice", "cached", "mood", "retried") if last.get(k) is not None} or {"provider": tts.backend}
+    return {k: last[k] for k in ("provider", "voice", "model", "cached", "mood", "retried") if last.get(k) is not None} or {"provider": tts.backend}
 
 
 # (d22 batch99 BI1, viewer Aurora site:4295: "Routine words like still or broken can trigger frustration. Use a natural
@@ -2491,8 +2491,10 @@ class Caster:
                     if a.writer == "or" and low and low != a.model else None)
         self.watch_reads = deque(maxlen=60)  # (read at, count or None), one per bridge reading
         self.host = self.writer  # the main writer the last line went to; a change is logged
-        self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
-        self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
+        tts_model = voices.configured_openai_model(run_dir=getattr(a, "run_dir", None))
+        self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai, openai_model=tts_model)
+        self.tts_fallback = (voices.TTS(a.tts_fallback, ai=ai, openai_model=tts_model)
+                             if a.tts_fallback and not a.dry_run else None)
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
         self.classifier = Classifier(a.classifier, ai=ai)
         self.talk = TalkPicker(a.agent_gap, a.agent_cooldown, a.chat_stale, limit=a.max_chars,

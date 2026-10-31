@@ -23,7 +23,7 @@ def agents_started(run):
 
 
 class Player:
-    def __init__(self, run, source, audio, phase="recap"):
+    def __init__(self, run, source, audio, phase="recap", tts_config=None):
         self.run, self.source, self.audio, self.phase = Path(run), Path(source), audio, phase
         self.root = self.source / "shift-recap"
         self.path = self.run / f"shift-recap-{phase}-played.json"
@@ -43,6 +43,7 @@ class Player:
         self.manifest = None
         self.mtime = None
         self.synced = False
+        self.tts_config = tts_config
 
     def persist(self):
         recap.save_json(self.path, self.state)
@@ -65,6 +66,10 @@ class Player:
             return
         if self.mtime != modified:
             manifest = recap.read_json(self.root / "manifest.json")
+            if self.tts_config is not None and (not isinstance(manifest, dict)
+                                                or manifest.get("tts_config") != self.tts_config):
+                self.manifest = None
+                return  # wait for replacement assets; never play another model's prepared speech
             if isinstance(manifest, dict) and manifest.get("version") == 1 and manifest.get("run") == self.source.name:
                 self.manifest, self.mtime = visuals.bind(manifest), modified
 
@@ -134,11 +139,16 @@ class Player:
 
 class ShiftRecap:
     def __init__(self, run, config, audio):
+        import voices
         self.run, self.config, self.audio = Path(run), config, audio
         self.root = self.run / "shift-recap"
         self.shift = config.get("shift") or {}
         previous = recap.parent_run(self.run)
-        self.player = Player(self.run, previous, audio) if previous and not agents_started(self.run) else None
+        self.tts_model = voices.configured_openai_model(config)
+        self.tts_backend = os.environ.get("POG_RECAP_TTS", "auto")
+        self.tts_config = {"backend": self.tts_backend, "openai_tts_model": self.tts_model}
+        self.player = (Player(self.run, previous, audio, tts_config=self.tts_config)
+                       if previous and not agents_started(self.run) else None)
         self.previous = previous
         self.latest = None
         self.public = None
@@ -161,7 +171,7 @@ class ShiftRecap:
             writer = None
             if not final and hourly.openrouter_key():
                 writer = hourly.make_writer(os.environ.get("POG_RECAP_MODEL", hourly.MODEL))
-            tts = voices.TTS(os.environ.get("POG_RECAP_TTS", "auto"))
+            tts = voices.TTS(self.tts_backend, openai_model=self.tts_model)
             out = source / "shift-recap"
             recap.prepare(source, out, until, writer=writer, tts=tts,
                           logs=recap.HERE / "logs", final=final)
@@ -189,18 +199,18 @@ class ShiftRecap:
             old = recap.read_json(self.previous / "shift-recap" / "manifest.json", {}) or {}
             prev_config = recap.read_json(self.previous / "stream.json", {}) or {}
             until = recap.record_end(self.previous, (prev_config.get("shift") or {}).get("end") or now)
-            if old.get("final") and old.get("through", 0) >= until:
+            if old.get("final") and old.get("through", 0) >= until and old.get("tts_config") == self.tts_config:
                 self.final_previous = True
             else:
                 # If the old service was killed at the deadline, the successor finishes from files.
                 self.schedule(self.previous, until, bool(old), now)
         elif start and end and now >= min(start + recap.PREPARE_AFTER, end - 120):
             own = recap.read_json(self.root / "manifest.json", {}) or {}
-            if not own or (now >= end and not own.get("final")):
+            if not own or own.get("tts_config") != self.tts_config or (now >= end and not own.get("final")):
                 self.schedule(self.run, min(now, end), bool(own), now)
         if end and end - recap.TRANSITION_BEFORE <= now < end:
             if not self.player or self.player.phase != "transition":
-                self.player = Player(self.run, self.run, self.audio, "transition")
+                self.player = Player(self.run, self.run, self.audio, "transition", tts_config=self.tts_config)
         elif end and now >= end and self.player and self.player.phase == "transition":
             self.player.finish("shift deadline")
         self.public = self.player.step(now) if self.player else None

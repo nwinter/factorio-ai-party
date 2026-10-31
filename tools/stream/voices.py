@@ -34,6 +34,27 @@ import textprep
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEY_DIR = os.path.expanduser(os.environ.get("POG_KEY_DIR", "~/.config/pog"))
 STATE_DIR = os.path.expanduser(os.environ.get("POG_VOICE_STATE", "~/.cache/pog/voices"))  # designed voices, id lookups
+DEFAULT_OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
+OPENAI_TTS_MODELS = (DEFAULT_OPENAI_TTS_MODEL, "gpt-4o-mini-tts-2025-03-20")
+
+
+def configured_openai_model(config=None, run_dir=None):
+    """Persistent per-run selector; read once by each host/service process at startup."""
+    if config is None and run_dir:
+        try:
+            with open(os.path.join(run_dir, "stream.json")) as f:
+                config = json.load(f)
+        except FileNotFoundError:
+            pass
+    model = ((config or {}).get("audio") or {}).get("openai_tts_model", DEFAULT_OPENAI_TTS_MODEL)
+    if model not in OPENAI_TTS_MODELS:
+        raise ValueError("audio.openai_tts_model must be one of: " + ", ".join(OPENAI_TTS_MODELS))
+    return model
+
+
+def audio_config(tts):
+    return {"backend": getattr(tts, "backend", "none"),
+            "openai_tts_model": getattr(tts, "openai_model", DEFAULT_OPENAI_TTS_MODEL)}
 
 # ---- Aura-2 (Cloudflare Workers AI) ------------------------------------------------------------------------------
 # id: (gender, accent, aura-1 fallback, macOS say voice, say rate). Gender only picks the `tone` pitch and nearest
@@ -656,7 +677,7 @@ class OpenAITTS(Provider):
     URL = "https://api.openai.com/v1/audio/speech"
     max_chars = 4096
 
-    def __init__(self, model="gpt-4o-mini-tts"):
+    def __init__(self, model=DEFAULT_OPENAI_TTS_MODEL):
         super().__init__()
         self.model = model
 
@@ -841,8 +862,11 @@ _load_designed()
 
 
 class TTS:
-    def __init__(self, backend="aura2", ai=None, target=-18.0, cache=None):
+    def __init__(self, backend="aura2", ai=None, target=-18.0, cache=None, openai_model=DEFAULT_OPENAI_TTS_MODEL):
         self.backend = backend
+        if openai_model not in OPENAI_TTS_MODELS:
+            raise ValueError("unsupported OpenAI TTS model: " + str(openai_model))
+        self.openai_model = openai_model
         self.ai = ai
         self.target = target if shutil.which("ffmpeg") else None  # LUFS every cloud clip is brought to
         self.cache = cache or os.environ.get("POG_TTS_CACHE")  # directory of clips keyed by provider+voice+text
@@ -863,6 +887,8 @@ class TTS:
                 continue
             if backend in ("auto", name):
                 p = make()
+                if name == "openai":
+                    p.model = self.openai_model
                 if p.available():
                     self.providers[name] = p
         if backend in PROVIDERS and backend not in self.providers:
@@ -967,7 +993,7 @@ class TTS:
         self._here.retried = None
         direction = clean_direction(direction)
         prov, ref = self.route(voice, caster)
-        model = getattr(self.providers.get(prov), "model", "")
+        model = getattr(self.providers.get(prov), "model", MODEL.get(prov, prov))
         m, instruction = style_for(text, caster, mood, direction)
         key = None
         if self.cache:
@@ -977,7 +1003,7 @@ class TTS:
             if os.path.exists(path):
                 audio = open(path, "rb").read()
                 dur = duration(audio)
-                self.last = self._here.last = {"provider": prov, "voice": ref, "mood": m, "cached": True}
+                self.last = self._here.last = {"provider": prov, "voice": ref, "model": model, "mood": m, "cached": True}
                 self.seconds += dur
                 return audio, "audio/mpeg", dur, time.time() - t0
         try:
@@ -1022,11 +1048,12 @@ class TTS:
         self.spent += rate * (len(text) if unit == "chars" else dur / 60)
         self.chars += len(text)
         self.seconds += dur
-        last = {"provider": prov, "voice": ref, "mood": m, "cached": False}
+        last = {"provider": prov, "voice": ref, "model": getattr(self.providers.get(prov), "model", MODEL.get(prov, prov)),
+                "mood": m, "cached": False}
         if self._here.retried:
             last.update(mood="neutral", retried=self._here.retried)
             key = None  # a plain timeout retry must not poison the directed clip cache
-        if getattr(self.providers.get(prov), "model", "") != model:
+        if getattr(self.providers.get(prov), "model", MODEL.get(prov, prov)) != model:
             key = None  # e.g. Turbo tags are unsupported after a downgrade to Flash
         self.last = self._here.last = last
         if key:

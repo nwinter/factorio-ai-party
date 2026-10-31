@@ -19,6 +19,7 @@ def main():
     ap.add_argument('--out', required=True, type=Path)
     ap.add_argument('--recap-writer', action='store_true')
     ap.add_argument('--resume', action='store_true', help='reuse already rendered samples in --out')
+    ap.add_argument('--openai-model', choices=voices.OPENAI_TTS_MODELS, default=voices.DEFAULT_OPENAI_TTS_MODEL)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     # Keep the audition isolated from live caches; simple fixture text needs no spacing model.
@@ -44,7 +45,7 @@ def main():
         return real_http(method, url, headers, body, timeout)
 
     voices._http = capture
-    tts = voices.TTS('auto')
+    tts = voices.TTS('auto', openai_model=args.openai_model)
     real_run = tts.ai.run
 
     def cf_capture(model, inputs, **kw):
@@ -68,13 +69,16 @@ def main():
         ('agent-aura', 'orion', None, 'The train is still waiting. I am checking the signal.', 'slow and calm.'),
     ]
     for name, voice, role, text, direction in jobs:
-        if any(row['name'] == name and row.get('asset') and (args.out / row['asset']).is_file() for row in samples):
+        if any(row['name'] == name and row.get('asset') and (args.out / row['asset']).is_file()
+               and row.get('openai_model', voices.DEFAULT_OPENAI_TTS_MODEL) == args.openai_model for row in samples):
             continue
         current = name
-        row = dict(name=name, text=text, direction=direction, requested_voice=voice, role=role)
+        row = dict(name=name, text=text, direction=direction, requested_voice=voice, role=role,
+                   openai_model=args.openai_model)
         try:
             data, ctype, duration, latency = tts.speak(text, voice, caster=role, direction=direction)
-            path = args.out / (name + '.mp3')
+            suffix = '' if args.openai_model == voices.DEFAULT_OPENAI_TTS_MODEL else '-' + args.openai_model
+            path = args.out / (name + suffix + '.mp3')
             path.write_bytes(data)
             row.update(asset=path.name, duration=duration, latency=latency, actual=tts.last_here(),
                        loudness=voices.loudness(str(path)))
