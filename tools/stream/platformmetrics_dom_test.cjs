@@ -17,7 +17,7 @@ class Element {
 }
 const source = fs.readFileSync(path.join(__dirname, "static/platformmetrics.js"), "utf8");
 function page() {
-  const window = {}, elements = {}, document = {createElement: tag => new Element(tag), getElementById: id => elements[id], querySelectorAll: () => []};
+  const window = {}, elements = {}, document = {createElement: tag => new Element(tag), getElementById: id => elements[id], querySelectorAll: () => elements.alerts ? [elements.alerts] : []};
   vm.runInNewContext(source, {window, document});
   const pane = new Element("div"), box = new Element("section"); pane.rect = rect(24, 24, 1208, 1032); pane.append(box);
   return {render: window.PogPlatformMetrics.render, box, pane, elements};
@@ -68,6 +68,26 @@ const mode = b => b["data-mode"];
   render(box, {...parked, tick: 104}, 80, scene); assert.equal(mode(box), "docked-compact");
   render(box, {...parked, tick: 105}, 100, {}); assert.equal(mode(box), "docked-compact");
   assert.equal(box.style["--pm-top"], "14px");
+  pane.rect = rect(24, 112, 1032, 883);
+  render(box, {...parked, tick: 106}, 120, scene);
+  render(box, {...parked, tick: 107}, 140, scene); assert.equal(mode(box), "docked-full");
+  const invalid = JSON.parse(JSON.stringify(scene)); delete invalid.space.platforms[0].view.hull.left;
+  render(box, {...parked, tick: 108}, 160, invalid); assert.equal(mode(box), "docked-compact");
+}
+// The gap is measured from the end of a beat, including when the next sample belongs to another ship.
+{
+  const {render, box} = page();
+  render(box, p, 0); render(box, {...p, tick: 101, hits_min: 1}, 20);
+  render(box, {...p, platform: "Petrel", tick: 102}, 30);
+  render(box, {...p, platform: "Petrel", tick: 103, hits_min: 1}, 57); assert.equal(mode(box), "compact");
+  render(box, {...p, platform: "Petrel", tick: 104, hits_min: 1}, 58); assert.equal(mode(box), "beat");
+}
+// A persistent big asteroid count is one event, rather than an automatic repeating full-card hold.
+{
+  const {render, box} = page(), rocks = {...p, asteroids: {...p.asteroids, big: 1}};
+  render(box, p, 0); render(box, {...rocks, tick: 101}, 20);
+  render(box, {...rocks, tick: 102}, 80); assert.equal(mode(box), "compact");
+  render(box, {...p, tick: 103, kills_min: 900, damage_dealt_min: 90000}, 100); assert.equal(mode(box), "compact");
 }
 // Brief events expire without a new telemetry sample, do not extend, and have 30s between beats.
 for (const signal of [{hits_min: 3}, {damage_taken: 40}, {asteroids: {...p.asteroids, big: 1}}, {asteroids: {...p.asteroids, huge: 1}}]) {
@@ -126,5 +146,6 @@ for (const signal of [{hits_min: 3}, {damage_taken: 40}, {asteroids: {...p.aster
   alert.textContent = "Alert"; alert.rect = rect(24, 40, 600, 50); elements.alerts = alert;
   render(box, p, 0); assert.equal(box.style["--pm-top"], "72px");
   alert.rect = rect(24, 950, 600, 50); render(box, p, 1); assert.equal(box.style["--pm-top"], "14px");
+  alert.rect = rect(600, 40, 100, 50); render(box, p, 2); assert.equal(box.style["--pm-top"], "14px");
 }
 console.log("platform metrics DOM: identity, anchored geometry, dock/work hysteresis, beats/gaps, warnings, attempts, scenes, reload and leg/ship isolation passed");

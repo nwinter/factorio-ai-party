@@ -31,8 +31,8 @@
   function captionRects(box) {
     const cam = box.parentElement;
     if (!cam) return [];
-    return [document.getElementById("alerts"), cam.querySelector(".cam-label.on"),
-      ...document.querySelectorAll("#voice .cap.on")].filter(n => n && n.textContent.trim())
+    return [cam.querySelector(".cam-label.on"),
+      ...document.querySelectorAll("#alerts .alert, #voice .cap.on")].filter(n => n && n.textContent.trim())
       .map(n => n.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
   }
   function clearCaption(box) {
@@ -52,8 +52,8 @@
     const view = (((scene.space || {}).platforms || []).find(s => s.name === p.platform) || {}).view || {};
     const hull = view.hull || view.bounds, pos = frame.position, pane = box.parentElement;
     if (!pane || !hull || !pos || cam.work || cam.attention || cam.work_close || frame.follow || cam.map ||
-        frame.surface !== view.surface || ![pos.x, pos.y, frame.zoom, frame.frac, ...Object.values(hull)].every(finite) ||
-        frame.zoom <= 0 || frame.frac <= 0 || frame.frac > 1) return false;
+        frame.surface !== view.surface || ![pos.x, pos.y, frame.zoom, frame.frac, hull.left, hull.top, hull.right, hull.bottom].every(finite) ||
+        frame.zoom <= 0 || frame.frac <= 0 || frame.frac > 1 || hull.right <= hull.left || hull.bottom <= hull.top) return false;
     const r = pane.getBoundingClientRect(), card = box.getBoundingClientRect();
     const sx = r.width * frame.zoom / (60 * frame.frac), sy = r.height * frame.zoom / 33.75;
     const ship = {left: r.left + r.width / 2 + (hull.left - pos.x) * sx,
@@ -124,6 +124,11 @@
       }
     }
     const b = box._parts, l = p.leg || {}, {a, fresh} = sample(box, p, now), parked = !a.flying;
+    // Trio scenes have a shorter main pane. Tighten vertical whitespace, retaining the same type sizes/width.
+    const dense = box.parentElement && box.parentElement.getBoundingClientRect().height < 800;
+    box.style.setProperty("--pm-leading", dense ? "1.15" : "1.35");
+    box.style.setProperty("--pm-row-pad", dense ? "0px" : "2px");
+    box.style.setProperty("--pm-section-gap", dense ? "3px" : "6px");
     const where = l.from && l.to ? `${label(l.from)} → ${label(l.to)}` : p.at ? `Docked at ${label(p.at)}` : parked ? "Dock unknown" : "Route unknown";
     put(b.header, `${p.platform} · ${where}`);
     box.setAttribute("aria-label", `${p.platform} · ${where}`);

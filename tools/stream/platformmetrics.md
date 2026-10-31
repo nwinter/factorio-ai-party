@@ -47,6 +47,7 @@ ordinary npm/Python gates. The report records private dense-leg profiling and th
 Landscape and portrait use one 360px card, 14px from the game pane's left/top edges. A visible top caption raises
 it only to that caption's bottom plus 8px. Ship name and directed route/dock share the first line in every mode.
 The first line fits its text without truncation; padding, width and anchor do not depend on the mode.
+Panes shorter than 800px tighten detail-row whitespace and leading, retaining the same type sizes and width.
 
 Flight defaults to compact navigation. A newly observed departure, changed leg/reversal or arrival, a positive
 hit/damage window, or an increase in big/huge asteroids can start an **8 wall-second** detail beat. There must be
