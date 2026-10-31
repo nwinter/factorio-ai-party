@@ -73,7 +73,7 @@ def run(d,cam,start,end,visible=True):
         now=i/2
         cam.advance(now)
         d.on_air=copy.deepcopy(d.state) if visible else dict(main=None)
-        d.pan_step(now);d.beat_step(now)
+        d.pan_step(now)
         if d.surveys:phases.append(next(iter(d.surveys.values())).phase)
     return phases
 

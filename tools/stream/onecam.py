@@ -390,15 +390,10 @@ ONECAM = {
     # danger, a ship entering the edge's dense asteroids, a departure and a visit move the one client there and back, as
     # they cut with three; the story's agent waits in a free camera panel meanwhile (away_inset). The map, a cloud and a
     # visit wait while the story on air has readable action (a fight, a big action, its news); danger and edge do not.
-    # A visit with one client opens on the whole ship visit_overview_s (a long ship's pan), then the ship's bow defense
-    # (in flight: its foremost turrets and the space they reach) and its machinery (the most working crafting machines
-    # in one frame at visit_machine_zoom), visit_beat_s each, in turn from visit to visit; a framing with nothing
-    # changing in it (docked: no bow defense; no machine working) is left out, so a still ship is on air
-    # visit_overview_s only.
+    # Ship visits use camerapath.Survey on every client count. Bow/machinery selection supplies section
+    # candidates; the controller owns all motion, dwell and interrupted progress.
     "one_client_shots": True,
     "away_inset": True,
-    "visit_overview_s": 7.0,
-    "visit_beat_s": 7.0,
     "visit_bow_rows": 12.0,     # tiles: turrets this close to the foremost one are the bow's
     "visit_machine_zoom": 0.7,
     # (batch318) With one client a ship's departure or edge entry within one_repeat of its last one on air is a repeat:
@@ -2082,7 +2077,6 @@ class OneCam(Director):
         self.release_maps(now)
         self.pan_step(now)
         self.closeup_step(now)
-        self.beat_step(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
@@ -4650,8 +4644,7 @@ class OneCam(Director):
             self.show_platform(t, scores, now)
 
     def visit_target(self, name, hold, now):
-        """A visit's shot: the whole ship for `hold` (a long ship: until its pan has gone bow to stern, BI4); with one
-        client (batch318) its framings in turn (visit_beats) for as long as they have something to show."""
+        """A visit allows the outward survey, both end dwells and a section excursion within the hold cap."""
         cfg = self.cfg
         t = self.platform_target(name, "visit", now + cfg["ready_s"] + hold, overview=True)
         if not t:
@@ -4668,18 +4661,10 @@ class OneCam(Director):
             t["until"] = now + cfg["ready_s"] + min(Survey.MAX_HOLD, max(hold, leg + 2 * Survey.END_S +
                                                        3 * max(Survey.ZOOM_S, excursion) + Survey.DETAIL_S + 12))
             return t
-        if self.pan_hold(t) > hold:  # (BI4) a long ship: bow to stern within the shot
-            t["until"] = now + cfg["ready_s"] + self.pan_hold(t)
-        if self.n_clients() < 2:
-            beats = self.visit_beats(name)
-            first = max(cfg["visit_overview_s"], self.pan_hold(t))
-            t["until"] = now + cfg["ready_s"] + first + len(beats) * cfg["visit_beat_s"]
-            t["beats"], t["beat_at"] = beats, now + first
-            t["work"] = f"{name} · whole ship"
         return t
 
     def count_visit(self, t):
-        if t.get("beats") is not None or t.get("survey"):
+        if t.get("survey"):
             self.visits += 1
 
     def visit_beats(self, name):
@@ -4734,21 +4719,6 @@ class OneCam(Director):
         return {"position": {"x": round((x0 + x1) / 2, 1), "y": round((y0 + y1) / 2, 1)}, "zoom": z,
                 "label": f"{name} · machinery: {len(best)} working here, {len(work)} of {len(ms)} on the ship",
                 "why": "machinery"}
-
-    def beat_step(self, now):
-        """(batch318) A one-client visit on air moves to its next framing every visit_beat_s (after the whole ship's
-        visit_overview_s or pan), gliding there; its caption names it. A new shot drops them."""
-        t = self.state.get(self.onair)
-        if not t or t.get("survey") or not t.get("beats") or now < t.get("beat_at", now + 1) or now >= t.get("until", now + 1):
-            return
-        b = t["beats"].pop(0)
-        target = {k: v for k, v in t.items() if k not in ("jump", "pan")}  # (apply keeps this one: the rest of the beats)
-        dist = math.hypot(b["position"]["x"] - t["position"]["x"], b["position"]["y"] - t["position"]["y"]) \
-            if t.get("position") else 0
-        target.update(position=dict(b["position"]), zoom=b["zoom"], solo_zoom=b["zoom"], exact_zoom=True, work=b["label"],
-                      glide=round(max(2.0, dist / 1.5), 2), beat_at=now + self.cfg["visit_beat_s"],
-                      beats_shown=list(t.get("beats_shown") or []) + [b["why"]])
-        self.apply(self.slot(self.onair), target, f"visit {b['why']}: {b['label']}", {}, now, quiet=True)
 
     def maybe_work(self, snapshot, by_name, scores, now, segment=None):
         """An agent's platform action (snapshot work with a platform view): the platform instead of the character, if

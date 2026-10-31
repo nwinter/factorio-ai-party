@@ -15,8 +15,8 @@ cloud, a platform in danger, an edge entry, a departure other than a maiden flig
    agent in a panel; the story back after.
 4. A ship entering an edge leg's dense asteroids: once per leg, urgent.
 5. A departure: news on air; a routine one in a free panel when it may not go on air (no panel: not shown).
-6. A visit with one client: the whole ship visit_overview_s, then the bow defense (in flight) and the machinery (while
-   machines work) visit_beat_s each, in turn from visit to visit; a docked ship with nothing working: the whole ship
+6. Ship visits share a receipt-driven survey controller across client counts, with bow/machinery section
+   candidates, endpoint dwells and preserved progress; a docked ship has a hub section
    only. Three clients: the whole ship platform_hold as before.
 7. Quiet time with one client: the platform visit and the map are quiet views again.
 8. director_replay.py's inputs for these: camera panels, the platforms read (views from a service state file, where
