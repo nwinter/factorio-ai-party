@@ -781,48 +781,33 @@ body:not(.onecam) .loadout.lo-main { top: calc(70px + var(--alerts-clear, 0px));
 .ship-card .ship-pct { font-variant-numeric: tabular-nums; color: var(--muted); }
 .ship-card .ship-facts { color: var(--muted); font-size: 0.9em; }
 body.onecam #cam-main .ship-card { top: 14px; font-size: 20px; }
-/* The featured/main ship: a persistent compact telemetry card, clear of the lower captions and inset. */
-#platform-metrics { position: absolute; z-index: 4; left: 14px; top: var(--pm-top, 62px); width: 430px; box-sizing: border-box;
-  padding: 12px 15px; border-left: 3px solid var(--fx-blue, #4aa3ff); border-radius: 4px;
+/* One ship card: a fixed width and anchor in every mode; only its height changes. */
+#platform-metrics { position: absolute; z-index: 4; left: 14px; top: var(--pm-top, 14px); width: 360px;
+  max-width: calc(100% - 28px); box-sizing: border-box; padding: 10px 12px;
+  border-left: 3px solid var(--fx-blue, #4aa3ff); border-radius: 4px;
   background: rgba(var(--fx-frame-rgb), 0.94); box-shadow: var(--fx-bevel), var(--fx-shadow-window);
-  font-size: 14px; line-height: 1.35; pointer-events: none; font-variant-numeric: tabular-nums; }
+  font-size: 13px; line-height: 1.35; pointer-events: none; font-variant-numeric: tabular-nums; }
 .has-metrics .ship-card { display: none; }
-.pm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.pm-name { color: var(--head); font-size: 23px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pm-tag { font-size: 10px; letter-spacing: 0.08em; color: var(--accent); white-space: nowrap; }
-.pm-route { font-size: 15px; color: var(--head); margin-top: 3px; }
-.pm-progress { height: 5px; background: var(--well); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+.pm-head { display: block; color: var(--head); font-size: 16px; white-space: nowrap; }
+.pm-summary { margin-top: 5px; color: var(--muted); font-size: 12px; }
+.pm-progress { height: 4px; background: var(--well); border-radius: 3px; margin-top: 7px; overflow: hidden; }
 .pm-progress i { display: block; height: 100%; background: var(--accent); transition: width 800ms linear; }
-.pm-flight, .pm-combat, .pm-supplies { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
-.pm-combat, .pm-supplies { grid-template-columns: repeat(3, 1fr); }
-.pm-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pm-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 2px 0; }
 .pm-key { color: var(--muted); }
 .pm-value { color: var(--ink); text-align: right; }
-.pm-flight .pm-row, .pm-combat .pm-row, .pm-supplies .pm-row { display: block; }
-.pm-flight .pm-key, .pm-combat .pm-key, .pm-supplies .pm-key { display: block; font-size: 11px; }
-.pm-flight .pm-value, .pm-combat .pm-value { font-size: 16px; font-weight: 600; }
-.pm-rocks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-top: 8px; margin-top: 7px; border-top: 1px solid var(--edge); }
-.pm-rocks::before { content: 'ASTEROIDS IN SAMPLED VIEW'; grid-column: 1 / -1; font-size: 10px; color: var(--muted); letter-spacing: 0.07em; }
+.pm-details { line-height: var(--pm-leading, 1.35); }
+.pm-details .pm-row { padding: var(--pm-row-pad, 2px) 0; }
+.pm-flight, .pm-combat, .pm-guns, .pm-ammo, .pm-supplies, .pm-rocks, .pm-warnings {
+  border-top: 1px solid var(--edge); margin-top: 7px; padding-top: var(--pm-section-gap, 6px); }
+.pm-rocks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pm-rocks::before { content: 'ASTEROIDS IN SAMPLED VIEW'; grid-column: 1 / -1; font-size: 10px; color: var(--muted); letter-spacing: 0.04em; }
 .pm-rocks .pm-row { display: block; }
-.pm-rocks .pm-key { font-size: 11px; margin-right: 7px; }
-.pm-rocks .pm-value { font-size: 18px; font-weight: 600; }
-.pm-combat, .pm-guns, .pm-ammo, .pm-supplies { border-top: 1px solid var(--edge); margin-top: 8px; padding-top: 7px; }
-.pm-guns .pm-row { padding: 2px 0; font-size: 12px; }
-.pm-ammo .pm-row { display: block; padding: 3px 0; }
+.pm-rocks .pm-key { font-size: 11px; margin-right: 6px; }
+.pm-guns { font-size: 12px; }
+.pm-ammo .pm-row { display: block; padding: calc(var(--pm-row-pad, 2px) + 1px) 0; }
 .pm-ammo .pm-key { display: block; color: var(--head); font-size: 12px; }
 .pm-ammo .pm-value { display: block; text-align: left; font-size: 11px; }
-.pm-bad .pm-value { color: var(--dead); }
-.pm-foot { margin-top: 8px; font-size: 10px; color: var(--muted); }
-/* Port: one nonzero stock row. Quiet flight: navigation and supplies. Combat keeps the full card. */
-#platform-metrics.pm-parked { width: max-content; max-width: calc(100% - 28px); padding: 6px 12px; }
-.pm-parked-row { display: flex; gap: 18px; font-size: 13px; white-space: nowrap; }
-.pm-parked-row .pm-row { gap: 6px; }
-#platform-metrics.pm-transit { padding: 9px 12px; }
-.pm-transit .pm-name { font-size: 20px; }
-.pm-transit .pm-route { margin-top: 0; font-size: 14px; }
-.pm-transit .pm-ammo { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
-.pm-transit .pm-ammo .pm-row { padding: 0; }
-.pm-transit .pm-supplies { display: block; }
-.pm-transit .pm-supplies .pm-row { display: flex; justify-content: flex-start; }
-.pm-transit .pm-supplies .pm-key { font-size: 12px; }
+.pm-bad .pm-value, .pm-warnings .pm-key { color: var(--dead); }
+.pm-warnings { font-weight: 600; }
+.pm-foot { margin-top: 7px; font-size: 10px; color: var(--muted); }
 body.trio #cam-cam2 .ship-card, body.trio #cam-cam3 .ship-card { top: 8px; left: 8px; font-size: 13px; min-width: 0; padding: 4px 8px; }
