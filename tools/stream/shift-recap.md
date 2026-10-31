@@ -134,7 +134,9 @@ saved frame per subject per 300 seconds, including helper restarts. Automatic re
 retry is disabled. A shift has a hard 128 MiB budget for `recap-frames/` plus its media
 index (with room reserved for atomic index replacement); a response is capped at 2 MiB.
 At the cap it stops requesting screenshots, preserving recorded evidence. The interval
-and cap apply to this helper, independently of existing mapframes capture.
+and cap apply to this helper, independently of existing mapframes capture. Prepared
+content-addressed copies can add at most another 128 MiB: at most 256 MiB added capture
+and prepared-image storage per shift, excluding pre-existing mapframes/audio/archive clips.
 
 The helper stores capture start/end times, subject/type, surface/platform, camera source,
 source dimensions, byte count, and the before/after receipts with tick and state time.
@@ -153,6 +155,8 @@ beat may use the surface explicitly named by its cited record. No unrelated fill
 missing/failed beat, its subject and asset diagnostics. Empty, missing, invalid-image and
 changed prepared bytes are rejected. Browser decode failures fall back to neutral cards
 and are exposed per beat in `PogShiftRecap.failures` for headless rehearsal checks.
+The offline rehearsal CLI also fully decodes images with Pillow and the first frame of
+indexed video with ffmpeg; decode failures are included in both the review and prep log.
 
 To refresh a reviewed script with a recorded or mock-capture run, without model/TTS calls:
 

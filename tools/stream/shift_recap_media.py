@@ -17,7 +17,7 @@ def header_error(data, suffix):
     return "invalid image bytes" if suffix in signatures and not signatures[suffix] else None
 
 
-def signature(run, out):
+def signature(run, out, *, prepared=True):
     """Stat indexed sources and prepared images too: arrivals, replacements and deletions matter."""
     import shift_recap as recap
     run, out = Path(run), Path(out)
@@ -29,7 +29,8 @@ def signature(run, out):
             path = (run / row["path"]).resolve()
             if path.is_relative_to(run.resolve()):
                 paths.add(path)
-    paths.update(p for p in (out / "assets").glob("*") if visuals.ASSET.fullmatch(p.name))
+    if prepared:
+        paths.update(p for p in (out / "assets").glob("*") if visuals.ASSET.fullmatch(p.name))
     records = []
     for path in sorted(paths):
         try:
@@ -71,6 +72,7 @@ def refresh(run, out, manifest, *, force=False, media_until=None):
     out = Path(out)
     if not force and manifest.get("media_signature") == signature(run, out):
         return manifest
+    source_signature = signature(run, out, prepared=False)
     errors = []
     # Preserve imported legacy media; managed sources are reread, including removals.
     legacy = [r for r in manifest.get("stills", [])
@@ -85,18 +87,26 @@ def refresh(run, out, manifest, *, force=False, media_until=None):
     manifest = checked(dict(manifest, stills=sorted(unique.values(), key=lambda r: r["t"]),
                             media_through=media_through, media_errors=errors), out)
     manifest["media_signature"] = signature(run, out)
+    if source_signature != signature(run, out, prepared=False):
+        # An atomic catalog arrival during copying must trigger the next refresh, rather
+        # than be acknowledged by a signature of inputs that this pass never ingested.
+        manifest["media_signature"] = None
     recap.save_json(out / "manifest.json", manifest)
     recap.export(manifest, out)
+    log_review(manifest, out)
+    return manifest
+
+
+def log_review(manifest, out):
     review = manifest["media_review"]
     summary = (f"[shift-recap] media {review['bound']}/{review['total']} beats; "
                f"{len(review['asset_errors'])} failed assets" + ("; WARNING: NO BOUND MEDIA" if review["no_media"] else ""))
     print(summary, flush=True)
-    with (out / "prep.log").open("a") as log:
+    with (Path(out) / "prep.log").open("a") as log:
         log.write(summary + "\n")
         for beat in review["beats"]:
             if beat["status"] == "missing" or beat["errors"]:
                 log.write(json.dumps(beat, ensure_ascii=False) + "\n")
-    return manifest
 
 
 def refresh_saved(run, out):

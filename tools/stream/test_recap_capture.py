@@ -176,6 +176,28 @@ class RefreshTest(unittest.TestCase):
         self.assertEqual(result["visuals"]["ship"]["media"]["asset"], "b" * 24 + ".png")
         self.assertEqual(result["visuals"]["belt"]["media"]["subject"], "nauvis")
 
+    def test_rehearsal_reports_decode_failure_even_with_valid_header_and_hash(self):
+        import shift_recap_rehearsal as rehearsal
+        (self.run / "broken.png").write_bytes(b"\x89PNG\r\n\x1a\nnot a PNG body")
+        R.save_json(self.run / "recap-media.json", [{"path": "broken.png", "platform": "Asterion", "t": 1000}])
+        result = rehearsal.check_decoding(R.prepare(self.run, self.out, 1100), self.out)
+        R.export(result, self.out)
+        self.assertTrue(result["media_review"]["no_media"])
+        self.assertIn("decode failed", result["visuals"]["ship"]["asset_errors"][0]["error"])
+        self.assertIn("decode failed", (self.out / "review.md").read_text())
+
+    def test_index_arrival_during_copy_is_not_forgotten(self):
+        original = R.stills
+        def racing_stills(*args):
+            found = original(*args)
+            (self.run / "ship.png").write_bytes(self.png)
+            R.save_json(self.run / "recap-media.json", [{"path": "ship.png", "platform": "Asterion", "t": 1000}])
+            return found
+        with patch.object(R, "stills", racing_stills):
+            first = R.prepare(self.run, self.out, 1100)
+        self.assertIsNone(first["media_signature"])
+        self.assertEqual(R.prepare(self.run, self.out, 1100)["visuals"]["ship"]["media"]["subject"], "Asterion")
+
     def test_service_refreshes_before_first_air_and_on_later_media_arrival(self):
         from shift_recap_air import ShiftRecap, Player
         from serve import AudioHub
