@@ -34,6 +34,27 @@ import textprep
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEY_DIR = os.path.expanduser(os.environ.get("POG_KEY_DIR", "~/.config/pog"))
 STATE_DIR = os.path.expanduser(os.environ.get("POG_VOICE_STATE", "~/.cache/pog/voices"))  # designed voices, id lookups
+DEFAULT_OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
+OPENAI_TTS_MODELS = (DEFAULT_OPENAI_TTS_MODEL, "gpt-4o-mini-tts-2025-03-20")
+
+
+def configured_openai_model(config=None, run_dir=None):
+    """Persistent per-run selector; read once by each host/service process at startup."""
+    if config is None and run_dir:
+        try:
+            with open(os.path.join(run_dir, "stream.json")) as f:
+                config = json.load(f)
+        except FileNotFoundError:
+            pass
+    model = ((config or {}).get("audio") or {}).get("openai_tts_model", DEFAULT_OPENAI_TTS_MODEL)
+    if model not in OPENAI_TTS_MODELS:
+        raise ValueError("audio.openai_tts_model must be one of: " + ", ".join(OPENAI_TTS_MODELS))
+    return model
+
+
+def audio_config(tts):
+    return {"backend": getattr(tts, "backend", "none"),
+            "openai_tts_model": getattr(tts, "openai_model", DEFAULT_OPENAI_TTS_MODEL)}
 
 # ---- Aura-2 (Cloudflare Workers AI) ------------------------------------------------------------------------------
 # id: (gender, accent, aura-1 fallback, macOS say voice, say rate). Gender only picks the `tone` pitch and nearest
@@ -400,6 +421,25 @@ def speakable_parts(text, limit=600):
 # (caster.py moment_mood) names it from the event (a loss, a fight, a death, a first launch); anything else is neutral.
 # The word guess this replaces read 22 of 63 agent lines on OpenAI voices in shifts 58-59 as frustrated, on "still",
 # "again" and "keeps" ("Kestrel IVc is still on the way from Aquilo"), and "yes"/"done" as excited.
+DELIVERY_MAX = 160
+NOT_DIRECTION = re.compile(r"\b(?:accents?|impressions?|imitat\w*|impersonat\w*|persona|character voice|another voice|"
+                           r"different voice|british|american|australian|irish|scottish|french|german)\b",
+                           re.I)
+
+
+def clean_direction(text):
+    """A writer's delivery direction as the TTS instruction takes it: one line, at most DELIVERY_MAX characters; None
+    for 'natural', for none, or for one that asks for another accent, persona or words (the voice's own stays)."""
+    d = re.sub(r"\s+", " ", text if isinstance(text, str) else "").strip().strip("*\"'").strip()
+    d = re.sub(r"^(?:delivery|direction)\s*[:\-–]\s*", "", d, flags=re.I)
+    d = re.sub(r"[\[\]<>]", "", d).strip()  # delivery cannot escape an inline control tag
+    if not d or re.fullmatch(r"(?:natural|neutral|normal|plain)\W*(?:delivery\W*)?", d, re.I) or NOT_DIRECTION.search(d):
+        return None
+    if len(d) > DELIVERY_MAX:
+        d = d[:DELIVERY_MAX].rsplit(" ", 1)[0]
+    return d.rstrip(",;:") + ("" if d.endswith(".") else ".")
+
+
 MOODS = ("neutral", "excited", "tense", "concerned")
 
 
@@ -424,6 +464,25 @@ V3_TAG = {"excited": "[excited]", "tense": "", "concerned": "", "neutral": ""}
 CARTESIA_EMOTION = {"excited": "excited", "tense": "neutral", "concerned": "calm", "neutral": "neutral"}
 
 
+def delivery_controls(direction):
+    """Conservative subset for numeric/enum APIs. Unknown, negated or changing arcs stay natural.
+    Only the writer's direction is read, never the spoken line. No voice/accent/pitch controls."""
+    d = re.sub(r"(['\"]).*?\1", "", direction.lower())  # emphasis targets are not emotion instructions
+    if re.search(r"\b(?:not|no|never|without|then|before|after)\b", d):
+        return {}
+    words = set(re.findall(r"\b[a-z]+\b", d))
+    controls = {}
+    slow = bool(words & {"slow", "slower", "slowly", "slowing", "measured", "unhurried"})
+    fast = bool(words & {"fast", "faster", "quick", "quicker", "quickly", "brisk"})
+    if slow != fast:
+        controls["speed"] = 0.9 if slow else 1.1
+    emotions = words & {"neutral", "calm", "excited", "curious", "sad", "proud", "confident", "surprised",
+                        "content", "sympathetic", "determined", "contemplative", "sarcastic"}
+    if len(emotions) == 1:
+        controls["emotion"] = emotions.pop()
+    return controls
+
+
 def style_for(text, caster=None, context=None, direction=None):
     """(mood, instruction text). (d22 batch99 BI2) `direction`: the writer's delivery for this line (tone, emphasis,
     pacing), in place of the mood's sentence (the writer read the line and its moment; both at once contradicted on a
@@ -437,6 +496,16 @@ def style_for(text, caster=None, context=None, direction=None):
 # ---- HTTP ---------------------------------------------------------------------------------------------------------
 class TTSError(RuntimeError):
     pass
+
+
+class TTSTimeout(TTSError):
+    pass
+
+
+def is_timeout(error):
+    return (isinstance(error, (TimeoutError, TTSTimeout)) or
+            isinstance(error, urllib.error.URLError) and is_timeout(error.reason) or
+            bool(re.search(r"\b(?:timed?\s*out|timeout)\b|^(?:408|504)\b", str(error), re.I)))
 
 
 def read_key(name):
@@ -497,7 +566,7 @@ class Provider:
     def available(self):
         return bool(self.key)
 
-    def synth(self, text, ref, mood, instruction):
+    def synth(self, text, ref, mood, instruction, direction=None):
         raise NotImplementedError
 
     def voices(self):
@@ -537,15 +606,19 @@ class ElevenLabs(Provider):
     def _h(self):
         return {"xi-api-key": self.key, "Accept": "audio/mpeg"}
 
-    def synth(self, text, ref, mood, instruction):
+    def synth(self, text, ref, mood, instruction, direction=None):
         while True:
             body = {"text": text, "model_id": self.model}
-            if self.model in ("eleven_v4", "eleven_v3"):
-                tag = V3_TAG.get(mood, "")
+            if self.model in ("eleven_v4", "eleven_v3", "eleven_v4_turbo"):
+                tag = "[" + direction + "]" if direction else V3_TAG.get(mood, "")
                 body["text"] = (tag + " " + text).strip() if tag else text
                 body["voice_settings"] = {"stability": 0.5}  # v3/v4: 0.0 creative, 0.5 natural, 1.0 robust
             else:
                 body["voice_settings"] = {"stability": 0.4, "similarity_boost": 0.75, "style": 0.3, "speed": 1.05}
+                if direction:
+                    body["voice_settings"]["speed"] = delivery_controls(direction).get("speed", 1.0)
+                elif not instruction:  # plain timeout retry
+                    body["voice_settings"]["speed"] = 1.0
             url = f"{self.API}/v1/text-to-speech/{ref}?output_format=mp3_44100_128"
             try:
                 return _http("POST", url, self._h(), body)
@@ -604,13 +677,14 @@ class OpenAITTS(Provider):
     URL = "https://api.openai.com/v1/audio/speech"
     max_chars = 4096
 
-    def __init__(self, model="gpt-4o-mini-tts"):
+    def __init__(self, model=DEFAULT_OPENAI_TTS_MODEL):
         super().__init__()
         self.model = model
 
-    def synth(self, text, ref, mood, instruction):
-        body = {"model": self.model, "voice": ref, "input": text, "instructions": instruction,
-                "response_format": "mp3"}
+    def synth(self, text, ref, mood, instruction, direction=None):
+        body = {"model": self.model, "voice": ref, "input": text, "response_format": "mp3"}
+        if instruction and self.model.startswith("gpt-4o-mini-tts"):
+            body["instructions"] = instruction
         return _http("POST", self.URL, {"Authorization": "Bearer " + self.key}, body)
 
     def voices(self):
@@ -645,11 +719,13 @@ class Cartesia(Provider):
             _save_state("cartesia-names.json", ids)
         return ids[ref]
 
-    def synth(self, text, ref, mood, instruction):
+    def synth(self, text, ref, mood, instruction, direction=None):
         body = {"model_id": self.model, "transcript": text, "voice": {"id": self.resolve(ref)},
                 "output_format": {"container": "mp3", "sample_rate": 44100, "bit_rate": 128000}, "language": "en",
                 "generation_config": {"emotion": CARTESIA_EMOTION.get(mood, "neutral"),
                                       "speed": 1.08 if mood == "excited" else 1.0}}
+        if direction:
+            body["generation_config"] = delivery_controls(direction)
         return _http("POST", f"{self.API}/tts/bytes", self._h(), body)
 
     def voices(self):
@@ -679,8 +755,13 @@ class Inworld(Provider):
     def _h(self):
         return {"Authorization": "Basic " + self.key}
 
-    def synth(self, text, ref, mood, instruction):
-        body = {"text": text, "voiceId": ref, "modelId": self.model, "instruction": instruction[:300],
+    def synth(self, text, ref, mood, instruction, direction=None):
+        tag = direction or (instruction if mood != "neutral" else None)
+        if tag and self.model == "inworld-tts-2":
+            text = "[" + tag + "] " + text
+        if len(text.encode("utf-16-le")) // 2 > self.max_chars:
+            raise TTSError("inworld text plus delivery exceeds its input limit (not cut)")
+        body = {"text": text, "voiceId": ref, "modelId": self.model,
                 "audioConfig": {"audioEncoding": "MP3", "sampleRateHertz": 48000, "bitRate": 128000}}
         res = _json("POST", f"{self.API}/tts/v1/voice", self._h(), body)
         return base64.b64decode(res["audioContent"]), "audio/mpeg"
@@ -781,8 +862,11 @@ _load_designed()
 
 
 class TTS:
-    def __init__(self, backend="aura2", ai=None, target=-18.0, cache=None):
+    def __init__(self, backend="aura2", ai=None, target=-18.0, cache=None, openai_model=DEFAULT_OPENAI_TTS_MODEL):
         self.backend = backend
+        if openai_model not in OPENAI_TTS_MODELS:
+            raise ValueError("unsupported OpenAI TTS model: " + str(openai_model))
+        self.openai_model = openai_model
         self.ai = ai
         self.target = target if shutil.which("ffmpeg") else None  # LUFS every cloud clip is brought to
         self.cache = cache or os.environ.get("POG_TTS_CACHE")  # directory of clips keyed by provider+voice+text
@@ -803,6 +887,8 @@ class TTS:
                 continue
             if backend in ("auto", name):
                 p = make()
+                if name == "openai":
+                    p.model = self.openai_model
                 if p.available():
                     self.providers[name] = p
         if backend in PROVIDERS and backend not in self.providers:
@@ -901,27 +987,30 @@ class TTS:
     def speak(self, text, voice, caster=None, mood=None, direction=None):
         """-> (audio bytes, content type, duration seconds, latency seconds). `text` is the caption text; the
         lexicon is applied here, for the provider that speaks it. `mood`: the line's moment (MOODS; default neutral).
-        `direction`: a delivery direction in words; only the engines that take an instruction use it (OpenAI
-        gpt-4o-mini-tts `instructions`, Inworld `instruction`); ElevenLabs, Cartesia, Aura and say ignore it."""
+        `direction`: sanitized delivery only, mapped to each model's supported controls (see delivery_controls
+        and provider synth methods). Voice routing is independent of delivery."""
         t0 = time.time()
+        self._here.retried = None
+        direction = clean_direction(direction)
         prov, ref = self.route(voice, caster)
+        model = getattr(self.providers.get(prov), "model", MODEL.get(prov, prov))
         m, instruction = style_for(text, caster, mood, direction)
         key = None
         if self.cache:
-            key = hashlib.sha1(json.dumps([prov, getattr(self.providers.get(prov), "model", ""), ref, m, instruction,
+            key = hashlib.sha1(json.dumps(["delivery-v2", prov, model, ref, m, instruction,
                                            text, self.target]).encode()).hexdigest()
             path = os.path.join(self.cache, key[:2], key + ".mp3")
             if os.path.exists(path):
                 audio = open(path, "rb").read()
                 dur = duration(audio)
-                self.last = self._here.last = {"provider": prov, "voice": ref, "mood": m, "cached": True}
+                self.last = self._here.last = {"provider": prov, "voice": ref, "model": model, "mood": m, "cached": True}
                 self.seconds += dur
                 return audio, "audio/mpeg", dur, time.time() - t0
         try:
-            audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
+            audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice, direction)
             self.fails[FAMILY.get(prov, prov)] = 0
         except (TTSError, KeyError, ValueError) as x:  # KeyError/ValueError: a response not shaped as documented
-            if self.backend != "auto" or prov == "aura2":
+            if is_timeout(x) or self.backend != "auto" or prov == "aura2":
                 raise
             self._failed(prov, x)
             key = None  # a stand-in's clip is not cached as the voice's
@@ -942,14 +1031,16 @@ class TTS:
             audio = None
             if prov != "aura2":
                 try:
-                    audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
+                    audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice, direction)
                 except (TTSError, KeyError, ValueError) as y:
+                    if is_timeout(y):
+                        raise
                     self._failed(prov, y)
                     prov, ref = "aura2", aura or (CATALOG.get(vid) or DESIGNED.get(vid) or CATALOG["orion"])[3]
             if audio is None:
                 if self.ai is None:
                     raise TTSError(f"{x}; no Workers AI for the Aura-2 fallback") from None
-                audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
+                audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice, direction)
         if prov not in ("say", "tone") and self.target is not None:
             audio, ctype = normalize(audio, ctype, self.target)
         dur = duration(audio, ctype)
@@ -957,7 +1048,14 @@ class TTS:
         self.spent += rate * (len(text) if unit == "chars" else dur / 60)
         self.chars += len(text)
         self.seconds += dur
-        self.last = self._here.last = {"provider": prov, "voice": ref, "mood": m, "cached": False}
+        last = {"provider": prov, "voice": ref, "model": getattr(self.providers.get(prov), "model", MODEL.get(prov, prov)),
+                "mood": m, "cached": False}
+        if self._here.retried:
+            last.update(mood="neutral", retried=self._here.retried)
+            key = None  # a plain timeout retry must not poison the directed clip cache
+        if getattr(self.providers.get(prov), "model", MODEL.get(prov, prov)) != model:
+            key = None  # e.g. Turbo tags are unsupported after a downgrade to Flash
+        self.last = self._here.last = last
         if key:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "wb").write(audio)
@@ -974,7 +1072,20 @@ class TTS:
             self.respacer = textprep.Respacer(ask=respace_model(self))
         return speakable(self.respacer(text), limit=100000)
 
-    def _synth(self, prov, text, ref, m, instruction, caster, voice):
+    def _synth(self, prov, text, ref, m, instruction, caster, voice, direction=None):
+        try:
+            return self._synth_once(prov, text, ref, m, instruction, caster, voice, direction)
+        except Exception as exc:
+            if not is_timeout(exc):
+                raise
+            # Keep the resolved provider AND voice. One bounded retry, with no delivery controls.
+            self._here.retried = "timeout_plain"
+            try:
+                return self._synth_once(prov, text, ref, "neutral", "", caster, voice)
+            except Exception as retry:
+                raise TTSTimeout("plain TTS retry failed after timeout") from retry
+
+    def _synth_once(self, prov, text, ref, m, instruction, caster, voice, direction=None):
         text = self.prep(text)
         if prov in self.providers:
             p = self.providers[prov]
@@ -986,7 +1097,7 @@ class TTS:
                 said = pronounce(text, "respell")
             if len(said) > p.max_chars:
                 raise TTSError(f"{prov} takes at most {p.max_chars} characters; this line has {len(said)} (not cut)")
-            return p.synth(said, ref, m, instruction)
+            return p.synth(said, ref, m, instruction, **({"direction": direction} if direction else {}))
         said = pronounce(text)
         if prov == "aura2":
             return self.ai.run(MODEL["aura2"], {"text": said, "speaker": ref, "encoding": "mp3"}, raw=True)

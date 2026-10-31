@@ -370,7 +370,10 @@ a duration from shorthand such as clean300 unless a cited row explicitly gives i
 explicitly establishes it.
 No private paths, accounts, quota, email, or credentials. Pronouns they/them.
 Return JSON only: {"lines":[{"speaker":"Rook"|"Vale","title":"short card heading",
-"text":"20 to 45 spoken words","sources":["id"]}]}. Write 24 to 32 lines.
+"text":"20 to 45 spoken words","sources":["id"],"direction":"natural"}]}. Write 24 to 32 lines.
+For each line, direction may give at most 16 words of delivery (tone, emphasis, pacing),
+or natural when unsure. Keep each host's own voice, persona and accent. Never request an
+impression, a different voice, or additional spoken words. Directions are not spoken text.
 Each line must stand alone if a neighboring line is removed by the fact checker. Do not open
 with an unexplained pronoun or rely on the preceding speaker's claim for its meaning.
 """
@@ -447,6 +450,11 @@ def write_script(evidence, writer=None, audit_dir=None):
                                                   "stage": "evidence review"})
                 accepted = [{k: lines[i - 1][k] for k in ("speaker", "title", "text", "sources")}
                             for i in audit["accepted"]]
+                import voices
+                for row, i in zip(accepted, audit["accepted"]):
+                    direction = voices.clean_direction(lines[i - 1].get("direction"))
+                    if direction:
+                        row["direction"] = direction
                 if len(accepted) > len(best):
                     best = accepted
         except Exception as exc:
@@ -510,17 +518,31 @@ def render_lines(lines, out, tts=None):
     rendered = []
     for line in lines:
         role = "pbp" if line["speaker"] == "Rook" else "color"
-        key = hashlib.sha256((str(getattr(tts, "backend", "none")) + line["speaker"] + line["text"]).encode()).hexdigest()[:24]
-        row = dict(line, id=key)
+        direction = voices.clean_direction(line.get("direction"))
+        route = tts.route(voices.CASTERS[role], role) if hasattr(tts, "route") else None
+        provider = getattr(tts, "providers", {}).get(route[0]) if route else None
+        fixed_model = voices.MODEL.get(route[0], route[0]) if route else None
+        model = getattr(provider, "model", fixed_model)
+        key = hashlib.sha256(json.dumps(["delivery-v2", getattr(tts, "backend", "none"), route, model,
+                                        line["speaker"], line["text"], direction]).encode()).hexdigest()[:24]
+        # Playback identity outlives a model switch; asset identity includes the synthesis model.
+        row = {k: v for k, v in line.items() if k not in ("asset", "ctype", "duration")}
+        row["id"] = line.get("id") or key
         meta = read_json(Path(out) / "assets" / (key + ".json"))
         if tts and meta and (Path(out) / "assets" / meta["asset"]).is_file():
             row.update(meta)
         elif tts:
-            data, ctype, duration, _ = tts.speak(line["text"], voices.CASTERS[role], caster=role)
+            data, ctype, duration, _ = tts.speak(line["text"], voices.CASTERS[role], caster=role,
+                                              **({"direction": direction} if direction else {}))
             asset = key + ".audio"
             atomic(Path(out) / "assets" / asset, data)
             meta = {"asset": asset, "ctype": ctype, "duration": duration}
-            save_json(Path(out) / "assets" / (key + ".json"), meta)
+            # A plain timeout retry is playable now, but must not become the cached directed rendition.
+            actual = tts.last_here() if hasattr(tts, "last_here") else {}
+            same_voice = not route or (actual.get("provider"), actual.get("voice")) == tuple(route)
+            if (actual.get("retried") != "timeout_plain" and same_voice
+                    and getattr(provider, "model", fixed_model) == model):
+                save_json(Path(out) / "assets" / (key + ".json"), meta)
             row.update(meta)
         else:
             row["duration"] = max(5, len(line["text"].split()) / 2.6)
@@ -529,17 +551,25 @@ def render_lines(lines, out, tts=None):
 
 
 def prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
+    import voices
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     with (out / ".prepare.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         old = read_json(out / "manifest.json")
+        if old and tts is not None and old.get("tts_config") != voices.audio_config(tts):
+            # Reuse only the already checked prose/evidence. Replace every audio asset before publishing.
+            old = dict(old, lines=render_lines(old["lines"], out, tts),
+                       transition=render_lines(old["transition"], out, tts), tts_config=voices.audio_config(tts))
+            save_json(out / "manifest.json", old)
+            export(old, out)
         if old and old.get("through", 0) >= until and (old.get("final") or not final):
             return old
         return _prepare(run, out, until, writer=writer, tts=tts, logs=logs, final=final)
 
 
 def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
+    import voices
     out, run = Path(out), Path(run)
     evidence = gather(run, until, logs)
     previous = read_json(out / "manifest.json")
@@ -571,7 +601,7 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
             {"speaker": "Vale", "title": "Coming up", "text": "We will take you through the turning points while the next team starts. The recap follows the record, right through the closing developments.", "sources": []}], out, tts)
     pictures = {r["asset"]: r for r in (previous.get("stills", []) if previous else [])}
     pictures.update({r["asset"]: r for r in stills(run, until, out)})
-    manifest = {"version": 1, "run": run.name, "through": until, "final": final,
+    manifest = {"version": 1, "run": run.name, "through": until, "final": final, "tts_config": voices.audio_config(tts),
                 "base_through": base_through, "base_count": base_count,
                 "evidence": evidence, "review": review, "lines": lines, "transition": transition,
                 "stills": sorted(pictures.values(), key=lambda r: r["t"])}
@@ -660,7 +690,7 @@ def main():
     tts = None
     if args.tts != "none":
         import voices
-        tts = voices.TTS(args.tts)
+        tts = voices.TTS(args.tts, openai_model=voices.configured_openai_model(config))
     if args.command == "rehearse":
         first = min(until, float(shift.get("start") or until) + PREPARE_AFTER)
         prepare(args.run_dir, args.out, first, writer=writer, tts=tts, logs=args.logs)

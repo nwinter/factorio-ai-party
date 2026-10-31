@@ -4,6 +4,61 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Delivery stays with the line (batch389, 2026-10-30)
+
+The operator can persist the OpenAI speech model in the run's `stream.json` (merge this field into the existing
+configuration):
+
+```json
+{"audio": {"openai_tts_model": "gpt-4o-mini-tts-2025-03-20"}}
+```
+
+Use `gpt-4o-mini-tts` or remove the field to keep the current default. Hosts read this once at process startup;
+the recap service reads the same setting at its startup, and the recap CLI reads the run's configuration. No live
+configuration is changed by this patch. The setting selects the model for OpenAI voices; it does not move Rook off
+his normal ElevenLabs voice. Host records include the actual model. TTS and recap asset cache keys include the
+actual model ID. A recap model switch rebuilds audio for already checked prose, blocks incompatible old manifests
+from playback until replacement, and preserves completed-line IDs. Existing old manifests without a model marker
+are regenerated once. Changing the setting takes effect at the operator's next normal process restart.
+
+Playback groups assign a stable `id` to each host line and store `directions[id]`. Resume and retries look up that
+ID, never the position in the unfinished subset. Old `event.directions` lists migrate against the full exchange on
+load. Queue and caster records include `line_id` for tracing across attempts.
+
+| Backend/model | Writer delivery control | Voice identity |
+| --- | --- | --- |
+| OpenAI `gpt-4o-mini-tts` | `instructions`, after the existing host role | Same `voice` |
+| Eleven v4, v3, v4 Turbo (Rook's normal route) | A bracketed delivery tag prepended to synthesis text | Same endpoint voice ID; natural stability |
+| Eleven Flash v2.5 fallback | Recognized pace maps to `voice_settings.speed`; unsupported words/tags dropped | Same endpoint voice ID |
+| Inworld TTS-2 | Bracketed inline instruction in `text`; no undocumented `instruction` field | Same `voiceId` |
+| Cartesia Sonic 3.6 | Conservative pace/emotion subset in `generation_config`; unknown/negated/changing arcs dropped | Same `voice.id`; no accent parameter |
+| Aura-2, Aura-1, MeloTTS, macOS say, tone | No writer delivery instruction | Existing route unchanged |
+
+OpenAI `tts-1`/`tts-1-hd` and Inworld models other than TTS-2 do not receive delivery instructions. The same backend
+mapping applies to host and agent voices. Agent chat still uses its existing event context; no new delivery writer
+is called for agents. Spoken/caption text stays separate from all direction metadata.
+
+On a synthesis timeout there is one retry with plain text and natural delivery, retaining the resolved provider and
+voice. A second failure terminates the attempt, without moving to a different voice. Normal non-timeout provider
+availability fallback and the existing Workers AI 8008 behavior remain. The retry is logged as `timeout_plain` and
+is not cached as directed audio. This adds at most one existing provider timeout to that attempt.
+
+The recap writer can return an optional `direction` on each line. Only the direction of a line surviving both
+existing evidence checks is retained. Record extracts and transition templates have no added directions. Recap
+cache keys include delivery and resolved voice; plain timeout renditions are not cached as directed clips.
+
+Offline regression/payload capture: `python3 tools/stream/test_delivery.py --capture /absolute/path/requests.json`.
+Small paid audition (no stream push): `python3 tools/stream/delivery_bench.py --out /absolute/path/audition
+--recap-writer`. `--resume` reuses successful host/agent renders. The audition includes an injected timeout followed
+by a real plain rendition, and labels the synthetic examples. Request captures include bodies/keys, never headers.
+
+Provider documentation checked for this change:
+
+- https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
+- https://elevenlabs.io/docs/help-center/product/core-capabilities/text-to-speech/how-do-audio-tags-work-with-eleven-v3-and-v4
+- https://docs.inworld.ai/tts/capabilities/steering
+- https://docs.cartesia.ai/build-with-cartesia/capability-guides/volume-speed-emotion
+
 ## The agents first, the hosts second (branch eng/talk-hosts, 2026-10-12 afternoon)
 
 Nick, during shift01: "the agents aren't talking to the stream as much, so it's almost all announcers." In the first

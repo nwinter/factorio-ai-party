@@ -200,7 +200,7 @@ auto.speak("Iron plates. Again. Fine, Muse.", "in-dennis")
 c = calls[-1]
 check("inworld request", c["url"] == "https://api.inworld.ai/tts/v1/voice" and c["body"]["voiceId"] == "Dennis"
       and c["body"]["modelId"] == "inworld-tts-2" and c["headers"]["Authorization"] == "Basic test-inworld-key"
-      and "/mjuːz/" in c["body"]["text"] and c["body"]["instruction"], json.dumps(c["body"]))
+      and "/mjuːz/" in c["body"]["text"] and "instruction" not in c["body"], json.dumps(c["body"]))
 auto.speak("Sol is on it!", "ca-daniel", mood="excited")
 c = calls[-1]
 check("cartesia request", c["url"] == "https://api.cartesia.ai/tts/bytes" and c["body"]["model_id"] == "sonic-3.6"

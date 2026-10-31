@@ -123,6 +123,101 @@ class RecapTest(unittest.TestCase):
         _, review = R.write_script(e, Writer())
         self.assertEqual(review["mode"], "record extracts")
 
+    def test_writer_delivery_stays_on_accepted_line(self):
+        e = R.gather(self.old, T0 + 10800)
+        source = next(r["id"] for r in e["rows"] if r["kind"] == "research")
+        lines = [dict(speaker="Rook", title="Research", text="Research finished: logistics 53.",
+                      sources=[source], direction="quick and excited."),
+                 dict(speaker="Vale", title="Research", text="Research finished: logistics 2.",
+                      sources=[source], direction="slow and calm.")]
+        class Writer:
+            def complete(self, system, user, **kw):
+                if system.startswith("Fact-check"):
+                    script = json.loads(user)["script"]
+                    assert [r["line"] for r in script] == [2]
+                    return json.dumps({"lines": [{"line": 2, "ok": True}]})
+                return json.dumps({"lines": lines})
+        script, review = R.write_script(e, Writer())
+        self.assertEqual(script, lines[1:])
+        self.assertEqual(review["attempts"][0]["failures"][0]["number"], "53")
+        self.assertIsNone(R.check(script, e))
+        self.assertTrue(all("direction" not in row for row in R.fallback(e)))
+
+    def test_delivery_render_cache_and_natural_timeout(self):
+        calls = []
+        class Capture(TTS):
+            retried = None
+            def speak(self, text, voice, **kw):
+                calls.append((text, voice, kw))
+                return super().speak(text, voice, **kw)
+            def last_here(self):
+                return {"retried": self.retried}
+        tts = Capture()
+        line = dict(speaker="Vale", title="Research", text="Research finished: logistics 2.", sources=["r"])
+        plain = R.render_lines([line], self.out, tts)[0]
+        directed = R.render_lines([dict(line, direction="slow and calm.")], self.out, tts)[0]
+        again = R.render_lines([dict(line, direction="slow and calm.")], self.out, tts)[0]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][2], {"caster": "color"})
+        self.assertEqual(calls[1][2], {"caster": "color", "direction": "slow and calm."})
+        self.assertNotEqual(plain["id"], directed["id"])
+        self.assertEqual(directed, again)
+        tts.retried = "timeout_plain"
+        new = dict(line, direction="quick and excited.")
+        R.render_lines([new], self.out, tts)
+        R.render_lines([new], self.out, tts)
+        self.assertEqual(len(calls), 4, "timeout audio must be synthesized again, not cached as directed")
+
+    def test_model_switch_rebuilds_final_manifest_before_playback(self):
+        import voices
+        from types import SimpleNamespace
+        class ModelTTS(TTS):
+            backend = "auto"
+            def __init__(self, model):
+                self.openai_model, self.calls, self.last = model, [], {}
+                self.providers = {"openai": SimpleNamespace(model=model)}
+            def route(self, voice, role):
+                return "openai", "cedar" if role == "pbp" else "ballad"
+            def speak(self, text, voice, **kw):
+                self.calls.append(text)
+                self.last = dict(provider="openai", voice=self.route(voice, kw["caster"])[1], model=self.openai_model)
+                return super().speak(text, voice, **kw)
+            def last_here(self):
+                return self.last
+        default, snapshot = [ModelTTS(m) for m in voices.OPENAI_TTS_MODELS]
+        old = R.prepare(self.old, self.out, T0 + 14400, tts=default, final=True)
+        audio = self.audio()
+        player = Player(self.run, self.old, audio, tts_config=voices.audio_config(snapshot))
+        player.state["completed"] = [old["lines"][0]["id"]]
+        self.assertEqual(player.step(T0 + 14401)["title"], "Shift change")
+        self.assertFalse(audio.clips, "old prepared audio must not play during replacement")
+        new = R.prepare(self.old, self.out, T0 + 14400, tts=snapshot, final=True)
+        for field in ("evidence", "review", "through", "final"):
+            self.assertEqual(old[field], new[field], field)
+        for section in ("lines", "transition"):
+            for a, b in zip(old[section], new[section]):
+                self.assertEqual(a["id"], b["id"], "heard-line identity survives an asset/model change")
+                self.assertEqual(a["text"], b["text"])
+                self.assertNotEqual(a["asset"], b["asset"])
+        count = len(snapshot.calls)
+        self.assertEqual(R.prepare(self.old, self.out, T0 + 14400, tts=snapshot, final=True), new)
+        self.assertEqual(len(snapshot.calls), count)
+        player.step(T0 + 14402)
+        self.assertTrue(audio.clips)
+        self.assertEqual(player.current["line"]["id"], old["lines"][1]["id"])
+        back = R.prepare(self.old, self.out, T0 + 14400, tts=default, final=True)
+        self.assertEqual([r["asset"] for r in back["lines"]], [r["asset"] for r in old["lines"]])
+        # The service reads the selector at startup, uses it for recap builds and waits on incompatible manifests.
+        cfg = {"audio": {"openai_tts_model": snapshot.openai_model}}
+        svc = ShiftRecap(self.run, cfg, self.audio())
+        calls = []
+        svc.schedule = lambda *args: calls.append(args)
+        svc.step(T0 + 14401)
+        self.assertTrue(calls and not svc.final_previous)
+        with patch.object(voices, "TTS", return_value=snapshot) as factory, patch.object(R, "prepare"):
+            svc.build(self.old, T0 + 14400, True)
+        factory.assert_called_once_with("auto", openai_model=snapshot.openai_model)
+
     def test_exact_number_forms_and_citation_scope(self):
         e = {"rows": [{"id": "a", "text": "Astra reported four new stern railguns and two aft engines. "
                        "Sol reported sixMIL resumed, a twenty-minute test, zero active reminders, and 4,000 bricks.",
