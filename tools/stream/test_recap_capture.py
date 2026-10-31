@@ -112,6 +112,12 @@ class CaptureTest(unittest.TestCase):
         self.capture.disk_bytes = 500
         self.assertEqual(self.step()["status"], "disk cap")
         self.assertEqual(self.calls, [])
+        self.capture.disk_bytes = C.MAX_FRAME_BYTES + 65536 + 100
+        orphan = self.run / "recap-media.json.123.tmp"
+        orphan.write_bytes(b"x" * 200)
+        self.assertEqual(self.step()["status"], "disk cap")
+        self.assertEqual(self.calls, [], "orphaned atomic index writes count before contacting OBS")
+        orphan.unlink()
         self.capture.disk_bytes = C.DISK_BYTES
         s = state()
         result = self.capture.step(s, lambda: state(subject="Lark"))

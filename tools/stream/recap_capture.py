@@ -114,7 +114,9 @@ class Capture:
             row = min(ready, key=lambda r: last.get((r["subject_type"], r["subject"].casefold()), 0))
             used = sum(p.stat().st_size for p in self.folder.iterdir() if p.is_file())
             index = self.run / "recap-media.json"
-            used += index.stat().st_size if index.exists() else 0
+            # Interrupted atomic index writes live beside the index, not in the frame
+            # folder. Count them too so repeated restarts cannot grow past the cap.
+            used += sum(p.stat().st_size for p in self.run.glob("recap-media.json*") if p.is_file())
             # Reserve one bounded response plus index growth/atomic replacement before even asking OBS.
             if used + MAX_FRAME_BYTES + 2 * (index.stat().st_size if index.exists() else 0) + 65536 > self.disk_bytes:
                 return {"status": "disk cap"}
