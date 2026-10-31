@@ -244,6 +244,7 @@
       if (state) report(clip.id, state, skipWhy ? Object.assign({ reason: skipWhy }, extra || {}) : extra);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
       x.done = true; x.playing = false;
+      clock.untrack(clip.tour, x);
       holdEnd(clip, state || "skip");
       setTimeout(() => timed.delete(clip.id), 60000);
       setTimeout(playNext, 300);

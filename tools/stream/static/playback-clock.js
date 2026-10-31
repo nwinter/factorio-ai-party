@@ -15,6 +15,9 @@
       tracks.set(id, state);
       if (tracks.size > 100) tracks.delete(tracks.keys().next().value);
     },
+    untrack(id, state) {
+      if (tracks.get(id) === state) tracks.delete(id);  // release decoded audio when this clip finishes
+    },
     elapsed(id, at) {
       if (!audioEnabled) return clock.now() - at;  // muted preview
       const x = tracks.get(id);
