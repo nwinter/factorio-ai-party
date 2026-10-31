@@ -314,7 +314,7 @@ do
   local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
   eq(by['iron-plate'],nil,'only ammunition, repair packs and thruster fluids')
   eq(by.rocket.stock,150,'hub and turrets'); eq(by.rocket.lasts_min,15); eq(by.rocket.runs_out_on,'fulgora->aquilo')
-  has(by.rocket.line,'rocket: 150 now, made 0/min, used 10/min (over the last leg fulgora->nauvis, 10m00s); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route\'s end about 0')
+  has(by.rocket.line,'rocket: aboard (whole ship) 150; stock (reachable) 150, made 0/min, used 10/min (over the last leg fulgora->nauvis, 10m00s); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route\'s end about 0')
   -- made 20/min from 9 iron plates at 4 a craft: 2 more, then 5/min used alone (Astra, d15 15:39)
   local fm=by['firearm-magazine']
   eq(fm.ingredient_limited.more,2); eq(fm.ingredient_limited.item,'iron-plate'); eq(fm.at_end,-98); eq(fm.lasts_min,10.4); eq(fm.runs_out_on,'fulgora->aquilo')

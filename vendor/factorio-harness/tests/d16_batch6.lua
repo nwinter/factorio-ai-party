@@ -62,7 +62,7 @@ do
   for _,x in ipairs(r.resources) do if x.name=='rocket' then rk=x end end
   eq(rk.stock,30+12+344+2+1,'hub, turrets, belts (the pair once), hands, the maker\'s output')
   eq(rk.by_place.belts,344); eq(rk.by_place.hub,30); eq(rk.by_place.turrets,12); eq(rk.by_place.hands,2); eq(rk.by_place.machines,1)
-  has(rk.line,'rocket: 389 now (hub 30, turrets 12, belts 344, hands 2, machines 1), made 6/min, used 10/min (last 10 min, flying)')
+  has(rk.line,'rocket: aboard (whole ship) 389; stock (reachable) 389 (hub 30, turrets 12, belts 344, hands 2, machines 1), made 6/min, used 10/min (last 10 min, flying)')
   has(rk.line,'; since this leg began: hub -340, belts +340')
   -- the ceiling: 2 more now (4 plates, 2 a craft), growing with the plates made aboard (20/min: 10 rockets' worth) until the
   -- 10 explosives and the 3 made a minute bind
