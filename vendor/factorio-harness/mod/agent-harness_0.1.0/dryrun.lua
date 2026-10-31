@@ -947,6 +947,8 @@ return function(api)
   function M.check(p, plan)
     remedy_cache = {}
     local s, force = p.surface, p.force
+    -- Conditions are cached per prototype by the runtime; property values belong to this check's target surface.
+    local surface_properties = {}
     local on_platform = api.own_platform(p)
     local kind, mode = plan.kind, plan.mode or 'normal'
     local manual = kind == 'build'
@@ -1573,10 +1575,13 @@ return function(api)
       -- (d28 batch330, Astra 22:10 on batch328: "occupied(-16.5,-56.5) still only says blocked by turbo belt, not surface
       -- first") the surface's conditions first, whatever else stands in the way
       if rec.proto and rec.status ~= 'exists' and api.surface_block then
-        local sc = try(function() return api.surface_block(s, rec.proto) end)
-        if sc and not table.concat(reasons, '; '):find('cannot be placed on', 1, true) then
-          table.insert(reasons, 1, sc)
+        local sc = api.surface_block(s, rec.proto, surface_properties)
+        if sc then
+          if not table.concat(reasons, '; '):find(sc, 1, true) then table.insert(reasons, 1, sc) end
           rec.status = 'blocked'
+          out.surface_conditions = out.surface_conditions or {}
+          out.surface_conditions[#out.surface_conditions+1] = string.format('#%s %s: %s',
+            tostring(rec.copy and (rec.copy..'.'..rec.index) or rec.index), rec.pos and at(rec.pos) or '', sc)
         end
       end
       rec.why = #reasons > 0 and table.concat(reasons, '; ') or nil
@@ -2470,7 +2475,9 @@ return function(api)
         for _, o in ipairs(occupied[key(math.floor(pos.x), math.floor(pos.y))] or {}) do
           local b = o.box
           if pos.x >= b.left_top.x and pos.x <= b.right_bottom.x and pos.y >= b.left_top.y and pos.y <= b.right_bottom.y then
-            return {name=o.name, position=o.pos, type=o.proto.type}
+            return {name=o.name, position=o.pos, type=o.proto.type,
+              blocked=o.status == 'blocked' and string.format('planned #%s %s %s is blocked: %s',
+                tostring(o.copy and (o.copy..'.'..o.index) or o.index), o.name, at(o.pos), o.why or 'placement refused') or nil}
           end
         end
       end

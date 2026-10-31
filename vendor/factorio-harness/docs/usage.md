@@ -389,6 +389,10 @@ fh call status
     and their dry runs give it.
   - `placements {platform, name: "cargo-bay", near?}` lists where it fits on that platform by the game's own build
     check, which knows the hub and bay attachment (near in platform coordinates, default the hub).
+  - `build` and `place_ghosts` dry runs check prototype surface conditions (gravity, pressure and each other named
+    property) against the target surface. `surface_conditions` lists failed entries, required bounds and actual values.
+    `check_inserters: true` refuses the whole batch before placing anything if any entry fails those conditions.
+    A blocked planned pickup or drop target names its entry and placement reason in the inserter row.
   - `check_inserters: true` on `build` or `place_ghosts` (Luna, d15: misaligned and blocked seed-feeder inserters took many
     round trips) runs the call's dry run first. Each planned inserter's pickup and drop (what stands there: built,
     planned in this call, a ghost), power (a pole's supply area, built or planned; a build only) and filters (one that

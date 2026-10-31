@@ -4602,6 +4602,58 @@ end)()
   for i=#made,1,-1 do made[i]=nil end
   local rt=call('place_ghosts',{check_inserters=true,dry_run=true,entities={{name='inserter',position={x=6.5,y=0.5}}}})
   eq(rt.dry_run,true); eq(#made,0)
+  -- SC (#2838): a blocked planned chest was still a valid drop target to check_inserters.
+  do
+    local sf=p.surface
+    local valid,index,platform,getprop=sf.valid,sf.index,sf.platform,sf.get_property
+    sf.valid=true; sf.index=399; sf.platform={name='SC platform'}
+    prototypes.entity.inserter.name='inserter'
+    local gravity,pressure=0,0
+    sf.get_property=function(n) return n=='gravity' and gravity or pressure end
+    local reads=0
+    local box={left_top={x=-0.35,y=-0.35},right_bottom={x=0.35,y=0.35}}
+    prototypes.entity['steel-chest']=setmetatable({name='steel-chest',type='container',collision_box=box},
+      {__index=function(_,k) if k=='surface_conditions' then reads=reads+1; return {{property='gravity',min=0.1}} end end})
+    prototypes.entity['pressure-chest']={name='pressure-chest',type='container',collision_box=box,
+      surface_conditions={{property='gravity',min=0},{property='pressure',min=1,max=1000}}}
+    local batch={{name='inserter',position={x=6.5,y=4.5}},
+      {name='steel-chest',position={x=6.5,y=5.5}}}
+    chest(6.5,3.5)
+    local dry=call('place_ghosts',{dry_run=true,entities=batch})
+    eq(dry.inserters[1].missing,'no drop target')
+    assert(dry.inserters[1].drop:find('planned #2 steel-chest',1,true),dry.inserters[1].drop)
+    assert(dry.surface_conditions[1]:find('needs gravity >= 0.1, this surface has 0',1,true))
+    fails(function() call('place_ghosts',{check_inserters=true,entities=batch}) end,
+      'check_inserters: nothing placed: #2 (6.5,5.5): steel-chest cannot be placed on SC platform: needs gravity >= 0.1, this surface has 0')
+    eq(#made,0,'the earlier valid inserter was not placed'); eq(reads,1,'conditions cached per prototype')
+    local long_batch={}
+    for i=1,255 do long_batch[i]={name='inserter',position={x=6.5,y=4.5}} end
+    long_batch[256]=batch[2]
+    fails(function() call('place_ghosts',{check_inserters=true,entities=long_batch}) end,
+      '#256 (6.5,5.5): steel-chest cannot be placed on SC platform')
+    eq(#made,0,'surface failures past the displayed row limit also refuse the batch')
+    -- A failing second property and a batch with no inserters still refuse before placing anything.
+    fails(function() call('place_ghosts',{check_inserters=true,entities={{name='pressure-chest',position={x=12.5,y=5.5}}}}) end,
+      'needs pressure between 1 and 1000, this surface has 0')
+    eq(#made,0)
+    gravity=0.1; pressure=1
+    local allowed=call('place_ghosts',{dry_run=true,entities=batch})
+    eq(allowed.surface_conditions,nil,'fresh surface properties on the next check at the same tick')
+    eq(allowed.inserters[1].missing,nil,'condition met: planned drop is usable')
+    eq(allowed.inserters[1].drop,'planned steel-chest (6.5,5.5)')
+    local can_place=sf.can_place_entity
+    sf.can_place_entity=function(a) return a.name~='steel-chest' end
+    fails(function() call('place_ghosts',{check_inserters=true,entities=batch}) end,'no drop target')
+    eq(#made,0,'a planned target blocked for another reason also refuses the batch')
+    sf.can_place_entity=can_place
+    -- Conditions absent on the inserter; the checked call still places it with built targets.
+    eq(call('place_ghosts',{check_inserters=true,entities={{name='inserter',position={x=6.5,y=0.5}}}}).placed,1)
+    for i=#made,1,-1 do made[i]=nil end
+    sf.valid,sf.index,sf.platform,sf.get_property=valid,index,platform,getprop
+    prototypes.entity.inserter.name=nil
+    prototypes.entity['steel-chest']=nil; prototypes.entity['pressure-chest']=nil
+    chests[#chests]=nil
+  end
   for _,v in ipairs({false,true}) do
     local rd=call('dry_run',{action='place_ghosts',args={dry_run=v,entities={{name='inserter',position={x=6.5,y=0.5}}}}})
     eq(rd.dry_run,true); eq(#made,0)

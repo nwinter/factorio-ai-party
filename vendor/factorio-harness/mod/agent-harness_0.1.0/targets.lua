@@ -66,6 +66,7 @@ return function(api)
     end
     if built then return string.format('%s %s', built.name, at(built.position)) end
     local p = planned and planned(pos)
+    if p and p.blocked then return nil, p.blocked end
     if p and M.TYPES[p.type] then return string.format('planned %s %s', p.name, at(p.position)) end
     if ghost then return string.format('ghost %s %s', ghost.ghost_name, at(ghost.position)) end
     local where = at(tile_of(pos))
