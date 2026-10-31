@@ -144,7 +144,7 @@ def auto_airtime_and_urgent():
     assert .65<share<.85,share
     away=[r for r in rows[10:] if name(r)!='Resolute']
     assert all(name(r,'inset')=='Resolute' for r in away)
-    assert {r['main']['platform']['framing'] for r in rows if name(r)=='Resolute'}=={'bow defense','whole ship'}
+    assert {r['main']['platform']['framing'] for r in rows if name(r)=='Resolute'}=={'ship survey'}
     for kind,text in [('attack','Base under attack'),('death','Sol died'),('loss','26 lost near (400, 400): 26 gun turret')]:
         d,_=director(auto_feature=True)
         for t in range(1000,1020):d.step(snap(TEAM,[SHIP]),t)

@@ -66,29 +66,16 @@ def holds(d):
 
 
 def onair():
-    d, sent = world(auto_feature=False, map_every=0)
-    a, t = team(), 1000
-    rows = [plat("Asterion", at="aquilo->solar-system-edge 7%", view=ASTERION, toward="solar-system-edge")]
-    d.cfg["platform_hold"] = 20
-    for k in range(0, 80):
-        d.step(snap(a, rows), t + k)
-        if (d.state.get(d.onair) or {}).get("platform"):
-            break
-    assert d.platforms, "no platform shot"
-    shot = d.state[d.onair]
-    p = shot["pan"]
-    assert shot["zoom"] == 0.3 and not p.get("speed"), shot
-    assert shot["until"] - (t + k) > 20, (shot["until"], t + k)  # held past platform_hold for the length
-    end, on = int(shot["until"]), d.onair
-    for k2 in range(k + 1, end - t):
-        d.step(snap(a, rows), t + k2)
-        if d.onair != on:
-            break
-    bodies = [b for b in sent if b.get("surface") == "platform-16"]
-    ys = [b["position"]["y"] for b in bodies]
-    assert ys[0] == p["y0"] and p["y1"] in ys, (ys[:3], ys[-3:], p)  # bow to stern on air
-    moving = [b for b in bodies if b["position"]["y"] != p["y0"]]
-    assert moving and all(b.get("speed") and b.get("smooth") for b in moving), moving[:2]  # gliding between steps
+    from test_ship_survey import setup, run
+    d, cam, _ = setup()
+    d.watch_platforms(snap([], [plat("Asterion", view=ASTERION)]), 1000)
+    shot = d.visit_target("Asterion", 20, 1000)
+    d.frame_on(d.slots[0], shot, "visit", {}, 1000)
+    q = d.surveys[d.state["main"]["survey_key"]]
+    run(d, cam, 1000, shot["until"])
+    assert q.ends == {"bow", "stern"}, q.public()
+    assert q.coverage == [(ASTERION["bounds"]["top"], ASTERION["bounds"]["bottom"])], q.public()
+    assert q.spec["bow"]["y"] < shot["pan"]["y0"] and q.spec["stern"]["y"] > shot["pan"]["y1"]
 
 
 def main():

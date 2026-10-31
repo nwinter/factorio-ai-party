@@ -385,6 +385,25 @@ local r = remote.call("agent_harness", "camera", BODY)
 rcon.print(type(r) == "string" and r or helpers.table_to_json({ok = true, result = r}))
 """
 
+# One camera player's rendered position/zoom, or one GUI camera element. No entity walk or dispatch;
+# unlike cameras.describe this is the current view, not the destination of a smooth move.
+CAMERA_OBSERVE_LUA = r"""
+local p = game.get_player(PLAYER)
+local out = {ok=false, tick=game.tick, speed=game.speed}
+if p and p.valid then
+  local el = PANEL > 0 and p.gui.screen['pog_panel_' .. PANEL] or nil
+  if PANEL == 0 or (el and el.valid) then
+    out.ok = true
+    out.connected = p.connected
+    out.position = el and el.position or p.position
+    out.zoom = el and el.zoom or p.zoom
+    out.surface = el and game.get_surface(el.surface_index).name or p.surface.name
+    out.visible = PANEL == 0 or el.visible
+  end
+end
+rcon.print(helpers.table_to_json(out))
+"""
+
 # (d28 batch326 RA2, viewer Aurora site:5423: the Gleba egg breeder's speaker alarm droned on air while pog-cam1 was
 # on Gleba) the speakers sounding an alarm the camera client can hear: its player's custom alerts whose target is a
 # programmable speaker (an alarm raises its alert while its condition holds), each with its playback volume and mode
@@ -837,4 +856,8 @@ class Harness:
         return json.loads(self.command("/silent-command " + one_line(ALARMS_LUA.replace("PLAYER", str(int(player))))))
 
     def camera(self, body):
+        if body.get("observe"):
+            # This private camera protocol is read-only and never reaches runtime dispatch.
+            return self.lua(CAMERA_OBSERVE_LUA.replace("PLAYER", str(int(body["player"])))
+                            .replace("PANEL", str(int(body.get("panel") or 0))))
         return json.loads(self.command("/silent-command " + one_line(CAMERA_LUA.replace("BODY", lua_string(json.dumps(body))))))

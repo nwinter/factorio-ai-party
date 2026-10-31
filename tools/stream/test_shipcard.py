@@ -36,21 +36,14 @@ def shots():
 
 
 def pan():
-    d, sent = world(auto_feature=False, map_every=0)
-    a, t = team(), 1000
-    rows = [plat("Bastion", at="aquilo->solar-system-edge 20%", view=BASTION, toward="solar-system-edge")]
-    d.cfg["platform_hold"] = 30
-    for k in range(0, 60):
-        d.step(snap(a, rows), t + k)
-        if d.platforms:
-            break
-    target = next(v for v in d.state.values() if v and v.get("pan"))
-    for k2 in range(k + 1, k + 40):
-        d.step(snap(a, rows), t + k2)
-    moves = [b["position"]["y"] for b in sent if b.get("surface") == "platform-2"]
-    assert moves[0] == target["pan"]["y0"] and target["pan"]["y1"] in moves, moves  # framed at the bow, on to the stern
-    assert moves == sorted(moves), moves  # bow to stern, never back within a 30 s shot
-    assert all(b2 - b1 <= 2 * d.PAN_STEP + 6 for b1, b2 in zip(moves, moves[1:])), moves  # small steps, eased
+    from test_ship_survey import setup, run
+    d, cam, _ = setup()
+    d.watch_platforms(snap([], [plat("Bastion", view=BASTION)]), 1000)
+    shot = d.visit_target("Bastion", 30, 1000)
+    d.frame_on(d.slots[0], shot, "visit", {}, 1000)
+    run(d, cam, 1000, shot["until"])
+    q = d.surveys[d.state["main"]["survey_key"]]
+    assert q.ends == {"bow", "stern"} and q.coverage == [(-62, 62)], q.public()
     # the pan's place over a long hold: bow, stern, back to the bow
     t0 = {"pan": {"y0": -40.0, "y1": 20.0}, "since": 0.0, "until": 600.0}
     assert d.pan_y(t0, 1.0) == -40.0 and d.pan_y(t0, d.PAN_END_S + d.PAN_LEG_S) == 20.0

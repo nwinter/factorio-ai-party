@@ -77,7 +77,7 @@ def held():
     assert row["zoom"] == shot["zoom"] and "in orbit of Vulcanus" in row["platform"]["label"]
     expanded = dict(VIEW, bounds={"left": -36, "top": -18, "right": 42, "bottom": 24})
     row = advance(d, a, [plat(at="vulcanus", view=expanded)], 1093, 1094)
-    assert d.onair == on and row["zoom"] < shot["zoom"] and row["frame"]["position"] == {"x": 3.0, "y": 3.0}
+    assert d.onair == on and row["zoom"] < shot["zoom"] and row["frame"]["position"] == {"x": 3.0, "y": -10.09}, row
     # Clearing before its deadline must not leave the fixed shot's old until active.
     pc.clear(1094)
     row = advance(d, a, [plat(at="vulcanus")], 1094, 1100)

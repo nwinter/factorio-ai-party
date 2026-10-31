@@ -60,7 +60,7 @@ def share_dwell_inset():
                 spans.append(t - start); start = None
         assert spans and min(spans) >= MAIN_S + CONTEXT_S, spans
         frames = {(r['main']['platform']['framing']) for _, r in rows if name(r) == 'Resolute'}
-        assert frames == {'bow defense', 'whole ship'}, frames
+        assert frames == {'ship survey'}, frames
         away = [(t, r) for t, r in rows if t > 1010 and name(r) != 'Resolute']
         if slots is None or len(slots) > 1:
             assert all(name(r, 'inset') == 'Resolute' for t, r in away), away[:3]
@@ -158,7 +158,7 @@ def sustained_encounter():
         ship['danger']={'kind':'fire','last':t,'level':2,'reason':'Resolute under fire'}
         d.step(snap(TEAM,[ship]),t)
         frames.add((d.public(t).get('main',{}).get('platform') or {}).get('framing'))
-    assert 'bow defense' in frames and 'whole ship' in frames, frames
+    assert 'ship survey' in frames, frames
 
 
 def failures():
@@ -177,7 +177,7 @@ def failures():
     assert name(rows[-1][1]) != 'Resolute'
     rows=run(d,1040,1046);assert name(rows[-1][1])=='Resolute'
     # Hull changes reframe the real surface, and a failed reframe preserves the acknowledged geometry.
-    expanded=copy.deepcopy(SHIP);expanded['view']['bow']['right']+=80
+    expanded=copy.deepcopy(SHIP);expanded['view']['hull']['right']+=80
     old=copy.deepcopy(d.state[d.onair]);d.sender=lambda b:{'ok':False}
     run(d,1046,1048,ship=expanded)
     assert d.state[d.onair]['position']==old['position'] and d.state[d.onair]['zoom']==old['zoom']

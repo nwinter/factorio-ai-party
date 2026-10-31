@@ -273,14 +273,10 @@ class Featured:
         return "repair" if repair_started else fresh[0][0] if fresh else None
 
     def shot(self, d, name, now, context=False):
-        shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S, overview=context)
+        shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S, overview=True)
         if not shot:
             return None
-        detail = None if context else d.bow_defense(name)
-        framing = "whole ship" if not detail else "bow defense"
-        if detail:
-            shot.pop("pan", None)
-            shot.update(position=detail["position"], zoom=detail["zoom"], exact_zoom=True)
+        framing = "ship survey"
         shot["featured"] = self.active["id"]
         source = self.active.get("source", "operator")
         shot["platform"].update(framing=framing, source=source, label=f"Featured: {d.platform_label(name)} · {framing}")
@@ -289,11 +285,24 @@ class Featured:
     @staticmethod
     def refresh(d, slot, old, shot, scores, now):
         # Refresh growing/repaired hulls without counting another cut. Keep the last acknowledged frame on failure.
+        q = d.surveys.get(old.get("survey_key"))
+        if old.get("survey") and shot.get("survey") and q and now < q.expires and all(
+                old["survey"][k] == shot["survey"][k] for k in ("bow", "stern", "bounds", "frac", "surface")):
+            old["platform"]["label"] = shot["platform"]["label"]
+            old["survey"] = copy.deepcopy(shot["survey"])
+            q.spec["details"] = copy.deepcopy(shot["survey"]["details"])
+            return
         if old.get("pan") and old.get("pan") == shot.get("pan"):
             shot = dict(shot, position=old["position"])
-        changed = any(old.get(k) != shot.get(k) for k in ("position", "surface", "zoom", "pan"))
+        changed = any(old.get(k) != shot.get(k) for k in ("position", "surface", "zoom", "pan", "survey"))
+        changed = changed or bool(shot.get("survey") and (q is None or now >= q.expires))
         if changed:
             target = dict(old, **shot)
+            for key in ("survey_step", "move", "move_ok", "glide"):
+                target.pop(key, None)
+            if not shot.get("survey"):
+                for key in ("survey", "survey_key", "survey_step", "move", "move_ok"):
+                    target.pop(key, None)
             # Remove a previous pan when changing to a fixed defense view.
             if "pan" not in shot:
                 target.pop("pan", None)

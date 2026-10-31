@@ -128,6 +128,7 @@ class Director:
         self.acknowledged = self.state
         self.on_air = dict(self.state)  # confirmed by the compositor, never by a send attempt
         self.send_pending = {}
+        self.surveys = {}  # (slot, surface, purpose): interrupted phases survive the original hold
         self.last_on_air = {}
         self.started = time.time()
         self.last_cut = 0.0
@@ -439,6 +440,22 @@ class Director:
     def apply(self, slot, target, reason, scores, now, quiet=False):
         name = slot["slot"]
         target = dict(target) if target is not None else None
+        survey_candidate, survey_from = None, None
+        if target and target.get("survey") and not target.get("survey_step"):
+            from camerapath import Survey
+            key = (name, target["surface"], (target.get("platform") or {}).get("why"))
+            survey = self.surveys.get(key)
+            spec = target["survey"]
+            if survey is None:
+                old_key = next((k for k, q in self.surveys.items() if k[1:] == key[1:] and q.interrupted and
+                                not q.active and now < q.expires and all(q.spec[f] == spec[f] for f in ("bow", "stern", "bounds", "frac"))), None)
+                if old_key is not None:
+                    survey, survey_from = self.surveys[old_key], old_key
+            if survey is None or now >= survey.expires or any(survey.spec[k] != spec[k] for k in ("bow", "stern", "bounds", "frac")):
+                survey = Survey(spec, now, target.get("until", now + Survey.MAX_HOLD))
+            survey_candidate = survey
+            target.update(position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
+                          survey_key=key, exact_zoom=True)
         self.requested[name] = copy.deepcopy(target)
         if target is None:
             body = {"player": slot["player"], "release": True}
@@ -514,7 +531,19 @@ class Director:
         if ok and reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
             self.last_cut = now
         if ok:
+            if survey_candidate:
+                if survey_from is not None:
+                    self.surveys.pop(survey_from, None)
+                self.surveys[target["survey_key"]] = survey_candidate
+                survey_candidate.spec["details"] = copy.deepcopy(target["survey"]["details"])
             self.state[name] = target
+            if target and target.get("survey_key") in self.surveys:
+                survey = self.surveys[target["survey_key"]]
+                survey.template = {k: copy.deepcopy(v) for k, v in target.items()
+                                   if k not in ("move", "move_ok", "survey_step", "jump", "glide", "survey_status")}
+            for key, survey in self.surveys.items():
+                if key[0] == name and (not target or key != target.get("survey_key")):
+                    survey.suspend()
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
                  "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame") if k in target},
@@ -531,6 +560,89 @@ class Director:
             print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub} [{status}]",
                   flush=True)
         return bool(ok)
+
+    def survey_step(self, now):
+        """Observe one camera, then drive its survey only while the compositor confirms it is visible.
+
+        Native moves run once per phase; panels/older runtimes follow the identical camerapath using smooth
+        updates. Game slowdown and unsuccessful moves cannot finish a phase or earn coverage.
+        """
+        import camerapath
+        live = set()
+        for slot in self.slots:
+            name = slot["slot"]
+            target = self.state.get(name) or {}
+            key = target.get("survey_key")
+            if not key or key not in self.surveys:
+                continue
+            survey = self.surveys[key]
+            aired = self.on_air.get(name) or {}
+            visible = aired.get("survey_key") == key and now < target.get("until", now + 1) and \
+                not getattr(self, "hold_layout", False) and not (hasattr(self, "hosting") and self.hosting(now))
+            if not visible:
+                if survey.active:
+                    survey.suspend()
+                    frozen = {k: v for k, v in target.items() if k not in ("move", "glide")}
+                    Director.apply(self, slot, dict(frozen, position={k: survey.pose[k] for k in ("x", "y")},
+                                          zoom=survey.pose["zoom"], jump=True, survey_step=True),
+                               "reframe", {}, now, quiet=True)
+                continue
+            live.add(key)
+            if survey.interrupted and not survey.active:
+                # A hidden native move may have kept running after a failed freeze. Restore the last
+                # visible point before taking new receipts; after the hold deadline start at the bow.
+                resumed = {k: v for k, v in target.items() if k not in ("move", "glide", "survey_step")}
+                if Director.apply(self, slot, dict(resumed, jump=True), "reframe", {}, now, quiet=True):
+                    survey = self.surveys[key]
+                    survey.active, survey.interrupted = True, False
+                continue
+            try:
+                receipt = self.sender(dict(player=slot["player"], panel=slot.get("panel", 0), observe=True))
+            except Exception:
+                receipt = {}
+            logical = dict(receipt) if isinstance(receipt, dict) else {}
+            if slot.get("panel") and isinstance(logical.get("zoom"), (float, int)):
+                scale = slot.get("scale", 1)
+                logical["coverage_zoom"] = logical["zoom"] / scale
+                logical["zoom"] = (survey.goal["zoom"] if logical["zoom"] <= PANEL_ZOOM_MIN + .002 and
+                                   survey.goal["zoom"] * scale <= PANEL_ZOOM_MIN + .002 else logical["zoom"] / scale)
+            if not survey.observe(logical, now, visible):
+                continue
+            survey.active = True
+            survey.interrupted = False
+            survey.advance()
+            target.update(position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
+                          game_zoom=receipt["zoom"], survey_status=survey.public())
+            if self.log_path:
+                with open(self.log_path, "a") as f:
+                    f.write(json.dumps(dict(t=round(now, 3), slot=name, reason="reframe", event="survey_receipt", receipt=receipt,
+                                            visible=True, survey=survey.public())) + "\n")
+            if survey.arrived() and survey.phase.endswith("dwell"):
+                continue
+            clean = {k: v for k, v in target.items() if k not in ("move", "jump", "glide", "pan")}
+            clean["survey_step"] = True
+            if survey.motion is None:
+                path = survey.path()
+                # Native time is game seconds. Scale for configured speed; arrival handles low UPS/stalls.
+                speed = max(.01, float(logical.get("speed", 1)))
+                native_path = copy.deepcopy(path)
+                for seg in native_path["segments"]:
+                    seg["t1"] = min(600, seg["t1"] * speed)
+                proposed = dict(clean, position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
+                                move=native_path)
+                if Director.apply(self, slot, proposed, "reframe", {}, now, quiet=True):
+                    survey.motion, survey.sent_at = path, now
+                    survey.native = bool((self.state.get(name) or {}).get("move_ok")) and not slot.get("panel")
+            elif not survey.native:
+                x, y, z = camerapath.at(survey.motion, now - survey.sent_at + .8)
+                distance = math.hypot(x - survey.pose["x"], y - survey.pose["y"])
+                Director.apply(self, slot, dict(clean, position=dict(x=x, y=y), zoom=z,
+                                      glide=min(60, max(.5, distance / .8))), "reframe", {}, now, quiet=True)
+        for key, survey in list(self.surveys.items()):
+            if key not in live:
+                survey.suspend()
+                if now >= survey.expires:
+                    del self.surveys[key]
 
     def retry_sends(self, now):
         for slot in self.slots:

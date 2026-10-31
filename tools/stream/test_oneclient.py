@@ -15,8 +15,8 @@ cloud, a platform in danger, an edge entry, a departure other than a maiden flig
    agent in a panel; the story back after.
 4. A ship entering an edge leg's dense asteroids: once per leg, urgent.
 5. A departure: news on air; a routine one in a free panel when it may not go on air (no panel: not shown).
-6. A visit with one client: the whole ship visit_overview_s, then the bow defense (in flight) and the machinery (while
-   machines work) visit_beat_s each, in turn from visit to visit; a docked ship with nothing working: the whole ship
+6. Ship visits share a receipt-driven survey controller across client counts, with bow/machinery section
+   candidates, endpoint dwells and preserved progress; a docked ship has a hub section
    only. Three clients: the whole ship platform_hold as before.
 7. Quiet time with one client: the platform visit and the map are quiet views again.
 8. director_replay.py's inputs for these: camera panels, the platforms read (views from a service state file, where
@@ -225,45 +225,29 @@ def departures():
 
 
 def visits():
+    # Selection retains its normal schedule; the shared controller owns motion and detail dwell.
+    from test_ship_survey import Camera, run as survey_run
     cfg = dict(platform_every=300, platform_first=30)
     d, sent = director(PANELS, **cfg)
     fly = plat("Starling", at="nauvis->vulcanus 40%", view=SHIP)
     k = run(d, 0, 120, lambda k: snap(team(), [fly]), until=lambda d, k: bool(d.platforms))
-    assert d.platforms[-1][2] == "visit", d.platforms
-    k0 = k
     t = d.state[d.onair]
-    assert t["until"] == T + k0 + d.cfg["ready_s"] + 7 + 2 * 7 and [b["why"] for b in t["beats"]] == ["bow defense", "machinery"], t
-    rows = []
-    k = run(d, k0 + 1, k0 + 40, lambda k: snap(team(), [fly]),
-            until=lambda d, k: rows.append((k, main_row(d, T + k).get("work"), main_row(d, T + k).get("zoom"))) or
-            not main_row(d, T + k).get("platform"))
-    works = [r[1] for r in rows if r[1]]
-    assert works[0] == "Starling · whole ship", rows[:3]
-    bow = next(r for r in rows if r[1] and "bow defense" in r[1])
-    mach = next(r for r in rows if r[1] and "machinery" in r[1])
-    assert bow[0] - k0 in (7, 8) and mach[0] - bow[0] in (7, 8), (k0, bow, mach)
-    assert bow[1] == "Starling · bow defense: 2 turrets ahead", bow
-    assert mach[1] == "Starling · machinery: 4 working here, 4 of 5 on the ship" and mach[2] == 0.7, mach
-    # the bow frame holds the two bow turrets and the space they reach ahead
-    bb = [b for b in sent if b.get("surface") == "platform-3" and b.get("speed")]
-    assert bb and bb[0]["position"]["y"] < -36 and bb[1]["position"] == {"x": -4.5, "y": 12.5}, bb[:2]
-    assert main_row(d, T + k).get("agents") == ["luna"] and k - k0 <= 7 + 14 + d.cfg["ready_s"] + 2, (k, k0)
-    # the next visit opens with the other framing after the whole ship
-    k = run(d, k + 1, k + 400, lambda k: snap(team(), [fly]), until=lambda d, k: len(d.platforms) >= 2)
-    assert [b["why"] for b in d.state[d.onair]["beats"]] == ["machinery", "bow defense"], d.state[d.onair]["beats"]
-    # docked, nothing working: the whole ship visit_overview_s only (decayed from platform_hold)
-    still = plat("Starling", view=dict(SHIP, machines=[dict(m, w=0) for m in SHIP["machines"]]))
-    d, _ = director(PANELS, **cfg)
-    k = run(d, 0, 120, lambda k: snap(team(), [still]), until=lambda d, k: bool(d.platforms))
-    t = d.state[d.onair]
-    assert t["beats"] == [] and t["until"] == T + k + d.cfg["ready_s"] + d.cfg["visit_overview_s"], t
-    # three clients: as before (platform_hold, no framings)
-    d, _ = director(SLOTS, **cfg)
-    k = run(d, 0, 120, lambda k: snap(team(), [fly]), until=lambda d, k: bool(d.platforms))
-    t = d.state[d.pending["slot"]]
-    assert "beats" not in t and t["until"] == T + k + d.cfg["ready_s"] + d.cfg["platform_hold"], t
-    print("6. visits with one client: the whole ship, then bow defense and machinery in turn; a still ship decays to "
-          "the overview; three clients unchanged: ok")
+    assert [b["why"] for b in t["survey"]["details"]] == ["bow defense", "machinery"]
+    assert "beats" not in t and t["until"] > T + k + d.cfg["platform_hold"]
+    cam = Camera(); cam.now = T + k; d.sender = cam
+    d.frame_on(d.slot(d.onair), t, "visit", {}, T+k)
+    survey_run(d, cam, T+k, t["until"])
+    q = d.surveys[d.state[d.onair]["survey_key"]]
+    assert q.ends == {"bow", "stern"}, q.public()
+    again = d.visit_target("Starling", 20, T+k+300)
+    assert [b["why"] for b in again["survey"]["details"]] == ["machinery", "bow defense"]
+    # Still ships also get a section and both end dwells; client count does not create another controller.
+    for slots in (PANELS, SLOTS):
+        d, _ = director(slots, **cfg)
+        d.watch_platforms(snap([], [plat("Starling", view=SHIP)]), T)
+        t = d.visit_target("Starling", 20, T)
+        assert t.get("survey") and "beats" not in t and t["until"] <= T+242
+    print("6. one-client visits use receipt-driven surveys with section hooks and both end dwells: ok")
 
 
 def quiet():
