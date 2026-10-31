@@ -431,6 +431,6 @@
   {"t": "2026-10-30 18:42", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 18:42"},
   {"t": "2026-10-30 22:20", "kind": "shift", "text": "Shift 109 change began.", "affected": "stream and agents", "recovered": "2026-10-30 22:29"},
   {"t": "2026-10-30 22:50", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 22:50"},
-  {"t": "2026-10-30 23:33", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-30 23:33", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-30 23:33"}
  ]
 }
