@@ -201,8 +201,9 @@ def brief_trim():
         live = b.split("## Your live checks\n", 1)[1]
         assert "Swiftlet section 5 on at 14:00" in live and "reminder #97" in live and live.rstrip().endswith("./fh call chat."), live
         assert "older state line 0" in b and "older state line 29" not in b, b
-        trimmed = b.split("Trimmed to fit 3 KB (notes.md and your journal have them): ", 1)[1].split("\n", 1)[0]
-        assert "Your last 30 minutes, measured (your journal) (all 4 lines); Last tells to you (all 1 line)" in trimmed and "lines of Now (notes.md)" in trimmed, trimmed
+        assert "incomplete: .recovery-detail.md" in b and "Before acting, read the marked fields" in b, b
+        full = open(os.path.join(ws, ".recovery-detail.md")).read()
+        assert "older state line 29" in full and "#1213" in full and all(r in full for r in rules)
         print(f"brief trim: ok ({len(b)} characters)")
     finally:
         shutil.rmtree(d)

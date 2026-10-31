@@ -31,14 +31,14 @@ with tempfile.TemporaryDirectory() as d:
     print("rules: ok")
 
     # digest
-    assert agy_rules.digest(d) == "You have no notes.md yet."
+    assert "You have no notes.md yet." in agy_rules.digest(d)
     notes = os.path.join(d, "notes.md")
     open(notes, "w").write("# Notes\n\nold stuff\n\n## Now\n- refuel the boilers at (10,20)\n\n## Done\n- x\n")
     os.utime(notes, (time.time() - 600, time.time() - 600))
     open(os.path.join(d, ".agy-last.txt"), "w").write("x" * 2000 + "Fixed the south unloader.")
     g = agy_rules.digest(d)
-    assert g.startswith("Your notes.md, as you last wrote it (10 min ago):\n## Now\n- refuel the boilers at (10,20)"), g
-    assert "old stuff" in g and g.endswith("Fixed the south unloader.") and "Your last turn ended with:" in g, g[-200:]
+    assert "## Now (notes.md)\n- refuel the boilers at (10,20)" in g, g
+    assert "old stuff" not in g and g.endswith("Fixed the south unloader.") and "Your last turn ended with:" in g, g[-200:]
     assert len(g) < 3000, len(g)
     print("digest: ok")
 print("all passed")
