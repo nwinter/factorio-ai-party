@@ -1680,8 +1680,8 @@
     renderResearchCard(s);
     renderCams(s);
     if (window.PogPlatformMetrics) {
-      window.PogPlatformMetrics.render($("platform-metrics"), s.platform_metrics);
-      $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics);
+      window.PogPlatformMetrics.render($("platform-metrics"), s.platform_metrics, undefined, s);
+      $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics && !!$("platform-metrics"));
     }
     renderSegment(s);
     renderLoadouts(s);

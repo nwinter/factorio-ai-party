@@ -41,3 +41,33 @@ updated runtime and stream process at the operator's deployment. It makes no OBS
 
 Offline checks: `python3 tools/stream/test_platformmetrics.py`, the harness `platformmetrics_test.lua`, and the
 ordinary npm/Python gates. The report records private dense-leg profiling and the private-run screenshot.
+
+## Card balance (batch391)
+
+Landscape and portrait use one 360px card, 14px from the game pane's left/top edges. A visible top caption raises
+it only to that caption's bottom plus 8px. Ship name and directed route/dock share the first line in every mode.
+The first line fits its text without truncation; padding, width and anchor do not depend on the mode.
+
+Flight defaults to compact navigation. A newly observed departure, changed leg/reversal or arrival, a positive
+hit/damage window, or an increase in big/huge asteroids can start an **8 wall-second** detail beat. There must be
+**30 wall-seconds after the preceding beat ends** before another can start, across ship/leg changes. Events during
+that gap are not queued. Repainting a sample cannot restart a beat; a timer collapses it even between 20-second
+reads. Sample age is subtracted from the beat. Cold pages/ship selections establish a baseline rather than
+inventing a departure; reload shows current warnings and resumes full featured-flight telemetry immediately.
+Outer-system routes alone do not expand. An active featured attempt stays full throughout its flight.
+
+Warnings sit above the expandable details, so collapse cannot hide them: positive hits, damage and leg losses,
+empty guns, measured ammo buffers below two minutes, and fuel/oxidizer tanks at zero. There is no invented fuel
+percentage/low threshold. Each warning needs two known clean telemetry samples and at least 20 wall-seconds
+since its last positive reading to clear; unknowns are not an all-clear. Ammo stock with a measured nonnegative
+net rate also clears its buffer warning. Ship/leg changes discard unrelated warning history.
+
+Docked details stack vertically. The candidate's actual DOM rectangle must fit above the bottom 58px caption
+reserve, clear visible captions by 8px, and clear the complete surveyed foundation rectangle by 12px. Projection
+uses the existing snapshot's main-camera position, zoom and cropped-width fraction (60 x 33.75 tiles at zoom 1),
+at the measured pane size. Work, attention, close-up, map/follow scenes or absent geometry are conservatively
+compact: their worksite is not bounded reliably. No camera framing or game read changes. Two distinct clear
+telemetry samples expand; a new obstruction collapses immediately. Arrival may get a short beat only when clear.
+
+Offline DOM tests cover scene switches, reload, ship/leg changes, actual pane dimensions, caption clearance,
+hysteresis, held warnings, expired/cached samples, beat spacing and continuous featured attempts.
