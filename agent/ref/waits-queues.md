@@ -57,7 +57,9 @@
   complete recorded baseline for this leg. `missing:"binding"` is the default: no data counts as binding, NET unknown.
   `missing:"pending"` neither binds nor clears: with `require:"all"`, an item with any pending window cannot meet it.
   `saw` says each item's NET/state per window and the eligibility tick; missing baselines say ready tick unknown.
-  The cache refreshes at that tick or after 10 s. An entire failed read still says not met.
+  Before the current leg's recorded baseline arrives, every requested window is unavailable under `missing`;
+  an earlier departure on the same route supplies no rates. Baseline arrival, replacement or loss refreshes the
+  cache at the next check; otherwise it refreshes at the eligibility tick or after 10 s. A failed read says not met.
   `saw` and `evidence.window_check` name the corroborated item; `return_budget.window_budgets` keeps every item and
   rate basis. Stock, reserve, margin, speed and caller allowance retain the existing formula; no gate state makes
   NET zero. Omitting the options keeps the default calculation. Set `windows`/`require`/`missing` here or inside

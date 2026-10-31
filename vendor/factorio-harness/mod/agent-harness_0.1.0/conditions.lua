@@ -926,16 +926,23 @@ return function(api)
         return false,string.format('platform %s: no flight leg: no fresh return budget (not met); cached budget cleared',c.platform)
       end
       local connection=pl.space_connection and pl.space_connection.name
+      local segment_start
+      if window_config and api.segments then
+        local segments=api.segments(pl)
+        segment_start=budgetwindows.segment_start(l,segments[#segments])
+      end
       local kept=budget_kept[c]
       if kept and (kept.platform~=pl or kept.name~=c.platform or kept.connection~=connection or kept.from~=l.from
-        or kept.to~=l.to or kept.back~=l.back or not budget_same(kept.args,turnaround)) then
+        or kept.to~=l.to or kept.back~=l.back or (window_config and (not kept.baseline_checked or kept.segment_start~=segment_start))
+        or not budget_same(kept.args,turnaround)) then
         budget_kept[c]=nil; kept=nil
       end
       local ready=kept and kept.b and kept.b.window_budgets and kept.b.window_budgets.next_ready_tick
       if not kept or now-kept.tick>=M.BUDGET_EVERY or (window_config and ready and now>=ready) then
         local ok,b=pcall(api.return_budget,p,c.platform,turnaround)
         kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil,platform=pl,name=c.platform,
-          connection=connection,from=l.from,to=l.to,back=l.back,args=budget_copy(turnaround)}
+          connection=connection,from=l.from,to=l.to,back=l.back,segment_start=segment_start,
+          baseline_checked=window_config and true or nil,args=budget_copy(turnaround)}
         budget_kept[c]=kept
       end
       local source=string.format('; cached leg %s->%s (connection %s, direction %s), read at tick %d',
