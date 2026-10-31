@@ -57,11 +57,13 @@ reads. Sample age is subtracted from the beat. Cold pages/ship selections establ
 inventing a departure; reload shows current warnings and resumes full featured-flight telemetry immediately.
 Outer-system routes alone do not expand. An active featured attempt stays full throughout its flight.
 
-Warnings sit above the expandable details, so collapse cannot hide them: positive hits, damage and leg losses,
+Warnings remain visible when details collapse: positive hits, damage and leg losses,
 empty guns, measured ammo buffers below two minutes, and fuel/oxidizer tanks at zero. There is no invented fuel
 percentage/low threshold. Each warning needs two known clean telemetry samples and at least 20 wall-seconds
 since its last positive reading to clear; unknowns are not an all-clear. Ammo stock with a measured nonnegative
 net rate also clears its buffer warning. Ship/leg changes discard unrelated warning history.
+Full telemetry highlights current warnings in their own rows; held historical warnings remain above it.
+Compact mode puts all held warnings directly below navigation, avoiding duplicate rows in the full card.
 
 Docked details stack vertically. The candidate's actual DOM rectangle must fit above the bottom 58px caption
 reserve, clear visible captions by 8px, and clear the complete surveyed foundation rectangle by 12px. Projection

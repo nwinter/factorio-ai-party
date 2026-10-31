@@ -116,6 +116,17 @@ for (const signal of [{hits_min: 3}, {damage_taken: 40}, {asteroids: {...p.aster
   assert.equal(mode(box), "compact");
   for (const text of ["0.5", "Fuel tanks empty", "Rocket Turret empty"]) assert(box._parts.warnings.textContent.includes(text), text);
 }
+// Attempts keep current warning values highlighted without duplicating them; held history remains visible.
+{
+  const {render, box} = page(), hot = {...p, featured: true, damage_taken: 182, hits_min: 6, fuel: {"thruster-fuel": 0}};
+  render(box, hot, 0); assert.equal(mode(box), "attempt"); assert(box._parts.warnings.hidden);
+  assert.equal(box._parts.combat._rows.get("damage_taken")._value.textContent, "182");
+  assert(box._parts.combat._rows.get("hits_min").classList.contains("pm-bad"));
+  assert(box._parts.supplies._rows.get("thruster-fuel").classList.contains("pm-bad"));
+  render(box, {...p, featured: true, tick: 101}, 20);
+  assert(box._parts.warnings.textContent.includes("Damage taken 182"));
+  render(box, {...p, featured: true, tick: 102}, 40); assert(box._parts.warnings.hidden);
+}
 // Leg start, reversal, arrival and ship changes. Cooldown crosses legs; holds never cross ships/legs.
 {
   const {render, box} = page();

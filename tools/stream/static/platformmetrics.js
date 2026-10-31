@@ -181,7 +181,7 @@
     const supply = [];
     if (finite(p.repair_packs)) supply.push(["repair", "Repair packs · hub", num(p.repair_packs), "All qualities", p.repair_packs === 0]);
     for (const [name, title] of [["thruster-fuel", "Fuel · tanks"], ["thruster-oxidizer", "Oxidizer · tanks"]])
-      if (finite((p.fuel || {})[name])) supply.push([name, title, num(p.fuel[name]), "Thruster and storage tanks; pipes/machines excluded"]);
+      if (finite((p.fuel || {})[name])) supply.push([name, title, num(p.fuel[name]), "Thruster and storage tanks; pipes/machines excluded", p.fuel[name] === 0]);
     rows(b.supplies, supply);
     put(b.foot, [p.featured && !parked ? "FEATURED ATTEMPT" : "", finite(p.window_s) ? `Rates / wall min · ${num(p.window_s)}s sample` : "",
       finite(p.age_s) ? `${num(p.age_s)}s ago` : ""].filter(Boolean).join(" · "));
@@ -197,6 +197,10 @@
     const mode = parked ? full ? a.dockFull ? "docked-full" : "docked-beat" : "docked-compact" : p.featured ? "attempt" : full ? "beat" : "compact";
     box.setAttribute("data-mode", mode);
     b.details.hidden = !full;
+    // Current warnings are already highlighted in the full telemetry. Keep only held historical readings
+    // above it; duplicating every current warning would push attempts out of a shorter scene's game pane.
+    const currentWarnings = warningReadings(p);
+    rows(b.warnings, [...a.warnings.entries()].filter(([key]) => !full || !currentWarnings.get(key)).map(([, w]) => w.row));
     // A beat must end even if telemetry arrives only every 20 seconds or the socket temporarily stalls.
     if ((parked ? !a.dockFull : !p.featured) && now < a.until && window.setTimeout)
       box._timer = window.setTimeout(() => { const v = box._latest; render(box, v.p, clock(), v.scene); }, (a.until - now) * 1000 + 1);
