@@ -163,7 +163,9 @@ def engines(tmp):
             assert directed["endpoint"] == plain["endpoint"]
             for key in ("voice", "voiceId", "model", "model_id", "modelId"):
                 assert body.get(key) == base.get(key), (body, base)
-            if "elevenlabs" in directed["endpoint"] or "inworld" in directed["endpoint"]:
+            if "elevenlabs" in directed["endpoint"]:
+                assert body["text"] == base["text"] and "slow and calm" not in body["text"], body
+            elif "inworld" in directed["endpoint"]:
                 assert body["text"] == "[slow and calm.] " + text, body
                 assert "instruction" not in body
             elif "openai" in directed["endpoint"]:
