@@ -144,3 +144,151 @@ def start(move):
 def points(move):
     """Every point the move passes through (for the chart check: each frame is read)."""
     return [p for s in move["segments"] for p in s["pts"]]
+
+
+def transition(a, b, seconds, easing="inout"):
+    """Shared native/fallback path; zoom travels logarithmically, position eases at both ends."""
+    # A rendered logarithmic interpolation can return 0.29999999999999993 at the .3 floor.
+    pts = [dict(p, zoom=min(MAX_ZOOM, max(MIN_ZOOM, p["zoom"]))) for p in (a, b)]
+    return check({"segments": [{"pts": pts, "t0": 0, "t1": seconds, "ease": easing}]})
+
+
+def ship_survey(shot, details=()):
+    """A survey from the measured hull and the current visible pane, independent of a shot's dwell.
+
+    At each end 35% of a view height lies beyond the foundation, including the asteroid/engine space.
+    Keep batch387's width fit and zoom floor. Details are supplied by the director (a future fresh-work hook).
+    """
+    frame = shot["platform_frame"]
+    b, z = frame["bounds"], shot["zoom"]
+    height = 33.75 / z
+    mid = (b["top"] + b["bottom"]) / 2
+    y0 = min(mid - height * .1, b["top"] + height * .15)
+    y1 = max(mid + height * .1, b["bottom"] - height * .15)
+    x = frame["hull_centre"]["x"]
+    return {"bow": {"x": x, "y": round(y0, 2), "zoom": z},
+            "stern": {"x": x, "y": round(y1, 2), "zoom": z},
+            "speed": height / 18, "bounds": dict(b), "frac": frame["frac"],
+            "details": list(details), "surface": shot["surface"]}
+
+
+class Survey:
+    """One receipt-driven survey/detail/pullback/return controller.
+
+    Scheduling never earns coverage. Only observe() of a connected, visible camera does. Motion is issued
+    by the director, using the same path for native playback and panel/old-runtime fallback. Suspension
+    retains the last observed point, phase, dwell and direction until the original hold deadline.
+    """
+    END_S, DETAIL_S, ZOOM_S, MAX_HOLD = 6.0, 10.0, 6.0, 240.0
+
+    def __init__(self, spec, now, until):
+        import copy
+        self.spec = copy.deepcopy(spec)
+        self.expires = min(until, now + self.MAX_HOLD)
+        self.phase, self.direction = "bow_dwell", 1
+        self.pose = dict(spec["bow"])
+        self.goal = dict(self.pose)
+        self.anchor = None
+        self.dwell = 0.0
+        self.detail_index = 0
+        self.detailed = False
+        self.coverage = []
+        self.ends = set()
+        self.last_observed = None
+        self.active = False
+        self.interrupted = False
+        self.template = None
+        self.motion = None
+        self.native = None
+        self.sent_at = None
+        self.return_phase = None
+
+    def suspend(self):
+        self.interrupted = self.interrupted or self.active
+        self.active = False
+        self.motion = None
+        self.last_observed = None
+
+    def arrived(self):
+        return math.hypot(self.pose["x"] - self.goal["x"], self.pose["y"] - self.goal["y"]) < .5 and \
+            abs(self.pose["zoom"] - self.goal["zoom"]) < .015
+
+    def observe(self, receipt, now, visible):
+        if not (visible and receipt.get("ok") and receipt.get("connected") and receipt.get("visible") and
+                receipt.get("surface") == self.spec["surface"] and isinstance(receipt.get("position"), dict) and
+                isinstance(receipt.get("zoom"), (float, int))):
+            self.last_observed = None
+            return False
+        dt = now - self.last_observed if self.last_observed is not None else 0
+        self.last_observed = now
+        self.pose = dict(receipt["position"], zoom=receipt["zoom"])
+        if self.phase in ("survey", "bow_dwell", "stern_dwell"):
+            # A frame covers hull only if its width fits the visible pane and its actual zoom is the overview.
+            b, p = self.spec["bounds"], self.pose
+            z = max(p["zoom"], receipt.get("coverage_zoom", p["zoom"]))
+            hw, hh = 30 * self.spec["frac"] / z, 16.875 / z
+            if p["x"] - hw <= b["left"] and p["x"] + hw >= b["right"]:
+                lo, hi = max(b["top"], p["y"] - hh), min(b["bottom"], p["y"] + hh)
+                if hi > lo:
+                    merged = []
+                    for a, c in sorted(self.coverage + [(lo, hi)]):
+                        if merged and a <= merged[-1][1]:
+                            merged[-1] = (merged[-1][0], max(c, merged[-1][1]))
+                        else:
+                            merged.append((a, c))
+                    self.coverage = merged
+        if self.arrived() and self.phase.endswith("dwell") and 0 < dt <= 3:
+            self.dwell += dt
+        return True
+
+    def change(self, phase, goal):
+        self.phase, self.goal = phase, dict(goal)
+        self.dwell, self.motion = 0.0, None
+
+    def detail(self, beat):
+        """Interrupt with a supplied section; future work-aware tours can call this without a second clock."""
+        if self.phase not in ("survey", "bow_dwell", "stern_dwell"):
+            return False
+        self.anchor = dict(self.pose)
+        self.return_phase = self.phase
+        self.saved_goal = dict(self.goal)
+        self.saved_dwell = self.dwell
+        self.change("zoom_in", dict(beat["position"], zoom=max(.3, beat["zoom"])))
+        self.detailed = True
+        return True
+
+    def advance(self):
+        """Called only after a fresh visible receipt. A deadline is never an arrival."""
+        at_goal = self.arrived()
+        if self.phase in ("bow_dwell", "stern_dwell") and at_goal and self.dwell >= self.END_S:
+            self.ends.add("bow" if self.phase == "bow_dwell" else "stern")
+            self.direction = 1 if self.phase == "bow_dwell" else -1
+            self.detailed = False
+            self.change("survey", self.spec["stern" if self.direction == 1 else "bow"])
+        elif self.phase == "survey":
+            if at_goal:
+                self.change("stern_dwell" if self.direction == 1 else "bow_dwell", self.goal)
+            elif not self.detailed and self.spec["details"] and \
+                    (self.pose["y"] - (self.spec["bow"]["y"] + self.spec["stern"]["y"]) / 2) * self.direction >= 0:
+                beat = self.spec["details"][self.detail_index % len(self.spec["details"])]
+                self.detail_index += 1
+                self.detail(beat)
+        elif self.phase == "zoom_in" and at_goal:
+            self.change("detail_dwell", self.goal)
+        elif self.phase == "detail_dwell" and at_goal and self.dwell >= self.DETAIL_S:
+            self.change("pullback", dict(self.pose, zoom=self.spec["bow"]["zoom"]))
+        elif self.phase == "pullback" and at_goal:
+            self.change("return", self.anchor)
+        elif self.phase == "return" and at_goal:
+            self.change(self.return_phase, self.saved_goal)
+            self.dwell = self.saved_dwell
+
+    def path(self):
+        distance = math.hypot(self.pose["x"] - self.goal["x"], self.pose["y"] - self.goal["y"])
+        seconds = max(1, distance / self.spec["speed"]) if self.phase == "survey" else max(self.ZOOM_S, distance / 20)
+        return transition(self.pose, self.goal, min(600, seconds))
+
+    def public(self):
+        return {"phase": self.phase, "direction": self.direction, "position": dict(self.pose),
+                "goal": dict(self.goal), "coverage": list(self.coverage), "ends": sorted(self.ends),
+                "expires": self.expires, "dwell": round(self.dwell, 2)}

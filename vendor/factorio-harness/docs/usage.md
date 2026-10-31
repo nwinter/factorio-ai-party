@@ -15897,6 +15897,20 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   `ready` 8.7 / 7.4 ms. No tick work added: the tick's rows read the same request rows as before.
 - Test: tests/d26_batch223.lua (in lua.test.ts), failing on main; tests/d22_batch91.lua and d22_batch110_freight.lua
   take the new texts.
+## d30 batch392 (SV: receipt-driven ship surveys; Aurora site:5676–5677)
+- Stream-only: visits, ship holds, aboard follows and featured ships share `camerapath.Survey`. The view pans
+  beyond the foundation bow/stern using batch387's pane fit, dwells at both ends, zooms into a section, dwells,
+  pulls back and returns to the saved survey position/direction. Details do not change the survey pace.
+- `Harness.camera({player, panel?, observe:true})` is a host-side bounded direct Lua read of one rendered camera;
+  it never enters gameplay dispatch. It reads actual position/zoom, surface, connection, game speed and panel
+  visibility. Existing `cameras` replies describe destinations and cannot establish arrival. Compositor-confirmed
+  visibility plus these receipts earns coverage. No runtime/tick work or new agent action is added.
+- A preempted phase survives its original hold deadline (maximum 240 seconds), then restarts. Existing host,
+  operator, urgent and work priorities remain. Native camera moves and smooth panel/old-runtime fallbacks share
+  the path. Future work-aware tours can supply section candidates; base-tour selection remains unchanged.
+- Checks: `tools/stream/test_ship_survey.py`; private-copy receipts, frame strips and shift replay variants in
+  the operator's batch392 report. The operator restarts the live stream service after merging.
+
 ## d26 batch222 (CD: the camera director; viewers Aurora 20:09, site:4851, site:4876-4879, Caleb d25 base tours)
 - Host only (tools/stream; docs/STREAM-NOTES.md "Loops, fresh events, base tours, remote vehicles"): no runtime
   change and no new game read (status `active.remote` was read already; live.py PLAN_KEYS passes it on).

@@ -54,7 +54,7 @@ def real_shots():
     ship['view'].update(bounds=huge, hull=huge, bow=dict(huge, bottom=-920))
     rows = run(d, 1000, 1500, ship=ship)
     assert any((r.get('inset') or {}).get('platform') for _, r in rows)
-    assert {'bow defense', 'whole ship'} <= {
+    assert {'ship survey'} <= {
         (r.get('main', {}).get('platform') or {}).get('framing') for _, r in rows}
     assert any(b.get('panel') for b in sent)
     assert any(not b.get('panel') and b.get('zoom') == WORLD_ZOOM_MIN for b in sent)
