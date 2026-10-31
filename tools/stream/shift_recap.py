@@ -551,8 +551,9 @@ def render_lines(lines, out, tts=None, checker=None):
             # A plain timeout retry is playable now, but must not become the cached directed rendition.
             actual = tts.last_here() if hasattr(tts, "last_here") else {}
             same_voice = not route or (actual.get("provider"), actual.get("voice")) == tuple(route)
-            if (actual.get("retried") != "timeout_plain" and same_voice
-                    and getattr(provider, "model", fixed_model) == model):
+            if ((cached is not None and data == cached[0]) or
+                    (actual.get("retried") != "timeout_plain" and same_voice
+                     and getattr(provider, "model", fixed_model) == model)):
                 save_json(Path(out) / "assets" / (key + ".json"), meta)
             row.update(meta)
         else:

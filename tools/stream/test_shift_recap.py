@@ -227,6 +227,10 @@ class RecapTest(unittest.TestCase):
         manifest = self.prepare()
         first = manifest["lines"][0]
         first.pop("audio_check")
+        meta_path = (self.out / "assets" / first["asset"]).with_suffix(".json")
+        meta = R.read_json(meta_path)
+        meta.pop("audio_check")
+        R.save_json(meta_path, meta)
         manifest.pop("audio_check_v")
         R.save_json(self.out / "manifest.json", manifest)
         audio = self.audio()
@@ -235,6 +239,7 @@ class RecapTest(unittest.TestCase):
         self.assertFalse(any(m[2].get("channel") == "caster" for m in audio.clips.values()))
         rebuilt = self.prepare()
         self.assertEqual(rebuilt["audio_check_v"], prepared_audio.VERSION)
+        self.assertTrue(R.read_json(meta_path)["audio_check"]["passed"])
         player.step(T0 + 14407)
         self.assertTrue(any(m[2].get("channel") == "caster" for m in audio.clips.values()))
         # A changed file cannot be vouched for by a receipt for its old bytes.
