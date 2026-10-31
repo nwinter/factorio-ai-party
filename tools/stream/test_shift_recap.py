@@ -222,6 +222,27 @@ class RecapTest(unittest.TestCase):
             svc.build(self.old, T0 + 14400, True)
         factory.assert_called_once_with("auto", openai_model=snapshot.openai_model)
 
+    def test_legacy_cache_keeps_receipt_without_new_synthesis(self):
+        class Routed(TTS):
+            def __init__(self): self.last, self.calls = {}, 0
+            def route(self, voice, role): return "openai", "ballad"
+            def last_here(self): return self.last
+            def speak(self, text, voice, **kw):
+                self.calls += 1
+                self.last = {"provider": "openai", "voice": "ballad"}
+                return super().speak(text, voice, **kw)
+        line = {"speaker": "Vale", "title": "Copper", "text": "The copper line runs again.", "sources": []}
+        rendered = R.render_lines([line], self.out, Routed())[0]
+        path = (self.out / "assets" / rendered["asset"]).with_suffix(".json")
+        meta = R.read_json(path); meta.pop("audio_check"); R.save_json(path, meta)
+        fresh = Routed()
+        R.render_lines([line], self.out, fresh)
+        self.assertEqual(fresh.calls, 0)
+        self.assertTrue(R.read_json(path)["audio_check"]["passed"])
+        with patch("prepared_audio.transcribe", side_effect=AssertionError("checked cache was retranscribed")):
+            self.assertEqual(R.render_lines([line], self.out, fresh)[0]["asset"], rendered["asset"])
+        self.assertEqual(fresh.calls, 0)
+
     def test_legacy_and_changed_audio_require_preparation(self):
         import prepared_audio
         manifest = self.prepare()
