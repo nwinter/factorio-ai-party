@@ -384,9 +384,8 @@ return function(api)
     for _, place in ipairs(M.PLACES) do if out[place] > 0 then parts[#parts+1] = place .. ' ' .. out[place] end end
     return #parts > 0 and table.concat(parts, ', ') or 'none aboard'
   end
-  -- platform_ammo_below {platform, item, count, quality?, max_age?}: met when the newest reading holds fewer than count
-  -- of the item (of that quality) aboard; also met (stale) when that reading began more than max_age seconds ago, or
-  -- when there is none max_age seconds after the platform's first check; not met while the first pass runs within it.
+  -- platform_ammo_below: on_stale="met" (default) also meets on an old/missing reading past max_age;
+  -- on_stale="wait" requires a reading within max_age. Both ask through want(), using the same bounded tick pass.
   -- (QP1) the item's total in the reading before the newest, for the same scope: the change between the two a minute
   local function change(rec, d, key, c, total)
     local p = rec.prev
@@ -405,6 +404,13 @@ return function(api)
     local q = c.quality == 'any' and ' (any quality)' or c.quality and c.quality ~= 'normal' and ' (' .. c.quality .. ')' or ''
     local d = rec.done
     local sd = d and key and d.scopes and d.scopes[key]
+    local policy = c.on_stale or 'met'
+    local age = d and game.tick - d.start
+    local pending = rec.job ~= nil or not d or key and not sd or age >= M.EVERY
+    local observed = d and (not key or sd)
+    local freshness = string.format('; reading_tick %s; age %s; max_age %s; refresh_pending %s; on_stale %s',
+      observed and tostring(d.start) or 'none', observed and string.format('%s (%d ticks)', secs(age), age) or 'unknown',
+      secs(max_age), tostring(not not pending), policy)
     if not d or key and not sd then
       local first = sc and sc.first or rec.first
       local since = game.tick - first
@@ -412,14 +418,14 @@ return function(api)
       local running = rec.job and string.format('a pass began %s ago', secs(game.tick - rec.job.start)) or 'its first pass waits for its turn'
       if key and rec.job and rec.job.finding then running = running .. ', finding the loop\'s belts' end
       if since > max_age then
-        return true, string.format('platform %s: no reading of %s yet %s after its first check (%s), past max_age %s: met (no reading as fresh as max_age)',
-          pl.name, what, secs(since), running, secs(max_age))
+        return policy == 'met', string.format('platform %s: no reading of %s yet %s after its first check (%s), past max_age %s: %s (no reading as fresh as max_age)',
+          pl.name, what, secs(since), running, secs(max_age), policy == 'met' and 'met' or 'unmet') .. freshness
       end
-      return false, string.format('platform %s: no reading of %s yet (%s; %s since its first check; met if none by max_age %s)', pl.name, what, running, secs(since), secs(max_age))
+      return false, string.format('platform %s: no reading of %s yet (%s; %s since its first check; %s if none by max_age %s)',
+        pl.name, what, running, secs(since), policy == 'met' and 'met' or 'unmet', secs(max_age)) .. freshness
     end
     local src = sd or d
     local out, total = M.places(src, c.item, c.quality)
-    local age = game.tick - d.start
     local e = src.ents
     local text
     if key then
@@ -432,8 +438,8 @@ return function(api)
       text = string.format('platform %s: %d %s%s aboard (%s) as read %s ago (ticks %d-%d: hub, %d ammo turrets, %d belts, %d inserters, %d machines, %d chests)',
         pl.name, total, c.item, q, places_text(out), secs(age), d.start, d.finish, e.turrets, e.belts, e.inserters, e.machines, e.chests)
     end
-    text = text .. change(rec, d, key, c, total)
-    if age > max_age then return true, text .. string.format('; older than max_age %s: met (stale reading)', secs(max_age)) end
+    text = text .. change(rec, d, key, c, total) .. freshness
+    if age > max_age then return policy == 'met', text .. string.format('; older than max_age %s: %s (stale reading)', secs(max_age), policy == 'met' and 'met' or 'unmet') end
     return total < c.count, text .. string.format('; met below %d', c.count)
   end
   return M

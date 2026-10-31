@@ -72,7 +72,7 @@ eq(st.ammo_reserve.active,nil,'the pass done')
 -- belts 10 + 3 (the buried lines once) = 13 normal; turret 5, hand 1, machine 7, hub 40: 66 normal
 met,saw=check({platform='Asterion',item='rocket',count=100})
 eq(met,true)
-assert(saw:find('^platform Asterion: 66 rocket aboard %(hub 40, turrets 5, belts 13, hands 1, machines 7%) as read 0s ago %(ticks 1020%-102%d: hub, 1 ammo turrets, 3 belts, 2 inserters, 1 machines, 1 chests%); met below 100$'),saw)
+assert(saw:find('^platform Asterion: 66 rocket aboard %(hub 40, turrets 5, belts 13, hands 1, machines 7%) as read 0s ago %(ticks 1020%-102%d: hub, 1 ammo turrets, 3 belts, 2 inserters, 1 machines, 1 chests%); reading_tick 1020; age 0s %(10 ticks%); max_age 2m00s; refresh_pending false; on_stale met; met below 100$'),saw)
 met=check({platform='Asterion',item='rocket',count=66}); eq(met,false,'66 is not below 66')
 -- quality: uncommon 3 (belt 2, hub 1); any 69
 met,saw=check({platform='Asterion',item='rocket',count=4,quality='uncommon'})

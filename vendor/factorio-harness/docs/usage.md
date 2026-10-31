@@ -12576,7 +12576,7 @@ A full-edge abort must keep the return leg's ammunition. `item_count` with `plat
 `ammo_below` each turret alone, so no wait or guard could test the total aboard.
 
 - New condition kind for `wait_until` and queue guards, in the body, remote and platform lanes (conditions.lua,
-  ammoreserve.lua; runtime deploy needed): `platform_ammo_below {platform, item, count, quality?, max_age?}`.
+  ammoreserve.lua; runtime deploy needed): `platform_ammo_below {platform, item, count, quality?, max_age?, on_stale?}`.
   - `item`: an ammunition item. `quality`: as `item_count` (default normal; a quality name; "any" sums every quality;
     the item's name alone is normal quality only, checked on the copy).
   - The count is the item aboard in all places a player can open: the hub's main inventory, each ammo turret's ammo
@@ -12590,13 +12590,17 @@ A full-edge abort must keep the return leg's ammunition. `item_count` with `plat
   a tick, and reads the hub on its last step. Each entity is read once a pass, so nothing is counted twice within one
   reading. An item that moves between two places during the pass (about 2.2 s on Asterion) can be counted in both or
   in neither.
-- Age and staleness (conservative, as Astra asked): age is ticks since the reading's pass began. With `max_age`
-  (30..900 s, default 120) the condition is also met when the newest reading is older than max_age ("...; older than
-  max_age 2m00s: met (stale reading)"), and when there is no reading max_age after the platform's first check. A guard
-  on it therefore fires on a stale reading. While the first pass has not finished within max_age it is not met, and saw
-  says so ("no reading of its ammunition yet (a pass began 0s ago; ...; met if none by max_age 2m00s)").
-- A guard's baseline line names the background reading and max_age. The wait estimate label is "platform_ammo_below
-  ITEM aboard PLATFORM" (it said "in PLATFORM hub").
+- Age is ticks since the reading's pass began. `max_age` is 30..900 seconds (default 120).
+  `on_stale:"met"` (default) also meets when the reading is older than max_age, or none exists past max_age after
+  the first check. `on_stale:"wait"` stays unmet in both cases, including a stale low count; only a reading within
+  max_age whose total is below count meets it. At exactly max_age a reading is still fresh. Both policies request
+  the same background pass, with the same cadence and per-tick work limits. No check scans entities.
+  Before the first reading, within max_age, both are unmet. For a scope the missing-reading clock starts at its
+  first check. The wait timeout and finite `produced` budget are unchanged.
+- Every `saw` includes `reading_tick` (pass start, or none), `age` (seconds and exact ticks, or unknown), `max_age`,
+  `refresh_pending` (a pass running or awaiting its turn), and `on_stale`. Missing readings also give elapsed time
+  since the first check. A guard's baseline and the wait estimate label include the policy. Body, remote and
+  platform lane waits and guards accept it, including members of `all` and `any`.
 - Measured on a headless copy of world n's 22:10 autosave (Asterion at Aquilo: 6743 belts with 14510 transport lines
   read, 289 inserters, 97 ammo turrets, 56 machines, no chest), with Astra's platform lane waiting on it:
   - `profile_ticks {seconds=60}`: `ammoreserve.tick` 323 ms over 60 s (0.09 ms a tick on average). That includes one

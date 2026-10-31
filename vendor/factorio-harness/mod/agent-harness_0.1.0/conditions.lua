@@ -1253,7 +1253,7 @@ return function(api)
   end
   -- (d22 batch117 BZ1, Astra #1970: a full-edge abort that keeps the return leg's ammunition) a platform's whole stock
   -- of one ammunition item: hub, turret slots, belts, inserter hands, machine outputs and chests, from the background
-  -- reading (ammoreserve.lua) with its age; a reading older than max_age (or none by then) meets it.
+  -- reading (ammoreserve.lua) with its age; on_stale selects met (default) or wait past max_age.
   checks.platform_ammo_below=function(p,c)
     local pl=M.platform_named(p,c.platform)
     if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
@@ -1324,6 +1324,7 @@ return function(api)
       error('until queue_done is a sleep\'s (fh sleep SECONDS --until queue_done, fh wait --until queue_done, sleep {seconds, condition: {until: "queue_done"}}): it wakes when your queue finishes or stalls; in a queue the next step runs when this one ends',0)
     end
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES..'; a sleep also takes queue_done')
+    assert(c.on_stale==nil or c['until']=='platform_ammo_below','on_stale applies to platform_ammo_below only')
     -- (d20 batch62 X2, Sol #1529: a surface a read took and did not use) surface and platform only where the condition reads them
     if c.surface~=nil then
       assert(SURFACE_KINDS[c['until']],'surface applies to '..SURFACE_LIST..'; '..tostring(c['until'])..' reads no other surface')
@@ -1528,7 +1529,8 @@ return function(api)
       assert(type(c.item)=='string' and prototypes.item[c.item] and prototypes.item[c.item].type=='ammo','platform_ammo_below item: an ammunition item (firearm-magazine, rocket, railgun-ammo, ...)')
       assert(type(c.count)=='number' and c.count>=1 and c.count<=1e6 and c.count==math.floor(c.count),'platform_ammo_below count: 1..1000000, met below it')
       assert(c.quality==nil or c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),'platform_ammo_below quality: a quality name or "any" (default normal)')
-      assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120): a reading older than this meets it')
+      assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120)')
+      assert(c.on_stale==nil or c.on_stale=='met' or c.on_stale=='wait','platform_ammo_below on_stale: "met" (default) or "wait"')
       -- (d24 batch173 QP1, Astra #2241) loop: the belts joined to the belt at that position, their inserters and turrets
       assert(c.area==nil or c.loop==nil,'platform_ammo_below: area or loop, not both')
       assert(c.position==nil and c.radius==nil,'platform_ammo_below: area or loop (a belt\'s position aboard) scopes it; no position or radius')

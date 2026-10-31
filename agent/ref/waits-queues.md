@@ -75,8 +75,10 @@
   `platform_ammo_below` (`platform`, `item` (ammunition), `count`, `quality?` (default normal, or "any"), `max_age?`
   30..900 s, default 120): that item aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests)
   under count, from a background reading begun every 30 s while a check asks (a pass about 2 s on 6743 belts); saw
-  gives the total by place and its age; met too when the reading is older than max_age, or none by max_age after the
-  first check; `area` (one area aboard) or `loop` (a belt's `{x,y}`: the belts joined to it end to end, through
+  gives total by place, reading tick, age, max_age and refresh_pending. `on_stale:"met"` (default) meets on a reading
+  older than max_age, or none past max_age after the first check; `on_stale:"wait"` stays unmet until a reading within
+  max_age is below count. Both ask for the existing background pass; the wait's timeout is unchanged. Guards take
+  either policy. `area` (one area aboard) or `loop` (a belt's `{x,y}`: the belts joined to it end to end, through
   splitters and undergrounds, the inserters taking from them and the turrets those fill) counts that part alone, and
   saw adds the change since the reading before, a minute; remote and platform lanes);
   `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
