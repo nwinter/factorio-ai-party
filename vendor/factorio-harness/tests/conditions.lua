@@ -1,6 +1,7 @@
 -- Run from repository root: lua tests/conditions.lua
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
+game={tick=0}
 defines={inventory={turret_ammo=7}}
 prototypes={item={['firearm-magazine']={}}}
 local mine={name='player',technologies={turrets={researched=true}}}

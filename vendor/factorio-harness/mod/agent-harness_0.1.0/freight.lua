@@ -135,8 +135,7 @@ return function(api)
   end
   -- {at (a space location, when there), stopped (there and not on its path),
   -- leg (M.leg while flying), text}. The platforms row and platform_arrived
-  -- both read this, so a wait is met exactly when the row says the platform is
-  -- stopped there.
+  -- both read this for current location; an arrival wait also remembers logged arrivals.
   -- departed (d19 batch48 2): the last departure a platform_schedule call caused, {from, tick, by} (space.lua), for
   -- wait_until platform_left begun just after it
   local function where_row(pl)
@@ -1456,6 +1455,14 @@ return function(api)
   function M.left_since(name, force, location, since)
     for _, e in ipairs(events().list) do
       if e.kind == 'left' and e.platform == name and e.force == force and e.tick >= since and (location == nil or e.at == location) then
+        return e
+      end
+    end
+  end
+  -- Bounded existing event log: the first matching arrival, including a stop crossed between observations.
+  function M.arrived_since(name, force, location, since)
+    for _, e in ipairs(events().list) do
+      if e.kind == 'arrived' and e.platform == name and e.force == force and e.tick >= since and (location == nil or e.at == location) then
         return e
       end
     end

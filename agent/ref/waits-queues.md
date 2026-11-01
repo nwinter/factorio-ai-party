@@ -95,7 +95,7 @@
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
   `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires by default; optional `position:[x,y]` and `wire:red|green|both` select an entity's native networks (`red+green` also means both, combinators read inputs). Explicit selectors require every selected network: missing entities/wires refuse submission and dry runs; a lost network stays unreadable in `saw`, with the condition unmet. Connected zero is readable. `saw` and guard evidence name the entity, network IDs, counts and read tick; a hub with no wire reads every signal as 0, as the game's own circuit conditions do, so `below` is met and a guard `at_least` over 0 is refused there), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
-  `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
+  `platform_arrived` (latched arrival since wait start or `since_tick`), `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
   every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
   "fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000},{"until":"fluid_count","platform":"Swift",
   "fluid":"thruster-oxidizer","at_least":12000}]}`; `any` (`conditions`: 1..8 plain conditions, met when one holds;
