@@ -9123,9 +9123,12 @@ function M.configure_approach(p,a,e,f)
   return M.autowalk.approach(p,'configure',a,{entity=e},why..': '..M.autowalk.line({f},1,f))
 end
 M.preflight=M.preflight or {}
+M.check_item_name=require('itemnames')
 -- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
+  feed=function(a) M.feed_items(a) end,
+  collect=function(a) if a.pods==nil and a.pick~=nil then M.pick_items(a) end end,
   platform_defense=function(a) M.asteroidwatch.filter_args(a) end,
   -- (d29 batch348 CS, Sol #2758) circuit_set's values as the live call parses them (circuits.lua check_args)
   circuit_set=function(a) M.circuits.check_args(a) end,
@@ -9141,7 +9144,12 @@ M.step_checks={
     if type(a.recipe)=='string' and a.recipe~='' and prototypes.recipe then assert(prototypes.recipe[a.recipe],'unknown recipe: '..a.recipe) end
   end,
   transfer=function(a)
+    if a.steps~=nil then M.transferchain.plan(a) end
     assert(a.direction==nil or a.direction=='to_entity' or a.direction=='to_player','direction must be to_entity or to_player')
+    if a.steps==nil and a.to_player==nil and type(a.to)~='string' then
+      if a.pick~=nil then M.pick_items(a)
+      elseif a.from==nil and a.items~=nil then M.transfer_item_counts(a.items) end
+    end
     if type(a.item)=='string' and prototypes.item then assert(prototypes.item[a.item],'unknown item '..a.item) end
     if a.items~=nil then assert(a.direction~=nil,'items requires direction to_entity or to_player') end
     -- A direct call infers it from who holds the item at the call; a queued step runs later.
@@ -12280,18 +12288,25 @@ end
 -- Hand-feeds machines from inventory: recipe ingredients, science packs and
 -- fuel, up to count each, keeping a reserve. In reach by default, at given
 -- positions, or as a walking tour with radius. clear_spoilage also takes waste out.
-function handlers.feed(p,a)
-  assert(a.clear_spoilage==nil or type(a.clear_spoilage)=='boolean','clear_spoilage must be true or false')
+function M.feed_items(a)
+  if type(a.items)=='table' then
+    for i,name in ipairs(a.items) do M.check_item_name(name,'items['..i..']') end
+  end
+  local items=a.items
   -- item: one name, as transfer takes it (Grok): the same as items=[item], beside any items given.
   if a.item~=nil then
-    assert(type(a.item)=='string' and prototypes.item[a.item],'unknown item '..tostring(a.item))
+    M.check_item_name(a.item,'item')
     assert(a.items==nil or type(a.items)=='table','items requires 1..16 item names')
     local list={a.item}
     for _,name in ipairs(a.items or {}) do if name~=a.item then list[#list+1]=name end end
-    a.items=list; a.item=nil
+    items=list
   end
-  assert(a.items==nil or (type(a.items)=='table' and #a.items>=1 and #a.items<=M.ITEMS_MAX),'items requires 1..'..M.ITEMS_MAX..' item names')
-  for _,name in ipairs(a.items or {}) do assert(prototypes.item[name],'unknown item '..tostring(name)) end
+  assert(items==nil or (type(items)=='table' and #items>=1 and #items<=M.ITEMS_MAX),'items requires 1..'..M.ITEMS_MAX..' item names')
+  return items
+end
+function handlers.feed(p,a)
+  assert(a.clear_spoilage==nil or type(a.clear_spoilage)=='boolean','clear_spoilage must be true or false')
+  a.items=M.feed_items(a); a.item=nil
   assert(a.fuel==nil or type(a.fuel)=='boolean' or (type(a.fuel)=='string' and prototypes.item[a.fuel] and (prototypes.item[a.fuel].fuel_value or 0)>0),'fuel must be a fuel item, true or false')
   a.count=integer(a.count,20,1,1000,'count'); a.fuel_count=integer(a.fuel_count,10,1,1000,'fuel_count')
   assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=M.TYPES_MAX),'types requires 1..'..M.TYPES_MAX..' entity types')
@@ -13072,24 +13087,29 @@ end
 -- ends the step at once, nothing walked. The take walks there when out of reach (as walk=true). to ({x,y}, or
 -- {item: {x,y}} by the item picked) carries what was taken on to that destination in the same timed call and gives
 -- it there (the inventory inferred as a give).
+function M.pick_items(a)
+  local items,counts={},{}
+  -- items as {name: count} (Luna, shift17 10:50: {"items":{"bioflux":5}} was refused, and items:["bioflux"] then moved the
+  -- whole 24-item stack): the picked item's count caps the take, as count does.
+  if type(a.items)=='table' and a.items[1]==nil and next(a.items)~=nil then
+    local names={}
+    for n in pairs(a.items) do M.check_item_name(n,'items.'..tostring(n)); names[#names+1]=n end
+    table.sort(names)
+    for _,n in ipairs(names) do items[#items+1]=n; counts[n]=integer(a.items[n],nil,1,100000,'items count for '..tostring(n)) end
+  elseif type(a.items)=='table' then
+    for i,n in ipairs(a.items) do M.check_item_name(n,'items['..i..']'); items[#items+1]=n end
+  elseif a.items~=nil then M.check_item_name(a.items,'items'); items[1]=a.items end
+  if a.item~=nil then M.check_item_name(a.item,'item'); table.insert(items,1,a.item) end
+  assert(#items>=1 and #items<=M.ITEMS_MAX,'pick needs item or items (1..'..M.ITEMS_MAX..' item names, or {name: count})')
+  return items,counts
+end
 function M.pick_source(p,a,verb)
   assert(a.pick=='first_with_stock' or a.pick=='most_stock','pick is first_with_stock or most_stock')
   assert(a.direction==nil or a.direction=='to_player','pick takes from the listed places: direction to_player')
   assert(a.total==nil and a.area==nil and a.radius==nil,'pick goes with positions (not total, area or radius)')
   local list=a.positions or (a.position~=nil and {a.position}) or nil
   assert(type(list)=='table' and #list>=1 and #list<=M.POSITIONS_MAX,'pick needs positions: 1..'..M.POSITIONS_MAX..' places to take from')
-  local items,counts={},{}
-  -- items as {name: count} (Luna, shift17 10:50: {"items":{"bioflux":5}} was refused, and items:["bioflux"] then moved the
-  -- whole 24-item stack): the picked item's count caps the take, as count does.
-  if type(a.items)=='table' and a.items[1]==nil and next(a.items)~=nil then
-    local names={}
-    for n in pairs(a.items) do names[#names+1]=n end
-    table.sort(names)
-    for _,n in ipairs(names) do items[#items+1]=n; counts[n]=integer(a.items[n],nil,1,100000,'items count for '..tostring(n)) end
-  elseif type(a.items)=='table' then for _,n in ipairs(a.items) do items[#items+1]=n end elseif a.items~=nil then items[1]=a.items end
-  if a.item~=nil then table.insert(items,1,a.item) end
-  assert(#items>=1 and #items<=M.ITEMS_MAX,'pick needs item or items (1..'..M.ITEMS_MAX..' item names, or {name: count})')
-  for _,n in ipairs(items) do assert(type(n)=='string' and prototypes.item[n],'unknown item '..tostring(n)) end
+  local items,counts=M.pick_items(a)
   -- The destination per item: one {x,y} for all, or a map item -> {x,y}.
   local function is_pos(v) return type(v)=='table' and ((type(v.x)=='number' and type(v.y)=='number') or (type(v[1])=='number' and type(v[2])=='number')) end
   local dest
@@ -13257,6 +13277,16 @@ function M.transfer_items_one(p,a,e)
   return {transferred=total,requested=asked,items=items,entries=rows,direction=a.direction,fresh=M.fresh_list(fresh),
     short=total<asked and {asked=asked,moved=total,missing=asked-total,reason='items_short'} or nil}
 end
+function M.transfer_item_counts(items)
+  assert(type(items)=='table','items must be an item-to-count map')
+  local n=0
+  for name,count in pairs(items) do
+    M.check_item_name(name,'items.'..tostring(name))
+    integer(count,1,1,10000,'items.'..name); n=n+1
+  end
+  assert(n>=1 and n<=32,'items requires 1..32 item counts')
+  return n
+end
 function M.transfer_items(p,a)
   assert(type(a.items)=='table','items must be an item-to-count map')
   assert(a.item==nil and a.count==nil and a.total==nil,'items supplies each item and count; item, count and total are exclusive with items')
@@ -13269,12 +13299,7 @@ function M.transfer_items(p,a)
   if a.keep~=nil then integer(a.keep,0,0,100000,'keep') end
   assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
   assert(a.quality==nil or (type(a.quality)=='string' and prototypes.quality[a.quality]),'unknown quality')
-  local n=0
-  for name,count in pairs(a.items) do
-    assert(type(name)=='string' and prototypes.item[name],'items keys must be item names: '..tostring(name))
-    integer(count,1,1,10000,'items.'..name); n=n+1
-  end
-  assert(n>=1 and n<=32,'items requires 1..32 item counts')
+  local n=M.transfer_item_counts(a.items)
   local e=entity(p,a,a.walk==true)
   friendly(p,e)
   if a.walk~=true or p.can_reach_entity(e) then return M.transfer_items_one(p,a,e) end

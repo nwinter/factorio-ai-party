@@ -1877,7 +1877,7 @@ assert(nothing.nothing_moved:find('2 burners hold fuel (coal 5-6): fuel is added
 -- item: one name, as transfer takes it (Grok); count is the target each machine holds.
 local one=call('feed',{item='iron-ore',count=25})
 eq(one.transferred,5); eq(one.items['iron-ore'],5); eq(one.items.coal,nil); eq(f1.slots[3][1].count,25); eq(one.held['iron-ore'],5)
-fails(function() call('feed',{item='nope'}) end,'unknown item nope')
+fails(function() call('feed',{item='nope'}) end,'item: nope is not an item (unknown item name)')
 -- No coal carried: the reply says so and what the furnaces hold (agent-minds
 -- study: Haiku's 35 empty feeds); the third identical one in 7 min says so too.
 main=inv(stack('iron-ore',10),stack(nil,0),stack(nil,0))
@@ -1886,7 +1886,7 @@ eq(nocoal.transferred,0); eq(nocoal.nothing_moved,'nothing given: you carry 0 co
 eq(nocoal.repeated,nil); eq(call('feed',{items={'coal'}}).repeated,nil)
 eq(call('feed',{items={'coal'}}).repeated,'feed 3 times in 7 min with nothing moved (same target and item)')
 fails(function() call('feed',{fuel='iron-ore'}) end,'fuel must be')
-fails(function() call('feed',{items={'nope'}}) end,'unknown item nope')
+fails(function() call('feed',{items={'nope'}}) end,'items[1]: nope is not an item (unknown item name)')
 -- With a radius, feed walks a tour through the machines that want something
 -- held, and ends early once nothing wanted is left.
 main=inv(stack('iron-ore',5))

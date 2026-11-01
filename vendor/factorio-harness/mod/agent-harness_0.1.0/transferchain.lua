@@ -7,6 +7,7 @@
 -- came from (a second walk).
 return function(api)
   local M = {}
+  local check_item_name = require('itemnames')
   M.MAX_LEGS = 32
   -- (d25 batch214 QZ2) the chests in all a chain's steps, as plan counts its legs (a queue step's check too)
   function M.count_legs(steps)
@@ -32,7 +33,7 @@ return function(api)
         assert(k == 'take' or k == 'give' or k == 'item' or k == 'count' or k == 'split' or k == 'quality' or k == 'inventory',
           string.format('steps[%d]: %s is not a step field: take | give, item, count? (take), split? (give), quality?, inventory?', i, tostring(k)))
       end
-      assert(type(st.item) == 'string' and prototypes.item[st.item], 'steps[' .. i .. ']: item is an item name')
+      check_item_name(st.item, 'steps[' .. i .. '].item')
       assert(kind == 'give' or st.split == nil, 'steps[' .. i .. ']: split is for a give')
       assert(st.split == nil or st.split == 'even' or st.split == 'fill', 'steps[' .. i .. ']: split is "even" or "fill"')
       local list = st[kind]
