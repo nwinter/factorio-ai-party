@@ -2837,3 +2837,33 @@ holds its identity, zoom and caption for at most 24 seconds and follows only new
 receipts expire after 3 seconds, stationary ones after 12; missing/stale data ends the shot, and a shown train
 rests ten minutes. Sparse agent reads therefore cannot support continuous train coverage. No extrapolated
 position or cargo claim is generated. New train shots never displace urgent, host, operator or segment holds.
+
+### Overlay recovery and browser health (batch408)
+
+The camera layout retries failed HTTP responses, invalid JSON/layouts and requests that take over five seconds,
+with 0.5–15 s exponential backoff. The optional trio layout loads independently; the main camera bar can draw
+before it succeeds. A failed or silent-for-20-seconds SSE connection is replaced with backoff; audio listeners
+reattach to the same new stream so speech resumes after HTTP errors as well as dropped connections. State polling allows one request at a time, uses the same retry policy, and checks at least
+every 15 s even with SSE flowing. A delayed HTTP response cannot overwrite a newer SSE state. Camera labels and
+recap visibility update before sidebar widgets; a late layout immediately redraws the current snapshot.
+
+Every overlay page posts `/overlay/health` after startup and every ten seconds, retrying failures with bounded
+backoff. The service logs `overlay-health.jsonl` beside `audio-played.jsonl`. `GET /overlay/status` includes
+`health.sessions` (the latest 16 sessions): `capture` distinguishes OBS's browser binding from ordinary previews;
+`received_at`, `state_age_s`, `classes`, `requests` and `errors` identify stale state, `onecam`/`recap-active`, failed
+loads and console errors. `layers` gives bounding boxes and computed visibility for the camera/bar/label, voice
+container/current caption, platform card, tour subtitle, recap and side panel. An empty voice container is normal
+between clips; inspect `captions` and `layers.caption` during speech. A preview with page name `main` cannot replace
+the OBS session's evidence.
+
+These are **browser-layer** reports. A visible browser layer can still be covered by another OBS scene source.
+For a missing bar/subtitle, compare read-only `GetSourceScreenshot` of `stream overlay` and `stream`, then inspect
+`GetSceneItemList` ordering. In the batch408 capture, the browser rendered both but game captures above the overlay
+covered them in the composed program (overlay index 5, game clean 6, cam1 7). Page reloads cannot correct scene
+stacking. The operator owns live scene correction and deployment; the recovery fixture never calls OBS.
+
+Offline reproduction: `node tools/stream/overlay_recovery_browser.mjs OUTPUT PLAYWRIGHT_MODULE [SOAK_SECONDS]`.
+It starts an isolated service and a flaky HTTP proxy, reproduces the pre-fix primary-load failure, tests layout and
+state retries, actual WebAudio captions, timed tour subtitles, recap entry/exit, delayed response ordering, health
+logging and portrait recovery, then runs a ten-minute soak by default. `POG_TEST_PYTHON` and `POG_TEST_CHROMIUM`
+select existing runtimes. Audio is a synthetic tone; no game, TTS, recording, live-service or OBS calls are made.
