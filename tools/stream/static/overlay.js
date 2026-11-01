@@ -1031,7 +1031,7 @@
       const cloudKey = renderCloud(frame, cam && cam.map ? cam : null, s);
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
       if (slot !== "main" && slot !== "inset" && !(onecam && curMode !== "trio")) renderFill(frame, s, !agents.length && !(cam && cam.attack));
-      const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
+      const sig = onecam + "|" + agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
         + "|" + (cam && cam.work || "");
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
