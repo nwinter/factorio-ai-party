@@ -128,6 +128,9 @@ class Director:
         self.acknowledged = self.state
         self.on_air = dict(self.state)  # confirmed by the compositor, never by a send attempt
         self.send_pending = {}
+        import basetour
+        self.tour_memory = basetour.Memory()
+        self.train_rows, self.train_shown = [], {}
         self.surveys = {}  # (slot, surface, purpose): interrupted phases survive the original hold
         self.last_on_air = {}
         self.started = time.time()
@@ -550,7 +553,7 @@ class Director:
                     survey.suspend()
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
-                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame", "seg") if k in target},
+                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame", "seg", "tour", "train") if k in target},
                  "cmd": body, "result": result, "acknowledged": bool(ok), "scores": dict(top)}
         if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
             entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})
@@ -564,6 +567,18 @@ class Director:
             print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub} [{status}]",
                   flush=True)
         return bool(ok)
+
+    @staticmethod
+    def survey_caption(target, survey):
+        base = target.get("survey_label") or target["platform"]["label"]
+        beat = survey.active_detail
+        if not beat:
+            return base
+        name = target["platform"]["name"]
+        label = beat.get("label") or beat.get("why") or "ship detail"
+        if label.startswith(name + " · "):
+            label = label[len(name) + 3:]
+        return ("Featured: " if target.get("featured") else "") + f"{name} · {label}"
 
     def survey_step(self, now):
         """Observe one camera, then drive its survey only while the compositor confirms it is visible.
@@ -614,7 +629,18 @@ class Director:
                 continue
             survey.active = True
             survey.interrupted = False
+            if survey.phase in ("survey", "bow_dwell", "stern_dwell") and not survey.detailed:
+                # Refresh candidates between scenes, preserving an in-progress detail's goal, caption and dwell.
+                survey.spec["details"] = self.tour_memory.details(survey.spec["surface"], survey.spec["details"], now)
+                survey.detail_index = 0
             survey.advance()
+            beat = survey.active_detail
+            if target.get("platform"):
+                target.setdefault("survey_label", target["platform"]["label"])
+                target["platform"]["label"] = self.survey_caption(target, survey)
+            if beat and survey.phase == "detail_dwell" and survey.dwell >= 2 and not beat.get("credited"):
+                self.tour_memory.seen(beat, now)
+                beat["credited"] = True
             target.update(position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
                           game_zoom=receipt["zoom"], survey_status=survey.public())
             if self.log_path:
@@ -652,6 +678,11 @@ class Director:
         for slot in self.slots:
             p = self.send_pending.get(slot["slot"])
             if p and now >= p["retry_at"]:
+                train = (p["target"] or {}).get("train")
+                if train and (now - train["t"] > (3 if train.get("speed") else 12) or
+                              getattr(self, "hosting", lambda t: False)(now) or getattr(self, "hold_layout", False)):
+                    self.send_pending.pop(slot["slot"], None)
+                    continue  # an old train position must not become a delayed camera command
                 if p["target"] and p["target"].get("until", now + 1) <= now:
                     self.send_pending.pop(slot["slot"], None)
                     continue

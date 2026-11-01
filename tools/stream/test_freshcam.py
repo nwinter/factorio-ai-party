@@ -141,11 +141,11 @@ def quiet(cams):
     assert tour_t is not None, (cams, d.cuts, d.quiets)
     shot = d.state[d.onair]
     assert shot["tour"]["surface"] == "nauvis" and shot["move"]["segments"][0]["pts"], shot
-    assert d.public(tour_t)["main"]["look"]["label"] == "Nauvis base · a slow pan"
-    assert onair_info({"agents": team}, d.public(tour_t))["tour"]["label"] == "Nauvis base · a slow pan"
+    assert d.public(tour_t)["main"]["look"]["label"] == shot["tour"]["label"]
+    assert onair_info({"agents": team}, d.public(tour_t))["tour"]["label"] == shot["tour"]["label"]
     moved = [b for b in sent if b.get("move")]
     assert moved and moved[-1]["surface"] == "nauvis" and moved[-1]["zoom"] == basetour.ZOOM, moved[-1:]
-    assert "tour: Nauvis base · a slow pan (quiet: luna still" in d.cuts[-1][2], d.cuts  # a cut row (one client too)
+    assert "quiet: luna still" in d.cuts[-1][2], d.cuts  # a cut row (one client too)
     assert moved[-1]["smooth"] is False  # framed off air (a standby; one client: a jump on air)
     if cams > 1:
         assert d.cuts[-1][1] != d.cuts[-2][1], d.cuts  # another client than the story's

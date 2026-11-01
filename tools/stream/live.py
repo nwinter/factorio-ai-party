@@ -491,6 +491,7 @@ class LiveSource:
             # where each agent is paying attention (attention.py): its latest request with a position, area or list
             obs["attention"] = self.work.take_attention()
             now = time.time()
+            obs["trains"] = self.work.trains.current(now)
             units = self.work.vehicles.units(now)
             if units:  # (d26 batch232 VC) where the agents' remote vehicles are now (harness VEHICLES_LUA, 5.4 us each)
                 try:

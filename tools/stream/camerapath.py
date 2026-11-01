@@ -185,8 +185,10 @@ class Survey:
         import copy
         self.spec = copy.deepcopy(spec)
         self.expires = min(until, now + self.MAX_HOLD)
-        self.phase, self.direction = "bow_dwell", 1
-        self.pose = dict(spec["bow"])
+        self.phase, self.direction = ("stern_dwell", -1) if spec.get("reverse") else ("bow_dwell", 1)
+        self.pose = dict(spec["stern" if spec.get("reverse") else "bow"])
+        self.active_detail = None
+        self.detail_seconds = self.DETAIL_S
         self.goal = dict(self.pose)
         self.anchor = None
         self.dwell = 0.0
@@ -249,6 +251,9 @@ class Survey:
         """Interrupt with a supplied section; future work-aware tours can call this without a second clock."""
         if self.phase not in ("survey", "bow_dwell", "stern_dwell"):
             return False
+        import copy
+        self.active_detail = copy.deepcopy(beat)
+        self.detail_seconds = max(8, min(14, beat.get("seconds", self.DETAIL_S)))
         self.anchor = dict(self.pose)
         self.return_phase = self.phase
         self.saved_goal = dict(self.goal)
@@ -275,11 +280,12 @@ class Survey:
                 self.detail(beat)
         elif self.phase == "zoom_in" and at_goal:
             self.change("detail_dwell", self.goal)
-        elif self.phase == "detail_dwell" and at_goal and self.dwell >= self.DETAIL_S:
+        elif self.phase == "detail_dwell" and at_goal and self.dwell >= self.detail_seconds:
             self.change("pullback", dict(self.pose, zoom=self.spec["bow"]["zoom"]))
         elif self.phase == "pullback" and at_goal:
             self.change("return", self.anchor)
         elif self.phase == "return" and at_goal:
+            self.active_detail = None
             self.change(self.return_phase, self.saved_goal)
             self.dwell = self.saved_dwell
 
@@ -291,4 +297,4 @@ class Survey:
     def public(self):
         return {"phase": self.phase, "direction": self.direction, "position": dict(self.pose),
                 "goal": dict(self.goal), "coverage": list(self.coverage), "ends": sorted(self.ends),
-                "expires": self.expires, "dwell": round(self.dwell, 2)}
+                "expires": self.expires, "dwell": round(self.dwell, 2), "detail": self.active_detail}
