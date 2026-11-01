@@ -9130,7 +9130,10 @@ M.step_checks={
   -- (d29 batch348 CS, Sol #2758) circuit_set's values as the live call parses them (circuits.lua check_args)
   circuit_set=function(a) M.circuits.check_args(a) end,
   flight_watch=function(a) M.flightwatch.check(a) end,  -- (d25 batch205 QR2) read: true with platform alone
-  uptime=function(a) M.uptime.check_read(a) end,  -- (d25 batch214 QZ1) read: true in pages, never a new watch
+  uptime=function(a)
+    M.uptime.check_read(a)
+    if a.items~=nil then M.uptime.check_items(a.items) end
+  end,
   reservations=function(a) M.reservations.check_point(a) end,  -- (d25 batch217 QAB1) position, from, radius, sweep
   configure=function(a)
     if a.modules~=nil then M.modules.parse(a.modules) end

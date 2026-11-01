@@ -143,7 +143,7 @@ do
   eq(out.flows.line,'production statistics on nauvis in 10s (every machine and hand there): iron-gear-wheel produced 54 (324/min), consumed 0 (0/min); iron-gear-wheel (uncommon) produced 9 (54/min), consumed 0 (0/min); iron-plate (uncommon) produced 0 (0/min), consumed 20 (120/min)')
   eq(out.lines[#out.lines],out.flows.line)
   fails(function() U.handler(p,{items={'nope'}}) end,'nope is not an item')
-  fails(function() U.handler(p,{items={{name='iron-plate',quality='shiny'}}}) end,'quality shiny is not a quality')
+  fails(function() U.handler(p,{items={{name='iron-plate',quality='shiny'}}}) end,'items[1].quality: shiny is not a quality')
 
   -- outputs by quality: an assembler on gears with quality modules, every 4th completion uncommon; an inserter takes
   -- everything out once, at 30 s

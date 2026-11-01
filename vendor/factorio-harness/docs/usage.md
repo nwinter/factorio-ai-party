@@ -18574,3 +18574,13 @@ profiles, duplicate targets, invalid keys and target names, and the model-limit 
 tests retain their numerical results.
 
 - Ammunition count scope: `supply {item}` (including `compact:true` and `stock:true`) returns `counts_scope` for its counted supply holders and a warning: turret magazines excluded; whole ship: `platform_endurance resources.aboard`. Counts and reads are unchanged. `platform_endurance` ammunition rows always expose `aboard` (whole ship, including turret magazines), and label it beside `stock` (reachable, excluding stranded) in the resource line and compact output.
+
+## d32 batch401 (Sol #2856): uptime items checked before queue submission
+
+`uptime.items` names and qualities are checked by `uptime.check_items` at execution and queue validation.
+Only item prototypes are accepted; fluids and unknown names are refused before submission, including nested
+guard steps. Dry and live submission name the step, argument and cause, for example
+`steps[17] (uptime): args: items[2]: water is not an item (fluid prototype)`.
+The check uses prototype lookups for at most eight entries; it reads no entities or production statistics.
+`tests/d32_batch401.lua` covers valid items, fluids, unknown names, mixed lists and qualities, plus a 28-step
+queue whose invalid step 17 prevents every step from running and preserves the current watch.

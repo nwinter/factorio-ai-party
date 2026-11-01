@@ -73,7 +73,7 @@ local P={x=0,y=0}
 -- named; 8 is taken
 local nine=list(9,function(i) return 'item-'..i end)
 local e=refused(plan({{action='wait_ticks',args={ticks=60}},{action='wait_ticks',args={ticks=60}},{action='uptime',label='baseline',args={items=nine,seconds=600}}}))
-has(e,'steps[3] (uptime, label "baseline")'); has(e,'items has 9 entries, outside 1..8, what uptime takes when it runs')
+has(e,'steps[3] (uptime, label "baseline")'); has(e,'items: 1..8 items')
 table.remove(nine)
 no_limit(plan({{action='uptime',args={items=nine,seconds=600}}}))
 -- the bound is the action's own: uptime.ITEMS moves the step's check and the call's

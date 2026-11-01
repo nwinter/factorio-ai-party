@@ -575,16 +575,28 @@ return function(api)
   local function flow_stats(force, surface)
     return try(function() return force.get_item_production_statistics(surface) end)
   end
-  function M.flows_start(force, surface, items)
+  -- Pure prototype checks shared by execution and every queued-step validation path.
+  function M.check_items(items)
     assert(type(items) == 'table' and #items >= 1 and #items <= M.ITEMS, 'items: 1..' .. M.ITEMS .. ' items, a name ("iron-gear-wheel", every quality) or {name, quality}')
+    for i, it in ipairs(items) do
+      local name, quality = it, nil
+      if type(it) == 'table' then name, quality = it.name, it.quality end
+      local field = 'items[' .. i .. ']'
+      if type(name) ~= 'string' or not prototypes.item[name] then
+        local fluid = type(name) == 'string' and prototypes.fluid and prototypes.fluid[name]
+        error(field .. ': ' .. tostring(name) .. ' is not an item (' .. (fluid and 'fluid prototype' or 'unknown item name') .. ')', 0)
+      end
+      assert(quality == nil or (type(quality) == 'string' and prototypes.quality[quality]), field .. '.quality: ' .. tostring(quality) .. ' is not a quality')
+    end
+  end
+  function M.flows_start(force, surface, items)
+    M.check_items(items)
     local stats = flow_stats(force, surface)
     assert(stats, 'no production statistics for ' .. surface.name)
     local rows, recent = {}, {}
     for _, it in ipairs(items) do
       local name, quality = it, nil
       if type(it) == 'table' then name, quality = it.name, it.quality end
-      assert(type(name) == 'string' and prototypes.item[name], 'items: ' .. tostring(name) .. ' is not an item')
-      assert(quality == nil or (type(quality) == 'string' and prototypes.quality[quality]), 'items: quality ' .. tostring(quality) .. ' is not a quality')
       for _, q in ipairs(quality and {quality} or qualities()) do
         local id = {name=name, quality=q}
         local r = {name=name, quality=q, produced0=try(function() return stats.get_input_count(id) end) or 0, consumed0=try(function() return stats.get_output_count(id) end) or 0}
@@ -1165,7 +1177,7 @@ return function(api)
   end
   M.schema = {uptime = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', positions='1..64 crafting machines or labs {x,y} (an assembler, furnace, chemical plant, biochamber, lab, biolab, ...; in sight or by remote view); with read: true, the machines of the watch to read (each the nearest centre within 2 tiles)', position='or one',
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
-    items='optional 1..8 items, a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch)',
+    items='optional 1..8 item prototype names (fluids refused), a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch); queue submission and dry_run check every name and quality, naming the failing step and items entry',
     seconds='optional 10..3600 (default 600): how long to watch',
     read='true: read a watch in pages without starting or replacing it (yours; with id or agent any agent\'s): read, id, agent (another\'s), done or watching, started_tick, until_tick, to_tick (the end, or now), sampled_tick (its last sample), samples, seconds, machines_total, matched, page, pages, page_size, machines (the page\'s rows as uptime {} gives them, with index (its place in the watch) and short_counts {ingredient: {samples, least, need, first_tick, last_tick}}; line only with details), lines (with details), not_found, segment (reading a segment: segment_start, ended_tick, closed_by, of: the watch keeping it) or segments, kept_watch (reading a kept watch: kept_tick, ended_tick, closed_by, by: the watch begun then) or kept and kept_dropped, flows (a watch with items, on every page: surface, start_tick, end_tick, every row, line; a done one\'s as it ended), line; a queue step and dry_run check it',
     id='with read: a watch\'s id as the start and status work give it, "uptime@START_TICK/AGENT"; "uptime@START_TICK" reads the one watch begun on that tick (two or more: refused, each id named)',
