@@ -450,6 +450,6 @@
   {"t": "2026-10-31 23:11", "kind": "shift", "text": "Shift 115 change began.", "affected": "stream and agents", "recovered": "2026-10-31 23:19"},
   {"t": "2026-11-01 02:19", "kind": "shift", "text": "Shift 116 change began.", "affected": "stream and agents", "recovered": "2026-11-01 02:27"},
   {"t": "2026-11-01 06:28", "kind": "shift", "text": "Shift 117 change began.", "affected": "stream and agents", "recovered": "2026-11-01 06:36"},
-  {"t": "2026-11-01 07:39", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-11-01 07:39", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-11-01 07:39"}
  ]
 }
