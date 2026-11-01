@@ -40,6 +40,7 @@ class Player:
         self.current = None
         self.public = None
         self.retry_at = 0
+        self.retry_line = None
         self.segment = f"shift-recap:{self.source.name}:{phase}"
         self.manifest = None
         self.mtime = None
@@ -69,7 +70,7 @@ class Player:
         self.audio.release_speech(self.segment)
         self.state.update(ended=True, reason=reason)
         self.persist()
-        self.current, self.public = None, None
+        self.current, self.public, self.retry_line = None, None, None
 
     def load(self):
         try:
@@ -92,12 +93,12 @@ class Player:
             # Readiness changes the phase, not the audible cursor. Drain the current
             # line before removing its image/caption and releasing its camera.
             self.stop_after_line = "agents started"
-        if self.stop_after_line and not self.current:
+        if self.stop_after_line and not self.current and not self.retry_line:
             self.finish(self.stop_after_line)
         if self.state.get("ended"):
             self.public = None
             return None
-        if not self.current:
+        if not self.current and not self.retry_line:
             self.load()  # one immutable visual/script binding for the whole audible line
         manifest = self.manifest
         if not manifest:
@@ -121,16 +122,18 @@ class Player:
                 self.state["completed"].append(self.current["line"]["id"])
                 self.persist()
                 self.current = None
+                self.retry_line = None
             elif failed or (not playing and now > self.current["deadline"]):
                 # A late page, reload, or missing receipt is not completion. Retry this line.
                 self.audio.interrupt(cid)
+                self.retry_line = self.current["line"]
                 self.current = None
                 self.retry_at = now + 2
-        if self.stop_after_line and not self.current:
+        if self.stop_after_line and not self.current and not self.retry_line:
             self.finish(self.stop_after_line)
             return None
         remaining = [r for r in lines if r["id"] not in self.state["completed"]]
-        line = self.current["line"] if self.current else (remaining[0] if remaining else None)
+        line = self.current["line"] if self.current else self.retry_line or (remaining[0] if remaining else None)
         if line and not self.current and now >= self.retry_at:
             # Wait for the capture page. At startup the OBS source may connect minutes after the service.
             with self.audio.cond:

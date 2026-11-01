@@ -491,6 +491,25 @@ class RecapTest(unittest.TestCase):
         self.assertEqual(p.state['completed'], [first['id']])
         self.assertIsNone(audio.speech_owner)
 
+    def test_phase_handoff_retries_reloaded_line_even_if_manifest_is_replaced(self):
+        manifest = self.prepare()
+        audio = self.audio()
+        p = Player(self.run, self.old, audio)
+        first = p.step(T0)
+        cid = p.current['clip']
+        audio.played(dict(id=cid, state='start', session='old', duration=4), now=T0+2)
+        (self.run / 'start.log').write_text('started: 9/9 agents\n')
+        audio.played(dict(state='load', session='new'), now=T0+3)
+        manifest['lines'] = manifest['lines'][1:]
+        R.save_json(self.out / 'manifest.json', manifest)
+        self.assertEqual(p.step(T0+4)['id'], first['id'])
+        self.assertEqual(p.step(T0+7)['id'], first['id'])
+        cid = p.current['clip']
+        audio.played(dict(id=cid, state='start', session='new', duration=4), now=T0+9)
+        audio.played(dict(id=cid, state='end', session='new', duration=4, played=4, audible=True), now=T0+13)
+        self.assertIsNone(p.step(T0+14))
+        self.assertEqual(p.state['completed'], [first['id']])
+
     def test_early_service_publishes_current_beat_before_agents_and_restores_on_end(self):
         p = Player(self.run, self.old, self.audio())
         self.assertTrue(p.step(T0)["active"], "preparing card needs no world snapshot")
