@@ -486,6 +486,11 @@
   checks once a second; arriving at a stop alone does not start it. Both armed modes end unbegun after 24 game hours.
   A `leg` watch's `start_change` and read line say what started it: `kind` (departure, connection, direction),
   `before`/`after` (location or connection/from/to/back), and the two observation ticks (`from_tick`, `tick`).
+  Edits on the same tick share one mixed boundary. `mixed.parts` keeps the latest 3 positive-duration intervals
+  (`from_tick`, `to_tick`); a fourth drops the oldest. `mixed.parts_limit` is 3; `parts_dropped` counts real intervals
+  dropped at the cap. Each part keeps damage, losses, empty-turret runs, railgun/laser energy and fire, accumulator
+  lows, fuel, ammunition, repairs and foundation. Parts contain all observed turret rows, without the normal read's
+  24 ammo-turret / 64 powered-turret display limits; sampling caps still apply. Zero-duration parts are not kept.
   Per ammo turret (unit_number, position):
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
   the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it

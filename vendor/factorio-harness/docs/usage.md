@@ -12714,6 +12714,14 @@ on Gleba breeders invalidated Luna's samples three times, and she reset each win
   - A second edit of the same entity in the same tick counts once.
 - What happens at the first edit and each one after:
   - The watch's read up to the edit is kept: `mixed.parts` holds from_tick, to_tick, line, and up to 64 lines.
+    Flight watches keep the complete observation read in each part, including all observed turret rows and their
+    lines, damage, losses, empty-turret runs, railgun/laser energy and fire, accumulators, fuel, ammunition, repairs
+    and foundation. The normal read's 24 ammo-turret / 64 powered-turret display limits do not truncate these parts;
+    the watch's sampling caps still apply. Parts contain no nested mixed history.
+  - Flight-watch edits on the same tick share one boundary: the baseline refreshes after each target, but no
+    zero-duration part is saved. At most 3 positive-duration parts are kept (`mixed.parts_limit`); a fourth drops
+    the oldest, counted by `mixed.parts_dropped`. Existing zero-duration parts are removed on the next edit;
+    observations already evicted by older code cannot be recovered from the watch.
   - The watch starts again from the edit tick with its first arguments, to the same end tick. A flight watch's counts
     begin again, to its arrival or limit.
   - The watch ends at the edit instead, its final being that part, in three cases: an entity it measures was mined or
