@@ -13,6 +13,7 @@ Platform `configure` returns recipe items to the hub; `deliver` requests ingredi
 `flight_watch` keeps 3 real mixed intervals; same-tick edits share a boundary (help space-age).
 `supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
 `platform_ammo_below`: `on_stale:"met"|"wait"` (default met).
+`platform_arrived` remembers arrivals after wait start or `since_tick` (help space-age).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 `place_ghosts` dry runs check surface conditions; `check_inserters` refuses the whole batch on failure (help building).
 

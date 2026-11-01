@@ -32,7 +32,12 @@
   thruster fuel and oxidizer used and made, the thrusters' tanks at start and end, the pumps' share of time working).
 - `platform_arrived {platform, location?}` and `platform_left {platform, location?}`: wait conditions, in `./fh wait
   --until`, `./fh sleep --until`, `wait_until`, queue steps and guards, and a standing order's `when`.
-  `platform_arrived` holds while the platform is stopped at `location` (a planet; without one, at any stop).
+  `platform_arrived` holds while stopped at `location` (any stop without one), or latches a logged arrival at or
+  after the wait's start (`since_tick` overrides it), even after departure. `saw` gives the arrival tick,
+  subsequent logged departure and current location/leg. Arrival records come from freight's last 40 events;
+  once matched, a wait keeps the event across reloads, timeout holds and requeues.
+  `queue_submit {dry_run:true}` reports matching schedule stops with no holding wait condition in `world_checks`:
+  the arrival wait does not hold the platform there; a following step or guard may run after departure.
   `platform_left` waits for its next departure from `location` (without one, from any stop): seen stopped there during
   the wait, then gone; one begun in flight waits for the next stop and its departure. In a queue it also counts a
   departure after the step before it began (a `platform_schedule` step that sent it off); `since_tick` counts one from

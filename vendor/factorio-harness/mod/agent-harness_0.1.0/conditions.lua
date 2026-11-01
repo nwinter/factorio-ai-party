@@ -1066,13 +1066,38 @@ return function(api)
     -- arrival): at `location` when given (a planet), else at any stop. As the platform list shows it: a platform is
     -- at a location while it is stopped there and on a route between two while it flies (2.0.77: space_location
     -- clears within 4 ticks of leaving).
-    platform_arrived=function(p,c,estimate)
+    platform_arrived=function(p,c,estimate,record)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
       if not pl then error('no platform of ours named '..tostring(c.platform),0) end
       -- freight.lua's rule, the platforms row's too (Luna, shift12 12:47: a wait met while the row showed the platform
       -- in flight): stopped at a location and not on its path; a leg in the way it is flown.
       local w=api.platform_where and api.platform_where(pl)
+      -- Each member has its own latch, even when all/any or sleep shares a wait record.
+      -- Records and guard conditions live in storage, so the baseline and event survive reloads.
+      local holder
+      if record then
+        record.platform_arrivals=record.platform_arrivals or {}
+        -- queue_status copies the record into JSON: keys must be strings, not condition tables.
+        local key=c.platform..'\0'..(c.location or '')..'\0'..tostring(c.since_tick or '')
+        holder=record.platform_arrivals[key]
+        if not holder then holder={}; record.platform_arrivals[key]=holder end
+      else
+        c.platform_arrival=c.platform_arrival or {}; holder=c.platform_arrival
+      end
+      holder.since=holder.since or c.since_tick or (record and (record.start_tick or record.wait_started or record.started_tick)) or game.tick
+      if not holder.arrival and api.arrived_since then
+        holder.arrival=api.arrived_since(pl.name,p.force.name,c.location,holder.since)
+      end
+      local e=holder.arrival
+      if e then
+        if not holder.departure and api.left_since then holder.departure=api.left_since(pl.name,p.force.name,e.at,e.tick) end
+        local d=holder.departure
+        local now=w and w.text or (pl.space_location and 'at '..pl.space_location.name or 'not at a stop')
+        return true,string.format('%s arrived at %s at tick %d (since tick %d)%s; now %s',c.platform,e.at,e.tick,holder.since,
+          d and string.format('; left %s at tick %d%s',d.at,d.tick,d.to and ' for '..d.to or '') or '',now),
+          estimate and {leg=w and w.leg,paused=pl.paused,platform=pl,arrival_tick=e.tick,departure_tick=d and d.tick} or nil
+      end
       if w then return w.stopped==true and (c.location==nil or w.at==c.location),c.platform..' '..w.text,
         estimate and {leg=w.leg,paused=pl.paused,platform=pl} or nil end
       local loc=pl.space_location and pl.space_location.name
@@ -1576,8 +1601,8 @@ return function(api)
     if kind=='platform_arrived' or kind=='platform_left' then
       assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
       assert(c.location==nil or (type(c.location)=='string' and prototypes.space_location[c.location]),'location must be a space location (a planet name)')
-      assert(c.since_tick==nil or (kind=='platform_left' and type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),
-        kind=='platform_left' and 'platform_left since_tick is a game tick up to now' or 'platform_arrived takes no since_tick')
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick
+        and (kind=='platform_left' or c.since_tick==math.floor(c.since_tick))),kind..' since_tick is a game tick up to now')
     end
     return c
   end

@@ -2902,10 +2902,25 @@ return function(api)
   function M.world_checks(p,items)
     local lines={}
     local reqs,skipped=0,{}
+    local function arrival_wait(c,head)
+      if c['until']=='all' or c['until']=='any' then
+        for _,m in ipairs(c.conditions or {}) do arrival_wait(m,head) end
+      elseif c['until']=='platform_arrived' then
+        local ok,pl=pcall(M.platform,p,c.platform)
+        if not ok then lines[#lines+1]=head..': not checked: '..plain(pl); return end
+        for j,r in ipairs((pl.schedule or {}).records or {}) do
+          if (c.location==nil or r.station==c.location) and #(r.wait_conditions or {})==0 then
+            lines[#lines+1]=string.format('%s: %s stop %d (%s) has no holding wait condition; platform_arrived latches arrival and does not hold the platform there; a following step or guard may run after departure',head,pl.name,j,r.station)
+          end
+        end
+      end
+    end
     for i,st in ipairs(items or {}) do
       local a=type(st.args)=='table' and st.args or {}
       local head=string.format('step %d (%s%s%s)',i,st.action,a.platform and ' '..tostring(a.platform) or '',a.stop and ' stop '..tostring(a.stop) or '')
-      if st.action=='platform_schedule' then
+      if st.action=='wait_until' then
+        arrival_wait(a,head)
+      elseif st.action=='platform_schedule' then
         local ok,r=pcall(M.schedule_check,p,a)
         if not ok then lines[#lines+1]=head..': not checked: '..plain(r)
         elseif r then
