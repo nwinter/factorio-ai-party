@@ -79,6 +79,7 @@ has(refused(plan({{action='belt_flow',args={position={x=0,y=0},seconds=31}}},tru
 has(refused(plan({{action='platform_supply',args={platform='Peregrine',collection=true,seconds=3601}}},true)),'seconds 3601 is outside 10..3600')
 has(refused(plan({{action='signal_watch',args={position={x=0,y=0},seconds=9}}},true)),'seconds 9 is outside 10..3600')
 -- action ranges: whole numbers, the widest of an action's modes, a mode's own key only with it
+prototypes={item={coal={}}}
 has(refused(plan({{action='feed',args={item='coal',count=1001}}},true)),'count 1001 is outside 1..1000')
 has(refused(plan({{action='feed',args={item='coal',count=2.5}}},true)),'count 2.5 is outside 1..1000 (a whole number)')
 has(refused(plan({{action='move_to',args={position={x=0,y=0},tolerance=11}}},true)),'tolerance 11 is outside 0.25..10, what move_to takes')

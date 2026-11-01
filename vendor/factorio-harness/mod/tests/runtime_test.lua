@@ -5351,9 +5351,9 @@ end)()
   -- give there): a move between the two, which pick makes.
   fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
     [[to goes with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
-  -- items: one item a call.
+  -- items accepts a map; these names are absent from the fake game's prototypes.
   fails(function() call('transfer',{position={x=35.5,y=35.5},direction='to_player',items={pipe=16,['small-electric-pole']=8}}) end,
-    [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
+    'is not an item (unknown item name)')
   -- Another action's unknown argument: its example.
   fails(function() call('technologies',{pack='electromagnetic-science-pack'}) end,
     [[unknown argument pack for technologies; valid: available, from, level, limit, name, prefix; accepted: available (boolean), from (optional), level (optional integer with one exact name), limit (1..32), name (optional), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
