@@ -83,6 +83,14 @@ eq(first.until_tick,1100); eq(first.turrets,nil); assert(first.result and first.
 eq(new.mixed.parts[1].segment_start,1000); eq(new.mixed.parts[1].to_tick,1100)
 has(new.mixed.parts[1].line,'watched Probe6 for 1.7s: 5 asteroids seen in view')
 
+-- batch400: further targets in the same tick preserve the original asteroid interval and its complete record.
+eq(X.edit(t1,'configure priority_targets by astra'),1)
+eq(X.edit(rail,'configure priority_targets by astra'),1)
+new=st.asteroid_watch[1]
+eq(#new.segments,1); eq(new.segments[1],first)
+eq(#new.mixed.parts,1); eq(new.mixed.parts[1].segment_start,1000)
+eq(new.mixed.parts[1].to_tick,1100); eq(#new.mixed.edits,3)
+
 -- the read lists the segment; segment_start reads it in full
 local r=A.handler(p,{platform='Probe6',asteroids=true})
 eq(#r.segments,1); eq(r.segments[1].segment_start,1000); eq(r.segments[1].end_tick,1100); eq(r.segments[1].seconds,1.7)
