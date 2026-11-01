@@ -2817,7 +2817,8 @@ no page= (and replay.html when open): no overlay, which is why it stayed connect
 
 `basetour.choose` selects a new base scene at a shot boundary from 64-tile machine regions and the director's
 bounded, session-local `basetour.Memory`. Accepted builds, remote work, repair starts, damage/threat episodes,
-ship arrivals, and changed chart recipe layouts supply facts. Unseen regions and fresh facts outrank unchanged
+ship arrivals, changed chart recipe layouts and ship production changes sustained for 30 seconds supply facts.
+Activity scenes name and credit the engineer whose work is shown. Repeated inspections do not qualify as news. Unseen regions and fresh facts outrank unchanged
 regions; unchanged regions rest for ten minutes. Surface recency breaks ties. Compositions rotate through two
 pan directions, principal/perpendicular axes, .4/.5/.6 zoom and 36/44/52-second shots, with 3/5/7-second endpoint
 rests. The whole straight path's frame envelope must be charted. A selected path is immutable; if no region is

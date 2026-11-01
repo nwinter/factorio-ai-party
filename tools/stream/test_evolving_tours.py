@@ -156,6 +156,9 @@ def train_rows():
     try: d.apply(d.slot(d.onair),shot,'train',{},1020)
     except CameraPending: pass
     assert d.state[d.onair]==old and not d.train_shown
+    d.sender=lambda b: sent.append(b) or dict(ok=True)
+    n=len(sent);d.retry_sends(1025)
+    assert len(sent)==n and not d.send_pending, 'expired train sends are not retried'
     return row
 
 
