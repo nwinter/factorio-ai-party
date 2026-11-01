@@ -11,15 +11,13 @@ def cue(recap, snapshot, now, frac=1.0):
         return None
     subject = recap.get("subject") or {}
     name = str(subject.get("name") or "").casefold()
-    if not name:
-        return None
     target = None
-    if subject.get("type") == "platform":
+    if name and subject.get("type") == "platform":
         row = next((p for p in (snapshot.get("space") or {}).get("platforms", [])
                     if str(p.get("name", "")).casefold() == name and (p.get("view") or {}).get("surface")), None)
         if row:
             target = platform_shot(row["view"], frac=frac, overview=True)
-    else:
+    elif name:
         agents = [a for a in snapshot.get("agents", []) if not a.get("dead") and a.get("position")
                   and str(a.get("surface") or a["position"].get("surface", "")).casefold() == name]
         if agents:
@@ -31,9 +29,15 @@ def cue(recap, snapshot, now, frac=1.0):
             if frame:
                 target = {"position": frame["position"], "surface": frame["surface"], "zoom": frame.get("zoom", .65)}
     if not target:
-        return None
+        # An unresolved subject still owns the current shot. Returning None used to
+        # invite a quiet tour or ordinary story cut in the middle of its narration.
+        target = {"hold_current": True, "zoom": .65}
+    # Recap framing is fixed for a line; the ordinary tall-ship pan must not reset
+    # or leave its subject while a delayed/reloaded narration is still playing.
+    target.pop("pan", None)
     return dict(target, id=f"shift-recap:{recap.get('run')}:{recap.get('phase')}:{recap.get('id')}",
-                label="Shift recap · " + subject["name"], until=now + 120)
+                label="Shift recap · " + (subject.get("name") or "current view"), until=now + 120,
+                recap=True)
 
 
 def on_air(recap, snapshot):

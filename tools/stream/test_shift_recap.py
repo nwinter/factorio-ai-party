@@ -434,9 +434,11 @@ class RecapTest(unittest.TestCase):
         self.assertNotEqual(new.current["line"]["id"], first)
         self.assertEqual(new.current["line"]["id"], p.current["line"]["id"])
         (self.run / "start.log").write_text("05:55:01 started: 8/9 agents (not started: luna); deadline later\n")
-        self.assertIsNone(new.step(T0 + 11))
+        self.assertIsNotNone(new.step(T0 + 11))
+        new.audio.completed.add(new.current["clip"])
+        self.assertIsNone(new.step(T0 + 12))
         self.assertTrue(new.state["ended"])
-        self.assertTrue(any(m[2].get("cancel") for m in new.audio.clips.values()))
+        self.assertTrue(any(m[2].get("stop_segment") for m in new.audio.clips.values()))
         self.assertTrue(any(m[2].get("release") for m in new.audio.clips.values()))
         self.assertIsNone(Player(self.run, self.old, self.audio()).step(T0 + 12))
 
@@ -468,6 +470,46 @@ class RecapTest(unittest.TestCase):
         self.assertIsNotNone(p.current)
         self.assertTrue(any(m[2].get("stop_segment") == p.segment for m in audio.clips.values()))
 
+    def test_delayed_playing_line_holds_visuals_and_phase_until_its_receipt(self):
+        self.prepare()
+        audio = self.audio()
+        p = Player(self.run, self.old, audio)
+        first = p.step(T0)
+        cid = p.current['clip']
+        audio.played(dict(id=cid, state='start', session='capture', duration=4), now=T0+2)
+        # An agent-ready marker and the old deadline both occur during delayed output.
+        (self.run / 'start.log').write_text('started: 9/9 agents\n')
+        for now in (T0+40, T0+150):
+            held = p.step(now)
+            self.assertEqual((held['id'], held['clip'], held['text']), (first['id'], cid, first['text']))
+            self.assertEqual(audio.speech_owner, p.segment)
+            self.assertNotIn(cid, audio.cancelled)
+        audio.played(dict(id=cid, state='end', session='wrong', played=4, duration=4, audible=True), now=T0+151)
+        self.assertIsNotNone(p.step(T0+151))
+        audio.played(dict(id=cid, state='end', session='capture', played=4, duration=4, audible=True), now=T0+152)
+        self.assertIsNone(p.step(T0+153))
+        self.assertEqual(p.state['completed'], [first['id']])
+        self.assertIsNone(audio.speech_owner)
+
+    def test_phase_handoff_retries_reloaded_line_even_if_manifest_is_replaced(self):
+        manifest = self.prepare()
+        audio = self.audio()
+        p = Player(self.run, self.old, audio)
+        first = p.step(T0)
+        cid = p.current['clip']
+        audio.played(dict(id=cid, state='start', session='old', duration=4), now=T0+2)
+        (self.run / 'start.log').write_text('started: 9/9 agents\n')
+        audio.played(dict(state='load', session='new'), now=T0+3)
+        manifest['lines'] = manifest['lines'][1:]
+        R.save_json(self.out / 'manifest.json', manifest)
+        self.assertEqual(p.step(T0+4)['id'], first['id'])
+        self.assertEqual(p.step(T0+7)['id'], first['id'])
+        cid = p.current['clip']
+        audio.played(dict(id=cid, state='start', session='new', duration=4), now=T0+9)
+        audio.played(dict(id=cid, state='end', session='new', duration=4, played=4, audible=True), now=T0+13)
+        self.assertIsNone(p.step(T0+14))
+        self.assertEqual(p.state['completed'], [first['id']])
+
     def test_early_service_publishes_current_beat_before_agents_and_restores_on_end(self):
         p = Player(self.run, self.old, self.audio())
         self.assertTrue(p.step(T0)["active"], "preparing card needs no world snapshot")
@@ -480,7 +522,9 @@ class RecapTest(unittest.TestCase):
         self.assertEqual(p.step(T0 + 4)["id"], first["id"], "page reload receives the current beat")
         self.assertEqual(p.public["elapsed"], 1)
         p.finish("interrupted")
-        self.assertIsNone(p.step(T0 + 5))
+        self.assertEqual(p.step(T0 + 5)['id'], first['id'])
+        p.audio.skipped.add(p.current['clip'])  # page acknowledged its stop/output drain
+        self.assertIsNone(p.step(T0 + 6))
         self.assertIsNone(Player(self.run, self.old, self.audio()).step(T0 + 6))
 
     def test_exhaustion_holds_cards_without_repeating(self):
@@ -535,7 +579,7 @@ class RecapTest(unittest.TestCase):
         audio.played({"id": clip["id"], "state": "end", "duration": 6, "played": 6, "audible": True})
         records = list(R.rows(self.run / "audio-played.jsonl"))
         self.assertEqual(records[-1][1]["recap"], tag)
-        self.assertTrue(records[-1][1]["completed"])
+        self.assertFalse(records[-1][1]["completed"], "cancelled callback cannot complete a beat")
 
     def test_segments_and_casters_yield(self):
         segs = Segments()
