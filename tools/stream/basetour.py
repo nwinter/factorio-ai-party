@@ -1,4 +1,11 @@
-"""Base tours (d26 batch222 CD, viewer Caleb d25 09:56-11:02, site:4914 "a base cam ... does a tour of the base by
+"""Quiet base scenes and ship-detail memory (batch406).
+
+choose(Tours, Memory, now) ranks fresh snapshot facts and unseen chart regions at scene boundaries.
+It rotates straight chart-checked compositions and remembers only confirmed on-air scenes. Trains consumes
+existing journal replies; it never dispatches a game read. The original plan/get API below remains available
+for callers needing a single static overview.
+
+Base tours (d26 batch222 CD, viewer Caleb d25 09:56-11:02, site:4914 "a base cam ... does a tour of the base by
 panning around", site:4915 "base tour cams for all planets"): a slow pan over one planet's factory, planned from the
 site's chart (chart.py: runs/RUN/chart/out/SURFACE/*.labels.json, a label at each machine with a recipe, and
 out/index.json), shot as the operator's POST /look moves were that morning (lookcam.py: a fixed spot with a camera move
@@ -439,9 +446,10 @@ class Trains:
             old = self.rows.get(key)
             if old and t <= old['t']:
                 continue
+            preposition = 'at' if tr.get('at_stop') or tr.get('state') == 'wait_station' else 'to'
             self.rows[key] = dict(id=key, number=tr['id'], surface=surface, position=p, t=t,
                                   speed=tr.get('speed_kmh') or 0, stop=stop, cargo=cargo,
-                                  label=f"Train {tr['id']} · " + (f"to {stop}" if stop else 'cargo route') +
+                                  label=f"Train {tr['id']} · " + (f"{preposition} {stop}" if stop else 'cargo route') +
                                         (f" · {cargo[:90]}" if cargo else ' · scheduled service'))
         self.rows = dict(sorted(self.rows.items(), key=lambda kv: kv[1]['t'])[-64:])
 
