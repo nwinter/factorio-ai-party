@@ -502,6 +502,8 @@ class RecapTest(unittest.TestCase):
         svc.step(T0 + 10800)
         self.assertEqual(calls[-1][1:3], (T0 + 10800, False))
         self.prepare()
+        # This scheduling fixture has prepared media; no background-thread timing dependency.
+        svc.media_ready.add(self.old)
         svc.step(T0 + 14400 - 35)
         self.assertEqual(svc.public["phase"], "transition")
         svc.step(T0 + 14400)
