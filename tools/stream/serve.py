@@ -396,7 +396,7 @@ class AudioHub:
                 self.loads.append(now)
                 self._log({"t": round(now, 2), "state": "load"})
                 for k, v in list(self.playing.items()):
-                    self._end(k, v, "reload", now)
+                    self._end(k, v, "held" if k in self.held else "reload", now)
                     self.playing.pop(k)
                     if v.get("recap"):
                         self.skipped.add(k)

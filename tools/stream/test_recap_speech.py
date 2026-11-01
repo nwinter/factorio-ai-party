@@ -185,6 +185,23 @@ class RecapSpeechTest(unittest.TestCase):
                 caster.Feed('http://fixture.invalid', receive).run()
         self.assertEqual(snapshots, [{'agents': [], 'shift_recap': {'active': True}}])
 
+    def test_reload_before_hold_receipt_keeps_caster_from_generating_duplicate(self):
+        memory = PlaybackMemory()
+        gid = memory.generated([('Rook', 'Still relevant')], {}, {}, 'writer')
+        c = self.push('caster')
+        memory.queued(gid, 0, c)
+        self.report(c, 'start', duration=4)
+        self.audio.acquire_speech('recap')
+        # New page load beats the old page's hold receipt. The service still owns the retry.
+        self.report(None, 'load')
+        memory.receipts(self.audio.status())
+        self.assertEqual(memory.groups[gid]['lines'][0]['state'], 'queued')
+        self.assertIsNone(memory.unfinished())
+        self.audio.release_speech('recap')
+        self.report(c, 'start', duration=4)
+        self.report(c, 'end', played=4, duration=4, audible=True)
+        self.assertEqual(memory.receipts(self.audio.status()), [(gid, 0)])
+
 
 if __name__ == '__main__':
     unittest.main()
