@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Recap speech ownership and audible receipts. Offline; no game, TTS, capture or live service."""
 import tempfile
+import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +10,7 @@ from serve import AudioHub
 from playback_memory import PlaybackMemory
 import hourly
 import tour
+import caster
 
 
 class RecapSpeechTest(unittest.TestCase):
@@ -166,6 +168,22 @@ class RecapSpeechTest(unittest.TestCase):
         self.audio.release_speech('two')
         self.assertEqual(c['hold_extension'], 120)
         self.assertIn(c['id'], self.audio.skipped)
+
+    def test_caster_ignores_sse_clock_before_recap_snapshot(self):
+        # Shift117's opening was written with team_size=0: the clock handshake was read as a snapshot.
+        stream = io.BytesIO(b'event: clock\ndata: {"t": 1000}\n\n'
+                            b'data: {"agents": [], "shift_recap": {"active": true}}\n\n')
+        snapshots = []
+        class Stop(BaseException):
+            pass
+        def receive(snapshot):
+            snapshots.append(snapshot)
+            if 'agents' in snapshot:
+                raise Stop()
+        with patch.object(caster.urllib.request, 'urlopen', return_value=stream):
+            with self.assertRaises(Stop):
+                caster.Feed('http://fixture.invalid', receive).run()
+        self.assertEqual(snapshots, [{'agents': [], 'shift_recap': {'active': True}}])
 
 
 if __name__ == '__main__':

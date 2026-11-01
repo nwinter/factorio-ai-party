@@ -224,5 +224,18 @@ for (const loading of [false, true]) {
   check(P.maxActive === 1, "exclusive recap and resumed lines use one source at a time");
   check(!P.reports.some(r => r.id === op.id && r.attempt === 0 && r.state === "end"), "held attempt never counts as heard");
 }
+for (const phase of ["loading", "scheduled", "playing"]) {
+  const P = page();
+  P.send("EARLIER_TOUR", 3, { ...seg("tour", 1, 2), at: now() + (phase === "scheduled" ? 2 : 0.05),
+    delay: phase === "loading" ? 700 : 0 });
+  await wait(150);
+  P.event({ speech_owner: "recap", speech_revision: 1, speech_epoch: "service" });
+  P.send("RECAP", 0.2, { ...seg("recap", 1, 2), at: now() + 0.1 });
+  await wait(850);
+  const tour = P.played("EARLIER_TOUR");
+  check(phase === "playing" ? tour.length === 1 && tour[0].end <= P.played("RECAP")[0].start : tour.length === 0,
+    `recap stops a timed tour while ${phase}`);
+  check(P.maxActive === 1, `no timed overlap when recap takes ${phase} tour speech`);
+}
 console.log(fails.length ? `FAILED: ${fails.length}` : "segment_audio_selftest: all ok");
 process.exit(fails.length ? 1 : 0);
