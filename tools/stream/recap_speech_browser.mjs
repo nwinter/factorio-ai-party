@@ -153,8 +153,9 @@ try {
       if (scenario === 'interruption') {
         await sleep(3000);
         await command({ action: 'interrupt' });
-      } else if (scenario === 'phase') {
+      } else if (scenario === 'phase' || scenario === 'phase-reload') {
         await sleep(3000); await command({ action: 'agents-started' });
+        if (scenario === 'phase-reload') { await save('before-reload'); await page.reload(); }
       } else if (scenario === 'reload') {
         await sleep(3000); await save('before-reload'); await page.reload();
       } else if (scenario === 'reconnect') {
@@ -177,10 +178,10 @@ try {
       }
       assert(!log.some(r => r.id === probes[4].id && r.state === 'start'), 'stale banter started');
       if (scenario !== 'interruption') assert.equal(new Set(completed.map(r => r.recap.line)).size,
-        scenario === 'phase' ? 1 : 2, 'whole recap lines before phase boundary');
+        scenario.startsWith('phase') ? 1 : 2, 'whole recap lines before phase boundary');
       else assert.equal(completed.length, 0, 'interrupted recap counted as heard');
       if (scenario === 'entry-loading') assert(!log.some(r => r.id === before.id && r.state === 'start' && r.t < release));
-      if (scenario === 'reload') assert(ended.some(r => r.state === 'reload' && !r.completed));
+      if (scenario.includes('reload')) assert(ended.some(r => r.state === 'reload' && !r.completed));
       if (scenario === 'reconnect') assert(ended.some(r => r.state === 'held' && !r.completed));
       assert.equal(errors.length, 0, errors.join('\n'));
       if (scenario === 'entry-playing')
