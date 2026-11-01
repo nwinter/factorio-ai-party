@@ -629,6 +629,7 @@ class Tour:
             self.agent_gaps = False
         self.parts, self.part = 0, 0
         self.aired_ids = []  # the stops whose narration played to its end (hourly.py resumes the others)
+        self.narrated = {}  # clip -> stop; wall time/start receipts never establish heard narration
 
     def record(self, **kw):
         t = self.now()
@@ -817,6 +818,16 @@ class Tour:
             row.update(ended=round(ended, 2), seconds=round(ended - row["cut"], 1), cut_short=self.stopped)
             self.record(**row)
 
+    def collect_heard(self):
+        try:
+            receipts = self.svc.audio_status().get("receipts") or []
+        except Exception:
+            return
+        for r in receipts:
+            stop = self.narrated.get(r.get("id"))
+            if stop and r.get("completed") and r.get("audible") and stop not in self.aired_ids:
+                self.aired_ids.append(stop)
+
     def run(self, rows):
         plan, _ = timeline(rows, self.manifest, self.out, self.lead, self.tail, self.videos)
         lengths = {p[0]["id"]: p[1] for p in plan}
@@ -877,6 +888,8 @@ class Tour:
                     continue  # the next stop takes this cut
                 subbed = self.overlay(s, r, cut, end, length, clip, narr_at)
                 cid = self.narrate(s, clip, narr_at, caption=not subbed) if clip else None
+                if cid:
+                    self.narrated[cid] = s["id"]
                 if clip and not cid:
                     log(f"[tour] {s['id']}: the service refused the narration clip")
                 if not self.wait_until(cut):
@@ -906,13 +919,16 @@ class Tour:
                         end += gap
                         self.cur["need_until"] = end + LOOK_SPARE_S
                 self.pending = self.row(s, cut, ask, t_air, narr_at, t_narr, clip, gap, who)
-                self.aired_ids.append(s["id"])
+                self.collect_heard()
+                if not clip:
+                    self.aired_ids.append(s["id"])
                 aired += 1
                 left -= length
                 T = end
             else:
                 self.wait_until(T)
         finally:
+            self.collect_heard()
             self.flush(self.now())
             self.finish()
             self.record(event="end", aired=aired, skipped=skipped, stopped=self.stopped, drift_s=self.drift,

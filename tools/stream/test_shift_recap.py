@@ -194,7 +194,8 @@ class RecapTest(unittest.TestCase):
         player = Player(self.run, self.old, audio, tts_config=voices.audio_config(snapshot))
         player.state["completed"] = [old["lines"][0]["id"]]
         self.assertEqual(player.step(T0 + 14401)["title"], "Shift change")
-        self.assertFalse(audio.clips, "old prepared audio must not play during replacement")
+        self.assertFalse([m for _, _, m in audio.clips.values() if m.get("channel") != "control"],
+                         "old prepared audio must not play during replacement")
         new = R.prepare(self.old, self.out, T0 + 14400, tts=snapshot, final=True)
         for field in ("evidence", "review", "through", "final"):
             self.assertEqual(old[field], new[field], field)
@@ -488,7 +489,8 @@ class RecapTest(unittest.TestCase):
         p.state["completed"] = [l["id"] for l in m["lines"]]
         self.assertTrue(p.step(T0)["holding"])
         self.assertIsNone(p.current)
-        self.assertEqual(len(p.audio.clips), 0)
+        self.assertFalse([m for _, _, m in p.audio.clips.values() if m.get("channel") != "control"])
+        self.assertIsNone(p.audio.speech_owner)
         p = Player(self.old, self.old, self.audio(), "transition")
         p.state["completed"] = [l["id"] for l in m["transition"]]
         self.assertIsNone(p.step(T0))
@@ -530,7 +532,7 @@ class RecapTest(unittest.TestCase):
         clip = audio.push({"channel": "caster", "speaker": "Vale", "duration": 6, "recap": tag}, b"x", "audio/mpeg")
         audio.played({"id": clip["id"], "state": "start", "duration": 6})
         self.assertTrue(audio.interrupt(clip["id"]))
-        audio.played({"id": clip["id"], "state": "end", "duration": 6, "played": 6})
+        audio.played({"id": clip["id"], "state": "end", "duration": 6, "played": 6, "audible": True})
         records = list(R.rows(self.run / "audio-played.jsonl"))
         self.assertEqual(records[-1][1]["recap"], tag)
         self.assertTrue(records[-1][1]["completed"])

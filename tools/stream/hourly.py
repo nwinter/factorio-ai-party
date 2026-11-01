@@ -890,6 +890,9 @@ def blocked(s, now):
     """Why a piece cannot go on air now, or None: a fresh attack, loss or death, a battle or an enemy group on air,
     the camera held by someone (a look, a follow, a platform hold, the host view), a tour or a replay on air."""
     s = s or {}
+    recap = s.get("shift_recap") or {}
+    if s.get("speech_owner") or (recap.get("active") and not recap.get("holding")):
+        return "shift recap owns speech"
     for a in s.get("alerts") or []:
         if isinstance(a, dict) and a.get("kind") in URGENT_KINDS and now - float(a.get("t") or 0) < URGENT_S:
             return f"a fresh {a['kind']} ({str(a.get('text') or '')[:80]})"
@@ -975,6 +978,9 @@ class Airing:
         except Exception:
             return None
         lk = st.get("look") or {}
+        recap = st.get("shift_recap") or {}
+        if st.get("speech_owner") or (recap.get("active") and not recap.get("holding")):
+            return "shift recap owns speech"
         if lk and lk.get("id") not in self.ours:
             return f"a look by {lk.get('by') or 'someone'} took the camera"
         if st.get("hostview"):
