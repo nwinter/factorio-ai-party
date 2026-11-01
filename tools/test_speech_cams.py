@@ -33,7 +33,7 @@ def speech_cases():
     ids = [clip(a), clip(a)]
     for i in ids:
         a.played({"id": i, "state": "start"}, now=t0 + 1)
-        a.played({"id": i, "state": "end", "played": 5.0, "duration": 5.0}, now=t0 + 6)
+        a.played({"id": i, "state": "end", "played": 5.0, "duration": 5.0, "audible": True}, now=t0 + 6)
     sp = a.speech(now=t0 + 70)
     assert sp["whole_30m"] == 2 and sp["due_15m"] == 2 and sp["due_15m_whole"] == 2, sp
     line, bad = overlay_check.speech({"speech": sp, "now": t0 + 70})
@@ -43,7 +43,7 @@ def speech_cases():
     x, y = clip(b), clip(b)
     for i, played in ((x, 3.0), (y, 4.6)):
         b.played({"id": i, "state": "start"}, now=t0 + 1)
-        b.played({"id": i, "state": "end", "played": played, "duration": 5.0}, now=t0 + 6)
+        b.played({"id": i, "state": "end", "played": played, "duration": 5.0, "audible": True}, now=t0 + 6)
     sp = b.speech(now=t0 + 70)
     assert sp["whole_30m"] == 1 and sp["due_15m_whole"] == 1, sp
     # all expiring in the page's queue (skip, expired): bad

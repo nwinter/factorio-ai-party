@@ -45,6 +45,8 @@ class Player:
         self.mtime = None
         self.synced = False
         self.tts_config = tts_config
+        if not self.state.get("ended"):
+            self.audio.acquire_speech(self.segment)
 
     def persist(self):
         recap.save_json(self.path, self.state)
@@ -56,6 +58,7 @@ class Player:
             self.audio.interrupt(self.current["clip"])
         self.audio.stop_segment(self.segment)
         self.audio.release(self.segment)
+        self.audio.release_speech(self.segment)
         self.state.update(ended=True, reason=reason)
         self.persist()
         self.current, self.public = None, None
@@ -131,10 +134,15 @@ class Player:
                                            "recap": {"source": self.source.name, "phase": self.phase, "line": line["id"]}},
                                           audio, line["ctype"])
                     self.current = {"clip": meta["id"], "line": line, "deadline": at + line["duration"] + 10, "at": at}
-        if not line and self.phase == "transition":
-            self.finish("transition completed")
-            return None
-        # Keep the receipt/audio hold until startup ends; the page restores once narration is exhausted.
+        if not line:
+            # The final audible receipt, not a timer or agent startup, returns speech.
+            if self.audio.speech_owner == self.segment:
+                self.audio.release(self.segment)
+                self.audio.release_speech(self.segment)
+            if self.phase == "transition":
+                self.finish("transition completed")
+                return None
+        # Keep the startup card state until agents start; speech has already been released on exhaustion.
         held = line or (lines[-1] if lines else {})
         self.public = visuals.public(manifest, held, self.phase, holding=not bool(line),
                                      elapsed=now - self.current["at"] if self.current else 0)
