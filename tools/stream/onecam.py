@@ -3703,7 +3703,8 @@ class OneCam(Director):
         plan = basetour.choose(self.tours, self.tour_memory, now, self.cfg["view_frac"])
         if plan:
             surface = plan["surface"]
-            return {"agents": [], "subject": "@tour", "position": dict(plan["position"]), "surface": surface,
+            return {"agents": [plan["scene"]["agent"]] if plan["scene"].get("agent") else [],
+                    "subject": "@tour", "position": dict(plan["position"]), "surface": surface,
                     "zoom": plan["zoom"], "exact_zoom": True, "move": plan["move"], "moved": now,
                     "until": now + self.cfg["ready_s"] + plan["seconds"],
                     "look": {"label": plan["label"], "by": "director", "surface": surface, "position": dict(plan["position"])},

@@ -210,7 +210,7 @@ class Memory:
         self.active_repairs = set()
         self.production = {}
 
-    def note(self, surface, p, why, identity, t, now):
+    def note(self, surface, p, why, identity, t, now, agent=None):
         p = position(p)
         if not surface or not p or type(t) not in (int, float) or not 0 <= now - t <= self.KEEP:
             return
@@ -219,7 +219,8 @@ class Memory:
         if old and old['identity'] == str(identity):
             return
         if old is None or t > old['t']:
-            self.events[key] = dict(surface=surface, position=p, why=why, identity=str(identity), t=t, region=key)
+            self.events[key] = dict(surface=surface, position=p, why=why + (f' by {agent}' if agent else ''),
+                                    identity=str(identity), t=t, region=key, agent=agent)
 
     def observe(self, snapshot, now):
         ships = {p.get('name'): p for p in (snapshot.get('space') or {}).get('platforms') or []}
@@ -230,18 +231,18 @@ class Memory:
             view = (ships.get(w.get('platform')) or {}).get('view') or {}
             self.note(view.get('surface') or w.get('surface'), w.get('position') or view.get('hub'),
                       'recent ' + str(w.get('verb') or w.get('action') or 'work'),
-                      w.get('id') or (w.get('agent'), w.get('t'), w.get('action')), w.get('t'), now)
+                      w.get('id') or (w.get('agent'), w.get('t'), w.get('action')), w.get('t'), now, w.get('agent'))
         repairing = set()
         for a in snapshot.get('agents') or []:
             w = a.get('did') or {}
             view = (ships.get(w.get('platform')) or {}).get('view') or {}
             self.note(view.get('surface') or w.get('surface'), w.get('position') or view.get('hub'),
-                      'recent ' + str(w.get('action') or 'building'), (a.get('name'), w.get('t')), w.get('t'), now)
+                      'recent ' + str(w.get('action') or 'building'), (a.get('name'), w.get('t')), w.get('t'), now, a.get('name'))
             if str(a.get('active') or '').split(':')[0] == 'repair':
                 key = (a.get('name'), a.get('surface'))
                 repairing.add(key)
                 if key not in self.active_repairs:
-                    self.note(a.get('surface'), a.get('position'), 'repairs underway', ('repair', key, now), now, now)
+                    self.note(a.get('surface'), a.get('position'), 'repairs underway', ('repair', key, now), now, now, a.get('name'))
         self.active_repairs = repairing
         for f in snapshot.get('fights') or []:
             self.note((f.get('position') or {}).get('surface') or f.get('surface'), f.get('position'),
