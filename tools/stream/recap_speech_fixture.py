@@ -17,12 +17,16 @@ from http.server import ThreadingHTTPServer
 
 from serve import AudioHub, Hub, Model, make_handler
 from shift_recap_air import Player
+from shift_recap_camera import cue
+from test_onecam import world, agent, snap as director_snapshot
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--delay-first', type=float, default=0)
+    ap.add_argument('--backdrop', type=Path)
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     source = a.out / a.source.name
@@ -42,10 +46,25 @@ def main():
     commands = []
     connections = set()
     first = manifest['lines'][0]
+    director, sent = world()
+    scene_key = None
+    dstate = director_snapshot([dict(agent('luna', 0, 0, 5), surface='nauvis')])
+    dstate['space'] = {'platforms': [{'name': 'Asterion', 'view': {
+        'surface': 'platform-16', 'hub': {'x': 10, 'y': 20}}}]}
+    delayed = False
 
     base = make_handler(hub, lambda: [], audio=audio)
 
     class Handler(base):
+        def do_GET(self):
+            nonlocal delayed
+            if self.path == '/__backdrop' and a.backdrop:
+                return self.send(200, a.backdrop.read_bytes(), 'video/mp4')
+            if self.path.startswith('/audio/clip/') and a.delay_first and not delayed:
+                delayed = True
+                time.sleep(a.delay_first)
+            return super().do_GET()
+
         def events(self):
             with lock:
                 connections.add(self.connection)
@@ -69,6 +88,9 @@ def main():
                 elif action == 'interrupt':
                     player.finish('fixture interruption')
                     result = {'interrupted': True}
+                elif action == 'agents-started':
+                    (run / 'start.log').write_text('started: 9/9 agents\n')
+                    result = {'started': True}
                 elif action == 'disconnect':
                     for connection in list(connections):
                         connection.shutdown(socket.SHUT_RDWR)
@@ -94,12 +116,23 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
 
     def tick():
+        nonlocal scene_key
         while True:
             with lock:
                 now = time.time()
                 public = player.step(now) if player else None
+                cameras = director.step(dstate, now, cue(public, dstate, now))
                 snap = model.snapshot(now)
-                snap.update(now=now, shift_recap=public, speech_owner=audio.speech_owner)
+                shot = director.state.get(director.onair) or {}
+                snap.update(now=now, shift_recap=public, speech_owner=audio.speech_owner,
+                            cameras=cameras, fixture_camera=dict(slot=director.onair, subject=shot.get('subject'),
+                                                                segment=shot.get('seg')))
+                key = (json.dumps(public and {k:public.get(k) for k in ('id','clip','holding')}),
+                       json.dumps(snap['fixture_camera']))
+                if key != scene_key:
+                    scene_key = key
+                    with (a.out / 'scenes.jsonl').open('a') as f:
+                        f.write(json.dumps(dict(t=now, recap=public, camera=snap['fixture_camera']))+'\n')
                 hub.publish(snap)
             time.sleep(0.1)
 

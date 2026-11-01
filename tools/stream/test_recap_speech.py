@@ -202,6 +202,29 @@ class RecapSpeechTest(unittest.TestCase):
         self.report(c, 'end', played=4, duration=4, audible=True)
         self.assertEqual(memory.receipts(self.audio.status()), [(gid, 0)])
 
+    def test_reconnect_binds_start_session_and_rejects_other_or_missing_end_owner(self):
+        self.audio.capture_session = None  # service restarted with an already open page
+        line = self.push('caster', recap={'line': 'one'})
+        self.report(line, 'start', duration=4)
+        self.assertEqual(self.audio.capture_session, 'capture')
+        for session in ('preview', None):
+            self.audio.played(dict(id=line['id'], state='end', capture=True, session=session,
+                                   played=4, duration=4, audible=True))
+            self.assertNotIn(line['id'], self.audio.completed)
+        self.now += 40  # delayed device/output or delayed receipt: never expire narration by a timer
+        self.report(None, 'heartbeat')
+        self.assertIn(line['id'], self.audio.playing)
+        self.report(line, 'end', played=4, duration=4, audible=True)
+        self.assertIn(line['id'], self.audio.completed)
+
+    def test_reload_fences_old_session_and_records_the_actual_interrupted_owner(self):
+        line = self.push('caster', recap={'line': 'one'})
+        self.report(line, 'start', duration=4)
+        self.audio.played(dict(state='load', capture=True, session='new'))
+        self.assertEqual(self.audio.receipts[-1]['session'], 'capture')
+        self.report(line, 'end', played=4, duration=4, audible=True)
+        self.assertNotIn(line['id'], self.audio.completed)
+
 
 if __name__ == '__main__':
     unittest.main()

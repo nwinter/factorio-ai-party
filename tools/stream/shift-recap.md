@@ -58,12 +58,22 @@ errors and lost pages retry the unfinished line; successful lines survive restar
 `shift-recap-recap-played.json` and tagged `audio-played.jsonl` receipts. Routine segments
 and the live caster writer yield. The normal page audio queue holds routine speech.
 
-`start.log`'s `started: N/M agents` ends playback, cancels any current clip, releases the
-audio hold and removes the recap card. Partial and zero successful launches use the same
-boundary. The marker is checked twice a second; a mid-shift service restart does not replay
-the recap. If narration finishes first, the page restores the normal layout; the audio hold
-remains without repeating the voices until the marker appears. Agent readiness is controlled by start-team, not by
-the recap. A short startup can end a longer script before all lines air.
+`start.log`'s `started: N/M agents` stops after the current line's audible end receipt,
+then releases speech, image, captions and camera together. Partial and zero successful
+launches use the same boundary. The marker is checked twice a second; a mid-shift service
+restart does not replay the recap. If narration finishes first, the page restores the normal
+layout and releases speech without repeating the voices. Agent readiness remains controlled
+by start-team. A short startup can leave later, unstarted lines unaired.
+
+The capture page that starts an attempt owns its completion, including when reconnecting
+to a restarted service without another page-load report. Wrong-session, short, muted and
+cancelled ends cannot complete a beat. A playing recap has no wall-duration deadline:
+delayed output and delayed end receipts retain its immutable script/media binding and camera.
+WebAudio's output latency drains before the end (or cut) receipt. Reload and reconnect retry
+the same unfinished beat. Explicit interruption cancels speech but retains the scene and
+ownership until the page acknowledges the stop. Phase/deadline changes drain the current line.
+Start/end logs contain the line, clip and capture session; public recap state includes `clip`,
+and director move logs include the segment's source/phase/beat ID in `target.seg`.
 
 The recommended layout puts the recap over the existing OBS game-camera rectangle,
 1208×1032 in landscape and 1032×883 in portrait. The sidebar dims while narration runs;
@@ -77,7 +87,11 @@ contains the cited record time. A nearer still cannot displace such a clip. Stil
 the audit/contact sheet; they never cover gameplay on air. Without a clip, the browser is
 transparent over the existing live camera. A subject cue goes through the normal director's
 segment-camera path using only existing platform views or agent positions. Operator holds
-and urgent shots keep priority; unknown/ambiguous subjects leave the current game on air.
+and urgent shots keep priority; unknown/ambiguous subjects hold the current game camera
+through the receipt, suppressing quiet tours and ordinary directing. Resolved recap shots
+also retain their framing through delayed/retried narration, without routine pans or an
+independent camera hold timeout. The normal `#voice` layer is hidden throughout narration,
+including retries and interruption/output drain.
 The live label names a subject only from acknowledged compositor state. Capture time and
 claim time remain distinct, and live footage explicitly says “earlier shift narrated”.
 

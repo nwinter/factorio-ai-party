@@ -1,5 +1,6 @@
 /* Keep the actual OBS game hole transparent. No scene transforms or camera duplication. */
 body.recap-active #stage > #side{opacity:.32}
+body.recap-active #voice{visibility:hidden!important}
 body.recap-active #stage > .cam > *,body.recap-active #alerts,body.recap-active #segment,
 body.recap-active #research-card,body.recap-active #show,body.recap-active #tourlay{visibility:hidden!important}
 #shift-recap{--sr-x:24px;--sr-y:24px;--sr-w:1208px;--sr-h:1032px;position:absolute;left:var(--sr-x);top:var(--sr-y);width:var(--sr-w);height:var(--sr-h);z-index:1000;box-sizing:border-box;overflow:hidden;background:transparent;color:#fff8ed;text-shadow:0 2px 3px #000;font-family:system-ui,sans-serif;pointer-events:none}

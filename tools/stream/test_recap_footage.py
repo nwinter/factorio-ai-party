@@ -73,7 +73,7 @@ class FootageTest(unittest.TestCase):
         shot=C.cue(recap,snap,100,.65)
         self.assertEqual(shot['surface'],'platform-7');self.assertIn('shift-recap',shot['id'])
         self.assertIsNone(C.cue(dict(recap,holding=True),snap,100))
-        self.assertIsNone(C.cue(recap,{},100))
+        self.assertTrue(C.cue(recap,{},100)['hold_current'])
         recap['subject']={'name':'nauvis','type':'surface'}
         snap['agents']=[{'name':'astra','position':{'x':1,'y':2,'surface':'nauvis'}}]
         self.assertEqual(C.cue(recap,snap,100)['follow'],'astra')
@@ -95,6 +95,18 @@ class FootageTest(unittest.TestCase):
         self.assertTrue(any(b.get('follow')=='sol' for b in sent))
         for now in range(1013,1045):director.step(state,now,C.cue(None,state,now))
         self.assertEqual(director.public(1045)['main']['agents'],['luna'])
+
+    def test_unresolved_recap_keeps_camera_past_quiet_tour_and_hold_deadlines(self):
+        from test_onecam import world, agent, snap
+        director, sent = world()
+        state = snap([dict(agent('luna',0,0,5),surface='nauvis')])
+        for now in range(1000,1003): director.step(state,now)
+        recap={'active':True,'run':'shift1','id':'unknown','phase':'recap'}
+        original = director.state[director.onair].copy()
+        before = len(sent)
+        for now in range(1003,1200): director.step(state,now,C.cue(recap,state,now))
+        self.assertEqual(director.state[director.onair], original)
+        self.assertEqual(len(sent), before)
 
 
 class OBSStub:

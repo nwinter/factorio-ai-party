@@ -44,6 +44,8 @@ class Player:
         self.manifest = None
         self.mtime = None
         self.synced = False
+        self.stop_after_line = None
+        self.stopping = self.state.get("stopping")
         self.tts_config = tts_config
         if not self.state.get("ended"):
             self.audio.acquire_speech(self.segment)
@@ -55,7 +57,13 @@ class Player:
         if self.state.get("ended"):
             return
         if self.current:
-            self.audio.interrupt(self.current["clip"])
+            if not self.stopping:
+                self.stopping = reason
+                self.state["stopping"] = reason
+                self.persist()
+                self.audio.interrupt(self.current["clip"])
+                self.audio.stop_segment(self.segment)
+            return  # hold the scene and ownership until the page acknowledges the audible stop
         self.audio.stop_segment(self.segment)
         self.audio.release(self.segment)
         self.audio.release_speech(self.segment)
@@ -78,12 +86,19 @@ class Player:
                 self.manifest, self.mtime = visuals.bind(manifest), modified
 
     def step(self, now):
+        if self.stopping and not self.current:
+            self.finish(self.stopping)
         if self.phase == "recap" and agents_started(self.run):
-            self.finish("agents started")
+            # Readiness changes the phase, not the audible cursor. Drain the current
+            # line before removing its image/caption and releasing its camera.
+            self.stop_after_line = "agents started"
+        if self.stop_after_line and not self.current:
+            self.finish(self.stop_after_line)
         if self.state.get("ended"):
             self.public = None
             return None
-        self.load()
+        if not self.current:
+            self.load()  # one immutable visual/script binding for the whole audible line
         manifest = self.manifest
         if not manifest:
             self.public = {"active": True, "phase": self.phase, "run": self.source.name,
@@ -95,15 +110,25 @@ class Player:
             with self.audio.cond:
                 complete = cid in self.audio.completed
                 failed = cid in self.audio.skipped
+                playing = cid in self.audio.playing
+            if self.stopping:
+                if complete or failed:
+                    self.current = None
+                    self.finish(self.stopping)
+                    return None
+                return self.public
             if complete:
                 self.state["completed"].append(self.current["line"]["id"])
                 self.persist()
                 self.current = None
-            elif failed or now > self.current["deadline"]:
+            elif failed or (not playing and now > self.current["deadline"]):
                 # A late page, reload, or missing receipt is not completion. Retry this line.
                 self.audio.interrupt(cid)
                 self.current = None
                 self.retry_at = now + 2
+        if self.stop_after_line and not self.current:
+            self.finish(self.stop_after_line)
+            return None
         remaining = [r for r in lines if r["id"] not in self.state["completed"]]
         line = self.current["line"] if self.current else (remaining[0] if remaining else None)
         if line and not self.current and now >= self.retry_at:
@@ -146,6 +171,7 @@ class Player:
         held = line or (lines[-1] if lines else {})
         self.public = visuals.public(manifest, held, self.phase, holding=not bool(line),
                                      elapsed=now - self.current["at"] if self.current else 0)
+        self.public["clip"] = self.current["clip"] if self.current else None
         return self.public
 
 
@@ -238,9 +264,14 @@ class ShiftRecap:
                 self.schedule(self.run, min(now, end), bool(own), now)
         if end and end - recap.TRANSITION_BEFORE <= now < end:
             if not self.player or self.player.phase != "transition":
+                if self.player and not self.player.state.get("ended"):
+                    self.player.stop_after_line = "transition begins"
+                    self.public = self.player.step(now)
+                    if not self.player.state.get("ended"):
+                        return self.public
                 self.player = Player(self.run, self.run, self.audio, "transition", tts_config=self.tts_config)
         elif end and now >= end and self.player and self.player.phase == "transition":
-            self.player.finish("shift deadline")
+            self.player.stop_after_line = "shift deadline"
         # Files only, on the producer thread. Refresh legacy/final recaps too, including a
         # successor's first load. Once a beat airs, keep its immutable prepared assets.
         if not self.busy and now >= self.next_media_check:

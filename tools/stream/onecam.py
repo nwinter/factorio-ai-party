@@ -1958,7 +1958,7 @@ class OneCam(Director):
             self.leave_trio("host view", now)
             self.survey_step(now)  # freeze native motion and its receipt clock behind the host
             return self.public(now)
-        if not self.hold_layout:
+        if not self.hold_layout and not (segment and segment.get("recap")):
             self.refresh_remote(by_name, now)
         # (after host view: a maiden flight waits for it like a segment, and is shown after if still within maiden_late)
         self.watch_maiden(snapshot, now)
@@ -1975,6 +1975,9 @@ class OneCam(Director):
         if self.pending and (self.look or self.plat or (self.fol and
                 (self.state.get(self.pending["slot"]) or {}).get("subject") != self.fol)):
             self.pending = None
+        if segment and segment.get("recap") and self.pending and \
+                (self.state.get(self.pending["slot"]) or {}).get("seg") != segment["id"]:
+            self.pending = None  # a pre-recap routine standby cannot cut underneath its first line
         if self.pending and self.ready(self.pending["slot"], now):
             since = self.pending.get("since")
             self.cut(self.pending["slot"], self.pending["reason"], now)
@@ -2000,6 +2003,15 @@ class OneCam(Director):
             self.on_alert(attack, by_name, scores, now)
         cur = self.state.get(self.onair)
         urgent_hold = cur and cur.get("subject") == "@attack" and now < cur.get("until", 0)
+        if segment and segment.get("recap") and not attack and not urgent_hold and not pinned:
+            if segment.get("hold_current") and cur:
+                # Keep the existing physical shot, including on an unknown subject.
+                # No synthetic follow, camera send or ordinary quiet-tour selection.
+                self.pending = self.trio_pending = None
+                return self.public(now)
+            if cur and cur.get("seg") == segment["id"]:
+                cur["until"] = segment["until"]  # end receipts, never a 120 s timeout
+                return self.public(now)
         if segment and not attack and not urgent_hold and not pinned:  # (a follow or a battle: no segment cuts in)
             pend = self.state.get(self.pending["slot"]) if self.pending else None
             if (not cur or cur.get("seg") != segment["id"]) and not (pend and pend.get("seg") == segment["id"]):
@@ -2020,6 +2032,8 @@ class OneCam(Director):
                         target["position"] = dict(target["position"], y=target["pan"]["y0"])
                 if follow or "position" in target:
                     self.urgent(target, f"segment: {segment['label']}", scores, now)
+                    if segment.get("recap"):
+                        return self.public(now)
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
         if not pinned:

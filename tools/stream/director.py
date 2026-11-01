@@ -304,6 +304,10 @@ class Director:
                 self.last_attack_cut = now
         cur = self.state.get(main) if main else None
         if segment and not attack and not (cur and cur["subject"] == "@attack" and now < cur["until"]):
+            if cur and segment.get("recap") and (segment.get("hold_current") or cur.get("seg") == segment["id"]):
+                if cur.get("subject") == "@segment":
+                    cur["until"] = segment["until"]
+                return self.public(now)
             if not cur or cur.get("seg") != segment["id"]:
                 follow = segment.get("follow")
                 if follow and follow not in by_name:
@@ -546,7 +550,7 @@ class Director:
                     survey.suspend()
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
-                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame") if k in target},
+                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame", "seg") if k in target},
                  "cmd": body, "result": result, "acknowledged": bool(ok), "scores": dict(top)}
         if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
             entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})

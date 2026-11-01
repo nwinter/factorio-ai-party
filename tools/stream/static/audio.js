@@ -229,6 +229,16 @@
     if (i >= 0) { report(queue[i], "skip", { reason: "cancelled" }); queue.splice(i, 1); }
   }
 
+  async function drainOutput(context) {
+    // onended is the render cursor, ahead of the audible device/OBS output.
+    // Keep the scene and speech ownership through the final output buffer.
+    const latency = Math.max(0, Number(context.baseLatency) || 0) +
+      Math.max(0, Number(context.outputLatency) || 0);
+    const until = performance.now() + latency * 1000;
+    while (performance.now() < until)
+      await new Promise(resolve => setTimeout(resolve, Math.min(50, until - performance.now())));
+  }
+
   async function schedule(clip) {
     const x = { clip, done: false, playing: false };
     timed.set(clip.id, x);
@@ -280,6 +290,7 @@
       report(clip, "start", { duration: Math.round(length * 100) / 100,
         started_at: Math.round((svcNow() + (when - c.currentTime)) * 1000) / 1000 });
       await ended;
+      if (clip.recap) await drainOutput(c);
       state = x.held ? "held" : x.done ? "cut" : "end";
     } catch (err) {
       console.error("timed clip failed", clip.id, err);

@@ -159,7 +159,8 @@ class AudioHub:
 
     def _log(self, row):
         if row.get("id"):
-            row.update(page="main", session=self.capture_session, capture=self.capture_receipt)
+            row.setdefault("session", self.capture_session)
+            row.update(page="main", capture=self.capture_receipt)
             self.receipts.append(dict(row))
         if not self.log_path:
             return
@@ -183,7 +184,8 @@ class AudioHub:
         row = {"t": round(now, 2), "id": cid, "ended": True, "state": state, "channel": v.get("channel"), "speaker": v.get("speaker"),
                "agent": v.get("agent"), "played": round(float(played), 2) if played is not None else None,
                "duration": round(float(length), 2) if length is not None else None,
-               "early": bool(early), "reason": (reason or state) if early else None}
+               "early": bool(early), "reason": (reason or state) if early else None,
+               "session": v.get("session", self.capture_session)}
         row["audible"] = audible is True
         row["completed"] = state == "end" and not early and audible is True and measured and bool(length) and played > 0
         if v.get("recap"):
@@ -389,34 +391,50 @@ class AudioHub:
             session = report.get("session")
             if session and st != "load" and self.capture_session not in (None, session):
                 return
+            if st != "load" and cid in self.cancelled:
+                # A cancelled source can still deliver its queued end callback.
+                # It may acknowledge the stop, but must never complete the beat.
+                if st == "end":
+                    st = "cut"
             if st == "load" and session:
                 self.capture_session = session
             self.capture_receipt = report.get("capture") is True
             self.last_report = now
             if st == "load":  # the page (re)loaded: what it was playing ended there
                 self.loads.append(now)
-                self._log({"t": round(now, 2), "state": "load"})
+                self._log({"t": round(now, 2), "state": "load", "session": session,
+                           "page": "main", "capture": self.capture_receipt})
                 for k, v in list(self.playing.items()):
                     self._end(k, v, "held" if k in self.held else "reload", now)
                     self.playing.pop(k)
                     if v.get("recap"):
                         self.skipped.add(k)
+                for k in self.cancelled:
+                    if self.clips.get(k, (None, None, {}))[2].get("recap"):
+                        self.skipped.add(k)  # a reload also discards a cancelled, still-loading source
             elif cid in self.clips and st == "start" and cid not in self.done:
+                # An SSE reconnect after a service restart sends no load receipt.
+                # Bind ownership to the page that actually starts this attempt.
+                if session:
+                    self.capture_session = session
                 at = num("started_at")  # (CK1) the moment the page started it, on the service's clock
                 self.playing[cid] = {"started": at if at and abs(at - now) < 30 else now, **self.clips[cid][2],
-                                     "audio_s": num("duration")}
+                                     "audio_s": num("duration"), "session": session}
                 self.done.add(cid)
                 self._log({"t": round(now, 2), "id": cid, "state": "start",
                            "started_at": round(self.playing[cid]["started"], 3),
-                           "channel": self.clips[cid][2].get("channel"), "at": self.clips[cid][2].get("at")})
+                           "channel": meta.get("channel"), "at": meta.get("at"), "recap": meta.get("recap")})
             elif st in ("end", "error", "cut", "held"):
+                playing = self.playing.get(cid)
+                if playing and playing.get("session") != session:
+                    return
                 self.done.add(cid)
                 v = self.playing.pop(cid, None)
                 if v:
                     self._end(cid, v, st, now, num("played"), num("duration"), audible=report.get("audible"))
                 elif st == "error" and cid in self.clips and cid not in self.completed:
                     self._end(cid, dict(self.clips[cid][2], started=now), st, now, 0, num("duration"))
-                if st == "held" and meta.get("recap"):
+                if meta.get("recap") and cid not in self.completed:
                     self.skipped.add(cid)  # the player retries; never resume a recap as ordinary speech
                 elif st == "held" and cid in self.clips and cid not in self.completed and cid not in self.cancelled:
                     self.held.setdefault(cid, now)
@@ -440,7 +458,7 @@ class AudioHub:
                 self._log(row)
             # a page that goes away mid-clip never reports the end; forget clips well past their length
             for k, v in list(self.playing.items()):
-                if k not in self.held and now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
+                if not v.get("recap") and k not in self.held and now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
                     self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 

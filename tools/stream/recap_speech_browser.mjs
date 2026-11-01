@@ -22,16 +22,20 @@ async function until(fn, label, seconds = 65) {
   throw new Error('timeout: ' + label);
 }
 
-async function instrument(page) {
-  await page.addInitScript(() => {
+async function instrument(page, outputDelay) {
+  await page.addInitScript(({ outputDelay }) => {
     const Native = window.AudioContext;
     const audit = window.audioAudit = { maxSources: 0, peak: 0, samples: [], receipts: [] };
     const contexts = [];
     window.AudioContext = class extends Native {
+      get outputLatency() { return (super.outputLatency || 0) + outputDelay; }
       constructor(...args) {
         super(...args);
         const mix = super.createGain(), dest = this.createMediaStreamDestination(), analyser = this.createAnalyser();
         mix.connect(dest); mix.connect(analyser);
+        const delayed = this.createDelay(10);
+        delayed.delayTime.value = outputDelay;
+        delayed.connect(mix); delayed.connect(this.destination);
         const recorder = new MediaRecorder(dest.stream), chunks = [];
         recorder.ondataavailable = e => chunks.push(e.data);
         recorder.start();
@@ -40,7 +44,7 @@ async function instrument(page) {
         const gain = this.createGain.bind(this), source = this.createBufferSource.bind(this);
         this.createGain = () => {
           const g = gain(), connect = g.connect.bind(g);
-          g.connect = destination => { if (destination === this.destination) connect(mix); return connect(destination); };
+          g.connect = destination => destination === this.destination ? connect(delayed) : connect(destination);
           return g;
         };
         this.createBufferSource = () => {
@@ -58,7 +62,11 @@ async function instrument(page) {
           const active = sources.filter(s => !s.ended && s.when <= this.currentTime && s.gain.gain.value > 0).length;
           audit.maxSources = Math.max(audit.maxSources, active);
           audit.peak = Math.max(audit.peak, peak);
-          audit.samples.push({ t: Date.now() / 1000, active, peak });
+          const recap = window.pogState?.shift_recap, voice = document.getElementById('voice');
+          audit.samples.push({ t: Date.now() / 1000, active, peak, beat: recap?.id,
+            clip: recap?.clip, recap: !!(recap?.active && !recap?.holding),
+            camera: window.pogState?.fixture_camera,
+            normalCaption: voice ? getComputedStyle(voice).visibility : null });
         }, 20);
       }
     };
@@ -77,15 +85,17 @@ async function instrument(page) {
       }
       return { audit, recordings };
     };
-  });
+  }, { outputDelay });
 }
 
 const summary = [];
 try {
-  for (const scenario of (process.env.POG_TEST_SCENARIOS || 'entry-playing,entry-loading,interruption,reload,reconnect').split(',')) {
+  for (const scenario of (process.env.POG_TEST_SCENARIOS || 'entry-playing,entry-loading,delayed,phase,interruption,reload,reconnect').split(',')) {
     const dir = path.join(out, scenario);
     const child = spawn(process.env.POG_TEST_PYTHON || 'agent-python', [path.join(here, 'recap_speech_fixture.py'),
-      '--source', source, '--out', dir], { stdio: ['ignore', 'pipe', 'pipe'] });
+      '--source', source, '--out', dir, ...(scenario === 'delayed' ? ['--delay-first', '8'] : []),
+      ...(process.env.POG_TEST_BACKDROP ? ['--backdrop', process.env.POG_TEST_BACKDROP] : [])],
+      { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', b => { stderr += b; });
     const url = await new Promise((resolve, reject) => {
@@ -93,10 +103,18 @@ try {
       child.stdout.on('data', b => { data += b; if (data.includes('\n')) resolve(JSON.parse(data.split('\n')[0]).url); });
       child.on('exit', code => reject(new Error('fixture exit ' + code + ': ' + stderr)));
     });
-    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 },
+      recordVideo: { dir, size: { width: 960, height: 540 } } });
     const page = await context.newPage(), errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    await instrument(page);
+    await instrument(page, 2); // actual DelayNode before both the recorder and speakers
+    if (process.env.POG_TEST_BACKDROP) await page.addInitScript(() => {
+      document.addEventListener('DOMContentLoaded', () => {
+        const v = document.createElement('video'); v.src='/__backdrop'; v.muted=true; v.autoplay=true; v.loop=true;
+        v.style='position:absolute;left:24px;top:24px;width:1208px;height:1032px;z-index:-1;object-fit:cover';
+        document.getElementById('stage').prepend(v);
+      });
+    });
     const command = async body => (await fetch(url + '/__fixture', { method: 'POST', body: JSON.stringify(body) })).json();
     const status = async () => (await fetch(url + '/audio/status')).json();
     const rows = () => fs.existsSync(path.join(dir, 'audio-played.jsonl'))
@@ -129,14 +147,18 @@ try {
                           { channel: 'narrator', timed: true }, { channel: 'caster', rank: 'banter', ttl: 1 }])
         probes.push(await command({ action: 'push', ...body }));
       await until(async () => (await status()).playing.some(r => !probes.some(p => p.id === r.id) && r.id !== before?.id), 'recap playback');
+      await page.screenshot({ path: path.join(dir, 'during.png') });
       if (scenario === 'entry-playing')
         await run(path.join(here, 'overlay_shot.sh'), [url + '/?preview&mute', path.join(dir, 'entry.png'), '--wait-ms', '1200']);
       if (scenario === 'interruption') {
-        await sleep(600);
+        await sleep(3000);
         await command({ action: 'interrupt' });
+      } else if (scenario === 'phase') {
+        await sleep(3000); await command({ action: 'agents-started' });
       } else if (scenario === 'reload') {
-        await sleep(600); await save('before-reload'); await page.reload();
+        await sleep(3000); await save('before-reload'); await page.reload();
       } else if (scenario === 'reconnect') {
+        await sleep(3000);
         // Closing the actual SSE socket proves reconnect; Chromium's offline emulation can leave SSE open.
         const before = (await (await fetch(url + '/overlay/status')).json()).pages.main.connects;
         assert((await command({ action: 'disconnect' })).disconnected > 0);
@@ -154,7 +176,8 @@ try {
         assert(log.find(r => r.id === p.id && r.state === 'start').t >= release, 'foreign start before release');
       }
       assert(!log.some(r => r.id === probes[4].id && r.state === 'start'), 'stale banter started');
-      if (scenario !== 'interruption') assert.equal(new Set(completed.map(r => r.recap.line)).size, 2, 'both whole recap lines');
+      if (scenario !== 'interruption') assert.equal(new Set(completed.map(r => r.recap.line)).size,
+        scenario === 'phase' ? 1 : 2, 'whole recap lines before phase boundary');
       else assert.equal(completed.length, 0, 'interrupted recap counted as heard');
       if (scenario === 'entry-loading') assert(!log.some(r => r.id === before.id && r.state === 'start' && r.t < release));
       if (scenario === 'reload') assert(ended.some(r => r.state === 'reload' && !r.completed));
@@ -164,8 +187,21 @@ try {
         await run(path.join(here, 'overlay_shot.sh'), [url + '/?preview&mute', path.join(dir, 'end.png'), '--wait-ms', '1200']);
       await page.screenshot({ path: path.join(dir, 'end-browser.png') });
       const audit = await save('output');
+      assert(audit.samples.filter(s => s.recap).every(s => s.normalCaption === 'hidden'), 'normal caption leaked');
+      const scenes = fs.readFileSync(path.join(dir, 'scenes.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+      const beats = [...new Set(completed.map(r => r.recap.line))];
+      for (const beat of beats) {
+        const end = completed.find(r => r.recap.line === beat);
+        const start = log.find(r => r.id === end.id && r.state === 'start');
+        const samples = audit.samples.filter(s => s.t > start.t + .3 && s.t < end.t - .1);
+        assert(samples.length > 0, 'missing playback samples');
+        assert(samples.every(s => s.beat === beat && s.recap), 'scene advanced before audible receipt');
+        assert.equal(new Set(samples.map(s => JSON.stringify(s.camera))).size, 1, 'camera changed during narration');
+        assert(end.t - start.t >= end.duration + 1.8, 'receipt preceded delayed output drain');
+      }
+      assert(scenes.length > 0);
       summary.push({ scenario, url, started, release, completed: completed.length, maxSources: audit.maxSources,
-                     peak: audit.peak, errors, pass: true });
+                     peak: audit.peak, outputDelay: 2, scenes: scenes.length, errors, pass: true });
       console.log(JSON.stringify(summary.at(-1)));
       fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2));
     } finally {
