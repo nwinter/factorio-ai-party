@@ -453,6 +453,6 @@
   {"t": "2026-11-01 07:39", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-11-01 07:39"},
   {"t": "2026-11-01 08:15", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-11-01 08:15"},
   {"t": "2026-11-01 09:10", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-11-01 09:10"},
-  {"t": "2026-11-01 09:11", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-11-01 09:11", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-11-01 09:11"}
  ]
 }
