@@ -1,32 +1,29 @@
-/* Sibling of cameras/sidebar, covering the complete capture. Underlying layout keeps updating. */
-body.recap-active #stage > :not(#shift-recap){visibility:hidden!important}
-#shift-recap{position:absolute;inset:0;z-index:1000;box-sizing:border-box;overflow:hidden;background:#10212b;color:#f4f0e6;text-shadow:none;border-top:6px solid #e5bb76;font-family:system-ui,sans-serif}
+/* Keep the actual OBS game hole transparent. No scene transforms or camera duplication. */
+body.recap-active #stage > #side{opacity:.32}
+body.recap-active #stage > .cam > *,body.recap-active #alerts,body.recap-active #segment,
+body.recap-active #research-card,body.recap-active #show,body.recap-active #tourlay{visibility:hidden!important}
+#shift-recap{--sr-x:24px;--sr-y:24px;--sr-w:1208px;--sr-h:1032px;position:absolute;left:var(--sr-x);top:var(--sr-y);width:var(--sr-w);height:var(--sr-h);z-index:1000;box-sizing:border-box;overflow:hidden;background:transparent;color:#fff8ed;text-shadow:0 2px 3px #000;font-family:system-ui,sans-serif;pointer-events:none}
 #shift-recap[hidden]{display:none!important}
-.sr-head{position:absolute;left:40px;right:40px;top:24px;z-index:2}
-.sr-kicker{font-size:18px;font-weight:700;letter-spacing:2px;color:#e5bb76;text-transform:uppercase}
-.sr-title{font-size:42px;line-height:1.12;font-weight:700;margin:10px 0 0;overflow-wrap:anywhere}
-.sr-media{position:absolute;inset:120px 32px 292px;margin:0;background:#09151c;border:1px solid #31434c;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.sr-picture{display:block;width:100%;height:100%;object-fit:cover;min-width:0;min-height:0}
-.sr-caption{position:absolute;z-index:2;bottom:26px;left:40px;right:40px;box-sizing:border-box;max-height:246px;padding:16px 22px;background:#10212b;border-left:4px solid #e5bb76;overflow:hidden}
-.sr-meta{display:flex;align-items:baseline;gap:24px;font-size:22px;line-height:1.3;margin-bottom:10px}
-.sr-speaker{color:#e5bb76;font-weight:750}
-.sr-time{color:#c1d1d8}
-.sr-text{font-size:32px;line-height:1.34;margin:0;overflow-wrap:anywhere}
-.sr-recorded{font-size:16px;line-height:1.3;margin-top:14px;color:#a9bdc6}
-#shift-recap.sr-neutral{background:radial-gradient(ellipse at 50% 38%,#1e3a48,#10212b 72%);display:flex;flex-direction:column;justify-content:center;gap:64px;padding:7%}
-.sr-neutral .sr-media{display:none}
-.sr-neutral .sr-head{position:static}
-.sr-neutral .sr-title{font-size:68px;line-height:1.12;max-width:1400px;margin-top:22px}
-.sr-neutral .sr-caption{position:static;background:transparent;border-left:0;padding:0;max-height:44%;flex-shrink:0}
-.sr-neutral .sr-recorded{display:none}
-body.portrait .sr-head{left:36px;right:36px;top:34px}
-body.portrait .sr-kicker{font-size:23px}
-body.portrait .sr-title{font-size:48px;line-height:1.15}
-body.portrait .sr-media{inset:176px 24px 500px}
-body.portrait .sr-caption{left:36px;right:36px;bottom:40px;padding:22px;max-height:440px}
-body.portrait .sr-meta{font-size:28px;gap:20px;flex-wrap:wrap}
-body.portrait .sr-text{font-size:38px;line-height:1.38}
-body.portrait .sr-recorded{font-size:20px}
-body.portrait #shift-recap.sr-neutral{gap:80px}
-body.portrait .sr-neutral .sr-title{font-size:70px}
-body.portrait .sr-neutral .sr-caption{padding:0;max-height:44%}
+.sr-media{position:absolute;inset:0;margin:0;overflow:hidden;background:transparent}
+.sr-picture{display:block;width:100%;height:100%;object-fit:cover;visibility:hidden}
+.sr-playing .sr-picture{visibility:visible}
+.sr-head{position:absolute;left:0;right:0;top:0;padding:28px 32px 55px;background:linear-gradient(#09151ced 0%,#09151cd6 65%,transparent)}
+.sr-kicker{font-size:18px;font-weight:750;letter-spacing:2px;color:#f4cc88;text-transform:uppercase}
+.sr-title{font-size:38px;line-height:1.12;font-weight:750;margin:10px 0 0;overflow-wrap:anywhere}
+.sr-caption{position:absolute;bottom:24px;left:24px;right:24px;box-sizing:border-box;max-height:60%;padding:20px 24px;background:rgba(9,21,28,.88);border-left:4px solid #f4cc88;overflow:hidden;box-shadow:0 4px 24px #0005}
+.sr-meta{display:flex;align-items:baseline;gap:24px;font-size:20px;line-height:1.3;margin-bottom:10px}
+.sr-speaker{color:#f4cc88;font-weight:750}.sr-time{color:#d5e1e7}
+.sr-text{font-size:30px;line-height:1.34;margin:0;overflow-wrap:anywhere}
+.sr-recorded{font-size:14px;line-height:1.3;margin-top:14px;color:#d5e1e7}
+/* Optional footage-first comparison. Live fallback always returns to the real camera hole. */
+#shift-recap.sr-cinema.sr-playing{left:0;top:0;width:100%;height:100%}
+.sr-cinema.sr-playing .sr-head{padding:32px 48px 70px}
+.sr-cinema.sr-playing .sr-caption{left:48px;right:48px;bottom:36px}
+body.portrait #shift-recap{--sr-y:112px;--sr-w:1032px;--sr-h:883px}
+body.portrait .sr-kicker{font-size:22px}
+body.portrait .sr-title{font-size:40px}
+body.portrait .sr-meta{font-size:24px;gap:18px;flex-wrap:wrap}
+body.portrait .sr-text{font-size:34px}
+body.portrait .sr-recorded{font-size:17px}
+body.portrait .sr-caption{max-height:64%}
+body.portrait .sr-cinema.sr-playing .sr-caption{bottom:64px;max-height:38%}

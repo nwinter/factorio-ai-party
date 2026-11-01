@@ -52,7 +52,7 @@ def js(value):
     return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c")
 
 
-def pages(manifest, out):
+def pages(manifest, out, *, backdrop=None, snapshot=None):
     """Keep the page markup, renderers and CSS; substitute only their transport.
 
     The restore snapshot is an empty Model (the service before its first world read).
@@ -69,9 +69,11 @@ def pages(manifest, out):
     durations = [line.get("duration", 5) for line in manifest["transition"] + manifest["lines"]]
     still = next((n for n, beat in enumerate(sequence) if beat["media"]), 0)
     neutral = next((n for n, beat in enumerate(sequence) if beat["phase"] == "recap" and not beat["media"]), 0)
-    cases = {"transition": 0, "still": still, "neutral": neutral, "early": still,
+    cases = {"transition": 0, "still": still, "clip": still, "live": neutral, "neutral": neutral, "early": still,
              "restore": len(sequence), "interrupted": len(sequence), "holding": len(sequence)}
     normal = model.Model({"title": "Player of Games", "subtitle": "Offline layout rehearsal", "agents": {}}).snapshot(manifest["through"], {})
+    if snapshot:
+        normal = snapshot.get("state", snapshot)
     payload = {"sequence": sequence, "durations": durations, "normal": normal, "cases": cases,
                "layouts": {name: json.loads((HERE / "static" / (name + ".json")).read_text())
                            for name in ("layout", "layout-portrait", "layout-3cam")}}
@@ -84,6 +86,7 @@ def pages(manifest, out):
  window.pogEvents = transport;
  function snapshot() {
    let recap = data.sequence[step] || null;
+   if (recap) recap = {...recap, elapsed:Number(params.get('elapsed') || 0)};
    if (which === 'holding' && step === data.sequence.length) recap = {...data.sequence.at(-1), holding:true};
    return early ? {shift_recap:recap} : {...data.normal, shift_recap:recap};
  }
@@ -130,6 +133,15 @@ def pages(manifest, out):
         page = re.sub(r'<link rel="stylesheet" href="/static/([^"]+)">', style, page)
         page = re.sub(r'<script src="/static/([^"]+)"></script>', script, page)
         page = page.replace("</head>", bootstrap + "</head>")
+        if backdrop:
+            # Explicit offline stand-in for the pixels OBS puts BELOW this transparent
+            # browser. The recap CSS/JS above is still the production implementation.
+            feed = '''<style>html body.fx-overlay{background:#0b1017}.rehearsal-feed{position:absolute;left:24px;top:24px;width:1208px;height:1032px;object-fit:cover}
+body.portrait .rehearsal-feed{top:112px;width:1032px;height:883px}
+.rehearsal-watermark{position:absolute;right:30px;bottom:6px;z-index:2000;font:14px system-ui;color:white;background:#000b;padding:3px 8px}</style>
+<video class="rehearsal-feed" src="rehearsal-feed.webm" muted autoplay loop playsinline></video>
+<div class="rehearsal-watermark">OFFLINE REHEARSAL · recorded feed beneath the overlay</div>'''
+            page = page.replace('<div id="stage">', feed + '<div id="stage">', 1)
         (out / f"onair-{kind}.html").write_text(page)
     (out / "replay-sequence.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
 
@@ -139,6 +151,8 @@ def main():
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, help="refresh media from this recorded run without rewriting narration")
+    parser.add_argument("--backdrop", type=Path, help="explicit offline OBS stand-in: muted gameplay WebM below the real overlay")
+    parser.add_argument("--snapshot", type=Path, help="saved normal-layout snapshot; no service requests")
     args = parser.parse_args()
     import shift_recap as recap
     manifest = json.loads(args.manifest.read_text())
@@ -155,6 +169,11 @@ def main():
     manifest = check_decoding(manifest, args.out)
     recap.save_json(args.out / "manifest.json", manifest)
     recap.export(manifest, args.out)
+    if args.backdrop:
+        shutil.copyfile(args.backdrop, args.out / "rehearsal-feed.webm")
+    if args.backdrop or args.snapshot:
+        pages(manifest, args.out, backdrop=args.backdrop,
+              snapshot=json.loads(args.snapshot.read_text()) if args.snapshot else None)
     log_review(manifest, args.out)
     if manifest["media_review"]["no_media"]:
         print("WARNING: NO BOUND MEDIA; see review.md")
