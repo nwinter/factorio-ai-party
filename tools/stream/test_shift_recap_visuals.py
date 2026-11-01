@@ -42,7 +42,7 @@ class VisualsTest(unittest.TestCase):
 
     def test_ship_clip_wins_over_its_dock_surface(self):
         m = fixture()
-        m["stills"].append({"asset": "c" * 24 + ".webm", "platform": "Lark", "t": 145, "offset": 4})
+        m["stills"].append({"asset": "c" * 24 + ".webm", "platform": "Lark", "t": 145, "offset": 4, "duration": 15})
         bound = V.bind(m)
         self.assertEqual(bound["visuals"]["s"]["media"]["kind"], "video")
         self.assertEqual(bound["visuals"]["s"]["media"]["subject"], "Lark")

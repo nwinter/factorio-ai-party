@@ -999,7 +999,12 @@ def main():
                     snap["speech"] = [dict(v, id=k) for k, v in audio.playing.items()
                                       if v.get("channel") in ("caster", "agent", "operator", "narrator")]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
-                cams = director.step(snap, now, segments.camera())
+                # Recap cues use the director's existing segment camera path. No new
+                # game reads, OBS sources or layout; missing subjects keep normal air.
+                from shift_recap_camera import cue as recap_camera, on_air as recap_on_air
+                recap_cue = recap_camera(snap.get("shift_recap"), snap, now,
+                                         frac=getattr(director, "cfg", {}).get("platform_frac") or 1.0)
+                cams = director.step(snap, now, recap_cue or segments.camera())
                 if cuts:
                     program = director.program()
                     program["cameras"] = {s["slot"]: {"pending": s["slot"] in director.send_pending,
@@ -1015,6 +1020,7 @@ def main():
                                        for s in director.slots}
                     snap["program"], snap["cuts"] = aired, cut_state
                     snap["camera_states"] = director.camera_states()
+                snap["shift_recap"] = recap_on_air(snap.get("shift_recap"), snap)
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
                 if platform:

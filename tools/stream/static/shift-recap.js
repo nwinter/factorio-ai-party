@@ -1,87 +1,100 @@
-// Full broadcast-canvas presentation of prepared records. No live game/media requests.
+// Prepared muted clips over the existing camera hole. Decode failure reveals live gameplay.
 (() => {
   const el = (tag, cls, text) => {
-    const node = document.createElement(tag);
-    node.className = cls;
+    const node = document.createElement(tag); node.className = cls;
     if (text != null) node.textContent = text;
     return node;
   };
-  let panel, key, video;
+  let panel, key, video, label, last, watchdog;
   const failures = [];
+  const params = new URLSearchParams(location.search);
+  const cinema = params.get('recap_layout') === 'cinema';
   function release() {
-    if (video) { video.pause(); video.removeAttribute("src"); video.load(); video = null; }
+    clearTimeout(watchdog);
+    if (video) {
+      const old = video; video = null;
+      old.pause(); old.removeAttribute('src'); old.load();
+    }
+  }
+  function liveLabel() {
+    const live = last && last.live;
+    return `LIVE GAMEPLAY${live && live.subject ? ' · ' + live.subject : ''} · earlier shift narrated · Graphics copyright Wube Software`;
+  }
+  function cameraRect() {
+    const cam = document.getElementById('cam-main');
+    // The normal renderer lays out the actual program's hole (including a trio).
+    if (cam && cam.offsetWidth && cam.offsetHeight) {
+      for (const [k,v] of Object.entries({x:cam.offsetLeft,y:cam.offsetTop,w:cam.offsetWidth,h:cam.offsetHeight}))
+        panel.style.setProperty('--sr-'+k,v+'px');
+    }
   }
   function render(s) {
     const recap = s && s.shift_recap;
-    // A finished narration may remain in the server's receipt state until the agents start.
-    // That hold is not an on-air beat: restore the normal canvas while it lasts.
     const active = !!(recap && recap.active && !recap.holding);
-    document.body.classList.toggle("recap-active", active);
+    document.body.classList.toggle('recap-active', active);
     if (!panel) {
-      const stage = document.getElementById("stage");
-      if (!stage) return;
-      panel = el("section", "shift-recap");
-      panel.id = "shift-recap";
-      panel.setAttribute("aria-label", "Recorded shift recap");
-      panel.hidden = true;
-      stage.appendChild(panel);
+      const stage = document.getElementById('stage'); if (!stage) return;
+      panel = el('section','shift-recap'); panel.id='shift-recap';
+      panel.setAttribute('aria-label','Recorded shift recap'); panel.hidden=true; stage.appendChild(panel);
     }
     panel.hidden = !active;
-    if (!active) { release(); panel.replaceChildren(); key = null; return; }
-    const media = recap.media || null;
-    // Elapsed time changes on service ticks; it must not recreate the image/video every tick.
-    const next = JSON.stringify([recap.run, recap.phase, recap.id, recap.title, recap.text,
-      recap.speaker, recap.time_label, media]);
-    if (next === key) return;
-    key = next;
-    release();
-    panel.replaceChildren();
-    panel.classList.toggle("sr-neutral", !media);
-    const header = el("header", "sr-head");
-    header.append(el("div", "sr-kicker", `${recap.run || ""} · ${recap.phase === "transition" ? "SHIFT CHANGE" : "SHIFT RECAP"}`),
-      el("h2", "sr-title", recap.title || "Shift recap"));
-    panel.append(header);
-    const figure = el("figure", "sr-media");
-    if (media) {
-      const node = el(media.kind === "video" ? "video" : "img", "sr-picture");
-      const failed = () => { if (!node.isConnected) return; release(); figure.replaceChildren();
-        failures.push({id:recap.id, title:recap.title, asset:media.asset, url:media.url, error:'browser media load failed'});
-        panel.classList.add("sr-neutral"); label.textContent = "Recorded shift"; };
-      node.addEventListener("error", failed, { once: true });
-      if (media.kind === "video") {
-        video = node;
-        node.muted = true; node.autoplay = true; node.playsInline = true;
-        node.addEventListener("loadedmetadata", () => {
-          const offset = Math.max(0, Number(recap.elapsed || 0) + Number(media.offset || 0));
-          if (Number.isFinite(node.duration)) node.currentTime = Math.min(offset, Math.max(0, node.duration - 0.1));
-          const play = node.play(); if (play && play.catch) play.catch(failed);
-        }, { once: true });
-      } else {
-        node.alt = `Recorded ${media.subject || "shift"} still`;
-      }
-      node.src = media.url;
-      figure.append(node);
+    if (!active) { release(); panel.replaceChildren(); key=null; last=null; return; }
+    last = recap;
+    requestAnimationFrame(cameraRect);
+    // Stills remain in the audit only. A missing, unsupported or failed clip is transparent.
+    const media = recap.media && recap.media.kind === 'video' ? recap.media : null;
+    const next = JSON.stringify([recap.run,recap.phase,recap.id,recap.title,recap.text,
+      recap.speaker,recap.time_label,media]);
+    if (next === key) {
+      if (!panel.classList.contains('sr-playing')) label.textContent=liveLabel();
+      return;
     }
-    panel.append(figure);
-    const caption = el("footer", "sr-caption");
-    const meta = el("div", "sr-meta");
-    meta.append(el("b", "sr-speaker", recap.speaker || "Rook & Vale"),
-      el("span", "sr-time", recap.time_label || "Recorded shift"));
-    const spoken = el("p", "sr-text", recap.text || "");
-    const label = el("div", "sr-recorded", media ?
-      `Recorded ${media.kind === "video" ? "clip" : "still"} · ${media.subject || "shift"} · ${media.recorded_time || ""} · Graphics copyright Wube Software` : "Recorded shift");
-    caption.append(meta, spoken, label);
-    panel.append(caption);
-    // Long record quotes still fit without losing words; normal narrative uses the larger type.
-    const fit = () => {
+    key=next; release(); panel.replaceChildren();
+    panel.classList.toggle('sr-playing',false);
+    panel.classList.toggle('sr-cinema',cinema);
+    const header=el('header','sr-head');
+    header.append(el('div','sr-kicker',`${recap.run || ''} · ${recap.phase === 'transition' ? 'SHIFT CHANGE' : 'SHIFT RECAP'}`),
+      el('h2','sr-title',recap.title || 'Shift recap'));
+    const figure=el('figure','sr-media');
+    const caption=el('footer','sr-caption'), meta=el('div','sr-meta');
+    meta.append(el('b','sr-speaker',recap.speaker || 'Rook & Vale'),el('span','sr-time',recap.time_label || 'Recorded shift'));
+    const spoken=el('p','sr-text',recap.text || '');
+    label=el('div','sr-recorded',liveLabel());
+    caption.append(meta,spoken,label); panel.append(figure,header,caption);
+    if (media) {
+      const node=el('video','sr-picture'); video=node;
+      node.muted=true; node.defaultMuted=true; node.autoplay=true; node.playsInline=true; node.loop=true;
+      node.setAttribute('muted',''); node.setAttribute('playsinline','');
+      const failed=() => {
+        if (video !== node) return;
+        release(); figure.replaceChildren(); panel.classList.toggle('sr-playing',false);
+        label.textContent=liveLabel();
+        failures.push({id:recap.id,asset:media.asset,error:'clip unavailable; live gameplay exposed'});
+      };
+      const stalled=() => { clearTimeout(watchdog); watchdog=setTimeout(failed,2500); };
+      node.addEventListener('error',failed,{once:true});
+      node.addEventListener('waiting',stalled);
+      node.addEventListener('stalled',stalled);
+      node.addEventListener('playing',() => {
+        if (video !== node) return;
+        clearTimeout(watchdog); panel.classList.toggle('sr-playing',true);
+        label.textContent=`RECORDED CLIP · ${media.subject || 'shift'} · ${media.recorded_time || ''} · Graphics copyright Wube Software`;
+      });
+      node.addEventListener('loadedmetadata',() => {
+        if (video !== node) return;
+        const offset=Math.max(0,Number(recap.elapsed || 0)+Number(media.offset || 0));
+        if (Number.isFinite(node.duration) && node.duration > 0) node.currentTime=offset % node.duration;
+        const playing=node.play(); if(playing && playing.catch) playing.catch(failed);
+      },{once:true});
+      figure.append(node); node.src=media.url; stalled();
+    }
+    const fit=() => {
       if (!caption.isConnected || !caption.clientHeight) return;
-      let size = parseFloat(getComputedStyle(spoken).fontSize);
-      while (caption.scrollHeight > caption.clientHeight + 1 && size > 18) {
-        spoken.style.fontSize = --size + "px";
-      }
+      let size=parseFloat(getComputedStyle(spoken).fontSize);
+      while(caption.scrollHeight > caption.clientHeight+1 && size > 18) spoken.style.fontSize=--size+'px';
     };
     requestAnimationFrame(fit);
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
   }
-  window.PogShiftRecap = { render, failures };
+  window.PogShiftRecap={render,failures};
 })();

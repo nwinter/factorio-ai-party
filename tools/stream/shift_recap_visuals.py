@@ -5,6 +5,7 @@ import re
 
 PLANETS = ("nauvis", "vulcanus", "fulgora", "gleba", "aquilo")
 ASSET = re.compile(r"[a-f0-9]{24}\.(?:webp|png|jpg|jpeg|mp4|webm)\Z")
+MAX_CLIP_BYTES = 16 * 1024 * 1024
 
 
 def clock(t):
@@ -33,7 +34,8 @@ def media_record(row):
     offset = max(0, offset) if isinstance(offset, (int, float)) and math.isfinite(offset) else 0
     return {"asset": row["asset"], "kind": kind, "subject": subject, "t": row["t"],
             "subject_type": "platform" if row.get("platform") or row.get("subject_type") == "platform" else "surface",
-            "recorded_time": clock(row["t"]), "offset": offset}
+            "recorded_time": clock(row["t"]), "offset": offset,
+            "duration": row.get("duration", 0)}
 
 
 def mentioned(text, names):
@@ -95,21 +97,33 @@ def bind(manifest):
                 targets = set()
             choices = [m for m in media if m["subject_type"] == subject_type
                        and m["subject"].casefold() in {s.casefold() for s in targets}]
-            chosen = min(choices, key=lambda m: (abs(m["t"] - stamp), m["asset"])) if choices else None
+            # Moving footage must cover the cited record time. A still remains useful in
+            # the offline audit, but never substitutes for gameplay on air. Legacy clips
+            # without an interval cannot establish that they show this moment.
+            clips = [m for m in choices if m["kind"] == "video"
+                     and isinstance(m["duration"], (int, float)) and math.isfinite(m["duration"])
+                     and 0 < m["duration"] <= 20
+                     and m["t"] <= stamp < m["t"] + m["duration"]]
+            pictures = [m for m in choices if m["kind"] == "image"]
+            pool = clips or pictures
+            chosen = min(pool, key=lambda m: (abs(m["t"] - stamp), m["asset"])) if pool else None
             failures = [r for r in manifest.get("media_errors", [])
                         if (label(r.get("platform") or r.get("subject") or r.get("surface"))).casefold()
                         in {s.casefold() for s in targets}]
             visuals[line["id"]] = {"media": chosen, "time_label": time_label, "asset_errors": failures,
-                "binding": {"subjects": sorted(targets), "subject_type": subject_type,
+                "binding": {"subjects": sorted(targets), "subject_type": subject_type, "record_t": stamp,
                             "evidence_ids": [r["id"] for r in refs],
                             "reason": "nearest recorded view of the subject" if chosen else "no matching recorded media"}}
     beats = [{"id": line["id"], "title": line.get("title", ""),
               "status": "bound" if visuals[line["id"]]["media"] else "missing",
+              "footage": "clip" if (visuals[line["id"]]["media"] or {}).get("kind") == "video" else "live",
               "subjects": visuals[line["id"]]["binding"]["subjects"],
               "errors": visuals[line["id"]]["asset_errors"]}
              for line in manifest.get("transition", []) + manifest.get("lines", [])]
     bound = sum(b["status"] == "bound" for b in beats)
     review = {"bound": bound, "total": len(beats), "no_media": bound == 0,
+              "clips": sum(b["footage"] == "clip" for b in beats),
+              "live": sum(b["footage"] == "live" for b in beats),
               "beats": beats, "asset_errors": manifest.get("media_errors", [])}
     return dict(manifest, visual_version=2, visuals=visuals, media_review=review)
 
@@ -117,8 +131,13 @@ def bind(manifest):
 def public(manifest, line, phase, *, asset_prefix="/shift-recap/assets/", holding=False, elapsed=0):
     visual = manifest.get("visuals", {}).get(line.get("id")) or {}
     media = visual.get("media")
+    if media and media["kind"] != "video":
+        media = None
+    binding = visual.get("binding") or {}
+    subjects = binding.get("subjects") or []
     return {"active": True, "phase": phase, "run": manifest["run"], "id": line.get("id"),
             "title": line.get("title", "Shift recap"), "speaker": line.get("speaker"),
             "text": line.get("text", ""), "time_label": visual.get("time_label", "Recorded shift"),
             "holding": holding, "elapsed": max(0, elapsed),
+            "subject": {"name": subjects[0], "type": binding.get("subject_type")} if len(subjects) == 1 else None,
             "media": dict(media, url=asset_prefix + media["asset"]) if media else None}

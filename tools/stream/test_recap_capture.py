@@ -236,7 +236,9 @@ class RefreshTest(unittest.TestCase):
             R.save_json(self.run / "recap-media.json", [{"path": "ship.png", "platform": "Asterion", "t": 1000}])
             svc.step(1262)
             jobs.pop().target([self.run])
-            self.assertEqual(svc.step(1263)["media"]["subject"], "Asterion")
+            public = svc.step(1263)
+            self.assertIsNone(public["media"], "stills stay in the audit; live gameplay stays visible")
+            self.assertEqual(public["subject"]["name"], "Asterion")
 
 
 if __name__ == "__main__":

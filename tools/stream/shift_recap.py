@@ -521,6 +521,8 @@ def stills(run, until, out, errors=None):
             errors.append(dict(row, error="missing subject metadata"))
             continue
         try:
+            if ext in (".mp4", ".webm") and path.stat().st_size > visuals.MAX_CLIP_BYTES:
+                raise ValueError("recap clip exceeds 16 MiB; cut the reviewed interval first")
             data = path.read_bytes()
             error = header_error(data, ext)
             if error:
@@ -535,6 +537,8 @@ def stills(run, until, out, errors=None):
         found.append({"asset": asset, "t": t, "surface": row.get("surface"),
                       "platform": row.get("platform"), "subject": row.get("subject"),
                       "subject_type": row.get("subject_type"), "offset": row.get("offset", 0),
+                      "duration": row.get("duration", 0),
+                      **({"coverage": row["coverage"]} if row.get("coverage") else {}),
                       "source": f"recap-media.json:{index + 1}", "recorded_path": row["path"],
                       **({"receipt": row["receipt"]} if row.get("receipt") else {})})
     return found
@@ -669,8 +673,9 @@ def export(manifest, out):
     diagnostics = [f"# {manifest['run']} recap review", "", f"Mode: {manifest['review']['mode']}", ""]
     media_review = manifest["media_review"]
     diagnostics += [f"Media: {media_review['bound']}/{media_review['total']} beats bound.", ""]
+    diagnostics += [f"Moving footage: {media_review['clips']} recorded clips; {media_review['live']} live camera fallbacks.", ""]
     if media_review["no_media"]:
-        diagnostics += ["WARNING: NO BOUND MEDIA — this recap has only neutral cards.", ""]
+        diagnostics += ["WARNING: NO BOUND MEDIA — all beats use live gameplay.", ""]
     for beat in media_review["beats"]:
         if beat["status"] == "missing" or beat["errors"]:
             diagnostics += [f"Beat {beat['id']} · {beat['title']}: {beat['status']}; subjects {beat['subjects']}"]
