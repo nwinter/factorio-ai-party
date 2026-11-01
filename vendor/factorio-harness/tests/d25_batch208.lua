@@ -101,8 +101,9 @@ has(refused(plan({{action='transfer',args={item='coal',direction='to_entity',pos
 no_length(plan({{action='load_silo',args={first={coal=10}}}},true))
 no_length(plan({{action='load_silo',args={from={x=1,y=2}}}},true))
 -- feed counts its item with its items, as the action does
-local sixteen={} for i=1,16 do sixteen[i]='item-'..i end
-has(refused(plan({{action='feed',args={item='coal',items=sixteen}}},true)),'items has 17 entries (item counts too), outside 1..16, what feed takes')
+prototypes.item={coal={}}
+local sixteen={} for i=1,16 do sixteen[i]='item-'..i; prototypes.item[sixteen[i]]={} end
+has(refused(plan({{action='feed',args={item='coal',items=sixteen}}},true)),'items requires 1..16 item names')
 sixteen[16]='coal'; no_length(plan({{action='feed',args={item='coal',items=sixteen}}},true))
 -- refuel: 64 positions a walk, 128 for a tour with from, area or feed_chests, or in a dry run
 has(refused(function() runtime.step_length_check('refuel',{positions=places(65)}) end),'positions has 65 entries, outside 1..64, what refuel takes')

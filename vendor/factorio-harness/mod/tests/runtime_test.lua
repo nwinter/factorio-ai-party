@@ -1877,7 +1877,7 @@ assert(nothing.nothing_moved:find('2 burners hold fuel (coal 5-6): fuel is added
 -- item: one name, as transfer takes it (Grok); count is the target each machine holds.
 local one=call('feed',{item='iron-ore',count=25})
 eq(one.transferred,5); eq(one.items['iron-ore'],5); eq(one.items.coal,nil); eq(f1.slots[3][1].count,25); eq(one.held['iron-ore'],5)
-fails(function() call('feed',{item='nope'}) end,'unknown item nope')
+fails(function() call('feed',{item='nope'}) end,'item: nope is not an item (unknown item name)')
 -- No coal carried: the reply says so and what the furnaces hold (agent-minds
 -- study: Haiku's 35 empty feeds); the third identical one in 7 min says so too.
 main=inv(stack('iron-ore',10),stack(nil,0),stack(nil,0))
@@ -1886,7 +1886,7 @@ eq(nocoal.transferred,0); eq(nocoal.nothing_moved,'nothing given: you carry 0 co
 eq(nocoal.repeated,nil); eq(call('feed',{items={'coal'}}).repeated,nil)
 eq(call('feed',{items={'coal'}}).repeated,'feed 3 times in 7 min with nothing moved (same target and item)')
 fails(function() call('feed',{fuel='iron-ore'}) end,'fuel must be')
-fails(function() call('feed',{items={'nope'}}) end,'unknown item nope')
+fails(function() call('feed',{items={'nope'}}) end,'items[1]: nope is not an item (unknown item name)')
 -- With a radius, feed walks a tour through the machines that want something
 -- held, and ends early once nothing wanted is left.
 main=inv(stack('iron-ore',5))
@@ -5351,9 +5351,9 @@ end)()
   -- give there): a move between the two, which pick makes.
   fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
     [[to goes with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
-  -- items: one item a call.
+  -- items accepts a map; these names are absent from the fake game's prototypes.
   fails(function() call('transfer',{position={x=35.5,y=35.5},direction='to_player',items={pipe=16,['small-electric-pole']=8}}) end,
-    [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
+    'is not an item (unknown item name)')
   -- Another action's unknown argument: its example.
   fails(function() call('technologies',{pack='electromagnetic-science-pack'}) end,
     [[unknown argument pack for technologies; valid: available, from, level, limit, name, prefix; accepted: available (boolean), from (optional), level (optional integer with one exact name), limit (1..32), name (optional), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
