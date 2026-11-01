@@ -194,14 +194,14 @@ def hidden_and_refit():
 
 def independent_dwell():
     arrival=[]
-    for dwell in (5,25):
-        d,c,_=setup();q=d.surveys[d.state['main']['survey_key']];q.DETAIL_S=dwell
+    for dwell in (8,14):
+        d,c,_=setup();q=d.surveys[d.state['main']['survey_key']];d.tour_memory.details = lambda surface, details, now: [dict(b, seconds=dwell) for b in details]
         for k in range(480):
             run(d,c,1000+k*.5,1000+(k+1)*.5)
             if q.phase=='stern_dwell':
                 arrival.append(k*.5);break
         assert q.coverage==[(-58,384)]
-    assert abs(arrival[1]-arrival[0]-20)<=1,arrival
+    assert abs(arrival[1]-arrival[0]-6)<=1,arrival
 
 
 def receipt_logging():

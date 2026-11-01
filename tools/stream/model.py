@@ -959,6 +959,7 @@ class Model:
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
+        self.trains = []
         self.silos = None  # (d26 batch257) launches.SiloFeed's last read (live.py, every poll): the launch shot
         self.speaker_alarms = None  # (d28 batch326 RA2) harness ALARMS_LUA's last read: alarmquiet.py
         self.vehicles = None  # (d26 batch233 VM) the census's vehicles read {tick, rows, total, t} (live.py, every 10 s)
@@ -1138,6 +1139,8 @@ class Model:
             self.platform_hits = {r.get("platform"): r for r in obs["platform_hits"] if r.get("platform")}
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
+        if "trains" in obs:
+            self.trains = obs["trains"]
         for w in obs.get("work") or []:
             self._ingest_work(w, now)
         for x in obs.get("attention") or []:
@@ -3117,6 +3120,7 @@ class Model:
             "space": self.space_snapshot(science, now),
             "work": self.work_snapshot(now),
             "fights": fights,
+            "trains": self.trains,
             "silos": self.silos,  # (batch257) launches.SiloFeed's last read
             "incoming": self.incoming_snapshot(now),
             "big_enemies": self.big_snapshot(now),

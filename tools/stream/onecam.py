@@ -1933,6 +1933,20 @@ class OneCam(Director):
     def _step(self, snapshot, now=None, segment=None):
         now = now or time.time()
         self.step_t = now
+        for shown in self.on_air.values():
+            if not shown:
+                continue
+            scene = (shown.get("tour") or {}).get("scene")
+            if scene and self.tour_memory.shown.get(scene["region"], (None,))[0] != shown.get("since"):
+                self.tour_memory.seen(scene, shown.get("since", now))
+            train = shown.get("train")
+            if train:
+                self.train_shown[train["id"]] = shown.get("since", now)
+        self.tour_memory.observe(snapshot, now)
+        self.train_rows = list(snapshot.get("trains") or [])
+        cur_train = self.state.get(self.onair) or {}
+        if cur_train.get("train") and not self.fresh_train(cur_train["train"]["id"], now):
+            cur_train["until"] = now
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
         self.agents_now = by_name  # (BC2) apply's spidertron fit reads the agent it frames
@@ -2087,6 +2101,8 @@ class OneCam(Director):
         self.maybe_artillery(snapshot, by_name, scores, now, segment)
         self.maybe_enemy_pip(snapshot, by_name, scores, now)
         self.maybe_group_pip(snapshot, by_name, scores, now)
+        if not pinned and not segment and not attack:
+            self.train_step(now)
         self.featured.inset(self, scores, now)
         self.release_maps(now)
         self.pan_step(now)
@@ -3684,16 +3700,15 @@ class OneCam(Director):
         if not self.tours:
             return None
         import basetour
-        for surface in sorted(self.tours.planets, key=lambda s: (self.toured.get(s, -1e9), basetour.PLANETS.index(s)
-                                                                 if s in basetour.PLANETS else 9)):
-            plan = self.tours.get(surface, self.cfg["view_frac"])
-            if not plan:
-                continue
+        plan = basetour.choose(self.tours, self.tour_memory, now, self.cfg["view_frac"])
+        if plan:
+            surface = plan["surface"]
             return {"agents": [], "subject": "@tour", "position": dict(plan["position"]), "surface": surface,
                     "zoom": plan["zoom"], "exact_zoom": True, "move": plan["move"], "moved": now,
                     "until": now + self.cfg["ready_s"] + plan["seconds"],
                     "look": {"label": plan["label"], "by": "director", "surface": surface, "position": dict(plan["position"])},
-                    "tour": {"surface": surface, "label": plan["label"], "machines": plan["machines"]}}
+                    "tour": {"surface": surface, "label": plan["label"], "machines": plan["machines"],
+                             "scene": plan["scene"], "seconds": plan["seconds"]}}
         return None
 
     def show_tour(self, t, why, scores, now):
@@ -3760,11 +3775,17 @@ class OneCam(Director):
             m = self.map_target((1208, 1032), now + cfg["ready_s"] + cfg["map_hold"], cfg["view_frac"])
             if m and not self.map_wait(now):  # (batch318) one client: an unchanged map decays
                 views.append(("map", m))
+        train = self.train_target(now)
+        if train:
+            views.append(("train", train))
         if not views:
             return
-        order = ("tour", "platform", "map")
+        order = ("train", "tour", "platform", "map")
         kind, t = min(views, key=lambda kv: (self.quiet_shown.get(kv[0], -1e9), order.index(kv[0])))
-        if kind == "tour":
+        if kind == "train":
+            self.quiet_log(kind, t["look"]["label"], why, now)
+            self.urgent(t, f"train: {t['look']['label']} (quiet: {why})", scores, now)
+        elif kind == "tour":
             self.quiet_log(kind, t["tour"]["label"], why, now)
             self.show_tour(t, f"quiet: {why}", scores, now)
         elif kind == "platform":
@@ -3778,6 +3799,37 @@ class OneCam(Director):
             self.last_map = now
             self.maps.append((now, "quiet"))
             self.urgent(t, f"base map (quiet: {why})", scores, now)
+
+    def train_target(self, now):
+        """A bounded quiet follow, ranked by known cargo and route; existing receipt positions only."""
+        import basetour
+        rows = [r for r in self.train_rows if basetour.position(r.get("position")) and
+                0 <= now-r.get("t", 0) <= (3 if r.get("speed") else 12) and
+                now-self.train_shown.get(r.get("id"), -1e9) >= 600]
+        row = max(rows, key=lambda r: (bool(r.get("cargo")), bool(r.get("stop")), r["t"]), default=None)
+        if not row:
+            return None
+        return dict(agents=[], subject="@tour", surface=row["surface"], position=dict(row["position"]),
+                    zoom=.5, exact_zoom=True, until=now+24, train=dict(row),
+                    look=dict(label=row["label"], by="director", surface=row["surface"], position=dict(row["position"])))
+
+    def fresh_train(self, identity, now):
+        return next((r for r in self.train_rows if r.get("id") == identity and
+                     0 <= now-r.get("t", 0) <= (3 if r.get("speed") else 12)), None)
+
+    def train_step(self, now):
+        """Do not extend a follow's deadline or change its identity/zoom/caption during a shot."""
+        cur = self.state.get(self.onair) or {}
+        train = cur.get("train")
+        if not train or now >= cur.get("until", 0):
+            return
+        row = self.fresh_train(train["id"], now)
+        if row is None:
+            cur["until"] = now
+            return
+        if row["t"] > train["t"] and not self.hosting(now) and not self.hold_layout:
+            updated = dict(cur, position=dict(row["position"]), train=dict(row), glide=40)
+            self.apply(self.slot(self.onair), updated, "reframe", {}, now, quiet=True)
 
     def maybe_tour(self, scores, now, segment=None):
         """A base tour about every tour_every (tour_first after the start), with the base map's guards; one client too."""
@@ -4074,7 +4126,10 @@ class OneCam(Director):
             if not detail or detail["zoom"] <= t["zoom"] + .05:
                 detail = {"position": dict(view.get("hub") or t["position"]),
                           "zoom": min(3, max(.7, t["zoom"] * 1.6)), "label": f"{name} · hub", "why": "hub"}
-            t["survey"] = camerapath.ship_survey(t, [detail])
+            details = self.tour_memory.details(view["surface"], [detail, self.bow_defense(name)], getattr(self, "step_t", None) or self.started)
+            t["survey"] = camerapath.ship_survey(t, details)
+            visits = sum(v[3] for k, v in self.tour_memory.shown.items() if k.startswith(view["surface"] + ":"))
+            t["survey"]["reverse"] = bool(visits % 2)
             t["position"] = {k: t["survey"]["bow"][k] for k in ("x", "y")}
         return t
 
@@ -4281,6 +4336,8 @@ class OneCam(Director):
                 q = self.surveys.get(t.get("survey_key"))
                 if q:
                     q.spec["details"] = copy.deepcopy(shot["survey"]["details"])
+                    shot["survey_label"] = shot["platform"]["label"]
+                    shot["platform"]["label"] = self.survey_caption(shot, q)
                 t["survey"] = copy.deepcopy(shot["survey"])
                 shot = {k: v for k, v in shot.items() if k not in ("position", "zoom", "pan")}
             if t.get("pan") and t.get("pan") == shot.get("pan"):  # a tall ship's pan moves the view: not a new frame

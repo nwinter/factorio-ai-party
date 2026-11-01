@@ -368,6 +368,8 @@ class WorkFeed:
         self.partial = {}  # agent -> an unfinished last line
         self.waits = WaitFeed()
         self.repeats = RepeatFeed()  # the same request again and again: an agent's own sampling (workcard.py)
+        from basetour import Trains
+        self.trains = Trains()
         self.vehicles = VehicleFeed()  # (batch222) each agent's vehicle by remote view: where it is (onecam)
         self.did = DidFeed()  # (batch240) each agent's latest build, paste, deconstruction or silo load (onecam)
         self.clocks = ClockFeed()  # (batch240) how long each agent's character has stood idle, by its clocks (onecam)
@@ -418,6 +420,7 @@ class WorkFeed:
                     continue
                 self.waits.ingest(agent, r)
                 self.repeats.ingest(agent, r)
+                self.trains.ingest(agent, r)
                 self.vehicles.ingest(agent, r)  # (a restart's tail too: the director drops a stale read)
                 self.did.ingest(agent, r)  # (a restart's tail too: DID_KEEP drops old rows)
                 self.clocks.ingest(agent, r)

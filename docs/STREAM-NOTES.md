@@ -2811,3 +2811,28 @@ no page= (and replay.html when open): no overlay, which is why it stayed connect
   state file (default /tmp/claude-501/overlay-check.json).
 - **Tests:** tools/test_overlay_blank.py (the item off at start and in watch; a blank page brought back by a reload at
   start; a blank page in watch, a failed round kept in the health line, and cleared by one that works).
+
+
+### Quiet tours and train receipts (batch406)
+
+`basetour.choose` selects a new base scene at a shot boundary from 64-tile machine regions and the director's
+bounded, session-local `basetour.Memory`. Accepted builds, remote work, repair starts, damage/threat episodes,
+ship arrivals, and changed chart recipe layouts supply facts. Unseen regions and fresh facts outrank unchanged
+regions; unchanged regions rest for ten minutes. Surface recency breaks ties. Compositions rotate through two
+pan directions, principal/perpendicular axes, .4/.5/.6 zoom and 36/44/52-second shots, with 3/5/7-second endpoint
+rests. The whole straight path's frame envelope must be charted. A selected path is immutable; if no region is
+eligible, the director retains its ordinary calm agent/map/ship fallback. Logs include the scene's region,
+identity, composition and planned duration. Only a compositor-confirmed on-air scene earns shown credit.
+
+Ship surveys use the same fact/region memory for details, reconsidered between excursions. An active detail's
+position, zoom, caption and 8–14-second dwell stay fixed. Visible settled receipts earn credit. A later visit
+can start at the stern; resumed surveys retain their direction and coverage. Existing hull fits and urgent,
+host, operator and work priorities remain in charge.
+
+`WorkFeed.trains` consumes successful `train` replies in the journal tail already read by the service. `live.py`
+and `model.py` pass those receipts through to `onecam`; there is no train polling or new runtime camera mode.
+Quiet selection prefers a train with cargo and a named destination, then the freshest receipt. A train shot
+holds its identity, zoom and caption for at most 24 seconds and follows only newly received positions. Moving
+receipts expire after 3 seconds, stationary ones after 12; missing/stale data ends the shot, and a shown train
+rests ten minutes. Sparse agent reads therefore cannot support continuous train coverage. No extrapolated
+position or cargo claim is generated. New train shots never displace urgent, host, operator or segment holds.

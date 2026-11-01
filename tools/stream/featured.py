@@ -288,7 +288,8 @@ class Featured:
         q = d.surveys.get(old.get("survey_key"))
         if old.get("survey") and shot.get("survey") and q and now < q.expires and all(
                 old["survey"][k] == shot["survey"][k] for k in ("bow", "stern", "bounds", "frac", "surface")):
-            old["platform"]["label"] = shot["platform"]["label"]
+            old["survey_label"] = shot["platform"]["label"]
+            old["platform"]["label"] = d.survey_caption(old, q)
             old["survey"] = copy.deepcopy(shot["survey"])
             q.spec["details"] = copy.deepcopy(shot["survey"]["details"])
             return
