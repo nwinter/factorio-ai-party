@@ -171,8 +171,8 @@ def on_air():
         assert copied[-1][0] == os.path.realpath(f) and name.startswith("show-") and name.endswith(".png")
         tag = sh.cur["tag"]
         assert obs.settings[f"{IMAGE} {tag}"] == {"file": f"D:/pog/overlay/{name}", "unload": False}
-        assert obs.names() == ["stream background", "stream cam3", "stream cam1", "stream cam2", BACKDROP, IMAGE,
-                               "stream overlay", "stream game audio"], obs.names()
+        assert obs.names() == ["stream background", "stream cam3", "stream cam1", "stream cam2", "stream game audio", BACKDROP, IMAGE,
+                               "stream overlay"], obs.names()
         ids = {n: i for (i, _), n in zip(obs.items, obs.names())}
         for src in (IMAGE, BACKDROP):
             t = obs.transforms[ids[src]]

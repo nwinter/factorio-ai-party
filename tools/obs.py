@@ -13,6 +13,7 @@
   tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients), then cropped
   tools/.venv/bin/python tools/obs.py cams                # read only: each camera's hole, crop and the crop it takes
   tools/.venv/bin/python tools/obs.py enable-overlay      # the "stream overlay" scene item read, on if it was off (batch349)
+  tools/.venv/bin/python tools/obs.py raise-overlay       # keep the overlay above all scene items (shift startup)
   tools/.venv/bin/python tools/obs.py toggle-overlay      # the "stream overlay" scene item off and on (d29 batch347: a
       blank overlay a refreshnocache did not bring back came back at once; tools/overlay_check.py calls it)
   tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
@@ -25,6 +26,7 @@
 import argparse, base64, json, os, sys
 
 import obsws_python as obs
+from stream.scene_order import raise_overlays
 
 OVERLAY = r"D:\pog\overlay\coop.txt"
 
@@ -119,14 +121,14 @@ def host_capture(c, scene, layout=LAYOUT):
 
 
 def host_view_source(c, scene="stream", layout=LAYOUT):
-    """One-off for the live scene: the host capture added (or set again) just below the overlay, off; nothing else in
-    the scene changes."""
+    """Add the host capture just below the overlay, off, and restore the overlay to the top."""
     item = host_capture(c, scene, layout)
     items = c.get_scene_item_list(scene).scene_items
     idx = {i["sourceName"]: i["sceneItemIndex"] for i in items}
     ov, mine = idx.get("stream overlay"), idx.get(HOST_SOURCE)
     if ov is not None and mine is not None and mine != ov - 1:
         c.set_scene_item_index(scene, item, ov - 1 if mine < ov else ov)
+    raise_stream_overlay(c, scene)
     return f"{HOST_SOURCE} ({HOST_EXE}) in {scene}, off until host view is on"
 
 
@@ -249,8 +251,22 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
     order.append(ov)
     for idx, item in enumerate(order):
         c.set_scene_item_index(scene, item, idx)
+    # Existing inputs (including captures unknown to this builder) are outside `order` and can remain above it.
+    raise_stream_overlay(c, scene)
     c.press_input_properties_button("stream overlay", "refreshnocache")  # the page reads its layout once, at load
     return scene
+
+
+def raise_stream_overlay(c, scene="stream", name="stream overlay"):
+    """Pin the overlay above every item, using the scene's actual size, not a hard-coded index."""
+    items = c.get_scene_item_list(scene).scene_items
+    found = raise_overlays(items, lambda iid, idx: c.set_scene_item_index(scene, iid, idx), names=(name,))
+    if not found:
+        raise RuntimeError(f"{name} missing in {scene}")
+    after = c.get_scene_item_list(scene).scene_items
+    if not after or max(after, key=lambda r: r['sceneItemIndex'])['sourceName'] != name:
+        raise RuntimeError(f"{name} did not reach the top of {scene}")
+    return f"{name}: top of {scene} ({len(items)} items)"
 
 
 def toggle_overlay(c, scene="stream", name="stream overlay", sleep=None):
@@ -445,6 +461,8 @@ def stream_audio(c, scene="stream", overlay="stream overlay", prefix="stream", e
         c.set_input_volume(bed, vol_db=MUSIC_DB)
         ensure_filter(c, bed, "duck under voices", "compressor_filter", dict(DUCK, sidechain_source=overlay))
         c.set_scene_item_enabled(scene, item, False)  # enable once an original track exists at MUSIC_FILE
+    if scene == "stream":
+        raise_stream_overlay(c, scene, overlay)
     return [game] + ([f"{prefix} music bed"] if music else [])
 
 
@@ -532,7 +550,7 @@ def main():
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
                                     "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams", "cams",
-                                    "host-view-source", "stats", "toggle-overlay", "enable-overlay"])
+                                    "host-view-source", "stats", "toggle-overlay", "enable-overlay", "raise-overlay"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
@@ -575,6 +593,8 @@ def main():
         print(toggle_overlay(c))
     elif a.cmd == "enable-overlay":
         print(enable_overlay(c))
+    elif a.cmd == "raise-overlay":
+        print(raise_stream_overlay(c))
     elif a.cmd == "start":
         c.start_record(); print("recording")
     elif a.cmd == "stop":

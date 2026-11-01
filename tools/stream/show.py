@@ -177,6 +177,9 @@ class Show:
         moves up one), from below it the one under the overlay's."""
         o, ref = self.obs, {"sceneName": self.scene}
         items = o.call("GetSceneItemList", ref)["sceneItems"]
+        from scene_order import raise_overlays
+        raise_overlays(items, lambda item, index: o.call("SetSceneItemIndex", dict(ref, sceneItemId=item, sceneItemIndex=index)))
+        items = o.call("GetSceneItemList", ref)["sceneItems"]
         over = [it["sceneItemIndex"] for it in items if it.get("sourceName") == OVERLAY] or \
                [it["sceneItemIndex"] for it in items if it.get("inputKind") == "browser_source"]
         if not over:

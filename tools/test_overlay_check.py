@@ -247,4 +247,5 @@ def main():
 
 
 if __name__ == "__main__":
+    os.environ["POG_TEST"] = "1"
     main()

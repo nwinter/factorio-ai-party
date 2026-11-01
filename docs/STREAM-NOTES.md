@@ -2868,3 +2868,33 @@ It starts an isolated service and a flaky HTTP proxy, reproduces the pre-fix pri
 state retries, actual WebAudio captions, timed tour subtitles, recap entry/exit, delayed response ordering, health
 logging and portrait recovery, then runs a ten-minute soak by default. `POG_TEST_PYTHON` and `POG_TEST_CHROMIUM`
 select existing runtimes. Audio is a synthetic tone; no game, TTS, recording, live-service or OBS calls are made.
+
+### OBS stacking invariant (batch408 cp2)
+
+The overlay is pinned above all scene items after camera cuts (including one-camera subsets, host view and trios),
+landscape/portrait scene builds, host-capture setup, show-card placement and stream-audio setup. Camera slots retain
+the director's relative ordering; unrelated items retain theirs. `cuts.order(..., overlays=...)` receives the actual
+overlay item IDs. Cuts also re-read the scene before the final pin to cover items appended during a panel rebuild.
+The vertical scene uses `vertical overlay`. Existing source enable states, transforms and audio settings are not
+changed by the stacking helper.
+
+`tools/obs-steps.sh` explicitly runs `tools/obs.py raise-overlay` after `stream-scene` and before selecting the program
+scene, reloading the browser or starting outputs. `raise-overlay` verifies the resulting top item. Failure stops
+startup with a nonzero result before those later steps. Scene builders also pin the overlay at their own completion,
+so calling a builder outside shift startup preserves the same invariant.
+
+The watchdog (`tools/overlay_check.py watch`) reads the current program scene and its items even when the page is
+connected and drawing. It reports `overlay order NOT top` with enabled item names/indices above the overlay, or
+missing/disabled status; OBS read failures report `UNKNOWN`. The policy is literally the top enabled item, including
+audio-only sources. The check does not reorder, toggle or reload anything for a stacking fault. It reports a changed
+fault once, returns bad status on every failing pass, and reports recovery once. The full result and `checked_at`
+are stored as `order_report` in the watchdog state file. `status` includes the same read-only check. Tests use
+`POG_OC_ORDER`; `POG_TEST=1` suppresses real OBS reads without that stub.
+
+Cause boundary: changing only `stream.json`'s camera list and restarting the service cannot by itself move a capture
+across a correctly placed overlay. The old cuts algorithm only permuted existing capture/host slots. It did preserve
+an already-bad slot above the overlay. Creating/replacing panel scene items appends them above existing items until
+`stream_scene` finishes its reorder; an interrupted or concurrent rebuild is a possible entry point, not a proven
+historical trigger. Startup's old fixed six-item reorder also left unmanaged extra sources above the overlay. The
+new tests cover correct and corrupt initial stacks, subset/full-camera restarts, panel/client rebuilds, trios, host
+view, inset cuts, extra captures/audio, and the watchdog's diagnosis and recovery.

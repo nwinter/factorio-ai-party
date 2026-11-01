@@ -6,7 +6,7 @@ All three captures ("stream cam1..3", factorio-cam1..3.exe, OBS order = the dire
 the on-air hole (layout.json `main`, the whole left column), cropped to its shape. A cut brings the client on air to
 the front of the other two; the inset, while there is one, is moved to layout.json `inset` (uncropped) and put on top.
 Only z-order and the inset's transform change: every capture keeps running, so a cut is instant. Nothing else in the
-scene moves (background below, the overlay above). The vertical scene ("stream vertical" in Aitum Vertical's canvas,
+scene moves except the overlay, which is pinned above every item even if its previous slot was wrong. The vertical scene ("stream vertical" in Aitum Vertical's canvas,
 tools/vertical.py) shares the captures and is restacked the same way in layout-portrait.json's holes.
 
 Trio (onecam.py, program "layout": "trio"): the three captures move to layout-3cam.json's holes, the client on air in
@@ -18,6 +18,7 @@ layout.json's, the panels over it): the main capture keeps its crop, so no GUI s
 import copy, json, os, re, threading, time, traceback
 
 from obsws import OBSError
+from scene_order import overlay_ids, overlays_last, raise_overlays
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = os.path.join(HERE, "static", "layout.json")
@@ -63,15 +64,15 @@ def platform_view_frac(layouts, client):
     return min(widths)
 
 
-def order(items, cams, top_first):
+def order(items, cams, top_first, overlays=()):
     """items: [(item id, index)] of the whole scene; cams: the camera item ids; top_first: cams from the front back.
-    -> the scene's ids bottom to top with the cameras restacked in the slots they already occupy."""
+    -> bottom to top, cameras restacked in their slots, then overlays above every other item."""
     ids = [i for i, _ in sorted(items, key=lambda x: x[1])]
     slots = sorted(ids.index(c) for c in cams)
     out = list(ids)
     for pos, cid in zip(slots, reversed(top_first)):
         out[pos] = cid
-    return out
+    return overlays_last(out, overlays)
 
 
 VERTICAL = {"canvas": "Aitum Vertical", "scene": "stream vertical",  # tools/vertical.py
@@ -261,13 +262,16 @@ class Cuts:
             stack[HOST] = ids[HOST]
             front = [HOST] + front if host_on else front + [HOST]
         final = order([(it["sceneItemId"], it["sceneItemIndex"]) for it in items], list(stack.values()),
-                      [stack[s] for s in front])
+                      [stack[s] for s in front], overlays=overlay_ids(items))
         cur = [i for i, _ in sorted(((it["sceneItemId"], it["sceneItemIndex"]) for it in items), key=lambda x: x[1])]
         for idx, iid in enumerate(final):  # bottom up: each move leaves the positions below it as they are
             if cur[idx] != iid:
                 o.call("SetSceneItemIndex", dict(ref, sceneItemId=iid, sceneItemIndex=idx))
                 cur.remove(iid)
                 cur.insert(idx, iid)
+        # A concurrent panel rebuild can append an item after the initial snapshot. Re-read before the final pin.
+        raise_overlays(o.call("GetSceneItemList", ref)["sceneItems"], lambda iid, idx: o.call(
+            "SetSceneItemIndex", dict(ref, sceneItemId=iid, sceneItemIndex=idx)))
 
     def place(self, target, iid, role, holes=None):
         """The capture into its role's hole, cropped to the hole's shape; True when its source size was known.

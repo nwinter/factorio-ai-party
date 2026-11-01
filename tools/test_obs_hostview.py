@@ -46,7 +46,7 @@ class Fake:
         self.calls.append(("item", name)); self.scenes[scene].append(name); self.enabled[name] = enabled
 
     def get_scene_item_list(self, scene):
-        return NS(scene_items=[{"sourceName": n, "sceneItemIndex": i} for i, n in enumerate(self.scenes[scene])])
+        return NS(scene_items=[{"sourceName": n, "sceneItemId": n, "sceneItemIndex": i} for i, n in enumerate(self.scenes[scene])])
 
     def get_scene_item_id(self, scene, name): return NS(scene_item_id=name)  # ids are the names here
 
@@ -96,6 +96,23 @@ def main():
     obs.stream_scene(f, "http://127.0.0.1:8787/", layout=os.path.join(HERE, "stream", "static", "layout.json"))
     assert f.transforms["stream cam3"]["cropLeft"] == 492 and f.transforms["stream cam3"]["boundsWidth"] == 1208, f.transforms["stream cam3"]
     assert f.transforms["stream cam1"]["cropLeft"] == 328
+    f = Fake(["stream background", "stream overlay", "extra game"])
+    obs.stream_scene(f, "http://127.0.0.1:8787/")
+    assert f.scenes["stream"][-1] == "stream overlay"
+    # Audio setup appends an enabled item too; strict top-enabled policy includes it.
+    f.get_input_list = lambda: NS(inputs=[{"inputName": n, "inputKind": kind} for n, (kind, _) in f.inputs.items()])
+    f.get_source_filter_list = lambda *args: NS(filters=[])
+    f.create_source_filter = lambda *args, **kw: None
+    f.set_input_volume = lambda *args, **kw: None
+    obs.stream_audio(f)
+    assert f.scenes["stream"][-1] == "stream overlay"
+    f.scenes["stream"].remove("extra game"); f.scenes["stream"].append("extra game")
+    f.set_scene_item_index = lambda *args: None
+    try:
+        obs.raise_stream_overlay(f)
+        raise AssertionError("an ignored move must fail verification")
+    except RuntimeError as e:
+        assert "did not reach the top" in str(e)
     print("obs host view: ok (factorio-nick.exe only, off, on-air hole and crop, above the cameras, one-off adds it alone)")
 
 

@@ -255,8 +255,17 @@ def main():
     old = os.environ.get("POG_CAM_PANELS")
     try:
         o = panels_on()
+        # Existing audio and an unmanaged capture must stay below the overlay through panel/client rebuilds.
+        o.create_input("stream", "extra game", "game_capture", {}, True)
+        o.create_input("stream", "extra audio", "wasapi_process_output_capture", {}, True)
+        assert o.names("stream")[-1] != "stream overlay"
         rehook(o)
+        assert o.names("stream")[-1] == "stream overlay"
+
         panels_off(o)
+        assert o.names("stream")[-1] == "stream overlay"
+        obs.host_view_source(o)
+        assert o.names("stream")[-1] == "stream overlay"
         o = panels_on()
         check(o)
         cuts_plain()
