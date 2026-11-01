@@ -61,6 +61,28 @@ def regions_and_composition():
     assert basetour.choose(tours, basetour.Memory(), 3000) is None
 
 
+def visible_memory():
+    d, _ = world(1, auto_feature=False, tour_every=0)
+    d.set_tours(basetour.Tours(chart_dir()))
+    team=[agent('luna',0,0,3,activity='thinking',active=False)]
+    d.step(snap(team),1000)
+    shot=d.tour_target(1001)
+    assert not d.tour_memory.shown, 'candidate selection is not airtime'
+    d.show_tour(shot,'test',{'luna':1},1001)
+    d.step(snap(team),1002)
+    assert not d.tour_memory.shown, 'camera acknowledgement without visibility is not airtime'
+    d.on_air=copy.deepcopy(d.state)
+    d.step(snap(team),1003)
+    key=shot['tour']['scene']['region']
+    assert d.tour_memory.shown[key][3]==1
+    d.step(snap(team),1004)
+    assert d.tour_memory.shown[key][3]==1, 'one shown scene is credited once'
+    unchanged=copy.deepcopy(d.state[d.onair]['move'])
+    d.tour_memory.note('nauvis',dict(x=200,y=10),'new build','new',1004,1004)
+    d.step(snap(team),1005)
+    assert d.state[d.onair]['move']==unchanged
+
+
 def fresh_facts():
     m = basetour.Memory()
     ship = dict(name='S', where='Nauvis', view=dict(surface='platform-1', hub=dict(x=0,y=0), machines=[]))
@@ -196,5 +218,5 @@ def priorities_and_feed():
 
 if __name__ == '__main__':
     with contextlib.redirect_stdout(io.StringIO()):
-        regions_and_composition();fresh_facts();survey_details();priorities_and_feed()
+        regions_and_composition();visible_memory();fresh_facts();survey_details();priorities_and_feed()
     print('evolving tours: regions, facts, composition, survey receipts, train feed/freshness and priorities passed')
