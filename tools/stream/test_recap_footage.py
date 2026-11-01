@@ -108,6 +108,15 @@ class FootageTest(unittest.TestCase):
         self.assertEqual(director.state[director.onair], original)
         self.assertEqual(len(sent), before)
 
+    def test_unresolved_first_beat_allows_initial_camera_to_become_ready(self):
+        from test_onecam import world, agent, snap
+        director, _ = world()
+        state = snap([dict(agent('luna',0,0,5),surface='nauvis')])
+        recap={'active':True,'run':'shift1','id':'unknown','phase':'recap'}
+        for now in range(1000,1005): director.step(state,now,C.cue(recap,state,now))
+        self.assertEqual(director.public(1005)['main']['agents'], ['luna'])
+        self.assertTrue(C.cue(recap,snap([agent('luna',0,0)]),1005)['hold_current'])
+
 
 class OBSStub:
     def __init__(self):

@@ -12,12 +12,12 @@ def cue(recap, snapshot, now, frac=1.0):
     subject = recap.get("subject") or {}
     name = str(subject.get("name") or "").casefold()
     target = None
-    if subject.get("type") == "platform":
+    if name and subject.get("type") == "platform":
         row = next((p for p in (snapshot.get("space") or {}).get("platforms", [])
                     if str(p.get("name", "")).casefold() == name and (p.get("view") or {}).get("surface")), None)
         if row:
             target = platform_shot(row["view"], frac=frac, overview=True)
-    else:
+    elif name:
         agents = [a for a in snapshot.get("agents", []) if not a.get("dead") and a.get("position")
                   and str(a.get("surface") or a["position"].get("surface", "")).casefold() == name]
         if agents:

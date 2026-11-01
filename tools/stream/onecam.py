@@ -1975,7 +1975,7 @@ class OneCam(Director):
         if self.pending and (self.look or self.plat or (self.fol and
                 (self.state.get(self.pending["slot"]) or {}).get("subject") != self.fol)):
             self.pending = None
-        if segment and segment.get("recap") and self.pending and \
+        if segment and segment.get("recap") and self.pending and self.state.get(self.onair) and \
                 (self.state.get(self.pending["slot"]) or {}).get("seg") != segment["id"]:
             self.pending = None  # a pre-recap routine standby cannot cut underneath its first line
         if self.pending and self.ready(self.pending["slot"], now):

@@ -196,6 +196,7 @@ try {
         const samples = audit.samples.filter(s => s.t > start.t + .3 && s.t < end.t - .1);
         assert(samples.length > 0, 'missing playback samples');
         assert(samples.every(s => s.beat === beat && s.recap), 'scene advanced before audible receipt');
+        assert(samples.every(s => s.camera?.subject), 'narration has no established camera');
         assert.equal(new Set(samples.map(s => JSON.stringify(s.camera))).size, 1, 'camera changed during narration');
         assert(end.t - start.t >= end.duration + 1.8, 'receipt preceded delayed output drain');
       }
