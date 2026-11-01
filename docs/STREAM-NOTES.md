@@ -2859,7 +2859,8 @@ the OBS session's evidence.
 These are **browser-layer** reports. A visible browser layer can still be covered by another OBS scene source.
 For a missing bar/subtitle, compare read-only `GetSourceScreenshot` of `stream overlay` and `stream`, then inspect
 `GetSceneItemList` ordering. In the batch408 capture, the browser rendered both but game captures above the overlay
-covered them in the composed program (overlay index 5, game clean 6, cam1 7). Page reloads cannot correct scene
+covered them in the composed program (overlay index 5, game capture cam1 at 7; game clean at 6 is audio-only).
+Page reloads cannot correct scene
 stacking. The operator owns live scene correction and deployment; the recovery fixture never calls OBS.
 
 Offline reproduction: `node tools/stream/overlay_recovery_browser.mjs OUTPUT PLAYWRIGHT_MODULE [SOAK_SECONDS]`.
