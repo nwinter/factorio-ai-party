@@ -40,7 +40,10 @@ stream for N s; " and the steps, or "...; still not connected" (exit 1). After a
 - cams: each camera client's controller by one RCON line on --world (POG_WORLD, else n; 0.68 ms on n, d29): bad for a
   connected one in a cutscene or a character controller. The runtime puts such a client back itself (cameras.lua's
   tick: make_director, exit_cutscene then spectator, every tick while it is not a spectator), so this is a report.
-watch prints the panel and cams lines once per change (and when they are good again). Stubs: POG_OC_CAMS (a command
+watch also reads GetCurrentProgramScene and GetSceneItemList: the overlay must be the top enabled item, including
+audio-only items in this strict check. Missing/disabled/covered overlays and OBS read failures return bad status,
+without triggering a reload or reorder solely for stacking. POG_OC_ORDER supplies a JSON report in tests.
+watch prints the panel, cams and ordering lines once per change (and when they are good again). Stubs: POG_OC_CAMS (a command
 printing the cams JSON); under POG_TEST no world is read without it.
 
 A service from before batch347 has no /overlay/status: "overlay check: skipped (the service has no /overlay/status)",
@@ -55,6 +58,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from stream import scene_order
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVICE = "http://127.0.0.1:8788"
@@ -160,6 +164,25 @@ def cams_line(cams):
         return "cams: none connected", False
     bad = [c for c in on if c.get("controller") in BAD_CONTROLLERS]
     return "cams: " + ", ".join(f"{c.get('name')} {c.get('controller')}" for c in on), bool(bad)
+
+
+def composition():
+    """Read the actual program's stack. Tests use POG_OC_ORDER; never use the mutation/reload command here."""
+    cmd = os.environ.get("POG_OC_ORDER")
+    if not cmd and os.environ.get("POG_TEST"):
+        return None
+    try:
+        if cmd:
+            r = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=10, check=True)
+            return json.loads(r.stdout)
+        from stream.obsws import OBS
+        client = OBS(timeout=3)
+        try:
+            return scene_order.read_program(client.call)
+        finally:
+            client.close()
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"[:200]}
 
 
 def obs(cmd):
@@ -321,7 +344,11 @@ def watch_more(a, st, clock=time.time):
     elif line and state.get("speech_said"):
         print(f"{stamp} speech again: {line}")
         state["speech_said"] = None
-    for key, (text, worse) in (("panel", panel(st)), ("cams", cams_line(cameras(getattr(a, "world", None))))):
+    order = composition()
+    if order is not None:
+        state["order_report"] = dict(order, checked_at=clock())
+    for key, (text, worse) in (("panel", panel(st)), ("cams", cams_line(cameras(getattr(a, "world", None)))),
+                               ("order", scene_order.line(order))):
         if text is None:
             continue
         rc = max(rc, 1 if worse else 0)
@@ -378,7 +405,7 @@ def status(a):
         print(f"overlay NOT connected (the service does not answer: {e})")
         return 1
     p = page(st)
-    more = [x for x in (speech(st), panel(st), cams_line(cameras(a.world))) if x[0]]
+    more = [x for x in (speech(st), panel(st), cams_line(cameras(a.world)), scene_order.line(composition())) if x[0]]
     tail = "".join("; " + t for t, _ in more)
     blank = blank_for(st)
     if blank is not None:

@@ -30,6 +30,7 @@ from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
 from shift_recap_camera import cue as recap_camera, on_air as recap_on_air
 from model import Model  # noqa: E402
+from overlay_health import OverlayHealth
 import router  # noqa: E402
 
 STATIC = os.path.join(HERE, "static")
@@ -550,6 +551,7 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
                  platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None, recap=None):
     audio = audio or AudioHub()
+    health = OverlayHealth(os.path.join(os.path.dirname(audio.log_path), "overlay-health.jsonl") if audio.log_path else None)
     tour = tour or TourOverlay()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -604,7 +606,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     after = 0
                 return self.send(200, json.dumps(audio.status(after)).encode(), "application/json")
             if path == "/overlay/status":  # (batch347) which overlay pages hold their event stream, since when
-                return self.send(200, json.dumps(audio.pages_status()).encode(), "application/json")
+                status = audio.pages_status()
+                status["health"] = health.status()
+                return self.send(200, json.dumps(status).encode(), "application/json")
             if path == "/analyst.json":
                 return self.send(200, json.dumps(analyst.full(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
             if path.startswith("/shift-recap/assets/") and recap:
@@ -627,12 +631,19 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
         def do_POST(self):
             path = self.path.split("?", 1)[0]
             n = int(self.headers.get("Content-Length") or 0)
-            if n > 8 << 20:
+            if n > (OverlayHealth.MAX_BYTES if path == "/overlay/health" else 8 << 20):
+                self.close_connection = True
                 return self.send(413, b"too large", "text/plain")
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
                 return self.send(400, b"bad json", "text/plain")
+            if path == "/overlay/health":
+                try:
+                    health.record(body)
+                except ValueError as e:
+                    return self.send(400, str(e).encode(), "text/plain")
+                return self.send(200, b"{}", "application/json")
             if path == "/audio":
                 import base64
                 try:

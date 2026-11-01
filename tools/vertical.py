@@ -22,6 +22,7 @@ output, so an unmuted portrait page would play every voice twice on both streams
 the program scene or the pog profile's outputs.
 """
 import argparse, base64, json, os, sys
+from stream.scene_order import raise_overlays
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -129,6 +130,9 @@ def build_scene(c, url):
     order.append(ov)
     for idx, item in enumerate(order):
         send(c, "SetSceneItemIndex", {"sceneUuid": uuid, "sceneItemId": item, "sceneItemIndex": idx})
+    items = send(c, "GetSceneItemList", {"sceneUuid": uuid})["sceneItems"]
+    raise_overlays(items, lambda iid, idx: send(c, "SetSceneItemIndex", {
+        "sceneUuid": uuid, "sceneItemId": iid, "sceneItemIndex": idx}), names=("vertical overlay",))
     vendor(c, "switch_scene", {"scene": SCENE})
     return uuid
 
