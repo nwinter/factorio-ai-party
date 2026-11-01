@@ -59,7 +59,7 @@ def speak(c, e, clock, lines=None):
 
 
 def played(hub, cid, state, clock, **kw):
-    hub.played(dict(id=cid, state=state, page='main', session='capture', capture=True, duration=2, **kw), now=clock.t)
+    hub.played(dict(id=cid, state=state, page='main', session='capture', capture=True, audible=True, duration=2, **kw), now=clock.t)
 
 
 def lifecycle(clock):

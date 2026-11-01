@@ -370,9 +370,14 @@ class Feed(threading.Thread):
         while True:
             try:
                 with urllib.request.urlopen(self.base + "/events", timeout=60) as r:
+                    event = "message"
                     for raw in r:
-                        line = raw.decode("utf-8", "replace").rstrip("\n")
-                        if line.startswith("data: "):
+                        line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                        if not line:
+                            event = "message"
+                        elif line.startswith("event: "):
+                            event = line[7:]
+                        elif line.startswith("data: ") and event == "message":
                             try:
                                 self.on_snapshot(json.loads(line[6:]))
                             except Exception:
@@ -2971,7 +2976,8 @@ class Caster:
 
     def caster_tick(self, now, st):
         self.playback_receipts(st)
-        if ((getattr(self, "snap", None) or {}).get("shift_recap") or {}).get("active"):
+        recap = (getattr(self, "snap", None) or {}).get("shift_recap") or {}
+        if st.get("speech_owner") or (recap.get("active") and not recap.get("holding")):
             # The prepared Rook/Vale audio is owned by the new stream service during startup.
             self.caster_free = max(self.caster_free, now)
             return

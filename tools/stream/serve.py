@@ -110,6 +110,7 @@ class AudioHub:
         self.playing = {}  # id -> {meta, started}
         self.done = set()  # ids started, ended, skipped or cancelled (not queued any more)
         self.skipped = set()  # ids whose skip was logged (two pages report each)
+        self.cancelled = set()
         self.listeners = 0
         self.last_report = None
         self.log_path = log_path
@@ -117,6 +118,9 @@ class AudioHub:
         self.loads = deque()  # times the page loaded
         self.receipts = deque(maxlen=2000)
         self.completed = set()
+        self.speech_owner = None
+        self.speech_revision = 0
+        self.held = {}  # clip id -> hold start; kept by the service across page reloads
         self.capture_session = None
         self.require_capture = require_capture
         self.capture_receipt = False
@@ -164,21 +168,23 @@ class AudioHub:
         except OSError:
             pass
 
-    def _end(self, cid, v, state, now, played=None, duration=None, reason=None):
+    def _end(self, cid, v, state, now, played=None, duration=None, reason=None, audible=None):
         """A clip's end: how long it played against its length, logged and counted (caller holds the lock)."""
+        measured = played is not None
         length = duration if duration is not None else v.get("audio_s") or v.get("duration")
         if state == "no_end":  # how long it played is not known: the page never said
             played = None
-        elif not played:  # no page measure (or an audio clock that did not move): the time between its reports
+        elif played is None:  # legacy diagnostic estimate, never evidence of audible completion
             played = round(now - v["started"], 2)
-        early = state in ("cut", "error", "reload", "no_end") or (length is not None and played < float(length) - self.EARLY_S)
+        early = state in ("cut", "held", "error", "reload", "no_end") or (length is not None and played < float(length) - self.EARLY_S)
         if state == "end" and early:
             reason = "short_end"
         row = {"t": round(now, 2), "id": cid, "ended": True, "state": state, "channel": v.get("channel"), "speaker": v.get("speaker"),
                "agent": v.get("agent"), "played": round(float(played), 2) if played is not None else None,
                "duration": round(float(length), 2) if length is not None else None,
                "early": bool(early), "reason": (reason or state) if early else None}
-        row["completed"] = state == "end" and not early
+        row["audible"] = audible is True
+        row["completed"] = state == "end" and not early and audible is True and measured and bool(length) and played > 0
         if v.get("recap"):
             row["recap"] = v["recap"]  # durable line completion, recoverable by the successor service
         if row["completed"]:
@@ -226,19 +232,88 @@ class AudioHub:
                 meta["expires"] = max(meta["expires"], float(meta["at"]) + 5)
             self.clips[cid] = (audio, ctype, meta)
             self.order.append(cid)
+            if self.speech_owner and meta.get("channel") != "control" and not self.owns(meta):
+                self.held[cid] = meta["t"]
             while len(self.order) > self.MAX_CLIPS:
                 gone = self.order.pop(0)
                 self.clips.pop(gone, None)
                 self.done.discard(gone)
                 self.skipped.discard(gone)
+                self.cancelled.discard(gone)
+                self.held.pop(gone, None)
             self.cond.notify_all()
             return meta
 
-    def cancel(self, cid):
-        """POST /audio/cancel {id}: a clip not started yet is taken back; the page drops it (a `cancel` event)."""
+    def owns(self, meta):
+        return (meta.get("segment") or {}).get("id") == self.speech_owner
+
+    def ownership(self):
+        return {"speech_owner": self.speech_owner, "speech_revision": self.speech_revision,
+                "speech_epoch": self.clip_epoch}
+
+    def acquire_speech(self, segment):
+        """Claim before preparing/posting the first recap line, including clips already in the browser."""
         with self.cond:
-            if cid not in self.clips or cid in self.done:
+            if self.speech_owner == segment:
+                return
+            self.speech_owner = segment
+            self.speech_revision += 1
+            now = time.time()
+            for cid, (_, _, m) in self.clips.items():
+                if (m.get("channel") != "control" and not self.owns(m)
+                        and (cid not in self.done or cid in self.playing) and m["expires"] > now):
+                    self.held.setdefault(cid, now)
+            self.push(dict(self.ownership(), channel="control"), b"", "text/plain")
+
+    def release_speech(self, segment):
+        with self.cond:
+            if self.speech_owner != segment:
+                return
+            self.speech_owner = None
+            self.speech_revision += 1
+            resume = self._resume_held(time.time())
+            self.push(dict(self.ownership(), channel="control", resume=resume), b"", "text/plain")
+
+    def _resume_held(self, now):
+        resume = []
+        for cid, since in list(self.held.items()):
+            self.held.pop(cid, None)
+            if cid not in self.clips or cid in self.completed or cid in self.skipped:
+                continue
+            m = self.clips[cid][2]
+            v = self.playing.pop(cid, None)
+            if v:
+                self._end(cid, v, "held", now)
+            # Match batch319's bounded relevance window, also on a newly loaded page.
+            if m.get("channel") in ("agent", "operator") or m.get("rank") == "viewer":
+                extension = min(max(0, 120 - m.get("hold_extension", 0)), max(0, now - since))
+                m["expires"] += extension
+                m["hold_extension"] = m.get("hold_extension", 0) + extension
+            self.done.discard(cid)
+            m["attempt"] = m.get("attempt", 0) + 1  # fence late receipts from the stopped source
+            if m["expires"] <= now:
+                self.played({"id": cid, "state": "skip", "reason": "expired", "attempt": m["attempt"],
+                             "capture": self.capture_receipt, "session": self.capture_session}, now)
+                continue
+            # A displaced timed narration joins the single voice queue; hourly tours cancel and
+            # resume their unaired stops with their pictures via the producer instead.
+            m.pop("at", None)
+            m.pop("segment", None)
+            resume.append(dict(m))
+        return resume
+
+    def subscription(self):
+        """Atomic SSE baseline: ownership precedes any replayed clip, even on reconnect."""
+        with self.cond:
+            return self.seq, [self.ownership(), *self.pending()]
+
+    def cancel(self, cid):
+        """Take back queued, held or playing speech; completed clips remain completed."""
+        with self.cond:
+            if cid not in self.clips or (cid in self.done and cid not in self.held and cid not in self.playing):
                 return False
+            self.held.pop(cid, None)
+            self.cancelled.add(cid)
             self.done.add(cid)
         self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
         return True
@@ -256,6 +331,7 @@ class AudioHub:
             if cid not in self.clips:
                 return False
             self.done.add(cid)
+            self.cancelled.add(cid)
         self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
         return True
 
@@ -265,6 +341,8 @@ class AudioHub:
             for cid, (_, _, meta) in self.clips.items():
                 if (meta.get("segment") or {}).get("id") == segment:
                     self.done.add(cid)
+                    self.cancelled.add(cid)
+                    self.held.pop(cid, None)
         self.push({"channel": "control", "stop_segment": segment, "expires_in": 30}, b"", "text/plain")
 
     def pending(self, now=None):
@@ -274,7 +352,7 @@ class AudioHub:
         with self.cond:
             out = []
             for c in self.order:
-                if c not in self.clips or c in self.done:
+                if c not in self.clips or c in self.done or c in self.held:
                     continue
                 m = self.clips[c][2]
                 if m.get("channel") == "control" or m["expires"] <= now:
@@ -287,7 +365,8 @@ class AudioHub:
     def wait(self, seq, timeout):
         with self.cond:
             self.cond.wait_for(lambda: self.seq != seq, timeout=timeout)
-            return self.seq, [self.clips[c][2] for c in self.order if int(c.split("-")[1]) > seq and c in self.clips]
+            return self.seq, [self.clips[c][2] for c in self.order
+                             if int(c.split("-")[1]) > seq and c in self.clips and c not in self.held]
 
     def played(self, report, now=None):
         cid, st = report.get("id"), report.get("state")
@@ -303,6 +382,9 @@ class AudioHub:
             v = report.get(k)
             return float(v) if isinstance(v, (int, float)) else None
         with self.cond:
+            meta = self.clips.get(cid, (None, None, {}))[2]
+            if cid and report.get("attempt", 0) != meta.get("attempt", 0):
+                return
             session = report.get("session")
             if session and st != "load" and self.capture_session not in (None, session):
                 return
@@ -314,8 +396,10 @@ class AudioHub:
                 self.loads.append(now)
                 self._log({"t": round(now, 2), "state": "load"})
                 for k, v in list(self.playing.items()):
-                    self._end(k, v, "reload", now)
+                    self._end(k, v, "held" if k in self.held else "reload", now)
                     self.playing.pop(k)
+                    if v.get("recap"):
+                        self.skipped.add(k)
             elif cid in self.clips and st == "start" and cid not in self.done:
                 at = num("started_at")  # (CK1) the moment the page started it, on the service's clock
                 self.playing[cid] = {"started": at if at and abs(at - now) < 30 else now, **self.clips[cid][2],
@@ -324,13 +408,19 @@ class AudioHub:
                 self._log({"t": round(now, 2), "id": cid, "state": "start",
                            "started_at": round(self.playing[cid]["started"], 3),
                            "channel": self.clips[cid][2].get("channel"), "at": self.clips[cid][2].get("at")})
-            elif st in ("end", "error", "cut"):  # cut: a line that mattered more faded this one out
+            elif st in ("end", "error", "cut", "held"):
                 self.done.add(cid)
                 v = self.playing.pop(cid, None)
                 if v:
-                    self._end(cid, v, st, now, num("played"), num("duration"))
+                    self._end(cid, v, st, now, num("played"), num("duration"), audible=report.get("audible"))
                 elif st == "error" and cid in self.clips and cid not in self.completed:
                     self._end(cid, dict(self.clips[cid][2], started=now), st, now, 0, num("duration"))
+                if st == "held" and meta.get("recap"):
+                    self.skipped.add(cid)  # the player retries; never resume a recap as ordinary speech
+                elif st == "held" and cid in self.clips and cid not in self.completed and cid not in self.cancelled:
+                    self.held.setdefault(cid, now)
+                    if not self.speech_owner:
+                        self.push({"channel": "control", "resume": self._resume_held(now)}, b"", "text/plain")
             elif st == "skip":  # expired in the page's queue: never played
                 if cid in self.skipped or cid in self.completed:
                     return  # (batch319) a second page's report of the same skip: logged once
@@ -343,11 +433,13 @@ class AudioHub:
                        "speaker": meta.get("speaker"), "agent": meta.get("agent"), "played": 0.0,
                        "duration": meta.get("duration"), "early": False,
                        "reason": why if why in ("expired", "late", "cancelled") else None}
+                if why == "expired" and meta.get("attempt", 0) > 0:
+                    row["held_expired"] = True
                 self.ended.append((now, row))
                 self._log(row)
             # a page that goes away mid-clip never reports the end; forget clips well past their length
             for k, v in list(self.playing.items()):
-                if now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
+                if k not in self.held and now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
                     self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 
@@ -377,7 +469,7 @@ class AudioHub:
         now = now or time.time()
         with self.cond:
             self._trim(now)
-            whole = [r for _, r in self.ended if r.get("state") == "end" and not r.get("early")
+            whole = [r for _, r in self.ended if r.get("completed")
                      and isinstance(r.get("played"), (int, float)) and isinstance(r.get("duration"), (int, float))
                      and r["played"] >= r["duration"] - self.WHOLE_S]
             ids = {r["id"] for r in whole}
@@ -410,6 +502,7 @@ class AudioHub:
                       for c in self.order if c in self.clips and c not in self.done
                       for m in [self.clips[c][2]] if m.get("channel") != "control" and m["expires"] > now]
             out = {"listeners": self.listeners, "playing": playing, "queued": queued,
+                   "speech_owner": self.speech_owner, "held": [{"id": c} for c in self.held],
                    "receipts": [r for r in self.receipts if r.get("t", 0) >= receipts_after],
                    "receipt_t": self.receipts[-1]["t"] if self.receipts else None,
                    "last_report": self.last_report, "clips": len(self.order)}
@@ -623,13 +716,15 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             self.end_headers()
 
         def audio_events(self):
-            """New clips only (a page that reconnects does not replay old lines)."""
+            """Ownership baseline and pending clips, then new audio/control events."""
             self.sse_head()
-            seq = audio.seq
+            seq, initial = audio.subscription()
             with audio.cond:
                 audio.listeners += 1
             try:
                 self.wfile.write(b": hello\n\n")
+                for c in initial:
+                    self.wfile.write(b"data: " + json.dumps(c).encode() + b"\n\n")
                 self.wfile.flush()
                 while True:
                     new, clips = audio.wait(seq, 15)
@@ -664,7 +759,8 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     audio.listeners += 1
             try:
                 if want_audio:  # (batch319 SU) the clips still queued, for a page that (re)connects
-                    for c in audio.pending():
+                    seq, initial = audio.subscription()
+                    for c in initial:
                         self.wfile.write(b"event: audio\ndata: " + json.dumps(dict(c, server_time=time.time()), ensure_ascii=False).encode() + b"\n\n")
                     self.wfile.flush()
                 while True:
@@ -979,6 +1075,7 @@ def main():
                     snap = model.snapshot(now, cams)
                     snap["artillery"] = arty["res"]
                 snap["shift_recap"] = shift_recap.public if shift_recap else None
+                snap["speech_owner"] = audio.speech_owner
                 snap["segment"] = segments.step(snap, now)
                 if mode == "onecam":  # no layout change while a replay is (about to be) on air
                     cur = segments.cur

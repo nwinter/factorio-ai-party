@@ -95,7 +95,14 @@ class PlaybackMemory:
                 if row['state'] == 'completed':
                     continue
                 state = receipt.get('state')
-                if state == 'start' and row['state'] == 'queued':
+                if receipt.get('held_expired'):
+                    row.update(state='cancelled', reason='expired while held')
+                    changed = True
+                elif state == 'held':
+                    row.update(state='queued', reason='recap or connection hold')
+                    row.pop('started', None)
+                    changed = True
+                elif state == 'start' and row['state'] == 'queued':
                     row.update(state='started', started=receipt['t'])
                     changed = True
                 elif state == 'end' and receipt.get('completed'):
@@ -111,7 +118,7 @@ class PlaybackMemory:
                         changed = True
             # A disappearing listener must release topics even if it never sends a skip/no_end.
             # Use the authoritative queue: narrator holds can extend expiry in the page.
-            live = {r['id'] for key in ('playing', 'queued') for r in status.get(key) or []}
+            live = {r['id'] for key in ('playing', 'queued', 'held') for r in status.get(key) or []}
             for gid, index, row in by_id.values():
                 if row['state'] == 'queued' and row['cid'] not in live and now > row.get('expires', now) + 5:
                     row.update(state='expired', reason='no playback receipt')
@@ -140,6 +147,6 @@ class PlaybackMemory:
                                 any(r['state'] in ('error', 'skipped', 'expired') for r in g['lines']))
                 if not any(r['state'] == 'interrupted' for r in g['lines']) and not continuation:
                     continue
-                indices = [i for i, r in enumerate(g['lines']) if r['state'] != 'completed']
+                indices = [i for i, r in enumerate(g['lines']) if r['state'] not in ('completed', 'cancelled')]
                 return gid, indices
         return None
