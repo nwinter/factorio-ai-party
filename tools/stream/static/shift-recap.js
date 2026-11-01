@@ -6,6 +6,7 @@
     return node;
   };
   let panel, key, video, label, last, watchdog;
+  let fit = () => {};
   const failures = [];
   const params = new URLSearchParams(location.search);
   const cinema = params.get('recap_layout') === 'cinema';
@@ -27,6 +28,7 @@
       for (const [k,v] of Object.entries({x:cam.offsetLeft,y:cam.offsetTop,w:cam.offsetWidth,h:cam.offsetHeight}))
         panel.style.setProperty('--sr-'+k,v+'px');
     }
+    fit();
   }
   function render(s) {
     const recap = s && s.shift_recap;
@@ -38,7 +40,7 @@
       panel.setAttribute('aria-label','Recorded shift recap'); panel.hidden=true; stage.appendChild(panel);
     }
     panel.hidden = !active;
-    if (!active) { release(); panel.replaceChildren(); key=null; last=null; return; }
+    if (!active) { release(); panel.replaceChildren(); key=null; last=null; fit=()=>{}; return; }
     last = recap;
     requestAnimationFrame(cameraRect);
     // Stills remain in the audit only. A missing, unsupported or failed clip is transparent.
@@ -88,7 +90,7 @@
       },{once:true});
       figure.append(node); node.src=media.url; stalled();
     }
-    const fit=() => {
+    fit=() => {
       if (!caption.isConnected || !caption.clientHeight) return;
       let size=parseFloat(getComputedStyle(spoken).fontSize);
       while(caption.scrollHeight > caption.clientHeight+1 && size > 18) spoken.style.fontSize=--size+'px';

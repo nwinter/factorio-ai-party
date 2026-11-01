@@ -136,7 +136,7 @@ def pages(manifest, out, *, backdrop=None, snapshot=None):
         if backdrop:
             # Explicit offline stand-in for the pixels OBS puts BELOW this transparent
             # browser. The recap CSS/JS above is still the production implementation.
-            feed = '''<style>body{background:#0b1017}.rehearsal-feed{position:absolute;left:24px;top:24px;width:1208px;height:1032px;object-fit:cover}
+            feed = '''<style>html body.fx-overlay{background:#0b1017}.rehearsal-feed{position:absolute;left:24px;top:24px;width:1208px;height:1032px;object-fit:cover}
 body.portrait .rehearsal-feed{top:112px;width:1032px;height:883px}
 .rehearsal-watermark{position:absolute;right:30px;bottom:6px;z-index:2000;font:14px system-ui;color:white;background:#000b;padding:3px 8px}</style>
 <video class="rehearsal-feed" src="rehearsal-feed.webm" muted autoplay loop playsinline></video>

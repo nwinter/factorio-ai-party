@@ -28,6 +28,7 @@ from director import Director  # noqa: E402
 from onecam import OneCam, onair_doing, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
+from shift_recap_camera import cue as recap_camera, on_air as recap_on_air
 from model import Model  # noqa: E402
 import router  # noqa: E402
 
@@ -1098,7 +1099,6 @@ def main():
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 # Recap cues use the director's existing segment camera path. No new
                 # game reads, OBS sources or layout; missing subjects keep normal air.
-                from shift_recap_camera import cue as recap_camera, on_air as recap_on_air
                 recap_cue = recap_camera(snap.get("shift_recap"), snap, now,
                                          frac=getattr(director, "cfg", {}).get("platform_frac") or 1.0)
                 cams = director.step(snap, now, recap_cue or segments.camera())

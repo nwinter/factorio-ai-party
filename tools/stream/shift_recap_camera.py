@@ -46,7 +46,10 @@ def on_air(recap, snapshot):
     camera = (program.get("cameras") or {}).get(frame.get("client", "main")) or {}
     # Only committed, non-pending compositor state can name the visible subject.
     visible = cuts.get("connected") and not cuts.get("error") and not camera.get("pending") and not program.get("host")
-    name = ((frame.get("platform") or frame.get("ship") or {}).get("name") or frame.get("surface")) if visible else None
+    surface = frame.get("surface") or (frame.get("frame") or {}).get("surface") or (camera.get("shot") or {}).get("surface")
+    ship = next((p.get("name") for p in (snapshot.get("space") or {}).get("platforms", [])
+                 if surface and (p.get("view") or {}).get("surface") == surface), None)
+    name = ((frame.get("platform") or frame.get("ship") or {}).get("name") or ship or surface) if visible else None
     if name and name.startswith("platform-"):
         name = None
     return dict(recap, live={"subject": name})

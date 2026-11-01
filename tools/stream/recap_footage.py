@@ -30,7 +30,10 @@ def plan(recipe, run):
         raise ValueError('recipe needs 1..16 reviewed clips')
     jobs = []
     for row in rows:
+        row = dict(row)
         source = Path(row['source']).expanduser().resolve()
+        stat = source.stat()
+        row.update(source_bytes=stat.st_size, source_mtime_ns=stat.st_mtime_ns)
         values = [row.get(k) for k in ('offset', 'duration', 't')]
         if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in values):
             raise ValueError('finite offset, duration and capture epoch required')
@@ -62,6 +65,7 @@ def plan(recipe, run):
         jobs.append({'path': str(out.relative_to(run)), 'output': str(out), 'command': command,
                      'source': str(source), 't': stamp, 'duration': duration, 'subject': row['subject'],
                      'subject_type': row['subject_type'], 'coverage': coverage, 'crop': crop,
+                     'source_bytes': stat.st_size, 'source_mtime_ns': stat.st_mtime_ns,
                      'offset': 0, 'recipe_key': key})
     return jobs
 
@@ -84,8 +88,8 @@ def apply(jobs, run, execute=subprocess.run):
             out = Path(job['output']); tmp = out.with_suffix('.tmp')
             if not Path(job['source']).is_file():
                 raise ValueError('source missing: ' + job['source'])
-            used = sum(p.stat().st_size for p in folder.glob('*.webm'))
-            if not out.exists() and used + MAX_BYTES > BUDGET:
+            used = sum(p.stat().st_size for p in folder.iterdir() if p.is_file() and p.name != '.lock')
+            if used > BUDGET or (not out.exists() and used + MAX_BYTES > BUDGET):
                 raise ValueError('256 MiB clip budget exhausted')
             before = time.monotonic()
             try:
@@ -94,13 +98,17 @@ def apply(jobs, run, execute=subprocess.run):
                     execute(job['command'], check=True, capture_output=True, timeout=120)
                 candidate = out if out.exists() else tmp
                 info = probe(candidate, execute)
+                duration = float(info['format']['duration'])
                 if (any(s['codec_type'] == 'audio' for s in info['streams']) or
                         not any(s['codec_type'] == 'video' for s in info['streams']) or
-                        float(info['format']['duration']) < job['duration'] - .15 or
+                        not math.isfinite(duration) or abs(duration - job['duration']) > .15 or
                         candidate.stat().st_size > MAX_BYTES):
                     raise ValueError('incomplete, oversized or non-silent clip')
                 execute(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(candidate), '-an', '-f', 'null', '-'],
                         check=True, capture_output=True, timeout=60)
+                current = Path(job['source']).stat()
+                if (current.st_size, current.st_mtime_ns) != (job['source_bytes'], job['source_mtime_ns']):
+                    raise ValueError('source changed during preparation; use a finished recording')
                 if candidate == tmp:
                     tmp.replace(out)
                 receipts.append({k: v for k, v in job.items() if k not in ('command', 'output')})

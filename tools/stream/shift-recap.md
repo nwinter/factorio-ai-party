@@ -65,27 +65,39 @@ the recap. If narration finishes first, the page restores the normal layout; the
 remains without repeating the voices until the marker appears. Agent readiness is controlled by start-team, not by
 the recap. A short startup can end a longer script before all lines air.
 
-The recap and transition cover the entire broadcast canvas, including cameras and sidebar,
-at 1920×1080 and 1080×1920. Each beat shows a short headline, speaker, record time and the
-spoken caption. Imagery occupies a dedicated 1856×662 field (59.25% of 1920×1080) or
-1032×1238 field (61.61% of 1080×1920), including its one-pixel border. Images fill that
-field with a centered crop (`object-fit: cover`); the original uncropped files remain in
-the audit assets. Captions sit below the image. Its capture time and Wube credit are separate
-from the claim's record time. The page binds by ship/surface and nearest recorded time,
-never by rotating an unrelated still. Ship names take precedence over their dock/route;
-ambiguous subjects and missing or failed media get a neutral card. Source paths, row IDs,
-binding reasons and the full timeline stay in the offline manifest/script/contact sheet.
+The recommended layout puts the recap over the existing OBS game-camera rectangle,
+1208×1032 in landscape and 1032×883 in portrait. The sidebar dims while narration runs;
+camera labels and ordinary overlay captions yield. The title has a dark gradient. Captions
+use `rgba(9,21,28,.88)` behind warm-white text, with a shadow and gold speaker/accent. Even
+against white footage the caption text has approximately 12:1 contrast. Text shrinks to fit
+longer record extracts. The rest of the footage stays unobscured.
 
-Normal layout keeps receiving snapshots beneath the opaque recap layer. Completion,
-interruption and an ended state after page reload restore it. A mid-recap reload renders the
-current service beat; a recorded clip seeks to its elapsed time and stays muted beneath the
-casters. The recap renderer runs before agent-dependent renderers, including when the service
-has no agents snapshot yet. No OBS scene change is needed. The operator deploys/restarts the
-service through the normal shift start.
+Each beat prefers a recorded **video** of its named ship/surface whose capture interval
+contains the cited record time. A nearer still cannot displace such a clip. Stills stay in
+the audit/contact sheet; they never cover gameplay on air. Without a clip, the browser is
+transparent over the existing live camera. A subject cue goes through the normal director's
+segment-camera path using only existing platform views or agent positions. Operator holds
+and urgent shots keep priority; unknown/ambiguous subjects leave the current game on air.
+The live label names a subject only from acknowledged compositor state. Capture time and
+claim time remain distinct, and live footage explicitly says “earlier shift narrated”.
+
+The browser's muted, looping video element supplies prepared footage; no OBS media source,
+scene switch, camera transform or browser-source setup is required. Clips contain no audio.
+While loading, on decoder error, or after a 2.5-second stall, the live game remains/reappears
+under the captions. A mid-recap reload seeks to `(elapsed + offset) % duration`, keeping
+motion through long lines. End, interruption and a completed narration's holding state
+release the decoder and restore normal opacity/labels. State continues updating throughout.
+
+`?recap_layout=cinema` enables the full-canvas comparison when a clip is actually playing.
+It uses a center crop and loses substantially more of the scene in portrait. Loading or
+failed clips return to the existing camera rectangle, since the live OBS camera is not
+full canvas. The default translucent layout preserves more gameplay and needs no scene
+operations. Changing the comparison switch on a live OBS browser source is an operator
+choice at normal deployment, never part of preparation.
 
 `mapframes/*.json` supplies timestamped surface stills. An optional `runs/RUN/recap-media.json`
 array can index other **already recorded** local images/clips, for example
-`{"path":"archive/lark.webm","t":1793391508,"platform":"Lark","offset":0}` (or `surface`).
+`{"path":"archive/lark.webm","t":1793391508,"platform":"Lark","duration":12,"offset":0}` (or `surface`).
 It must name an existing file inside that run, a capture time inside the recorded shift and
 a subject. Accepted formats are WebP/PNG/JPEG/MP4/WebM. The prep reader makes no capture, remux, OBS request or
 filename/mtime inference. Content-addressed copies and bindings survive service restarts.
@@ -102,7 +114,7 @@ uses the configured voice providers. `--logs tools/stream/logs` includes availab
 analyst logs. `--until EPOCH` sets a reproducible record boundary. The rehearsal retains
 `early-manifest.json`; arrow keys browse the two on-air HTML previews, or `?step=N` selects
 a zero-based beat (transition followed by recap). Space or `?play=1` advances at prepared
-line durations; Escape restores the normal layout. `?case=still`, `neutral`, `transition`,
+line durations; Escape restores the normal layout. `?case=clip`, `live`, `transition`,
 `restore`, `early`, `interrupted` and `holding` select the corresponding checks. These are
 the actual page markup, CSS and renderers with file-only state delivery and no audio. Early
 startup supplies only `shift_recap`; restore uses an empty pre-observation Model, not a fake
@@ -153,7 +165,7 @@ beat may use the surface explicitly named by its cited record. No unrelated fill
 
 `manifest.json.media_review`, `review.md` and `prep.log` flag `NO BOUND MEDIA` and list each
 missing/failed beat, its subject and asset diagnostics. Empty, missing, invalid-image and
-changed prepared bytes are rejected. Browser decode failures fall back to neutral cards
+changed prepared bytes are rejected. Browser decode failures reveal live gameplay
 and are exposed per beat in `PogShiftRecap.failures` for headless rehearsal checks.
 The offline rehearsal CLI also fully decodes images with Pillow and the first frame of
 indexed video with ffmpeg; decode failures are included in both the review and prep log.
@@ -167,3 +179,86 @@ python3 tools/stream/shift_recap_rehearsal.py --manifest SAVED/manifest.json --r
 Capture bounds/receipts and media refresh diagnostics are exercised by
 `python3 tools/stream/test_recap_capture.py`. Operator verification uses the actual exported
 overlay and `tools/stream/overlay_shot.sh`, plus browser reload and restoration checks.
+
+## Preparing gameplay cuts
+
+`replays.py` is the existing on-air precedent: it plays a muted program recording through
+an OBS media source in a separate replay scene, carrying the live overlay off canvas for
+voices. Its `-game.mkv` companion copies the **same composed video** with audio stream 2;
+“game” describes the audio, not clean video. The full shift MKVs and Replay MKVs contain
+program overlays. For recaps, crop a reviewed camera rectangle at preparation time to
+avoid old sidebar/chat/subtitles; never replay the complete program inside the overlay.
+Check the entire cut for scene changes, inset overlays and source labels. A replay's event
+label does not establish which camera its whole buffer actually shows.
+
+`recap_footage.py --recipe RECIPE.json --run-dir RUN` is a dry run. Add `--apply` to cut on
+the Mac from a local completed recording or saved replay. It never calls OBS, the game or
+a remote host, and never starts/restarts a service. Each recipe entry supplies:
+
+```json
+{"clips":[{"source":"/absolute/path/to/finished.mkv","offset":30,"duration":12,
+ "t":1793544519.5,"subject":"Asterion","subject_type":"platform",
+ "crop":[24,144,1208,864],
+ "coverage":{"reviewed":true,"start":1793544519,"end":1793544534,
+ "evidence":"reference to verified subject coverage throughout this interval",
+ "clock_anchor":"verified recording/record epoch alignment; include uncertainty"}}]}
+```
+
+The numbers are a schema example, not a recipe to apply to another file. Do not derive UTC
+from the Windows filename or mtime: the batch404 sample had a one-hour clock discrepancy.
+Use explicit recording-start receipts or visually aligned events plus director receipts,
+and disclose uncertainty. A subject-camera request alone is not proof of recorded pixels.
+
+The cut is 1024px wide, 24 fps VP9 WebM (`yuv420p`), with `-an -sn -dn`, two encoder threads,
+real-time preset and CRF 34. This decodes in OBS's browser and headless Chromium. A 12-second
+1920×1080 HEVC replay sample took 3.43 seconds on the Mac including validation and made a
+4,000,149-byte clip. This is one measurement, not a worst-case guarantee. Bounds: 16 cuts
+per invocation, 20 seconds/16 MiB per clip, 256 MiB in `recap-clips/` per shift, 120-second
+encoder timeout. Prepared content-addressed copies add at most another 256 MiB for those
+clips. Existing still-capture budgets remain separate. Source size/mtime enter the cache
+key, changed sources are rejected, complete silent output is probed and decoded, and the
+index is atomically merged under the capture helper's lock. Failed prep leaves the prior
+index intact. Missing or failed media always takes the live route.
+
+Copy a saved replay to the Mac with `scp`, then run the recipe; only a few dozen MB need
+cross the network. Whole four-hour recordings in the inspected listing were 21.2–23.3 GB.
+For those, ffmpeg/ffprobe are also installed on pogwin via WinGet. The operator can run the
+same emitted ffmpeg argument list there against `D:/pog/recordings/...`, substituting a
+new scratch output path, then copy the small silent WebM back. The Mac helper's emitted
+command uses an explicit seek before the input and a bounded duration; it does not decode
+four hours. Windows cutting/CPU time was not measured on the streaming machine. Never
+overwrite a recording or run an encoder from the live ticker. The Mac route avoids adding
+encoding contention to OBS; a whole-recording copy trades local/network disk cost for that
+isolation. Imported cuts must still carry reviewed capture-time and subject metadata in
+`recap-media.json`, including `duration`, and pass rehearsal decoding.
+
+After cutting, `shift_recap_rehearsal.py --manifest SAVED/manifest.json --run-dir RUN --out
+REPLAY` rebinds the saved script without model or voice generation. Normal service media
+refresh ingests the index at preparation/startup. `media_review` reports separate clip and
+live-fallback counts. `--backdrop SILENT.webm --snapshot SAVED_STATE.json` supplies an
+explicit, watermarked offline stand-in for OBS underneath the real exported pages; it is
+never added to production markup. Use `recap_footage_browser.mjs` for decode advancement,
+muting, failure fallback, elapsed-time reload, every caption's fit, completion and restore.
+
+## Operator-only voice isolation
+
+Batch403 owns all browser speech during a recap. For literal voice-only program audio,
+`recap_audio_guard.py` is a separate operator-run script: by default it only prints a dry
+run of active, unmuted track-1 inputs other than `stream overlay`. `--apply` watches the
+existing state endpoint; it writes the original mute states to `--receipt` **before**
+muting anything. Narration completion, interruption, Ctrl-C or a service-read failure
+restores those exact states. `--undo --receipt FILE` recovers after a crash; a pending
+receipt refuses a second watcher. Track-2-only clean recording audio is excluded. There
+are no scene/source creation, recording or stream-control calls. Only the operator starts
+this guard; it is not started by the service or by preparation. Do not run two guards.
+
+```sh
+python3 tools/stream/recap_audio_guard.py --receipt /absolute/operator/recap-audio-undo.json
+python3 tools/stream/recap_audio_guard.py --receipt /absolute/operator/recap-audio-undo.json --apply
+python3 tools/stream/recap_audio_guard.py --receipt /absolute/operator/recap-audio-undo.json --undo
+```
+
+The batch404 read-only dry run selected `stream cam1` and `stream game audio`. The apply,
+partial-failure receipt and undo paths are tested exclusively against an OBS stub. Without
+the guard, prepared clips are still silent and other speech is held, but ordinary live
+game ambience remains in the program mix.

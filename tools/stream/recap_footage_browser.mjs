@@ -41,6 +41,12 @@ try {
   await page.reload();await page.waitForFunction(()=>document.querySelector('#shift-recap.sr-playing video'));
   const reload=await info();assert(reload.video.t>=5 && reload.video.t<7);assert(reload.video.muted);
   await page.screenshot({path:path.join(out,kind+'-reload.png')});
+  await page.evaluate(()=>document.querySelector('#shift-recap video').dispatchEvent(new Event('waiting')));
+  await page.waitForTimeout(2700);
+  assert(!(await info()).video,'a sustained stall releases the decoder and exposes live gameplay');
+  await page.evaluate(n=>PogRecapReplay.show(n),indices.live);
+  await page.evaluate(n=>PogRecapReplay.show(n),indices.clip);
+  await page.waitForFunction(()=>document.querySelector('#shift-recap.sr-playing video'));
   // Once loaded, a decoder/network error must immediately expose the underlying feed.
   await page.evaluate(()=>document.querySelector('#shift-recap video').dispatchEvent(new Event('error')));
   const failure=await info();assert(!failure.playing && !failure.video);assert.equal(failure.background,'rgba(0, 0, 0, 0)');

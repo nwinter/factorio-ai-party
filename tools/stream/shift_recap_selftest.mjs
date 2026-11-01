@@ -62,4 +62,4 @@ const reload=page();reload.render({shift_recap:{...beat,media:image,id:'current'
 assert.equal(reload.all().filter(n=>n.tagName==='img').length,0);
 const after=page();after.render({shift_recap:null});restored(after);
 const broken=page();broken.render({shift_recap:{...beat,media:clip}});broken.all().find(n=>n.tagName==='video').events.error();assert.equal(broken.panel().classList.contains('sr-playing'),false);
-console.log('Shift recap DOM states: early, transition, still, neutral, missing media, clip seek, hold, interruption, reload, restore passed');
+console.log('Shift recap DOM states: early, transition, still rejection, live fallback, clip seek, hold, interruption, reload, restore passed');

@@ -17,6 +17,19 @@ from test_shift_recap_visuals import fixture
 
 
 class FootageTest(unittest.TestCase):
+    def test_oversized_legacy_video_is_rejected_before_loading(self):
+        import shift_recap_media as M
+        from shift_recap_air import ShiftRecap
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'assets').mkdir()
+            name='c'*24+'.webm'
+            with (root/'assets'/name).open('wb') as f:f.truncate(V.MAX_CLIP_BYTES+1)
+            m=fixture();m['stills']=[{'asset':name,'surface':'nauvis','t':165,'duration':12}]
+            checked=M.checked(m,root)
+            self.assertIn('16 MiB',checked['media_errors'][0]['error'])
+            service=ShiftRecap.__new__(ShiftRecap);service.player=None;service.root=root
+            self.assertIsNone(service.asset(name))
+
     def test_clip_preference_interval_and_still_is_never_on_air(self):
         m = fixture()
         clip = {'asset': 'c'*24+'.webm', 'surface':'nauvis', 't':165, 'duration':12}
@@ -69,6 +82,19 @@ class FootageTest(unittest.TestCase):
         self.assertEqual(C.on_air(recap,snap)['live']['subject'],'nauvis')
         snap['cuts']['on_air']['cameras']['main']['pending']=True
         self.assertIsNone(C.on_air(recap,snap)['live']['subject'])
+
+    def test_real_director_takes_surface_cue_and_releases_it(self):
+        from test_onecam import world, agent, snap
+        director, sent = world()
+        team = [dict(agent('luna',0,0,5),surface='nauvis'),dict(agent('sol',400,0,1),surface='vulcanus')]
+        state = snap(team)
+        for now in range(1000,1003):director.step(state,now)
+        recap={'active':True,'run':'shift1','id':'a','phase':'recap','subject':{'name':'vulcanus','type':'surface'}}
+        for now in (1010,1012):director.step(state,now,C.cue(recap,state,now))
+        self.assertEqual(director.public(1012)['main']['agents'],['sol'])
+        self.assertTrue(any(b.get('follow')=='sol' for b in sent))
+        for now in range(1013,1045):director.step(state,now,C.cue(None,state,now))
+        self.assertEqual(director.public(1045)['main']['agents'],['luna'])
 
 
 class OBSStub:

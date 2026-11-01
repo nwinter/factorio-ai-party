@@ -6,6 +6,7 @@ import re
 PLANETS = ("nauvis", "vulcanus", "fulgora", "gleba", "aquilo")
 ASSET = re.compile(r"[a-f0-9]{24}\.(?:webp|png|jpg|jpeg|mp4|webm)\Z")
 MAX_CLIP_BYTES = 16 * 1024 * 1024
+VERSION = 3
 
 
 def clock(t):
@@ -125,7 +126,7 @@ def bind(manifest):
               "clips": sum(b["footage"] == "clip" for b in beats),
               "live": sum(b["footage"] == "live" for b in beats),
               "beats": beats, "asset_errors": manifest.get("media_errors", [])}
-    return dict(manifest, visual_version=2, visuals=visuals, media_review=review)
+    return dict(manifest, visual_version=VERSION, visuals=visuals, media_review=review)
 
 
 def public(manifest, line, phase, *, asset_prefix="/shift-recap/assets/", holding=False, elapsed=0):

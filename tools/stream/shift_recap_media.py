@@ -53,6 +53,8 @@ def checked(manifest, out):
             continue
         path = Path(out) / "assets" / media["asset"]
         try:
+            if media["kind"] == "video" and path.stat().st_size > visuals.MAX_CLIP_BYTES:
+                raise ValueError("recap clip exceeds 16 MiB")
             data = path.read_bytes()
             error = header_error(data, path.suffix)
             if hashlib.sha256(data).hexdigest()[:24] != path.stem:
@@ -70,7 +72,7 @@ def refresh(run, out, manifest, *, force=False, media_until=None):
     """Caller holds .prepare.lock. Publish only after all new assets are copied and checked."""
     import shift_recap as recap
     out = Path(out)
-    if not force and manifest.get("media_signature") == signature(run, out):
+    if not force and manifest.get("visual_version") == visuals.VERSION and manifest.get("media_signature") == signature(run, out):
         return manifest
     source_signature = signature(run, out, prepared=False)
     errors = []
@@ -100,6 +102,7 @@ def refresh(run, out, manifest, *, force=False, media_until=None):
 def log_review(manifest, out):
     review = manifest["media_review"]
     summary = (f"[shift-recap] media {review['bound']}/{review['total']} beats; "
+               f"footage {review['clips']} clips / {review['live']} live; "
                f"{len(review['asset_errors'])} failed assets" + ("; WARNING: NO BOUND MEDIA" if review["no_media"] else ""))
     print(summary, flush=True)
     with (Path(out) / "prep.log").open("a") as log:

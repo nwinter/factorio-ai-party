@@ -263,6 +263,8 @@ class ShiftRecap:
         root = self.player.root if self.player else self.root
         path = root / "assets" / name
         try:
+            if path.suffix in (".mp4", ".webm") and path.stat().st_size > visuals.MAX_CLIP_BYTES:
+                return None
             return path.read_bytes(), mimetypes.guess_type(path)[0] or "application/octet-stream"
         except OSError:
             return None

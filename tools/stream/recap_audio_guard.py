@@ -7,6 +7,7 @@ normal deployment, never from a test. --apply watches the existing service state
 service loss, completed narration and --undo restore the saved input mute states.
 """
 import argparse
+import fcntl
 import json
 from pathlib import Path
 import time
@@ -81,7 +82,15 @@ def main():
     host, port = a.obs.rsplit(':', 1)
     obs = OBS(host, int(port))
     guard = Guard(obs, a.receipt, a.overlay)
+    process_lock = None
     try:
+        if a.apply or a.undo:
+            a.receipt.parent.mkdir(parents=True, exist_ok=True)
+            process_lock = a.receipt.with_suffix('.guard.lock').open('w')
+            try:
+                fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise SystemExit('audio guard is running; stop it before applying or undoing')
         if a.undo:
             guard.restore()
         elif not a.apply:
@@ -94,7 +103,10 @@ def main():
                 while True:
                     with urllib.request.urlopen(a.state_url, timeout=3) as f:
                         state = json.load(f)
-                    if active(state.get('state', state)):
+                    state = state.get('state', state)
+                    if not -1 <= time.time() - state.get('now', 0) <= 10:
+                        raise ValueError('stale service state; restoring audio')
+                    if active(state):
                         if not a.receipt.exists():
                             print(json.dumps({'muted': guard.enter()}), flush=True)
                     elif a.receipt.exists():
@@ -105,6 +117,8 @@ def main():
                 guard.restore()
     finally:
         obs.close()
+        if process_lock:
+            process_lock.close()
 
 
 if __name__ == '__main__':
