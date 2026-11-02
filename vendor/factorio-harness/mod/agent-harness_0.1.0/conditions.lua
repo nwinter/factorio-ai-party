@@ -421,6 +421,40 @@ return function(api)
       local ch=p.character; local r=ch.health/ch.max_health
       return r>c.fraction,string.format('health %d%%',math.floor(r*100))
     end,
+    inventory_free_slots=function(p,c)
+      local holder=c
+      holder.evidence=nil -- A failed read must not keep an earlier capacity reading.
+      local entity,inv,where
+      if c.platform then
+        entity=M.platform_named(p,c.platform).hub
+        assert(entity and entity.valid,'platform '..c.platform..' has no hub')
+        inv=entity.get_inventory(defines.inventory.hub_main)
+        where=c.platform..' hub'
+      else
+        local s,pos=surface_of(p,c),api.position(c.position)
+        if not charted(p,s,pos) then uncharted(s,pos,'container') end
+        local found=s.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},
+          type={'container','logistic-container','linked-container'},force=p.force,limit=2}
+        assert(#found==1 and found[1].valid,string.format('expected one container of ours at (%g,%g) on %s; found %d',pos.x,pos.y,s.name,#found))
+        entity=found[1]
+        inv=entity.get_inventory(defines.inventory.chest)
+        where=string.format('%s (%g,%g) on %s',entity.name,entity.position.x,entity.position.y,s.name)
+      end
+      assert(inv and inv.valid,where..' has no inventory')
+      -- Native counter: every quality and partial stack occupies one slot. #inv includes cargo-bay capacity.
+      -- The bar excludes blocked slots; filtered empty slots count (usable for their matching item).
+      local capacity=#inv
+      local total=inv.supports_bar() and math.min(capacity,inv.get_bar()-1) or capacity
+      local free=inv.count_empty_stacks(true,false)
+      local occupied=total-free
+      local row={occupied=occupied,free=free,total=total,capacity=capacity,barred=capacity-total,read_tick=game.tick,
+        inbound_reserved_slots='unavailable',inbound_reserved_slots_reason='not exposed by Factorio 2.0.77',
+        filtered_empty_slots_included=true,platform=c.platform}
+      holder.evidence={inventory_free_slots=row}
+      local met=(c.below==nil or free<c.below) and (c.at_least==nil or free>=c.at_least)
+      return met,string.format('%s: occupied %d, free %d, total %d usable slots; capacity %d, barred %d; inbound reserved slots unavailable (API); excludes cargo in flight; filtered empty slots included; read_tick %d',
+        where,occupied,free,total,capacity,capacity-total,game.tick)
+    end,
     -- In a named platform hub's main inventory, the character's main inventory, or summed over our entities on the
     -- given tiles (chests, machines: every inventory they have; a rocket
     -- silo's rocket cargo too, which the game counts with the silo's own; each
@@ -1256,7 +1290,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1343,8 +1377,8 @@ return function(api)
     return true,saws[first.index]..(#rest>0 and ' (others: '..table.concat(rest,'; ')..')' or '')
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
-  local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
+  local SURFACE_LIST='inventory_free_slots, item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
+  local PLATFORM_LIST='inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1423,6 +1457,24 @@ return function(api)
       assert(kind=='item_count' or kind=='platform_ammo_below' or kind=='pod_landed','quality applies to item_count, platform_ammo_below and pod_landed only (no other condition counts by quality)')
       assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
         kind..' quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
+    end
+    if kind=='inventory_free_slots' then
+      assert(c.positions==nil and c.network==nil and c.radius==nil and c.item==nil,
+        'inventory_free_slots takes one platform hub or one container position, no positions, network, radius or item')
+      if c.platform~=nil then
+        assert(type(c.platform)=='string' and #c.platform>0,'inventory_free_slots platform requires a platform name')
+        assert(c.position==nil and c.surface==nil,'inventory_free_slots platform counts the hub; no position or surface')
+      else
+        assert(c.position~=nil,'inventory_free_slots requires platform or container position (surface optional)')
+      end
+      assert(c.at_least~=nil or c.below~=nil,'inventory_free_slots requires at_least or below')
+      for _,key in ipairs({'at_least','below'}) do
+        if c[key]~=nil then
+          number(c[key],0,1e9,key)
+          assert(c[key]==math.floor(c[key]),'inventory_free_slots '..key..' must be an integer')
+        end
+      end
+      assert(c.below==nil or c.at_least==nil or c.at_least<c.below,'inventory_free_slots range is empty')
     end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')

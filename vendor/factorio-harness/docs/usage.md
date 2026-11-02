@@ -18585,3 +18585,20 @@ guard steps. Dry and live submission name the step, argument and cause, for exam
 The check uses prototype lookups for at most eight entries; it reads no entities or production statistics.
 `tests/d32_batch401.lua` covers valid items, fluids, unknown names, mixed lists and qualities, plus a 28-step
 queue whose invalid step 17 prevents every step from running and preserves the current watch.
+
+`wait_until` condition `inventory_free_slots` takes a platform name (its hub main inventory), or one container
+`position` with optional planet `surface`. `below` / `at_least` are integer free-slot thresholds (0..1e9;
+when both are present, at_least <= free < below). Example:
+`{"until":"inventory_free_slots","platform":"Asterion","below":16}`. It works in direct waits, sleeps,
+queue waits and queue guards, including `all`/`any`, in body, remote and platform lanes (remote needs platform
+or surface). Guards check every 10 ticks and run their supplied reaction once.
+`saw` reports occupied, free, total usable slots, physical capacity, barred slots, and `read_tick`.
+Capacity is the current native inventory size, including cargo bays and quality. Barred slots are outside
+usable counts; empty filtered slots are included (for their matching item); a partial stack occupies one slot.
+Hub trash and cargo in flight are excluded. Inbound reserved inventory slots are reported unavailable:
+Factorio 2.0.77 exposes cargo-hatch reservations, not reserved inventory-slot counts. Free slots do not account
+for future arrivals. Guard evidence contains `inventory_free_slots` with the same numbers.
+The read is live at each check, with no stale cache or `on_stale` option. Missing targets raise the existing
+read error: direct waits refuse/fail, queued waits follow `on_fail`, guards remain armed and report
+`read_error`; an `any` member that remains readable can still trigger. Containers are limited to our
+container/logistic-container/linked-container at one footprint, in a charted chunk for remote reads.
