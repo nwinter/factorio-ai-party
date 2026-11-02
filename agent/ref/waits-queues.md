@@ -423,7 +423,9 @@
   is km/tick, multiplied by 60. Each check reads live speed. `for_s` defaults to 0 (0..86400 game seconds);
   a sample at/below the threshold, unreadable speed, or a gap over `max_age` resets the sustained duration.
   `max_age` is the allowed gap in seconds (default 1; 1/60..900), not a speed cache. Guard `saw` and `evidence`
-  show `speed_kms` and `tick`. A guard fires once; its recovery steps replace the running and pending steps.
+  show `speed_kms`, `tick` and source `LuaSpacePlatform.speed`. Zero and finite negative speed clear duration;
+  negative noise within 1e-9 km/s of zero reads as 0, larger negatives stay signed. Missing platforms and
+  missing/unreadable speed fields have distinct errors. A guard fires once; recovery replaces running/pending steps.
   Platform entity configuration and `circuit_set` leave schedule records and an active `flight_watch` intact;
   recovery can set the thrust circuit and then wait for arrival. Guards are checked every 10 ticks while unpaused.
 - `queue_submit` (including `dry_run`) parses every `platform_schedule` stop wait and guard recovery step before

@@ -110,7 +110,7 @@ game.tick=60; eq(C.check(nick,c),true)
 pl.speed=20/60; game.tick=70; eq(C.check(nick,c),false); eq(c.speed_since,nil)
 pl.speed=40.3/60; game.tick=80; eq(C.check(nick,c),false)
 game.tick=150; eq(C.check(nick,c),false); eq(c.speed_since,150,'stale gap resets duration')
-pl.valid=false; refused(function() C.check(nick,c) end,'no readable speed'); eq(c.evidence,nil); eq(c.speed_since,nil)
+pl.valid=false; refused(function() C.check(nick,c) end,'platform unavailable'); eq(c.evidence,nil); eq(c.speed_since,nil)
 pl.valid=true; game.tick=160; eq(C.check(nick,c),false)
 local record={}; game.tick=170; C.check(nick,speed{for_s=1},false,record); eq(record.evidence.tick,170)
 -- State is stored on the condition/record, surviving a module reload.
@@ -136,9 +136,21 @@ Q.handlers.queue_submit(nick,{steps={{action='wait_ticks',args={ticks=600}}},gua
 for t=230,280,10 do game.tick=t; Q.tick() end
 local status=Q.handlers.queue_status(nick,{})
 eq(status.guards[1].evidence.speed_kms,40.3); eq(status.guards[1].evidence.tick,280)
-game.tick=290; Q.tick(); eq(configured,1)
+-- #2870: a zero/starved reading leaves the guard armed, without a guard_error, and restarts duration.
+pl.speed=0; game.tick=290; Q.tick(); eq(configured,0)
+status=Q.handlers.queue_status(nick,{})
+eq(status.guards[1].evidence.speed_kms,0); eq(status.guards[1].evidence.source,'LuaSpacePlatform.speed')
+eq(status.guards[1].read_error,nil)
+pl.speed=-0.003368769996856992; game.tick=300; Q.tick(); eq(configured,0)
+eq(Q.handlers.queue_status(nick,{}).guards[1].read_error,nil)
+pl.speed=40.3/60
+for t=310,360,10 do game.tick=t; Q.tick(); eq(configured,0) end
+game.tick=370; Q.tick(); eq(configured,1)
 eq(pl.schedule,route); eq(storage.agent_harness.flightwatch.batch415,watch)
 local found=false
-for _,h in ipairs(Q.handlers.queue_status(nick,{recent=64}).history) do if h.action=='guard' then eq(h.result.evidence.speed_kms,40.3); found=true end end
+for _,h in ipairs(Q.handlers.queue_status(nick,{recent=64}).history) do
+  assert(h.action~='guard_error')
+  if h.action=='guard' then eq(h.result.evidence.speed_kms,40.3); eq(h.result.evidence.since_tick,310); found=true end
+end
 assert(found)
 print('d33_batch415: shared schedule wait validation, recovery atomicity, speed duration/freshness/evidence and recovery: ok')

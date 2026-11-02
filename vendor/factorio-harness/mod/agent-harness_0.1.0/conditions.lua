@@ -911,19 +911,29 @@ return function(api)
     -- Native speed is km/tick; every check reads it anew. Duration state survives save/load.
     platform_speed_above=function(p,c,estimate,record)
       local h=record or c
-      local ok,speed=pcall(function() return M.platform_named(p,c.platform).speed*60 end)
-      if not ok or type(speed)~='number' or speed~=speed or speed==math.huge or speed<0 then
+      local function unreadable(reason)
         h.speed_since=nil; h.speed_tick=nil; h.evidence=nil
-        error('platform_speed_above: no readable speed for '..c.platform..' at tick '..game.tick,0)
+        error('platform_speed_above: '..reason..' for '..c.platform..' at tick '..game.tick,0)
       end
+      local found,pl=pcall(M.platform_named,p,c.platform)
+      if not found or not pl then unreadable('platform unavailable: '..tostring(pl)) end
+      local ok,native=pcall(function() return pl.speed end)
+      if not ok then unreadable('unreadable LuaSpacePlatform.speed: '..tostring(native)) end
+      if native==nil then unreadable('missing LuaSpacePlatform.speed field') end
+      if type(native)~='number' then unreadable('unreadable LuaSpacePlatform.speed: expected number, got '..type(native)) end
+      local speed=native*60
+      if speed~=speed or speed==math.huge or speed==-math.huge then unreadable('unreadable LuaSpacePlatform.speed: non-finite km/s value') end
+      -- Starved 2.0.77 platforms can report finite negative speed in flight. Keep that reading;
+      -- only negative zero/float noise (within 1e-9 km/s of zero) is normalized to positive zero.
+      if speed<=0 and speed>=-1e-9 then speed=0 end
       local gap=not h.speed_tick or game.tick-h.speed_tick>(c.max_age or 1)*60 or game.tick<h.speed_tick
       if speed<=c.above then h.speed_since=nil
       elseif gap or not h.speed_since then h.speed_since=game.tick end
       h.speed_tick=game.tick
       local elapsed=h.speed_since and (game.tick-h.speed_since)/60 or 0
-      h.evidence={platform=c.platform,speed_kms=speed,tick=game.tick,above=c.above,for_s=c.for_s or 0,
+      h.evidence={platform=c.platform,speed_kms=speed,tick=game.tick,source='LuaSpacePlatform.speed',above=c.above,for_s=c.for_s or 0,
         since_tick=h.speed_since,elapsed_s=elapsed,max_age=c.max_age or 1}
-      return speed>c.above and elapsed>=(c.for_s or 0),string.format('%s speed %.6g km/s > %g km/s: %s; sustained %.3g/%g s; read tick %d (age 0 s)',
+      return speed>c.above and elapsed>=(c.for_s or 0),string.format('%s speed %.6g km/s > %g km/s: %s; sustained %.3g/%g s; read tick %d (age 0 s; source LuaSpacePlatform.speed)',
         c.platform,speed,c.above,speed>c.above and 'yes' or 'no',elapsed,c.for_s or 0,game.tick)
     end,
     -- (d22 batch92 BB3, Astra #1887: a probe flight turned back at a share of its outer leg, whatever its speed) the
