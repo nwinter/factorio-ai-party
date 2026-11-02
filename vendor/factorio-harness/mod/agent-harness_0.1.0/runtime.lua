@@ -18022,6 +18022,7 @@ M.scheduler_api={snapshots=function(p,a) return M.turretsnap.read(p,a) end,colle
 }
 scheduler=scheduler_module(M.scheduler_api)
 scheduler=require('queue_lanes'){scheduler=scheduler,factory=scheduler_module,base=M.scheduler_api,is_read=function(action) return M.is_read(action) end,
+  agent_player=function(name) return M.agent_player(M.board.resolve(name)) end,who=function(p) return M.board.who(p) end,
   deliver=function(index,t) return M.board.deliver(index,t) end}
 -- (d17 batch21 D1) a queue call for a platform's own lane: as the remote lane, no body
 function M.platform_lane(a) return type(a)=='table' and type(a.lane)=='string' and a.lane:match('^platform:.+$')~=nil end

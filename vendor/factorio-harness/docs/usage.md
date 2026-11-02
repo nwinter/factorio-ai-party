@@ -1612,6 +1612,16 @@ the selected queue. `queue_edit` revisions refer to the selected lane.
 A full `drop` waits on the existing pod-dispatch channel. A competing drop finishes
 before the next queued remote drop starts. Already-started full drops continue
 sending their remaining pods after queue cancellation, as in the body lane.
+`queue_status {agent:"sol", lane:"platform:Asterion"}` reads a teammate's queue with the owner's existing
+history/pending limits (defaults 16/1, caps 64/128; history defaults to 3 with `orders:true`). Agent and display
+names are case-insensitive; omitting `agent` reads the caller. Replies include `owner`, `state`, current and pending
+steps, plan/history, guard baselines and cached evidence (`saw`, `when.evidence`), read errors and pause/failure
+reasons. `history:"all"`/`pending:"all"` use the caps; `args:true` includes history arguments. Unknown agents fail;
+an absent queue returns `state:"empty"` without creating it or registering a lane. Reads do not evaluate guards.
+Queue edits, cancels, pauses, resumes and submissions remain owner-scoped and reject `agent`; the status reply
+states that restriction. Snapshot options retain their existing force-wide scope. Request telemetry and delivered
+messages remain the caller's; wall-clock projections use the time of each read.
+
 `queue_status` returns the selected lane in full and `lanes.body`/`lanes.remote`
 summaries; `status`, including `brief`, returns both under `queues`. `sleep` wakes
 when either running lane finishes or stalls; a remote wake has

@@ -1,3 +1,13 @@
+- `queue_status {agent:"sol", lane:"platform:Asterion", pending:"all", history:"all"}` reads that agent's lane.
+  Omit `agent` for your own. Agent names and display names are case-insensitive. The reply names `owner` and
+  `state`, with the same active step, pending steps, plan/history, guard baselines, last cached evidence (`saw`,
+  `when.evidence`), read errors and pause/failure reasons the owner sees. `lanes` summarizes their other lanes.
+  History defaults to 16 entries (3 with `orders:true`), capped at 64; pending defaults to 1, capped at 128;
+  `"all"` uses those caps. `args:true` includes history arguments. Unknown agents fail; an absent queue is `empty`.
+  Reads do not run guards or create queues. Edits, cancels, pauses, resumes and submissions remain owner-scoped;
+  queue writes reject `agent`. Snapshot options keep their existing force-wide scope. Request telemetry and
+  delivered messages remain the caller's; wall-clock projections use the time of each read.
+
 - In `lane: "platform:NAME"`, `wait_until` with `until: "platform_arrived"` or `"platform_progress"` takes
   `timeout: 1..17280000` ticks (80 game hours). Default 3600, other conditions/lanes and `wait_ticks` stay unchanged.
   Dry and live `queue_submit` enforce the same bound, including guard steps. Guards still interrupt every 10 ticks

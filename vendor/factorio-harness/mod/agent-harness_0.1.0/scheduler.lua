@@ -486,7 +486,7 @@ return function(api)
   end
   -- orders: true lists the standing orders' entries too (every entry, as before plans); else the plan's own entries,
   -- the orders' counted.
-  local function snapshot(q,recent,orders,with_args)
+  local function snapshot(q,recent,orders,with_args,owner_index)
     guard_ids(q)
     local list,from_orders=q.history,0
     if not orders then
@@ -534,7 +534,8 @@ return function(api)
     -- (QT3) a build or place_ghosts waiting on its clear_obstacles job or run again: continuation says which
     local cont
     if current and CLEARS[current.action] and api.clear_pending then
-      for i,each in pairs(api.state()[QUEUES] or {}) do if each==q then cont=api.clear_pending(i,current.action) end end
+      if owner_index then cont=api.clear_pending(owner_index,current.action)
+      else for i,each in pairs(api.state()[QUEUES] or {}) do if each==q then cont=api.clear_pending(i,current.action) end end end
     end
     if cont then
       local copy={}
@@ -559,6 +560,7 @@ return function(api)
         c.scope=g.scope or 'standing'
         if g.deadline then c.deadline=nil; c.deadline_tick=g.deadline; c.ticks_left=math.max(0,g.deadline-game.tick) end
         c.read_error=read_error_row(g); c.saw=g.saw; c.evidence=g.when.evidence
+        c.baseline,c.since_tick=baseline(g.when)
         gl[i]=c
       end
     end
@@ -1156,11 +1158,22 @@ return function(api)
       assert(api.snapshots,'no snapshots here')
       return api.snapshots(p,a)
     end
-    local q=queue(p.index)
+    -- Status never creates a queue or assigns legacy guard ids in stored state.
+    local stored=(api.state()[QUEUES] or {})[p.index]
+    local q={revision=0,sequence=0,pending={},history={},paused=true}
+    if stored then
+      for k,v in pairs(stored) do q[k]=v end
+      if stored.guards then
+        q.guards={}
+        for i,g in ipairs(stored.guards) do
+          local copy={}; for k,v in pairs(g) do copy[k]=v end; q.guards[i]=copy
+        end
+      end
+    end
     assert(a.orders==nil or type(a.orders)=='boolean','orders must be true or false')
     assert(a.args==nil or type(a.args)=='boolean','args must be true or false')
     -- The plan's entries: up to 16 by default (its steps and outcomes); with orders, the newest 3 of all as before.
-    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true,a.args==true)
+    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true,a.args==true,p.index)
     local np=count_arg(a.pending,1,MAX_PENDING,'pending')
     if #q.pending>np then
       local some={}
@@ -1169,6 +1182,8 @@ return function(api)
     end
     s.pending_count=#q.pending
     s.history_total=#q.history
+    s.state=not stored and 'empty' or q.paused and (q.held and 'paused, held' or 'paused')
+      or (q.current or #q.pending>0 or q.loop) and 'running' or q.plan and 'completed' or 'empty'
     if q.current then
       local active={}
       for k,v in pairs(s.active) do active[k]=v end
