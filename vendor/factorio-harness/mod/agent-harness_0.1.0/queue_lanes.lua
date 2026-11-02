@@ -89,7 +89,7 @@ return function(api)
   -- names are kept in storage (platform_lanes) and each is ticked as the remote lane is.
   local engines={}
   local function M_key(name) return 'lane_queues|'..name end
-  local function platform_engine(name)
+  local function platform_engine(name,read_only)
     local e=engines[name]
     if e then return e end
     local papi={}
@@ -102,15 +102,16 @@ return function(api)
       return check(action,a)
     end
     e=api.factory(papi)
-    engines[name]=e
-    local s=api.base.state(); s.platform_lanes=s.platform_lanes or {}; s.platform_lanes[name]=true
+    local s=api.base.state()
+    if not read_only then s.platform_lanes=s.platform_lanes or {}; s.platform_lanes[name]=true end
+    if (s.platform_lanes or {})[name] then engines[name]=e end
     return e
   end
-  local function lane(a)
+  local function lane(a,read_only)
     local name=a and a.lane or 'body'
     if type(name)=='string' then
       local pl=name:match('^platform:(.+)$')
-      if pl then return name,platform_engine(pl) end
+      if pl then return name,platform_engine(pl,read_only) end
     end
     assert(name=='body' or name=='remote','lane must be body, remote or platform:NAME (a remote lane of its own for that platform)')
     return name,name=='remote' and remote or base
@@ -146,7 +147,7 @@ return function(api)
     local out={body=brief((s.queues or {})[index]),remote=brief((s.remote_queues or {})[index])}
     for name in pairs(s.platform_lanes or {}) do
       local q=(s[M_key(name)] or {})[index]
-      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q,platform_engine(name)) end
+      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q,platform_engine(name,true)) end
     end
     return out
   end
@@ -161,7 +162,17 @@ return function(api)
   for name in pairs(base.handlers) do
     M.schema[name].lane='body (default, existing queue) | remote (independent of body work) | platform:NAME (a remote lane of its own for that platform: its waits and platform steps apart from the remote lane and the other platforms\' lanes); revisions belong to the selected lane'
     M.handlers[name]=function(p,a)
-      local selected,engine=lane(a)
+      a=a or {}
+      if a.agent~=nil then
+        assert(name=='queue_status','agent is read-only on queue_status; queue writes affect only the caller')
+        assert(type(a.agent)=='string' and a.agent~='','agent must be a nonempty agent name')
+        assert(api.agent_player,'agent lookup unavailable')
+        local target=api.agent_player(a.agent)
+        assert(target and target.valid,'unknown agent '..a.agent)
+        assert(target.force==p.force,'agent is not on your force')
+        p=target
+      end
+      local selected,engine=lane(a,name=='queue_status')
       if selected=='remote' and name=='queue_repeat' then
         assert(a.orders==nil or a.orders==false or a.orders=='none','standing orders run only in the body lane')
         local copy={}; for k,v in pairs(a) do copy[k]=v end
@@ -169,10 +180,16 @@ return function(api)
       end
       local out=engine.handlers[name](p,a or {})
       out.lane=selected
-      if name=='queue_status' then out.lanes=M.lanes(p.index) end
+      if name=='queue_status' then
+        out.lanes=M.lanes(p.index)
+        out.owner=api.who and api.who(p) or p.name
+        out.access='read-only; queue edits, cancels, pauses, resumes and submissions remain owner-scoped'
+      end
       return out
     end
   end
+  M.schema.queue_status.agent='optional agent name: read their queue in the selected lane, with the same history/pending caps; queue writes remain owner-scoped'
+  M.schema.queue_status.returns=M.schema.queue_status.returns..'; owner, state (empty, paused, paused/held, running or completed), access (read-only; writes owner-scoped); guards include baseline and since_tick'
   M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched|tick_at_least or item_count with platform, ammo_below, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface, all or any of those (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; flight_watch (in a platform lane a start or a read: true without platform or id watches or reads the lane\'s platform); body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; wait_deadlines (platform arrival/progress waits): tick, game_seconds, ticks_left, wall_unix_ms and wall_seconds_left projected at 60 ticks/s; state waiting for an active wait, if_started_now for a pending step (its start depends on earlier work/resume). Also on submission and dry-run replies; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
