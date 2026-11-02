@@ -18661,7 +18661,11 @@ reads native `LuaSpacePlatform.speed` (km/tick) times 60, and holds only above 3
 `above` is required (0..1e9 km/s); `for_s` defaults to 0 (0..86400); `max_age` defaults to 1 second (1/60..900).
 At/below the threshold, an unreadable value, or a sample gap over `max_age` resets duration. Each check reads
 live speed; no cached speed is accepted. Direct waits, queue steps and guards in body/remote/platform lanes and
-`all`/`any` use the same condition. Guards expose measured `speed_kms` and sample `tick` in `evidence` and `saw`.
+`all`/`any` use the same condition. Zero and finite negative native readings are below threshold and clear duration;
+negative values within 1e-9 km/s of zero normalize to 0. Larger negative readings remain signed in evidence
+(starved platforms can report these in flight). Missing platforms and missing/unreadable speed fields have
+distinct errors. Guards expose `speed_kms`, sample `tick`, and `source: "LuaSpacePlatform.speed"` in evidence;
+`saw` names the same reading, tick and source.
 A guard fires once, replacing current/pending steps with its recovery steps. Platform entity `configure` and
 `circuit_set` do not replace schedule records or stop an active `flight_watch`; a recovery can change the thrust
 circuit followed by an arrival wait. Guards run every 10 ticks while the lane is unpaused.
