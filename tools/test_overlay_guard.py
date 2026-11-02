@@ -215,7 +215,7 @@ sys.path.insert(0, {str(Path(check).parent)!r})
 import overlay_check as O
 def read(service):
     now = time.time()
-    return {{'now': now, 'pages': {{'main': {{'open': 1, 'seen': now, 'connected': now, 'rendered': now}}}}}}
+    return {{'now': now, 'pages': {{'main': {{'open': 1, 'seen': now, 'connected': now, 'rendered': now, 'panel_px': 1032}}}}}}
 O.read = read
 sys.exit(O.main())
 ''')

@@ -33,7 +33,7 @@ class StartupTest(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
-    def run_start(self, service_at=1000, tunnel_at=1000, renders_after=1, missing_status=False):
+    def run_start(self, service_at=1000, tunnel_at=1000, renders_after=1, missing_status=False, panel_px=1032):
         reloads = []
         def ready():
             return (self.clock() >= max(service_at, tunnel_at),
@@ -51,6 +51,7 @@ class StartupTest(unittest.TestCase):
             p = dict(open=1, connected=reloads[-1], seen=now)
             if renders_after is not None and len(reloads) >= renders_after:
                 p['rendered'] = now
+                p['panel_px'] = panel_px
             return dict(now=now, up=service_at, pages={'main': p})
         out = io.StringIO()
         with patch.object(G, 'tunnel_ready', side_effect=ready), patch.object(O, 'obs', side_effect=obs), \
@@ -98,6 +99,12 @@ class StartupTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('cooldown', detail)
         self.assertTrue(json.loads(Path(self.a.state + '.reload').read_text())['retried'])
+
+    def test_zero_height_render_report_is_blank(self):
+        rc, out, reloads = self.run_start(panel_px=0)
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(len(reloads), 2)
+        self.assertIn('DEGRADED', out)
 
     def test_blank_or_missing_status_is_never_optional(self):
         for missing in (False, True):
@@ -183,7 +190,8 @@ class ChangeTest(unittest.TestCase):
         (root / 'autopilot.sh').write_text(script)
         commands = {'tools/shift-change.sh': f'exit {result}', 'notice.sh': 'exit 0',
                     'watch-run3.sh': 'echo watchdog > "$(dirname "$0")/watchdog-started"',
-                    'git': '[ "$1" != rev-parse ]'}
+                    'git': '[ "$1" != rev-parse ]',
+                    'date': 'case "$1" in -j) echo 1000;; +%s) echo 2000;; *) echo 00:00;; esac'}
         for name, body in commands.items():
             p = root / name; p.write_text('#!/bin/bash\n' + body + '\n'); p.chmod(0o755)
         env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'])

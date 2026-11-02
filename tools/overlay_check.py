@@ -12,7 +12,7 @@ at once.)
 batch418: startup gates scene setup, refresh and rendering, retries once, and reports degraded on timeout.
 batch413: prepare --wait 120 waits for a valid /state.json through pogwin's :8787 reverse tunnel, then reloads.
 All reloads (including the legacy recovery round below) share --state + '.reload': default 600 s cooldown,
-minimum 180 s, reserved before the request, including ambiguous failures. prepare and watch log each attempt.
+minimum 180 s except startup's one reserved retry, including ambiguous failures. Each attempt is logged.
 watch also checks batch408's OBS main-page health (120 s without a report or fresh state), ignoring previews
 and portrait pages. One 480x270 source PNG per 60 s, two consecutive <=2048-byte samples, detects a near-empty
 source even with fresh telemetry. Those new signals request just one reload, then verify on the next pass.
@@ -353,7 +353,7 @@ def startup(a, clock=time.time, sleep=time.sleep):
         while True:
             try:
                 st = read(a.service)
-                if live(st, since):
+                if live(st, since) and not panel(st)[1]:
                     print(f"overlay: connected and rendered after startup reload {attempt}", flush=True)
                     return 0
             except (NoStatus, Down):
