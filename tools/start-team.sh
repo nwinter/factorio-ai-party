@@ -5,7 +5,8 @@
 # normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on),
 # POG_YOUTUBE (@handle or video id for the YouTube chat bridge; default @NickWinter), POG_SPACE_AGE=1 (Space Age world, expansion-build
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
-# POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-c).
+# POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-c; POG_ANALYST_EVERY
+# seconds between its cycles, default 90).
 # POG_HOURLY (default 0; 1: "what changed this hour", one prepared piece an hour on the narrator channel,
 # tools/stream/hourly.py; POG_HOURLY_MODEL its OpenRouter writer, default anthropic/claude-opus-5.5).
 # POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
@@ -493,7 +494,7 @@ if [ "${POG_ANALYST:-1}" != 0 ]; then
   aflags=(); [ "${POG_VIEWER_QUESTIONS:-1}" != 0 ] && aflags+=(--viewer-questions)
   nohup env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE \
     "${aenv[@]}" ENABLE_CLAUDEAI_MCP_SERVERS=false python3 tools/stream/analyst.py --world "$world" --bot "$first_bot" --feed http://127.0.0.1:8788 \
-    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 ${aflags[@]+"${aflags[@]}"} >"$rundir/analyst.log" 2>&1 &
+    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every "${POG_ANALYST_EVERY:-90}" --ask-port 8789 ${aflags[@]+"${aflags[@]}"} >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("analyst:$!:$rundir/analyst.log")
 fi
