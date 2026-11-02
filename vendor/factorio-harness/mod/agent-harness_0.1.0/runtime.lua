@@ -20321,6 +20321,7 @@ do
   end
 end
 function handlers.platform_defense(p,a)
+  assert(a.planned_entities == nil or (a.asteroids == nil and a.aim == nil), 'planned_entities cannot be combined with asteroids or aim')
   assert(a.track_filter == nil or a.asteroids == true, 'track_filter is for starting an asteroid watch (asteroids: true, seconds)')
   -- (d22 batch82 AR1) asteroids: true: the asteroid watch (asteroidwatch.lua)
   if a.asteroids~=nil then return M.asteroidwatch.handler(p,a) end
