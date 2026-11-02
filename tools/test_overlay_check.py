@@ -117,9 +117,16 @@ def main():
                         pages.append(Page(port))
                 time.sleep(0.05)
         threading.Thread(target=on_toggle, daemon=True).start()
-        env = dict(os.environ, POG_OC_OBS=stub, POG_OC_SLEEP="0.1")
+        ready = os.path.join(d, "ready")
+        open(ready, "w").write(f'#!{sys.executable}\n' + 'print(\'{"tick": 1, "agents": []}\')\n')
+        os.chmod(ready, 0o755)
+        env = dict(os.environ, POG_OC_OBS=stub, POG_OC_SLEEP="0.1", POG_OC_READY=ready)
 
         def cli(*args):
+            budget = os.path.join(d, "state.json.reload")
+            if args[0] == "start" or "--again" in args or not os.path.exists(os.path.join(d, "state.json")):
+                if os.path.exists(budget):
+                    os.remove(budget)  # independent scenarios; cooldown itself has dedicated guard tests
             return subprocess.run([sys.executable, os.path.join(HERE, "overlay_check.py"), *args, "--service", url,
                                    "--state", os.path.join(d, "state.json")], capture_output=True, text=True, env=env, timeout=60)
 
