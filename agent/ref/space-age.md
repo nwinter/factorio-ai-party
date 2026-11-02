@@ -328,6 +328,18 @@
   legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
   restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
   closed_by, line}] (at most 3, 3000 tracked asteroids together); `segment_start: <tick>` reads one in full.
+- `platform_defense {platform, planned_entities:[{name,position:{x,y},direction?}]}` is a standalone read:
+  1..8 proposed entities against up to 64 existing built/ghost railguns of the platform's force. The footprint is
+  the rotated prototype collision box's axis-aligned envelope; nonrotatable prototypes use north. Direction is
+  0..15 or a compass name, default north. Each `entities` row retains its input `index`, name/position/direction,
+  and `railguns` (1-based indices into the returned railgun table with positions/directions/ghost status).
+  Only intersecting sources appear in `railguns`; `railguns_checked` counts all sources tested. Top-level and row
+  `complete`/`capped` report enumeration completeness: an extra railgun detects truncation, including on rows with
+  no hits. More than 8 entries is an error; 106 entries take fourteen calls. No other options combine with this mode.
+  Geometry reuses the existing expanded-box/wedge rule (17 rays at radial boundaries), including its same-turret
+  and origin-containing-box exclusions. Diagonal envelopes can overstate the footprint. Proposed railguns are
+  targets only; corridor sources are existing railguns. This checks geometry, not placement, ammo, target filters,
+  or damage. No ghosts, entities, watches or hull jobs are created.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in

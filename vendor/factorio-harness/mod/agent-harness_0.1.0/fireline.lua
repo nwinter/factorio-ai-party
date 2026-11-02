@@ -73,6 +73,29 @@ return function(api)
     end
     return false
   end
+  -- Shared box/wedge predicate for existing and proposed entities; preserves the radial sampling rule.
+  function M.intersects(c, pos, direction, name, target_name, q, bb)
+    local face = (direction or 0) / 16 * 2 * math.pi
+    local half = c.arc * math.pi
+    local w = c.width / 2
+    local x0, y0, x1, y1 = bb.left_top.x - w - pos.x, bb.left_top.y - w - pos.y, bb.right_bottom.x + w - pos.x, bb.right_bottom.y + w - pos.y
+    local same = target_name == name and math.abs(q.x - pos.x) < 1 and math.abs(q.y - pos.y) < 1
+    -- its box (widened by half the line) against the arc: the bearings of its corners from the turret (north 0,
+    -- clockwise) against the facing, and its nearest and farthest points against the shot's start and reach
+    local lo, hi, far = math.huge, -math.huge, 0
+    for _, k in ipairs({{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}}) do
+      local off = wrap(atan2(k[1], -k[2]) - face)
+      if off < lo then lo = off end
+      if off > hi then hi = off end
+      far = math.max(far, math.sqrt(k[1] ^ 2 + k[2] ^ 2))
+    end
+    local nx, ny = math.max(x0, math.min(0, x1)), math.max(y0, math.min(0, y1))
+    local near = math.sqrt(nx * nx + ny * ny)
+    local inside = x0 <= 0 and x1 >= 0 and y0 <= 0 and y1 >= 0
+    local hit = not same and not inside and hi - lo < math.pi and hi >= -half and lo <= half and near <= c.reach and far >= c.start
+    if hit and (near < c.start or far > c.reach) then hit = crosses(x0, y0, x1, y1, math.max(lo, -half) + face, math.min(hi, half) + face, c.start, c.reach) end
+    return hit
+  end
   -- Our entities a turret of name at pos facing direction (0..15) would hit: {hits, ghosts, line, ...}, or nil when its
   -- shots are no line. skip: the turret itself (an entity); one of that name (or its ghost) within a tile of pos is it too.
   function M.hits(surface, force, name, pos, direction, skip)
@@ -97,23 +120,7 @@ return function(api)
       local near_arc = d <= MARGIN or (d - MARGIN <= c.reach and math.abs(wrap(atan2(dx, -dy) - face)) <= half + math.asin(MARGIN / d))
       if near_arc and e ~= skip and e.type ~= 'character' then
         local bb = e.bounding_box
-        local w = c.width / 2
-        local x0, y0, x1, y1 = bb.left_top.x - w - pos.x, bb.left_top.y - w - pos.y, bb.right_bottom.x + w - pos.x, bb.right_bottom.y + w - pos.y
-        local same = (e.type == 'entity-ghost' and e.ghost_name or e.name) == name and math.abs(dx) < 1 and math.abs(dy) < 1
-        -- its box (widened by half the line) against the arc: the bearings of its corners from the turret (north 0,
-        -- clockwise) against the facing, and its nearest and farthest points against the shot's start and reach
-        local lo, hi, far = math.huge, -math.huge, 0
-        for _, k in ipairs({{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}}) do
-          local off = wrap(atan2(k[1], -k[2]) - face)
-          if off < lo then lo = off end
-          if off > hi then hi = off end
-          far = math.max(far, math.sqrt(k[1] ^ 2 + k[2] ^ 2))
-        end
-        local nx, ny = math.max(x0, math.min(0, x1)), math.max(y0, math.min(0, y1))
-        local near = math.sqrt(nx * nx + ny * ny)
-        local inside = x0 <= 0 and x1 >= 0 and y0 <= 0 and y1 >= 0
-        local hit = not same and not inside and hi - lo < math.pi and hi >= -half and lo <= half and near <= c.reach and far >= c.start
-        if hit and (near < c.start or far > c.reach) then hit = crosses(x0, y0, x1, y1, math.max(lo, -half) + face, math.min(hi, half) + face, c.start, c.reach) end
+        local hit = M.intersects(c, pos, direction, name, e.type == 'entity-ghost' and e.ghost_name or e.name, q, bb)
         if hit then
           local ghost = e.type == 'entity-ghost' or e.type == 'tile-ghost'
           local nm = ghost and e.ghost_name or e.name
@@ -158,6 +165,94 @@ return function(api)
     local rows = {}
     for _, nm in ipairs(hits) do rows[#rows+1] = {name=nm, count=#by[nm], positions=by[nm]} end
     return {line=line, hit=hit_n, ghosts=ghost_n > 0 and ghost_n or nil, entities=rows, cut=#found >= FIND or nil}
+  end
+  -- Proposed footprints only: no entities, ghosts, watches or background jobs are created.
+  M.PROPOSED_MAX, M.RAIL_MAX = 8, 64
+  local DIRECTIONS = {}
+  for d, word in pairs(COMPASS) do DIRECTIONS[word] = d end
+  local COS, SIN = {[0]=1,[4]=0,[8]=-1,[12]=0}, {[0]=0,[4]=1,[8]=0,[12]=-1}
+  local function finite(v) return type(v) == 'number' and v == v and math.abs(v) < math.huge end
+  function M.proposed(surface, force, entries)
+    assert(type(entries) == 'table' and #entries > 0 and #entries <= M.PROPOSED_MAX,
+      'planned_entities: 1..8 {name, position, direction?}')
+    for k in pairs(entries) do
+      assert(type(k) == 'number' and k % 1 == 0 and k >= 1 and k <= #entries, 'planned_entities: a dense array')
+    end
+    local rows, boxes = {}, {}
+    for i = 1, #entries do
+      local e = entries[i]
+      assert(type(e) == 'table', 'planned_entities: each entry is a table')
+      local pr = type(e.name) == 'string' and prototypes.entity[e.name]
+      assert(pr and pr.type ~= 'entity-ghost' and pr.type ~= 'tile-ghost', 'planned_entities: unknown or ghost prototype')
+      local q = e.position
+      local x, y = type(q) == 'table' and (q.x or q[1]), type(q) == 'table' and (q.y or q[2])
+      assert(finite(x) and finite(y) and math.abs(x) <= 1000000 and math.abs(y) <= 1000000,
+        'planned_entities: position has finite x,y within +/-1000000')
+      local d = e.direction == nil and 0 or e.direction
+      if type(d) == 'string' then d = DIRECTIONS[d] end
+      assert(finite(d) and d % 1 == 0 and d >= 0 and d <= 15, 'planned_entities: direction is 0..15 or a compass name')
+      if pr.supports_direction == false then d = 0 end
+      local b = pr.collision_box
+      assert(b, 'planned_entities: prototype has no collision box')
+      local a = d * math.pi / 8
+      local cs, sn = COS[d] or math.cos(a), SIN[d] or math.sin(a)
+      local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+      for _, p in ipairs({b.left_top, {x=b.right_bottom.x,y=b.left_top.y}, b.right_bottom, {x=b.left_top.x,y=b.right_bottom.y}}) do
+        local rx, ry = p.x * cs - p.y * sn + x, p.x * sn + p.y * cs + y
+        x0, y0, x1, y1 = math.min(x0,rx), math.min(y0,ry), math.max(x1,rx), math.max(y1,ry)
+      end
+      boxes[i] = {left_top={x=x0,y=y0},right_bottom={x=x1,y=y1}}
+      rows[i] = {index=i, name=e.name, position={x=x,y=y}, direction=d, railguns={}}
+    end
+    -- One sentinel beyond the combined limit distinguishes exactly-full from truncated.
+    local built = surface.find_entities_filtered{name='railgun-turret',force=force,limit=M.RAIL_MAX+1}
+    local ghosts = {}
+    if #built <= M.RAIL_MAX then
+      ghosts = surface.find_entities_filtered{type='entity-ghost',ghost_name='railgun-turret',force=force,limit=M.RAIL_MAX+1-#built}
+    end
+    local capped = #built + #ghosts > M.RAIL_MAX
+    local rails = {}
+    local c = assert(M.arc('railgun-turret'), 'railgun-turret has no line ammunition')
+    for _, group in ipairs({built,ghosts}) do
+      for _, t in ipairs(group) do
+        if #rails >= M.RAIL_MAX then break end
+        rails[#rails+1] = {index=#rails+1, name='railgun-turret', position=t.position, direction=t.direction,
+          ghost=t.type == 'entity-ghost', unit_number=t.unit_number}
+      end
+    end
+    -- Cheap necessary conditions before the shared corner/ray test. Each wedge edge defines a half-plane;
+    -- reject only when the entire expanded box is outside one, or its nearest point is past the shot's reach.
+    local edges = {}
+    for j,t in ipairs(rails) do
+      local face, half = t.direction * math.pi / 8, c.arc * math.pi
+      edges[j] = {math.cos(face-half), math.sin(face-half), -math.cos(face+half), -math.sin(face+half)}
+    end
+    local hits, matched, matched_index = 0, {}, {}
+    for _, row in ipairs(rows) do
+      for j, t in ipairs(rails) do
+        local b, w, e = boxes[row.index], c.width/2, edges[j]
+        local x0, y0 = b.left_top.x-w-t.position.x, b.left_top.y-w-t.position.y
+        local x1, y1 = b.right_bottom.x+w-t.position.x, b.right_bottom.y+w-t.position.y
+        local nx, ny = math.max(x0,math.min(0,x1)), math.max(y0,math.min(0,y1))
+        local near = nx*nx+ny*ny <= c.reach*c.reach
+        local wedge = c.arc > .5 or
+          ((e[1]*(e[1]>=0 and x1 or x0)+e[2]*(e[2]>=0 and y1 or y0) >= -1e-9) and
+           (e[3]*(e[3]>=0 and x1 or x0)+e[4]*(e[4]>=0 and y1 or y0) >= -1e-9))
+        if near and wedge and M.intersects(c,t.position,t.direction,t.name,row.name,row.position,b) then
+          if not matched_index[j] then
+            matched[#matched+1], matched_index[j] = t, #matched+1
+            t.index = #matched
+          end
+          row.railguns[#row.railguns+1] = matched_index[j]
+        end
+      end
+      row.complete, row.capped = not capped, capped
+      if #row.railguns > 0 then hits = hits + 1 end
+    end
+    return {entities=rows, railguns=matched, railguns_checked=#rails, complete=not capped, capped=capped,
+      limits={proposed_entities=M.PROPOSED_MAX,railguns=M.RAIL_MAX}, corridor=c,
+      note='Geometry only: rotated collision-box envelopes and the existing box/wedge rule (17 rays at radial boundaries; same-turret and origin-containing boxes excluded). Diagonal envelopes can overstate footprints. complete means all existing built and ghost railguns tested. Proposed railguns are not sources. No ammo, target-filter, placement or damage check.',
+      lines={string.format('proposed rail corridors: %d entities, %d existing railguns; %d entities intersect; complete=%s, capped=%s',#rows,#rails,hits,tostring(not capped),tostring(capped))}}
   end
   -- The same for a built turret or its ghost.
   function M.of(e)

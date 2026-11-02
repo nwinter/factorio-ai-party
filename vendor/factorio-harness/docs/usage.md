@@ -18607,3 +18607,41 @@ The read is live at each check, with no stale cache or `on_stale` option. Missin
 read error: direct waits refuse/fail, queued waits follow `on_fail`, guards remain armed and report
 `read_error`; an `any` member that remains readable can still trigger. Containers are limited to our
 container/logistic-container/linked-container at one footprint, in a charted chunk for remote reads.
+
+## d32 batch412 RC: proposed railgun corridors
+
+`platform_defense {platform, planned_entities:[{name,position:{x,y},direction?}]}` returns a standalone read of
+proposed footprints against existing built and ghost `railgun-turret`s belonging to the platform's force. This
+mode bypasses the ordinary hull, ammunition-feed and per-gun nearby-entity scans. It creates no ghosts/entities
+and starts no watches/background jobs. `planned: true` remains the separate existing-ghost defense view.
+
+Input: 1..8 entries; prototype name, finite position within +/-1,000,000, direction 0..15 or compass name (default
+north). Nonrotatable prototypes use north. Invalid input is an error; nothing is staged. The footprint is the
+axis-aligned envelope of the rotated prototype collision box. Diagonal envelopes can overstate the footprint.
+The mode takes only `platform` and `planned_entities`; watch and ordinary defense options cannot combine with it.
+
+Output: `entities [{index,name,position,direction,railguns,complete,capped}]`; each `railguns` list has
+1-based indices into the top-level `railguns [{index,name,position,direction,ghost,unit_number}]`. `railguns_checked` counts all sources tested; only intersecting sources appear in `railguns`. Every intersecting
+source read is returned, with no per-row hit truncation. Top-level `complete`, `capped`, `limits`, `corridor`, `note`
+and `lines` accompany the rows. At most 64 sources are tested, built first, with one extra source fetched to detect
+truncation; exactly 64 is complete, more is capped. A capped empty-hit row is incomplete too. More than 8 proposals
+is refused: 106 proposals take thirteen batches of 8 and one of 2 entries. Input indices are local to each call. Proposed railguns do not
+become corridor sources; only existing built and ghost railguns are sources.
+
+The shared predicate is `fireline.intersects`, extracted from `fireline.hits` without changing its box/wedge rule:
+prototype arc and longest line-ammo reach, expanded collision box by half the line width, corner bearings and
+nearest/farthest radii, then 17 slab-tested rays when a box straddles start/reach. Base railgun values are a 72-degree
+wedge, shot start 3.6, line length 50 and width 1, reach 53.6. The original same-turret and origin-containing-box
+exclusions remain. `complete` describes source enumeration, not exact geometry. Cheap half-plane and outer-radius
+rejections precede this predicate for proposals. This is geometric corridor intersection, independent of readiness,
+ammunition held, target filtering or damage. It does not validate construction placement.
+
+The existing read retains its 2,048 nearby-entity cap per source, 12 names in prose, and platform_defense's 16-source
+line page / 256-turret scan. Proposed reads do not use those scans or caps. No new stream-service action was added.
+Tests: `tests/d32_batch412.lua`, plus existing `tests/d17_batch31.lua` corridor regression.
+
+Private OrbStack measurement on Asterion (42 built railguns, 21,287 foundation tiles, 9,065 force entities): 106
+synthetic proposals, positioned 20 tiles ahead of the guns, in fourteen calls. Warm handler plus JSON serialization:
+3.43–7.71 ms/call; two complete warm passes: 81.64 and 84.80 ms total. First cold call: 16.74 ms. A full harness
+dispatch sample for 8 proposals took 13.08 ms first, then 8.95 and 8.42 ms. The cap bounds work; it is not a cold-latency
+guarantee. No shared-server probe was run. Entity/ghost counts and game tick were unchanged across the measured audit.
