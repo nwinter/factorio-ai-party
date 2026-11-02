@@ -2065,6 +2065,11 @@ bottleneck calls to find) gives, per surface:
 - The users come from the census's last background pass (`as_of`; before its first pass none are listed and
   `pending` says so); their state is read at the call, at most 2048 a call (`capped`). The read is kept 10 seconds.
 
+
+Batch411: every damage-based endurance forecast includes `damage_model`: area/splash and multi-target effects are not modelled; each ammunition is estimated independently. The existing scalar flattens damage entries in the first projectile (explosive rocket: 50 direct + 100 area), then applies them to one asteroid; secondary projectiles are excluded. It is not direct-only damage or total area damage.
+
+`platform_endurance {platform, design:{width, speed, ammo:["explosive-rocket"], stock:{"explosive-rocket":0}, details:true}, route:[...]}` adds `ammo_details[].effects`: cached prototype direct damage by type, area damage entries by type/radius/friendly_fire (yes/no/unknown), nested actions, projectile attack/final actions, repeat counts and distance falloff. Values are base damage per effect; ammunition quality multiplier is separate, force/turret bonuses excluded. Radii are unscaled. Repeats, probability and overlapping areas are not totalled. Created entities, beams and streams are named only; bounds (16 projectiles, 512 nodes, depth 24) report `truncated`. Native weapon settings are unchanged.
+
 `platform_endurance {platform, route?}` (read; Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and
 repair packs ran out on the way) projects a planned route at the rates the platform shows now:
 - `route`: the stops given (`"route":["fulgora","aquilo","nauvis"]`, 1 to 12 space locations), else the schedule

@@ -810,3 +810,5 @@ Explicit window budgets (batch364): `platform_endurance {platform,turnaround:{km
 Budget labels (batch364): `usable_after_reserve_margin` holds the budget usable extrema, `(stock - reserve) / (1 + margin)`, observed at reads; its `measure` and `formula` state this explicitly. It is not raw stock. An item's legacy `window` now follows authoritative `rate_basis.window`; `recent_window` separately labels the recent candidate compared against the phase/leg.
 
 - Ammunition `platform_endurance resources`: `aboard` (whole ship, including turret magazines); `stock` (reachable, excluding stranded). The resource line labels both counts, including in compact output.
+
+`platform_endurance` damage forecasts carry `damage_model`: area/splash and multi-target effects not modelled; independent ammunition estimates. `design.details:true` with `design.ammo` adds `ammo_details[].effects`: cached direct/area prototype damage, radius, friendly-fire filter, nested projectile actions, repeats/falloff and separate quality multiplier. Base values, not total blast damage; native turret settings unchanged.

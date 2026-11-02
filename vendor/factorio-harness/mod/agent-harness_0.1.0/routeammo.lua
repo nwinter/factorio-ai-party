@@ -9,6 +9,7 @@
 -- (d20 batch51 H1, viewer Aurora 09:36) What is made on the way is endurance's (ammomodel.lua): at most what the
 -- ingredients aboard allow over the trip so far, an ingredient shared between products split by their rates; what
 -- rockets on their way up bring counts at the start; each ammunition's last line says which limit binds.
+local ammodetail = require('ammodetail')
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -590,19 +591,24 @@ return function(api)
       hits = {}
       current = scan_turrets(pl)
       local _, all_fire = aiming(pl, nil, current)
-      local accepted, allowed = {}, {}
-      -- Prototypes plus compatible turrets aboard define the supported names; no player inventory is changed.
-      for n, ip in pairs(prototypes.item) do
-        if ip.type == 'ammo' then
+      -- Validate selected ammo only. Enumerating every prototype and calculating every alternative's
+      -- damage on successful reads cost most of this design path; the accepted list is only for errors.
+      local function supported(n)
+        local ip = prototypes.item[n]
+        if ip and ip.type == 'ammo' then
           local turret, quality = all_fire(n)
           local h = turret and M.hit(n, quality, pl.force, turret)
-          if h and h.total > 0 then accepted[#accepted+1] = n; allowed[n] = true end
+          return h and h.total > 0
         end
       end
-      table.sort(accepted)
       for _, n in ipairs(o.ammo) do
-        assert(allowed[n], 'design.ammo: ' .. tostring(n) .. ' is not an ammunition supported by the turrets aboard and damage model; accepted: '
-          .. (#accepted > 0 and table.concat(accepted, ', ') or 'none'))
+        if not supported(n) then
+          local accepted = {}
+          for name in pairs(prototypes.item) do if supported(name) then accepted[#accepted+1] = name end end
+          table.sort(accepted)
+          error('design.ammo: ' .. tostring(n) .. ' is not an ammunition supported by the turrets aboard and damage model; accepted: '
+            .. (#accepted > 0 and table.concat(accepted, ', ') or 'none'), 0)
+        end
       end
       turrets, fire_of, aim_of = aiming(pl, o.ammo, current)
     elseif not o.targets and aimed and aimed.pl == pl.index and aimed.tick == game.tick then
@@ -718,7 +724,7 @@ return function(api)
         local source = stock ~= nil and 'design.stock' or 'platform'
         stock = stock or (places and places.total[a]) or 0
         local needed = math.ceil(shots / math.max(1, mag))
-        details[#details+1] = {ammo=a, turret=turret, quality=quality, damage_per_shot=h.total, damage=h.by,
+        details[#details+1] = {effects=o.details and ammodetail.read(a, quality) or nil, ammo=a, turret=turret, quality=quality, damage_per_shot=h.total, damage=h.by,
           targets=target_settings(aim_of(a).mine, true), stock=stock, stock_source=source, shots_per_item=mag,
           shots=shots, items_required=needed, stock_after=stock-needed}
       end
@@ -728,7 +734,7 @@ return function(api)
     if current then
       basis.targets = 'effective_targets: design.targets replaces the target set for every participating turret of each named prototype; omitted prototypes retain current settings; an empty list targets nothing, "any" targets every asteroid; current_targets is the native profile, unchanged'
     end
-    return {basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines,
+    return {damage_model=ammodetail.LIMITATION, basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines,
       ammo_source=o.ammo and 'design.ammo' or nil, ammo_details=details, stock_read=stock_read,
       target_source=current and (o.targets and next(o.targets) and 'design.targets' or 'platform') or nil,
       effective_targets=current and target_settings(turrets, true) or nil,
@@ -739,6 +745,7 @@ return function(api)
     opts = opts or {}
     local off, off_from = offset()
     return {
+      damage_model = ammodetail.LIMITATION,
       legs = 'the route\'s stops (route, or the schedule from its current stop), each leg its space connection\'s length (the leg flown now: the km left); minutes at the speed read (' .. tostring(speed_from or 'unknown') .. ')'
         .. (opts.speed and string.format(', times %g (pessimistic.speed)', opts.speed) or ''),
       asteroids = 'each leg\'s connection\'s asteroid_spawn_definitions (asteroid entities; chunks not), each kind\'s spawn chance as a mean over the leg (linear between its points, by distance along the connection): a relative weight, not a count',
@@ -763,7 +770,7 @@ return function(api)
       fmin = fmin + l.minutes
     end
     for k, p in pairs(fd) do fd[k] = p / fmin end
-    local cache, lines = {}, {}
+    local cache, lines = {}, {ammodetail.LIMITATION}
     hits = {}  -- (AX1) the force's bonuses as they are now
     local turrets, fire_of, aim_of = aiming(pl)
     -- (d24 batch187 QAC1) the model read next in the same call takes these turrets and shots, not a second scan
