@@ -349,6 +349,9 @@ def watch(a, clock=time.time, sleep=time.sleep):
     save_state(a.state, state)
     problem = overlay_guard.health_problem(st) or shot_problem
     if problem:
+        enabled = ensure_enabled()  # preserve the disabled-item repair even when health/screenshot fails
+        if enabled:
+            print(f"{time.strftime('%H:%M:%S')} OVERLAY: {enabled}")
         ok, detail = overlay_guard.reload_once(a, obs, clock=clock, sleep=sleep)
         print(f"{time.strftime('%H:%M:%S')} OVERLAY: {problem}; {detail}")
         state = load_state(a.state)

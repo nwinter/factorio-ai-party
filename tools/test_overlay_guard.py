@@ -164,7 +164,7 @@ print('{{}}' if phase == 'empty' else '{{"tick": 42, "agents": []}}')
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(O.watch(self.a, self.clock, self.clock.sleep), 1)
                 self.assertEqual(O.watch(self.a, self.clock, self.clock.sleep), 1)
-            self.assertEqual(self.calls, ['reload-overlay'])
+            self.assertEqual(self.calls, ['enable-overlay', 'reload-overlay', 'enable-overlay'])
             self.assertIn('reload-overlay attempt', out.getvalue())
             self.assertIn('cooldown', out.getvalue())
             st['health'] = self.st()['health']
