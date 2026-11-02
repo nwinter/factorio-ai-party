@@ -60,7 +60,8 @@ class StartupTest(unittest.TestCase):
         return rc, out.getvalue(), reloads
 
     def test_service_twenty_seconds_late_and_tunnel_late(self):
-        for service, tunnel in [(1020, 1000), (1000, 1040)]:
+        # Also reproduce shift123: service ready about 20 s beyond the old 120 s gate.
+        for service, tunnel in [(1020, 1000), (1140, 1000), (1000, 1040)]:
             with self.subTest(service=service, tunnel=tunnel):
                 Path(self.a.state + '.reload').unlink(missing_ok=True)
                 self.clock.now = 1000
