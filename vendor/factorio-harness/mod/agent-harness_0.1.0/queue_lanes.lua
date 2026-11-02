@@ -29,7 +29,7 @@ return function(api)
           for _,m in ipairs(c.conditions) do if not remote_ok(m) then return false end end
           return true
         end
-        return WAITS[c['until']] or (c['until']=='item_count' and (type(c.platform)=='string' and c.platform~='' or type(c.surface)=='string' and c.surface~=''))
+        return WAITS[c['until']] or ((c['until']=='item_count' or c['until']=='inventory_free_slots') and (type(c.platform)=='string' and c.platform~='' or type(c.surface)=='string' and c.surface~=''))
           or ((c['until']=='produced' or c['until']=='fluid_count' or c['until']=='circuit_signal' or c['until']=='pod_landed') and type(c.platform)=='string' and c.platform~='')
           -- (d20 batch52 K1) the guns of a platform; (K2) a silo on a named planet
           or (c['until']=='ammo_below' and type(c.platform)=='string' and c.platform~='')
@@ -41,7 +41,7 @@ return function(api)
           or ((c['until']=='rocket_ready' or c['until']=='rocket_parts' or SURFACE_WAITS[c['until']]) and type(c.surface)=='string' and c.surface~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, item_count or inventory_free_slots with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).

@@ -391,3 +391,20 @@
   `wait_ticks` or `wait_until` while your queue runs runs as a sleep and the queue keeps going (`as_sleep`;
   `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue
   running.
+
+- `inventory_free_slots`: `{"until":"inventory_free_slots","platform":"Asterion","below":16}`
+  is met when the hub has fewer than 16 empty usable slots; `at_least:16` is met at 16 or more.
+  Thresholds are integers 0..1000000000; both specify an inclusive lower/exclusive upper range.
+  Alternatively, `surface:"nauvis", position:[x,y]` reads one container, logistic container or linked container
+  of our force in a charted chunk (surface defaults to the character's). Platform excludes surface/position.
+  Direct `wait_until`, sleep conditions, queue waits and guards accept it, including `all`/`any`;
+  remote/platform lanes require platform or surface. Checks occur every 10 ticks for waits and queue guards.
+  `saw` gives occupied/free/total usable slots, physical capacity/barred slots and `read_tick`. The live
+  inventory size includes cargo-bay and quality capacity. Each partial or full stack occupies one slot,
+  across all items and qualities. Empty filtered slots count for their matching item; partial-stack room
+  is not a free slot. Barred slots are excluded from all three usable counts. Hub trash and cargo in flight
+  are excluded. Inbound pods' reserved inventory slots are unavailable in the 2.0.77 API; cargo-hatch
+  reservations are not inventory-slot reservations. These counts do not subtract future deliveries.
+  Fired guards keep the reading in `evidence.inventory_free_slots`. No cached reading or `on_stale` option:
+  a missing/unreadable target raises the existing condition error (direct wait refused/failed, queued wait
+  follows `on_fail`, guard stays armed with `read_error`; `any` can still meet on another readable member).
