@@ -42,7 +42,9 @@ Cost: at most one `GetSourceScreenshot` per 60 seconds of watchdog passes, 480x2
 `stream overlay`, websocket timeout three seconds, automatic request retries disabled. The state
 stores byte count and wall time, not the image. One read-only sample on shift121 measured 31.3 ms
 and 54,714 PNG bytes (~73 KB base64); it was healthy. This is one observation, not a latency bound
-or OBS GPU benchmark. Sampling later than 60 seconds follows the watchdog's own cadence. Health
+or OBS GPU benchmark. The current operator `watch-run3.sh` sleeps 120 seconds between passes, plus
+the time spent checking, so in practice screenshots are at least 120 seconds apart; two-sample
+detection takes two watchdog passes. Sampling later than 60 seconds follows that cadence. Health
 uses the already-fetched `/overlay/status`; a recovery adds a remote readiness probe.
 
 Tests: `tools/test_overlay_guard.py`, `tools/test_overlay_check.py`, `tools/test_overlay_blank.py`,
