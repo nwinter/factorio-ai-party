@@ -408,3 +408,15 @@
   Fired guards keep the reading in `evidence.inventory_free_slots`. No cached reading or `on_stale` option:
   a missing/unreadable target raises the existing condition error (direct wait refused/failed, queued wait
   follows `on_fail`, guard stays armed with `read_error`; `any` can still meet on another readable member).
+- `platform_speed_above {platform, above, for_s?, max_age?}` is a `wait_until` condition and queue guard in body,
+  remote and platform lanes, including `all`/`any`. `above` is a strict km/s threshold; native `LuaSpacePlatform.speed`
+  is km/tick, multiplied by 60. Each check reads live speed. `for_s` defaults to 0 (0..86400 game seconds);
+  a sample at/below the threshold, unreadable speed, or a gap over `max_age` resets the sustained duration.
+  `max_age` is the allowed gap in seconds (default 1; 1/60..900), not a speed cache. Guard `saw` and `evidence`
+  show `speed_kms` and `tick`. A guard fires once; its recovery steps replace the running and pending steps.
+  Platform entity configuration and `circuit_set` leave schedule records and an active `flight_watch` intact;
+  recovery can set the thrust circuit and then wait for arrival. Guards are checked every 10 ticks while unpaused.
+- `queue_submit` (including `dry_run`) parses every `platform_schedule` stop wait and guard recovery step before
+  accepting the plan. Invalid waits name the step, label and `stops[i].wait[j]` (or `wait[j]` for `stop`).
+  Count/circuit waits take `condition: "iron-plate >= 100"` or `{signal, comparator, value}`; `comparator` beside
+  `type` is invalid. Dry runs do not write saved wait lists or schedules.

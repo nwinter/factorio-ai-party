@@ -9127,6 +9127,7 @@ M.check_item_name=require('itemnames')
 -- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
+  platform_schedule=function(a) space.check_schedule_args(a) end,
   feed=function(a) M.feed_items(a) end,
   collect=function(a) if a.pods==nil and a.pick~=nil then M.pick_items(a) end end,
   platform_defense=function(a) M.asteroidwatch.filter_args(a) end,
