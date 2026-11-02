@@ -159,4 +159,23 @@ q.guards={{when={['until']='platform_loss',platform='Asterion',loss_since=123},s
 local before=copy(q)
 local legacy=astra('queue_status',{agent='sol',lane='remote'})
 eq(legacy.guards[1].since_tick,123); assert(legacy.guards[1].id); same(q,before)
+-- Batch415 merge: another agent sees both the speed evidence and batch416's baseline, without changing duration state.
+force.platforms={{valid=true,name='Asterion',speed=40.3/60}}
+for _,lane in ipairs{'body','remote','platform:Asterion'} do
+  local key=lane=='body' and 'queues' or lane=='remote' and 'remote_queues' or 'lane_queues|Asterion'
+  local queue=state[key][si]
+  local guards=queue.guards
+  local condition={['until']='platform_speed_above',platform='Asterion',above=35,for_s=2}
+  local met,saw=runtime.scheduler_api.condition(runtime.scheduler_api.player(si,true),condition)
+  eq(met,false)
+  queue.guards={{when=condition,saw=saw}}
+  local before=copy(queue)
+  local own=sol('queue_status',{lane=lane})
+  local other=astra('queue_status',{agent='sol',lane=lane})
+  same(own,other); same(queue,before)
+  eq(other.guards[1].evidence.speed_kms,40.3); eq(other.guards[1].evidence.tick,game.tick)
+  assert(other.guards[1].baseline:find('live speed of Asterion > 35 km/s for 2 s',1,true))
+  eq(other.guards[1].when.speed_since,game.tick)
+  queue.guards=guards
+end
 print('queue_status agent: owner parity, evidence, read-only state, writes refused, caps: ok')

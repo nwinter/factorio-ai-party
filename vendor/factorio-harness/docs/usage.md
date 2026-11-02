@@ -18655,3 +18655,18 @@ synthetic proposals, positioned 20 tiles ahead of the guns, in fourteen calls. W
 3.43–7.71 ms/call; two complete warm passes: 81.64 and 84.80 ms total. First cold call: 16.74 ms. A full harness
 dispatch sample for 8 proposals took 13.08 ms first, then 8.95 and 8.42 ms. The cap bounds work; it is not a cold-latency
 guarantee. No shared-server probe was run. Entity/ghost counts and game tick were unchanged across the measured audit.
+
+`wait_until {until:"platform_speed_above", platform:"Asterion", above:35, for_s:2, max_age:1}`
+reads native `LuaSpacePlatform.speed` (km/tick) times 60, and holds only above 35 km/s for 2 sampled game seconds.
+`above` is required (0..1e9 km/s); `for_s` defaults to 0 (0..86400); `max_age` defaults to 1 second (1/60..900).
+At/below the threshold, an unreadable value, or a sample gap over `max_age` resets duration. Each check reads
+live speed; no cached speed is accepted. Direct waits, queue steps and guards in body/remote/platform lanes and
+`all`/`any` use the same condition. Guards expose measured `speed_kms` and sample `tick` in `evidence` and `saw`.
+A guard fires once, replacing current/pending steps with its recovery steps. Platform entity `configure` and
+`circuit_set` do not replace schedule records or stop an active `flight_watch`; a recovery can change the thrust
+circuit followed by an arrival wait. Guards run every 10 ticks while the lane is unpaused.
+
+`queue_submit dry_run` and submission validate every `platform_schedule` wait, including recovery steps, using
+the execution parser. Refusals name step/label and `stops[i].wait[j]` (or `wait[j]` with `stop`), and show accepted
+condition syntax. A count/circuit wait uses `condition:"iron-plate >= 100"` or `{signal, comparator, value}`;
+`comparator` is not a top-level wait field. Validation does not write schedules or saved wait lists.

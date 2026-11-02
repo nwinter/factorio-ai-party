@@ -2097,9 +2097,9 @@ return function(api)
   -- One stop's waits as the game's records take them, and the harness's watch for it (B9), or nil; runs and read_as get
   -- their lines. Shared by stops and by stop (B8).
   -- Wait lists kept by name (save_as / wait_from), as written; the harness's storage, no defaults.
-  function M.saved_waits(i,stop,read_as,p)
+  function M.saved_waits(i,stop,read_as,p,preview)
     if stop.save_as==nil and stop.wait_from==nil then return stop end
-    local st=api.state and api.state()
+    local st=preview or api.state and api.state()
     assert(st,'saved waits need the harness storage')
     st.saved_waits=st.saved_waits or {}
     local out={}
@@ -2129,7 +2129,16 @@ return function(api)
     local waits={}
     local harness_conds,mirror,other,ordered={},{},{},{}
     -- (d18 batch36 A3) any_of / all_of as the game's chain; kinds mixed with no compare past the first: refused
+    assert(stop.wait==nil or type(stop.wait)=='table','stop '..i..': wait must be an array or any_of/all_of group')
     local list,grouped=M.waitgroups.flatten(stop.wait,'stop '..i)
+    if not grouped and list~=nil then
+      local count=0
+      for k in pairs(list) do
+        count=count+1
+        assert(type(k)=='number' and k>=1 and k<=#list and k==math.floor(k),'stop '..i..': wait must be a contiguous array or any_of/all_of group')
+      end
+      assert(count==#list,'stop '..i..': wait must be a contiguous array or any_of/all_of group')
+    end
     if grouped then read_as[#read_as+1]=string.format('stop %d: %s written as the game\'s chain of %d waits',i,stop.wait.any_of and 'any_of' or 'all_of',#list)
     else M.waitgroups.mixed(list,'stop '..i) end
     for j,w in ipairs(list or {}) do
@@ -2154,6 +2163,11 @@ return function(api)
         read_as[#read_as+1]=string.format('stop %d wait %d: seconds %g read as ticks %d',i,j,w.seconds,copy.ticks)
         w=copy
       end
+      assert(({all_requests_satisfied=true,any_request_not_satisfied=true,any_request_zero=true,time=true,inactivity=true,item_count=true,fluid_count=true,circuit=true})[w.type], 'stop '..i..' wait '..j..': type must be all_requests_satisfied|any_request_not_satisfied|any_request_zero|time|inactivity|item_count|fluid_count|circuit')
+      assert(w.compare==nil or w.compare=='and' or w.compare=='or','stop '..i..' wait '..j..': compare must be and or or')
+      if w.type=='time' or w.type=='inactivity' then
+        assert(type(w.ticks)=='number' and w.ticks>=0 and w.ticks<=4294967295 and w.ticks==math.floor(w.ticks),'stop '..i..' wait '..j..': ticks must be an integer 0..4294967295 (or seconds)')
+      else assert(w.ticks==nil,'stop '..i..' wait '..j..': ticks goes with time or inactivity') end
       local bad={}
       for k in pairs(w) do
         if k~='type' and k~='ticks' and k~='condition' and k~='compare' and k~='harness' then bad[#bad+1]=tostring(k) end
@@ -2161,7 +2175,7 @@ return function(api)
       if #bad>0 then
         table.sort(bad)
         error(string.format('stop %d wait %d: %s %s not wait fields (a wait takes type, ticks, condition, compare, harness); a count is a condition: {"type":"%s","condition":"%s >= %s"}',
-          i,j,table.concat(bad,', '),#bad==1 and 'is' or 'are',w.type,tostring(w.fluid or w.item or w.signal or 'thruster-fuel'),tostring(w.count or w.value or w.at_least or 10000)),0)
+          i,j,table.concat(bad,', '),#bad==1 and 'is' or 'are',w.type,tostring(w.fluid or w.item or w.signal or (w.type=='item_count' and 'iron-plate' or 'thruster-fuel')),tostring(w.count or w.value or w.at_least or 10000)),0)
       end
       if (w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit') and w.condition==nil then
         error(string.format('stop %d wait %d: %s needs a condition ("%s >= 10000" or {signal, comparator, value}); without one the game\'s wait compares nothing',
@@ -2445,9 +2459,28 @@ return function(api)
     end
     assert(a.paused==nil or type(a.paused)=='boolean','paused must be boolean')
   end
+  -- Submission and execution parse every wait before any schedule or saved-wait write.
+  function M.check_schedule_args(a)
+    arg_checks(a)
+    local preview={saved_waits={}}
+    for k,v in pairs(api.state and api.state().saved_waits or {}) do preview.saved_waits[k]=v end
+    local function check(i,stop,path)
+      local ok,err=pcall(function()
+        stop=M.saved_waits(i,stop,{},nil,preview)
+        stop_waits(i,stop,{},{})
+      end)
+      if not ok then
+        local msg=tostring(err):gsub('^[^:]*:%d+: ','')
+        local j=msg:match('wait (%d+)')
+        error(path..(j and '['..j..']' or '')..': '..msg,0)
+      end
+    end
+    if a.stop~=nil and a.wait~=nil then check(a.stop,{station='?',wait=a.wait},'wait') end
+    for i,stop in ipairs(a.stops or {}) do check(i,stop,'stops['..i..'].wait') end
+  end
   function M.schedule_call(p,a)
     local pl=M.platform(p,a.platform)
-    arg_checks(a)
+    M.check_schedule_args(a)
     local runs,read_as
     -- (d24 batch142 PN1) unloading: one record's (with stop) or each stops entry's
     assert(a.unloading==nil or a.stop~=nil,'unloading goes with stop (that record\'s allow unloading) or in a stops entry')
@@ -2825,7 +2858,7 @@ return function(api)
   function M.schedule_check(p,a)
     local okp,pl=pcall(M.platform,p,a.platform)
     if not okp then return {refused=plain(pl),depends='the platform '..tostring(a.platform)..' when it runs'} end
-    local bad=select(2,pcall(arg_checks,a))
+    local bad=select(2,pcall(M.check_schedule_args,a))
     if bad then return {refused=plain(bad)} end
     local sch=try(function() return pl.get_schedule() end)
     local n=sch and try(function() return sch.get_record_count() end) or 0

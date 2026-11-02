@@ -908,6 +908,24 @@ return function(api)
         names and ' of those names' or '',holder.hit_since,not met and #goal>0 and ' (met at '..table.concat(goal,' or ')..')' or '',
         #parts>0 and table.concat(parts,', ') or 'none kept',n>#parts and string.format(', +%d more',n-#parts) or '',older,unread)
     end,
+    -- Native speed is km/tick; every check reads it anew. Duration state survives save/load.
+    platform_speed_above=function(p,c,estimate,record)
+      local h=record or c
+      local ok,speed=pcall(function() return M.platform_named(p,c.platform).speed*60 end)
+      if not ok or type(speed)~='number' or speed~=speed or speed==math.huge or speed<0 then
+        h.speed_since=nil; h.speed_tick=nil; h.evidence=nil
+        error('platform_speed_above: no readable speed for '..c.platform..' at tick '..game.tick,0)
+      end
+      local gap=not h.speed_tick or game.tick-h.speed_tick>(c.max_age or 1)*60 or game.tick<h.speed_tick
+      if speed<=c.above then h.speed_since=nil
+      elseif gap or not h.speed_since then h.speed_since=game.tick end
+      h.speed_tick=game.tick
+      local elapsed=h.speed_since and (game.tick-h.speed_since)/60 or 0
+      h.evidence={platform=c.platform,speed_kms=speed,tick=game.tick,above=c.above,for_s=c.for_s or 0,
+        since_tick=h.speed_since,elapsed_s=elapsed,max_age=c.max_age or 1}
+      return speed>c.above and elapsed>=(c.for_s or 0),string.format('%s speed %.6g km/s > %g km/s: %s; sustained %.3g/%g s; read tick %d (age 0 s)',
+        c.platform,speed,c.above,speed>c.above and 'yes' or 'no',elapsed,c.for_s or 0,game.tick)
+    end,
     -- (d22 batch92 BB3, Astra #1887: a probe flight turned back at a share of its outer leg, whatever its speed) the
     -- share of its leg a platform has flown, as the platforms read gives it (freight.lua leg: from and to in the
     -- direction it flies), met at at_least; on the leg asked only (from, to), so a return leg, another leg or a stop
@@ -1290,7 +1308,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_speed_above|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1378,7 +1396,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='inventory_free_slots, item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_speed_above, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1581,6 +1599,14 @@ return function(api)
       for _,n in ipairs(c.entity_names or {}) do assert(type(n)=='string' and prototypes.entity[n],'platform_hit entity_names: '..tostring(n)..' is no entity name') end
       assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_hit since_tick is a game tick up to now')
       if c.damage~=nil then number(c.damage,0.1,1e9,'damage') end
+    end
+    assert(c.above==nil or kind=='platform_speed_above','above applies to platform_speed_above only')
+    assert(c.for_s==nil or kind=='platform_speed_above','for_s applies to platform_speed_above only')
+    if kind=='platform_speed_above' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_speed_above requires platform (a platform of ours by name)')
+      number(c.above,0,1e9,'above (km/s)')
+      if c.for_s~=nil then number(c.for_s,0,86400,'for_s') end
+      if c.max_age~=nil then number(c.max_age,1/60,900,'max_age (seconds between samples)') end
     end
     if kind=='platform_progress' then
       assert(type(c.platform)=='string' and #c.platform>0,'platform_progress requires platform (a platform of ours by name)')
