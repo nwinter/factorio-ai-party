@@ -421,10 +421,6 @@ return function(api)
       local ch=p.character; local r=ch.health/ch.max_health
       return r>c.fraction,string.format('health %d%%',math.floor(r*100))
     end,
-    -- In a named platform hub's main inventory, the character's main inventory, or summed over our entities on the
-    -- given tiles (chests, machines: every inventory they have; a rocket
-    -- silo's rocket cargo too, which the game counts with the silo's own; each
-    -- silo's rocket state and cargo follow in saw).
     inventory_free_slots=function(p,c)
       local holder=c
       holder.evidence=nil -- A failed read must not keep an earlier capacity reading.
@@ -459,6 +455,10 @@ return function(api)
       return met,string.format('%s: occupied %d, free %d, total %d usable slots; capacity %d, barred %d; inbound reserved slots unavailable (API); excludes cargo in flight; filtered empty slots included; read_tick %d',
         where,occupied,free,total,capacity,capacity-total,game.tick)
     end,
+    -- In a named platform hub's main inventory, the character's main inventory, or summed over our entities on the
+    -- given tiles (chests, machines: every inventory they have; a rocket
+    -- silo's rocket cargo too, which the game counts with the silo's own; each
+    -- silo's rocket state and cargo follow in saw).
     item_count=function(p,c,estimate)
       local n,where=0,''
       local scope={}
