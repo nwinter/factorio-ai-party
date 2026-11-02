@@ -230,3 +230,15 @@ test('a paged reply leads with its one-line fields: page 1 says what the table h
   assert.match(shown, /pods_line: "47 pod journeys .* oldest first"/);
   assert.match(shown, /more lines, \d+ KB: \.\/fh more\]/);
 });
+
+test('damage forecast limitation and friendly-fire facts survive compact paging', () => {
+  const damage_model = 'area/splash and multi-target effects not modelled; each ammunition estimated independently';
+  for (const result of [
+    {damage_model, design:{width:35}, ammo_details:[{effects:{prototype:{area_damage:[{friendly_fire:'no',radius:2}]}}}]},
+    {damage_model, forecast:['example'], forecast_model:{damage_model}},
+  ]) {
+    const out = formatCompact({ok:true,result},true);
+    assert.ok(paginate(out).shown.includes(damage_model));
+    if ('ammo_details' in result) assert.ok(out.includes('friendly_fire=no'));
+  }
+});

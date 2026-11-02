@@ -48,6 +48,7 @@ local function read(am,extra)
   return E.read({},{platform='Asterion',design=d,forecast=true,route={'solar-system-edge','shattered-planet'},progress={from=.75,to=1}})
 end
 local r=read({'railgun-ammo'})
+eq(r.damage_model,'area/splash and multi-target effects not modelled; each ammunition estimated independently')
 eq(#r.ammo,1); eq(r.ammo[1],'railgun-ammo'); eq(r.ammo_source,'design.ammo')
 eq(r.legs[1].shots.rocket,nil); eq(r.legs[1].shots['firearm-magazine'],nil)
 eq(r.legs[1].shots['railgun-ammo'],15100)
@@ -70,6 +71,12 @@ eq(read({'railgun-ammo'}).legs[1].shots['railgun-ammo'],60400)
 local magazines=read({'firearm-magazine','railgun-ammo'},{stock={['firearm-magazine']=20000,['railgun-ammo']=0}})
 eq(magazines.ammo_details[1].shots_per_item,10); eq(magazines.ammo_details[1].items_required,9060)
 -- No override retains the four loaded names and the light read (no stock).
+local detail=read({'railgun-ammo'},{details=true,stock={['railgun-ammo']=0}})
+eq(detail.ammo_details[1].effects.prototype.direct_damage.physical,100)
+eq(detail.ammo_details[1].effects.quality_multiplier,1)
+eq(r.ammo_details[1].effects,nil)
+fails(function() read(nil,{details=true}) end,'requires design.ammo')
+fails(function() read({'rocket'},{details='yes'}) end,'true or false')
 local before=stock_reads
 local plain=read(nil); eq(#plain.ammo,4); eq(plain.ammo_details,nil); eq(stock_reads,before)
 for _,name in ipairs{'bad-name','shotgun-shell','unsupported-rocket','iron-plate'} do

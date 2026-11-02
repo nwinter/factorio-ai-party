@@ -7,7 +7,7 @@
 {{ROSTER}}
 
 Factory, research and power are shared. `./fh` controls your character and inventory.
-`technologies {name, level}` reads cost without queueing.
+`technologies {name, level}`: cost. `platform_endurance` design.details: ammo effects (help space-age).
 Platform `configure` returns recipe items to hub; `deliver` requests ingredients. Stream: ship metrics.
 `configure` splitter filters keep quality/comparator; `inspect.splitter.outputs` reads outlet lanes (help circuits-settings).
 `flight_watch`: 3 real mixed intervals; same-tick edits share a boundary (help space-age).
