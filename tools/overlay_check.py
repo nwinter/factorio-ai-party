@@ -4,10 +4,12 @@ start left the "stream overlay" browser source blank for 26 minutes, with no rig
 answered and the page was served, a refreshnocache did not help, and turning the scene item off and on brought it back
 at once.)
 
-  python3 tools/overlay_check.py start --since EPOCH [--wait 30]   # after a start's reload (tools/obs-steps.sh)
+  python3 tools/overlay_check.py startup --wait 180 --render-wait 30  # shift startup (tools/obs-steps.sh)
+  python3 tools/overlay_check.py start --since EPOCH [--wait 30]   # legacy/manual recovery
   python3 tools/overlay_check.py watch [--stale 120] [--state FILE]  # one pass of a run's watchdog
   python3 tools/overlay_check.py status                            # the main page's stream, one line
 
+batch418: startup gates scene setup, refresh and rendering, retries once, and reports degraded on timeout.
 batch413: prepare --wait 120 waits for a valid /state.json through pogwin's :8787 reverse tunnel, then reloads.
 All reloads (including the legacy recovery round below) share --state + '.reload': default 600 s cooldown,
 minimum 180 s, reserved before the request, including ambiguous failures. prepare and watch log each attempt.
@@ -202,7 +204,7 @@ def obs(cmd):
         return False, "test has no OBS stub"
     words = stub.split() if stub else [os.path.join(HERE, ".venv", "bin", "python") if os.path.exists(os.path.join(HERE, ".venv", "bin", "python"))
                                        else os.path.expanduser("~/code/player-of-games/tools/.venv/bin/python"), os.path.join(HERE, "obs.py")]
-    r = subprocess.run(words + [cmd], capture_output=True, text=True, timeout=60)
+    r = subprocess.run(words + cmd.split(), capture_output=True, text=True, timeout=60)
     out = (r.stdout.strip().splitlines() or [r.stderr.strip()[-160:]])[-1] if (r.stdout or r.stderr) else ""
     return r.returncode == 0, out
 
@@ -314,6 +316,52 @@ def start(a, clock=time.time, sleep=time.sleep):
         print(f"overlay: {how} {a.wait:g} s after the reload; " + "; ".join(words))
         return 0
     print(f"overlay: FAILED: {how} {a.wait:g} s after the reload; " + "; ".join(words))
+    return 1
+
+
+def startup(a, clock=time.time, sleep=time.sleep):
+    """Shift startup: gate all scene changes, then reload and prove a rendered page.
+
+    Exit 1 means degraded overlay only. Outputs and the shift watchdog must still start.
+    Legacy start/recover remain available to the watchdog and manual recovery.
+    """
+    import uuid
+    token = uuid.uuid4().hex
+    ready, detail = overlay_guard.wait_ready(a.wait, clock, sleep)
+    if not ready:
+        # Final readiness probe, never an unconditional refresh of an unreachable URL.
+        ready, detail = overlay_guard.wait_ready(0, clock, sleep)
+    if not ready:
+        print(f"overlay: DEGRADED: tunnel not ready after {a.wait:g} s ({detail}); watchdog will retry")
+        return 1
+    for cmd in ("stream-scene", "raise-overlay", "scene stream", "enable-overlay"):
+        try:
+            ok, detail = obs(cmd)
+        except (OSError, subprocess.SubprocessError) as e:
+            ok, detail = False, type(e).__name__
+        print(f"overlay: {cmd}: {detail}", flush=True)
+        if not ok:
+            print(f"overlay: DEGRADED: {cmd} did not complete; watchdog will retry")
+            return 1
+    for attempt in (1, 2):
+        since = clock()
+        ok, detail = overlay_guard.reload_once(a, obs, clock=clock, sleep=sleep,
+                                               startup_id=token, startup_retry=attempt == 2)
+        print(f"overlay: startup reload {attempt}/2: {detail}", flush=True)
+        # An accepted request alone is insufficient; even ambiguous failures can have loaded.
+        end = clock() + a.render_wait
+        while True:
+            try:
+                st = read(a.service)
+                if live(st, since):
+                    print(f"overlay: connected and rendered after startup reload {attempt}", flush=True)
+                    return 0
+            except (NoStatus, Down):
+                pass  # missing telemetry is not success; retry within the render deadline
+            if clock() >= end:
+                break
+            sleep(min(2, end - clock()))
+    print("overlay: DEGRADED: no rendered page after startup retries; watchdog will retry")
     return 1
 
 
@@ -458,15 +506,18 @@ def status(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["prepare", "start", "watch", "status"])
+    ap.add_argument("cmd", choices=["startup", "prepare", "start", "watch", "status"])
     ap.add_argument("--service", default=SERVICE)
     ap.add_argument("--since", type=float, help="start: the reload's time (epoch seconds)")
     ap.add_argument("--wait", type=float, default=30)
+    ap.add_argument("--render-wait", type=float, default=30)
     ap.add_argument("--stale", type=float, default=120)
     ap.add_argument("--again", type=float, default=600)
     ap.add_argument("--state", default=os.environ.get("POG_OC_STATE", "/tmp/claude-501/overlay-check.json"))
     ap.add_argument("--world", default=None, help="the world the camera clients are on (default POG_WORLD, else n)")
     a = ap.parse_args(argv)
+    if a.cmd == "startup":
+        return startup(a)
     if a.cmd == "prepare":
         ok, detail = overlay_guard.reload_once(a, obs, wait=a.wait)
         print(f"overlay: {detail}")

@@ -209,11 +209,15 @@ print(json.dumps({{'tick': 42, 'agents': []}}))
         self.assertIn('cooldown', ''.join(out for out, err in outputs))
         Path(self.a.state + '.reload').unlink()
         log.write_text('')
-        # Run the actual obs-steps shell. Its health verifier is stubbed; prepare uses the real CLI.
-        overlay = self.script('overlay', f'''import os, subprocess, sys
-if sys.argv[1] == 'prepare':
-    sys.exit(subprocess.call([{sys.executable!r}, {check!r}] + sys.argv[1:]))
-print('overlay: connected')
+        # Real shell and startup CLI; only the page's render report is stubbed.
+        overlay = self.script('overlay', f'''import sys, time
+sys.path.insert(0, {str(Path(check).parent)!r})
+import overlay_check as O
+def read(service):
+    now = time.time()
+    return {{'now': now, 'pages': {{'main': {{'open': 1, 'seen': now, 'connected': now, 'rendered': now}}}}}}
+O.read = read
+sys.exit(O.main())
 ''')
         env.update(POG_OS_OBS=obs, POG_OS_OVERLAY=overlay, POG_OS_READY_WAIT='0')
         root = Path(O.__file__).resolve().parent.parent
@@ -221,6 +225,7 @@ print('overlay: connected')
                            capture_output=True, text=True, timeout=10)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         calls = log.read_text().splitlines()
+        self.assertLess(calls.index('ready'), calls.index('obs stream-scene'))
         self.assertLess(calls.index('ready'), calls.index('obs reload-overlay'))
         self.assertLess(calls.index('obs reload-overlay'), calls.index('obs start'))
         self.assertEqual(calls.count('obs reload-overlay'), 1)

@@ -253,7 +253,7 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
         c.set_scene_item_index(scene, item, idx)
     # Existing inputs (including captures unknown to this builder) are outside `order` and can remain above it.
     raise_stream_overlay(c, scene)
-    c.press_input_properties_button("stream overlay", "refreshnocache")  # the page reads its layout once, at load
+    # The caller reloads after tunnel readiness, using overlay_guard's shared budget.
     return scene
 
 

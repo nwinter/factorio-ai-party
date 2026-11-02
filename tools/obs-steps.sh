@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
 # The OBS steps of a shift (start-team.sh's, and tools/obs-recover.sh's after a restart):
 #   tools/obs-steps.sh [--stream] [--dry-run]
-# stream scene (overlay URL, camera holes), program scene "stream", reload the overlay, start recording, and with
-# --stream start streaming and check the vertical feed (Aitum Vertical starts with the main stream; started by hand
-# when its status says it is not streaming). Wait up to POG_OS_READY_WAIT (120 s) for state.json via pogwin's
-# :8787 tunnel before reloading; a timeout is logged, then outputs proceed and the watchdog can retry later.
-# Startup and watchdog share the reload budget (600 s, minimum 180 s). Prints each step's outcome;
-# exit 1 when the recording (or with --stream the stream) did not start, or was accepted but did not become active
-# within POG_OS_ACTIVE_WAIT s (status / stream-status active=True), else 0. Then (d29 batch347 OR, shift100: the overlay
-# blank for 26 min after its reload) the overlay check: the main overlay page connected to the stream service after the
-# reload (tools/overlay_check.py start: within POG_OS_OVERLAY_WAIT s, default 30; else (d29 batch349 cp2) a toggle, a
-# refreshnocache and a toggle again, each checked for that long; none bringing it back is printed FAILED and the health line says overlay NOT connected; the exit
-# code is the recording's and stream's only). A failed overlay stack repair stops before outputs start. Last, a read of each camera's crop (obs.py cams).
-# Stubs for tests: POG_OS_OBS, POG_OS_VERTICAL, POG_OS_OVERLAY (commands, split on spaces), POG_OS_SLEEP (seconds before the
-# vertical check, default 8), POG_OS_POLL (seconds between active checks, default 1).
+# Overlay startup gates scene setup on a tunnel snapshot (default 180 s), reloads,
+# verifies rendering, and retries once. Overlay-only trouble is DEGRADED; outputs
+# still start so a successful shift change can launch its watchdog.
+# Exit 1 only when recording/stream output fails. All OBS calls are stubbed in tests.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -31,7 +22,7 @@ read -ra vertical <<<"${POG_OS_VERTICAL:-$py tools/vertical.py}"
 read -ra overlay <<<"${POG_OS_OVERLAY:-python3 tools/overlay_check.py}"
 say() { printf '%s obs-steps: %s\n' "$(date +%H:%M:%S)" "$*"; }
 if [ $dry = 1 ]; then
-  say "plan: ${obs[*]} stream-scene; raise-overlay; scene stream; ${overlay[*]} prepare (pogwin :8787/state.json ready, then rate-limited reload-overlay); start (then status until active, ${POG_OS_ACTIVE_WAIT:-10} s)${stream:+; stream-start (then stream-status until active); then ${vertical[*]} status (start --yes if not streaming)}; ${overlay[*]} start --since RELOAD (if not connected: toggle, rate-limited reload, toggle); cams"
+  say "plan: ${overlay[*]} startup (wait for tunnel, stream-scene, raise-overlay, scene stream, reload and verify rendered page; one retry); start (then status until active, ${POG_OS_ACTIVE_WAIT:-10} s)${stream:+; stream-start (then stream-status until active); then ${vertical[*]} status (start --yes if not streaming)}; cams"
   exit 0
 fi
 bad=0
@@ -56,11 +47,11 @@ active() {  # LABEL STATUS-CMD: the output became active within POG_OS_ACTIVE_WA
   bad=1
   return 1
 }
-run "stream scene" 0 "${obs[@]}" stream-scene
-run "overlay stacking" 1 "${obs[@]}" raise-overlay || exit 1
-run "program scene" 0 "${obs[@]}" scene stream
-reload_t=$(date +%s)
-POG_OC_OBS="${obs[*]}" run "reload overlay" 0 "${overlay[@]}" prepare --wait "${POG_OS_READY_WAIT:-120}"
+# Stream every readiness probe to the operator log; do not reduce this to the last line.
+if ! POG_OC_OBS="${obs[*]}" "${overlay[@]}" startup --wait "${POG_OS_READY_WAIT:-180}" \
+    --render-wait "${POG_OS_OVERLAY_WAIT:-30}" 2>&1 | while IFS= read -r line; do say "$line"; done; then
+  say "overlay: DEGRADED: startup did not verify rendering; outputs continue, watchdog will retry"
+fi
 run "recording" 1 "${obs[@]}" start && active "recording" status
 if [ "$stream" = --stream ]; then
   if run "stream" 1 "${obs[@]}" stream-start && active "stream" stream-status; then
@@ -77,8 +68,6 @@ if [ "$stream" = --stream ]; then
     fi
   fi
 fi
-# (batch347) the main overlay page connected since its reload, else one toggle of its scene item (the same OBS command)
-POG_OC_OBS="${obs[*]}" run "overlay" 0 "${overlay[@]}" start --since "$reload_t" --wait "${POG_OS_OVERLAY_WAIT:-30}"
 # (d24 batch136 PH2) read only: each camera's hole and crop against the crop that hole takes, for the change's log
 run "cameras" 0 "${obs[@]}" cams
 exit $bad

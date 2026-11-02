@@ -174,9 +174,10 @@ def stamp(at):
 
 def health(rundir, team, since, window=180, broker=False, stream=False, obs=None, state_url="http://127.0.0.1:8788/state.json"):
     """(ok, line): agents up (a request in the journal since the start), broker sockets, OBS and the stream service,
-    the viewer relay switch, harness Lua errors in replies during the first `window` seconds."""
+    the viewer relay switch, harness Lua errors in replies during the first `window` seconds.
+    Overlay/service trouble is degraded (ok=True); required startup failures still return False."""
     names = [l.split("\t", 1)[0] for l in read(team).splitlines() if l.strip() and not l.startswith("#")]
-    parts, bad = [], []
+    parts, bad, degraded = [], [], []
     up, errors, faults = [], [], set()
     for name in names:
         seen = False
@@ -224,7 +225,7 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
             service = "service ok" if status == 200 else f"service HTTP {status}"
     except Exception as e:  # noqa: BLE001
         service = f"service DOWN ({type(e).__name__})"
-        bad.append("stream service")
+        degraded.append("stream service")
     if obs:
         out = run_words(obs + ["stream-status" if stream else "status"])
         active = "active=True" in out
@@ -251,11 +252,11 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
             ov = head + sep + rest
             parts.append(ov)
             if ov.startswith("overlay NOT"):
-                bad.append("overlay")
+                degraded.append("overlay")
             for word, what in (("speech NOT", "speech"), ("panel NOT", "overlay panel"), ("cutscene", "camera"), (" character", "camera"),
                                ("recovery FAILED", "overlay recovery")):
-                if word in ov and what not in bad:
-                    bad.append(what)
+                if word in ov and what not in degraded and what not in bad:
+                    (bad if what == "camera" else degraded).append(what)
     # the OBS restart before the shift (shift-change.sh / start-team.sh: obs-restart.sh's last line); a failure is
     # reported, the shift went on with the OBS that ran
     restart = read(os.path.join(rundir, "obs-restart.txt")).strip()
@@ -272,7 +273,7 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
         bad.append("Lua errors")
     else:
         parts.append(f"no harness Lua errors in the first {span}")
-    line = "health: " + "; ".join(parts)
+    line = "health: " + ("DEGRADED (" + ", ".join(degraded) + "); " if degraded else "") + "; ".join(parts)
     for e in errors[:5]:
         line += "\n  " + e
     return not bad, line
@@ -280,7 +281,7 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
 
 def overlay_status(state_url):
     """'overlay connected' or 'overlay NOT connected (...)' from the service's /overlay/status (beside state_url), or
-    None for a service without it (before batch347) or a URL that is no HTTP one (tests)."""
+    None only for a URL that is no HTTP one (tests); missing render status is degraded."""
     if not state_url.startswith("http") or not state_url.endswith("/state.json"):
         return None
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -288,7 +289,7 @@ def overlay_status(state_url):
     try:
         st = overlay_check.read(state_url[:-len("/state.json")])
     except overlay_check.NoStatus:
-        return None
+        return "overlay NOT connected (render status unavailable)"
     except overlay_check.Down as e:
         return f"overlay NOT connected (no status: {e})"
     # (d29 batch349 SP) the voices played whole, the panel's own render report, the camera clients' controllers
@@ -301,8 +302,10 @@ def overlay_status(state_url):
     blank = overlay_check.blank_for(st)
     if blank is not None:
         return f"overlay NOT drawing: connected but blank, nothing drawn for {blank} s" + tail
-    if overlay_check.connected(st):
+    if overlay_check.live(st):
         return "overlay connected" + tail
+    if overlay_check.connected(st):
+        return "overlay NOT drawing: connected but no fresh render report" + tail
     p = overlay_check.page(st)
     return "overlay NOT connected" + (f" (its stream closed {round(st['now'] - p['closed'])} s ago)" if p.get("closed")
                                       else " (no main overlay stream since the service started)") + tail

@@ -33,20 +33,30 @@ def tunnel_ready():
         return False, type(e).__name__
 
 
-def reload_once(a, obs, *, wait=0, clock=time.time, sleep=time.sleep):
+def wait_ready(wait, clock=time.time, sleep=time.sleep):
+    """Bounded tunnel gate; every probe is visible in the start/operator log."""
+    began = clock()
+    end = began + wait
+    attempt = 0
+    while True:
+        attempt += 1
+        ready, detail = tunnel_ready()
+        print(f"OVERLAY: readiness try {attempt} at +{clock() - began:g}s: {detail}", flush=True)
+        if ready or clock() >= end:
+            return ready, detail
+        sleep(min(max(0.1, float(os.environ.get("POG_OC_SLEEP", "2"))), end - clock()))
+
+
+def reload_once(a, obs, *, wait=0, clock=time.time, sleep=time.sleep,
+                startup_id=None, startup_retry=False):
     """One refresh after readiness, shared with startup/legacy recovery/watchdog across processes.
 
     Reserve the budget durably before OBS, including failed/ambiguous requests. Lock the separate
     budget file so the watchdog's other state writes cannot lose the reservation.
     """
-    end = clock() + wait
-    while True:
-        ready, detail = tunnel_ready()
-        if ready:
-            break
-        if clock() >= end:
-            return False, f"reload deferred: tunnel not ready ({detail})"
-        sleep(min(float(os.environ.get("POG_OC_SLEEP", "2")), max(0, end - clock())))
+    ready, detail = wait_ready(wait, clock, sleep)
+    if not ready:
+        return False, f"reload deferred: tunnel not ready ({detail})"
     path = Path(a.state + ".reload")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,11 +67,15 @@ def reload_once(a, obs, *, wait=0, clock=time.time, sleep=time.sleep):
             previous = json.loads(raw) if raw else {}
             now = clock()
             interval = max(MIN_RELOAD_INTERVAL, a.again)
-            if previous.get("at") is not None and now - previous["at"] < interval:
+            # One extra startup attempt, tied to the first reservation. A new process/token
+            # cannot bypass cooldown; watch and legacy recovery never receive this token.
+            retry = (startup_retry and startup_id is not None
+                     and previous.get("startup_id") == startup_id and not previous.get("retried"))
+            if previous.get("at") is not None and now - previous["at"] < interval and not retry:
                 return False, f"reload deferred: cooldown ({max(0, round(interval - (now - previous['at'])))} s left)"
             f.seek(0)
             f.truncate()
-            json.dump({"at": now}, f)
+            json.dump({"at": now, "startup_id": startup_id, "retried": bool(startup_retry)}, f)
             f.flush()
             os.fsync(f.fileno())
             print(f"{time.strftime('%H:%M:%S')} OVERLAY: reload-overlay attempt after {detail}", flush=True)

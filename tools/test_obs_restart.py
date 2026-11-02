@@ -64,7 +64,9 @@ exit "${BOX_FAILS:-0}"
 """
 OVERLAY = r"""#!/usr/bin/env bash
 echo "overlay $1 obs=$POG_OC_OBS" >> "$STUB_LOG"
-if [ "${OVERLAY_DOWN:-0}" = 1 ]; then echo "overlay: FAILED: not connected 30 s after the reload nor 30 s after a toggle"; exit 1; fi
+if [ "${OVERLAY_DOWN:-0}" = 1 ] || [ "${ORDER_FAILS:-0}" = 1 ]; then echo "overlay: DEGRADED: no rendered page after startup retries"; exit 1; fi
+# This stub represents startup's scene setup, which is unit-tested separately.
+"$POG_OC_OBS" stream-scene
 echo "overlay: connected 3 s after the reload"
 """
 VERTICAL = r"""#!/usr/bin/env bash
@@ -151,18 +153,18 @@ def steps():
     try:
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream")
         assert r.returncode == 0, r.stdout + r.stderr
-        assert [l for l in calls.splitlines()] == ["obs stream-scene", "obs raise-overlay", "obs scene stream", f"overlay prepare obs={bin_}/obs", "obs start",
+        assert [l for l in calls.splitlines()] == [f"overlay startup obs={bin_}/obs", "obs stream-scene", "obs start",
                                                    "obs status", "obs stream-start", "obs stream-status",
-                                                   "vertical status", f"overlay start obs={bin_}/obs", "obs cams"], calls
+                                                   "vertical status", "obs cams"], calls
         assert "recording: active" in r.stdout and "stream: active" in r.stdout, r.stdout
         assert "vertical: streaming (started with the main stream)" in r.stdout, r.stdout
         assert "overlay: connected 3 s after the reload" in r.stdout, r.stdout
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream", ORDER_FAILS="1")
-        assert r.returncode == 1 and "overlay stacking: FAILED" in r.stdout, r.stdout
-        assert "obs start\n" not in calls and "obs stream-start\n" not in calls, calls
+        assert r.returncode == 0 and "overlay: DEGRADED" in r.stdout, r.stdout
+        assert "obs start\n" in calls and "obs stream-start\n" in calls, calls
         # (batch347) the overlay not back after the reload nor a toggle: said FAILED, the exit code the outputs' only
         r, _ = run(tmp, bin_, state, "obs-steps.sh", "--stream", OVERLAY_DOWN="1")
-        assert r.returncode == 0 and "overlay: FAILED: not connected 30 s after the reload nor 30 s after a toggle" in r.stdout, r.stdout
+        assert r.returncode == 0 and "overlay: DEGRADED: no rendered page after startup retries" in r.stdout, r.stdout
         put(state, stream=0, record=0)
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream", VERTICAL_ON="False")
         assert "vertical start --yes" in calls and "vertical start: " in r.stdout, (calls, r.stdout)
@@ -176,7 +178,7 @@ def steps():
         put(state, broken=0)
         put(state, down=100)
         r, _ = run(tmp, bin_, state, "obs-steps.sh", "--stream")
-        assert r.returncode == 1 and "overlay stacking: FAILED" in r.stdout, r.stdout
+        assert r.returncode == 1 and "recording: FAILED" in r.stdout, r.stdout
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream", "--dry-run")
         assert r.returncode == 0 and not calls and "plan:" in r.stdout
         print("obs-steps: ok")
