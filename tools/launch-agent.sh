@@ -9,7 +9,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 # A later shift (tools/start-team.sh, POG_RESUME): one neutral sentence on the prompt, no advice.
-resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them. Read the new deadline.txt; notes.md is where you left off, with a full read needed only if no recovery brief arrived.'
+resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them. The world stays paused at the start until every agent has launched (a few minutes), then resumes by itself. Read the new deadline.txt; notes.md is where you left off, with a full read needed only if no recovery brief arrived.'
 if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
