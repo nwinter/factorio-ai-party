@@ -7,6 +7,7 @@ stream stop with no word):
     python3 tools/announce.py stop --minutes 15 [--what "a restart of the game machine"]
     python3 tools/announce.py change-begin PREV NEXT        # tools/shift-change.sh, as a change begins
     python3 tools/announce.py change-live NEXT --agents K   # ... once NEXT's agents are up
+    python3 tools/announce.py change-degraded NEXT          # ... overlay is unavailable; watchdog continues
     python3 tools/announce.py change-failed NEXT            # ... when NEXT's start failed or PREV's stop refused
     python3 tools/announce.py change-stalled NEXT           # ... when NEXT is not up past twice the usual change time
     python3 tools/announce.py usual                         # the usual change time in minutes (from the runs)
@@ -107,6 +108,8 @@ def lines(a, runs_dir):
     if a.cmd == "change-live":
         who = f": {a.agents} agent{'' if a.agents == 1 else 's'} playing" if a.agents > 0 else ""
         return f"live:{a.next}", f"{nxt[0].upper() + nxt[1:]} is live{who}."
+    if a.cmd == "change-degraded":
+        return f"degraded:{a.next}", f"{nxt[0].upper() + nxt[1:]} is running with degraded overlay service. The overlay has not recovered; automatic retries continue."
     if a.cmd == "change-failed":
         return f"failed:{a.next}", f"The start of {nxt} has hit a problem; the operator is on it, and the stream stays off until it is fixed."
     if a.cmd == "change-stalled":
@@ -163,7 +166,7 @@ def main(argv=None):
     lv = sub.add_parser("change-live")
     lv.add_argument("next")
     lv.add_argument("--agents", type=int, required=True)
-    for c in ("change-failed", "change-stalled"):
+    for c in ("change-failed", "change-stalled", "change-degraded"):
         sub.add_parser(c).add_argument("next")
     sub.add_parser("usual")
     a = ap.parse_args(argv)

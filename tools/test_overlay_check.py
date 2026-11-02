@@ -234,7 +234,7 @@ def main():
         assert r.returncode == 0 and "overlay check: skipped (the service has no /overlay/status)" in r.stdout, r.stdout
         r = cli("watch")
         assert r.returncode == 0 and not r.stdout, r.stdout
-        assert shift_change.overlay_status(url + "/state.json") is None
+        assert "render status unavailable" in shift_change.overlay_status(url + "/state.json")
         old_srv.shutdown()
         # no service at all
         url = "http://127.0.0.1:9"
