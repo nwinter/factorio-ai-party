@@ -57,8 +57,8 @@ without triggering a reload or reorder solely for stacking. POG_OC_ORDER supplie
 watch prints the panel, cams and ordering lines once per change (and when they are good again). Stubs: POG_OC_CAMS (a command
 printing the cams JSON); under POG_TEST no world is read without it.
 
-A service from before batch347 has no /overlay/status: "overlay check: skipped (the service has no /overlay/status)",
-exit 0, no toggle. Stubs for tests: POG_OC_OBS (the toggle command, split on spaces), POG_OC_SLEEP (seconds between
+Legacy start/watch skip a service without /overlay/status; startup never skips render verification.
+Stubs for tests: POG_OC_OBS (the OBS command, split on spaces), POG_OC_SLEEP (seconds between
 polls, default 2).
 """
 import argparse
