@@ -81,7 +81,7 @@ function M.read(ammo, quality)
   local qm = QUALITY[quality]
   if not qm then qm = try(function() return prototypes.quality[quality].default_multiplier end) or 1; QUALITY[quality] = qm end
   return {prototype=facts(ammo), quality=quality, quality_multiplier=qm,
-    quality_scaling='damage uses ammunition quality multiplier; listed prototype damage and radii are unscaled; force/turret bonuses excluded',
+    quality_scaling='forecast scalar uses ammunition quality multiplier; listed prototype damage/radii are unscaled; force/turret bonuses excluded; nested-effect execution not simulated',
     forecast_damage_scope='legacy flattened damage entries applied to one target; nested secondary projectiles excluded',
     damage_model=M.LIMITATION}
 end
