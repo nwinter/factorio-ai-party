@@ -47,7 +47,10 @@ def main():
                         pages.append(T.Page(port))
                 time.sleep(0.05)
         threading.Thread(target=follow, daemon=True).start()
-        env = dict(os.environ, POG_OC_OBS=stub, POG_OC_SLEEP="0.1", POG_TEST="1")
+        ready = os.path.join(d, "ready")
+        open(ready, "w").write(f'#!{sys.executable}\n' + 'print(\'{"tick": 1, "agents": []}\')\n')
+        os.chmod(ready, 0o755)
+        env = dict(os.environ, POG_OC_OBS=stub, POG_OC_SLEEP="0.1", POG_TEST="1", POG_OC_READY=ready)
 
         def cli(*args):
             return subprocess.run([sys.executable, os.path.join(HERE, "overlay_check.py"), *args, "--service", url, "--state", state],
@@ -91,7 +94,8 @@ def main():
         assert overlay_check.blank_for(st) >= 60 and not overlay_check.live(st)
         import types
         a = types.SimpleNamespace(service=url, stale=120, wait=0.5, again=600, state=state, world=None)
-        os.environ.update(POG_OC_OBS=stub, POG_OC_SLEEP="0.1")
+        os.environ.update(POG_OC_OBS=stub, POG_OC_SLEEP="0.1", POG_OC_READY=ready)
+        os.remove(state + ".reload")  # independent watchdog scenario
         rc = overlay_check.watch_overlay(a, st)
         assert rc == 1 and json.load(open(state))["failed"].endswith("toggled the source again: not connected in 0.5 s"), open(state).read()
         os.environ["POG_OC_STATE"] = state

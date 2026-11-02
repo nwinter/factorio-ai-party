@@ -151,7 +151,7 @@ def steps():
     try:
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream")
         assert r.returncode == 0, r.stdout + r.stderr
-        assert [l for l in calls.splitlines()] == ["obs stream-scene", "obs raise-overlay", "obs scene stream", "obs reload-overlay", "obs start",
+        assert [l for l in calls.splitlines()] == ["obs stream-scene", "obs raise-overlay", "obs scene stream", f"overlay prepare obs={bin_}/obs", "obs start",
                                                    "obs status", "obs stream-start", "obs stream-status",
                                                    "vertical status", f"overlay start obs={bin_}/obs", "obs cams"], calls
         assert "recording: active" in r.stdout and "stream: active" in r.stdout, r.stdout

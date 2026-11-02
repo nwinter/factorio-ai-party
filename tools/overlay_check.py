@@ -8,6 +8,15 @@ at once.)
   python3 tools/overlay_check.py watch [--stale 120] [--state FILE]  # one pass of a run's watchdog
   python3 tools/overlay_check.py status                            # the main page's stream, one line
 
+batch413: prepare --wait 120 waits for a valid /state.json through pogwin's :8787 reverse tunnel, then reloads.
+All reloads (including the legacy recovery round below) share --state + '.reload': default 600 s cooldown,
+minimum 180 s, reserved before the request, including ambiguous failures. prepare and watch log each attempt.
+watch also checks batch408's OBS main-page health (120 s without a report or fresh state), ignoring previews
+and portrait pages. One 480x270 source PNG per 60 s, two consecutive <=2048-byte samples, detects a near-empty
+source even with fresh telemetry. Those new signals request just one reload, then verify on the next pass.
+POG_OC_READY and POG_OC_SHOT supply subprocess stubs; no live OBS/tunnel access under POG_TEST without stubs.
+See tools/stream/overlay-recovery.md for startup order, cost and limitations.
+
 The page names itself on its one event stream (/events?audio=1&page=main; the portrait page is "portrait"), and the
 service keeps each page's open streams, last connect and last write (GET /overlay/status, tools/stream/serve.py). The
 main page is connected when a stream of it is open and had a write in the last 60 s (the service writes at least every
@@ -59,6 +68,7 @@ import time
 import urllib.error
 import urllib.request
 from stream import scene_order
+import overlay_guard
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVICE = "http://127.0.0.1:8788"
@@ -188,6 +198,8 @@ def composition():
 def obs(cmd):
     """tools/obs.py CMD (toggle-overlay: the scene item off and on; reload-overlay: the browser source's refreshnocache)."""
     stub = os.environ.get("POG_OC_OBS")
+    if os.environ.get("POG_TEST") and not stub:
+        return False, "test has no OBS stub"
     words = stub.split() if stub else [os.path.join(HERE, ".venv", "bin", "python") if os.path.exists(os.path.join(HERE, ".venv", "bin", "python"))
                                        else os.path.expanduser("~/code/player-of-games/tools/.venv/bin/python"), os.path.join(HERE, "obs.py")]
     r = subprocess.run(words + [cmd], capture_output=True, text=True, timeout=60)
@@ -245,7 +257,8 @@ def recover(a, clock=time.time, sleep=time.sleep):
     connected in W s"), and the one that brought it back last; at the first step that does, the round stops."""
     words, step = [], float(os.environ.get("POG_OC_SLEEP", "2"))
     for cmd, what in STEPS:
-        ok, out = obs(cmd)
+        ok, out = (overlay_guard.reload_once(a, obs, clock=clock, sleep=sleep)
+                   if cmd == "reload-overlay" else obs(cmd))
         if not ok:
             words.append(f"{what}: failed ({out})")
             continue
@@ -275,6 +288,7 @@ def wait_for(service, since, wait, step, clock=time.time, sleep=time.sleep):
 
 
 def start(a, clock=time.time, sleep=time.sleep):
+    a.since = max(a.since, load_state(a.state + ".reload").get("at", 0))
     step = float(os.environ.get("POG_OC_SLEEP", "2"))
     enabled = ensure_enabled()
     if enabled:
@@ -305,13 +319,15 @@ def start(a, clock=time.time, sleep=time.sleep):
 
 def load_state(path):
     try:
-        return json.load(open(path))
+        with open(path) as f:
+            return json.load(f)
     except (OSError, ValueError):
         return {}
 
 
 def save_state(path, state):
     try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w") as f:
             json.dump(state, f)
     except OSError:
@@ -326,7 +342,26 @@ def watch(a, clock=time.time, sleep=time.sleep):
     except Down as e:
         print(f"{time.strftime('%H:%M')} OVERLAY: the stream service does not answer ({e})")
         return 1
-    rc = watch_overlay(a, st, clock, sleep)
+    state = load_state(a.state)
+    # Reserve the sample time even if OBS fails; subsequent watchdog passes stay cheap.
+    shot_problem, sample = overlay_guard.watch_source(a.state, clock())
+    state.update(sample)
+    save_state(a.state, state)
+    problem = overlay_guard.health_problem(st) or shot_problem
+    if problem:
+        ok, detail = overlay_guard.reload_once(a, obs, clock=clock, sleep=sleep)
+        print(f"{time.strftime('%H:%M:%S')} OVERLAY: {problem}; {detail}")
+        state = load_state(a.state)
+        state["failed"] = f"{problem}; {detail}"
+        # A request accepted by OBS is not yet a healthy page. Next fresh sample/report verifies it.
+        save_state(a.state, state)
+        rc = 1
+    else:
+        rc = watch_overlay(a, st, clock, sleep)
+        if live(st) and not rc:
+            state = load_state(a.state)
+            state["failed"] = None
+            save_state(a.state, state)
     return max(rc, watch_more(a, st, clock))
 
 
@@ -420,15 +455,19 @@ def status(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["start", "watch", "status"])
+    ap.add_argument("cmd", choices=["prepare", "start", "watch", "status"])
     ap.add_argument("--service", default=SERVICE)
     ap.add_argument("--since", type=float, help="start: the reload's time (epoch seconds)")
     ap.add_argument("--wait", type=float, default=30)
     ap.add_argument("--stale", type=float, default=120)
     ap.add_argument("--again", type=float, default=600)
-    ap.add_argument("--state", default="/tmp/claude-501/overlay-check.json")
+    ap.add_argument("--state", default=os.environ.get("POG_OC_STATE", "/tmp/claude-501/overlay-check.json"))
     ap.add_argument("--world", default=None, help="the world the camera clients are on (default POG_WORLD, else n)")
     a = ap.parse_args(argv)
+    if a.cmd == "prepare":
+        ok, detail = overlay_guard.reload_once(a, obs, wait=a.wait)
+        print(f"overlay: {detail}")
+        return 0 if ok else 1
     if a.cmd == "start":
         if a.since is None:
             ap.error("start needs --since")
