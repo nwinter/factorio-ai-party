@@ -347,6 +347,11 @@ def startup(a, clock=time.time, sleep=time.sleep):
         since = clock()
         ok, detail = overlay_guard.reload_once(a, obs, clock=clock, sleep=sleep,
                                                startup_id=token, startup_retry=attempt == 2)
+        # The remote readiness probe can take seconds. Only renders after the
+        # actual reload reservation count, not a frame drawn during that probe.
+        reservation = load_state(a.state + ".reload")
+        if reservation.get("startup_id") == token:
+            since = max(since, reservation["at"])
         print(f"overlay: startup reload {attempt}/2: {detail}", flush=True)
         # An accepted request alone is insufficient; even ambiguous failures can have loaded.
         end = clock() + a.render_wait
@@ -360,7 +365,7 @@ def startup(a, clock=time.time, sleep=time.sleep):
                 pass  # missing telemetry is not success; retry within the render deadline
             if clock() >= end:
                 break
-            sleep(min(2, end - clock()))
+            sleep(min(2, max(0, end - clock())))
     print("overlay: DEGRADED: no rendered page after startup retries; watchdog will retry")
     return 1
 

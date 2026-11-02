@@ -107,6 +107,20 @@ class StartupTest(unittest.TestCase):
         self.assertEqual(len(reloads), 2)
         self.assertIn('DEGRADED', out)
 
+    def test_frame_during_readiness_probe_does_not_verify_later_reload(self):
+        probes = []
+        def ready():
+            probes.append(self.clock())
+            if len(probes) == 2:
+                self.clock.sleep(20)
+            return True, 'ready'
+        st = {'now': 1020, 'pages': {'main': {'open': 1, 'seen': 1020,
+              'connected': 1001, 'rendered': 1001, 'panel_px': 1032}}}
+        with patch.object(G, 'tunnel_ready', side_effect=ready), \
+             patch.object(O, 'obs', return_value=(True, 'accepted')), \
+             patch.object(O, 'read', return_value=st), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(O.startup(self.a, self.clock, self.clock.sleep), 1)
+
     def test_blank_or_missing_status_is_never_optional(self):
         for missing in (False, True):
             Path(self.a.state + '.reload').unlink(missing_ok=True)
@@ -160,6 +174,7 @@ class ChangeTest(unittest.TestCase):
                 Path(runs, 'shake11', 'switches.env').write_text('POG_BROKER=0\n')
                 r, calls = T.run(tmp, runs, bin_, state + '.offline', 'shake11', 'shake12', '240', '--stream',
                                  STREAMING='True', START_FAILS='1' if failed else '0', POG_SC_STALL_S='60')
+                calls += '\n'.join(T.announced(tmp, 2 if failed else 3))
                 self.assertEqual(r.returncode, 1 if failed else 0, r.stdout + r.stderr)
                 if not failed:
                     self.assertIn('change shake12 DEGRADED', r.stdout)

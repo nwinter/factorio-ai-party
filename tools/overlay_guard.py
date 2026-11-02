@@ -44,7 +44,7 @@ def wait_ready(wait, clock=time.time, sleep=time.sleep):
         print(f"OVERLAY: readiness try {attempt} at +{clock() - began:g}s: {detail}", flush=True)
         if ready or clock() >= end:
             return ready, detail
-        sleep(min(max(0.1, float(os.environ.get("POG_OC_SLEEP", "2"))), end - clock()))
+        sleep(min(max(0.1, float(os.environ.get("POG_OC_SLEEP", "2"))), max(0, end - clock())))
 
 
 def reload_once(a, obs, *, wait=0, clock=time.time, sleep=time.sleep,
