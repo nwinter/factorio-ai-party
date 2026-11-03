@@ -18016,6 +18016,15 @@ binds ... Clean179s leg: held853fuel/558oxid vs fuel_outlook7208aboard; fuel7190
   - Railgun ammunition binds (165,696 km), its second rate over the last 1 min since the 10 would hold the leg's
     startup.
   - The read takes 10.8-10.9 ms with a turnaround and 9.9-11.6 ms without, at that state of Resolute.
+## d34 batch420 cp2 (#2883): inventory_free_slots on cargo landing pads
+
+`inventory_free_slots` with surface/position includes a cargo landing pad's main inventory. Its trash is excluded,
+as hub trash already is. Native size includes attached cargo-bay capacity; the bar and filtered-empty-slot rules
+are unchanged. Inbound pods' reserved slots remain unavailable in Factorio 2.0.77; the reported free count does not
+subtract cargo in flight. Submit and dry-run validation resolve the target and main inventory, including in
+`all`/`any`; missing, unsupported, ambiguous or uncharted targets are refused before queue execution. Validation
+does not require the threshold to hold and does not reserve capacity. Later disappearance remains a read error.
+
 ## d34 batch420 (#2882): flight_watch arrival handoff before its next sample
 
 A start by the setter without `replace` takes the old watch's final sample immediately when native state already

@@ -341,6 +341,27 @@ return function(api)
     end
     return n,on,nets,parts,{circuit_signal=true,platform=c.platform,entity={name=e.name or 'space-platform-hub',position=e.position and {x=e.position.x,y=e.position.y},unit_number=e.unit_number},signal=c.signal,wire=wire,networks=nets,count=n,tick=game.tick}
   end
+  -- The same target lookup is used by live reads and plan validation; only the main inventory counts.
+  local function free_slots_target(p,c)
+    local entity,inv,where
+    if c.platform then
+      entity=M.platform_named(p,c.platform).hub
+      assert(entity and entity.valid,'platform '..c.platform..' has no hub')
+      inv=entity.get_inventory(defines.inventory.hub_main)
+      where=c.platform..' hub'
+    else
+      local s,pos=surface_of(p,c),api.position(c.position)
+      if not charted(p,s,pos) then uncharted(s,pos,'container or cargo landing pad') end
+      local found=s.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},
+        type={'container','logistic-container','linked-container','cargo-landing-pad'},force=p.force,limit=2}
+      assert(#found==1 and found[1].valid,string.format('expected one container or cargo landing pad of ours at (%g,%g) on %s; found %d',pos.x,pos.y,s.name,#found))
+      entity=found[1]
+      inv=entity.get_inventory(entity.type=='cargo-landing-pad' and defines.inventory.cargo_landing_pad_main or defines.inventory.chest)
+      where=string.format('%s (%g,%g) on %s',entity.name,entity.position.x,entity.position.y,s.name)
+    end
+    assert(inv and inv.valid,where..' has no inventory')
+    return inv,where
+  end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -424,23 +445,7 @@ return function(api)
     inventory_free_slots=function(p,c)
       local holder=c
       holder.evidence=nil -- A failed read must not keep an earlier capacity reading.
-      local entity,inv,where
-      if c.platform then
-        entity=M.platform_named(p,c.platform).hub
-        assert(entity and entity.valid,'platform '..c.platform..' has no hub')
-        inv=entity.get_inventory(defines.inventory.hub_main)
-        where=c.platform..' hub'
-      else
-        local s,pos=surface_of(p,c),api.position(c.position)
-        if not charted(p,s,pos) then uncharted(s,pos,'container') end
-        local found=s.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},
-          type={'container','logistic-container','linked-container'},force=p.force,limit=2}
-        assert(#found==1 and found[1].valid,string.format('expected one container of ours at (%g,%g) on %s; found %d',pos.x,pos.y,s.name,#found))
-        entity=found[1]
-        inv=entity.get_inventory(defines.inventory.chest)
-        where=string.format('%s (%g,%g) on %s',entity.name,entity.position.x,entity.position.y,s.name)
-      end
-      assert(inv and inv.valid,where..' has no inventory')
+      local inv,where=free_slots_target(p,c)
       -- Native counter: every quality and partial stack occupies one slot. #inv includes cargo-bay capacity.
       -- The bar excludes blocked slots; filtered empty slots count (usable for their matching item).
       local capacity=#inv
@@ -1503,6 +1508,7 @@ return function(api)
         end
       end
       assert(c.below==nil or c.at_least==nil or c.at_least<c.below,'inventory_free_slots range is empty')
+      if p then free_slots_target(p,c) end
     end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')
