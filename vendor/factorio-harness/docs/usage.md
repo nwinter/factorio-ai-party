@@ -18016,6 +18016,15 @@ binds ... Clean179s leg: held853fuel/558oxid vs fuel_outlook7208aboard; fuel7190
   - Railgun ammunition binds (165,696 km), its second rate over the last 1 min since the 10 would hold the leg's
     startup.
   - The read takes 10.8-10.9 ms with a turnaround and 9.9-11.6 ms without, at that state of Resolute.
+## d34 batch420 (#2882): flight_watch arrival handoff before its next sample
+
+A start by the setter without `replace` takes the old watch's final sample immediately when native state already
+shows arrival: it has flown, is no longer flying, and has a space location. The arrival test, final sample and
+finalization are shared with the periodic sampler. The old result is returned in `previous_watch` with
+`previous_line`; its end tick and arrival ammunition boundary end at this observation, and its totals are frozen
+there. The same call arms or starts the new watch. In-flight watches retain the existing refusal message.
+Another setter's watch and explicit `replace: true` retain their existing behavior. No new stored fields or options.
+
 ## d29 batch337 (WR, Sol #2741: a queued flight_watch start refused after a queued read)
 
 Sol's report: "Cinder queued flight_watch read:true and queued explicit id1660 both returned archived donewatch, but
