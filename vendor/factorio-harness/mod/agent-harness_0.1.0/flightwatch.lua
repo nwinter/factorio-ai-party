@@ -1098,6 +1098,17 @@ return function(api)
     if w.ammo0 then w.ammo_last = ammo_read(pl) end
     floor_sample(w, pl, tick)  -- (QAA1)
   end
+  local function arrived(w, pl, f)
+    return w.flew and not f and try(function() return pl.space_location end)
+  end
+  local function sample_watch(w, pl, tick, f)
+    sample(w, pl, tick)
+    if f and w.ammo_last then w.ammo_flying = w.ammo_last end
+    -- started while stopped: the leg it flies once it leaves
+    if f and not w.flew then w.flew = true; w.leg = where(pl) end
+    if arrived(w, pl, f) then finish(w, pl, tick, 'arrived at ' .. where(pl))
+    elseif tick >= w.until_tick then finish(w, pl, tick, 'its time limit, ' .. w.minutes .. ' min') end
+  end
   function M.tick(tick)
     local st = api.state().flightwatch
     if not st then return end
@@ -1141,13 +1152,7 @@ return function(api)
           end
           if w.state == 'armed' and tick - w.set > M.WAIT then finish(w, nil, tick, 'no ' .. waiting_for(w) .. ' within 24h') end
         else
-          local f = flying(pl)
-          sample(w, pl, tick)
-          if f and w.ammo_last then w.ammo_flying = w.ammo_last end  -- (QX1) the last sample that read it flying
-          -- started while stopped: the leg it flies once it leaves
-          if f and not w.flew then w.flew = true; w.leg = where(pl) end
-          if w.flew and not f and try(function() return pl.space_location end) then finish(w, pl, tick, 'arrived at ' .. where(pl))
-          elseif tick >= w.until_tick then finish(w, pl, tick, 'its time limit, ' .. w.minutes .. ' min') end
+          sample_watch(w, pl, tick, flying(pl))
         end
       end
     end
@@ -1475,6 +1480,12 @@ return function(api)
     local lim, cl = M.limit(p.force), counting(st, p.force)
     local rep
     for i, w in ipairs(cl) do if w.index == pl.index then rep = table.remove(cl, i); break end end
+    -- #2882: an arrival wait can finish before this watch's next sample. Take that final sample now,
+    -- with the sampler's arrival test and totals, then let the setter's usual handoff read it below.
+    if rep and rep.state == 'watching' and rep.setter == who and a.replace ~= true then
+      local f = flying(pl)
+      if arrived(rep, pl, f) then sample_watch(rep, pl, game.tick, f) end
+    end
     -- (d29 batch337 WR, Sol #2741: Cinder's queue read #1660 while it still watched (job 67, tick 81243368), the watch
     -- ended at the arrival the queue then waited for, and the start after it (job 71, tick 81248280) was refused "done
     -- and not read") the platform's watch done and not read, set by the same agent: this start reads it first, as

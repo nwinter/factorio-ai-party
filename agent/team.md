@@ -11,7 +11,7 @@ Factory, research and power are shared. `./fh` controls your character and inven
 `technologies {name, level}`: cost. `platform_endurance` design.details: ammo effects (help space-age).
 Platform `configure` returns recipe items to hub; `deliver` requests ingredients. Stream: ship metrics.
 `configure` splitter filters keep quality/comparator; `inspect.splitter.outputs` reads outlet lanes (help circuits-settings).
-`flight_watch`: 3 real mixed intervals; same-tick edits share a boundary (help space-age).
+`flight_watch`: arrival returns `previous_watch`, then arms the next (help space-age).
 `supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
 `inventory_free_slots`; `platform_ammo_below`: `on_stale:"met"|"wait"` (default met).
 `platform_arrived` remembers arrivals after wait start or `since_tick` (help space-age).
