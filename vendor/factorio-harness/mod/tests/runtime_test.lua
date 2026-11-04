@@ -2238,6 +2238,79 @@ local qs=call('queue_status'); local h=qs.history[#qs.history]
 eq(qs.active.action,'wait_ticks'); eq(h.action,'rearm'); eq(h.ok,true); eq(h.result.outcome,'fed'); eq(mag_slot.count,10)
 call('queue_cancel',{})
 p.get_inventory=nil
+-- #2888: a chest pickup is only the first stage of rearm, including across a runtime reload.
+;(function()
+  local find,reach,pos,held_main=p.surface.find_entities_filtered,p.can_reach_entity,p.position,main
+  local old_proto,filtered=turret.prototype,prototypes.get_item_filtered
+  turret.prototype={type='ammo-turret',attack_parameters={ammo_categories={'bullet'}}}
+  local ammo=prototypes.item['firearm-magazine']; ammo.ammo_category={name='bullet'}
+  prototypes.get_item_filtered=function() return {['firearm-magazine']=ammo} end
+  local chest_slot=stack('firearm-magazine',40)
+  local chest_inv=inv(chest_slot)
+  local source={valid=true,name='wooden-chest',type='container',position={x=30,y=0},force=p.force,surface=p.surface}
+  source.get_inventory=function() return chest_inv end
+  p.surface.find_entities_filtered=function(f)
+    if f.position and f.position.x==30 then return {source} end
+    return {turret}
+  end
+  local stage=0
+  p.can_reach_entity=function(e) return e==source and stage>=1 or e==turret and stage>=2 end
+  local function reset(n)
+    call('stop',{}); stage=0; p.position={x=0,y=0}; main=inv(stack(nil,0),stack(nil,0))
+    chest_slot.name,chest_slot.count,chest_slot.valid_for_read='firearm-magazine',n,true
+    mag_slot.name,mag_slot.count,mag_slot.valid_for_read=nil,0,false
+  end
+  local function args(form)
+    local a={ammo='firearm-magazine',count=20,walk=true,from={position=source.position,count=40}}
+    if form=='area' then a.area={left_top={x=0,y=-2},right_bottom={x=10,y=2}}
+    else a.positions={{x=5,y=0}} end
+    return a
+  end
+  for _,form in ipairs({'area','positions'}) do
+    reset(40)
+    local a=args(form); local out=call('rearm',a)
+    assert(out.then_rearm); local pending=storage.agent_harness.active[1].then_call
+    eq(pending.args.from,nil); eq(pending.args[form],a[form])
+    -- Save/load keeps plain continuation data in storage, not a closure in the old runtime.
+    local function plain(t)
+      if type(t)~='table' then assert(type(t)~='function'); return t end
+      local copy={} for k,v in pairs(t) do copy[k]=plain(v) end return copy
+    end
+    storage.agent_harness.active[1].then_call=plain(pending)
+    runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
+    stage=1; p.position={x=30,y=0}; advance(1)
+    local last=storage.agent_harness.last[1]
+    eq(last.transferred,40); eq(last.not_made,nil)
+    local tour=storage.agent_harness.active[1]
+    assert(tour and tour.op=='rearm','turret tour must follow pickup')
+    eq(tour.targets[1].entity,turret)
+    stage=2; p.position={x=5,y=0}; advance(2)
+    eq(mag_slot.count,20); eq(storage.agent_harness.last[1].outcome,'topped_up')
+    -- The same destination without from gives the same turret result.
+    mag_slot.count=0; a.from=nil; call('rearm',a); advance(2); eq(mag_slot.count,20)
+  end
+  -- The chest is emptied while walking. No tour, even with ammo already carried.
+  reset(40); call('rearm',args('area')); chest_slot.count=0; chest_slot.valid_for_read=false
+  main=inv(stack('firearm-magazine',40)); stage=1; advance(2)
+  local last=storage.agent_harness.last[1]
+  eq(storage.agent_harness.active[1],nil); eq(last.outcome,'failed'); eq(last.not_made,nil)
+  assert(last.error:find('no ammo taken',1,true),last.error); eq(mag_slot.count,0)
+  -- Sol's actual failure: pickup succeeded, but the area needs more ammo than was taken.
+  reset(5); call('rearm',args('area')); stage=1; advance(2)
+  last=storage.agent_harness.last[1]
+  eq(storage.agent_harness.active[1],nil); eq(last.outcome,'failed'); eq(last.pickup_outcome,'transferred')
+  eq(last.transferred,5); eq(last.not_made,nil); assert(last.error:find('need',1,true),last.error)
+  -- An in-reach pickup returning zero must also leave the turret alone.
+  local transfer_now=runtime.transfer_now
+  reset(0); main=inv(stack('firearm-magazine',40)); stage=2
+  runtime.transfer_now=function() return {transferred=0} end
+  fails(function() call('rearm',args('positions')) end,'no ammo taken from the chest')
+  eq(mag_slot.count,0); eq(storage.agent_harness.active[1],nil)
+  runtime.transfer_now=transfer_now
+  p.surface.find_entities_filtered,p.can_reach_entity,p.position,main=find,reach,pos,held_main
+  turret.prototype=old_proto; prototypes.get_item_filtered=filtered
+  mag_slot.name,mag_slot.count,mag_slot.valid_for_read='firearm-magazine',10,true
+end)()
 call('walk',{direction='west',ticks=10}); runtime.stop_all()
 eq(call('status').active,false); eq(call('status').last.outcome,'interrupted')
 -- Explicit offline attachment is required; combat remains active during movement.
