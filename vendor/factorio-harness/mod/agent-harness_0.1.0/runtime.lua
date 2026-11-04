@@ -994,12 +994,20 @@ local function finish(index, outcome)
   end
   -- A call to run once the wait is met (A2: rearm {retry_when_clear}): next tick, outside this finish.
   if action and action.then_call and s.last[index] then
+    local last=s.last[index]
+    local take=action.then_call.after_take
+    local taken=not take or (last.moved or last.transferred or 0)>0
     -- (d17 batch34 C2) or a tour that ended one of then_after's outcomes (rearm {from}: the take, then the tour)
-    if outcome=='met' or (action.then_after and action.then_after[outcome]) then
+    if taken and (outcome=='met' or (action.then_after and action.then_after[outcome])) then
       s.then_calls=s.then_calls or {}
       s.then_calls[#s.then_calls+1]={index=index,call=action.then_call}
       s.last[index].then_call=action.then_call.action..' runs again now'
     else s.last[index].then_call=string.format('%s not run again: the %s ended %s',action.then_call.action,action.then_after and 'action' or 'wait',outcome) end
+    if take and not (taken and action.then_after and action.then_after[outcome]) then
+      last.pickup_outcome=outcome
+      last.outcome='failed'
+      last.error='rearm did not start: ammo pickup ended '..outcome..(not taken and '; no ammo taken' or '')
+    end
   end
   -- launch {wait_ready}: the wait met, the launch now (last.launch; launch_failed when it is refused).
   if action and action.then_launch and outcome=='met' and s.last[index] then
@@ -11153,11 +11161,12 @@ function handlers.rearm(p,a)
   local take=handlers.transfer(p,{position=f.position or f,direction='to_player',item=ammo,count=integer(f.count,200,1,10000,'from.count'),walk=true})
   local now=state().active[p.index]
   if now then
-    now.then_call={action='rearm',args=rest}
+    now.then_call={action='rearm',args=rest,after_take=true}
     now.then_after={transferred=true,collected=true,topped_up=true}
     if type(take)=='table' then take.then_rearm='the rearm tour starts once the take has ended with ammo taken (last.then_call; its reply in last.then_result)' end
     return take
   end
+  assert(type(take)=='table' and (take.moved or take.transferred or 0)>0,'rearm did not start: no ammo taken from the chest')
   local out=handlers.rearm(p,rest)
   if type(out)=='table' then out.took_first=take end
   return out
@@ -21788,6 +21797,11 @@ function M.tick_body(event)
       if c.clear then pcall(M.clearobs.ran,c.index,c.call.action,ok,ok and r or reason(r)); if ok and now and c.queued then now.queued=true end end
       local text=ok and (type(r)=='table' and (r.until_tick and string.format('%s started (until tick %d)',c.call.action,r.until_tick) or c.call.action..' ran') or tostring(r)) or (c.call.action..' refused: '..reason(r))
       if last then last.then_result=text end
+      if last and c.call.after_take and not ok then
+        last.pickup_outcome=last.outcome
+        last.outcome='failed'
+        last.error=text
+      end
       -- the action it started says so in its own last (finish)
       if ok and now and now.kind~='wait_until' then now.started_by=c.started_by or c.call.action..' run again after a wait (then_call)' end
     end

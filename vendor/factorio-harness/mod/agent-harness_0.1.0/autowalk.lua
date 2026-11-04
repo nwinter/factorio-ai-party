@@ -94,6 +94,8 @@ return function(api)
   -- The walk's end (finish): the call it walked for, and when it was not made, why.
   function M.ended(walk,last,outcome)
     local tc=walk.then_call
+    -- Waits and stock tours also carry then_call; only approach creates a reach target.
+    if not tc.target then return end
     last.walking_for=tc.action
     if outcome~='arrived' and outcome~='arrived_near' then
       last.not_made=string.format('%s was not made: the walk into reach of %s ended %s',tc.action,tc.target,outcome)

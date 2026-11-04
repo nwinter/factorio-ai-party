@@ -18,6 +18,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 `place_ghosts` dry runs check surface conditions; `check_inserters` refuses the whole batch on failure (help building).
 `platform_defense planned_entities`: proposed footprint/railgun corridor intersections, read only (help space-age).
+`rearm {from}`: pickup then turret tour; no ammo taken or a refused tour reports failure with the reason.
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in

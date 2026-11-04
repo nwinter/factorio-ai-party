@@ -8811,7 +8811,10 @@ fh watch    # deploy on every change
   - `rearm {from: {position, count?}}`: a transfer of the ammo (default 200) from that chest to you, walking to it.
     The tour then runs with the other arguments once the take ends `transferred`, `collected` or `topped_up`
     (`then_after`: finish now runs a then_call after those outcomes too, not only after a met wait). In reach, the tour
-    runs at once (`took_first`).
+    runs at once (`took_first`). The original area or positions and other tour arguments survive the pickup and
+    save/load. If no ammo is taken, the tour does not run. If the pickup or the follow-up rearm fails, `last.outcome`
+    is `failed`, `last.error` gives the reason, and `last.pickup_outcome` retains the pickup's outcome; ammo already
+    taken remains carried. A successful pickup alone does not mean the turrets were rearmed.
   - `retry_when_clear` now also covers turrets a tour leaves out for passing enemies (stock.screen records their
     positions, 64). Once the tour ends, it runs `rearm {positions: them, walk, retry_when_clear}` (`left_out_retry`),
     which waits for units_clear as a refused rearm does (6 tries in all).
