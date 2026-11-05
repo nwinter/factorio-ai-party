@@ -483,6 +483,6 @@
   {"t": "2026-11-04 20:39", "kind": "shift", "text": "Shift 138 change began, with a restart of the game box (planned).", "affected": "stream and agents", "recovered": "2026-11-04 21:02"},
   {"t": "2026-11-05 01:03", "kind": "shift", "text": "Shift 139 change began.", "affected": "stream and agents", "recovered": "2026-11-05 01:13"},
   {"t": "2026-11-05 05:12", "kind": "shift", "text": "Shift 140 change began.", "affected": "stream and agents", "recovered": "2026-11-05 05:20"},
-  {"t": "2026-11-05 09:19", "kind": "shift", "text": "Shift 141 change began.", "affected": "stream and agents", "recovered": null}
+  {"t": "2026-11-05 09:19", "kind": "shift", "text": "Shift 141 change began.", "affected": "stream and agents", "recovered": "2026-11-05 09:29"}
  ]
 }
