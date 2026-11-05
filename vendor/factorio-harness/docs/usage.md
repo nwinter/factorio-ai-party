@@ -17973,7 +17973,9 @@ ship ..."
   Turnaround fields use the same argument validation as `platform_endurance` (including return allowance).
 - `queue_status.guard_read_errors` and each lane summary show active guard read failures with the first failed
   tick, consecutive check count and latest error. A successful read clears this summary; `guards[].read_error`
-  retains the cleared record. No additional condition reads are made.
+  retains the cleared record. Failed or empty return-budget reads (including unavailable turnaround geometry)
+  use this error channel and remain cached for 600 ticks. Stops, no flight leg and nothing binding remain plain
+  not-met. Read errors fire no guard action and release no hold. No additional condition reads are made.
 - The budget is read at most every 600 ticks (`BUDGET_EVERY`); between reads the last reading stands, and its tick is
   said.
 

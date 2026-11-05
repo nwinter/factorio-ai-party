@@ -1017,8 +1017,9 @@ return function(api)
         kept.from,kept.to,kept.connection or 'unknown',kept.back and 'back' or 'forward',kept.tick)
       local b=kept.b
       if kept.err or not b then
-        return false,string.format('platform %s: no fresh return budget for this leg (not met): %s%s',
-          c.platform,kept.err or 'read returned no budget',source)
+        -- Raise the cached failure so scheduler read-error tracking sees it without another budget read.
+        error(string.format('platform %s: no fresh return budget for this leg (not met): %s%s',
+          c.platform,kept.err or 'read returned no budget',source),0)
       end
       if window_config then
         local check=budgetwindows.evaluate(b.window_budgets,window_config,c.km)
