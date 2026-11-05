@@ -394,6 +394,17 @@ return function(api)
     local e=g.read_error
     return e and {error=e.text,first_tick=e.tick,last_tick=e.last_tick,checks=e.checks,cleared_tick=e.cleared_tick} or nil
   end
+  -- Format saved failures only when replying; no extra condition reads or tick work.
+  function M.guard_read_errors(q)
+    local lines={}
+    for _,g in ipairs(q.guards or {}) do
+      local e=g.read_error
+      if e and not e.cleared_tick then
+        lines[#lines+1]=string.format('%s: read error since tick %d (%d checks): %s',tostring(g.id),e.tick,e.checks,e.text)
+      end
+    end
+    return #lines>0 and table.concat(lines,'; ') or nil
+  end
   local function guard_rows(q,status)
     local rows={}
     for _,g in ipairs(q.guards or {}) do
@@ -570,7 +581,7 @@ return function(api)
       orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
       history_total=trimmed and #q.history or nil,
       waiting=waiting,kept_wait=kept,wait_deadlines=wait_deadlines(q.current,q.pending),
-      guards=gl,last_failure=failure,after_direct=q.after_direct,
+      guard_read_errors=M.guard_read_errors(q),guards=gl,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       paused_why=q.paused and q.paused_why and string.format('%s (tick %d, %ds ago); queue_resume runs the rest',q.paused_why.line,q.paused_why.tick,math.floor((game.tick-q.paused_why.tick)/60)) or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,

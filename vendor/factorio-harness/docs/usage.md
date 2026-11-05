@@ -17969,6 +17969,11 @@ ship ..."
 
 **`wait_until {until: "budget_below", platform, turnaround, km}`**
 - Met once the binding item's `out_km_max` is under `km`.
+- Submit/edit require exactly one of `turnaround.km` or `turnaround.fraction`; outer `km` is never inherited.
+  Turnaround fields use the same argument validation as `platform_endurance` (including return allowance).
+- `queue_status.guard_read_errors` and each lane summary show active guard read failures with the first failed
+  tick, consecutive check count and latest error. A successful read clears this summary; `guards[].read_error`
+  retains the cleared record. No additional condition reads are made.
 - The budget is read at most every 600 ticks (`BUDGET_EVERY`); between reads the last reading stands, and its tick is
   said.
 
