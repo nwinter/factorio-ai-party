@@ -1,5 +1,8 @@
 -- A joining peer restores storage but none of the server's module upvalues.
 -- Both camera reports turned Resolute back ten ticks late after budget cache loss.
+local function unreadable(C,p,c)
+  local ok,e=pcall(C.check,p,c); assert(not ok,'expected a budget read error'); return false,e
+end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function copy(v,seen)
@@ -67,10 +70,10 @@ print('d29_batch367: restored budget/launch caches keep independent clocks, deci
 
 -- Cached failures also survive loading, then expire; a new leg still invalidates immediately.
 st={c=budget()}; server,sreads=peer(st)
-game.tick=2000; err='budget unavailable'; eq(server.check(p,st.c),false)
+game.tick=2000; err='budget unavailable'; eq(unreadable(server,p,st.c),false)
 saved=copy(st); client,creads=peer(saved); err=nil
 game.tick=2001
-cm,cs=client.check(p,saved.c); eq(cm,false); assert(cs:find('budget unavailable',1,true)); eq(creads.budget,0)
+cm,cs=unreadable(client,p,saved.c); eq(cm,false); assert(cs:find('budget unavailable',1,true)); eq(creads.budget,0)
 game.tick=2600; eq(client.check(p,saved.c),true); eq(creads.budget,1)
 saved=copy(st); client,creads=peer(saved)
 leg={from='shattered-planet',to='solar-system-edge',back=true}

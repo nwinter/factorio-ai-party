@@ -9,6 +9,9 @@
 -- 3. shipment {launches}.
 -- 4. (Astra #2755) budget_below and launches_at_least in the remote and platform lanes, inside all/any.
 -- 5. a window reaching past the pod log's oldest kept journey.
+local function unreadable(C,p,c)
+  local ok,e=pcall(C.check,p,c); assert(not ok,'expected a budget read error'); return false,e
+end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '..x) end
@@ -167,9 +170,9 @@ do
   local met,saw=C.check(p,c)
   eq(met,false); eq(reads,0); has(saw,'platform Resolute: stopped at solar-system-edge: the return budget reads a ship in flight (not met)')
   res.space_location=nil
-  met,saw=C.check(p,c); eq(met,false); has(saw,'no fresh return budget'); has(saw,'flies no connection now'); has(saw,'read at tick '..t0)
+  met,saw=unreadable(C,p,c); eq(met,false); has(saw,'no fresh return budget'); has(saw,'flies no connection now'); has(saw,'read at tick '..t0)
   game.tick=t0+590
-  met,saw=C.check(p,c); eq(met,false); has(saw,'read at tick '..t0)
+  met,saw=unreadable(C,p,c); eq(met,false); has(saw,'read at tick '..t0)
   eq(reads,1,'a failed read kept for BUDGET_EVERY')
   fail=false; game.tick=t0+600
   met=C.check(p,c); eq(met,true); eq(reads,2)

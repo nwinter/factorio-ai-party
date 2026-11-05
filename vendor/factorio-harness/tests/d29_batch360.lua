@@ -1,4 +1,7 @@
 -- BC, Astra #2772: guard-593 used tick 83453890's AQ->EDGE budget on the new deep leg at 83454180.
+local function unreadable(C,p,c)
+  local ok,e=pcall(C.check,p,c); assert(not ok,'expected a budget read error'); return false,e
+end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(s:find(x,1,true),s..' lacks '..x) end
@@ -76,17 +79,17 @@ do
   C.check(p,guard); eq(f.reads,1)
   game.tick=2001; f.leg={from='solar-system-edge',to='shattered-planet',back=false,flown=1/4000000,length=4000000}
   pl.space_connection={name='solar-system-edge-shattered-planet'}; f.err='deep budget unavailable'
-  local met,saw=C.check(p,guard); eq(met,false); eq(f.reads,2)
+  local met,saw=unreadable(C,p,guard); eq(met,false); eq(f.reads,2)
   has(saw,'no fresh return budget for this leg (not met)'); has(saw,'deep budget unavailable'); has(saw,'tick 2001')
   game.tick=2002; f.err=nil; f.value=100
-  eq(C.check(p,guard),false); eq(f.reads,2,'failure throttled on this leg only')
+  eq(unreadable(C,p,guard),false); eq(f.reads,2,'failure throttled on this leg only')
   game.tick=2601; eq(C.check(p,guard),true); eq(f.reads,3)
   -- A cached failure cannot delay the next leg's first read either.
-  f.err='old leg unavailable'; game.tick=3201; eq(C.check(p,c),false); eq(f.reads,4)
+  f.err='old leg unavailable'; game.tick=3201; eq(unreadable(C,p,c),false); eq(f.reads,4)
   game.tick=3202; f.leg.back=true; f.err=nil
   eq(C.check(p,c),true); eq(f.reads,5)
   game.tick=3802; f.missing=true
-  met,saw=C.check(p,c); eq(met,false); has(saw,'read returned no budget')
+  met,saw=unreadable(C,p,c); eq(met,false); has(saw,'read returned no budget')
 end
 print('d29_batch360: new-leg failure/missing budget is not met, failures expire and invalidate: ok')
 
