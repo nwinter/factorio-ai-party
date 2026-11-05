@@ -138,7 +138,7 @@ return function(api)
     local why=q.paused and q.paused_why and q.paused_why.line or nil
     return {revision=q.revision,paused=q.paused,paused_by=why,held=q.held and true or nil,pending=#q.pending,repeating=q.loop~=nil,waiting=waiting,
       active=q.current and {id=q.current.id,action=q.current.action,label=q.current.label,started_tick=q.current.started_tick,run=run_of(q)} or false,
-      after_direct=q.after_direct}
+      after_direct=q.after_direct,guard_read_errors=base.guard_read_errors(q)}
   end
   local M={handlers={},schema=base.schema}
   for k,v in pairs(base) do if M[k]==nil then M[k]=v end end

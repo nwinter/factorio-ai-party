@@ -1,5 +1,6 @@
 local budgetrates = require('budgetrates')
 local budgetwindows = require('budgetwindows')
+local turnaround = require('turnaround')
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
@@ -1633,7 +1634,8 @@ return function(api)
     end
     if kind=='budget_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'budget_below requires platform (a platform of ours in flight, by name)')
-      assert(type(c.turnaround)=='table','budget_below turnaround: as platform_endurance\'s ({km | fraction, back_to?, speed_floor?, margin?, reserve?})')
+      assert(type(c.turnaround)=='table',"budget_below turnaround: as platform_endurance's ({km | fraction, back_to?, speed_floor?, margin?, reserve?})")
+      turnaround.check(c.turnaround)
       budgetwindows.arguments(c)
       assert(type(c.km)=='number' and c.km>=0 and c.km<=1e8,'budget_below km: met once the binding item can go out less than this many km farther (0..100000000)')
     end
