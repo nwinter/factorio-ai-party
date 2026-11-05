@@ -354,8 +354,9 @@
   its last 8 status changes), the ingredients short at the samples that read short (at the recipe's quality, with
   their first and last tick), outputs by quality from its output slot,
   totals by recipe (`groups`), `left_out`; a rocket silo's completions are rocket parts, with `silo_statistics` (the
-  surface's production statistics of them over the watch); rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
-  name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
+  surface's production statistics of them over the watch); rows above 16 machines are left out (`lines` has each). `items` (1..16 item or fluid names, or {name, kind?, quality?}): surface production counters over the watch.
+  Ambiguous names require `kind:"item"|"fluid"`; items read every quality unless specified; fluids have no quality.
+  All flow rows share exact `start_tick`/`end_tick`, also stated once in their line.
   `uptime {read: true, page?, page_size?, positions?, id?, agent?, details?}` reads a watch in pages of rows (16 a page by
   default, at most 16) and never starts or replaces one: each row as `uptime {}` gives it, with `index` (its place in
   the watch) and `short_counts` {ingredient: {samples, least, need, first_tick, last_tick}}; `positions` picks the

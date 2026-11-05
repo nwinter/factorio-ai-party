@@ -69,19 +69,19 @@ local function no_limit(fn) local ok,err=pcall(fn); assert(ok or not tostring(er
 local function plan(steps) return function() return runtime.dispatch{action='queue_submit',args={dry_run=true,steps=steps},bot='astra'} end end
 local function list(n,f) local t={} for i=1,n do t[i]=f and f(i) or ('n'..i) end return t end
 local P={x=0,y=0}
--- Astra's queue: two steps that change the factory, then a watch of 9 items: refused before anything runs, the step
--- named; 8 is taken
-local nine=list(9,function(i) return 'item-'..i end)
-local e=refused(plan({{action='wait_ticks',args={ticks=60}},{action='wait_ticks',args={ticks=60}},{action='uptime',label='baseline',args={items=nine,seconds=600}}}))
-has(e,'steps[3] (uptime, label "baseline")'); has(e,'items: 1..8 items')
-table.remove(nine)
-no_limit(plan({{action='uptime',args={items=nine,seconds=600}}}))
+-- Astra's queue: two steps that change the factory, then a watch of 17 items: refused before anything runs, the step
+-- named; 16 is taken
+local seventeen=list(17,function(i) return 'item-'..i end)
+local e=refused(plan({{action='wait_ticks',args={ticks=60}},{action='wait_ticks',args={ticks=60}},{action='uptime',label='baseline',args={items=seventeen,seconds=600}}}))
+has(e,'steps[3] (uptime, label "baseline")'); has(e,'items: 1..16 item or fluid names')
+table.remove(seventeen)
+no_limit(plan({{action='uptime',args={items=seventeen,seconds=600}}}))
 -- the bound is the action's own: uptime.ITEMS moves the step's check and the call's
 local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return {} end}
-has(refused(function() U.flows_start({name='player'},{name='nauvis'},list(9)) end),'items: 1..8 items')
+has(refused(function() U.flows_start({name='player'},{name='nauvis'},list(17)) end),'items: 1..16 item or fluid names')
 runtime.uptime.ITEMS=4
 has(refused(function() runtime.step_length_check('uptime',{items=list(5),seconds=60}) end),'items has 5 entries, outside 1..4')
-runtime.uptime.ITEMS=8
+runtime.uptime.ITEMS=16
 -- a read of the watch takes no items limit (it starts nothing)
 runtime.step_length_check('uptime',{read=true,page=1})
 print('d25_batch214b QZ2 uptime items: ok')

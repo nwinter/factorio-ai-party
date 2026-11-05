@@ -54,6 +54,7 @@ local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
 prototypes={item={['iron-ore']={}},fluid={water={}},quality={normal={}}}
 local stats={get_input_count=function() return 0 end,get_output_count=function() return 0 end,get_flow_count=function() return 0 end}
 force.get_item_production_statistics=function() return stats end
+force.get_fluid_production_statistics=function() return stats end
 defines.flow_precision_index.ten_minutes=2
 game.surfaces=surfaces
 prototypes.item.coal={}
@@ -85,15 +86,15 @@ local function invalid(items,entry,reason)
   eq(reads,before_reads)
   eq(storage.agent_harness.uptime and storage.agent_harness.uptime[1],before)
 end
-invalid({'water'},1,'water is not an item (fluid prototype)')
-invalid({'batch401-missing-item'},1,'batch401-missing-item is not an item (unknown item name)')
-invalid({'iron-ore','water','coal'},2,'fluid prototype')
-invalid({'iron-ore',{name='water',quality='normal'}},2,'fluid prototype')
+invalid({{name='water',kind='item'}},1,'water is not an item prototype')
+invalid({'batch401-missing-item'},1,'batch401-missing-item is not an item or fluid (unknown item name or fluid name)')
+invalid({'iron-ore',{name='water',quality='normal'},'coal'},2,'fluids have no quality')
+invalid({'iron-ore',{name='water',quality='normal'}},2,'fluids have no quality')
 invalid({'iron-ore',{name='batch401-missing-item'}},2,'unknown item name')
 invalid({{name='iron-ore',quality='batch401-missing-quality'}},1,'.quality: batch401-missing-quality is not a quality')
 invalid({{quality='normal'}},1,'nil is not an item')
 invalid({false},1,'false is not an item')
-for _,items in ipairs({{'iron-ore'},{{name='iron-ore',quality='rare'}},{'iron-ore',{name='coal',quality='normal'}}}) do
+for _,items in ipairs({{'water'},{'iron-ore','water'},{{name='water',kind='fluid'}},{'iron-ore'},{{name='iron-ore',quality='rare'}},{'iron-ore',{name='coal',quality='normal'}}}) do
   local before_reads=reads
   runtime.scheduler_api.check_args('uptime',{items=items,seconds=300})
   eq(reads,before_reads,'validation reads no statistics')
@@ -103,20 +104,20 @@ for _,items in ipairs({{'iron-ore'},{{name='iron-ore',quality='rare'}},{'iron-or
   eq(watch.watching,true)
 end
 -- Invalid mixed lists leave the existing watch intact too.
-invalid({'coal','water'},2,'fluid prototype')
-refused(function() plan({},true) end,'items: 1..8 items')
-refused(function() plan('iron-ore',true) end,'items: 1..8 items')
-local eight={}; for i=1,8 do eight[i]='iron-ore' end
-eq(plan(eight,true).steps,1)
-eight[9]='iron-ore'
-refused(function() plan(eight,true) end,'items: 1..8 items')
+invalid({'coal',{name='water',quality='normal'}},2,'fluids have no quality')
+refused(function() plan({},true) end,'items: 1..16 item or fluid names')
+refused(function() plan('iron-ore',true) end,'items: 1..16 item or fluid names')
+local sixteen={}; for i=1,16 do sixteen[i]='iron-ore' end
+eq(plan(sixteen,true).steps,1)
+sixteen[17]='iron-ore'
+refused(function() plan(sixteen,true) end,'items: 1..16 item or fluid names')
 eq(call('queue_submit',{dry_run=true,steps={{action='uptime',args={}},{action='uptime',args={read=true}}}}).steps,2)
 refused(function() call('queue_submit',{dry_run=true,steps={{action='uptime',args={read=true,items={'water'}}}}}) end,'items goes with a new watch')
 
 -- A 28-step plan: no earlier step runs or replaces the current watch when step 17 is invalid.
 local steps={}
 for i=1,28 do steps[i]={action='uptime',args={items={'iron-ore'},seconds=300}} end
-steps[17]={action='uptime',label='baseline',args={items={'iron-ore','water'},seconds=300}}
+steps[17]={action='uptime',label='baseline',args={items={'iron-ore',{name='water',quality='normal'}},seconds=300}}
 local calls=0
 local handler=U.handler
 U.handler=function(...) calls=calls+1; return handler(...) end
@@ -124,7 +125,7 @@ local scheduler=require('scheduler')(runtime.scheduler_api)
 local before=storage.agent_harness.uptime[1]
 for _,dry in ipairs({true,false}) do
   refused(function() call('queue_submit',{dry_run=dry,mode='replace',steps=steps}) end,
-    'steps[17] (uptime, label "baseline"): args: items[2]: water is not an item (fluid prototype)')
+    'steps[17] (uptime, label "baseline"): args: items[2].quality: fluids have no quality')
   for i=1,3 do game.tick=game.tick+1; scheduler.tick() end
   eq(calls,0); eq(storage.agent_harness.uptime[1],before)
   local q=storage.agent_harness.queues[1]
@@ -135,11 +136,11 @@ force.platforms={{valid=true,name='Asterion'}}
 for _,step in ipairs(steps) do step.args.platform='Asterion' end
 for _,dry in ipairs({true,false}) do
   refused(function() call('queue_submit',{lane='platform:Asterion',dry_run=dry,steps=steps}) end,
-    'steps[17]','items[2]','fluid prototype')
+    'steps[17]','items[2]','fluids have no quality')
 end
 refused(function() call('queue_submit',{dry_run=true,steps={{action='wait_ticks',args={ticks=60}}},
   guards={{when={['until']='tick_at_least',tick=600},steps={steps[17]}}}}) end,
-  'guards[1]: steps[1]','items[2]','fluid prototype')
+  'guards[1]: steps[1]','items[2]','fluids have no quality')
 -- Corrected 28-step plan validates; a valid submitted body step actually executes in the same scheduler.
 steps[17].args.items={'iron-ore'}
 eq(call('queue_submit',{lane='platform:Asterion',dry_run=true,steps=steps}).steps,28)
