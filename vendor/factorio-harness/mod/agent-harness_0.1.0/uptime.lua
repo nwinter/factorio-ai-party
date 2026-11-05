@@ -37,7 +37,7 @@ return function(api)
   -- A reply's numbers are what its encoding pays for (the private copy: helpers.table_to_json took 23 ms for 64 rows of
   -- 15 fields and 0.07 ms for 64 lines of text): above ROWS machines the rows are left out and lines carries each one;
   -- group rows up to GROUP_ROWS groups, flow rows up to FLOW_ROWS.
-  M.MAX, M.EVERY, M.STEP, M.AREA_SIDE, M.ITEMS, M.ROWS, M.GROUP_ROWS, M.FLOW_ROWS = 64, 60, 7, 200, 8, 16, 8, 10
+  M.MAX, M.EVERY, M.STEP, M.AREA_SIDE, M.ITEMS, M.ROWS, M.GROUP_ROWS, M.FLOW_ROWS = 64, 60, 7, 200, 16, 16, 8, 10
   local function next_at(job)
     local k = job.samples
     return math.min(job.start + M.EVERY * k + (M.STEP * k) % M.EVERY, job.until_tick)
@@ -572,39 +572,53 @@ return function(api)
     table.sort(out, function(x, y) return (QORDER[x] or 9) < (QORDER[y] or 9) or ((QORDER[x] or 9) == (QORDER[y] or 9) and x < y) end)
     return out
   end
-  local function flow_stats(force, surface)
+  local function flow_stats(force, surface, kind)
+    if kind == 'fluid' then return try(function() return force.get_fluid_production_statistics(surface) end) end
     return try(function() return force.get_item_production_statistics(surface) end)
+  end
+  local function counter(it)
+    local name, quality, kind = it, nil, nil
+    if type(it) == 'table' then name, quality, kind = it.name, it.quality, it.kind end
+    return name, quality, kind or (prototypes.item[name] and 'item' or 'fluid')
+  end
+  local function flow_label(name, quality, kind)
+    return qlabel(name, quality) .. (kind == 'fluid' and ' (fluid)' or '')
   end
   -- Pure prototype checks shared by execution and every queued-step validation path.
   function M.check_items(items)
-    assert(type(items) == 'table' and #items >= 1 and #items <= M.ITEMS, 'items: 1..' .. M.ITEMS .. ' items, a name ("iron-gear-wheel", every quality) or {name, quality}')
+    assert(type(items) == 'table' and #items >= 1 and #items <= M.ITEMS, 'items: 1..' .. M.ITEMS .. ' item or fluid names, or {name, kind?, quality?}')
     for i, it in ipairs(items) do
-      local name, quality = it, nil
-      if type(it) == 'table' then name, quality = it.name, it.quality end
+      local name, quality, kind = it, nil, nil
+      if type(it) == 'table' then name, quality, kind = it.name, it.quality, it.kind end
       local field = 'items[' .. i .. ']'
-      if type(name) ~= 'string' or not prototypes.item[name] then
-        local fluid = type(name) == 'string' and prototypes.fluid and prototypes.fluid[name]
-        error(field .. ': ' .. tostring(name) .. ' is not an item (' .. (fluid and 'fluid prototype' or 'unknown item name') .. ')', 0)
-      end
+      assert(kind == nil or kind == 'item' or kind == 'fluid', field .. '.kind: expected item or fluid')
+      local item = type(name) == 'string' and prototypes.item[name]
+      local fluid = type(name) == 'string' and prototypes.fluid and prototypes.fluid[name]
+      assert(item or fluid, field .. ': ' .. tostring(name) .. ' is not an item or fluid (unknown item name or fluid name)')
+      assert(kind or not (item and fluid), field .. ': ' .. name .. ' is both an item and a fluid; give {name="' .. name .. '", kind="item"|"fluid"}')
+      kind = kind or (item and 'item' or 'fluid')
+      assert(kind == 'item' and item or kind == 'fluid' and fluid, field .. ': ' .. name .. ' is not ' .. (kind == 'item' and 'an item' or 'a fluid') .. ' prototype')
+      assert(kind ~= 'fluid' or quality == nil, field .. '.quality: fluids have no quality')
       assert(quality == nil or (type(quality) == 'string' and prototypes.quality[quality]), field .. '.quality: ' .. tostring(quality) .. ' is not a quality')
     end
   end
   function M.flows_start(force, surface, items)
     M.check_items(items)
-    local stats = flow_stats(force, surface)
-    assert(stats, 'no production statistics for ' .. surface.name)
-    local rows, recent = {}, {}
+    local rows, recent, by_kind = {}, {}, {}
     for _, it in ipairs(items) do
-      local name, quality = it, nil
-      if type(it) == 'table' then name, quality = it.name, it.quality end
-      for _, q in ipairs(quality and {quality} or qualities()) do
-        local id = {name=name, quality=q}
-        local r = {name=name, quality=q, produced0=try(function() return stats.get_input_count(id) end) or 0, consumed0=try(function() return stats.get_output_count(id) end) or 0}
-        r.named = quality ~= nil
+      local name, quality, kind = counter(it)
+      local stats = by_kind[kind] or flow_stats(force, surface, kind)
+      assert(stats, 'no ' .. kind .. ' production statistics for ' .. surface.name)
+      by_kind[kind] = stats
+      for _, q in ipairs(kind == 'fluid' and {false} or quality and {quality} or qualities()) do
+        q = q or nil
+        local id = kind == 'fluid' and name or {name=name, quality=q}
+        local r = {name=name, kind=kind, quality=q, produced0=try(function() return stats.get_input_count(id) end) or 0, consumed0=try(function() return stats.get_output_count(id) end) or 0}
+        r.named = kind == 'fluid' or quality ~= nil
         rows[#rows+1] = r
         local function last(cat, idx) return try(function() return stats.get_flow_count{name=id, category=cat, precision_index=idx, count=true} end) or 0 end
         local p10, c10 = last('input', defines.flow_precision_index.ten_minutes), last('output', defines.flow_precision_index.ten_minutes)
-        if quality or p10 > 0 or c10 > 0 then recent[#recent+1] = string.format('%s: produced %d, consumed %d', qlabel(name, q), math.floor(p10 + 0.5), math.floor(c10 + 0.5)) end
+        if r.named or p10 > 0 or c10 > 0 then recent[#recent+1] = string.format('%s: produced %g, consumed %g', flow_label(name, q, kind), p10, c10) end
       end
     end
     return {force=force.name, surface=surface.name, rows=rows},
@@ -614,22 +628,24 @@ return function(api)
     local f = job.flows
     if not f then return nil end
     local surface, force = game.surfaces[f.surface], game.forces[f.force]
-    local stats = surface and force and flow_stats(force, surface)
-    local rows, words = {}, {}
+    local rows, words, by_kind = {}, {}, {}
     local function pm(n) return secs > 0 and math.floor(n / secs * 600 + 0.5) / 10 or 0 end
     for _, r in ipairs(f.rows) do
-      local id = {name=r.name, quality=r.quality}
+      local kind = r.kind or 'item' -- watches saved before kinds were added
+      if by_kind[kind] == nil then by_kind[kind] = surface and force and flow_stats(force, surface, kind) or false end
+      local stats = by_kind[kind]
+      local id = kind == 'fluid' and r.name or {name=r.name, quality=r.quality}
       local p = stats and try(function() return stats.get_input_count(id) end)
       local c = stats and try(function() return stats.get_output_count(id) end)
       if p and c then
         local dp, dc = p - r.produced0, c - r.consumed0
         if r.named or dp > 0 or dc > 0 then
-          rows[#rows+1] = {name=r.name, quality=r.quality, produced=dp, consumed=dc, net=dp - dc, produced_per_min=pm(dp), consumed_per_min=pm(dc)}
-          words[#words+1] = string.format('%s produced %d (%g/min), consumed %d (%g/min)', qlabel(r.name, r.quality), dp, pm(dp), dc, pm(dc))
+          rows[#rows+1] = {name=r.name, kind=kind, quality=r.quality, produced=dp, consumed=dc, net=dp - dc, produced_per_min=pm(dp), consumed_per_min=pm(dc)}
+          words[#words+1] = string.format('%s produced %g (%g/min), consumed %g (%g/min)', flow_label(r.name, r.quality, kind), dp, pm(dp), dc, pm(dc))
         end
-      else words[#words+1] = qlabel(r.name, r.quality) .. ' unknown (the statistics could not be read)' end
+      else words[#words+1] = flow_label(r.name, r.quality, kind) .. ' unknown (the statistics could not be read)' end
     end
-    return {surface=f.surface, start_tick=job.start, end_tick=game.tick, rows=rows, line=string.format('production statistics on %s in %ds (every machine and hand there): %s', f.surface, math.floor(secs + 0.5),
+    return {surface=f.surface, start_tick=job.start, end_tick=game.tick, rows=rows, line=string.format('production statistics on %s in %ds (every machine and hand there; all rows share ticks %d-%d): %s', f.surface, math.floor(secs + 0.5), job.start, game.tick,
       #words > 0 and table.concat(words, '; ') or 'none of them produced or consumed at any quality')}
   end
   -- (QN1) the watched silos' parts beside the surface's production statistics of their product over the watch.
@@ -1165,7 +1181,7 @@ return function(api)
     -- (QR) what is kept and what this start dropped
     local kept = M.kept_rows(job, p.index)
     local was = kept and old and kept[#kept].id == id_of(old, p.index) and kept[#kept].id or nil
-    local line = #machines == 0 and string.format('watching the production statistics of %d item%s for %ds: uptime {} reads them so far, and in full once done', #a.items, #a.items == 1 and '' or 's', seconds)
+    local line = #machines == 0 and string.format('watching the production statistics of %d counter%s for %ds: uptime {} reads them so far, and in full once done', #a.items, #a.items == 1 and '' or 's', seconds)
       or string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)
     if kept then line = line .. '; kept, read by uptime {read: true, id}: ' .. kept_text(kept) end
     local gone = {}
@@ -1177,13 +1193,13 @@ return function(api)
   end
   M.schema = {uptime = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', positions='1..64 crafting machines or labs {x,y} (an assembler, furnace, chemical plant, biochamber, lab, biolab, ...; in sight or by remote view); with read: true, the machines of the watch to read (each the nearest centre within 2 tiles)', position='or one',
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
-    items='optional 1..8 item prototype names (fluids refused), a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch); queue submission and dry_run check every name and quality, naming the failing step and items entry',
+    items='optional 1..16 item or fluid prototype names, or {name, kind?, quality?}; kind=item|fluid is required for an ambiguous name. Items read every quality unless named; fluids have no quality, one row. Surface production statistics over the watch share exact start_tick/end_tick (alone, a statistics-only watch); queue submission and dry_run check every entry',
     seconds='optional 10..3600 (default 600): how long to watch',
     read='true: read a watch in pages without starting or replacing it (yours; with id or agent any agent\'s): read, id, agent (another\'s), done or watching, started_tick, until_tick, to_tick (the end, or now), sampled_tick (its last sample), samples, seconds, machines_total, matched, page, pages, page_size, machines (the page\'s rows as uptime {} gives them, with index (its place in the watch) and short_counts {ingredient: {samples, least, need, first_tick, last_tick}}; line only with details), lines (with details), not_found, segment (reading a segment: segment_start, ended_tick, closed_by, of: the watch keeping it) or segments, kept_watch (reading a kept watch: kept_tick, ended_tick, closed_by, by: the watch begun then) or kept and kept_dropped, flows (a watch with items, on every page: surface, start_tick, end_tick, every row, line; a done one\'s as it ended), line; a queue step and dry_run check it',
     id='with read: a watch\'s id as the start and status work give it, "uptime@START_TICK/AGENT"; "uptime@START_TICK" reads the one watch begun on that tick (two or more: refused, each id named)',
     agent='with read: an agent\'s name: that agent\'s watch (with id, the id must be its)',
     segment_start='with read: the start tick of a segment the watch keeps (segments lists them; its id reads it too): that closed window, done at the edit, in pages', page='with read: 1.. (default 1)', page_size='with read: 1..16 machines a page (default 16)',
     details='with read: true adds each row\'s line and lines', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one keeps the last one done, readable by its id): the start returns id, baseline (each machine\'s completions so far), kept, dropped (what that start dropped) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, start_tick, end_tick, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch, those ticks: every machine and hand on the surface; a read by id gives every row, kept with a done watch); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see); segments [{id, segment_start, ended_tick, seconds, samples, machines, closed_by}] (the windows an edit to what it measures closed before this one began, each kept whole: uptime {read: true, id} reads one), segments_dropped, segments_note; kept [{id, started_tick, ended_tick, seconds, samples, machines, segments, closed_by, kept_tick}] (your earlier watches, each done: uptime {read: true, id} reads one), kept_dropped [{id, machines, dropped_tick, by, why}], kept_note. Read only'}}
+    returns='a watch, one an agent (a new one keeps the last one done, readable by its id): the start returns id, baseline (each machine\'s completions so far), kept, dropped (what that start dropped) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; returned on a machine row and a group (a recipe that gives or takes an item with ignored_by_stats, pentapod-egg\'s own): per such item out, in, returned (the amount on both sides), net, statistics_made and statistics_used (the returned amount on neither side: made is the net), and its line; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, start_tick, end_tick, rows [{name, kind, quality (items only), produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch, those ticks: every machine and hand on the surface; a read by id gives every row, kept with a done watch); a rocket silo\'s completions are rocket parts (completions_are: finished rockets x the parts a rocket takes plus rocket_parts, productivity\'s included), with silo_statistics {item, surface, silos, silos_made, statistics_produced, line} (the parts the watched silos made beside the surface\'s production statistics of them); lines; left_out (what the watch does not see); segments [{id, segment_start, ended_tick, seconds, samples, machines, closed_by}] (the windows an edit to what it measures closed before this one began, each kept whole: uptime {read: true, id} reads one), segments_dropped, segments_note; kept [{id, started_tick, ended_tick, seconds, samples, machines, segments, closed_by, kept_tick}] (your earlier watches, each done: uptime {read: true, id} reads one), kept_dropped [{id, machines, dropped_tick, by, why}], kept_note. Read only'}}
   return M
 end

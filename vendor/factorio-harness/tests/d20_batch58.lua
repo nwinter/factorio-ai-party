@@ -140,7 +140,7 @@ do
   for _,r in ipairs(out.flows.rows) do rows[r.name..'@'..r.quality]=r end
   eq(rows['iron-gear-wheel@uncommon'].produced,9); eq(rows['iron-gear-wheel@normal'].produced,54); eq(rows['iron-gear-wheel@rare'],nil,'a quality with nothing is left out')
   eq(rows['iron-plate@uncommon'].consumed,20); eq(rows['iron-plate@uncommon'].produced,0)
-  eq(out.flows.line,'production statistics on nauvis in 10s (every machine and hand there): iron-gear-wheel produced 54 (324/min), consumed 0 (0/min); iron-gear-wheel (uncommon) produced 9 (54/min), consumed 0 (0/min); iron-plate (uncommon) produced 0 (0/min), consumed 20 (120/min)')
+  eq(out.flows.line,'production statistics on nauvis in 10s (every machine and hand there; all rows share ticks 10000-10600): iron-gear-wheel produced 54 (324/min), consumed 0 (0/min); iron-gear-wheel (uncommon) produced 9 (54/min), consumed 0 (0/min); iron-plate (uncommon) produced 0 (0/min), consumed 20 (120/min)')
   eq(out.lines[#out.lines],out.flows.line)
   fails(function() U.handler(p,{items={'nope'}}) end,'nope is not an item')
   fails(function() U.handler(p,{items={{name='iron-plate',quality='shiny'}}}) end,'items[1].quality: shiny is not a quality')

@@ -18695,3 +18695,12 @@ circuit followed by an arrival wait. Guards run every 10 ticks while the lane is
 the execution parser. Refusals name step/label and `stops[i].wait[j]` (or `wait[j]` with `stop`), and show accepted
 condition syntax. A count/circuit wait uses `condition:"iron-plate >= 100"` or `{signal, comparator, value}`;
 `comparator` is not a top-level wait field. Validation does not write schedules or saved wait lists.
+
+## d36 batch422 (#2895): uptime production counters
+
+`uptime.items` accepts 1..16 item or fluid prototype names, or `{name, kind?, quality?}`.
+A name shared by an item and fluid requires `kind:"item"` or `kind:"fluid"`. Items read every quality
+unless quality is specified; fluids reject quality and return one row with kind fluid and no quality.
+Fluid produced/consumed deltas and per-minute rates use surface fluid production statistics. All rows
+share the exact `flows.start_tick`/`end_tick`, stated once in the flow line; completed and saved watches
+keep those counters. The 64-machine cap and sampled machine counters are unchanged.
