@@ -18767,3 +18767,21 @@ Up to three candidates within 32 tiles and 600 ticks before discovery are return
 its retained name/unit/position/tick and `inferred:true`. Proximity and fragment matching are evidence, not causal
 proof. Rebuild delay or record eviction may leave no candidates. Counts begin with this instrumentation; old
 losses are not reconstructed. Completed watches and closed segments retain their own bounded evidence.
+### batch433 — idempotent platform recovery current (#2910 Sol, #2911 Astra)
+
+`platform_schedule {platform, current:N}` with no `stops` or `stop` succeeds with `changed:false` when N is already
+current and the platform is unpaused and waiting or flying there. The call preserves schedule records, wait timers,
+flight distance and direction. A different current still selects that stop. A paused platform still takes the game's
+go-to-station path, which switches to automatic (unpauses), including when `paused:true` accompanies current.
+
+Replies confirm `current`, `heading_to` (schedule destination), `paused_before`, `paused` (both explicit booleans),
+and `changed`; in flight they also give `direction:{from,to}`, `progress` (fraction flown in that direction) and
+`distance` (connection fraction). `confirmed` repeats the current, changed and pause values as text because compact
+format omits false boolean fields. The selected current and unpaused state are checked after go-to.
+
+The same handler runs in body, remote and platform queues, including recovery guards. A satisfied current step
+continues the queue without `on_fail:skip`. Missing platforms/stops and empty schedules still fail. Genuine
+`no_schedule` and `no_path` still use the existing delayed recheck (normally 300 ticks): queues hold the step until
+confirmation and pause on persistent failure; direct calls retain the recheck and failure tell. A no_schedule read
+while waiting at the current station on unmet conditions remains the existing valid waiting case. `schedule_check`
+and describe text now match the idempotent behavior.
