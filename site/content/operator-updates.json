@@ -1,5 +1,5 @@
 {
- "notices_checked": "2026-11-06 10:11",
+ "notices_checked": "2026-11-06 10:16",
  "backlog_reviewed": "2026-11-06 09:07",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
@@ -489,6 +489,7 @@
   {"t": "2026-11-05 17:45", "kind": "shift", "text": "Shift 143 change began.", "affected": "stream and agents", "recovered": "2026-11-05 17:54"},
   {"t": "2026-11-05 21:53", "kind": "shift", "text": "Shift 144 change began.", "affected": "stream and agents", "recovered": "2026-11-05 22:03"},
   {"t": "2026-11-06 02:01", "kind": "shift", "text": "Shift 145 change began.", "affected": "stream and agents", "recovered": "2026-11-06 02:09"},
-  {"t": "2026-11-06 06:09", "kind": "shift", "text": "Shift 146 change began.", "affected": "stream and agents", "recovered": "2026-11-06 06:19"}
+  {"t": "2026-11-06 06:09", "kind": "shift", "text": "Shift 146 change began.", "affected": "stream and agents", "recovered": "2026-11-06 06:19"},
+  {"t": "2026-11-06 10:16", "kind": "shift", "text": "Shift 147 change began.", "affected": "stream and agents", "recovered": null}
  ]
 }
