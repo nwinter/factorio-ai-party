@@ -487,9 +487,16 @@
   provider the game picks with what robots reserve there) and `held_by`, the first that holds each now (on the way, no
   room, none in the network, no provider, all reserved, no idle robot with what the busy ones do, robots queued with
   every charging slot taken, or not sent yet); `robots`: idle, on orders, holding cargo with no order, charging,
-  queued to charge, charging slots. `storage: true` reads its storage room instead (the `no_storage` alert): storage chests, free slots, full and
-  filtered ones, robots holding cargo with no order to put it anywhere and their items, each with whether a storage
-  chest can take it now. Free slots are those under each chest's bar (`physical_free_slots` counts every empty slot,
+  queued to charge, charging slots. `storage: true`: storage chests, free slots, full and filtered ones;
+  `cargo_no_order` (no destination) and `cargo_with_orders`, with separate `*_items` lists. `no_storage` and
+  `no_storage_items` count only no-order cargo for which the engine found no drop point; `robots_stuck`/`stuck_items`
+  are aliases for those confirmed failures. An empty order queue alone is not a storage failure.
+  `robots_read` of `robots_total` deployed logistic + construction robots is the coverage (`coverage {scanned,total}`);
+  robots stored in roboports are excluded. `robot_scan_cap_hit` reports reaching the shared 2048 scan cap, even
+  at exactly 2048; `robots_unscanned` reports incomplete coverage. Cargo counts describe only scanned robots.
+  Room checks use one item per quality, at most 32 distinct item/quality lookups per call (`storage_room_checks`,
+  `storage_room_check_cap`). Failed/skipped lookups count as `storage_room_unconfirmed` cargo robots, never failures;
+  unreadable queues count as `cargo_unknown_order`. Free slots are those under each chest's bar (`physical_free_slots` counts every empty slot,
   the bar's red ones too); every read of a chest's, pad's, wagon's or hub's free slots counts under its bar. Otherwise:
   every requester of that logistic network, worst first: `full_unrequested` (every slot taken while a short item has
   no room, by items it does not request, spoilage named), `full` (the same by its own items), `spoiled` (spoilage it
