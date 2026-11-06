@@ -21,6 +21,7 @@ import terrain  # noqa: E402  (site/terrain.py: the map frames the site publishe
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
+              "resting_until", "resting_known",
               "combat", "died_at", "job", "job_from", "attention", "wait_line", "wait_reason",  # job_from: focus, plan (its team-plan line) or notes
               "job_label", "job_age_s", "job_tick",  # where the job comes from and its age (d20 batch54 N3)
               "surface", "where", "on_platform", "travel",  # where the body is: the map lists agents off Nauvis at its edge

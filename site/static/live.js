@@ -1296,11 +1296,45 @@
       var line = who + ': acknowledged ' + ago(x.acked_ago_s) + by + open;
       return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, line + ':') : '<span class="lt-short">' + esc(line + (remOmitted(x) || ', no result given')) + '</span>';
     }).join('');
-    var backup = j.backup ? '<span class="fx-muted small">Backup: ' + esc((byName[j.backup] || {}).display_name || j.backup) + '</span>' : '';
-    return out || backup ? '<div class="rem-latest">' + backup + out + '</div>' : '';
+    return out ? '<div class="rem-latest">' + out + '</div>' : '';
+  }
+  function remAvailability(who) {
+    var until = who.resting_until, now = lastState && lastState.now;
+    if (typeof until === 'number' && until > (now == null ? Date.now() / 1000 : now)) {
+      var date = new Date(until * 1000);
+      var clock = date.toLocaleTimeString('en-GB', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false });
+      return 'resting until ' + clock + ' PT (' + date.toLocaleDateString('en-GB', { timeZone: 'America/Los_Angeles', weekday: 'short' }) + ')';
+    }
+    var activity = ACT_REM_ACTIVITY[who.activity];
+    return (who.resting_known ? 'not resting' : 'rest state unknown') + (activity ? ', ' + activity : '');
+  }
+  var ACT_REM_ACTIVITY = { acting: 'acting', thinking: 'thinking', idle: 'idle', dead: 'dead', offline: 'offline' };
+  function remCoverHtml(j, byName) {
+    function name(n) { return (byName[n] || {}).display_name || n; }
+    var ctx = j.board_context, lines = [];
+    if (j.backup) lines.push('Configured backup: ' + name(j.backup));
+    if (ctx && ctx.kind === 'claim' && (ctx.covers || []).length) {
+      lines.push('Recorded cover on claim #' + ctx.id + ': ' + ctx.covers.map(name).join(', '));
+    } else lines.push('Recorded cover: unknown');
+    if (ctx && ctx.kind === 'request') {
+      lines.push('Linked request #' + ctx.id + ': ' + (ctx.owner ? name(ctx.owner) : 'unowned') + ' (' + ctx.status + '; not recorded cover)');
+    }
+    return '<span class="lt-short fx-muted small rem-cover">' + esc(lines.join(' · ')) + '</span>';
+  }
+  function remCapacityHtml(cap, byName) {
+    if (!cap) return '<p class="fx-muted small rem-capacity">Reminder capacity unavailable.</p>';
+    var lim = cap.limits || {};
+    function counts(row, limit) {
+      return row.held + ' held / ' + (limit == null ? 'unknown limit' : limit + ' slots') + ' · ' + row.active + ' active';
+    }
+    var owners = Object.keys(cap.owners || {}).sort().map(function (n) {
+      return '<span class="lt-short">' + esc(((byName[n] || {}).display_name || n) + ': ' + counts(cap.owners[n], lim.MAX_OWN)) + '</span>';
+    }).join('');
+    return '<div class="rem-capacity small"><b>' + esc('Team: ' + counts(cap, lim.MAX_JOBS)) + '</b>' + owners +
+      '<span class="lt-short fx-muted">Held includes disabled and finished reminders; active means enabled. Limits apply to held slots by owner.</span></div>';
   }
   function remindersHtml(rem, byName) {
-    if (!rem || !(rem.jobs || []).length) return '';
+    if (!rem || (!(rem.jobs || []).length && !rem.capacity)) return '';
     // (d22 batch94 BD1) done: acknowledged with a result; open (no result, or a gap named) and deferred stay open
     var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green', done: 'fx-chip--green', open: 'fx-chip--orange', deferred: 'fx-chip--orange' };
     var jobs = rem.jobs, total = Math.max(rem.total || 0, jobs.length), opened = remAll && total > REM_SHOWN;
@@ -1318,12 +1352,16 @@
       var o = byName[j.agent] || {};
       var states = remStates(j).map(function (x) {
         var who = byName[x.who] || {};
-        return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '')) + '</span>';
+        return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '') +
+          (x.state === 'overdue' ? ' · ' + remAvailability(who) : '')) + '</span>';
       }).join(' ');
+      var resultAge = j.result_age_s != null ? ago(j.result_age_s).replace(/ ago$/, '') + ' (game time)' : j.last_result ? 'unknown' : 'no result recorded';
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
         esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted rem-schedule">' + esc(remScheduleText(j)) + '</span>' +
-        (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result' + (j.result_age_s != null ? ' ' + ago(j.result_age_s) : '') + ':') : '') +
+        '<span class="lt-short fx-muted small rem-result-age">' + esc('Result age: ' + resultAge) + '</span>' +
+        (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result:') : '') +
         evidenceHtml('rem' + j.id, j) + (states ? '<br><span class="fx-muted small rem-run">' + esc(remRunLabel(j, tick)) + '</span> ' + states : '') +
+        remCoverHtml(j, byName) +
         remLatestHtml(j, byName) + '</span></li>';
     }).join('');
     var filters = !opened ? '' : '<div class="rem-filters" role="group" aria-label="Show reminders">' + REM_FILTERS.map(function (f) {
@@ -1335,7 +1373,8 @@
     var unsent = opened && total > jobs.length ? '<p class="fx-muted small">+' + esc(total - jobs.length) + (demo || !API ? ' more not sent (the page\'s size limit)' : boardDoc === null && boardDocAt && !boardDocBusy ? ' more: the full list is not available right now' : ' more, loading the full list…') + '</p>' : '';
     var toggle = total > REM_SHOWN ? '<button type="button" class="fx-btn fx-btn--small rem-all" data-action="reminders-all" aria-expanded="' + opened + '">' +
       (opened ? 'Show the first ' + REM_SHOWN : 'Show all ' + total + ' reminders (+' + (total - Math.min(REM_SHOWN, jobs.length)) + ' more)') + '</button>' : '';
-    return '<div class="board-rem"><h4>Reminders</h4>' + filters + (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + pagerRem + unsent + toggle + '</div>';
+    return '<div class="board-rem"><h4>Reminders</h4>' + remCapacityHtml(full ? boardDoc.reminders_capacity : rem.capacity, byName) + filters +
+      (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + pagerRem + unsent + toggle + '</div>';
   }
   // (d22 batch99 BI3, viewer Aurora site:4316: "Could the board show all tasks and reminders, with paging if needed?
   // Hidden jobs and the nine omitted reminders make it hard to check what's actually finished.") The state carries the
