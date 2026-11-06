@@ -53,10 +53,10 @@ def setup():
     d.log_path = os.path.join(tempfile.mkdtemp(), "director.jsonl")
     tm = team()
     t0 = 80000
-    for k in range(3):
+    for k in range(11):
         d.step(snap(tm), t0 + k)
     assert (d.public(t0 + 2).get("main") or {}).get("agents") == ["astra"]
-    return d, sent, tm, t0 + 3
+    return d, sent, tm, t0 + 11
 
 
 def cut_and_back():

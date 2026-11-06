@@ -148,7 +148,7 @@ def overlay():
     assert "top: calc(16px + var(--alerts-clear, 0px))" in main_rule and "bottom" not in main_rule, main_rule
     assert "#voice { z-index: 6; }" in css and ".loadout.lo-yield { opacity: 0; visibility: hidden; }" in css
     assert ".loadout { position: absolute; z-index: 2;" in css
-    for needle in ("function loadoutClear()", '#voice .cap.on', '["chat", "chat-pins", "chat-ticker"]', 'classList.add("lo-yield")',
+    for needle in ("function loadoutClear()", '#voice .cap.on', '["chat", "chat-pins", "chat-ticker", "platform-metrics", "alerts"]', 'classList.add("lo-yield")',
                    "loadoutClear();", "watchLoadoutClear();", "new MutationObserver(loadoutClear)"):
         assert needle in js, needle
     subprocess.run(["node", "--check", os.path.join(HERE, "static", "overlay.js")], check=True)

@@ -30,7 +30,7 @@ const p = {platform: "Resolute <b>", featured: false, tick: 100, age_s: 0, speed
   fuel: {"thruster-fuel": 5000, "thruster-oxidizer": 6000},
   asteroids: {small: 10, medium: 3, big: 0, huge: 0}, repair_packs: 50};
 const parked = {...p, platform: "Asterion", at: "nauvis", leg: null, speed_kms: 0};
-const scene = {cameras: {main: {frame: {surface: "platform-16", position: {x: 0, y: 0}, zoom: .3, frac: .6576388889}}},
+const scene = {cameras: {main: {ship: {name: "Asterion"}, frame: {surface: "platform-16", position: {x: 0, y: 0}, zoom: .3, frac: .6576388889}}},
   space: {platforms: [{name: "Asterion", view: {surface: "platform-16", hull: {left: -6, top: -6, right: 8, bottom: 6}}}]}};
 const mode = b => b["data-mode"];
 {
@@ -135,7 +135,7 @@ for (const signal of [{hits_min: 3}, {damage_taken: 40}, {asteroids: {...p.aster
   render(box, {...p, platform: parked.platform, tick: 102, leg: {...p.leg, back: true}}, 40, scene); assert.equal(mode(box), "compact");
   render(box, {...parked, tick: 103}, 60, scene); assert.equal(mode(box), "docked-beat");
   render(box, {...parked, tick: 103, age_s: 8}, 68, scene); assert.equal(mode(box), "docked-compact");
-  render(box, {...p, platform: "Petrel", hits_min: 3, tick: 104}, 69, scene); assert.equal(mode(box), "compact");
+  render(box, {...p, platform: "Petrel", hits_min: 3, tick: 104}, 69, {...scene, cameras: {main: {ship: {name: "Petrel"}}}}); assert.equal(mode(box), "compact");
   assert(box._parts.header.textContent.startsWith("Petrel ·"));
   render(box, {...p, tick: 1}, 70); assert.equal(mode(box), "compact");
 }

@@ -87,10 +87,12 @@ def destination_changes():
     assert len(sent) == before
     a['attention']['position'] = dict(x=150, y=160)
     d.refresh_remote(d.agents_now, 1020)
-    assert len(sent) == before + 1 and not sent[-1]['smooth']
+    assert len(sent) == before  # the visible destination gets its readable dwell
     a['attention']['position']['x'] = 250  # mutating the input must not mutate the acknowledged destination
     d.refresh_remote(d.agents_now, 1021)
-    assert len(sent) == before + 2 and sent[-1]['position']['x'] == 250
+    assert len(sent) == before
+    d.refresh_remote(d.agents_now, 1026)
+    assert len(sent) == before + 1 and sent[-1]['position']['x'] == 250
     # Returning to a ship from an old story starts a new, slow pan on its bow.
     a['attention'] = dict(platform='Asterion', kind='scanning', text='scanning on Asterion')
     d.refresh_remote(d.agents_now, 1400)

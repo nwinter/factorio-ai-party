@@ -531,6 +531,13 @@ class Director:
             target["sent"] = now
             if pending and pending["body"] == body and "framed" in target:
                 target["framed"] = now  # readiness dwell starts at the successful send, including a retry
+            if pending and pending["body"] == body:
+                if target.get("settle"):
+                    target["settle"] = dict(sent=now, arrived=None)
+                if "destination_since" in target:
+                    target["destination_since"] = now
+                if (target.get("closeup") or {}).get("done"):
+                    target["closeup"]["done"] = now
             target["game_zoom"] = body.get("zoom")  # frame_of: what the client shows
             if body.get("move"):  # the game plays it (its camera says move), else the director steps it
                 r = result.get("result", result) if isinstance(result, dict) else {}

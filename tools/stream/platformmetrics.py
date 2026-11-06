@@ -16,12 +16,16 @@ def number(n):
 
 def selected(snapshot):
     air = snapshot.get("onair") or {}
-    if air.get("host") or snapshot.get("hostview"):
+    if air.get("host") or snapshot.get("hostview") or snapshot.get("show") or (snapshot.get("replay") or {}).get("playing"):
         return None
     main = (snapshot.get("cameras") or {}).get("main") or {}
-    feature = snapshot.get("featured_platform") or {}
-    name = (air.get("platform") or {}).get("name") or (main.get("ship") or {}).get("name")
-    name = name or (feature.get("name") if feature.get("status") == "active" else None)
+    if main.get("map"):
+        return None
+    surface = (main.get("frame") or {}).get("surface")
+    rows = (snapshot.get("space") or {}).get("platforms") or []
+    if surface:
+        return next((p for p in rows if (p.get("view") or {}).get("surface") == surface), None)
+    name = (main.get("ship") or {}).get("name") or (main.get("platform") or {}).get("name")
     if not name:
         return None
     return next((p for p in (snapshot.get("space") or {}).get("platforms") or []
