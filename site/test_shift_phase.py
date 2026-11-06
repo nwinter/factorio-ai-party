@@ -59,6 +59,7 @@ assert.equal(resolve(old,1999,[live]).phase,'live'); // future notice ignored
 assert.equal(resolve(old,2100,[op(1500,'Shift 147 is live: 9 agents playing.')]).phase,'pending');
 const next = {number:148,start:2500,end:16900,next:17100,started:false};
 assert.equal(resolve(next,2600,[begin]).phase,'starting');
+assert.equal(resolve(next,20000,[begin]).phase,'starting'); // a stuck startup stays unconfirmed
 assert.equal(resolve({...next,started:true},2700,[begin]).phase,'live');
 assert.equal(resolve({...old,stopped:true,save_state:'confirmed'},2450).number,148);
 const final = {...old,next:null};

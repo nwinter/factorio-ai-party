@@ -16,8 +16,9 @@
     var final = sh.next === null, number = sh.number, phase;
     if (sh.save_state === 'failed') phase = 'failed';
     else if (sh.stopped) { phase = final ? 'ended' : 'starting'; if (!final && number != null) number++; }
+    else if (sh.started === false) phase = 'starting';
     else if (now >= sh.end) phase = 'pending';
-    else phase = sh.started === true ? 'live' : sh.started === false ? 'starting' : 'unknown';
+    else phase = sh.started === true ? 'live' : 'unknown';
     var events = (messages || []).map(notice).filter(function (e) {
       return e && e.t >= sh.start && e.t <= now &&
         (e.number === number || (!final && e.number === number + 1));

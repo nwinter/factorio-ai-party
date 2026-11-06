@@ -7,20 +7,13 @@ import json
 import mimetypes
 import os
 from pathlib import Path
-import re
 import threading
 import time
 
 import shift_recap as recap
 import shift_recap_visuals as visuals
 import prepared_audio
-
-
-def agents_started(run):
-    try:
-        return bool(re.search(r"(?m)^.*\bstarted: \d+/\d+ agents\b", (Path(run) / "start.log").read_text()))
-    except OSError:
-        return False
+from shift_phase import agents_started
 
 
 class Player:
