@@ -4,6 +4,38 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## One-shift OpenAI speech trial (batch432)
+
+Before starting the target shift, the operator writes `/Users/owner/code/pog-operator/tts-trial.json`:
+
+```json
+{"run": "shift149", "openai_tts_model": "gpt-4o-mini-tts-2025-03-20"}
+```
+
+`start-team.sh` applies this only to that exact run, before launching any audio producer. The generated
+`stream.json` records `audio.openai_tts_model` and `tts_trial`: the original audio configuration and each speech
+path's prior setting, prior effective model, and trial effective model. With today's fresh configuration, the prior
+field is absent and every OpenAI path uses `gpt-4o-mini-tts`. Every other run, including shift150, gets the same
+fresh configuration as before (no audio/trial field); the file can remain in place. Missing or invalid trial files
+leave normal startup intact; invalid matching requests emit a warning. `POG_TTS_TRIAL_FILE` overrides the path for tests.
+
+Hosts, agent speech and caster fallback read the run at startup. The recap service uses the playback run's setting,
+including when rendering the previous shift's evidence; incompatible prepared recap assets cannot play and are
+rebuilt with that setting. The following shift therefore selects the restored model before preparing its audio.
+Recap transitions during the trial still use the trial model. Providers, voice choices and delivery instructions
+are unchanged.
+
+For manually prepared audio, pass the **playback run**: `tour.py prepare SCRIPT --run-dir runs/shift149` and
+`tour.py run SCRIPT --run-dir runs/shift149`; `voices.py TEXT --run-dir runs/shift149`. The hourly service passes its
+run automatically. Tour OpenAI clips include the model in their cache identity, and `tour.py run --run-dir` refuses
+an incompatible prepared model. The recap CLI normally uses `--run-dir`; when evidence comes from an earlier
+shift, add `--audio-run-dir runs/shift149`. Standalone auditions without a run keep their existing default;
+`delivery_bench.py` retains its explicit model selector.
+
+Offline verification: `python3 tools/stream/test_tts_trial.py` executes the actual startup config block and captures
+mocked requests for all eight paths in shift149 and shift150. `test_delivery.py` and `test_shift_recap.py` cover
+speech/recap cache isolation, regeneration, and rejection of incompatible manifests. No paid synthesis is needed.
+
 ## Delivery stays with the line (batch389, 2026-10-30)
 
 The operator can persist the OpenAI speech model in the run's `stream.json` (merge this field into the existing

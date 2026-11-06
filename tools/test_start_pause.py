@@ -139,6 +139,9 @@ def run_case(**over):
         (d / "stubs").mkdir()
         for name in ("start-team.sh", "start-cams.sh", "cams.py", "shift_times.py", "resume_guard.py", "full_tools.py"):
             shutil.copy2(ROOT / "tools" / name, d / "tools" / name)
+        (d / "tools/stream").mkdir()
+        for name in ("tts_trial.py", "voices.py", "textprep.py"):
+            shutil.copy2(ROOT / "tools/stream" / name, d / "tools/stream" / name)
         for path in ("stubs/python3", "stubs/nohup", "stubs/sleep", "stubs/git", "stubs/scp", "stubs/cam-rcon",
                      "stubs/cam-obs", "bin/fh", "tools/winps.sh", "tools/launch-agent.sh", "tools/obs-restart.sh",
                      "tools/obs-steps.sh", "tools/clear-prompts.sh"):
@@ -153,6 +156,7 @@ def run_case(**over):
                            POG_RESUME="prev", POG_RESUME_DIR=str(prev), POG_TEAM_FILE=str(team),
                            POG_WORLD_NAME="stub-start", POG_CASTER="0", POG_ANALYST="0", POG_PUSH_LIVE="0",
                            POG_MAPFRAMES="0", POG_TRUSTED_PLAYERS="", POG_CAMS="1", POG_IDLE_NUDGE="0",
+                           POG_TTS_TRIAL_FILE=str(d / "tts-trial.json"),
                            POG_CAM_RCON=str(d / "stubs/cam-rcon"), POG_CAM_OBS=str(d / "stubs/cam-obs"))
         env.update(over)
         r = subprocess.run(["bash", str(d / "tools/start-team.sh"), "next", "10", "--stream"],

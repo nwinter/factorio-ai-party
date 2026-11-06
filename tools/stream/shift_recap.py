@@ -738,6 +738,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("command", choices=("prepare", "rehearse"))
     ap.add_argument("--run-dir", type=Path, required=True)
+    ap.add_argument("--audio-run-dir", type=Path,
+                    help="playback run's stream.json for speech (default: --run-dir, the evidence run)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--logs", type=Path)
     ap.add_argument("--offline", action="store_true", help="record extracts, no model or network")
@@ -757,7 +759,8 @@ def main():
     tts = None
     if args.tts != "none":
         import voices
-        tts = voices.TTS(args.tts, openai_model=voices.configured_openai_model(config))
+        tts = voices.TTS(args.tts, openai_model=voices.configured_openai_model(
+            run_dir=args.audio_run_dir or args.run_dir))
     if args.command == "rehearse":
         first = min(until, float(shift.get("start") or until) + PREPARE_AFTER)
         prepare(args.run_dir, args.out, first, writer=writer, tts=tts, logs=args.logs)
