@@ -3,10 +3,12 @@ import datetime as dt
 import math
 import re
 
+import shift_recap_detail as detail
+
 PLANETS = ("nauvis", "vulcanus", "fulgora", "gleba", "aquilo")
 ASSET = re.compile(r"[a-f0-9]{24}\.(?:webp|png|jpg|jpeg|mp4|webm)\Z")
 MAX_CLIP_BYTES = 16 * 1024 * 1024
-VERSION = 3
+VERSION = 4
 
 
 def clock(t):
@@ -36,7 +38,7 @@ def media_record(row):
     return {"asset": row["asset"], "kind": kind, "subject": subject, "t": row["t"],
             "subject_type": "platform" if row.get("platform") or row.get("subject_type") == "platform" else "surface",
             "recorded_time": clock(row["t"]), "offset": offset,
-            "duration": row.get("duration", 0)}
+            "duration": row.get("duration", 0), "view": detail.view(row)}
 
 
 def mentioned(text, names):
@@ -73,7 +75,8 @@ def bind(manifest):
         for line in manifest.get("transition" if phase == "transition" else "lines", []):
             refs = [rows[r] for r in line.get("sources", []) if r in rows]
             times = sorted(r["t"] for r in refs if isinstance(r.get("t"), (int, float)))
-            stamp = times[-1] if times else end
+            wanted = detail.target(line, refs)
+            stamp = wanted['record_t'] if wanted and wanted.get('record_t') is not None else times[-1] if times else end
             time_label = ("Record · " + clock(stamp)) if times else ("Record through " + clock(end))
             text = line.get("title", "") + " " + line.get("text", "")
             context = " ".join(r["text"] for r in refs)
@@ -98,9 +101,8 @@ def bind(manifest):
                 targets = set()
             choices = [m for m in media if m["subject_type"] == subject_type
                        and m["subject"].casefold() in {s.casefold() for s in targets}]
-            # Moving footage must cover the cited record time. A still remains useful in
-            # the offline audit, but never substitutes for gameplay on air. Legacy clips
-            # without an interval cannot establish that they show this moment.
+            # Subject-only footage must cover the cited record time. Target beats below
+            # require containing image geometry; legacy clips cannot establish it.
             clips = [m for m in choices if m["kind"] == "video"
                      and isinstance(m["duration"], (int, float)) and math.isfinite(m["duration"])
                      and 0 < m["duration"] <= 20
@@ -108,21 +110,39 @@ def bind(manifest):
             pictures = [m for m in choices if m["kind"] == "image"]
             pool = clips or pictures
             chosen = min(pool, key=lambda m: (abs(m["t"] - stamp), m["asset"])) if pool else None
+            fallback = None
+            if wanted:
+                anchored = [(m, a) for m in pictures if (a := detail.anchor(m, wanted, stamp))]
+                if anchored:
+                    selected, a = min(anchored, key=lambda pair: (abs(pair[0]['t'] - stamp), pair[0]['asset']))
+                    chosen = dict(selected, detail=a,
+                                  recorded_time=dt.datetime.fromtimestamp(selected['t']).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z'))
+                else:
+                    # A generic ship image is context, never evidence of the named detail.
+                    chosen = min(pictures, key=lambda m: (abs(m['t'] - stamp), m['asset'])) if pictures else None
+                    fallback = ('MAP' if chosen and (chosen.get('view') or {}).get('kind') == 'map' else 'OVERVIEW') + ' FALLBACK · target detail not recorded'
+                    if chosen:
+                        chosen = dict(chosen, fallback=fallback)
             failures = [r for r in manifest.get("media_errors", [])
                         if (label(r.get("platform") or r.get("subject") or r.get("surface"))).casefold()
                         in {s.casefold() for s in targets}]
             visuals[line["id"]] = {"media": chosen, "time_label": time_label, "asset_errors": failures,
-                "binding": {"subjects": sorted(targets), "subject_type": subject_type, "record_t": stamp,
+                "fallback": fallback,
+                "binding": {"target": wanted, "subjects": sorted(targets), "subject_type": subject_type, "record_t": stamp,
                             "evidence_ids": [r["id"] for r in refs],
-                            "reason": "nearest recorded view of the subject" if chosen else "no matching recorded media"}}
+                            "reason": "dated frame contains target position" if chosen and chosen.get("detail") else fallback or ("nearest recorded view of the subject" if chosen else "no matching recorded media")}}
     beats = [{"id": line["id"], "title": line.get("title", ""),
               "status": "bound" if visuals[line["id"]]["media"] else "missing",
-              "footage": "clip" if (visuals[line["id"]]["media"] or {}).get("kind") == "video" else "live",
+              "target": visuals[line["id"]]["binding"].get("target"),
+              "reason": visuals[line["id"]]["binding"]["reason"],
+              "footage": "overview" if (visuals[line["id"]]["media"] or {}).get("fallback") else "detail" if (visuals[line["id"]]["media"] or {}).get("detail") else "clip" if (visuals[line["id"]]["media"] or {}).get("kind") == "video" else "live",
               "subjects": visuals[line["id"]]["binding"]["subjects"],
               "errors": visuals[line["id"]]["asset_errors"]}
              for line in manifest.get("transition", []) + manifest.get("lines", [])]
     bound = sum(b["status"] == "bound" for b in beats)
     review = {"bound": bound, "total": len(beats), "no_media": bound == 0,
+              "overviews": sum(b["footage"] == "overview" for b in beats),
+              "details": sum(b["footage"] == "detail" for b in beats),
               "clips": sum(b["footage"] == "clip" for b in beats),
               "live": sum(b["footage"] == "live" for b in beats),
               "beats": beats, "asset_errors": manifest.get("media_errors", [])}
@@ -132,13 +152,14 @@ def bind(manifest):
 def public(manifest, line, phase, *, asset_prefix="/shift-recap/assets/", holding=False, elapsed=0):
     visual = manifest.get("visuals", {}).get(line.get("id")) or {}
     media = visual.get("media")
-    if media and media["kind"] != "video":
+    if media and media["kind"] != "video" and not (media.get("detail") or media.get("fallback")):
         media = None
     binding = visual.get("binding") or {}
     subjects = binding.get("subjects") or []
     return {"active": True, "phase": phase, "run": manifest["run"], "id": line.get("id"),
             "title": line.get("title", "Shift recap"), "speaker": line.get("speaker"),
             "text": line.get("text", ""), "time_label": visual.get("time_label", "Recorded shift"),
+            "fallback": visual.get("fallback"),
             "holding": holding, "elapsed": max(0, elapsed),
             "subject": {"name": subjects[0], "type": binding.get("subject_type")} if len(subjects) == 1 else None,
             "media": dict(media, url=asset_prefix + media["asset"]) if media else None}
