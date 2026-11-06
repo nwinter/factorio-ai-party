@@ -37,6 +37,8 @@ return function(api)
   M.MAX_ASTEROIDS, M.TRACK, M.POINTS, M.WALK_STEPS, M.WALK_BUDGET, M.CELL = 3000, 24, 16, 1200, 600, 8
   M.MAX_TURRETS, M.TURRET_ROWS, M.HIT_ROWS = 400, 64, 16
   M.PAGE, M.PAGE_MAX, M.NAMES_MAX, M.HIT_BY = 24, 100, 16, 3
+  M.FLOOR_ROWS, M.FLOOR_RECENT, M.FLOOR_CANDIDATES = 32, 128, 3
+  M.FLOOR_AGE, M.FLOOR_RADIUS = 600, 32
   -- (d25 batch200 QM1) the watches an edit closed (mixed.lua), kept on the watch that followed: at most SEGMENTS, and
   -- their tracked asteroids together at most SEGMENT_RECORDS (the newest always kept). A done 120 s watch of 1501 tracked
   -- asteroids on a copy of world n held 12026 tables (726 KB as JSON), so the segments hold at most about one full watch.
@@ -63,6 +65,62 @@ return function(api)
   local function store() local s = api.state(); s.asteroid_watch = s.asteroid_watch or {}; return s.asteroid_watch end
   -- the operator profiler's parts (profile_ticks): asteroid_watch.find, .project, .ammo
   local function timed(label, fn, ...) if api.timed then return api.timed(label, fn, ...) end return fn(...) end
+
+  -- Evidence only: no tile searches. Keep deaths and inferred fragments independently of trajectory admission.
+  local function floor_recent(job, kind, name, unit, pos, tick, parent)
+    job.floor_recent = job.floor_recent or {}
+    job.floor_recent_seq = (job.floor_recent_seq or 0) + 1
+    job.floor_recent[(job.floor_recent_seq - 1) % M.FLOOR_RECENT + 1] =
+      {kind=kind, name=name, unit=unit, position={x=pos.x,y=pos.y}, tick=tick, parent=parent}
+  end
+  local function floor_candidates(job, loss)
+    local out = {}
+    for _, c in pairs(job.floor_recent or {}) do
+      local age = loss.pt - c.tick
+      local dx, dy = c.position.x - (loss.x + 0.5), c.position.y - (loss.y + 0.5)
+      local d2 = dx * dx + dy * dy
+      if age >= 0 and age <= M.FLOOR_AGE and d2 <= M.FLOOR_RADIUS * M.FLOOR_RADIUS then
+        local r = {inferred=true, kind=c.kind, name=c.name, unit=c.unit, position=c.position,
+          tick=c.tick, age_ticks=age, distance=r1(math.sqrt(d2)), parent=c.parent, d2=d2}
+        local at = #out + 1
+        for i, v in ipairs(out) do
+          if d2 < v.d2 or (d2 == v.d2 and (c.tick > v.tick or (c.tick == v.tick and (c.unit or 0) < (v.unit or 0)))) then at = i; break end
+        end
+        table.insert(out, at, r)
+        if #out > M.FLOOR_CANDIDATES then out[#out] = nil end
+      end
+    end
+    for _, r in ipairs(out) do r.d2 = nil end
+    return out
+  end
+  -- flightwatch's deduplicated loss ledger calls this on discovery and again on a known tile's rebuild.
+  -- No exact impact tick or causal asteroid is supplied by Factorio 2.0.77 for bare foundation destruction.
+  function M.on_floor_loss(pl, loss)
+    for _, job in pairs(api.state().asteroid_watch or {}) do
+      if not job.result and job.surface == pl.surface.index and job.force == pl.force.name
+        and loss.pt >= job.start and loss.pt <= job.until_tick then
+        job.floor_witnesses = job.floor_witnesses or {}
+        local found
+        for _, row in ipairs(job.floor_witnesses) do
+          if row.seq == loss.seq then row.rebuilt_tick = loss.rebuilt; found = true; break end
+        end
+        if not found and loss.seq > (job.floor_seq or 0) then
+          job.floor_seq = loss.seq
+          job.floor_impacts = (job.floor_impacts or 0) + 1
+          local row = {seq=loss.seq, tick=loss.pt, tick_basis=loss.seen and 'ghost_seen' or 'hub_rebuild',
+            tiles={{x=loss.x,y=loss.y}}, after_tick=loss.after, seen_tick=loss.seen, rebuilt_tick=loss.rebuilt,
+            cause='unknown', candidates=floor_candidates(job, loss)}
+          job.floor_witnesses[#job.floor_witnesses+1] = row
+          if #job.floor_witnesses > M.FLOOR_ROWS then table.remove(job.floor_witnesses, 1) end
+        end
+      end
+    end
+  end
+  M.FLOOR_NOTE = 'floor_impacts counts witnessed lost foundation tiles (not distinct asteroids), separate from entity hits, regardless of track_filter; '
+    .. 'floor_witnesses keeps the newest 32 tiles from the existing foundation-loss ledger: hub rebuilds and ghost finds already made by foundation-loss checks. No new scan. '
+    .. 'tick is discovery/rebuild, not an exact impact tick; after_tick is the preceding ghost find when known. Player construction and known pre-existing ghosts are excluded. '
+    .. 'cause is unknown: bare-floor destruction emits no causal event in 2.0.77. candidates are inferred, never causal proof: the nearest 3 of the last 128 retained deaths/inferred fragments, within 32 tiles and 600 ticks before discovery; parent is inferred too. '
+    .. 'Unrebuilt losses without a foundation-loss check can remain unseen; delayed rebuilds can lack candidates. Counts start with this instrumentation; no historical reconstruction.'
 
   -- The hull's box: the foundation chunks' box narrowed to the first and last row and column holding foundation.
   function M.hull(s)
@@ -265,11 +323,12 @@ return function(api)
   M.kids_of = kids_of
   local function dcell(x, y) return math.floor(x / 8) * 65536 + math.floor(y / 8) end
   -- a death that makes fragments, kept MATCH_TICKS (plus a sample) by place
-  local function add_death(job, name, pos, tick)
+  local function add_death(job, name, pos, tick, unit)
+    floor_recent(job, 'death', name, unit, pos, tick)
     local kids = kids_of(name)
     if not kids then return end
     job.dg, job.dl = job.dg or {}, job.dl or {}
-    local d = {t=tick, x=pos.x, y=pos.y, left={}}
+    local d = {t=tick, x=pos.x, y=pos.y, n=name, u=unit, left={}}
     for n, c in pairs(kids) do d.left[n] = c end
     local c = dcell(pos.x, pos.y)
     local l = job.dg[c]
@@ -296,7 +355,7 @@ return function(api)
     job.dl = rest
   end
   -- an asteroid's cohort when first seen: first (in view at the first read), fragment (a death matched), later
-  local function cohort(job, name, pos, tick)
+  local function cohort(job, name, pos, tick, unit)
     if not job.first_sample or tick <= job.first_sample then return 'first' end
     local dg = job.dg
     if dg then
@@ -309,7 +368,12 @@ return function(api)
             if left and left > 0 and dt >= 0 and dt <= M.MATCH_TICKS + M.SAMPLE then
               local r = M.MATCH_R + M.MATCH_DRIFT * dt
               local dx, dy = pos.x - d.x, pos.y - d.y
-              if dx * dx + dy * dy <= r * r then d.left[name] = left - 1; return 'fragment' end
+              if dx * dx + dy * dy <= r * r then
+                d.left[name] = left - 1
+                floor_recent(job, 'fragment', name, unit, pos, tick,
+                  {inferred=true,name=d.n,unit=d.u,position={x=d.x,y=d.y},tick=d.t})
+                return 'fragment'
+              end
             end
           end
         end
@@ -336,7 +400,7 @@ return function(api)
       job.untr[u], job.untracked = 1, job.untracked + 1
       local n = e.name
       job.useen[n] = (job.useen[n] or 0) + 1
-      count_cohort(job, n, cohort(job, n, e.position, tick))
+      count_cohort(job, n, cohort(job, n, e.position, tick, u))
     end
     return st
   end
@@ -358,7 +422,7 @@ return function(api)
     end
     if job.nast >= M.MAX_ASTEROIDS then return nil, untracked_of(job, e, tick) end
     r = {n=e.name, s0=tick, p0={x=pos.x, y=pos.y}, p={x=pos.x, y=pos.y}, t=tick}
-    r.c = cohort(job, r.n, pos, tick)
+    r.c = cohort(job, r.n, pos, tick, u)
     count_cohort(job, r.n, r.c)
     job.asts[u], job.nast = r, job.nast + 1
     -- (QX1) the tick the tracked set reached its cap: asteroids first seen after it are counted, not followed
@@ -545,7 +609,7 @@ return function(api)
       if not job.result and job.surface == si then
         local r, ust = rec_of(job, e, event.tick)
         if ust == 1 then job.untr[e.unit_number] = 3; local n = e.name; job.udied[n] = (job.udied[n] or 0) + 1 end
-        add_death(job, e.name, e.position, event.tick)
+        timed('asteroid_watch.floor_death', add_death, job, e.name, e.position, event.tick, e.unit_number)
         local cause = event.cause
         local t = cause and cause.valid and job.turrets[cause.unit_number]
         if t then
@@ -775,12 +839,15 @@ return function(api)
         string.format(', %d of them past the %d tracked', job.untracked, M.MAX_ASTEROIDS)) or '', job.in_view or 0, nd, nh, fired, idle, capped)
     local track_scope = M.track_scope(job)
     line = line .. '; ' .. track_scope
+    line = line .. string.format('; floor_impacts %d witnessed lost tiles (separate from entity hits)', job.floor_impacts or 0)
     local out = {watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=r1(secs), start_tick=job.start, end_tick=done and job.until_tick or nil,
       samples=job.samples, every_ticks=M.SAMPLE, view=job.view, hull={left_top={x=job.hull.x0, y=job.hull.y0}, right_bottom={x=job.hull.x1, y=job.hull.y1}},
       drift_tiles_per_s=drift(job) and {x=r3(drift(job).x * 60), y=r3(drift(job).y * 60)} or nil,
       asteroids=job.nast + job.untracked, tracked=job.nast, tracked_cap=M.MAX_ASTEROIDS, untracked=job.untracked,
       track_filter=job.track_filter or {all=true}, track_scope=track_scope, filtered_out=job.filtered_out or 0,
       past_cap=job.untracked - (job.filtered_out or 0), platform_hits_all=nh,
+      floor_impacts=job.floor_impacts or 0, floor_witnesses=job.floor_witnesses or {}, floor_note=M.FLOOR_NOTE,
+      floor_witnesses_dropped=math.max(0, (job.floor_impacts or 0) - #(job.floor_witnesses or {})),
       capped=job.cap_tick and true or nil, capped_at_tick=job.cap_tick, capped_at_s=job.cap_tick and sec(job.cap_tick) or nil,
       untracked_unit='asteroids (unit numbers), each counted once however many reads saw it: excluded by track_filter or first seen after the matching tracked set reached its cap',
       cohort_note=M.COHORT, ammo_note=M.AMMO_NOTE, platform_consumed=consumed, platform_consumed_lines=consumed_lines,
@@ -1215,6 +1282,7 @@ return function(api)
     trajectory_limit='optional, reading the watch: 1..100 trajectories a page (default 24)',
     segment_start='optional, reading the watch: the start tick of a segment (segments): that closed watch\'s full read', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
     asteroids_returns='the start: hull (the box round its foundation), view, turrets, line; without seconds it reads it so far (watching) or done: asteroids (seen in view, every one), tracked (those followed one by one: the first tracked_cap matching the start filter), untracked (excluded by the start filter or past the cap, each counted once), by_name [{name, seen, destroyed, hit, left_view, in_view, untracked}] (every asteroid, by name, the most seen first) and by_name_lines, scope (which totals cover which asteroids; asteroid chunks are not entities and not seen here), classes (the tracked ones) [{class (front|side|rear by where its straight line enters the hull\'s box, the platform facing north; /crosses or /misses: whether that line crosses foundation; clear: it never enters the box; unknown), seen, destroyed, hit, left_view, in_view}] and class_lines; '
+      .. 'floor_impacts (witnessed lost tiles, separate from entity hits, including excluded trajectories), floor_witnesses (newest 32: tick, tick_basis, tiles, after_tick, seen_tick, rebuilt_tick, cause unknown, candidates with inferred=true, name/unit/position/tick, kind death|fragment, inferred parent when retained), floor_witnesses_dropped, floor_note (bounds and evidence limits); '
       .. 'platform_hits and platform_hit_lines (what each asteroid that hit us hit, where, its damage, its approach and projection); turret_groups [{name, region (front|middle|rear third of the hull, west|east half), turrets, hits, kills (by class), damage, ammo_used}] and turret_group_lines (hits and kills on clear asteroids and on ones crossing no foundation); '
       .. 'turrets (those that fired: name, position, region, quality, range (its prototype\'s times its quality\'s range_multiplier), base_range (its prototype\'s), min_range, turn_range and facing (when under a full turn), hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
       .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; segments [{segment_start, end_tick, seconds, closed_by, line}] (the watches an edit on the platform closed before this one began, at most 3 and 3000 tracked asteroids together, each read in full with segment_start), segments_dropped and segments_note; drift_tiles_per_s; line; note. Read only'}

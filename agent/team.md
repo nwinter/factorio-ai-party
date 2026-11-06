@@ -19,7 +19,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `logistics_audit` storage: cargo, coverage, confirmed failures (help analysis).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 `place_ghosts` dry runs check surface conditions; `check_inserters` refuses the whole batch on failure (help building).
-`platform_defense planned_entities`: proposed footprint/railgun corridor intersections, read only (help space-age).
+`platform_defense`: planned_entities corridor checks; asteroid floor_impacts and inferred witnesses (help space-age).
 `rearm {from}`: pickup then turret tour; no ammo taken or a refused tour reports failure with the reason.
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you

@@ -305,6 +305,15 @@
   Every start/read names `track_filter` (expanded names, or `all:true`) and `track_scope`. `filtered_out` and
   `past_cap` split `untracked`. Global `by_name`, turret totals and `platform_hits_all` include excluded asteroids;
   `platform_hits`, classes and trajectories cover tracked asteroids. Read-only `asteroid_names` still filters pages.
+  `floor_impacts` separately counts witnessed lost foundation tiles, including excluded trajectories. The newest
+  32 `floor_witnesses` give `tick`, `tick_basis` (ghost_seen or hub_rebuild), `tiles`, `after_tick`, `seen_tick` and
+  `rebuilt_tick` when known; `floor_witnesses_dropped` counts older witnesses. These reuse hub rebuild events and
+  ghost finds already made by foundation-loss checks; no extra scan. Without a check, unrepaired losses can remain
+  unseen. The tick is discovery/rebuild, not exact impact time. `cause: "unknown"`: bare-floor destruction emits
+  no causal event. `candidates` gives at most three nearest retained deaths/inferred fragments, each `inferred:true`,
+  with name, unit, position, tick, distance and age_ticks; a fragment's parent is inferred too. Bounds: last 128
+  records, within 32 tiles and 600 ticks before discovery. Proximity is not causal proof; delayed rebuilds may have
+  no candidates. Counts are lost tiles, not distinct asteroids; no reconstruction of losses before instrumentation.
   `by_name` also splits `in_first_sample` (in view at the first read) from `later`: `later_fragments` (first seen
   where an asteroid that breaks into that name died just before: by name, place and time, as no game event links
   them) and `later_other`. Past the cap the line says from what second (`capped_at_s`); `untracked` counts unique
