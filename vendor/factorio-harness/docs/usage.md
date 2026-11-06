@@ -18714,3 +18714,27 @@ keep those counters. The 64-machine cap and sampled machine counters are unchang
 
 - Remote/platform queue `upgrade` steps require explicit `platform` or `surface`. The direct planner checks run at submission and execution; submission makes no upgrade marks. Execution uses the direct call: ghosts change in place with wires/settings kept, built entities are marked for replacement.
 - `wait_until {until: "entity_quality", platform: "Asterion", position: {x: 1, y: 2}, name: "inserter", quality: "epic", timeout: 54000}`: true when an owned built entity at that position has exactly that quality. `name` is optional; `surface` replaces `platform` for a planet. Ghosts, missing entities and pending upgrade marks are false. Current sight is required, as for upgrade. The condition works in remote/platform lanes, including guards and all/any.
+
+## d37 batch426: logistics_audit storage cargo and coverage
+
+`logistics_audit {storage: true}` separates cargo observations from confirmed storage failures:
+
+- `cargo_no_order`/`cargo_no_order_items`: cargo with no order (no destination).
+- `cargo_with_orders`/`cargo_with_orders_items`: cargo with orders, counted separately.
+- `no_storage`/`no_storage_items`: the subset of no-order cargo for which a successful engine
+  `select_drop_point` call found no drop point for even one item at that quality. The legacy
+  `robots_stuck`/`stuck_items` fields now alias these confirmed failures, not all no-order cargo.
+  Existing matching stacks can have room even when every inventory slot is occupied.
+- `robots_read`, `robots_total`, `coverage {scanned,total}`, `robots_unscanned`: coverage of deployed
+  logistic and construction robots; robots stored in roboports are outside this scan. The line says
+  scanned of total and whether `robot_scan_cap` (2048, shared across both types) was hit
+  (`robot_scan_cap_hit`, true at exactly 2048 as well). All cargo counts are among scanned robots.
+- Room results are cached per item/quality, with at most 32 engine lookups (`storage_room_checks`,
+  `storage_room_check_cap`). `storage_room_unconfirmed` counts no-order cargo robots whose lookup
+  failed or exceeded that cap; an API error is never a no-storage confirmation.
+  `cargo_unknown_order` counts cargo robots whose order queues could not be read.
+
+Storage chest/free-slot/bar/filter totals retain their existing meaning. The two deployed-robot
+lists are retrieved once each and reused for coverage; no second robot pass or new Lua chest scan.
+Item lists retain quality. This is an on-demand read with no background tick work or mutations.
+Tests: `tests/logaudit_storage.lua`, existing network storage and barred-storage suites.

@@ -276,12 +276,16 @@ do
   end
   local ln={network_id=12,storages={chest(0,'iron-plate'),chest(3,'copper-plate')},
     logistic_robots={robot({['steel-plate']=4}),robot({['iron-plate']=2},{{}}),robot({})},construction_robots={robot({['iron-plate']=1})}}
+  ln.select_drop_point=function() if #ln.storages > 2 then return {} end end
   local L=dofile('mod/agent-harness_0.1.0/logaudit.lua'){state=function() return {} end}
   local r=L.storage({},{},{name='nauvis'},ln)
   eq(r.storage_chests,2); eq(r.free_slots,3); eq(r.full_chests,1); eq(r.robots_stuck,2)
-  eq(r.line,'logistic network #12 on nauvis: 2 storage chests, 3 free slots (1 full), filtered: copper-plate 1, iron-plate 1; 2 robots hold cargo with nowhere to put it: iron-plate 1: its filtered storage chests are full and no unfiltered one has room; steel-plate 4: no storage chest has room for it (a free slot, unfiltered or filtered to it)')
+  has(r.line,'2 hold cargo with no order (no destination): iron-plate 1, steel-plate 4')
+  has(r.line,'1 hold cargo with orders: iron-plate 2')
+  eq(r.no_storage,2); has(r.line,'2 confirmed no-storage failures')
   ln.storages[3]=chest(5,nil)
-  has(L.storage({},{},{name='nauvis'},ln).line,'steel-plate 4: 1 storage chest can take it')
+  local room=L.storage({},{},{name='nauvis'},ln)
+  eq(room.cargo_no_order,2); eq(room.no_storage,0); eq(room.no_storage_items,nil)
   defines=nil
 end
 print('d17_batch33 batch32 B7 network storage: ok')
