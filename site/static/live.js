@@ -1612,6 +1612,8 @@
     var merged = Object.assign({}, st, sh);
     if (st.stopped || st.save_state === 'failed') {
       merged.stopped = st.stopped; merged.save_state = st.save_state;
+      // The final plan may have been corrected after the last live snapshot.
+      merged.next = st.next; merged.end = st.end;
     }
     return merged;
   }

@@ -83,6 +83,7 @@ ctx.chatMsgs=[begin,failed]; assert.match(ctx.shiftText(old,true,2650),/Handover
 ctx.chatMsgs=[begin,live]; assert.match(ctx.shiftText(old,true,2750),/Shift 148 live/);
 ctx.offlineStatus={shift:{...final,stopped:true,save_state:'confirmed'}};
 assert.match(ctx.shiftText(ctx.currentShift(final),false,3000),/Run ended · save confirmed/);
+assert.match(ctx.shiftText(ctx.currentShift(old),false,3000),/Run ended · save confirmed/); // cached next-shift plan
 assert.equal(ctx.currentShift(next).number,148); // an older static receipt cannot replace a successor
 console.log('normal, delayed, failed, stale, final, authenticated notices and countdown: ok');
 """
