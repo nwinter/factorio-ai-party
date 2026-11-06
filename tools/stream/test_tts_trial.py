@@ -43,7 +43,7 @@ class TrialTest(unittest.TestCase):
         run.mkdir(exist_ok=True)
         team = self.root / "team.tsv"
         team.write_text("sol\tcodex\tlocal\tmodel\thigh\tSol\tharness\n")
-        env = dict(os.environ, POG_TTS_TRIAL_FILE=str(self.trial))
+        env = dict(os.environ, POG_TEST="1", POG_TTS_TRIAL_FILE=str(self.trial))
         subprocess.run([sys.executable, "-", str(team), str(run / "stream.json"), name, "240"],
                        input=code, text=True, env=env, cwd=ROOT, check=True)
         return run, json.loads((run / "stream.json").read_text())
