@@ -265,7 +265,7 @@ class ShiftRecap:
             if (not own or own.get("tts_config") != self.tts_config or own.get("audio_check_v") != prepared_audio.VERSION
                     or (now >= end and not own.get("final"))):
                 self.schedule(self.run, min(now, end), bool(own), now)
-        if end and end - recap.TRANSITION_BEFORE <= now < end:
+        if self.shift.get("next", True) is not None and end and end - recap.TRANSITION_BEFORE <= now < end:
             if not self.player or self.player.phase != "transition":
                 if self.player and not self.player.state.get("ended"):
                     self.player.stop_after_line = "transition begins"

@@ -653,7 +653,7 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
         lines = render_lines(script, out, tts)
         base_through, base_count = until, len(lines)
         transition = render_lines([
-            {"speaker": "Rook", "title": "Shift change", "text": "The shift change is coming up. We have been going back through the record for a full recap.", "sources": []},
+            {"speaker": "Rook", "title": "Planned handover", "text": "The planned handover is coming up. We have been going back through the record for a full recap.", "sources": []},
             {"speaker": "Vale", "title": "Coming up", "text": "We will take you through the turning points while the next team starts. The recap follows the record, right through the closing developments.", "sources": []}], out, tts)
     manifest = {"version": 1, "audio_check_v": prepared_audio.VERSION if tts else None,
                 "run": run.name, "through": until, "final": final, "tts_config": voices.audio_config(tts),

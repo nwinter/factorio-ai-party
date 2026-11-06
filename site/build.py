@@ -2035,6 +2035,7 @@ def public_status(st):
 
 
 LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/static/mapview.js" defer></script>\n'
+             '<script src="/static/shift-phase.js" defer></script>\n'
              '<script src="/static/live.js" defer></script>\n<script src="/static/polls.js" defer></script>')
 
 
@@ -2390,7 +2391,14 @@ def main():
         write("updates/updates.json", json.dumps(full, ensure_ascii=False))
         write("updates/stamp.json", json.dumps(op_updates.stamp_json(full)))
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
-    write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
+    status = json.loads((SITE / "live" / "status.json").read_text())
+    if LONG and LONG.get("shifts"):
+        from shift_phase import facts as shift_facts
+        for shift in reversed(LONG["shifts"]):
+            status["shift"] = shift_facts(Path(args.runs_dir) / shift["id"])
+            if status["shift"]:
+                break
+    write("live/status.json", public_status(status))
     how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve
     lost = [("/", "The live show"), ("/runs/long/", "The run so far"), ("/videos/", "Every shift on video"),
             ("/search/", "Search"), ("/about/", "About the project")]
@@ -2410,6 +2418,7 @@ def main():
     kit = (ART / "factorio-ui.css").read_text()
     write("static/factorio-ui.css", re.sub(r"^@import url\([^)]*\);\n", "", kit, flags=re.M))
     shutil.copy(ART / "avatar.js", out / "static" / "avatar.js")
+    shutil.copy(ART / "shift-phase.js", out / "static" / "shift-phase.js")
     for key in AGENTS:
         if archive() or not AGENTS[key].get("earlier"):  # agents of the earlier runs only with the archive
             write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))

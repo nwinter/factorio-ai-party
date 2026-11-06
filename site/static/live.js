@@ -1602,24 +1602,42 @@
     if (ev.key === 'Escape') hideTip();
   });
 
-  // When this shift ends, or when the next starts (state.shift from start-team.sh: start, end, next, next_exact), in
-  // the visitor's own time zone. Between shifts the line says when to come back.
+  // Scheduled times never confirm a stop/start. Status supplies file receipts
+  // between services; authenticated Operator chat supplies change/failure notices.
   function clock(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function currentShift(sh) {
+    var st = offlineStatus && offlineStatus.shift;
+    if (!st || (sh && sh.start > st.start)) return sh;
+    if (!sh || st.start > sh.start) return st;
+    var merged = Object.assign({}, st, sh);
+    if (st.stopped || st.save_state === 'failed') {
+      merged.stopped = st.stopped; merged.save_state = st.save_state;
+    }
+    return merged;
+  }
   function shiftText(sh, live, nowS) {
-    if (!sh || !isFinite(sh.end)) return '';
-    nowS = Date.now() / 1000;
-    if (live && sh.end > nowS) return 'This shift runs until ' + clock(sh.end) + ' (' + ago(sh.end - nowS).replace(' ago', '') + ' left).';
-    if (sh.next == null) return 'The last shift ended at ' + clock(sh.end) + '. No next shift is scheduled yet.';
-    if (sh.next > nowS + 60) return 'Next shift ' + (sh.next_exact ? 'starts at ' : 'expected around ') + clock(sh.next) +
-      ' (in ' + ago(sh.next - nowS).replace(' ago', '') + '). The last one ended at ' + clock(Math.min(sh.end, nowS)) + '.';
-    return 'The next shift should start any minute now; the page goes live by itself.';
+    if (!window.PogShiftPhase) return '';
+    nowS = nowS == null ? Date.now() / 1000 : nowS;
+    var p = window.PogShiftPhase.resolve(sh, nowS, chatMsgs);
+    if (!p) return '';
+    var text = window.PogShiftPhase.label(p) + (p.phase === 'live' ? '' : ' · ' + p.save) + '.';
+    if (!live && p.phase === 'live') text += ' Live data unavailable; last confirmed phase.';
+    if (!p.same) return text + ' Waiting for the new shift’s data.';
+    text += ' Planned end ' + clock(sh.end);
+    if (nowS < sh.end) text += ' (in ' + ago(sh.end - nowS).replace(' ago', '') + ')';
+    text += sh.next == null ? '; no next shift scheduled.' : '; next planned start ' + clock(sh.next) + '.';
+    return text;
   }
   function renderShift(sh, live) {
     var p = $('#next-shift');
     if (!p) return;
+    sh = currentShift(sh);
     var t = shiftText(sh, live);
     p.textContent = t;
     p.hidden = !t;
+    var phase = window.PogShiftPhase && window.PogShiftPhase.resolve(sh, Date.now() / 1000, chatMsgs);
+    if (!demo && phase) setBadge(live && phase.phase === 'live' ? 'live' : 'offline',
+      phase.phase === 'live' && !live ? 'Live data unavailable' : window.PogShiftPhase.label(phase));
   }
 
   // ------------------------------------------------------------------ state polling and offline status
@@ -1665,8 +1683,10 @@
       offlineStatus = st;
       if (st.stream) embedPlayer(st.stream.youtube_video_id, st.stream.youtube_channel_id);
       renderOffline(st);
+      renderShift(lastState && lastState.shift, serviceLive);
     }).catch(function () { renderOffline(null); });
   }
+  if (!demo) { loadStatus(); setInterval(loadStatus, 60000); }
 
   // The homepage's run summary (#run-summary, built at shift changes): right under the heading while no shift is live,
   // after the live show while one is.
@@ -1689,12 +1709,14 @@
       $('#updated').textContent = demo ? 'Sample data from the stream service\'s mock session.' : (d.received ? 'Updated ' + ago(age) : '');
       if (!live && !offlineStatus) loadStatus();
       if (s && (s.now !== lastNow || !live)) { lastNow = s.now; renderState(s, age); }
+      renderShift(s && s.shift, live);
       placeSummary(live || demo);
     }).catch(function () {
       placeSummary(false);
       setBadge('offline', 'Offline');
       setWatching('');
       $('#updated').textContent = 'Live data is unavailable right now.';
+      renderShift(lastState && lastState.shift, false);
       if (!offlineStatus) loadStatus();
     }).then(function () { if (!demo) setTimeout(tick, document.hidden ? POLL * 4 : POLL); });
   }

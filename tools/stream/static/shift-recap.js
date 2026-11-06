@@ -5,7 +5,7 @@
     if (text != null) node.textContent = text;
     return node;
   };
-  let panel, key, video, label, last, watchdog, picture, context, mediaFailure;
+  let panel, key, video, label, last, watchdog, picture, context, mediaFailure, phaseNode;
   let fit = () => {};
   const failures = [];
   const params = new URLSearchParams(location.search);
@@ -33,6 +33,9 @@
   }
   function render(s) {
     const recap = s && s.shift_recap;
+    const handover = window.PogShiftPhase && window.PogShiftPhase.resolve(s && s.shift, s && s.now);
+    const phaseLabel = handover ? window.PogShiftPhase.label(handover) : 'Shift status unconfirmed';
+    const phaseText = `${recap?.run || ''} · ${recap?.phase === 'transition' ? 'PLANNED HANDOVER' : 'SHIFT RECAP'} · ${phaseLabel}`;
     const active = !!(recap && recap.active && !recap.holding);
     document.body.classList.toggle('recap-active', active);
     if (!panel) {
@@ -49,6 +52,7 @@
     const next = JSON.stringify([recap.run,recap.phase,recap.id,recap.title,recap.text,
       recap.speaker,recap.time_label,recap.fallback,media]);
     if (next === key) {
+      phaseNode.textContent=phaseText;
       if (!panel.classList.contains('sr-playing')) label.textContent=liveLabel();
       return;
     }
@@ -57,7 +61,8 @@
     panel.classList.toggle('sr-cinema',cinema);
     panel.classList.toggle('sr-anchored',!!media && media.kind === 'image');
     const header=el('header','sr-head');
-    header.append(el('div','sr-kicker',`${recap.run || ''} · ${recap.phase === 'transition' ? 'SHIFT CHANGE' : 'SHIFT RECAP'}`),
+    phaseNode=el('div','sr-kicker',phaseText);
+    header.append(phaseNode,
       el('h2','sr-title',recap.title || 'Shift recap'));
     const figure=el('figure','sr-media');
     const caption=el('footer','sr-caption'), meta=el('div','sr-meta');
