@@ -311,7 +311,8 @@ do
     return out
   end
   local F=dofile('mod/agent-harness_0.1.0/fuelstock.lua'){}
-  local r=F.trace({surface=s,force={},name='Wren'})
+  local force={}; s.platform={force=force}
+  local r=F.trace({surface=s,force=force,name='Wren'})
   eq(r.first_missing,'carbon into chemical-plant (0,10) (holds 0, a craft takes 2): underground-belt exit (3.5,13.5) has no entrance paired')
   has(r.lines[2],'thruster-fuel into 1 thruster: their boxes hold 100 of 1000 (short); the pipes it joins (1 segment) hold 50, 0 tanks on them; 1 maker there')
   has(r.lines[3],'  chemical-plant (0,10) thruster-fuel: item_ingredient_shortage')
@@ -320,15 +321,15 @@ do
   local ui=ent{type='underground-belt',name='underground-belt',belt_to_ground_type='input',position={x=3.5,y=17.5},belt_neighbours={inputs={}},
     get_max_transport_line_index=function() return 2 end,get_transport_line=function() return line(0) end}
   uo.neighbours=ui; tiles['3,15']='empty-space'
-  r=F.trace({surface=s,force={},name='Wren'})
+  r=F.trace({surface=s,force=force,name='Wren'})
   eq(r.first_missing,'carbon into chemical-plant (0,10) (holds 0, a craft takes 2): underground-belt (3.5,17.5) to (3.5,13.5): its span is over empty space at (3,15)')
   -- from the hub instead: it holds none, the crusher that unloads into it has no chunk and nothing brings one
   i1.pickup_target=hub
-  r=F.trace({surface=s,force={},name='Wren'})
+  r=F.trace({surface=s,force=force,name='Wren'})
   eq(r.first_missing,'no inserter drops carbonic-asteroid-chunk into crusher (-6,0) (it holds 0, a craft takes 1)')
   -- carbon at the maker and fuel in the thruster: nothing missing
   carbon_in.carbon=4; maker.status=1; thruster.fluidbox[1].amount=900
-  r=F.trace({surface=s,force={},name='Wren'})
+  r=F.trace({surface=s,force=force,name='Wren'})
   eq(r.first_missing,nil); has(r.lines[1],'first missing link: none')
 end
 print('d17_batch31 B5 fuel feedstock: ok')

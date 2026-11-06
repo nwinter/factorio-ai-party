@@ -47,7 +47,7 @@ return function(api)
     return b and b.production_type
   end
   -- The fluid segments a machine's boxes of that fluid and kind join (2.0.77: a machine's own boxes carry no segment;
-  -- the pipes, tanks and pumps at its ports do), and the machines joined port to port with no pipe.
+  -- the pipes and tanks at its ports do; thrusters can also expose the joined id), and the machines joined port to port with no pipe.
   local function segments(e, fluid, kind)
     local segs, direct, held, cap = {}, {}, 0, 0
     local fb = try(function() return e.fluidbox end)
@@ -76,33 +76,18 @@ return function(api)
       local d = try(function() return i.drop_target end)
       if d and d.valid then local k = key(d); by_drop[k] = by_drop[k] or {}; table.insert(by_drop[k], i) end
     end
-    -- the pipes, tanks and pumps of each segment: what it holds and its tanks
-    local seg_info = {}
+    -- Shared native stock accounting also supplies the topology trace's segments.
+    local fluidstock = require('fluidstock')
+    local accounting = fluidstock.read(s,force)
+    local seg_info = accounting.segments
     local function seg_text(segs, fluid)
       local n, tanks, ids = 0, 0, 0
       for id in pairs(segs) do
         ids = ids + 1
-        local info = seg_info[id] or {held=0, tanks=0}
-        n = n + info.held; tanks = tanks + info.tanks
+        local info = seg_info[id] or {tanks=0}
+        n = n + (info.fluid==fluid and info.amount or 0); tanks = tanks + info.tanks
       end
       return n, tanks, ids
-    end
-    for _, t in ipairs(try(function() return s.find_entities_filtered{type={'storage-tank', 'pipe', 'pipe-to-ground', 'pump'}, force=force, limit=4096} end) or {}) do
-      local fb = try(function() return t.fluidbox end)
-      for i = 1, fb and #fb or 0 do
-        local id = try(function() return fb.get_fluid_segment_id(i) end)
-        if id then
-          local info = seg_info[id]
-          if not info then
-            local c = try(function() return fb.get_fluid_segment_contents(i) end) or {}
-            local held = 0
-            for _, v in pairs(c) do held = held + v end
-            info = {held=held, tanks=0, fluid=next(c)}
-            seg_info[id] = info
-          end
-          if t.type == 'storage-tank' then info.tanks = info.tanks + 1 end
-        end
-      end
     end
     -- pumps (2.0.77 on world n: a pump's box carries no segment; its connections join two): each with the segments
     -- at its ends
@@ -374,7 +359,13 @@ return function(api)
       first = first or m
     end
     table.insert(lines, 1, 'first missing link: ' .. (first or 'none: each consumer holds a craft of each ingredient, and the thrusters\' boxes are at least half full'))
-    return {lines=lines, first_missing=first, cut=#lines >= LINES or nil}
+    local cut=#lines >= LINES or nil
+    local fluids={}
+    for _, fluid in ipairs({'thruster-fuel','thruster-oxidizer'}) do
+      fluids[fluid]=accounting.stock(fluid)
+      lines[#lines+1]=fluidstock.line(fluid,fluids[fluid])
+    end
+    return {lines=lines, first_missing=first, cut=cut, fluids=fluids, counted=accounting.counted}
   end
   return M
 end
