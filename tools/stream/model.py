@@ -27,6 +27,7 @@ import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
 import tokens
+import reminder_view
 
 FIGHT_EPISODE_GAP = 45.0  # seconds without a report: the next report at the same key is a new fight
 ATTENTION_TTL = 120.0  # seconds: an attention point older than this is no longer where the agent is looking
@@ -752,6 +753,7 @@ class Agent:
         self.last_activity_t = None  # wall time of the last observed action or speech
         self.combat = False  # in a fight now: hit lately or fighting (combat_state)
         self.resting = None  # a rest between turns (pacing.py: {since, until, reason}), or None
+        self.resting_known = False
         self.combat_state = None  # "hurt" | "fighting" | "guard" | None
         self.vehicle_fire = None  # (d22 batch93 BC2) driving a spidertron: {range, ammo, targets, farthest, box, ...}
         self.combat_info = {}
@@ -1369,6 +1371,7 @@ class Model:
                 self.alert("rest", f"{ag.display_name} is {pacing.label(rest)}", key=f"rest:{ag.name}:{rest.get('until')}",
                            agent=ag.name, ttl=60)
             ag.resting = rest
+            ag.resting_known = True
         if "profile_set" in a:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
@@ -1774,6 +1777,8 @@ class Model:
             board["progress"] = {r["id"]: r for r in b["progress"] if isinstance(r, dict) and r.get("id") is not None}
         if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
             board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
+        if isinstance(b, dict) and "claim_ids" in b:  # the separate claim read, for recorded reminder cover
+            board["claim_ids"] = set(b["claim_ids"]) if b["claim_ids"] is not None else None
         if isinstance(b, dict) and "finished_ids" in b:  # (BI3) the finished tasks and requests a read listed
             board["finished_ids"] = set(b["finished_ids"]) if b["finished_ids"] is not None else None
         for it in items:
@@ -1926,13 +1931,16 @@ class Model:
                          "enabled": bool(j.get("enabled")), "done": bool(j.get("done")),
                          "next_due_in_s": j.get("next_due_in_s"), "last_result": clean_text(j.get("last_result") or "") or None,
                          "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states"),
+                         "last_fired_tick": j.get("last_fired_tick"),
+                         "board_context": reminder_view.board_context(j, self.board),
                          # (d17 batch35 D3) runs each recipient missed ({name: runs}); states says when the owner was told
                          "missed": {str(k): v for k, v in (j.get("missed") or {}).items() if isinstance(v, int)} or None,
                          # (d20 batch70 AF2, viewer Aurora) its backup, and each recipient's latest result or wait
                          "backup": j.get("backup") or None, "latest": self._reminder_latest(j.get("latest")),
                          # (d19 batch43 A2) the evidence given with its acknowledgments (batch41 B2), whole
                          **with_evidence(j)})
-        return {"jobs": rows, "total": len(r.get("jobs") or [])}
+        return {"jobs": rows, "total": len(r.get("jobs") or []), "tick": r.get("tick"),
+                "capacity": reminder_view.capacity(r.get("jobs") or [], self.agents)}
 
     LATEST_RESULT = 240  # a recipient's latest result on the panel (the job's last result stays whole)
 
@@ -2019,7 +2027,8 @@ class Model:
         rem = self.reminders_snapshot() or {}
         return {"tick": self.tick, "items": [row(it) for it in items[:self.ALL_MAX]], "items_total": len(items),
                 "claims": [row(it) for it in claims], "projects": projects,
-                "reminders": rem.get("jobs") or [], "reminders_total": rem.get("total") or 0}
+                "reminders": rem.get("jobs") or [], "reminders_total": rem.get("total") or 0,
+                "reminders_capacity": rem.get("capacity")}
 
     def jobs_snapshot(self):
         """(open, doing): tasks and requests from the last active board read (board.active_ids), open with no owner, and
@@ -3072,6 +3081,7 @@ class Model:
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,
+                "resting_known": ag.resting_known,
                 "tokens": (tok.get(ag.name) or {}).get("total") or None,  # this shift's, for the card's small figure
             })
         res = self.research

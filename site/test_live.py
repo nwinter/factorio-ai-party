@@ -473,9 +473,9 @@ def map_tests():
         # a step's own owner and the parallel steps (d15 batch5 J2, viewer Foobator)
         assert 'class="step step-next step-parallel"' in bd and "· Luna</span>" in bd and ">parallel</span>" in bd, bd
         # the team's reminder jobs (d15 batch5 group I): owner, message, next due, the last result with its age, states
-        assert '<h4>Reminders</h4><ul class="board-claims board-reminders">' in bd and "ship review: Petrel ammo, fuel and hub room" in bd, bd
-        assert "every 15m00s, next in 7 min" in bd and "last result 8 min ago:</span> Petrel 900 magazines" in bd, bd
-        assert 'fx-chip--red">Astra overdue (8 runs missed (the first at tick 33987840, 7m35s ago; the last at tick 33987840, 7m35s ago), the owner told)</span>' in bd \
+        assert '<h4>Reminders</h4>' in bd and '<ul class="board-claims board-reminders">' in bd and "ship review: Petrel ammo, fuel and hub room" in bd, bd
+        assert "every 15m00s, next in 7 min" in bd and "Result age: 8 min (game time)" in bd and "last result:</span> Petrel 900 magazines" in bd, bd
+        assert 'fx-chip--red">Astra overdue (8 runs missed (the first at tick 33987840, 7m35s ago; the last at tick 33987840, 7m35s ago), the owner told) · rest state unknown' in bd \
             and 'fx-chip--green">Sol acknowledged' in bd, bd
         # (d19 batch43 A2) the long result whole, collapsed to a line that opens; evidence newest first, the older after
         assert '<details class="lt" data-lt="rem2:result">' in bd and bd.count(long_result) == 2, bd  # the line and the opened text

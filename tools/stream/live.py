@@ -1088,6 +1088,7 @@ class LiveSource:
                 progress = self.read_progress(errors)  # (d22 batch75 AK11) the progress checks' facts per owned item
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus, "progress": progress,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
+                                "claim_ids": [it.get("id") for it in claims.get("items") or []],
                                 "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None,
                                 "finished_ids": [it.get("id") for it in finished.get("items") or []] if isinstance(finished, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)

@@ -501,6 +501,20 @@ Field meanings are `serve.py`'s (see `docs/STREAM-NOTES.md`); dropped on purpose
 `errors`, per-agent `seen`, `interest` and `voice`, and camera zoom/player indices. To show something new on the
 page, add it to the keep-lists in `push_live.py` and document it here.
 
+Reminder availability (batch427, Aurora site:5646): agents keep `resting_until` (epoch seconds) and
+`resting_known` from the existing `resting.json` read. Overdue recipient chips show the rest deadline in Pacific
+time, or explicitly distinguish no rest from unknown rest state; their missed runs remain visible. Each reminder
+shows `result_age_s` in game time outside its collapsible result. A configured `backup` is labelled separately
+from `board_context`: only the reminder's explicitly linked active claim supplies recorded `covers`; a linked
+request and its owner are labelled as a request, never proof of cover. Missing cover stays unknown.
+
+`reminders.capacity` contains `{held, active, owners: {name: {held, active}}, limits: {MAX_JOBS, MAX_OWN}}`.
+Counts come from the complete existing `reminders {all:true}` read before model/public size limits or paging.
+Every retained job uses a held slot, including disabled/finished history; enabled jobs are active. Per-agent slots
+belong to the owner, not the recipients. Limits are read from the declarations in the checked-out harness's
+`reminders.lua`, with no numeric fallback (unreadable declarations display an unknown limit). The full board
+document carries the same summary as `reminders_capacity`. Older streams show capacity unavailable.
+
 ## The full board document (d22 batch99 BI3)
 
 Viewer Aurora (site:4316): "Could the board show all tasks and reminders, with paging if needed? Hidden jobs and the
