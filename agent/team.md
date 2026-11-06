@@ -16,6 +16,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
 `inventory_free_slots`: pads; `platform_ammo_below` on_stale=met|wait (default met).
 `platform_arrived` remembers arrivals after wait start or `since_tick` (help space-age).
+`platform_schedule current:N`: already-current unpaused stops succeed unchanged; paused platforms unpause.
 `logistics_audit` storage: cargo, coverage, confirmed failures (help analysis).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 `place_ghosts` dry runs check surface conditions; `check_inserters` refuses the whole batch on failure (help building).

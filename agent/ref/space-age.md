@@ -73,7 +73,13 @@
   processing units, left once they came); that is said, not failed. `current_note` gives it when an edit's current
   stop is the station it is at. In flight, `leg` gives the leg before the edit and the current stop now (the same
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
-  destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
+  destination (refused when the stops hold none). `current:N` alone succeeds with `changed:false` when that stop is
+  already current and the platform is unpaused and waiting or flying there; records, waits and progress stay intact.
+  Otherwise it calls go to station, which also unpauses (even if `paused:true` accompanies `current`). It returns
+  `current`, `heading_to` (schedule destination), `direction:{from,to}` and `progress` (fraction in that direction)
+  in flight, `distance` (connection fraction), `paused_before`, `paused` and `changed`; `confirmed` prints the current,
+  changed and pause values in compact output too. Missing stops/platforms and persistent no_schedule/no_path still fail.
+  `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
   The call fails (a failed queue step too) when the platform reads paused without `paused: true` after it. A
   `no_schedule` or `no_path` read in the call's tick is read again every 10 ticks for up to 300 (the game updates a
