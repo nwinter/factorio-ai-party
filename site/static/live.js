@@ -1672,7 +1672,7 @@
   function renderOffline(st) {
     var h = '';
     if (st && st.message) h += '<p>' + esc(st.message) + '</p>';
-    if (st && st.next && st.next.title) h += '<p><strong>Next:</strong> ' + esc(st.next.title) + (st.next.when ? ' · ' + esc(new Date(st.next.when).toLocaleString()) : '') + '</p>';
+    if (st && st.next && st.next.title) h += '<p><strong>Next (planned):</strong> ' + esc(st.next.title) + (st.next.when ? ' · ' + esc(new Date(st.next.when).toLocaleString()) : '') + '</p>';
     if (st && st.last_run && /^\/[\w\/-]*$/.test(st.last_run.url || '')) h += '<p>Latest run: <a href="' + st.last_run.url + '">' + esc(st.last_run.title) + '</a></p>';
     h += '<p class="fx-muted small"><a href="?demo=1">See the dashboard with sample data</a>.</p>';
     $('#offline').innerHTML = h;
@@ -1702,6 +1702,7 @@
     getJSON(url).then(function (d) {
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
       var live = s && age != null && age <= LIVE_MAX_AGE;
+      serviceLive = !!live;
       if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', 'Live'); else setBadge('offline', 'Offline');
       setWatching(watchingText(s, demo ? null : d.site_watching, live || demo));
       app.classList.toggle('has-state', !!s);
@@ -1712,6 +1713,7 @@
       renderShift(s && s.shift, live);
       placeSummary(live || demo);
     }).catch(function () {
+      serviceLive = false;
       placeSummary(false);
       setBadge('offline', 'Offline');
       setWatching('');
