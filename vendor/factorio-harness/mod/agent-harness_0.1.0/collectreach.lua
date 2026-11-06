@@ -301,6 +301,7 @@ return function(api)
     end
     local hit, out = hits[1], {}
     for k, v in pairs(hit.job.result) do out[k] = v end
+    if api.mixed_view then out.mixed = api.mixed_view(hit.job) end
     out.id, out.agent, out.platform = hit.id, hit.agent, hit.job.platform
     out.start_tick, out.end_tick = hit.job.start, hit.job.until_tick
     out.line = string.format('%s by %s, ticks %d-%d: %s', out.id, out.agent, out.start_tick, out.end_tick, out.line or '')
@@ -446,7 +447,7 @@ return function(api)
       job.kept = {}
       for _, kept in ipairs(old.kept or {}) do job.kept[#job.kept+1] = kept end
       if old.result then
-        job.kept[#job.kept+1] = {start=old.start, until_tick=old.until_tick, platform=old.platform, id=old.id, result=old.result}
+        job.kept[#job.kept+1] = {start=old.start, until_tick=old.until_tick, platform=old.platform, id=old.id, result=old.result, mixed=old.mixed}
       end
       while #job.kept > M.KEPT do table.remove(job.kept, 1) end
     end

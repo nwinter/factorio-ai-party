@@ -20619,7 +20619,8 @@ M.platplan=require('platplan'){platform=function(p,name) return space.platform(p
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 -- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
-M.collectreach=require('collectreach'){state=state,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end}
+M.collectreach=require('collectreach'){state=state,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,
+  mixed_view=function(job) return M.mixed.view(job) end}
 M.platsupply=require('platsupply'){unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   collectreach=M.collectreach,reason=function(v) return M.measures.reason(v) end,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}

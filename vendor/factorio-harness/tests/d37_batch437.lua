@@ -71,6 +71,10 @@ eq(read{id=r.id}.caught,91); eq(read{id='collector_tally@1000'}.agent,'astra')
 eq(read{agent='astra',platform='Asterion'}.caught,91)
 eq(target.read_tick,nil); eq(target.id,nil); eq(target.result.agent,nil); eq(caller.call,nil); eq(caller.read_tick,nil)
 eq(S.collector_tally[idx.sol],caller); eq(S.collector_tally[idx.astra],target); eq(runtime.rests.get('astra'),rest)
+target.mixed={line='target edit history',edits={{tick=1100,text='filter changed',how='configure'}},parts={},from_tick=1100}
+local annotated=read{agent='astra'}
+eq(annotated.mixed.line,'target edit history'); has(annotated.mixed.edits[1],'filter changed')
+eq(target.result.mixed,nil); eq(caller.call,nil)
 refused(function() read{agent='nobody'} end,'no completed collector_tally of agent nobody')
 refused(function() read{id='collector_tally@999/astra'} end,'no completed collector_tally')
 refused(function() read{id='collector_tally@1000/astra',agent='sol'} end,'no completed collector_tally')
@@ -106,6 +110,7 @@ local C=runtime.collectreach
 C.start({index=idx.astra},pl,10)
 local active=S.collector_tally[idx.astra]
 eq(#active.kept,1); eq(read{agent='astra'}.caught,91); eq(read{id='collector_tally@1000/astra'}.caught,91)
+eq(read{id='collector_tally@1000/astra'}.mixed.line,'target edit history')
 refused(function() read{id='collector_tally@3000/astra'} end,'no completed collector_tally')
 -- Exclude caller's intentionally skeletal running fixture from sampling.
 S.collector_tally[idx.sol]=nil

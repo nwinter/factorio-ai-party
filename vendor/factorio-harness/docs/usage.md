@@ -18794,7 +18794,8 @@ and describe text now match the idempotent behavior.
   Optional `platform` filters the result; no platform is required for these stored-result reads.
 - The tally includes `id`, `agent`, `platform`, `start_tick`, `end_tick`, and its original catch/type/collector counts.
   This path reads stored evidence only, without a platform scan. It does not start, stop, replace or mark any watch
-  read, or attach the caller's watch metadata. `seconds`, `reason` and `fuel` are refused with selectors.
+  read, or attach the caller's watch metadata. The selected tally's own `mixed` edit history is preserved.
+  `seconds`, `reason` and `fuel` are refused with selectors.
 - Rest does not clear collector tallies or stop their completion. A new watch retains up to four previous completed
   results, oldest dropped first; replaced running watches are not archived as completed. This retention starts with
   deployment: previously overwritten results cannot be recovered. A missing, unknown, running or no-longer-retained
