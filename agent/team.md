@@ -11,7 +11,7 @@ Factory, research and power are shared. `./fh` controls your character and inven
 `platform_supply {collection:true,agent:"opus"}` reads their newest completed tally; `id` selects one (help space-age).
 `technologies {name, level}`: cost. `platform_endurance` design.details: ammo effects (help space-age).
 Platform `configure` returns recipe items to hub; `deliver` requests ingredients. Stream: ship metrics.
-`configure` splitter filters keep quality/comparator; `inspect.splitter.outputs` reads outlet lanes (help circuits-settings).
+`configure`/`inspect`: splitter quality/comparator, outlet lanes; inserter pickup size vs fixed full-hand wait.
 `flight_watch`: arrival returns `previous_watch`, then arms the next (help space-age).
 `budget_below`: turnaround.km|fraction required; queue/lane guard errors include failed/empty cached reads.
 `supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
