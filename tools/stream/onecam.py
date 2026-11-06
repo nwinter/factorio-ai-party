@@ -1165,8 +1165,10 @@ class OneCam(Director):
         if t.get("swap") and now >= t.get("until", 0):
             return False
         settle = t.get("settle")
+        if settle and settle.get("arrived") is not None:
+            return now < settle["arrived"] + 8
         if settle and now < settle["sent"] + 45:
-            return settle.get("arrived") is None or now < settle["arrived"] + 8
+            return True
         starts = [v for v in (self.onair_since, t.get("destination_since", -1e9)) if v <= now]
         return bool(starts) and now - max(starts) < 8
 

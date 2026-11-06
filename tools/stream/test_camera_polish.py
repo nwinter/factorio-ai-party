@@ -76,6 +76,11 @@ def closeup():
             assert not d.ordinary_busy(t)
             break
     assert arrived is not None and arrived > 1063, arrived
+    # An arrival near the missing-receipt timeout still earns the entire dwell.
+    d.state['main']['settle'] = dict(sent=1060, arrived=1104)
+    assert d.ordinary_busy(1111) and not d.ordinary_busy(1112)
+    d.state['main']['settle'] = dict(sent=1060, arrived=None)
+    assert d.ordinary_busy(1104) and not d.ordinary_busy(1105)
     # Urgency bypasses the hold, then the useful work resumes using the existing resume slot.
     d, camera = director()
     d.watch_platforms(snap([], [plat('Asterion')]), 1000)
