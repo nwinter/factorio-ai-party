@@ -90,7 +90,7 @@ class RecapTest(unittest.TestCase):
         first = self.prepare(final=True)
         extra = dict(self.events[-1], id=5, t=T0 + 14500, tick=21600, platform="Swift", line="Swift was lost to asteroids")
         jsonl(self.old / "chronicle.jsonl", self.events + [extra])
-        R.save_json(self.old / "stopped.json", {"stop_utc": R.dt.datetime.fromtimestamp(T0 + 14600, R.dt.timezone.utc).isoformat()})
+        R.save_json(self.old / "stopped.json", {"via": "game.server_save", "stop_utc": R.dt.datetime.fromtimestamp(T0 + 14600, R.dt.timezone.utc).isoformat()})
         until = R.record_end(self.old, T0 + 14400)
         final = R.prepare(self.old, self.out, until, tts=TTS(), final=True)
         self.assertEqual(final["lines"][:first["base_count"]], first["lines"][:first["base_count"]])

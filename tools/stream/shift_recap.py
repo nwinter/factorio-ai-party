@@ -24,6 +24,7 @@ import time
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from shift_phase import confirmed_stop
 PREPARE_AFTER = 3 * 3600
 TRANSITION_BEFORE = 35
 CATEGORIES = ("milestone", "loss", "research", "chronicle", "platform", "board", "plan", "tell", "chat", "analyst")
@@ -94,7 +95,7 @@ def parent_run(run):
 def record_end(run, default):
     """The stop's final saved record can extend a few minutes beyond its scheduled deadline."""
     stopped = read_json(Path(run) / "stopped.json", {}) or {}
-    return epoch(stopped.get("stop_utc")) or default
+    return (epoch(stopped.get("stop_utc")) if confirmed_stop(stopped) else None) or default
 
 
 def chain(run):
@@ -284,7 +285,7 @@ def gather(run, until, logs=None):
     for r in out:
         unique[(r["kind"], r["text"])] = r
     return {"run": run.name, "start": start, "until": until, "scheduled_end": shift.get("end"),
-            "partial": until < float(shift.get("end") or until),
+            "partial": not confirmed_stop(read_json(run / "stopped.json", {}) or {}) or until < record_end(run, until),
             "rows": sorted(unique.values(), key=lambda r: (r["t"], r["id"])),
             "coverage": {k: sum(r["kind"] == k for r in unique.values()) for k in CATEGORIES}}
 
@@ -362,7 +363,7 @@ Speak for viewers, not engineers: omit raw tick ids, coordinates, board ids and 
 such as guarded2, all8, Mfloor or FINAL43. Describe the supported action in ordinary words; if a
 code's meaning is not established by the records, omit it instead of guessing its expansion.
 The evidence says partial=true when this is only an early part of the shift. In that case never
-call its endpoint the shift's end or closing state. The deadline update will be appended later.
+call its endpoint the shift's end or closing state. Only a confirmed stop establishes the endpoint.
 Do not state the window's duration unless a cited row establishes it. Selected rows are not a
 complete history: lack of a report is not proof that something never happened.
 Every line and title must cite its evidence ids. Keep wall time and game time distinct; never
@@ -638,7 +639,7 @@ def _prepare(run, out, until, *, writer=None, tts=None, logs=None, final=False):
                                     and (r["kind"], r["text"]) not in earlier_claims])
         coda = fallback(late, 8)
         for line in coda:
-            line["title"] = "Closing update · " + line["title"]
+            line["title"] = ("Record update · " if evidence["partial"] else "Closing update · ") + line["title"]
         lines = previous["lines"][:base_count] + render_lines(coda, out, tts)
         base_review = previous.get("review") or {}
         base_review = base_review.get("base", base_review)

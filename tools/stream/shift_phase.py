@@ -12,6 +12,10 @@ def read_json(path):
         return {}
 
 
+def confirmed_stop(record):
+    return bool(record.get("stop_utc") and record.get("via") in ("game.server_save", "server-save"))
+
+
 def facts(run, shift=None):
     run = Path(run)
     shift = shift if shift is not None else read_json(run / "stream.json").get("shift")
@@ -31,6 +35,6 @@ def facts(run, shift=None):
     stop = read_json(run / "stopped.json")
     # A failed save is not a confirmed final stop. A successful stop record is
     # written only after the helpers stopped and the world was paused/saved.
-    out["stopped"] = bool(stop.get("stop_utc") and stop.get("via") in ("game.server_save", "server-save"))
+    out["stopped"] = confirmed_stop(stop)
     out["save_state"] = "confirmed" if out["stopped"] else "failed" if stop.get("via") == "failed" else "unconfirmed"
     return out

@@ -101,6 +101,17 @@ console.log('normal, delayed, failed, stale, final, authenticated notices and co
                 recap.step(2100)
                 player.assert_not_called()
 
+    def test_recap_endpoint_requires_the_same_stop_receipt(self):
+        import shift_recap as recap
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d)
+            (run / "stream.json").write_text(json.dumps({"shift": {"start": 1000, "end": 2000, "next": None}}))
+            self.assertTrue(recap.gather(run, 2100)["partial"])
+            for via, partial in (("failed", True), ("game.server_save", False)):
+                (run / "stopped.json").write_text(json.dumps({"via": via, "stop_utc": "1970-01-01T00:35:00Z"}))
+                self.assertEqual(recap.gather(run, 2100)["partial"], partial)
+            self.assertTrue(recap.gather(run, 2000)["partial"])  # planned end precedes actual stop
+
     def test_build_publishes_final_receipt_and_shared_renderer(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
