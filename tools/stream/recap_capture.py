@@ -16,6 +16,7 @@ import urllib.request
 
 from shift_recap import atomic, read_json, save_json
 from shift_recap_visuals import label
+from shift_recap_detail import capture_view
 
 SOURCES = {"main": "stream cam1", "cam2": "stream cam2", "cam3": "stream cam3"}
 SUBJECT_SECONDS = 300
@@ -156,6 +157,10 @@ class Capture:
                 row.pop("identity")
                 row.update(path="recap-frames/" + name, t=now, capture_finished=finished, px=size,
                            bytes=len(data), after_receipt=after["receipt"])
+                before_view = capture_view(row['receipt'], size)
+                after_view = capture_view(row['after_receipt'], size)
+                if before_view and before_view == after_view:
+                    row['view'] = before_view
                 new_catalog = catalog + [row]
                 payload = json.dumps(new_catalog, ensure_ascii=False, indent=2) + "\n"
                 if used + len(data) + len(payload.encode()) + 65536 > self.disk_bytes:
