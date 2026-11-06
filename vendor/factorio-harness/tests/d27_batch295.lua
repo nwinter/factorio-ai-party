@@ -48,7 +48,7 @@ do
   end
   -- Astra's two fast inserters at (16,-52): no override reads 3 (before: no hand size at all), override 1 reads 1
   local f=D.hand(ins('fast-inserter',researched))
-  eq(f.hand_line,"hand size 3 (its most, 3: 1 + the force's inserter_stack_size_bonus 2; no override: hand_size_override 0); holds 0; from a chest or machine swings with what it took; from a belt waits for a full hand; 144 arm turns a minute (a swing each), at most 432 items a minute at this hand")
+  eq(f.hand_line,"hand size 3 (its most, 3: 1 + the force's inserter_stack_size_bonus 2; no override: hand_size_override 0); holds 0; does not require a full hand (prototype wait_for_full_hand false); hand size is the maximum pickup size; 144 arm turns a minute (a swing each), at most 432 items a minute at this hand")
   eq(f.short,'hand size 3 (no override; most 3)')
   eq(f.swings_per_min,144); eq(f.items_per_min_most,432)
   local o=D.hand(ins('fast-inserter',researched,{override=1,held=1}))

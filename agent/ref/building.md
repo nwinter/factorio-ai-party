@@ -23,9 +23,9 @@
   pickup target unset until the inserter runs (2.0.77); replies then name both (`pickup target unset by the engine
   (transport-belt (-7.5,320.5) on its pickup tile)`), and `the ground` only when nothing stands there. `inspect`
   always gives an inserter's hand size: `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max` (1 + the
-  force's research bonus, `capacity_bonus`), apart from `held_count`; on 2.0.77 every inserter waited at a belt for a
-  full hand. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
-  chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles).
+  force's research bonus, `capacity_bonus`), apart from `held_count`. Hand size is the maximum pickup size;
+  `wait_for_full_hand` is the fixed prototype requirement (stack true; fast, long-handed and bulk false).
+  One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles).
 - `build`, entry settings: Entry settings (a single `build`, `builds` entries, `place_ghosts` entries): `configure`,
   `requests`, `circuit` (the arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires:
   [{to, color, from_side, to_side}]`. A hand build sets each entry's as it is placed, ghosts after every entry is

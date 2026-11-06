@@ -17106,8 +17106,8 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   inserter_stack_size_bonus (burner, basic, long-handed, fast). Quality changes none of it. An override above 0 caps
   it; one above the most reads back as set and the most applies. A circuit's set stack size writes the override (1
   with no signal, 0 when turned off). `inserter_target_pickup_count` reads the result at once.
-  - From a belt every inserter waited at the belt for a full hand (compressed turbo, sparse, moving or stopped). From
-    a chest holding 1, all but stack-inserter swung with 1.
+  - The belt observations below measured pickup sizes; they do not establish a full-hand requirement.
+    `wait_for_full_hand` is false for fast, long-handed and bulk inserters, true for stack inserters.
   - A compressed turbo belt, 60 s: basic 50, long 72, fast 144 swings a minute of 3 (their arm turns); bulk 86 of 12
     and stack 75 of 16 stopped, 78 and 64 moving. One item every 16 ticks on one lane: a basic inserter took none.
 - inspect (built or ghost): `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max`, `capacity_bonus
@@ -18785,3 +18785,17 @@ continues the queue without `on_fail:skip`. Missing platforms/stops and empty sc
 confirmation and pause on persistent failure; direct calls retain the recheck and failure tell. A no_schedule read
 while waiting at the current station on unmet conditions remains the existing valid waiting case. `schedule_check`
 and describe text now match the idempotent behavior.
+## d37 batch434: inspect full-hand waiting (Sol #2912)
+
+- `inspect.hand_line` distinguishes maximum pickup size from the prototype's fixed full-hand requirement.
+  Fast, long-handed and bulk inserters say "does not require a full hand"; stack inserters say "waits for a full hand".
+  Hand capacity, held count and the throughput upper bound remain separate quantities. Built entities and ghosts
+  use the same value as `configure wait_for_full_hand`; requesting its opposite is still refused, not toggled.
+- Prototype facts are cached by name across inspect, configure, entities, ghosts and qualities. The runtime property
+  is tried once; a false result is cached too. Factorio 2.0.77 does not expose LuaEntityPrototype.wait_for_full_hand
+  (https://lua-api.factorio.com/2.0.77/runtime-api.json), so that version uses the verified data-stage defaults:
+  stack true; burner, basic, fast, long-handed and bulk false. An unknown prototype without a readable boolean
+  reports unknown and configure refuses it. Reloading the runtime rebuilds the cache. No per-tick work is added.
+- Describe and the building reference no longer claim that every inserter requires a full hand from a belt.
+- Tests: tests/d37_batch434.lua covers the four requested inserters, built/ghost wording, configure agreement,
+  cached true/false/unknown reads, property precedence over names, and the 2.0.77 unavailable-property fallback.
