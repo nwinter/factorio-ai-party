@@ -72,6 +72,14 @@ class DetailTest(unittest.TestCase):
         m['stills']=m['stills'][1:2]
         self.assertIn('FALLBACK',V.bind(m)['visuals']['ship']['fallback'])
 
+    def test_malformed_archive_geometry_falls_back_without_crashing(self):
+        for bad in ({'receipt':'old'}, {'receipt':{'frame':[]},'px':12},
+                    {'receipt':{'frame':{'frame':'unknown'}},'px':[1280,720]},
+                    {'view':{'kind':'world','box':[0,0,0,30],'px':[1280,720]}}):
+            m=detail_manifest(); m['stills']=m['stills'][1:2];m['stills'][0].pop('view')
+            m['stills'][0].update(bad)
+            self.assertIn('FALLBACK',V.bind(m)['visuals']['ship']['fallback'])
+
     def test_cited_coordinates_and_ambiguous_positions(self):
         line={'text':'Asterion front-right turret'}
         self.assertEqual(D.target(line,[{'text':'front-right turret at (24,-12)'}])['position'],[24,-12])

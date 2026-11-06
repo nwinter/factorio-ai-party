@@ -40,8 +40,14 @@ def capture_view(receipt, px):
     Moving/follow/map requests do not establish a settled camera centre. Keep their
     receipts for audit, but never manufacture detail geometry from them.
     """
-    shot = receipt.get('on_air') or {}
-    frame = (receipt.get('frame') or {}).get('frame') or {}
+    if not isinstance(receipt, dict) or not isinstance(px, list):
+        return None
+    shot, outer = receipt.get('on_air') or {}, receipt.get('frame') or {}
+    if not isinstance(shot, dict) or not isinstance(outer, dict):
+        return None
+    frame = outer.get('frame') or {}
+    if not isinstance(frame, dict):
+        return None
     if any(shot.get(k) for k in ('move', 'glide', 'follow', 'map')) or frame.get('follow'):
         return None
     pos, zoom = frame.get('position'), frame.get('zoom')
