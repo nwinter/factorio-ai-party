@@ -18738,3 +18738,11 @@ Storage chest/free-slot/bar/filter totals retain their existing meaning. The two
 lists are retrieved once each and reused for coverage; no second robot pass or new Lua chest scan.
 Item lists retain quality. This is an on-demand read with no background tick work or mutations.
 Tests: `tests/logaudit_storage.lua`, existing network storage and barred-storage suites.
+
+
+Recap component/event beats now bind a named position to a dated, containing camera still
+(`tools/stream/shift_recap_detail.py`), hold its crop/highlight through narration, and label
+missing detail as an overview/map fallback. Capture view/zoom and before/after receipts
+survive preparation; capture/record timing stays explicit. Next-shift service/helper restart
+and overlay page reload load this change; no game runtime deploy or site rebuild. See
+`tools/stream/shift-recap.md` for geometry, timing bounds and offline verification.

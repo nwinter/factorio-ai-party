@@ -28,3 +28,18 @@ body.portrait .sr-text{font-size:34px}
 body.portrait .sr-recorded{font-size:17px}
 body.portrait .sr-caption{max-height:64%}
 body.portrait .sr-cinema.sr-playing .sr-caption{bottom:64px;max-height:38%}
+
+/* Recorded target images get their own unobscured region. SVG meet keeps edge targets visible. */
+.sr-anchored .sr-head{padding:14px 24px;background:rgba(9,21,28,.9)}
+.sr-anchored .sr-title{font-size:30px;margin-top:4px}
+.sr-anchored .sr-caption{max-height:42%;padding:12px 18px}
+.sr-anchored .sr-text{font-size:26px}
+.sr-anchored.sr-playing .sr-media{background:#09151c}
+.sr-detail{width:100%;height:100%;display:block}
+.sr-target{width:74%}
+.sr-context{position:absolute;right:0;top:0;width:25%;height:100%;box-sizing:border-box;background:#09151cee;border:1px solid #f4cc88}
+.sr-context[hidden]{display:none}
+.sr-wide{width:100%;height:calc(100% - 20px)}
+.sr-context span{display:block;text-align:center;font-size:12px;line-height:18px}
+body.portrait .sr-anchored .sr-caption{max-height:44%}
+body.portrait .sr-anchored .sr-text{font-size:26px}

@@ -82,9 +82,9 @@ use `rgba(9,21,28,.88)` behind warm-white text, with a shadow and gold speaker/a
 against white footage the caption text has approximately 12:1 contrast. Text shrinks to fit
 longer record extracts. The rest of the footage stays unobscured.
 
-Each beat prefers a recorded **video** of its named ship/surface whose capture interval
-contains the cited record time. A nearer still cannot displace such a clip. Stills stay in
-the audit/contact sheet; they never cover gameplay on air. Without a clip, the browser is
+Subject-only beats prefer a recorded **video** of its named ship/surface whose capture interval
+contains the cited record time. A nearer still cannot displace such a clip. Generic stills stay in
+the audit/contact sheet. Component/event beats use the anchored-detail exception below. Without a clip, the browser is
 transparent over the existing live camera. A subject cue goes through the normal director's
 segment-camera path using only existing platform views or agent positions. Operator holds
 and urgent shots keep priority; unknown/ambiguous subjects hold the current game camera
@@ -174,7 +174,7 @@ Preparation refreshes media independently of script/audio. A file-only worker ch
 per minute after preparation, and before a successor starts playback, including old final
 manifests. Indexed-file and prepared-file arrival, replacement or deletion triggers new
 bindings. Later captures in the same shift can illustrate an earlier beat; claim time
-and capture time remain distinct. The nearest subject frame wins; an unnamed surface
+and capture time remain distinct. For subject-only beats the nearest subject frame wins; an unnamed surface
 beat may use the surface explicitly named by its cited record. No unrelated filler is used.
 
 `manifest.json.media_review`, `review.md` and `prep.log` flag `NO BOUND MEDIA` and list each
@@ -276,3 +276,51 @@ The batch404 read-only dry run selected `stream cam1` and `stream game audio`. T
 partial-failure receipt and undo paths are tested exclusively against an OBS stub. Without
 the guard, prepared clips are still silent and other speech is held, but ordinary live
 game ambience remains in the program mix.
+
+
+### Anchored component/event detail (batch429)
+
+A beat naming a component/event (for example `front-right turret at (24, -12)`) binds
+that position, not the ship centre. Coordinates can also come from an unambiguous cited
+row naming the same component. Multiple positions or missing coordinates remain an
+explicit overview fallback; directional words alone never invent coordinates. A matching
+cited row supplies the target record time ahead of unrelated later citations.
+
+The picker requires a world still within 300 seconds of that record, with the target and
+its three-tile margin inside the captured view, and enough resolution for the highlight.
+Explicit before/after wording constrains the side of the record time. The caption includes
+the capture date/time and signed offset before/after the record; the image does not claim
+to prove a construction/destruction state or capture the exact event. Unknown geometry,
+map frames and distant captures cannot be promoted to target detail.
+
+Capture retains `px`, both receipts, capture end time and a `view` containing `box`
+(`[left, top, width, height]` in world tiles), `px`, actual game `zoom`, `surface` and
+`kind: "world"`. Only stationary, settled physical camera views with matching before/after
+geometry get that projection. Follow, glide, map and moving shots keep their receipts but
+supply no assumed detail centre. Preparation preserves these fields, can recover geometry
+from old batch395 receipts, and preserves registered mapframe geometry as `kind: "map"`.
+An archive image may supply the same view schema only from verified capture geometry;
+never substitute hull bounds for the captured viewport.
+
+The browser shows a fixed target crop/highlight throughout that audible beat, including
+late end receipts and retries. A separate wider recorded view appears for its first two
+seconds; it cannot overlap the target. SVG aspect fitting keeps the full crop visible in
+landscape and portrait, in a region between the header and caption. No target frame gives
+`OVERVIEW FALLBACK` or `MAP FALLBACK · target detail not recorded`, using a matching full
+image if present, otherwise labelled live gameplay. Decode/dimension errors expose the
+live feed with a fallback label. Subject-only video behavior is unchanged.
+
+`test_shift_recap_detail.py` checks selection, edge exclusion, before/after time, legacy
+capture metadata and the real player's immutable crop through delayed narration and a
+manifest replacement. `shift_recap_selftest.mjs` checks DOM crop retention and restoration.
+`recap_detail_browser.mjs REHEARSAL_DIR OUT PLAYWRIGHT_MODULE` verifies actual exported
+landscape/portrait pages: image decode, target visibility, header/caption separation,
+brief context, 150-second hold, fallback label and restoration. It expects a two-beat
+fixture with an anchored detail followed by its missing-detail fallback.
+
+Deployment: merge, then use the normal next-shift service and recap-capture helper restart
+from `start-team.sh`; reload the OBS overlay browser pages to load the changed JS/CSS.
+No Factorio runtime deploy, game read, camera client restart, site rebuild, or new speech is
+needed. Visual version 4 forces file-only rebind of existing manifests at startup/refresh;
+new still geometry is recorded by the restarted helper. Old captures without usable
+geometry remain labelled fallbacks. Do not interrupt the current watched shift to deploy.

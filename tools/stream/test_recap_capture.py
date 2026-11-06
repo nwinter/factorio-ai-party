@@ -19,8 +19,10 @@ import shift_recap_visuals as V
 
 def state(now=1000, subject="Asterion", surface="platform-16", platform=True):
     shot = {"since": now - 10, "framed": now - 10, "sent": now - 1, "surface": surface,
+            "position": {"x": 0, "y": 0}, "game_zoom": 1,
             **({"platform": {"name": subject}} if platform else {})}
-    frame = {"client": "main", "surface": surface, **({"platform": {"name": subject}} if platform else {})}
+    frame = {"client": "main", "surface": surface,
+             "frame": {"position": {"x": 0, "y": 0}, "zoom": 1, "surface": surface}, **({"platform": {"name": subject}} if platform else {})}
     program = {"frames": {"main": frame}, "cameras": {"main": {"shot": shot, "pending": False}}}
     return {"now": now, "tick": 12000, "cuts": {"connected": True, "t": now - 1, "on_air": program},
             "camera_states": {"main": {"acknowledged": shot, "on_air": shot}}}
@@ -98,6 +100,9 @@ class CaptureTest(unittest.TestCase):
         self.assertEqual(self.step()["status"], "saved")
         catalog = R.read_json(self.run / "recap-media.json")
         self.assertEqual([r["t"] for r in catalog], [1000, 1060, 1300])
+        self.assertEqual(catalog[0]["view"]["zoom"], 1)
+        self.assertEqual(catalog[0]["view"]["box"], [-30, -16.875, 60, 33.75])
+        self.assertEqual(catalog[0]["view"]["px"], [1280, 720])
         self.assertEqual(catalog[0]["subject_type"], "platform")
         self.assertEqual(catalog[0]["surface"], "platform-16")
         self.assertEqual(catalog[0]["receipt"]["tick"], 12000)

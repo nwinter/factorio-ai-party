@@ -499,7 +499,9 @@ def stills(run, until, out, errors=None):
         found.append({"asset": asset, "caption": f"Recorded still: {r.get('surface', 'factory')} · {wall(t)} · Graphics copyright Wube Software",
                       "t": t, "surface": r.get("surface"), "platform": r.get("platform"),
                       "game_time": game_time(r["tick"]) if r.get("tick") is not None else None,
-                      "source": str(meta.relative_to(run))})
+                      "source": str(meta.relative_to(run)),
+                      "view": {"box": r.get("box"), "px": r.get("px"), "zoom": r.get("zoom"),
+                               "surface": r.get("surface"), "kind": "map"}})
     # recap_capture writes this index; manually indexed archive clips remain supported.
     # Capture timestamps and subject labels are mandatory; filenames/mtime are not evidence.
     catalog = read_json(run / "recap-media.json", None if (run / "recap-media.json").exists() else [])
@@ -540,7 +542,7 @@ def stills(run, until, out, errors=None):
                       "duration": row.get("duration", 0),
                       **({"coverage": row["coverage"]} if row.get("coverage") else {}),
                       "source": f"recap-media.json:{index + 1}", "recorded_path": row["path"],
-                      **({"receipt": row["receipt"]} if row.get("receipt") else {})})
+                      **{k: row[k] for k in ("receipt", "after_receipt", "px", "view", "capture_finished") if k in row}})
     return found
 
 
@@ -674,9 +676,13 @@ def export(manifest, out):
     media_review = manifest["media_review"]
     diagnostics += [f"Media: {media_review['bound']}/{media_review['total']} beats bound.", ""]
     diagnostics += [f"Moving footage: {media_review['clips']} recorded clips; {media_review['live']} live camera fallbacks.", ""]
+    diagnostics += [f"Anchored details: {media_review['details']}; labelled overviews/maps: {media_review['overviews']}.", ""]
     if media_review["no_media"]:
         diagnostics += ["WARNING: NO BOUND MEDIA — all beats use live gameplay.", ""]
     for beat in media_review["beats"]:
+        if beat.get("target"):
+            visual = manifest["visuals"][beat["id"]]
+            diagnostics += [f"Beat {beat['id']}: {beat['reason']}; target {beat['target']}; detail {(visual.get('media') or {}).get('detail')}"]
         if beat["status"] == "missing" or beat["errors"]:
             diagnostics += [f"Beat {beat['id']} · {beat['title']}: {beat['status']}; subjects {beat['subjects']}"]
             diagnostics += [f"  {r.get('path', r.get('asset', '?'))}: {r['error']}" for r in beat["errors"]]

@@ -14,7 +14,7 @@ class Node {
   append(...children) {for(const child of children){this.children.push(child);child.parent=this;}}
   appendChild(child) {this.append(child);}
   replaceChildren(...children) {for(const c of this.children)c.parent=null;this.children=[];this.append(...children);}
-  setAttribute(k,v) {this.attrs ??= {}; this.attrs[k]=v;}
+  setAttribute(k,v) {this.attrs ??= {}; this.attrs[k]=v;if(k==='class')this.className=v;}
   removeAttribute(k) {delete this[k];}
   addEventListener(k,fn) {this.events[k]=fn;}
   pause(){this.paused=true;}
@@ -22,13 +22,14 @@ class Node {
   play(){this.played=true;return Promise.resolve();}
 }
 function page() {
+  const created=[];
   const body=new Node('body'), stage=new Node('div'), cam=new Node('div'), side=new Node('aside');
   stage.id='stage';cam.id='cam-main';side.id='side';body.append(stage);stage.append(cam,side);
   const all=n=>[n,...n.children.flatMap(all)];
-  const document={body,createElement:tag=>new Node(tag),getElementById:id=>all(body).find(n=>n.id===id)};
+  const document={body,createElement:tag=>{const n=new Node(tag);created.push(n);return n;},createElementNS:(ns,tag)=>new Node(tag),getElementById:id=>all(body).find(n=>n.id===id)};
   const context={document,window:{},location:{search:''},URLSearchParams,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),getComputedStyle:()=>({fontSize:'32px'})};
   vm.runInNewContext(source,context);
-  return {body,stage,cam,side,all:()=>all(body),render:context.window.PogShiftRecap.render,
+  return {created,body,stage,cam,side,all:()=>all(body),render:context.window.PogShiftRecap.render,
     panel:()=>document.getElementById('shift-recap')};
 }
 const beat={active:true,run:'shift1',phase:'recap',id:'a',speaker:'Vale',title:'Science packs',
@@ -63,3 +64,21 @@ assert.equal(reload.all().filter(n=>n.tagName==='img').length,0);
 const after=page();after.render({shift_recap:null});restored(after);
 const broken=page();broken.render({shift_recap:{...beat,media:clip}});broken.all().find(n=>n.tagName==='video').events.error();assert.equal(broken.panel().classList.contains('sr-playing'),false);
 console.log('Shift recap DOM states: early, transition, still rejection, live fallback, clip seek, hold, interruption, reload, restore passed');
+
+const anchored=page(), detail={...image,detail:{crop:[800,0,480,400],point:[1152,104],radius:[64,64],px:[1280,720],name:'front-right turret',context_seconds:2,timing:'before record',delta_seconds:-10}};
+anchored.render({shift_recap:{...beat,media:detail}});
+const sourceImage=anchored.created.find(n=>n.tagName==='img');sourceImage.naturalWidth=1280;sourceImage.naturalHeight=720;sourceImage.events.load();
+const crop=anchored.all().find(n=>n.className.includes('sr-target'));
+assert.equal(crop.attrs.viewBox,'800 0 480 400');
+assert.equal(crop.attrs.preserveAspectRatio,'xMidYMid meet');
+anchored.render({shift_recap:{...beat,media:detail,elapsed:150}});
+assert.equal(anchored.all().find(n=>n.className.includes('sr-target')),crop,'narration ticks retain the exact crop node');
+assert.equal(anchored.all().find(n=>n.className==='sr-context').hidden,true);
+anchored.render({shift_recap:{...beat,media:detail,holding:true}});restored(anchored);
+console.log('Anchored detail crop, highlight, context timeout and narration hold passed');
+
+const failedDetail=page();failedDetail.render({shift_recap:{...beat,media:detail}});
+failedDetail.created.find(n=>n.tagName==='img').events.error();
+failedDetail.render({shift_recap:{...beat,media:detail,elapsed:3}});
+assert(failedDetail.all().some(n=>n.textContent.startsWith('OVERVIEW FALLBACK · recorded detail unavailable')));
+failedDetail.render({shift_recap:null});
