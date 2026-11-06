@@ -251,6 +251,10 @@ class Featured:
 
     def news(self, d, snapshot, name, now):
         candidates = []
+        metric_at, metric = getattr(d, "ship_metrics", (0, {}))
+        if (metric.get("platform") == name and now - metric_at + metric.get("age_s", 0) <= 45 and
+                (metric.get("kills_min", 0) > 0 or metric.get("damage_dealt_min", 0) > 0)):
+            candidates.append(("shooting", int(now // 90)))
         danger = (d.plat_rows.get(name) or {}).get("danger") or {}
         if danger.get("kind") == "fire" and now - danger.get("last", 0) <= 30:
             candidates.append(("encounter", danger.get("last")))
@@ -272,14 +276,47 @@ class Featured:
         self.news_seen.update(candidates)
         return "repair" if repair_started else fresh[0][0] if fresh else None
 
-    def shot(self, d, name, now, context=False):
-        shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S, overview=True)
+    def shot(self, d, name, now, context=False, work=None):
+        row = d.plat_rows.get(name) or {}
+        age = max(0, now - self.started) if self.started is not None else 0
+        metric_at, metric = getattr(d, "ship_metrics", (0, {}))
+        active = (metric.get("platform") == name and now - metric_at + metric.get("age_s", 0) <= 45 and
+                  (metric.get("kills_min", 0) > 0 or metric.get("damage_dealt_min", 0) > 0 or
+                   any(g.get("targeting", 0) for g in (metric.get("turrets") or {}).values())))
+        danger = bool(row.get("danger"))
+        flying = d.travelling(row)
+        framing = "ship survey"
+        shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S, overview=not flying and not danger and not active)
+        if flying or danger or active or work:
+            # Alternate orientation and readable guns. Working production gets one occasional beat in calm flight.
+            beat = int(age // 30) % 5
+            detail = d.machinery(name) if beat == 4 and not (danger or active) else None
+            if work and not (danger or active):
+                who = (d.agents_now.get(work.get("agent")) or {}).get("display_name") or work.get("agent") or "Engineer"
+                detail = d.work_close(work, row["view"], who, name)
+                framing = "repair/build detail"
+            elif detail:
+                framing = "working production"
+            elif beat % 2:
+                guns = ((row.get("view") or {}).get("guns") or [])
+                guns = [g for g in guns if all(isinstance(g.get(k), (int, float)) for k in ("x", "y", "range"))]
+                if guns:
+                    gun = min(guns, key=lambda g: (g["y"], g["x"]))
+                    detail = dict(position=dict(x=gun["x"], y=gun["y"] - min(12, gun["range"] / 3)), zoom=.7)
+                    framing = "guns in action" if active else "bow guns"
+            if detail and shot:
+                shot = {k: v for k, v in shot.items() if k not in ("pan", "survey")}
+                shot.update(position=detail["position"], zoom=detail["zoom"], exact_zoom=True)
+            else:
+                shot = d.bow_target(name, now + MAIN_S + CONTEXT_S) or shot
+                if shot:
+                    shot = {k: v for k, v in shot.items() if k not in ("pan", "survey")}
+                framing = "bow and approaching asteroids"
         if not shot:
             return None
-        framing = "ship survey"
         shot["featured"] = self.active["id"]
         source = self.active.get("source", "operator")
-        shot["platform"].update(framing=framing, source=source, label=f"Featured: {d.platform_label(name)} · {framing}")
+        shot["platform"].update(why="featured", framing=framing, source=source, label=f"Featured: {d.platform_label(name)} · {framing}")
         return shot
 
     @staticmethod
@@ -299,7 +336,7 @@ class Featured:
         changed = changed or bool(shot.get("survey") and (q is None or now >= q.expires))
         if changed:
             target = dict(old, **shot)
-            for key in ("survey_step", "move", "move_ok", "glide"):
+            for key in ("survey_step", "move", "move_ok", "glide", "jump"):
                 target.pop(key, None)
             if not shot.get("survey"):
                 for key in ("survey", "survey_key", "survey_step", "move", "move_ok"):
@@ -309,14 +346,15 @@ class Featured:
                 target.pop("pan", None)
             d.apply(slot, target, "reframe", scores, now, quiet=True)
         else:
-            old["platform"]["label"] = shot["platform"]["label"]
+            old["platform"].update(shot["platform"])
 
     def main(self, d, snapshot, scores, now, pinned, segment, attack):
         name = self.resolve(d)
         if not name:
             return False
         cur = d.state.get(d.onair) or {}
-        urgent = ((cur.get("subject") == "@attack" and now < cur.get("until", 0)) or
+        urgent = (((cur.get("platform") or {}).get("why") == "danger" and now < cur.get("until", 0)) or
+                  (cur.get("subject") == "@attack" and now < cur.get("until", 0)) or
                   now < cur.get("hold_until", 0) or
                   (cur.get("subject") in scores and d.fighting(cur["subject"], d.agents_now, now)))
         if pinned or segment or attack or urgent or d.hold_layout:
@@ -330,6 +368,8 @@ class Featured:
         featured = cur.get("featured") == self.active["id"] and now < cur.get("until", 0)
         if featured and self.started is None:
             self.started = now
+        if featured and self.started is not None:
+            cur["until"] = max(cur["until"], self.started + MAIN_S + CONTEXT_S)
         # News can recall the ship from other coverage, but does not postpone its context shot indefinitely.
         age = now - self.started if self.started is not None else 0
         if self.started is not None and age >= MAIN_S + CONTEXT_S:
@@ -339,10 +379,18 @@ class Featured:
             return False
         if d.pending:
             return True
-        shot = self.shot(d, name, now, context=age >= MAIN_S)
-        if featured and cur.get("platform", {}).get("framing") == shot["platform"]["framing"]:
+        work = next((w for w in reversed(snapshot.get("work") or []) if w.get("platform") == name and
+                     0 <= now - w.get("t", 0) <= 30 and isinstance(w.get("position"), dict) and
+                     all(isinstance(w["position"].get(k), (int, float)) for k in ("x", "y")) and
+                     any(k in str(w.get("action") or w.get("kind") or "") for k in ("repair", "build", "construct", "ghost", "paste"))), None)
+        shot = self.shot(d, name, now, context=age >= MAIN_S, work=work)
+        if featured:
+            if d.ordinary_busy(now):
+                return True
             self.refresh(d, d.slot(d.onair), cur, shot, scores, now)
             return True
+        if d.ordinary_busy(now):
+            return False
         d.urgent(shot, f"featured platform {name}: {news or shot['platform']['framing']}", scores, now)
         return True
 

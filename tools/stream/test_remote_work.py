@@ -86,7 +86,7 @@ def work_shots():
         for att in (dict(attention.point('inspect',{'surface':'aquilo','position':a['position']}),age_s=0),
                     dict(attention.point('platform',{'platform':'Resolute'}),age_s=121)):
             s['agents'][0]['attention']=att
-            d.step(s,t+31);assert d.state[d.onair].get('follow')=='astra'
+            d.step(s,t+40);assert d.state[d.onair].get('follow')=='astra'
 
 
 def automatic():
@@ -100,7 +100,8 @@ def automatic():
         d.step(snap(team,[shallow]),1000);assert not d.featured.active
         for t in range(1001,1006):d.step(snap(team,[deep,shallow]),t)
         assert d.featured.active['source']=='auto' and d.featured.active['name']=='Resolute'
-        assert d.public(1005)['main']['platform']['source']=='auto'
+        assert 'platform' not in d.public(1005)['main']  # the ordinary opening shot finishes its dwell
+        assert d.public(1005)['inset']['platform']['source']=='auto'
         d.step(snap(team,[deep,shallow,further]),1006);assert d.featured.active['name']=='Farther'
         # An operator's setting wins, including its explicit clear. 'auto' releases that override.
         d.featured.set('Courier',arrival='vulcanus',now=1007)
@@ -144,7 +145,7 @@ def auto_airtime_and_urgent():
     assert .65<share<.85,share
     away=[r for r in rows[10:] if name(r)!='Resolute']
     assert all(name(r,'inset')=='Resolute' for r in away)
-    assert {r['main']['platform']['framing'] for r in rows if name(r)=='Resolute'}=={'ship survey'}
+    assert {r['main']['platform']['framing'] for r in rows if name(r)=='Resolute'}=={'bow and approaching asteroids'}
     for kind,text in [('attack','Base under attack'),('death','Sol died'),('loss','26 lost near (400, 400): 26 gun turret')]:
         d,_=director(auto_feature=True)
         for t in range(1000,1020):d.step(snap(TEAM,[SHIP]),t)

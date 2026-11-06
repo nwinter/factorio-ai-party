@@ -1096,12 +1096,16 @@
         label.classList.add("on");
         continue;
       }
-      if (cam && cam.platform && (!agents.length || cam.platform.why === "follow")) { // whole ship, including an agent aboard
-        const psig = "plat|" + cam.platform.label;
+      if (cam && cam.platform) { // whole ship, including an agent aboard
+        const psig = "plat|" + cam.platform.label + "|" + (cam.work || "") + "|" + (cam.owner || "");
         if (label.dataset.sig !== psig) {
           label.dataset.sig = psig;
           label.textContent = "";
-          label.append(el("span", "ico", cam.platform.why === "departure" ? "🚀" : "🛰️"), el("span", "", cam.platform.label));
+          const owner = (s.agents || []).find(a => a.name === cam.owner)?.display_name || cam.owner;
+          let text = cam.work || cam.platform.label;
+          if (owner && text.startsWith(owner + " ")) text = text.slice(owner.length + 1).replace(/^·\s*/, "");
+          label.append(el("span", "ico", cam.platform.why === "departure" ? "🚀" : "🛰️"), el("span", "", text));
+          if (owner) label.append(el("span", "remote-owner", " · remote: " + owner));
         }
         label.classList.remove("attack", "death");
         frame.style.borderColor = "";
@@ -1710,7 +1714,8 @@
       const cam = (s.cameras || {})[slot] || {};
       const who = (cam.agents || [])[0];
       const L = who && byName.get(who) ? byName.get(who).loadout : null;
-      const hidden = !L || (slot === "inset" && !frame.classList.contains("on")) || (slot === "main" && seg && !seg.hidden);
+      const hidden = !L || cam.body_visible === false || cam.platform || cam.work || cam.attention || cam.vehicle || cam.did || cam.map ||
+        (slot === "main" && (s.hostview || s.show || s.replay?.playing)) || (slot === "inset" && !frame.classList.contains("on")) || (slot === "main" && seg && !seg.hidden);
       if (hidden) { if (strip) strip.hidden = true; continue; }
       if (!strip) { strip = el("div", "loadout"); frame.append(strip); }
       const { age_s, ...shown } = L;
@@ -1738,14 +1743,17 @@
     if (!strips.length) return;
     const boxes = [];
     for (const c of document.querySelectorAll("#voice .cap.on")) boxes.push(c.getBoundingClientRect());
-    for (const id of ["chat", "chat-pins", "chat-ticker"]) {
+    for (const id of ["chat", "chat-pins", "chat-ticker", "platform-metrics", "alerts"]) {
       const e = $(id);
       if (e && e.offsetParent !== null) boxes.push(e.getBoundingClientRect());
     }
     for (const s of strips) {
       s.classList.remove("lo-yield");
       const r = s.getBoundingClientRect();
-      if (r.width && boxes.some((b) => b.width && b.height && overlaps(r, b))) s.classList.add("lo-yield");
+      const inset = $("cam-inset");
+      const reserved = boxes.slice();
+      if (s.classList.contains("lo-main") && inset && inset.classList.contains("on")) reserved.push(inset.getBoundingClientRect());
+      if (r.width && reserved.some((b) => b.width && b.height && overlaps(r, b))) s.classList.add("lo-yield");
     }
   }
   let loadoutWatched = false;
@@ -1780,7 +1788,8 @@
     renderResearchCard(s);
     if (window.PogPlatformMetrics) {
       window.PogPlatformMetrics.render($("platform-metrics"), s.platform_metrics, undefined, s);
-      $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics && !!$("platform-metrics"));
+      $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics && !$("platform-metrics").hidden);
+      loadoutClear();
     }
     renderSegment(s);
     renderLoadouts(s);

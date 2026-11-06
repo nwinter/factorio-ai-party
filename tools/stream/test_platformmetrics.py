@@ -38,7 +38,7 @@ def main():
     s["onair"] = {"host": {"label": "Nick"}}
     assert selected(s) is None
     s = snapshot(); s["onair"] = {}; s["cameras"] = {}
-    assert selected(s)["name"] == "Resolute" and view_area(s, selected(s)) is None
+    assert selected(s) is None
     s["featured_platform"]["status"] = "ended"
     assert selected(s) is None
     old, new = raw(), raw()
@@ -89,7 +89,8 @@ def main():
     ps["paused"] = False
     assert "kills_min" not in pm.step(ps, pause_read, 167) and len(paused_reads) == 1
     s["onair"] = {}; s["cameras"] = {}
-    assert "asteroids" not in m.step(s, read, 121)
+    assert m.step(s, read, 121) is None
+    s["cameras"] = snapshot()["cameras"]
     s["space"]["platforms"][0].update(route_ids=["shattered-planet", "solar-system-edge"])
     assert m.step(s, read, 122) is None and len(reads) == 2
     assert "kills_min" not in m.step(s, read, 140)

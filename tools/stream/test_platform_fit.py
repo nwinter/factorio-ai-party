@@ -121,7 +121,8 @@ def overview_paths():
         assert hold['position']['x']==cx and hold['zoom']==visit['zoom']
         d.featured.data=dict(id='test',status='active')
         context=d.featured.shot(d,name,1000,context=True)
-        assert context['position']['x']==cx and context['zoom']==visit['zoom']
+        assert context['surface'] == visit['surface'] and not context.get('survey')
+        assert context['platform']['framing'] == 'bow and approaching asteroids'
     sent=[]
     d=OneCam([dict(slot='main',player=1)],lambda body:sent.append(body) or {'ok':True},None,
              auto_feature=False,map_every=0,platform_every=0,platform_frac=FRAC)

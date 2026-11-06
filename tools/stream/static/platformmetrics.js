@@ -32,7 +32,7 @@
     const cam = box.parentElement;
     if (!cam) return [];
     return [cam.querySelector(".cam-label.on"),
-      ...document.querySelectorAll("#alerts .alert, #voice .cap.on")].filter(n => n && n.textContent.trim())
+      ...document.querySelectorAll("#alerts .alert, #voice .cap.on, #cam-inset.on")].filter(n => n && n.textContent.trim())
       .map(n => n.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
   }
   function clearCaption(box) {
@@ -108,6 +108,9 @@
   function render(box, p, now = clock(), scene = {}) {
     if (!box) return;
     if (box._timer) window.clearTimeout(box._timer);
+    const main = (scene.cameras || {}).main;
+    const shown = main && ((main.ship || {}).name || (main.platform || {}).name);
+    if (scene.hostview || scene.show || scene.replay?.playing || (main && (main.map || !shown || shown !== p?.platform))) p = null;
     box._latest = {p, scene}; box.hidden = !p || !p.platform;
     if (box.hidden) return; // retain history through scene gaps; a cached sample cannot replay a beat
     if (!box._parts) {
@@ -201,6 +204,13 @@
     // above it; duplicating every current warning would push attempts out of a shorter scene's game pane.
     const currentWarnings = warningReadings(p);
     rows(b.warnings, [...a.warnings.entries()].filter(([key]) => !full || !currentWarnings.get(key)).map(([, w]) => w.row));
+    // Ship identity has priority over personal gear. Compact first, then yield if even that cannot fit.
+    const collision = () => {
+      const r = box.getBoundingClientRect(), pane = box.parentElement?.getBoundingClientRect();
+      return pane && (r.bottom > pane.bottom - 48 || captionRects(box).some(c => overlaps(r, c, 4)));
+    };
+    if (collision()) { b.details.hidden = true; box.setAttribute("data-mode", "compact"); }
+    box.style.visibility = collision() ? "hidden" : "";
     // A beat must end even if telemetry arrives only every 20 seconds or the socket temporarily stalls.
     if ((parked ? !a.dockFull : !p.featured) && now < a.until && window.setTimeout)
       box._timer = window.setTimeout(() => { const v = box._latest; render(box, v.p, clock(), v.scene); }, (a.until - now) * 1000 + 1);
