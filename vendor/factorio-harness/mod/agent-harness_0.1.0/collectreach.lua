@@ -256,6 +256,56 @@ return function(api)
 
   -- The tally watch (measures.lua kind collector_tally).
   local function store() local st = api.state(); st.collector_tally = st.collector_tally or {}; return st.collector_tally end
+  -- Completed tallies survive rest and the next start; only completed result snapshots are retained.
+  M.KEPT = 4
+  local function norm(n) return (n:lower():gsub('^@', ''):gsub('^pog%-', '')) end
+  function M.check_read(a)
+    if a.agent == nil and a.id == nil then return end
+    assert(a.collection == true, 'agent and id go with collection: true')
+    assert(a.seconds == nil and a.reason == nil and a.fuel == nil, 'agent/id reads a completed collector_tally; seconds, reason and fuel do not go with it')
+    assert(a.agent == nil or type(a.agent) == 'string' and #a.agent >= 1 and #a.agent <= 64 and norm(a.agent):match('%S'), 'agent: an agent\'s name, up to 64 characters')
+    assert(a.id == nil or type(a.id) == 'string' and #a.id <= 96 and (a.id:match('^collector_tally@%d+$') or a.id:match('^collector_tally@%d+/[^%s/]+$')),
+      'id: "collector_tally@START_TICK/AGENT" (or "collector_tally@START_TICK" when unambiguous)')
+    assert(a.platform == nil or type(a.platform) == 'string', 'platform: a platform name')
+  end
+  function M.read_tally(a)
+    M.check_read(a)
+    local tick, who
+    if a.id then
+      local t, w = a.id:match('^collector_tally@(%d+)/?(.*)$')
+      tick, who = tonumber(t), w ~= '' and norm(w) or nil
+    end
+    local want, hits = a.agent and norm(a.agent), {}
+    for i, current in pairs(api.state().collector_tally or {}) do
+      local name = api.who_index and api.who_index(i)
+      if name and (not who or norm(name) == who) and (not want or norm(name) == want) then
+        local newest
+        local function add(job)
+          if job.result and (not tick or job.start == tick) and (not a.platform or job.platform == a.platform) then
+            local hit = {job=job, agent=name, id=job.id or string.format('collector_tally@%d/%s', job.start, name)}
+            if tick then hits[#hits+1] = hit
+            elseif not newest or job.start > newest.job.start then newest = hit end
+          end
+        end
+        add(current)
+        for _, job in ipairs(current.kept or {}) do add(job) end
+        if newest then hits[#hits+1] = newest end
+      end
+    end
+    local what = (a.id or 'of agent ' .. tostring(a.agent)) .. (a.id and a.agent and ' of agent ' .. a.agent or '')
+      .. (a.platform and ' on ' .. a.platform or '')
+    assert(#hits > 0, 'no completed collector_tally ' .. what .. ' is kept')
+    if #hits > 1 then
+      local ids = {}; for _, hit in ipairs(hits) do ids[#ids+1] = hit.id end; table.sort(ids)
+      error('ambiguous collector_tally ' .. what .. ': ' .. table.concat(ids, ', ') .. '; give a full id or agent', 0)
+    end
+    local hit, out = hits[1], {}
+    for k, v in pairs(hit.job.result) do out[k] = v end
+    out.id, out.agent, out.platform = hit.id, hit.agent, hit.job.platform
+    out.start_tick, out.end_tick = hit.job.start, hit.job.until_tick
+    out.line = string.format('%s by %s, ticks %d-%d: %s', out.id, out.agent, out.start_tick, out.end_tick, out.line or '')
+    return out
+  end
   local function prod_counts(force, s)
     local out = {}
     for _, g in ipairs(collected(force, s) or {}) do out[g.name] = g.total end
@@ -391,6 +441,15 @@ return function(api)
       box={left_top={x=x0 - M.WATCH - 6, y=y0 - M.WATCH - 6}, right_bottom={x=x1 + M.WATCH + 6, y=y1 + M.WATCH + 6}}}
     M.sample(job, game.tick)
     M.catch_start(job, game.tick)
+    local old = store()[p.index]
+    if old then
+      job.kept = {}
+      for _, kept in ipairs(old.kept or {}) do job.kept[#job.kept+1] = kept end
+      if old.result then
+        job.kept[#job.kept+1] = {start=old.start, until_tick=old.until_tick, platform=old.platform, id=old.id, result=old.result}
+      end
+      while #job.kept > M.KEPT do table.remove(job.kept, 1) end
+    end
     store()[p.index] = job
     return replaced
   end

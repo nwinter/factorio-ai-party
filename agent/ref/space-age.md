@@ -842,3 +842,13 @@ Budget labels (batch364): `usable_after_reserve_margin` holds the budget usable 
 - Ammunition `platform_endurance resources`: `aboard` (whole ship, including turret magazines); `stock` (reachable, excluding stranded). The resource line labels both counts, including in compact output.
 
 `platform_endurance` damage forecasts carry `damage_model`: area/splash and multi-target effects not modelled; independent ammunition estimates. `design.details:true` with `design.ammo` adds `ammo_details[].effects`: cached direct/area prototype damage, radius, friendly-fire filter, nested projectile actions, repeats/falloff and separate quality multiplier. Base values, not total blast damage; native turret settings unchanged.
+
+`platform_supply {collection:true,agent:"opus"}` reads that agent's newest completed collector tally.
+`platform_supply {collection:true,id:"collector_tally@121787697/opus"}` selects a retained completed tally.
+The reply's `tally` names its `id`, `agent`, `platform`, `start_tick` and `end_tick`. An optional `platform`
+filters the selection. Agent names accept any case and `@`/`pog-` prefixes, as uptime does. With both selectors,
+the owner must match; an ownerless id must be unambiguous. Missing, running, or unretained tallies give an error.
+These reads do not start, stop, replace or mark anyone's watch read; `seconds`, `reason` and `fuel` are refused.
+Completed results survive resting. Starting another watch retains four previous completed tallies, oldest dropped
+first; a running watch replaced by a new start is not a completed tally. Without selectors, the caller's usual
+`platform_supply {platform,collection:true}` behavior is unchanged.
