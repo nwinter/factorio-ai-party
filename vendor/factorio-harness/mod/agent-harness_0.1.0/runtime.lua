@@ -20525,6 +20525,7 @@ M.ammoreserve=require('ammoreserve'){state=state}
 -- (d29 batch344 GS) snapshots of a turret and its feeders when an ammo_below guard on a platform fires
 M.turretsnap=require('turretsnap'){state=state,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
+  floor_loss=function(pl,e) return M.timed('asteroid_watch.floor_loss',M.asteroidwatch.on_floor_loss,pl,e) end,
   fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
   trace_done=function(pl) return M.ammofeed.done_tick(pl) end,supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end,mixed_view=function(w) return M.mixed and M.mixed.view(w) end,

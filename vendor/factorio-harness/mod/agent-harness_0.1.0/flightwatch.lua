@@ -537,11 +537,15 @@ return function(api)
     if sn then
       r.seen[k] = nil
       local e = sn.seq and loss_row(r, sn.seq)
-      if e then e.rebuilt = tick end
+      if e then
+        e.rebuilt = tick
+        if api.floor_loss then api.floor_loss(pl, e) end
+      end
       return
     end
     local e = loss_push(r, math.floor(x), math.floor(y), tick)
     e.rebuilt, e.after = tick, r.read_tick
+    if api.floor_loss then api.floor_loss(pl, e) end
   end
   function M.loss_scan(pl, tick)
     local r = loss_log(pl)
@@ -562,6 +566,7 @@ return function(api)
           local e = loss_push(r, g.x, g.y, tick)
           e.seen, e.after = tick, prev
           r.seen[k] = {seq=e.seq}
+          if api.floor_loss then api.floor_loss(pl, e) end
         end
       end
     end
