@@ -63,7 +63,7 @@ do
   fails(function() C.validate({['until']='pod_landed',platform='Ferry',last_drop=true,since_tick=10}) end,'no since_tick')
   fails(function() C.validate({['until']='pod_landed',platform='Ferry',quality='rare'}) end,'pod_landed quality goes with item')
   fails(function() C.validate({['until']='pod_landed',platform='Ferry',item='firearm-magazine',quality='shiny'}) end,'quality is a quality name')
-  fails(function() C.validate({['until']='platform_arrived',platform='Ferry',quality='rare'}) end,'quality applies to item_count, platform_ammo_below and pod_landed only')
+  fails(function() C.validate({['until']='platform_arrived',platform='Ferry',quality='rare'}) end,'quality applies to entity_quality, item_count, platform_ammo_below and pod_landed only')
 end
 
 -- A held wait (on_timeout hold) and a requeued one (the queue paused while it ran) keep their start tick: pods that

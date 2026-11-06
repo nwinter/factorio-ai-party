@@ -38,4 +38,4 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 - A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
 - The stream's full-canvas shift recap uses recorded files via `tools/stream/shift_recap.py`; recorded camera imagery: `tools/stream/recap_capture.py`; offline replay: `tools/stream/shift_recap_rehearsal.py`. No game reads.
-- `platform_speed_above` accepts zero/negative speed; `queue_submit` validates schedule waits and recovery steps (ref/waits-queues.md).
+- Remote queue `upgrade` takes platform/surface; `entity_quality` waits for completion (ref/waits-queues.md).

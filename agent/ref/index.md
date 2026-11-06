@@ -16,7 +16,7 @@
   `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `belt_flow`,
   `pipe_gaps`, `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`,
   `shortages`, `damage_log`, `uptime` (16 item/fluid), `dependency`, `ingredient_gap`, `robot_losses`, `losses`, `alerts_digest`, `requester_rate`.
-- `waits-queues`, waits, queues, orders: `inventory_free_slots`, `wait_until`, `sleep
+- `waits-queues`, waits: `entity_quality`, `inventory_free_slots`, `wait_until`, `sleep
   --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
   `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,
   `orders_resume`, `reminder_add`, `reminder_edit`, `reminder_ack`, `reminders`.

@@ -386,3 +386,5 @@
   pick up from the tile behind and drop on the tile in front; check the edge tiles of 3x3 machines. An inserter's
   `direction` is the side it picks up from (`direction: east` takes from the east, drops west; a belt's is where items
   go); `build` replies say it in words. `build` accepts a batch of up to 64 placements.
+
+- `upgrade` in remote/platform queues requires explicit `platform` or `surface`; `wait_until {until: "entity_quality", position, quality, platform, timeout}` waits for the built replacement (ref/waits-queues.md).
