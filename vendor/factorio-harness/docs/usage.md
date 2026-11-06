@@ -18786,6 +18786,21 @@ continues the queue without `on_fail:skip`. Missing platforms/stops and empty sc
 confirmation and pause on persistent failure; direct calls retain the recheck and failure tell. A no_schedule read
 while waiting at the current station on unmet conditions remains the existing valid waiting case. `schedule_check`
 and describe text now match the idempotent behavior.
+
+## d37 batch437 (#2915, Sol: another agent's completed collector tally)
+
+- `platform_supply {collection:true,agent:"opus"}` returns that agent's newest completed collector tally in `tally`.
+  `id:"collector_tally@121787697/opus"` selects a retained completed tally. Like uptime, agent names ignore case and
+  accept `@`/`pog-` prefixes; an id without its owner must be unambiguous. Both selectors must agree when supplied.
+  Optional `platform` filters the result; no platform is required for these stored-result reads.
+- The tally includes `id`, `agent`, `platform`, `start_tick`, `end_tick`, and its original catch/type/collector counts.
+  This path reads stored evidence only, without a platform scan. It does not start, stop, replace or mark any watch
+  read, or attach the caller's watch metadata. The selected tally's own `mixed` edit history is preserved.
+  `seconds`, `reason` and `fuel` are refused with selectors.
+- Rest does not clear collector tallies or stop their completion. A new watch retains up to four previous completed
+  results, oldest dropped first; replaced running watches are not archived as completed. This retention starts with
+  deployment: previously overwritten results cannot be recovered. A missing, unknown, running or no-longer-retained
+  selection is a clear error. Without selectors, the caller's existing start/read behavior is unchanged.
 ## d37 batch434: inspect full-hand waiting (Sol #2912)
 
 - `inspect.hand_line` distinguishes maximum pickup size from the prototype's fixed full-hand requirement.

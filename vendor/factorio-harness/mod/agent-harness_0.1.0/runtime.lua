@@ -9135,6 +9135,7 @@ M.check_item_name=require('itemnames')
 -- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
 -- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
 M.step_checks={
+  platform_supply=function(a) M.collectreach.check_read(a) end,
   platform_schedule=function(a) space.check_schedule_args(a) end,
   feed=function(a) M.feed_items(a) end,
   collect=function(a) if a.pods==nil and a.pick~=nil then M.pick_items(a) end end,
@@ -20618,7 +20619,8 @@ M.platplan=require('platplan'){platform=function(p,name) return space.platform(p
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 -- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
-M.collectreach=require('collectreach'){state=state}
+M.collectreach=require('collectreach'){state=state,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,
+  mixed_view=function(job) return M.mixed.view(job) end}
 M.platsupply=require('platsupply'){unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   collectreach=M.collectreach,reason=function(v) return M.measures.reason(v) end,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
@@ -22178,6 +22180,7 @@ end)()
     local orig=handlers[name]
     handlers[name]=function(p,a)
       local out=orig(p,a)
+      if name=='platform_supply' and (a.agent~=nil or a.id~=nil) then return out end
       local k=type(kind)=='function' and kind(a or {}) or kind
       local job=k and p and p.valid and (k=='belt_flow' and require('beltwatches').find(state(),p.index,out and out.id) or (state()[k] or {})[p.index])
       if type(job)=='table' then
