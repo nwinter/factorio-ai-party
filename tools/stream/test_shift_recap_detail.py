@@ -60,6 +60,18 @@ class DetailTest(unittest.TestCase):
         public=V.public(V.bind(m),m['lines'][0],'recap')
         self.assertIsNone(public['media']); self.assertIn('OVERVIEW FALLBACK',public['fallback'])
 
+    def test_target_record_time_wins_over_later_background(self):
+        m=detail_manifest()
+        m['evidence']['rows']=[{'id':'target','t':1000,'text':'Asterion front-right turret at (24,-12)'},
+                               {'id':'background','t':1080,'text':'platform Asterion arrived at Nauvis'}]
+        m['lines'][0]['sources']=['target','background']
+        v=V.bind(m)['visuals']['ship']
+        self.assertEqual(v['binding']['record_t'],1000)
+        self.assertEqual(v['media']['detail']['delta_seconds'],-10)
+        m['lines'][0]['text']+=' after the record.'
+        m['stills']=m['stills'][1:2]
+        self.assertIn('FALLBACK',V.bind(m)['visuals']['ship']['fallback'])
+
     def test_cited_coordinates_and_ambiguous_positions(self):
         line={'text':'Asterion front-right turret'}
         self.assertEqual(D.target(line,[{'text':'front-right turret at (24,-12)'}])['position'],[24,-12])

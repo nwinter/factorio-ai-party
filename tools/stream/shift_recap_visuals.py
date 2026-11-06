@@ -101,9 +101,8 @@ def bind(manifest):
                 targets = set()
             choices = [m for m in media if m["subject_type"] == subject_type
                        and m["subject"].casefold() in {s.casefold() for s in targets}]
-            # Moving footage must cover the cited record time. A still remains useful in
-            # the offline audit, but never substitutes for gameplay on air. Legacy clips
-            # without an interval cannot establish that they show this moment.
+            # Subject-only footage must cover the cited record time. Target beats below
+            # require containing image geometry; legacy clips cannot establish it.
             clips = [m for m in choices if m["kind"] == "video"
                      and isinstance(m["duration"], (int, float)) and math.isfinite(m["duration"])
                      and 0 < m["duration"] <= 20
