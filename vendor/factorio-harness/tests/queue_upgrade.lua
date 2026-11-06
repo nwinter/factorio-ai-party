@@ -41,7 +41,7 @@ local handlers={upgrade=function(p,a) return upgrade.run(actor(p,a),a) end}
 local s={}
 -- Exercise the runtime's submission hook, including its call to the shared planner validator.
 local f=assert(io.open('mod/agent-harness_0.1.0/runtime.lua')); local runtime=f:read('*a'); f:close()
-local hook=assert(runtime:match('step_read_check=(function%(p,action,args,prior%).-\n  end),'))
+local hook=assert(runtime:match('step_read_check=(function%(p,action,args,prior%).-end),%s*condition='))
 local readcheck=assert(load('return '..hook,'submission-hook','t',{M={upgrade=upgrade,upgrade_player=actor,step_read_check=function() end}}))()
 local base={state=function() return s end,player=function() return p end,handlers=handlers,
   busy=function() return false end,stop=function() end,stop_index=function() end,
