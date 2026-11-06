@@ -62,6 +62,7 @@ assert.equal(resolve(next,2600,[begin]).phase,'starting');
 assert.equal(resolve(next,20000,[begin]).phase,'starting'); // a stuck startup stays unconfirmed
 assert.equal(resolve({...next,started:true},2700,[begin]).phase,'live');
 assert.equal(resolve({...old,stopped:true,save_state:'confirmed'},2450).number,148);
+assert.equal(resolve({...old,stopped:true},3000,[op(2900,'Shift 149 is live: 9 agents playing.')]).phase,'starting');
 const final = {...old,next:null};
 assert.equal(resolve(final,2100).phase,'pending');
 assert.match(phase.label(resolve(final,2100)),/Run end pending/);

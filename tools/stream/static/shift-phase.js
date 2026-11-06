@@ -21,7 +21,7 @@
     else phase = sh.started === true ? 'live' : 'unknown';
     var events = (messages || []).map(notice).filter(function (e) {
       return e && e.t >= sh.start && e.t <= now &&
-        (e.number === number || (!final && e.number === number + 1));
+        (e.number === sh.number || (!final && e.number === sh.number + 1));
     }).sort(function (a, b) { return a.t - b.t; });
     var e = events[events.length - 1];
     // A current shift's old live notice cannot undo its later deadline/stop.
