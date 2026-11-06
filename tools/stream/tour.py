@@ -326,8 +326,11 @@ def clip_dir(script):
     return os.path.join(os.path.dirname(os.path.abspath(script)), "tour-clips")
 
 
-def clip_hash(voice, text):
-    return hashlib.sha1(json.dumps([voice, DIRECTION, text]).encode()).hexdigest()[:12]
+def clip_hash(voice, text, openai_model=None):
+    key = [voice, DIRECTION, text]
+    if openai_model:
+        key.append(openai_model)
+    return hashlib.sha1(json.dumps(key).encode()).hexdigest()[:12]
 
 
 def read_manifest(out):
@@ -341,7 +344,8 @@ def read_manifest(out):
 
 def audio_skipped(manifest, stop):
     c = (manifest or {}).get("clips", {}).get(stop["id"], {})
-    return bool(c.get("skipped") and c.get("hash") == clip_hash((manifest or {}).get("voice"), stop["narration"]))
+    return bool(c.get("skipped") and c.get("hash") == clip_hash((manifest or {}).get("voice"), stop["narration"],
+                                                               (manifest or {}).get("openai_tts_model")))
 
 
 def clip_for(manifest, out, stop):
@@ -349,7 +353,8 @@ def clip_for(manifest, out, stop):
     if not manifest or not stop["narration"]:
         return None
     c = manifest["clips"].get(stop["id"])
-    if not c or c.get("skipped") or c.get("hash") != clip_hash(manifest.get("voice"), stop["narration"]):
+    if not c or c.get("skipped") or c.get("hash") != clip_hash(manifest.get("voice"), stop["narration"],
+                                                            manifest.get("openai_tts_model")):
         return None
     path = os.path.join(out, c["file"])
     if not os.path.exists(path):
@@ -379,11 +384,12 @@ def render_all(rows, out, voice, tts, manifest, speak=None, checker=None):
     import prepared_audio as PA
     checker = checker or PA.Checker(os.path.join(out, "audio-checks.jsonl"))
     old = manifest.get("clips", {}) if manifest and manifest.get("voice") == voice else {}
+    model = getattr(tts, "openai_model", V.DEFAULT_OPENAI_TTS_MODEL) if V.provider_of(voice) == "openai" else None
     clips = {}
     for _, s, _ in rows:
         if not s or not s["narration"]:
             continue
-        h = clip_hash(voice, s["narration"])
+        h = clip_hash(voice, s["narration"], model)
         name = f"{s['id']}-{h}.mp3"
         path = os.path.join(out, name)
         prev = old.get(s["id"])
@@ -425,6 +431,7 @@ def render_all(rows, out, voice, tts, manifest, speak=None, checker=None):
 
 def prepare(a):
     import voices as V
+    model = V.configured_openai_model(run_dir=getattr(a, "run_dir", None))
     rows = checked(load_script(a.script))
     for i, s, why in rows:
         if not s:
@@ -445,7 +452,7 @@ def prepare(a):
             continue
         prov = V.provider_of(voice)
         try:
-            tts = V.TTS(prov)  # one provider: a failure raises (no stand-in voice mid-tour)
+            tts = V.TTS(prov, openai_model=model)  # one provider: no stand-in voice mid-tour
         except Exception as x:
             errors.append(f"{voice}: {type(x).__name__}: {str(x)[:160]}")
             log(f"[prepare] {voice} ({prov}) unavailable: {str(x)[:160]}")
@@ -457,6 +464,8 @@ def prepare(a):
             continue
         m = {"voice": voice, "provider": prov, "direction": DIRECTION, "script": os.path.abspath(a.script),
              "made": time.strftime("%Y-%m-%d %H:%M:%S"), "clips": clips}
+        if prov == "openai":
+            m["openai_tts_model"] = model
         with open(os.path.join(out, "manifest.json"), "w") as f:
             json.dump(m, f, indent=1)
         total = sum(c.get("duration", 0) for c in clips.values())
@@ -984,6 +993,11 @@ def run(a):
     rows = from_index(checked(load_script(a.script)), a.start)
     out = a.out or clip_dir(a.script)
     m = read_manifest(out)
+    if getattr(a, "run_dir", None) and m and m.get("provider") == "openai":
+        import voices as V
+        if m.get("openai_tts_model") != V.configured_openai_model(run_dir=a.run_dir):
+            log("[tour] prepared speech model differs from the playback run; prepare again with --run-dir")
+            return 1
     missing = [s["id"] for _, s, _ in rows if s and s["narration"] and not clip_for(m, out, s)
                and not audio_skipped(m, s)]
     if missing:
@@ -1070,6 +1084,7 @@ def parser():
         if name != "stop":
             p.add_argument("script")
             p.add_argument("--out", help="clip directory (default: SCRIPT_DIR/tour-clips)")
+            p.add_argument("--run-dir", help="playback run whose stream.json selects the OpenAI speech model")
         if name in ("dry-run", "run"):
             p.add_argument("--from", dest="start", metavar="ID", help="start at this stop (resume)")
             p.add_argument("--lead", type=float, default=LEAD_S, help="seconds from the cut to the narration")

@@ -315,6 +315,8 @@ import json, os, sys
 sys.path.insert(0, "tools")
 from shift_times import shift as shift_times
 from cams import slots as cam_slots
+sys.path.insert(0, "tools/stream")
+from tts_trial import apply as apply_tts_trial
 team, out, run, minutes = sys.argv[1:]
 # The shift's times for the site (a visitor between shifts sees when to come back): shifts run back to back, so the
 # next is expected when this one ends; POG_NEXT_SHIFT sets it ("02:47", an ISO time, or "none"). tools/shift_times.py
@@ -325,10 +327,11 @@ for line in open(team):
     name, kind, route, model, effort, label, harness = line.rstrip("\n").split("\t")
     agents[name] = {"model": label, "harness": harness}
 words = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
-json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
+config = {"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
            "space_age": os.environ.get("POG_SPACE_AGE") == "1", "shift": shift, "agents": agents,
            # the director's clients (tools/cams.py: POG_CAMS=1 is cam1 alone, Sunday 2026-10-18)
-           "cameras": cam_slots()}, open(out, "w"), indent=1)
+           "cameras": cam_slots()}
+json.dump(apply_tts_trial(config, run), open(out, "w"), indent=1)
 EOF
 # Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.
 viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtube "$POG_YOUTUBE")

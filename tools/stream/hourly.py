@@ -930,11 +930,11 @@ def script_for(p):
                       for s in p["stops"]], "facts": p["facts"], "piece": p["id"]}
 
 
-def render(script_path, out, feed=FEED):
+def render(script_path, out, feed=FEED, run_dir=None):
     """tour.py prepare: every stop's clip in the tour's narrator voice (the first of tour.VOICES no host or agent
     speaks in that renders them all). -> the manifest, or None."""
     import tour
-    a = argparse.Namespace(script=script_path, out=out, voice=",".join(tour.VOICES), feed=feed)
+    a = argparse.Namespace(script=script_path, out=out, voice=",".join(tour.VOICES), feed=feed, run_dir=run_dir)
     return tour.read_manifest(out) if tour.prepare(a) == 0 else None
 
 
@@ -952,10 +952,10 @@ class Airing:
     """One piece on the narrator channel (tour.Tour), rendered when it can air, dropped when it is too old."""
 
     def __init__(self, svc, out=OUT_DIR, cams=None, clock=time.time, sleep=time.sleep, renderer=None, hush_file=None,
-                 stop_file=None, run_file=None, log_dir=LOG_DIR):
+                 stop_file=None, run_file=None, log_dir=LOG_DIR, run_dir=None):
         import tour
         self.svc, self.out, self.cams, self.now, self.sleep = svc, out, cams, clock, sleep
-        self.renderer = renderer or (lambda script, d: render(script, d, getattr(svc, "base", FEED)))
+        self.renderer = renderer or (lambda script, d: render(script, d, getattr(svc, "base", FEED), run_dir))
         self.hush_file, self.stop_file = hush_file or tour.HUSH_FILE, stop_file or tour.STOP_FILE
         self.run_file, self.log_dir = run_file or tour.RUN_FILE, log_dir
         self.started, self.ours, self.last_look = None, set(), -1e9
@@ -1099,7 +1099,7 @@ def run(a):
         log("[hourly] no OpenRouter key (OPENROUTER_API_KEY or the keychain's openrouter): not starting")
         return 1
     writer, svc = make_writer(a.model), tour.Service(a.feed)
-    airing = Airing(svc, a.out, a.cams or int(os.environ.get("POG_EXPECT_CAMS") or 0) or None)
+    airing = Airing(svc, a.out, a.cams or int(os.environ.get("POG_EXPECT_CAMS") or 0) or None, run_dir=a.run_dir)
     os.makedirs(a.out, exist_ok=True)
     path = os.path.join(LOG_DIR, time.strftime("hourly-%Y%m%d-%H%M%S.jsonl"))
     run_name = os.path.basename(os.path.abspath(a.run_dir))

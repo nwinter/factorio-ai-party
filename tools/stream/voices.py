@@ -1286,6 +1286,7 @@ if __name__ == "__main__":
     ap.add_argument("--mood", choices=list(MOODS), help="the line's moment (default neutral)")
     ap.add_argument("--direction", help="a delivery direction in words (OpenAI and Inworld only)")
     ap.add_argument("--out", default=".", help="directory for the mp3 files")
+    ap.add_argument("--run-dir", help="playback run whose stream.json selects the OpenAI speech model")
     ap.add_argument("--check", action="store_true",
                     help="also measure loudness and transcribe each clip back with Whisper (word accuracy)")
     ap.add_argument("--providers", help="catalog: comma-separated providers to list (default: all)")
@@ -1297,7 +1298,7 @@ if __name__ == "__main__":
         print(f"wrote {os.path.normpath(path)}: {md.count(chr(10))} voices")
         raise SystemExit
     os.makedirs(a.out, exist_ok=True)
-    tts = TTS(a.tts)
+    tts = TTS(a.tts, openai_model=configured_openai_model(run_dir=a.run_dir))
     whisper = 0.0
     for v in (voice_ids() if a.voice == "all" else [a.voice]):
         audio, ctype, dur, lat = tts.speak(speakable(a.text), v, caster=a.caster, mood=a.mood, direction=a.direction)
