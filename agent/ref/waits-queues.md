@@ -434,3 +434,6 @@
   accepting the plan. Invalid waits name the step, label and `stops[i].wait[j]` (or `wait[j]` for `stop`).
   Count/circuit waits take `condition: "iron-plate >= 100"` or `{signal, comparator, value}`; `comparator` beside
   `type` is invalid. Dry runs do not write saved wait lists or schedules.
+
+- Remote/platform queue `upgrade` steps require explicit `platform` or `surface`. The direct planner checks run at submission and execution; submission makes no upgrade marks. Execution uses the direct call: ghosts change in place with wires/settings kept, built entities are marked for replacement.
+- `wait_until {until: "entity_quality", platform: "Asterion", position: {x: 1, y: 2}, name: "inserter", quality: "epic", timeout: 54000}`: true when an owned built entity at that position has exactly that quality. `name` is optional; `surface` replaces `platform` for a planet. Ghosts, missing entities and pending upgrade marks are false. Current sight is required, as for upgrade. The condition works in remote/platform lanes, including guards and all/any.

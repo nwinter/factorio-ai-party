@@ -17192,6 +17192,13 @@ for _,name in ipairs({'feed','collect','transfer','rearm','refuel'}) do
     return out
   end
 end
+function M.upgrade_player(p,a)
+  if a.surface~=nil then
+    assert(a.platform==nil,'give platform or surface, not both')
+    return M.on_surface(p,a.surface)
+  end
+  return a.platform~=nil and on_platform(p,a.platform) or p
+end
 -- The upgrade planner on ghosts and built entities (upgrade.lua; Astra 15:20).
 M.upgrade=require('upgrade'){position=position,read_sight=function(p,q,w) return M.read_sight(p,q,w) end,real=function(p) return real(p) end}
 function handlers.upgrade(p,a) return M.upgrade.run(p,a) end
@@ -17956,7 +17963,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{segments=function(pl) return M.freight.segments(pl) end,state=state,launch_count=function(f,name,o) return M.launchcount.count(f,name,o) end,turret_snapshot=function(pl,t,why) return M.turretsnap.take(pl,t,why) end,return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{entity_quality_sight=function(p,c,pos) M.read_sight(M.upgrade_player(p,c),pos,'target') end,segments=function(pl) return M.freight.segments(pl) end,state=state,launch_count=function(f,name,o) return M.launchcount.count(f,name,o) end,turret_snapshot=function(pl,t,why) return M.turretsnap.take(pl,t,why) end,return_budget=function(p,name,t) return M.endurance.read(p,{platform=name,turnaround=t}).return_budget end,losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,floor_losses=function(pl,tick) return M.timed('flightwatch.loss_scan',M.flightwatch.loss_scan,pl,tick),M.flightwatch.LOSS_KEEP end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,pods_landed=function(name,since,item,q,planet) return M.podlog.landed_from(name,since,item,q,planet) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived: current location plus arrivals in the existing freight event log.
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   arrived_since=function(name,force,location,since) return M.freight and M.freight.arrived_since(name,force,location,since) end,
@@ -17976,7 +17983,10 @@ M.scheduler_api={snapshots=function(p,a) return M.turretsnap.read(p,a) end,colle
   recheck_read=function(rc) return space.recheck_read(rc) end,
   state=state,player=player,player_check=function(index,seated) return player(index,seated,true) end,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
-  step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
+  step_read_check=function(p,action,args,prior)
+    if action=='upgrade' then M.upgrade.validate(M.upgrade_player(p,args),args) end
+    return M.step_read_check(p,action,args,prior)
+  end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end; if type(args)=='table' then M.step_range_check(action,args); M.step_length_check(action,args) end end,validate_condition=function(c,p) return conditions.validate(c,p) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
@@ -18643,7 +18653,7 @@ reads.ghosts=true
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
 -- that document results rather than inputs are not arguments.
-local DOC_ONLY={step_options=true,returns=true,note=true,reports=true,outcomes=true,status=true,usage=true,checked=true,max=true,examples=true,produced=true,platform_built=true}
+local DOC_ONLY={entity_quality=true,step_options=true,returns=true,note=true,reports=true,outcomes=true,status=true,usage=true,checked=true,max=true,examples=true,produced=true,platform_built=true}
 local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,

@@ -1325,7 +1325,20 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_speed_above|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
+  checks.entity_quality=function(p,c)
+    local pos=api.position(c.position)
+    local s
+    if c.platform then s=M.platform_named(p,c.platform).surface else s=surface_of(p,c) end
+    assert(s,'platform '..tostring(c.platform)..' has no surface yet')
+    api.entity_quality_sight(p,c,pos)
+    for _,e in ipairs(s.find_entities_filtered{position=pos,radius=0.3,force=p.force,name=c.name}) do
+      if e.valid and e.type~='entity-ghost' and e.type~='tile-ghost' and e.quality.name==c.quality then
+        return true,string.format('%s (%g,%g): %s quality',e.name,pos.x,pos.y,c.quality)
+      end
+    end
+    return false,string.format('no built %s at (%g,%g) with %s quality',c.name or 'entity',pos.x,pos.y,c.quality)
+  end
+  local NAMES='entity_quality|no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_speed_above|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1412,8 +1425,8 @@ return function(api)
     return true,saws[first.index]..(#rest>0 and ' (others: '..table.concat(rest,'; ')..')' or '')
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
-  local SURFACE_LIST='inventory_free_slots, item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_speed_above, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
+  local SURFACE_LIST='entity_quality, inventory_free_slots, item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
+  local PLATFORM_LIST='entity_quality, inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_speed_above, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1489,9 +1502,15 @@ return function(api)
     -- (batch33 A2) quality: item_count and (d22 batch117 BZ1) platform_ammo_below read it, and (d25 batch205 QR1)
     -- pod_landed with item; one given elsewhere is refused
     if c.quality~=nil then
-      assert(kind=='item_count' or kind=='platform_ammo_below' or kind=='pod_landed','quality applies to item_count, platform_ammo_below and pod_landed only (no other condition counts by quality)')
+      assert(kind=='entity_quality' or kind=='item_count' or kind=='platform_ammo_below' or kind=='pod_landed','quality applies to entity_quality, item_count, platform_ammo_below and pod_landed only (no other condition counts by quality)')
       assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
         kind..' quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
+    end
+    if kind=='entity_quality' then
+      assert(c.position~=nil,'entity_quality requires position')
+      assert(type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality],'entity_quality requires an exact quality name')
+      assert(c.name==nil or (type(c.name)=='string' and prototypes.entity[c.name]),'entity_quality name must be an entity name')
+      if c.platform~=nil then assert(type(c.platform)=='string' and c.platform~='','entity_quality platform must be a platform name') end
     end
     if kind=='inventory_free_slots' then
       assert(c.positions==nil and c.network==nil and c.radius==nil and c.item==nil,

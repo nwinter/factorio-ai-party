@@ -18711,3 +18711,6 @@ unless quality is specified; fluids reject quality and return one row with kind 
 Fluid produced/consumed deltas and per-minute rates use surface fluid production statistics. All rows
 share the exact `flows.start_tick`/`end_tick`, stated once in the flow line; completed and saved watches
 keep those counters. The 64-machine cap and sampled machine counters are unchanged.
+
+- Remote/platform queue `upgrade` steps require explicit `platform` or `surface`. The direct planner checks run at submission and execution; submission makes no upgrade marks. Execution uses the direct call: ghosts change in place with wires/settings kept, built entities are marked for replacement.
+- `wait_until {until: "entity_quality", platform: "Asterion", position: {x: 1, y: 2}, name: "inserter", quality: "epic", timeout: 54000}`: true when an owned built entity at that position has exactly that quality. `name` is optional; `surface` replaces `platform` for a planet. Ghosts, missing entities and pending upgrade marks are false. Current sight is required, as for upgrade. The condition works in remote/platform lanes, including guards and all/any.
