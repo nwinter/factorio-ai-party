@@ -18747,3 +18747,24 @@ missing detail as an overview/map fallback. Capture view/zoom and before/after r
 survive preparation; capture/record timing stays explicit. Next-shift service/helper restart
 and overlay page reload load this change; no game runtime deploy or site rebuild. See
 `tools/stream/shift-recap.md` for geometry, timing bounds and offline verification.
+
+## d37 batch431: foundation-loss evidence in asteroid watches (#2909)
+
+`platform_defense {platform, asteroids:true}` returns `floor_impacts` separately from `platform_hits_all`
+(entity hits). It counts witnessed lost foundation **tiles**, not unique impacting asteroids. The global headline
+includes it even when the causal trajectory was excluded by `track_filter` or the tracked-record cap.
+
+`floor_witnesses` retains the newest 32 tile witnesses: `tick`, `tick_basis` (`ghost_seen` or `hub_rebuild`),
+`tiles: [{x,y}]`, `after_tick`, `seen_tick`, `rebuilt_tick` when available, `cause`, and `candidates`.
+`floor_witnesses_dropped` counts older rows. The existing foundation-loss ledger supplies observations, including
+hub rebuilds between checks. A later rebuild updates the same witness without counting it twice. Player/agent
+construction and known pre-existing ghosts keep the ledger's exclusions. No tile scan is added; unrepaired losses
+without an existing foundation-loss check can remain unseen. The observation tick is not an exact impact tick.
+
+Factorio 2.0.77 supplies no causal event for bare foundation destruction, so `cause` is `"unknown"`.
+The newest 128 asteroid deaths and inferred fragments are retained independently of trajectory admission.
+Up to three candidates within 32 tiles and 600 ticks before discovery are returned, nearest first, with
+`inferred:true`, `kind`, `name`, `unit`, `position`, `tick`, `distance`, and `age_ticks`. Fragment `parent` includes
+its retained name/unit/position/tick and `inferred:true`. Proximity and fragment matching are evidence, not causal
+proof. Rebuild delay or record eviction may leave no candidates. Counts begin with this instrumentation; old
+losses are not reconstructed. Completed watches and closed segments retain their own bounded evidence.
