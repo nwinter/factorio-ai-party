@@ -635,8 +635,11 @@ class LiveSource:
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
     def observe_platform_metrics(self, snapshot, now):
-        return self.platform_metrics.step(snapshot, self.h.operator_read, now,
-                                          supported=getattr(self, "has_platform_metrics", False))
+        try:
+            return self.platform_metrics.step(snapshot, self.h.operator_read, now,
+                                              supported=getattr(self, "has_platform_metrics", False))
+        finally:
+            snapshot["mission_metrics"] = self.platform_metrics.mission_sample(snapshot, now)
 
     # route and speed; and for the Space widget (model.platform_card) the defence, repair packs, damaged entities and
     # hub cargo (eng/platformalerts); ammo made/used and when it runs out in flight (onecam's danger shot; viewer

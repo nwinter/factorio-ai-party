@@ -1199,7 +1199,7 @@ def main():
                 if hasattr(source, "observe_platform_metrics"):
                     try:
                         snap["platform_metrics"] = source.observe_platform_metrics(snap, now)
-                        director.ship_metrics = (now, snap["platform_metrics"] or {})
+                        director.ship_metrics = (now, snap.get("mission_metrics") or snap["platform_metrics"] or {})
                     except Exception as e:
                         snap["platform_metrics"] = None
                         snap.setdefault("errors", {})["platform_metrics"] = str(e)

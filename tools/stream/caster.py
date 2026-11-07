@@ -236,6 +236,7 @@ PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "
             "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
             "story": 7,  # (d28 batch312 B) an operation story's question or result (stories.py)
+            "mission": 7,  # current voyage progress/recovery; urgent audio still wins
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5, "chronicle": 6,
             "analyst": 5,  # (d23 batch130 CM2) an analyst point as its own beat (analyst_event)
@@ -285,6 +286,11 @@ def subjects_of(facts, e=None):
     walk(e or {}, 1)
     walk(facts or {}, 1)
     return out[:4]
+
+
+def mission_deadline(e):
+    return e["sample_t"] + 45 if e.get("kind") == "mission" else None
+
 
 
 def clip_rank(e):
@@ -1112,6 +1118,8 @@ def loss_count(e):
 
 
 def facts_for(e, s, baseline=None, deadline=None, shift=None, target=None):
+    if e["kind"] == "mission":
+        return {"event": "mission", "mission": e["facts"], "game_time": spoken_time(s.get("game_time"))}
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     if e.get("since_last_report"):  # battle beats held back since the last one: sum them up in one line
         f["since_last_battle_report"] = e["since_last_report"]
@@ -2521,6 +2529,8 @@ class Caster:
         self.plain = hoststory.PlainPlan(self.plain_writer(ai), os.path.join(run_dir, "host-plain.json") if run_dir else None)
         # (d23 batch130 CM1) a routine docking is a traffic count; the routes flown this shift kept in the run folder
         self.arrivals = hoststory.ArrivalGate(os.path.join(run_dir, "host-arrivals.json") if run_dir else None)
+        from missions import Missions
+        self.missions = Missions(run_dir)
         self.playback()  # restore heard lines before the feed and speech threads start
 
     def plain_writer(self, ai=None):
@@ -2584,6 +2594,12 @@ class Caster:
                 self.events.extend(gate.poll(s, now))
             if plain:
                 self.events.extend(plain.poll(now))
+            if getattr(self, "missions", None):
+                # Replace, never accumulate: a queued beat always reflects the newest observation.
+                self.events = deque((e for e in self.events if e["kind"] != "mission"), maxlen=60)
+                mission = self.missions.event(s, now)
+                if mission:
+                    self.events.append(mission)
             # (CM2) an analyst point as a beat of its own, one per ANALYST_EVERY seconds
             if "events" in self.__dict__ and now - self.__dict__.get("analyst_t", 0.0) >= ANALYST_EVERY and not any(
                     e["kind"] == "analyst" for e in self.events):
@@ -2633,6 +2649,9 @@ class Caster:
         self.history.append(f"{e['kind']} at {facts.get('game_time')}: {name} - {line}")
         self.remember_framings([line], row.get("completed"))
         self.mark_changes(facts)
+        if e.get("kind") == "mission" and who == "pbp" and getattr(self, "missions", None):
+            with self.lock:
+                self.missions.completed(e, row.get("completed", time.time()), line)
         if e.get("_digest") is not None:
             self.last_digest = tuple(e["_digest"])
         if pollstrip.mentioned([line]):
@@ -2664,6 +2683,12 @@ class Caster:
         # Keep an interrupted explanation in its original order. Withdraw later, still-unheard lines before
         # resuming; a line already playing is allowed to finish and will not be replayed.
         for gid, group in list(memory.groups.items()):
+            if mission_deadline(group["event"]) is not None and any(r["state"] == "queued" for r in group["lines"]):
+                why = self.claim_invalid(group["event"])
+                if why:
+                    for i, row in enumerate(group["lines"]):
+                        if row["state"] == "queued" and self.cancel_audio(row["cid"]):
+                            memory.change(gid, i, "cancelled", reason=why)
             if group["backend"] == "voice" or not any(r["state"] == "interrupted" for r in group["lines"]):
                 continue
             for i, row in enumerate(group["lines"]):
@@ -2686,6 +2711,10 @@ class Caster:
         current = getattr(self, "source_snap", None) or getattr(self, "snap", None)
         if current is None:
             current = getattr(self, "_writing_source", None) or {}
+        if e.get("kind") == "mission":
+            why = self.missions.invalid(e, current, time.time())
+            if why:
+                return why
         for source in (e.get("_source"), e.get("_analyst_source"), e.get("point")):
             if source:
                 why = invalid(source, current)
@@ -2814,7 +2843,7 @@ class Caster:
         self.events = deque(fresh, maxlen=60)
         if not fresh:
             return None
-        best = max(fresh, key=lambda e: (e["prio"], e["t"]))
+        best = max(fresh, key=lambda e: (e["prio"], e["kind"] == "mission", e["t"]))
         segs = [e for e in fresh if e["kind"] == "segment"]
         if segs and best["prio"] < 9:
             # what is on screen wins: on stream2's mock the opener and an attack outranked a production segment
@@ -3117,6 +3146,16 @@ class Caster:
         source = getattr(self, "source_snap", None) or s
         self._writing_source = source
         e = dict(e, _source=stamp(source, min(t_start, getattr(self, "source_received", t_start))), _digest=digest(s))
+        if e["kind"] == "mission":
+            # The mission guard validates the ship. Unrelated agent chatter/research cannot retract it.
+            e["_source"]["subject_revision"] = {k: v for k, v in e["_source"]["subject_revision"].items() if k == "plan"}
+            self.missions.attempted = t_start
+            if not self.claim_invalid(e):
+                self.last_speaker = "color"
+                self.last_line_t = t_start
+                self.stats["caster_lines"] += len(e["lines"])
+                self.speak_lines(e["lines"], e, facts_for(e, s), "mission-facts", None, 0, t_start)
+            return
         if e.get("point") and self.claim_invalid(e):
             return
         if e["kind"] == "analyst":  # (CM2) the next analyst beat waits ANALYST_EVERY from this one, aired or not
@@ -3336,8 +3375,10 @@ class Caster:
                 break
             # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
             try:
+                expires = mission_deadline(e)
                 pushed = self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
+                       "expires_in": min(25, max(0, expires - time.time())) if expires is not None else 25,
+                       "duration": round(dur, 2), "voice": spoke.get("voice"),
                        "rank": clip_rank(e), "exchange": base.get("exchange"), "line_id": line_ids[i],
                        "subjects": subjects_of(facts, e)}, audio, ctype)  # (batch324 SF) for the camera
                 memory.queued(gid, indices[i], pushed)
