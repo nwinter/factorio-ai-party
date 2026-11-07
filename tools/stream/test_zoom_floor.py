@@ -38,6 +38,12 @@ def commands():
     assert all(p['zoom'] >= WORLD_ZOOM_MIN for p in camerapath.points(actual))
     assert d.state['main']['move'] == actual
     assert all(camerapath.at(actual, t / 10)[2] >= WORLD_ZOOM_MIN for t in range(101))
+    # A constant floor-level native survey needs margin too: the real client has returned
+    # .29999999999999993 while interpolating .3 -> .3, alongside recorded map-block frames.
+    floor_pan = {'segments': [{'pts': [{'x':0,'y':0,'zoom':.3},{'x':0,'y':300,'zoom':.3}],
+                              't0':0,'t1':30,'ease':'inout'}]}
+    assert d.apply(SLOTS[0], dict(base, zoom=.3, exact_zoom=True, move=floor_pan), 'survey', {}, 12.5)
+    assert all(camerapath.at(sent[-1]['move'], t/10)[2] > WORLD_ZOOM_MIN + 1e-4 for t in range(301))
     # Failed sends and unchanged retries use the same capped geometry.
     d.sender = lambda b: sent.append(copy.deepcopy(b)) or {'ok': False}
     assert not d.apply(SLOTS[1], dict(base, zoom=.01), 'pending', {}, 13)

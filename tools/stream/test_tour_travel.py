@@ -176,7 +176,45 @@ def eligibility():
     assert not d.state[d.onair].get('train') and not d.send_pending
 
 
+def wide_ship_context():
+    from test_platformcam import plat
+    from test_ship_survey import VIEW
+    d,c,team=quiet_world()
+    s=snap(team);s['space']=dict(platforms=[plat('Asterion',view=VIEW)])
+    d.watch_platforms(s,1065);d.step_t=1065
+    target=d.visit_target('Asterion',25,1065)
+    assert target.get('wide_context') and target.get('survey')
+    d.urgent(target,'private quiet visit',{'luna':1},1065)
+    for t in range(1065,1073):
+        public=tick(d,c,s,t)
+        assert 'wide ship overview' in public['main']['platform']['label']
+    tick(d,c,s,1073)
+    cur=d.state[d.onair]
+    assert cur.get('quiet_detail') and cur['zoom']>=.7 and not cur.get('survey') and not cur.get('wide_context')
+    assert cur['until'] <= 1073+d.cfg['quiet_platform_hold'], 'no leftover long survey hold'
+    assert 'machinery closeup' in d.public(1073)['main']['platform']['label']
+    d.step_t=1200
+    assert d.platform_target('Asterion','featured',1300,overview=True).get('quiet_detail')
+    assert d.platform_target('Asterion','operator',1300,overview=True).get('survey'), 'manual survey remains available'
+    d.step_t=1666
+    assert d.platform_target('Asterion','visit',1800,overview=True).get('wide_context')
+    assert not any(b.get('map') for b in c.calls)
+
+    # A calm featured stint also leaves its wide opening, then changes detail instead of freezing for four minutes.
+    d,c,team=quiet_world()
+    d.featured.set('Asterion',at=1400,now=1065)
+    frames=[]
+    for t in range(1065,1140):
+        public=tick(d,c,s,t)
+        cur=d.state[d.onair]
+        frames.append((t,cur.get('wide_context'),cur.get('zoom'),cur.get('position')))
+        if t>=1074:
+            assert not cur.get('wide_context') and cur['zoom']>=.7,(t,cur)
+    assert any(r[1] for r in frames), 'featured opening is explicitly wide'
+    assert len({str(r[3]) for r in frames if r[0]>=1074})>=2, 'featured details change'
+
+
 if __name__=='__main__':
     with contextlib.redirect_stdout(io.StringIO()):
-        machinery();train_program();tour_program();eligibility()
+        machinery();train_program();tour_program();eligibility();wide_ship_context()
     print('tour travel: machinery routes, closeup dwells, chart envelope; train program, expiry, glide, deadline, priorities and retries passed')

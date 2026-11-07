@@ -814,6 +814,7 @@ class OneCam(Director):
         self.plat_rows = {}    # name -> the snapshot's platform row (model.platform_where: where, route, view)
         self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
         self.plat_shown = {}   # name -> when it was last on air
+        self.wide_context_shown = {}  # confirmed automatic wide ship context, at most once per ten minutes
         self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
         self.departure = None  # {"name", "t", "label", "until"?, "maiden"?, "news"?, "route"?, "why"?}: seen, not on air yet
         self.route_source = None  # (AS1) the model (serve.py): route_last and platform_visited across restarts
@@ -2039,6 +2040,8 @@ class OneCam(Director):
             train = shown.get("train")
             if train:
                 self.train_shown[train["id"]] = shown.get("since", now)
+            if shown.get('wide_context'):
+                self.wide_context_shown[shown['platform']['name']] = shown.get('since', now)
         self.tour_memory.observe(snapshot, now)
         self.train_rows = list(snapshot.get("trains") or [])
         cur_train = self.state.get(self.onair) or {}
@@ -2202,6 +2205,7 @@ class OneCam(Director):
             self.train_step(now)
         self.featured.inset(self, scores, now)
         self.release_maps(now)
+        self.wide_context_step(now)
         if (self.state.get(self.onair) or {}).get('tour') and not self.hosting(now) and not self.hold_layout:
             self.step_move(now)  # quiet tours share the existing native-move fallback used by explicit looks
         self.pan_step(now)
@@ -4232,6 +4236,20 @@ class OneCam(Director):
             t["position"] = dict(t["position"], y=t["pan"]["y0"])
         if agent:
             t["platform"]["agent"] = agent
+        if overview and why in ('visit', 'featured') and t['zoom'] <= .31:
+            now = getattr(self, 'step_t', None) or self.started
+            cur = self.state.get(self.onair) or {}
+            opening = (cur.get('wide_context') and (cur.get('platform') or {}).get('name') == name and
+                       now-self.onair_since < 8)
+            if now-self.wide_context_shown.get(name, -1e9) < 600 and not opening:
+                detail = self.machinery(name) or dict(position=view.get('hub') or t['position'], zoom=.8)
+                t.pop('pan', None)
+                t.update(position=dict(detail['position']), zoom=max(.7, detail['zoom']), exact_zoom=True, quiet_detail=True)
+                t['platform'].update(label=f'{name} · machinery closeup', framing='machinery closeup')
+                return t
+            # Deliberately wide context is labelled and bounded; it cannot occupy a long automatic survey.
+            t['wide_context'] = True
+            t['platform'].update(label=f'{name} · wide ship overview', framing='wide ship overview')
         if overview and why in ("visit", "operator", "follow", "featured"):
             import camerapath
             # One controller owns overview motion and section details. Selection/priorities remain here.
@@ -4245,6 +4263,25 @@ class OneCam(Director):
             t["survey"]["reverse"] = bool(visits % 2)
             t["position"] = {k: t["survey"]["bow"][k] for k in ("x", "y")}
         return t
+
+    def wide_context_step(self, now):
+        t = self.state.get(self.onair) or {}
+        if not t.get('wide_context') or now-self.onair_since < 8 or self.hosting(now) or self.hold_layout:
+            return
+        p = t['platform']
+        if p['name'] not in self.wide_context_shown:
+            return  # only a compositor-confirmed view starts the context cooldown
+        # Ask for the same automatic overview policy; its already-shown context now yields to detail.
+        fresh = self.platform_target(p['name'], p['why'], t['until'], overview=True)
+        if not fresh or not fresh.get('quiet_detail'):
+            return
+        target = {k: v for k,v in t.items() if k not in ('survey','survey_key','survey_step','survey_status',
+                                                       'pan','move','move_ok','jump','wide_context')}
+        target.update(fresh)
+        if p['why'] == 'visit':
+            # A hull survey's extended travel budget must not become a long static detail hold.
+            target['until'] = min(target['until'], now + self.cfg['quiet_platform_hold'])
+        self.apply(self.slot(self.onair), target, 'reframe', {}, now, quiet=True)
 
     def platform_following(self, now):
         p = self.platform_follow
@@ -5656,7 +5693,7 @@ class OneCam(Director):
                 p = dict(t["platform"])
                 if visible_ship and p["name"] != visible_ship:
                     p.update(name=visible_ship, label=self.platform_label(visible_ship))
-                if p["why"] == "visit":
+                if p["why"] == "visit" and not (t.get('wide_context') or t.get('quiet_detail')):
                     p["label"] = self.platform_label(p["name"])
                 row["platform"] = p
                 if t.get("work"):

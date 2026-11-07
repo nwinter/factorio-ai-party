@@ -161,7 +161,8 @@ def hidden_and_refit():
     assert q.public()==saved
     d.hold_layout=False;c.fail=False
     run(d,c,1050,1050.5)
-    assert c.pose==saved['position'] and q.phase==saved['phase']
+    # A static restore has the camera protocol's two-decimal zoom, unlike native path headroom.
+    assert c.pose==dict(saved['position'],zoom=round(saved['position']['zoom'],2)) and q.phase==saved['phase']
     # Section metadata changes cannot restart a live native path.
     run(d,c,1050.5,1055)
     old=d.state['main'];fresh=copy.deepcopy(shot)

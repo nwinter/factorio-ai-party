@@ -2852,8 +2852,14 @@ onto the program. Failed initial shots re-enter quiet selection so an eventual s
 only an already active train's reframes use the send retry path. A moving train's full dwell therefore still
 depends on naturally occurring fresh replies; TV never requests them.
 
-Ordinary ship views retain the rendered-world zoom floor (.3; inset panels .06); these selectors create no ship
-map shots. Existing explicit base maps remain labelled, short (15 seconds) and infrequent (ten minutes, with
+Ordinary ship views retain the rendered-world zoom floor (.3; inset panels .06), with .001 native-path headroom
+against floating-point interpolation dipping below the floor; these selectors create no ship
+map shots. Automatic visits and calm featured surveys at zoom .31 or below show a labelled “wide ship overview”
+for eight seconds, at most once per ship per ten minutes of confirmed on-air coverage, then use the existing
+machinery/hub detail at zoom .7 or closer. Visits then hold detail for at most 25 seconds; calm featured stints
+alternate machinery and bow/hub detail every 30 seconds. Manual surveys retain their existing coverage. This limits wide
+context independently of the renderer's pixel/map representation. Existing explicit base maps remain labelled,
+short (15 seconds) and infrequent (ten minutes, with
 unchanged-map backoff to an hour for the single-client program).
 
 ### Overlay recovery and browser health (batch408)

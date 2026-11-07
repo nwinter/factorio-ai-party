@@ -2,10 +2,18 @@
 
 Ordinary director shots have a final game-zoom floor of **0.3 for a full client** and **0.06 for a GUI inset**.
 `Director.apply` enforces it after exact framing, main/side scaling and panel scaling. It also floors every native
-pan point; logarithmic zoom interpolation stays between those values. The acknowledged `game_zoom` and native
+pan point, with .001 headroom for native interpolation. Logarithmic interpolation can round just below an exact
+boundary: the Nov 6 06:22 Asterion survey returned .29999999999999993 while the recorded program showed map blocks.
+The headroom guarantees a path stays above the existing floor; it does not establish that every historical
+pixel frame had the same cause. The acknowledged `game_zoom` and native
 path describe what was sent. An oversized ship retains its existing pan or gets a partial frame at the floor.
 Only a target explicitly marked `map: true` is exempt. A GUI panel still follows the existing API's 0.05 minimum
 and cannot use the main client's remote-controller chart mode.
+
+Batch441's private connected 2.0.77 client reported `render_mode=game` for both the exact-floor native path
+(.29999999999999993) and the path with headroom (.301). The numerical dip is reproduced, but is not proven to
+cause the historical map blocks. Automatic low-zoom visits/featured context now separately use an eight-second
+labelled overview, once per ship per ten minutes, followed by a machinery closeup. Manual surveys are unchanged.
 
 ## Private-client measurement (batch376, 2026-10-30)
 
