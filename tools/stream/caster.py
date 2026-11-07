@@ -2633,6 +2633,11 @@ class Caster:
         kw["t"] = round(time.time(), 2)
         with open(self.log_path, "a") as f:
             f.write(json.dumps(kw, ensure_ascii=False) + "\n")
+        # Direct mission speech bypasses the writer's console log. Expose delivery, not just generation.
+        if kw.get("type") == "caster" and kw.get("event") == "mission":
+            name = CASTERS.get(kw.get("who"), {}).get("name", kw.get("who"))
+            state = "queued" if kw.get("pushed") else "not queued: " + str(kw.get("reason") or kw.get("error"))
+            log(f"[{name}] (mission, {state}) {kw.get('line', '')}")
 
     def playback(self):
         from playback_memory import PlaybackMemory
@@ -2650,6 +2655,8 @@ class Caster:
         row, e, facts = group["lines"][index], group["event"], group["facts"]
         who, line = row["who"], row["text"]
         name = CASTERS.get(who, {}).get("name", who)
+        if e.get("kind") == "mission" and not restoring:
+            log(f"[{name}] (mission, capture completed) {line}")
         self.recent.append(f"{name}: {line}")
         self.history.append(f"{e['kind']} at {facts.get('game_time')}: {name} - {line}")
         self.remember_framings([line], row.get("completed"))
@@ -2694,6 +2701,8 @@ class Caster:
                     for i, row in enumerate(group["lines"]):
                         if row["state"] == "queued" and self.cancel_audio(row["cid"]):
                             memory.change(gid, i, "cancelled", reason=why)
+                            if group["event"]["kind"] == "mission":
+                                log(f"[caster] cancelled queued mission: {why}")
             if group["backend"] == "voice" or not any(r["state"] == "interrupted" for r in group["lines"]):
                 continue
             for i, row in enumerate(group["lines"]):
@@ -3155,7 +3164,10 @@ class Caster:
             # The mission guard validates the ship. Unrelated agent chatter/research cannot retract it.
             e["_source"]["subject_revision"] = {k: v for k, v in e["_source"]["subject_revision"].items() if k == "plan"}
             self.missions.attempted = t_start
-            if not self.claim_invalid(e):
+            why = self.claim_invalid(e)
+            if why:
+                log(f"[caster] cancelled mission before synthesis: {why}")
+            else:
                 self.last_speaker = "color"
                 self.last_line_t = t_start
                 self.stats["caster_lines"] += len(e["lines"])

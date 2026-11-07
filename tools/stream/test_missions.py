@@ -191,13 +191,17 @@ def main():
     assert len(missions.digest_context(s, START)) <= 6000
     huge = dict(s, run_target={'goal': 'x' * 10000})
     assert len(missions.digest_context(huge, START)) <= 6000
-    with contextlib.redirect_stdout(io.StringIO()):
+    with contextlib.redirect_stdout(io.StringIO()) as rejected_log:
         send_guards()
+    assert 'mission, not queued: mission sample expired' in rejected_log.getvalue()
+    assert 'mission, capture completed' not in rejected_log.getvalue()
     # Exercise real caster queue selection, real speech pushing and completed capture receipts, with camera subjects.
-    with contextlib.redirect_stdout(io.StringIO()):
+    with contextlib.redirect_stdout(io.StringIO()) as aired_log:
         result = replay()
     assert result['completed_exchanges']['mission'] == 3
     assert result['completed_exchanges']['research'] >= 2
+    assert aired_log.getvalue().count('(mission, queued)') == 6
+    assert aired_log.getvalue().count('(mission, capture completed)') == 6
     print('missions: freshness, unknowns, lineage, receipt idempotence, offscreen budget, analyst provenance, ten-minute aired replay: ok')
 
 

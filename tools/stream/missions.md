@@ -34,6 +34,11 @@ expired and skipped audio cannot establish a heard milestone. Playback restorati
 run inherits nothing. The recent 120 heard observations also feed hourly narration as explicitly dated historical
 material, with the ship as camera target; the hourly/tour cadence and model-call count are unchanged.
 
+Delivery diagnosis: `caster.log` distinguishes mission `queued`, `not queued` with a reason, and `capture completed`.
+Queued does not mean heard. Completed lines restored at startup are not logged as a new airing. The structured
+`tools/stream/logs/caster-*.jsonl` records pushes; `host-playback.json` retains capture receipts and interruption/
+cancellation states. Before cp3, direct mission speech wrote the structured log but bypassed the console log.
+
 The existing analyst digest gains current Goals, dated project plan lines and chronicle facts, recent relevant
 agent speech, and fresh voyage telemetry. Added context is capped at 6,000 characters (approximately 1,500 input
 tokens, before a short instruction). Ship-related analyst claims carry the exact sample revision and expire or
