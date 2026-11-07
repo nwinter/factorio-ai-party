@@ -29,6 +29,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `place_ghosts` dry runs check surface conditions and rotated railgun floor tiles; `check_inserters` refuses the whole batch on failure (help building).
 `platform_defense`: asteroid segments keep first + newest two; aim keeps first failure (help space-age).
 `rearm {from}`: pickup then turret tour; no ammo taken or a refused tour reports failure with the reason.
+`load_silo first`: sources cover the manifest or refuse; native auto status and partial/OFF warning (help space-age).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in

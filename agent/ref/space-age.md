@@ -710,7 +710,11 @@
   for, which would go to the trash slots (the reply says so); with them on, load_silo and preflight name the platforms' open requests a
   rocket may go to. The game has no priority among a silo's automatic requests. `first: ["space-platform-foundation",
   "asteroid-collector"]` (with `platform`): those items alone, each at what the hub lacks of its requests (or
-  `{item: count}`), from what you hold and the chests of the silo's network robots would take from first (or `from`),
+  `{item: count}`), from what you hold and enough eligible storage/active/passive provider chests of the silo's
+  network (up to 16; buffers require explicit `from`). Insufficient normal-quality stock refuses before starting,
+  with excluded sources and reasons. Explicit `from` keeps its existing partial-load semantics. `native_auto_before`
+  reports the visible rocket state, switches, target and payload matches; the engine's idle cause is not exposed.
+  `first_warning` states that a partial load without its launch leaves automatic requests OFF. The selected load is
   walked, launched to the platform with automatic requests paused (`"pause"`); `first` names the counts and chests,
   `first_skipped` items the hub lacks none of. A dry run pauses nothing. `dry_run: true` (and `preflight`): each item's weight, slots and sources, the rocket's room, the
   split, the hub's free slots, cargo aboard that is not in the list (`foreign_cargo`) and automatic requests that are

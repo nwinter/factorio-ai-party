@@ -8640,10 +8640,16 @@ fh watch    # deploy on every change
   - `load_silo {position, platform, first}` (runtime.lua M.load_first) builds that call:
     - `items`: each item named at what the hub lacks of its requests (its sections that are on), or `{item: count}`.
       Items it lacks none of are named in `first_skipped`, and a call where it lacks none of them is refused.
-    - `from`: the chests of the silo's logistic network that robots would take each item from first
-      (select_pickup_point, up to 4 an item, 16 in all), unless `from` is given.
+    - `from`: preferred pickup chests, then other eligible storage/active/passive provider chests of the silo's
+      network until inventory plus sources cover the manifest (16 chests total). Buffers remain excluded from
+      automatic pickup, as in the original selector; explicit `from` still permits them. Insufficient normal-quality
+      stock refuses before any walk, load or auto-request pause, naming selected sources, excluded sources and reasons.
+      Explicit `from` keeps its existing semantics, including partial loads.
     - `walk: true`, `launch: true`, and `auto_requests: "pause"` when the silo's automatic requests are on. `first`
-      in the reply says the counts and the chests.
+      in the reply says the counts and the chests. `first_warning` keeps the partial/auto-OFF warning visible.
+      `native_auto_before` reports the read tick, rocket state, native switches, current target and platform payload
+      matches before pausing. The engine does not expose the cause of its automatic launch scheduling; matching stock
+      is not a launch guarantee. Native behaviour is unchanged (#2937, d37 batch457).
   - Found on the way: a dry run with `auto_requests: "pause"` switched the automatic requests off and never back on
     (no launch follows a dry run). A dry run now switches nothing and says what the load would do.
 - B8 (Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer >= 24000 she set current 2, as current =
