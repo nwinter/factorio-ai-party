@@ -2661,9 +2661,9 @@ class Caster:
         self.history.append(f"{e['kind']} at {facts.get('game_time')}: {name} - {line}")
         self.remember_framings([line], row.get("completed"))
         self.mark_changes(facts)
-        if e.get("kind") == "mission" and who == "pbp" and getattr(self, "missions", None):
+        if e.get("kind") == "mission" and getattr(self, "missions", None):
             with self.lock:
-                self.missions.completed(e, row.get("completed", time.time()), line)
+                self.missions.completed(e, row.get("completed", time.time()), line, who)
         if e.get("_digest") is not None:
             self.last_digest = tuple(e["_digest"])
         if pollstrip.mentioned([line]):

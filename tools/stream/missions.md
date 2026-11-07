@@ -2,7 +2,7 @@
 
 Rook and Vale now have a coalesced mission beat for the active featured ship, or a measured ship named in current
 Goals. Rook calls distance, milestone, incoming damage, structure losses, empty guns, observed repair/construction,
-ammunition drawdown or recovery. Vale explains the scope of that observation and the stated run goal. These are
+ammunition drawdown or recovery. Vale explains the scope of that observation and the measured reserves. These are
 short rule-written pairs through the existing caster/TTS/playback path, not additional LLM requests. Existing
 arrival/destruction headlines still handle the result of a voyage. No game agent is asked to write or spend quota.
 
@@ -17,7 +17,7 @@ One pending mission replaces its previous candidate on each snapshot. A complete
 listener check and segment scheduling still apply. Mission priority is 7, tied with research and preferred at that
 tie, below urgent priority 8+. Its audio rank is ordinary banter, so urgent and agent audio retain priority. On a
 quiet slow voyage a new spoken tenth of a percent and at least .05% forward movement warrants another update;
-unchanged measurements, tiny rate noise and old work cues do not create updates.
+old work cues do not create updates; batch461 adds routine ammo slots and dated reports as described below.
 
 Only telemetry acquired within 45 wall seconds is usable. Missing/future dates, removed ships, route changes,
 pauses and changed spoken facts fail closed. A fact is checked again after synthesis and before each push; queued
@@ -26,7 +26,7 @@ sample's 45-second deadline. Playback already underway may finish. Repair/build 
 old. Zero new hits/damage is reported only when both are known zero, and never called a repaired hull. Loss counts
 exclude foundation; ammo net includes crafting and does not prove gun feeding or endurance.
 
-`runs/RUN/host-missions.json` stores only capture-completed Rook observations and heard milestones. A mission key
+`runs/RUN/host-missions.json` stores capture-completed host observations; only Rook establishes heard milestones. A mission key
 contains ship, directed route, reversal flag and departure tick. The 10/25/50/75/90 percent milestones, first
 structure loss, negative ammo types, repair/damage and recovery reports survive process restarts and a new shift
 through `resumed-from`. A later crossed percentage subsumes earlier thresholds. Generated, queued, interrupted,
@@ -56,3 +56,26 @@ simulated minutes through the real caster scheduler, speech push code, receipt m
 with fake TTS durations and capture receipts. It prints every line, camera platform, playback rank and completed
 exchange count, plus the identical trace with mission beats disabled. This is a synthetic recovery exercise, not
 an assertion that live Asterion suffered the injected damage or a recording of actual listener playback.
+
+## batch461: routine mission detail
+
+The existing mission slot now rotates active ammo types (made/used per wall minute, hub reserve and loaded reserve),
+even without a new progress tenth. Among types not yet covered, the shortest measured buffer goes first. Danger,
+recovery and distance milestones keep their existing precedence. After an ammo report, one unheard dated agent
+report can take the next routine slot: existing chat, last speech and plan lines supply short verbatim sentences
+about the named ship's refits, bottlenecks, trials or next decisions. Reports carry agent and original game-hour/
+minute attribution; plans and reports are not asserted as fresh measurements or confirmed test outcomes. Only
+reports within one game hour (and one wall hour when a wall date exists) qualify. Undated, future, overlong or
+unrelated statements are skipped. No summarizer or new model/game-agent call is added. Routine progress no longer
+repeats the run goal; Goals remain in the analyst context.
+
+Ammo guards compare all rounded spoken numbers, including Vale's reserves. Dated-report guards compare the exact
+source statement. Original 45-second sample expiry and queued cancellation remain; an unrelated progress tenth
+cannot cancel an ammo report. Every completed Rook OR Vale line enters the existing narrator history; only Rook
+still establishes milestones and cadence. A dropped reserve line never enters that history. Restored receipts are
+idempotent. Narration labels this material as historical, with the source date retained inside agent reports.
+
+The three-minute minimum, retry backoff, urgent preemption, camera coordination, service read budget and model-call
+cadences are unchanged. This can use previously silent mission slots (up to the existing 20 pairs/hour); it is not
+zero TTS cost. Stream/caster restart remains operator-owned. `test_mission_details.py` covers numeric/unknown guards,
+ammo rotation, dated report expiry/change, lineage and completed-only narrator detail alongside the original replay.
