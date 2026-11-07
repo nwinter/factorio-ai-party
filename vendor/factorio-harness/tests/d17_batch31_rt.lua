@@ -83,12 +83,14 @@ do
   prototypes=prototypes or {}
   prototypes.item=prototypes.item or {}
   for _,n in ipairs({'space-platform-foundation','asteroid-collector','firearm-magazine','iron-ore'}) do prototypes.item[n]={name=n,weight=1000,stack_size=50} end
-  local chest={valid=true,name='storage-chest',unit_number=31,position={x=70.5,y=20.5},get_item_count=function(n) return n=='space-platform-foundation' and 400 or 0 end}
-  local net={select_pickup_point=function(f) if f.name=='space-platform-foundation' then return {owner=chest} end end}
+  defines.rocket_silo_status={rocket_ready=7}
+  local chest={valid=true,name='storage-chest',type='logistic-container',force=force,surface=surface,prototype={logistic_mode='storage'},unit_number=31,position={x=70.5,y=20.5}}
+  chest.get_inventory=function() return {get_item_count=function(n) return n.name=='space-platform-foundation' and 400 or n.name=='iron-ore' and 50 or 0 end} end
+  local net={storages={chest},select_pickup_point=function(f) if f.name.name=='space-platform-foundation' then return {owner=chest} end end}
   local silo={valid=true,name='rocket-silo',type='rocket-silo',unit_number=779,force=force,surface=surface,position={x=65.5,y=14.5},use_transitional_requests=true,
     bounding_box={left_top={x=61,y=10},right_bottom={x=70,y=19}},get_inventory=function() return {get_contents=function() return {} end} end}
   local was,wasnet=surface.find_entities_filtered,surface.find_logistic_network_by_position
-  surface.find_entities_filtered=function(f) return {silo} end
+  surface.find_entities_filtered=function(f) return f.position and f.position.x==70.5 and {chest} or {silo} end
   surface.find_logistic_network_by_position=function() return net end
   local sec={active=true,filters={{value={name='space-platform-foundation'},min=100,import_from='nauvis'},{value={name='asteroid-collector'},min=2,import_from='nauvis'}}}
   local held={['space-platform-foundation']=20,['asteroid-collector']=2}
@@ -110,11 +112,26 @@ do
   assert(r.first:find('rocket-silo first: space-platform-foundation 80 (what the hub lacks of its requests), launched to Swift with the silo\'s automatic requests paused (back on after the launch); from what you hold and the network\'s chests robots would take from first: storage-chest (70.5,20.5) holding 400 space-platform-foundation',1,true),r.first)
   eq(r.first_skipped[1],'asteroid-collector (the hub asks 2 and holds them)'); eq(r.first_skipped[2],'firearm-magazine (the hub does not request it)')
   assert(r.auto_requests and r.auto_requests:find('a dry run: nothing switched',1,true),tostring(r.auto_requests))
+  assert(r.native_auto_before.line:find('native auto before load',1,true))
+  assert(r.first_warning:find('leaves automatic requests OFF',1,true))
   -- counts given; refusals
   runtime.rocketload.plan=function(p,a) seen=a; return {dry_run=true} end
   grok('load_silo',{position={x=65.5,y=14.5},platform='Swift',first={['iron-ore']=50},dry_run=true})
   runtime.rocketload.plan=real
   eq(seen.items['iron-ore'],50)
+  -- Insufficient automatic selection is refused before the plan or auto pause, even with some stock.
+  fails(function() grok('load_silo',{position={x=65.5,y=14.5},platform='Swift',first={['iron-ore']=51}}) end,
+    'iron-ore 50 of 51 (1 short)')
+  eq(silo.use_transitional_requests,true)
+  sec.filters[#sec.filters+1]={value={name='iron-ore'},min=51}
+  fails(function() grok('load_silo',{position={x=65.5,y=14.5},platform='Swift',first={'iron-ore','iron-ore'}}) end,
+    'iron-ore 50 of 51 (1 short)')
+  -- Explicit from keeps the caller's source and existing partial-load semantics.
+  runtime.rocketload.plan=function(p,a) seen=a; return {dry_run=true} end
+  local explicit={{x=70.5,y=20.5}}
+  grok('load_silo',{position={x=65.5,y=14.5},platform='Swift',first={['iron-ore']=51},from=explicit,dry_run=true})
+  eq(seen.from,explicit); eq(seen.items['iron-ore'],51)
+  runtime.rocketload.plan=real
   fails(function() grok('load_silo',{position={x=65.5,y=14.5},platform='Swift',first={'asteroid-collector'}}) end,'lacks none of them: asteroid-collector (the hub asks 2 and holds them)')
   fails(function() grok('load_silo',{position={x=65.5,y=14.5},platform='Swift',first={'iron-ore'},items={['iron-ore']=5}}) end,'first sets items, walk, launch and auto_requests itself')
   fails(function() grok('load_silo',{position={x=65.5,y=14.5},first={'iron-ore'}}) end,'first goes with platform')
