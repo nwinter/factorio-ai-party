@@ -1016,6 +1016,8 @@ return function(api)
       local source=string.format('; cached leg %s->%s (connection %s, direction %s), read at tick %d',
         kept.from,kept.to,kept.connection or 'unknown',kept.back and 'back' or 'forward',kept.tick)
       local b=kept.b
+      if b and b.mode then source=source..'; recovery mode '..b.mode end
+      if b and b.warning then source=source..'; '..b.warning end
       if kept.err or not b then
         -- Raise the cached failure so scheduler read-error tracking sees it without another budget read.
         error(string.format('platform %s: no fresh return budget for this leg (not met): %s%s',
@@ -1038,7 +1040,8 @@ return function(api)
       holder.evidence=met and {tick=kept.tick,platform=c.platform,cached_leg={from=kept.from,to=kept.to,connection=kept.connection,back=kept.back},return_budget=budgetrates.copy(b)} or nil
       local line
       for _,r in ipairs(b.items or {}) do if r.name==b.binds.name then line=r.multiwindow_line or budgetrates.line(r); break end end
-      return met,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+      local distance=b.mode=='direct' and b.direct_remaining_km~=nil and '%d km advance budget after reserving direct recovery' or 'at most %d km farther out'
+      return met,string.format('platform %s: %s binds first, '..distance..' (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
         ..source..(line and '; '..line or '')
     end,
     -- (d29 batch346 LC, Astra #2754: 23 pods went up before an audit; a correction raced rockets already loaded and in

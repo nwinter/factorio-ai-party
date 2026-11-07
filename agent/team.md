@@ -14,7 +14,7 @@ Factory, research and power are shared. `./fh` controls your character and inven
 Platform `configure` returns recipe items to hub; `deliver` requests ingredients. Stream: ship metrics.
 `configure`/`inspect`: splitter quality/comparator, outlet lanes; inserter pickup size vs fixed full-hand wait.
 `flight_watch`: arrival returns `previous_watch`, then arms the next (help space-age).
-`budget_below`: turnaround.km|fraction required; queue/lane guard errors include failed/empty cached reads.
+`budget_below`: optional turnaround.direct:true; turnaround.km|fraction required (help waits-queues).
 `supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
 `inventory_free_slots`: pads; `platform_ammo_below` on_stale=met|wait (default met).
 `platform_arrived` remembers arrivals after wait start or `since_tick` (help space-age).
