@@ -104,6 +104,20 @@ class Metrics:
         self.next_read = 0
         self.ships = {}
 
+    def mission_sample(self, snapshot, now):
+        """Existing offscreen featured cache for speech; never selects the overlay card or reads the game."""
+        featured = snapshot.get("featured_platform") or {}
+        if featured.get("status") != "active" or snapshot.get("paused"):
+            return None
+        state = self.ships.get(featured.get("name")) or {}
+        value, seen = state.get("value"), state.get("seen")
+        if not value or seen is None or not 0 <= now - seen <= MAX_AGE:
+            return None
+        result = copy.deepcopy(value)
+        result.pop("asteroids", None)
+        result.update(sample_t=seen, age_s=now - seen)
+        return result
+
     def step(self, snapshot, read, now, supported=True):
         if not supported:
             self.ships.clear()
@@ -154,7 +168,7 @@ class Metrics:
         value, seen = state.get("value"), state.get("seen", now)
         if value is None or now - seen > MAX_AGE:
             return None
-        result = dict(value, age_s=max(0, round(now - seen)), featured=
+        result = dict(value, sample_t=seen, age_s=max(0, round(now - seen)), featured=
                       featured.get("status") == "active" and featured.get("name") == row["name"])
         if snapshot.get("paused"):
             result["paused"] = True

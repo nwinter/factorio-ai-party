@@ -547,6 +547,14 @@ def gather(run_dir, t0, t1, logs_dir=LOG_DIR, agents=None):
     analyst_part(m, logs_dir)
     aloud_part(m, run_dir)
     plan_part(m, run_dir)
+    # Capture-completed mission observations, dated explicitly; no new narrator cadence or model calls.
+    from missions import Missions
+    for r in Missions(run_dir).heard:
+        if t0 <= r["t"] < t1:
+            m.add("M", "mission", 8, f"At {hhmm(r['sample_t'])}, mission sample tick {r.get('sample_tick')}: {r['text']}",
+                  rel(os.path.join(run_dir, "host-missions.json")), "mission:" + r['platform'] + ':' + r['milestone'])
+            m.target({"platform": r['platform']}, f"{r['platform']}, subject of the dated mission report",
+                     rel(os.path.join(run_dir, "host-missions.json")))
     for p in m.fleet:
         where = f"at {p.get('at')}" if p.get("at") != "in transit" else f"in transit to {p.get('to')}"
         m.target({"platform": p["name"]}, f"ship {p['name']} ({where} at {hhmm(m.ticks[3])})",

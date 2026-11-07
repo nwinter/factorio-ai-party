@@ -44,7 +44,12 @@ def scoped(source, text, agents=()):
     revisions = source.get('subject_revision') or {}
     selected = {k: v for k, v in revisions.items() if ':' not in k or k.split(':', 1)[1].lower() in names
                 or re.search(r'(?<!\w)' + re.escape(k.split(':', 1)[1].lower()) + r'(?!\w)', text)}
-    return dict(source, subject_revision=selected)
+    result = dict(source, subject_revision=selected)
+    if result.get('mission_source'):
+        from missions import named
+        if not named(result['mission_source']['platform'], text):
+            result.pop('mission_source')
+    return result
 
 
 def news(s):
@@ -56,6 +61,12 @@ def news(s):
 def invalid(source, current, now=None):
     """Return why this claim must be cancelled. Intentional dated history is handled at prompt construction."""
     now = time.time() if now is None else now
+    mission = source.get('mission_source')
+    if mission:
+        from missions import analyst_source, MAX_AGE
+        latest = analyst_source(current or {}, now)
+        if now - mission['sample_t'] >= MAX_AGE or not latest or latest['revision'] != mission['revision']:
+            return 'mission telemetry expired or changed'
     if source.get('expires') is not None and now >= source['expires']:
         return 'source expired'
     if source.get('source_t') is not None and now - source['source_t'] >= TTL:
@@ -76,7 +87,8 @@ def current_analyst(analyst, snapshot=None, now=None):
     an = dict(analyst or {})
     now = time.time() if now is None else now
     # Old producers still expire from the board's receive time; new producers date their original read.
-    expired = (an.get('expires') is not None and now >= an['expires']) or an.get('age_s', 0) >= TTL
+    expired = ((an.get('expires') is not None and now >= an['expires']) or an.get('age_s', 0) >= TTL or
+               (an.get('mission_source') and now - an['mission_source']['sample_t'] >= 45))
     if snapshot is not None and invalid(an, snapshot, now):
         expired = True
     if expired:
