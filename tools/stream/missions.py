@@ -65,7 +65,10 @@ def context(s, now):
     out = {'goals': str(plan.get('goals') or '')[:1200], 'run_target': s.get('run_target'),
            'projects': [{k: p[k] for k in ('name', 'agent', 'text', 'tick') if k in p}
                         for p in (plan.get('doing') or [])[:12]],
-           'rule': 'Goals are intent, dated reports are history, not current telemetry. Never infer repair success.'}
+           'rule': ('Goals are intent; dated reports are history, not current telemetry. Never infer repair success. '
+                    'Voyage rates are per wall minute; speed is km per game second. ETA is estimated wall seconds '
+                    'at current speed and UPS. Ammo buffer uses hub and loaded stock with net production/consumption '
+                    '(including crafting), not endurance or guaranteed gun feeding. Structure losses exclude foundation.')}
     m = metric(s, now)
     if m:
         out['voyage_sample'] = {k: copy.deepcopy(v) for k, v in m.items() if k != 'asteroids'}
