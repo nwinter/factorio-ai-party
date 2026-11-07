@@ -90,7 +90,9 @@ return function(api)
     local per_rocket = w > 0 and math.floor(lift / w) or nil
     -- measured: the net is the measure's own (its window's stock change a minute), not the 10-minute rates less a
     -- 5-minute measure (Gleba: held 3,730 then 3,738 read -12/min that way)
-    local net = m and m.minutes > 0 and (m.stock_now - m.stock_then) / m.minutes or made - used - gone
+    -- minutes is rounded for display. Use the sample's tick edges for rates and stock coverage (61s is not 60s).
+    local span = m and (m.tick and m.since_tick and (m.tick - m.since_tick) / 3600 or m.minutes)
+    local net = span and span > 0 and (m.stock_now - m.stock_then) / span or made - used - gone
     local minutes = net < 0 and stock / math.max(0.1, -net) or nil
     return {item=item, made_per_min=r1(made), used_per_min=r1(used), stock=stock, minutes_left=minutes and r1(minutes) or nil,
       spoils=spoils or nil, uncounted_per_min=m and r1(m.residual_per_min or m.uncounted_per_min) or nil, net_per_min=r1(net), measured=m and m.line or nil,

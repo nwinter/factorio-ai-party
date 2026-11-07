@@ -12893,6 +12893,14 @@ Now (spoilflow.lua):
   supply measured it; otherwise the last line names it as not counted. The crafts run: made over what the statistics
   count a craft (products past a returned catalyst, with the makers' average productivity bonus from the census).
 Regression: tests/d22_batch122b.lua.
+- d37 batch440 follow-up: dependency's measured net rate and stock coverage use the supply sample's exact tick
+  interval. Its displayed minutes are rounded to one decimal; using that display value as the divisor made a
+  61-second, 100-item stock fall read -100/min instead of -98.4/min and could mark over ten minutes of stock short.
+  Regression: tests/d37_batch440.lua also checks the inclusive 1/60-minute sample edges and 30-minute quote expiry.
+- The same check found `fuel_budget` omitted recipe inputs for machines with burners. A biochamber now appears
+  in its burner group for the fuel slot and in its recipe group for fuel-valued ingredients, each inventory once.
+  The copy's 600-second window consumed 14,400 nutrients in egg crafts and 3,038 as fuel; production statistics
+  counted their sum, 17,438. Group rates remain estimates for the machines working now, not measured window totals.
 - cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
   tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
   - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
