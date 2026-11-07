@@ -4,6 +4,8 @@ A mission is a ship and directed leg (including its departure tick). Only captur
 Rook lines establish milestones. State follows resumed-from, never an unrelated run.
 """
 import copy
+import hashlib
+import math
 import json
 import os
 import re
@@ -129,6 +131,10 @@ def cues(s, m, now):
 
 def guard(kind, s, m, now):
     """Only facts actually spoken in this pair. No percentage noise can retract a repair observation."""
+    if kind.startswith('ammo:'):
+        return ammo_lines(m, kind.split(':', 1)[1])
+    if kind.startswith('report:'):
+        return dict(reports(s, m, now)).get(kind)
     repair, fire = cues(s, m, now)
     damage = (m.get('hits_min') or 0) > 0 or (m.get('damage_taken') or 0) > 0
     if kind == 'first-loss':
@@ -151,14 +157,56 @@ def guard(kind, s, m, now):
     return None if pct is None else [f'{pct:.1f}', progress_meaning(s, m)]
 
 
+def ammo_lines(m, ammo):
+    a = next((a for a in m.get('ammo') or [] if a.get('name') == ammo), {})
+    keys = ('made_min', 'used_min', 'hub', 'turrets')
+    if not all(isinstance(a.get(k), (int, float)) and math.isfinite(a[k]) and a[k] >= 0 for k in keys):
+        return None
+    if not (a['made_min'] or a['used_min']):
+        return None
+    made, used, hub, loaded = (f"{a[k]:,.0f}" for k in keys)
+    return [f"{m['platform']}: {ammo.replace('-', ' ')} made {made}, used {used} per wall minute in the latest sample.",
+            f"Reserves: {hub} in the hub and {loaded} loaded in turrets. Use includes crafting; stock does not prove every gun is fed."]
+
+
+def reports(s, m, now):
+    """Short, verbatim, dated agent statements; never turn a plan or trial into a result."""
+    agents = {a['name']: a.get('display_name') or a['name'] for a in s.get('agents') or []}
+    rows = list(s.get('chat') or [])
+    rows += [dict(a['last_said'], agent=a['name']) for a in s.get('agents') or [] if a.get('last_said')]
+    rows += [dict(r, agent=r.get('agent') or r.get('name')) for r in
+             ((s.get('board') or {}).get('plan') or {}).get('doing', [])]
+    result = {}
+    for r in rows:
+        tick = r.get('tick')
+        agent = r.get('agent')
+        text = r.get('body') or r.get('text') or ''
+        if agent not in agents or not isinstance(tick, (int, float)) or not named(m['platform'], text):
+            continue
+        # Game-tick age is explicit for plans; wall dates also constrain chat across pauses.
+        if not 0 <= (s.get('tick') or 0) - tick <= 60 * 60 * 60:
+            continue
+        if r.get('t') is not None and not 0 <= now - r['t'] <= 3600:
+            continue
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        for i, sentence in enumerate(sentences):
+            # Keep ship attribution explicit; retain following result/next-step sentences when they fit.
+            if not named(m['platform'], sentence):
+                continue
+            for following in sentences[i + 1:]:
+                if len(sentence) + len(following) + 1 > 260:
+                    break
+                sentence += ' ' + following
+            if not 15 <= len(sentence) <= 260 or not re.search(
+                    r'ammo|rail|rocket|feed|iron|refit|test|trial|bottleneck|qualif|next|debug|restor', sentence, re.I):
+                continue
+            key = 'report:' + hashlib.sha256(f'{agent}:{tick}:{sentence}'.encode()).hexdigest()[:16]
+            hours, minutes = divmod(int(tick // 3600), 60)
+            result[key] = (tick, f"At game hour {hours}, minute {minutes}, {agents[agent]} reported: {sentence}")
+    return [(k, v[1]) for k, v in sorted(result.items(), key=lambda item: item[1][0], reverse=True)]
+
+
 def progress_meaning(s, m):
-    goal = str((s.get('run_target') or {}).get('goal') or '').strip().rstrip('.')
-    # The operator's run target is plain-language intent, not a prediction or a deadline.
-    if goal and len(goal) <= 180:
-        return f"The run's stated goal is: {goal}. The ship is still on the current leg."
-    negative = next((a for a in m.get('ammo') or [] if (a.get('net_min') or 0) < 0), None)
-    if negative:
-        return f"{negative['name'].replace('-', ' ').capitalize()} consumption exceeds production in this sample, so that stock is being drawn down during the flight."
     return 'This is distance along the current leg. The destination is still ahead, and arrival has not been confirmed.'
 
 
@@ -223,12 +271,27 @@ class Missions:
                 v = max(crossed)
                 choices.append(('progress:' + str(v), f"{name} has passed {v} percent of the leg toward {label(leg['to'])}.",
                                 'That measures distance along this leg, not a guarantee of reaching the destination.'))
+        # Routine detail uses the existing three-minute slot, even on a slow leg.
+        # Rotate ammunition types by last completed Rook report, not by snapshot noise.
+        ammo_choices = []
+        for a in m.get('ammo') or []:
+            lines = ammo_lines(m, a.get('name'))
+            if lines:
+                kind = 'ammo:' + a['name']
+                last = max((r['t'] for r in self.heard if r['platform'] == name and r['milestone'] == kind), default=0)
+                buffer = a.get('buffer_min')
+                urgency = buffer if isinstance(buffer, (int, float)) and math.isfinite(buffer) else float('inf')
+                ammo_choices.append((last, urgency, kind, *lines))
+        dated = [(kind, line, 'That is a dated agent report, not a fresh measurement or a confirmed outcome of the next test.')
+                 for kind, line in reports(s, m, now) if kind not in heard]
+        routine = [(kind, rook, vale) for _, _, kind, rook, vale in sorted(ammo_choices)]
+        choices.extend((dated + routine) if old.get('last', '').startswith('ammo:') else (routine + dated))
         # Long outer-system legs move slowly: a new spoken tenth, with at least .05% actual progress.
         if isinstance(pct, (int, float)) and (old.get('pct') is None or
                 (pct - old['pct'] >= .05 and f'{pct:.1f}' != f"{old['pct']:.1f}")):
             choices.append(('progress', f"{name} is {pct:.1f} percent along the leg toward {label(leg['to'])}.",
                             progress_meaning(s, m)))
-            if not old and not (danger or repair or empty or m.get('losses_leg', 0)) and not crossed:
+            if not old and not routine and not dated and not (danger or repair or empty or m.get('losses_leg', 0)) and not crossed:
                 choices.insert(0, choices.pop())
         if not choices:
             return None
@@ -250,9 +313,17 @@ class Missions:
             return 'mission observation changed'
         return None
 
-    def completed(self, e, now, text):
+    def completed(self, e, now, text, who="pbp"):
         key = e['mission_id']
         row = self.rows.setdefault(key, {})
+        if who != 'pbp':
+            milestone = e['milestone'] + ':detail'
+            if any(r['milestone'] == milestone and r['sample_t'] == e['sample_t'] and r['platform'] == e['platform'] for r in self.heard):
+                return
+            self.heard.append({'t': now, 'sample_t': e['sample_t'], 'sample_tick': e.get('sample_tick'),
+                               'platform': e['platform'], 'milestone': milestone, 'text': text})
+            self.save()
+            return
         if row.get('t', 0) >= now:
             return
         heard = set(row.get('milestones', []))
@@ -262,6 +333,9 @@ class Missions:
         row.update(copy.deepcopy(e['mission_state']), t=now, milestones=sorted(heard), last=e['milestone'], sample_tick=e.get('sample_tick'))
         self.heard.append({'t': now, 'sample_t': e['sample_t'], 'sample_tick': e.get('sample_tick'),
                            'platform': e['platform'], 'milestone': e['milestone'], 'text': text})
+        self.save()
+
+    def save(self):
         self.heard = self.heard[-120:]
         if self.path:
             tmp = self.path + '.tmp'

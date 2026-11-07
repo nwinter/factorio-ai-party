@@ -37,7 +37,7 @@ def snapshot(now, offset=0):
             'mission_metrics': m, 'work': [{'platform': 'Asterion', 'kind': 'repair', 't': now}] if 180 <= offset < 390 else []}
 
 
-def replay(enabled=True):
+def replay(enabled=True, snapshot_factory=None):
     with tempfile.TemporaryDirectory() as root:
         clock = [START]
         def sleep(dt):
@@ -78,7 +78,7 @@ def replay(enabled=True):
             c.push = push
             for offset in range(0, 601, 20):
                 clock[0] = START + offset
-                s = snapshot(clock[0], offset)
+                s = (snapshot_factory or snapshot)(clock[0], offset)
                 c.on_snapshot(s)
                 d.step(s, clock[0])
                 if offset % 100 == 60:
@@ -95,8 +95,9 @@ def replay(enabled=True):
             missions = [g for g in c.playback().groups.values() if g['event']['kind'] == 'mission']
             assert all(g['backend'] == 'mission-facts' for g in missions)
             if enabled:
-                assert any('Repair or construction' in r['text'] for r in aired), aired
-                assert any('keeping up' in r['text'] or 'no new hits' in r['text'] for r in aired), aired
+                if snapshot_factory is None:
+                    assert any('Repair or construction' in r['text'] for r in aired), aired
+                    assert any('keeping up' in r['text'] or 'no new hits' in r['text'] for r in aired), aired
                 assert counts['research'] and counts['mission'] >= 3, counts
                 assert any(r['rank'] == 'urgent' and r['camera_platform'] == 'Asterion' for r in aired), aired
             for r in aired:
