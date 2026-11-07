@@ -7,20 +7,13 @@ import json
 import mimetypes
 import os
 from pathlib import Path
-import re
 import threading
 import time
 
 import shift_recap as recap
 import shift_recap_visuals as visuals
 import prepared_audio
-
-
-def agents_started(run):
-    try:
-        return bool(re.search(r"(?m)^.*\bstarted: \d+/\d+ agents\b", (Path(run) / "start.log").read_text()))
-    except OSError:
-        return False
+from shift_phase import agents_started
 
 
 class Player:
@@ -265,7 +258,7 @@ class ShiftRecap:
             if (not own or own.get("tts_config") != self.tts_config or own.get("audio_check_v") != prepared_audio.VERSION
                     or (now >= end and not own.get("final"))):
                 self.schedule(self.run, min(now, end), bool(own), now)
-        if end and end - recap.TRANSITION_BEFORE <= now < end:
+        if self.shift.get("next", True) is not None and end and end - recap.TRANSITION_BEFORE <= now < end:
             if not self.player or self.player.phase != "transition":
                 if self.player and not self.player.state.get("ended"):
                     self.player.stop_after_line = "transition begins"

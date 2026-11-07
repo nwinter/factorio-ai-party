@@ -103,8 +103,8 @@ def lines(a, runs_dir):
     if a.cmd == "change-begin":
         m = usual_minutes(runs_dir)
         n = number(runs_dir, a.prev)
-        over = f"Shift {n} is over" if n is not None else "This shift is over"
-        return f"begin:{a.next}", f"{over}; {nxt} starts in about {m} minutes."
+        over = f"Shift {n} handover began" if n is not None else "The handover began"
+        return f"begin:{a.next}", f"{over}; {nxt} is starting (usually about {m} minutes). Save and startup are not confirmed yet."
     if a.cmd == "change-live":
         who = f": {a.agents} agent{'' if a.agents == 1 else 's'} playing" if a.agents > 0 else ""
         return f"live:{a.next}", f"{nxt[0].upper() + nxt[1:]} is live{who}."

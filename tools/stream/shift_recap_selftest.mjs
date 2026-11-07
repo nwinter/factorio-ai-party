@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('./static/shift-recap.js', import.meta.url), 'utf8');
+const phaseSource = fs.readFileSync(new URL('./static/shift-phase.js', import.meta.url), 'utf8');
 class Node {
   constructor(tag) {
     this.tagName = tag; this.children = []; this.events = {}; this.style = {}; this.hidden = false;
@@ -28,6 +29,7 @@ function page() {
   const all=n=>[n,...n.children.flatMap(all)];
   const document={body,createElement:tag=>{const n=new Node(tag);created.push(n);return n;},createElementNS:(ns,tag)=>new Node(tag),getElementById:id=>all(body).find(n=>n.id===id)};
   const context={document,window:{},location:{search:''},URLSearchParams,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),getComputedStyle:()=>({fontSize:'32px'})};
+  vm.runInNewContext(phaseSource,context);
   vm.runInNewContext(source,context);
   return {created,body,stage,cam,side,all:()=>all(body),render:context.window.PogShiftRecap.render,
     panel:()=>document.getElementById('shift-recap')};
@@ -42,7 +44,11 @@ const p=page();
 p.render({shift_recap:beat});active(p); // no agents: earliest service state
 assert.equal(p.panel().classList.contains('sr-playing'),false);
 p.render({shift_recap:{...beat,phase:'transition'}});active(p);
-assert.ok(p.all().some(n=>n.textContent.includes('SHIFT CHANGE')));
+assert.ok(p.all().some(n=>n.textContent.includes('PLANNED HANDOVER')));
+for (const [now,started,label] of [[1900,false,'Shift 148 starting'],[1900,true,'Shift 148 live'],[2100,true,'Handover pending']]) {
+  p.render({shift_recap:beat,now,shift:{number:148,start:1000,end:2000,next:2200,started}});
+  assert.ok(p.all().some(n=>n.textContent.includes(label)),label);
+}
 for(const state of [null,{active:false},{...beat,holding:true}]) {
  p.render({shift_recap:state});restored(p);p.render({shift_recap:beat});active(p);
 }
