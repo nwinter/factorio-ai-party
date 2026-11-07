@@ -289,8 +289,13 @@ def subjects_of(facts, e=None):
 
 
 def mission_deadline(e):
-    return e["sample_t"] + 45 if e.get("kind") == "mission" else None
-
+    """The same sample expiry for direct mission lines and analyst-derived voyage claims."""
+    dates = [e.get("sample_t")] if e.get("kind") == "mission" else []
+    for key in ("point", "_analyst_source"):
+        source = (e.get(key) or {}).get("mission_source") or {}
+        if source.get("sample_t") is not None:
+            dates.append(source["sample_t"])
+    return min(dates) + 45 if dates else None
 
 
 def clip_rank(e):
@@ -3164,7 +3169,7 @@ class Caster:
                           run_target.fact(getattr(self.a, "run_dir", None)))
         if any(k in facts for k in ("analyst_point", "analyst_headline", "next_milestone", "corrections")):
             an = source.get("analyst") or {}
-            e["_analyst_source"] = {k: an[k] for k in ("source_tick", "source_t", "subject_revision", "expires", "news") if k in an}
+            e["_analyst_source"] = {k: an[k] for k in ("source_tick", "source_t", "subject_revision", "expires", "news", "mission_source") if k in an}
             e["_analyst_source"]["correction_revision"] = fingerprint(an.get("corrections"))
         if e.get("history"):
             tick = e.get("source_tick", e.get("tick"))
