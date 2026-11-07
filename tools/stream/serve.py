@@ -30,6 +30,7 @@ from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
 from shift_recap_camera import cue as recap_camera, on_air as recap_on_air
 from shift_phase import facts as shift_facts
+from target_countdown import facts as target_facts
 from model import Model  # noqa: E402
 from overlay_health import OverlayHealth
 import router  # noqa: E402
@@ -1106,6 +1107,7 @@ def main():
                     snap = model.snapshot(now, cams)
                     snap["artillery"] = arty["res"]
                 snap["shift_recap"] = shift_recap.public if shift_recap else None
+                snap["run_target"] = target_facts(os.path.dirname(a.run)) if a.run and not a.mock else None
                 if a.run and not a.mock:
                     snap["shift"] = shift_facts(os.path.dirname(a.run), run.get("shift"))
                 snap["speech_owner"] = audio.speech_owner

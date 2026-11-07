@@ -737,6 +737,8 @@ def public_library_areas(la):
 
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
+    target = s.get("run_target")
+    out["run_target"] = {k: target[k] for k in ("goal", "at", "at_epoch") if k in target} if isinstance(target, dict) else None
     planets, planet_map, others = public_planets(s.get("planet_maps"))
     if planets:
         out["planets"], out["planet_map"] = planets, planet_map

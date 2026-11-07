@@ -10,6 +10,7 @@
   var POLL = Math.max(5, parseInt(cfg.poll, 10) || 10) * 1000;
   var LIVE_MAX_AGE = 60; // seconds: older state means the run (or the pusher) has stopped
   var $ = function (sel) { return app.querySelector(sel); };
+  var targetCountdown = window.PogTargetCountdown && window.PogTargetCountdown.create($('#run-target'));
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -1704,6 +1705,7 @@
     getJSON(url).then(function (d) {
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
       var live = s && age != null && age <= LIVE_MAX_AGE;
+      if (targetCountdown) targetCountdown.update(live ? s.run_target : null, age);
       serviceLive = !!live;
       if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', 'Live'); else setBadge('offline', 'Offline');
       setWatching(watchingText(s, demo ? null : d.site_watching, live || demo));
@@ -1716,6 +1718,7 @@
       placeSummary(live || demo);
     }).catch(function () {
       serviceLive = false;
+      if (targetCountdown) targetCountdown.update(null);
       placeSummary(false);
       setBadge('offline', 'Offline');
       setWatching('');

@@ -1764,10 +1764,12 @@
     new MutationObserver(loadoutClear).observe(v, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
 
+  const targetCountdown = window.PogTargetCountdown && window.PogTargetCountdown.create($("run-target"));
   function render(s) {
     latestSnapshot = s;
     window.pogState = s; // publish even a recap-only snapshot, before any optional widget can throw
     if (staleCheck(s)) return;
+    if (targetCountdown) targetCountdown.update(s.run_target);
     // The prepared recap is available before an agent/model snapshot at startup.
     if (window.PogShiftRecap) window.PogShiftRecap.render(s);
     if (!Array.isArray(s.agents)) return;
