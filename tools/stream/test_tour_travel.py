@@ -212,6 +212,16 @@ def wide_ship_context():
             assert not cur.get('wide_context') and cur['zoom']>=.7,(t,cur)
     assert any(r[1] for r in frames), 'featured opening is explicitly wide'
     assert len({str(r[3]) for r in frames if r[0]>=1074})>=2, 'featured details change'
+    d,c,team=quiet_world()
+    d.featured.set('Asterion',at=1400,now=1065)
+    active=copy.deepcopy(s)
+    active['work']=[dict(id='build',kind='build',agent='luna',platform='Asterion',t=1065,
+                         position=dict(x=10,y=60))]
+    for t in range(1065,1080):
+        tick(d,c,active,t)
+        cur=d.state[d.onair]
+        assert cur['platform']['framing']=='repair/build detail'
+        assert not cur.get('wide_context') and not cur.get('quiet_detail'), 'work is not a quiet overview'
 
 
 if __name__=='__main__':

@@ -299,6 +299,9 @@ class Featured:
                 detail, framing = details[int(age // 30) % len(details)]
                 shot.update(position=dict(detail['position']), zoom=max(.7, detail['zoom']))
         if flying or danger or active or work:
+            if shot:
+                for key in ('wide_context', 'quiet_detail'):
+                    shot.pop(key, None)  # active coverage is not a quiet overview, even on a docked ship
             # Alternate orientation and readable guns. Working production gets one occasional beat in calm flight.
             beat = int(age // 30) % 5
             detail = d.machinery(name) if beat == 4 and not (danger or active) else None
