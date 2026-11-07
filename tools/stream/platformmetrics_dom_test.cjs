@@ -61,7 +61,7 @@ for (const cameras of [{}, {main: null}, {main: {agents: []}}]) {
   render(box, {...p, featured: true, kills_min: 140, ammo: [], asteroids: undefined, repair_packs: undefined}, 2);
   assert.equal(box._parts.combat._rows.get("kills_min"), row); assert.equal(row._value.textContent, "140");
   assert(box._parts.ammo.hidden && box._parts.rocks.hidden); assert(!box.textContent.includes("NaN"));
-  render(box, {...p, featured: true, tick: 101}, 1000); assert.equal(mode(box), "compact");
+  render(box, {...p, featured: true, tick: 101}, 1000); assert.equal(mode(box), "beat");
   render(box, {platform: "Bare"}, 1001); assert(!box.hidden); assert.equal(box._parts.header.textContent, "Bare · Dock unknown");
 }
 // Full docked telemetry is vertical, only after two clear samples. Work/scene changes collapse immediately.
@@ -90,8 +90,8 @@ for (const cameras of [{}, {main: null}, {main: {agents: []}}]) {
   const invalid = JSON.parse(JSON.stringify(scene)); delete invalid.space.platforms[0].view.hull.left;
   render(box, {...parked, tick: 108}, 160, invalid); assert.equal(mode(box), "docked-compact");
 }
-// Four-second beats have 150 seconds after their end, across ships and page reloads.
-for (const featured of [false, true]) {
+// Non-featured four-second beats have 150 seconds after their end, across ships and page reloads.
+for (const featured of [false]) {
   const store = new Map(), first = page(store), {render, box} = first;
   const flight = {...p, featured}, rocks = {...flight, asteroids: {...p.asteroids, big: 1}};
   render(box, flight, 0); render(box, {...rocks, tick: 101}, 20);
@@ -108,6 +108,44 @@ for (const featured of [false, true]) {
   reload.render(reload.box, {...rocks, tick: 107}, 20); assert.equal(mode(reload.box), "compact");
   reload.render(reload.box, {...flight, tick: 108}, 152);
   reload.render(reload.box, {...rocks, tick: 109}, 153); assert.equal(mode(reload.box), "beat");
+}
+// Featured attempts open regularly without an event: 12 seconds on, 48 off, one shared page budget.
+{
+  const store = new Map(), first = page(store), flight = {...p, featured: true};
+  const {render, box} = first;
+  render(box, flight, 0); assert.equal(mode(box), "compact"); // cold baseline
+  render(box, {...flight, tick: 101}, 20); assert.equal(mode(box), "beat");
+  render(box, {...flight, tick: 101, age_s: 11}, 31); assert.equal(mode(box), "beat");
+  first.advance(32.01); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 102}, 40); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 103}, 60); assert.equal(mode(box), "compact");
+  const portrait = page(store, 60);
+  portrait.render(portrait.box, flight, 0);
+  portrait.render(portrait.box, {...flight, tick: 104}, 19); assert.equal(mode(portrait.box), "compact");
+  render(box, {...flight, tick: 104}, 80); assert.equal(mode(box), "beat");
+  portrait.render(portrait.box, {...flight, tick: 105}, 20); assert.equal(mode(portrait.box), "compact");
+  const reload = page(store, 81);
+  reload.render(reload.box, {...flight, tick: 104}, 0); assert.equal(mode(reload.box), "compact");
+  // Switching to non-featured cannot evade the reservation, and its next beat reserves the normal 154s.
+  render(box, {...p, tick: 105}, 100);
+  render(box, {...p, tick: 106, asteroids: {...p.asteroids, huge: 1}}, 139); assert.equal(mode(box), "compact");
+  render(box, {...p, tick: 107, asteroids: {...p.asteroids, huge: 2}}, 140); assert.equal(mode(box), "beat");
+  render(box, {...flight, tick: 108}, 160); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 109}, 294); assert.equal(mode(box), "beat");
+}
+// Periodic beats need fresh telemetry, yield to caption collisions and do not resume after a cut.
+{
+  const {render, box, elements} = page(), flight = {...p, featured: true};
+  render(box, flight, 0);
+  render(box, {...flight, tick: 101, age_s: 5}, 20); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 102}, 40); assert.equal(mode(box), "beat");
+  render(box, flight, 41, {cameras: {}}); assert(box.hidden);
+  render(box, {...flight, tick: 102}, 42); assert.equal(mode(box), "compact");
+  const alert = new Element("div"); alert.textContent = "Caption";
+  alert.rect = rect(24, 500, 600, 50); elements.alerts = alert;
+  render(box, {...flight, tick: 103}, 100); assert.equal(mode(box), "compact");
+  delete elements.alerts;
+  render(box, {...flight, tick: 103}, 101); assert.equal(mode(box), "compact");
 }
 // A persistent asteroid count and high outgoing damage are not repeating detail triggers.
 {

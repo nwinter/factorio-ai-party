@@ -1,6 +1,6 @@
 /* One anchored ship card. Telemetry advances history once; repaints only expire wall-time beats. */
 (function () {
-  const BEAT = 4, GAP = 150, WARNING_HOLD = 20;
+  const BEAT = 4, GAP = 150, FEATURED_BEAT = 12, FEATURED_GAP = 48, WARNING_HOLD = 20;
   const BEAT_KEY = "pog:platform-metrics:next-detail:v1";
   const finite = v => typeof v === "number" && Number.isFinite(v);
   const num = v => finite(v) ? v.toLocaleString("en-US", {maximumFractionDigits: 1}) : "";
@@ -9,9 +9,10 @@
     "uranium-rounds-magazine": "Uranium", "railgun-ammo": "Railgun", "explosive-rocket": "Explosive rocket"})[v] || label(v);
   const duration = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s` : `${Math.ceil(s)}s`;
   const clock = () => typeof performance === "undefined" ? Date.now() / 1000 : performance.now() / 1000;
-  function reserveBeat(box, now, at) {
+  function reserveBeat(box, now, at, featured) {
     // One budget across ships, cuts and both pages on this origin. Only the deadline survives reload;
     // a new page never resumes a full card. If persistence is unavailable, stay compact in flight.
+    const beat = featured ? FEATURED_BEAT : BEAT, gap = featured ? FEATURED_GAP : GAP;
     if (at < (box._nextBeat ?? -Infinity)) return false;
     try {
       const wall = Date.now() / 1000, saved = window.localStorage.getItem(BEAT_KEY);
@@ -21,8 +22,8 @@
         return false; // malformed data or a backwards wall clock: establish a conservative new gap
       }
       if (next > wall + at - now) return false;
-      window.localStorage.setItem(BEAT_KEY, String(wall + at + BEAT - now + GAP));
-      box._nextBeat = at + BEAT + GAP;
+      window.localStorage.setItem(BEAT_KEY, String(wall + at + beat - now + gap));
+      box._nextBeat = at + beat + gap;
       return true;
     } catch (_) { return false; }
   }
@@ -132,7 +133,7 @@
       }
       a.key = key; a.tick = p.tick; a.flying = flying; a.rocks = rocks;
     }
-    return {a, fresh, eventAt};
+    return {a, fresh, eventAt, reset};
   }
   function render(box, p, now = clock(), scene = {}) {
     if (!box) return;
@@ -159,10 +160,16 @@
         for (const n of [box.parentElement, document.getElementById("alerts"), document.getElementById("voice")]) if (n) observer.observe(n);
       }
     }
-    const b = box._parts, l = p.leg || {}, {a, fresh, eventAt} = sample(box, p, now), parked = !a.flying;
+    const b = box._parts, l = p.leg || {}, {a, fresh, eventAt, reset} = sample(box, p, now), parked = !a.flying;
     const blocked = detailBlocked(scene) || a.warnings.size > 0;
     if (blocked) a.until = -Infinity;
-    else if (eventAt !== null && reserveBeat(box, now, eventAt)) a.until = eventAt + BEAT;
+    else if (now >= a.until) {
+      // A fresh featured sample can open a regular beat without an event. Repaints/reloads cannot.
+      const periodic = p.featured && !parked && fresh && !reset && (p.age_s ?? 0) <= 1;
+      const at = periodic ? now : eventAt;
+      if (at !== null && reserveBeat(box, now, at, p.featured))
+        a.until = at + (p.featured ? FEATURED_BEAT : BEAT);
+    }
     // Trio scenes have a shorter main pane. Tighten vertical whitespace, retaining the same type sizes/width.
     const dense = box.parentElement && box.parentElement.getBoundingClientRect().height < 800;
     box.style.setProperty("--pm-leading", dense ? "1.15" : "1.35");
@@ -246,7 +253,7 @@
       const r = box.getBoundingClientRect(), pane = box.parentElement?.getBoundingClientRect();
       return pane && (r.bottom > pane.bottom - 48 || captionRects(box).some(c => overlaps(r, c, 4)));
     };
-    if (collision()) { b.details.hidden = true; box.setAttribute("data-mode", "compact"); }
+    if (collision()) { a.until = -Infinity; b.details.hidden = true; box.setAttribute("data-mode", "compact"); }
     box.style.visibility = collision() ? "hidden" : "";
     // A beat must end even if telemetry arrives only every 20 seconds or the socket temporarily stalls.
     if (!a.dockFull && now < a.until && window.setTimeout)
