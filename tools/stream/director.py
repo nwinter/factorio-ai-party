@@ -686,7 +686,9 @@ class Director:
             p = self.send_pending.get(slot["slot"])
             if p and now >= p["retry_at"]:
                 train = (p["target"] or {}).get("train")
-                if train and (now - train["t"] > (3 if train.get("speed") else 12) or
+                import basetour
+                if train and (not basetour.train_fresh(train, now) or
+                              not getattr(self, 'train_retry_ok', lambda t, n: True)(p['target'], now) or
                               getattr(self, "hosting", lambda t: False)(now) or getattr(self, "hold_layout", False)):
                     self.send_pending.pop(slot["slot"], None)
                     continue  # an old train position must not become a delayed camera command
