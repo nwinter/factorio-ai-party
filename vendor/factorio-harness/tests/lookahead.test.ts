@@ -27,7 +27,9 @@ async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void
           const match=text.match(/\n(\{.*\})\]\]/);
           assert(match,`bad dispatch: ${text}`);
           const request=JSON.parse(match[1]!);
-          body=JSON.stringify({id:request.id,tick:1,...reply(request)});
+          const response = reply(request);
+          if (response === undefined) { socket.destroy(); return; }
+          body=JSON.stringify({id:request.id,tick:1,...response});
         }
         const out=Buffer.alloc(Buffer.byteLength(body)+14);
         out.writeInt32LE(out.length-4,0);out.writeInt32LE(id,4);out.writeInt32LE(kind===3?2:0,8);out.write(body,12);
@@ -49,6 +51,49 @@ test('the look-ahead comes 20 min plus an offset by agent after the first call, 
   assert.ok(lookaheadDue({started:0}, 'astra') >= 20 * 60000, 'never in the first 20 min');
   assert.equal(lookaheadDue({started:0, last:5000}, 'astra'), 5000 + 45 * 60000);
 });
+
+for (const failure of ['drop', 'refusal'] as const) {
+  for (const format of ['json', 'compact']) {
+    test(`a successful action and its ID survive automatic lookahead ${failure} (${format})`, async () => {
+      const dir = tempDirSync('lookahead-failure-');
+      const file = join(dir, '.lookahead.json');
+      const state = {started:0};
+      writeFileSync(file, JSON.stringify(state));
+      const asked: any[] = [];
+      await engine(request => {
+        asked.push(request);
+        if (request.action === 'lookahead') return failure === 'drop' ? undefined : {ok:false, error:{code:'read_failed', message:'lookahead unavailable'}};
+        return {ok:true, result:{built:1}, warnings:['existing warning']};
+      }, async port => {
+        const result = await exec(process.execPath, ['dist/host/cli.js', '--format', format, '--port', String(port),
+          '--id', 'primary-build', 'call', 'build', '--args', '{"name":"stone-furnace","position":{"x":1,"y":2}}'],
+          {env:{...process.env, FACTORIO_RCON_PASSWORD:'test-only', FH_LOOKAHEAD_FILE:file, FH_RETRY_MS:'0'}})
+          .then(out => ({...out, code:0}), error => ({stdout:error.stdout, stderr:error.stderr, code:error.code}));
+        assert.equal(result.code, 0, result.stdout);
+        assert.deepEqual(asked.map(q => q.action), ['build', 'lookahead']);
+        assert.equal(asked[0].id, 'primary-build');
+        assert.notEqual(asked[1].id, 'primary-build');
+        assert.deepEqual(asked[1].args, {peek:true});
+        if (format === 'json') {
+          const out = JSON.parse(result.stdout);
+          assert.equal(out.ok, true);
+          assert.equal(out.id, 'primary-build');
+          assert.deepEqual(out.result, {built:1});
+          assert.equal(out.error, undefined);
+          assert.equal(out.warnings[0], 'existing warning');
+          assert.match(out.warnings[1], /lookahead failed/i);
+          assert.ok(out.warnings[1].includes(asked[1].id));
+        } else {
+          assert.match(result.stdout, /built: 1/);
+          assert.match(result.stdout, /lookahead failed/i);
+          assert.match(result.stdout, /primary-build/);
+          assert.match(result.stdout, /existing warning/);
+        }
+        assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), state, 'a failed lookahead is not marked shown');
+      });
+    });
+  }
+}
 test('a reply carries the look-ahead once when it is due, read with peek, with the time left in the shift', async () => {
   const dir = tempDirSync('lookahead-');
   const file = join(dir, '.lookahead.json'), deadlineFile = join(dir, 'deadline.txt');

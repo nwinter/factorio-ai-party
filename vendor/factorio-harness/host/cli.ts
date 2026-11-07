@@ -1225,9 +1225,16 @@ async function main() {
       return;
     }
     if (now < lookaheadDue(state, lookaheadName)) return;
-    const block = await harness.request('lookahead', {peek:true});
-    if (!block.ok || !block.result) return;
-    reply.result = {...reply.result, lookahead:lookaheadLines(block.result)};
+    const lookaheadId = randomUUID();
+    try {
+      const block = await harness.request('lookahead', {peek:true}, lookaheadId);
+      if (!block.ok || !block.result) throw new Error(block.error?.message ?? 'lookahead returned no result');
+      reply.result = {...reply.result, lookahead:lookaheadLines(block.result)};
+    } catch (error) {
+      // This optional read must not replace the primary action's verified result or ID.
+      reply.warnings = [...(reply.warnings ?? []), `Automatic lookahead failed (request ${lookaheadId}; primary request ${reply.id}): ${error instanceof Error ? error.message : String(error)}`];
+      return;
+    }
     try { writeFileSync(lookaheadFile, JSON.stringify({...state, last:now}) + '\n'); } catch (error) { process.stderr.write(`lookahead file: ${String(error)}\n`); }
   }
   let stopping = false;
@@ -2073,6 +2080,11 @@ async function main() {
       }
     }
     catch (error) {
+      // An explicit --id may retry an earlier invocation. A failed connection says nothing about that send;
+      // without its verified reply we cannot claim that this request ID was never applied.
+      if (id !== undefined && error instanceof RconUnavailable) {
+        error = new RconOutcomeUnknown(`Request ${requestId} outcome unknown: this attempt could not connect; no verified reply resolves any earlier send`, {cause:error});
+      }
       const failed = transportError(error);
       if (failed) return {id:requestId, ok:false, error:failed};
       throw error;
