@@ -1909,9 +1909,29 @@ async function main() {
     // (BP1) the belt_flow sample this wait waits for: no action ran when it began, and none ended after the sample began.
     // It keeps the budget (the sample's end tick, or --max as given) and the wake rules; its result is the reply.
     let sample: any;
+    // Follow both channels, including one that starts after the first poll. Keep a failure even if the other
+    // channel finishes later, or the queue starts another action before the character becomes idle.
+    const channels = [
+      {active:'active', key:'last', action:undefined as string | undefined},
+      {active:'combat', key:'last_combat', action:'shoot'},
+    ].map(c => ({...c, seen:false, since:undefined as number | undefined, baseline:'', last:undefined as any}));
+    const succeeded = (last: any) => !last?.outcome || successfulOutcomes.includes(last.outcome)
+      || (last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true);
+    let failed: {key:string, action:string | undefined, last:any} | undefined;
     // The poll after the deadline still counts: idle there ends the wait as idle (as in waitForActionEnd); the
     // overtime rule (pace.ts) says when the deadline has come.
     while (!stopping) {
+      for (const c of channels) {
+        const last = status.result?.[c.key];
+        if (!c.seen && status.result?.[c.active]) {
+          c.seen = true; c.since = status.tick ?? status.result?.tick; c.baseline = JSON.stringify(last);
+        }
+        if (c.seen && last?.outcome && JSON.stringify(last) !== c.baseline
+          && !(typeof last.tick === 'number' && c.since !== undefined && last.tick < c.since)) {
+          c.last = last;
+          if (!succeeded(last) && !failed) failed = {...c, last};
+        }
+      }
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
         const flow = runningWatches(status).find(r => r.kind === 'belt_flow' && (!sample || r.id === sample.id));
@@ -1952,9 +1972,15 @@ async function main() {
           return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note:quiet.result?.note, last, last_combat:status.result?.last_combat,
             watches:quiet.result?.watches, waited_ms:Date.now()-started, team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
         }
-        const ok = !last?.outcome || successfulOutcomes.includes(last.outcome) || (last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true);
-        const ended = withWatches({...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})});
-        if (compactWaits) return withSlow(withTells(await brief(ended, started)));
+        const completed = channels.filter(c => c.last).sort((a,b) => (b.last.tick ?? 0)-(a.last.tick ?? 0));
+        const chosen = failed ?? completed[0];
+        const outcome = chosen?.last ?? (channels.some(c => c.seen) ? undefined : last);
+        const ok = succeeded(outcome);
+        const ended = withWatches({...status, ok, ...(ok ? {} : {error:endedError(chosen?.action ?? outcome.kind ?? 'the action',outcome)})});
+        if (compactWaits) {
+          const shown = {...ended, result:{...ended.result, [chosen?.key ?? 'last']:outcome}};
+          return withSlow(withTells(await brief(shown, started, undefined, chosen?.action)));
+        }
         const full = await finalReply(ended);
         return withSlow(withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
           ...(ended.result?.watches ? {watches:ended.result.watches, note:ended.result.note} : {}),

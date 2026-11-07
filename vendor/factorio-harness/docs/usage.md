@@ -1685,7 +1685,8 @@ fh queue repeat --file plan.json
   compact reply's `guard_ids` marks them `(standing)`. Guards armed before this runtime have no scope and stay
   standing. A scope-plan guard on a lane that would have no step left is refused (`guards[1]: scope plan (the default)
   retires a guard when the lane has no step left, ...`). `queue_edit` guards `replace` keeps the guard's scope unless
-  it gives one.
+  it gives one. Retirement is tracked per plan: a successor that finishes in its first tick retires its own
+  plan guards, while standing guards remain armed.
 - Deadlines (d27 batch261, Astra #2508: Luna's 15-minute boost had a relative timeout that started late and restarted
   at a resume, and its gate was restored 4m21s after the cutoff): `wait_until {until: "tick_at_least", tick}` is met
   once `game.tick` reaches `tick` (a whole tick, at most 1296000 ticks ahead), at the first check when it has passed.
@@ -1818,6 +1819,10 @@ fh sleep 900 --until researched                       # ...or until the research
   does, for at most S seconds, and returns at once when nothing runs (friction1300: Grok and Haiku read `fh wait --max
   150` as that; it slept the whole 150 s while the walk had ended after 46). Out of time it ends as a timed-out wait
   (`wait_timeout`, `still_running`).
+  - Completion uses fresh outcomes from every movement or combat channel observed running during the wait,
+    including a channel that starts after the first poll. A failure such as combat `out_of_ammo` gives exit 1
+    even if movement succeeds; compact output names the failed action. Older results from before the observed
+    work do not decide the wait. If both succeed, compact output shows the latest completion.
   - Nothing running when the wait begins, and the last action ended before your previous call's reply (friction3:
     Haiku's two waits after a rearm had ended printed its old `timed_out` as a fresh error, exit 1): `outcome: idle`,
     `note: nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago, before your

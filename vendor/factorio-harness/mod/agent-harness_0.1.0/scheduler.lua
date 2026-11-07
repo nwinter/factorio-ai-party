@@ -516,7 +516,8 @@ return function(api)
   -- its scope-plan guards are retired in that tick, after its last step, with a history row and one team block line
   -- that names the standing guards still armed too.
   local function retire(q)
-    q.drain_seen=game.tick
+    -- A successor can finish in its first tick, without an intervening non-idle tick to clear retirement.
+    q.drained_plan=q.plan_seq or 0
     local gone,kept={},{}
     for _,g in ipairs(q.guards) do if g.scope=='plan' then gone[#gone+1]=g else kept[#kept+1]=g end end
     q.guards=kept
@@ -1918,7 +1919,7 @@ return function(api)
           -- after the last step, before any later check
           if q.guards and #q.guards>0 then
             local idle=not q.paused and not q.loop and (q.order~=nil or (not q.current and #q.pending==0))
-            if idle and not q.drain_seen then retire(q) elseif not idle and q.drain_seen then q.drain_seen=nil end
+            if idle and q.drained_plan~=(q.plan_seq or 0) then retire(q) elseif not idle and q.drained_plan then q.drained_plan=nil end
           end
         end
       end
