@@ -178,4 +178,19 @@ for _,lane in ipairs{'body','remote','platform:Asterion'} do
   eq(other.guards[1].when.speed_since,game.tick)
   queue.guards=guards
 end
-print('queue_status agent: owner parity, evidence, read-only state, writes refused, caps: ok')
+-- Batch446: actual dispatch preserves warnings in compact writes and exposes control to teammates.
+local args={lane='remote',mode='replace',steps={{action='wait_ticks',args={ticks=1000}}},guards={
+  {when={['until']='tick_at_least',tick=game.tick+10},steps={{action='wait_ticks',args={ticks=1000}}}},
+  {when={['until']='tick_at_least',tick=game.tick+20},steps={{action='wait_ticks',args={ticks=500}}}}}}
+args.dry_run=true; assert(sol('queue_submit',args).guard_warnings)
+args.dry_run=nil; assert(sol('queue_submit',args).guard_warnings)
+args.guards[1].priority=100; args.guards[2].priority=10
+local submitted=sol('queue_submit',args); eq(submitted.guard_warnings,nil)
+advance(20)
+local control=sol('queue_status',{lane='remote'})
+eq(control.guard_control.priority,100); eq(#control.guard_suppressed,1)
+local before=copy(state.remote_queues[si])
+same(control,astra('queue_status',{agent='sol',lane='remote'})); same(before,state.remote_queues[si])
+local paused=sol('queue_pause',{lane='remote'})
+eq(paused.guard_control.guard,control.guard_control.guard); eq(#paused.guard_suppressed,1)
+print('queue_status agent: owner parity, evidence, read-only state, writes refused, caps, priority control: ok')

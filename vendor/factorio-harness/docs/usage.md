@@ -18815,3 +18815,30 @@ and describe text now match the idempotent behavior.
 - Describe and the building reference no longer claim that every inserter requires a full hand from a belt.
 - Tests: tests/d37_batch434.lua covers the four requested inserters, built/ghost wording, configure agreement,
   cached true/false/unknown reads, property precedence over names, and the 2.0.77 unavailable-property fallback.
+
+## d37 batch446: optional guard priority (#2920)
+
+Guards in `queue_submit` and `queue_edit` accept `priority` (any finite number; higher takes precedence)
+and `exclusive_group` (a nonempty string up to 64 bytes). Example: a critical-loss guard with `priority:100`
+and a damage guard with `priority:10`, both `exclusive_group:"flight"`. Once the critical guard fires, a met
+damage guard is consumed as suppressed while any critical reaction step is active or pending. Its actions
+do not stop, replace or cancel the critical reaction. This applies to recovery `steps`, a guard `goto` tail,
+and lower-priority abort guards. Paused/held and requeued reaction steps retain protection. Completed or
+removed steps release it; guard-created continuations inherit it. A reaction consisting only of an immediate
+schedule write is complete once that step ends; subsequent flight time is protected only while its reaction
+still has a step, such as an arrival wait.
+
+The comparison is local to the caller's lane. Two different explicit groups do not compare. When either
+guard omits the group, the comparison covers the lane. Equal priorities, or either priority omitted, retain
+the existing replacement behavior. Existing saved guards require no migration and keep their behavior.
+Direct queue edits, replacement and cancellation remain explicit overrides; this is guard-to-guard control.
+
+`queue_status.guard_control` (also lane summaries) gives the controlling guard ID, priority, group, firing
+tick and trigger reason. Fired history rows include the control record. `guard_suppressed` retains the newest
+eight suppressions, with guard ID, trigger, priority, suppressor ID, its priority/firing tick/reason, and the
+suppression tick. Each suppression also has a `guard_suppressed` queue-history row (normal history limit 64).
+
+Submit and dry-run replies include `guard_warnings` for pairs of differing reactions when neither has
+priority, including retained guards on append. Identical reactions are omitted. The warning is conservative:
+it reports potential replacement/cancellation, without predicting whether both conditions will fire.
+The guard describe text documents the same optional fields and compatibility rules.
