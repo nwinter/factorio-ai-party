@@ -334,6 +334,11 @@ class Digest:
         except Exception as e:
             parts.append(f"(chat unavailable: {e})")
         if feed:
+            from missions import digest_context
+            parts.append("## Current Goals and dated missions\n" + digest_context(feed, time.time()))
+            parts.append("Give active goal projects and voyages sustained coverage alongside research. Explain observed progress, "
+                         "danger, repair work and results. Reuse the agents' existing dated speech. Current voyage numbers "
+                         "expire after 45 seconds; prefer dated observations in analysis. No predicted survival or advice.")
             ag = [f"{x.get('display_name') or x.get('name')} ({x.get('model') or '?'}; {x.get('role') or 'no role'}) "
                   f"on {x.get('where') or str(x.get('surface') or 'nauvis').capitalize()}: "
                   f"{x.get('activity')}{', ' + x['action'] if x.get('action') else ''}" for x in feed.get("agents") or []]
@@ -466,6 +471,15 @@ def cycle(a, dg, prev, logf):
     meta.update(digest_s=round(t_digest, 1), digest_chars=len(text), dropped=len(dropped))
     reply.update(game_minute=facts["game_minute"], tick=snap["tick"], meta=meta, t=time.time())
     reply.update(provenance)
+    from missions import analyst_source, mission_claim
+    mission_source = analyst_source(feed or {}, t0)
+    if mission_source:
+        for point in reply.get("talking_points") or []:
+            if mission_claim(mission_source['platform'], str(point)):
+                point['mission_source'] = mission_source
+        if mission_claim(mission_source['platform'], str({k: reply.get(k) for k in
+                 ('headline', 'judgement', 'storylines', 'next', 'segments', 'corrections')})):
+            reply['mission_source'] = mission_source
     if getattr(a, "viewer_questions", False):  # the hosts leave viewer questions to the analyst (analyst_board.questions_on)
         reply["viewer_questions"] = {"on": True, "every_s": a.ask_every}
     if a.feed and not a.dry_run:
