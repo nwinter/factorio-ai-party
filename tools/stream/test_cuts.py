@@ -39,6 +39,9 @@ class FakeOBS:
         self.calls.append(req)
         if req == "GetCurrentProgramScene":
             return {"currentProgramSceneName": "stream"}
+        if req == "CallVendorRequest":
+            assert d['requestType'] == 'current_scene'
+            return {"responseData": {"scene": "stream vertical", "success": True}}
         if req == "GetSceneItemList":
             items = self.scenes[self.scene(d)]
             return {"sceneItems": [{"sourceName": n, "sceneItemId": self.ids[n], "sceneItemIndex": i,
@@ -61,7 +64,8 @@ class FakeOBS:
             return {"canvases": [{"canvasName": "Main"}] + ([{"canvasName": "Aitum Vertical", "canvasUuid": "cv"}]
                                                            if self.vertical else [])}
         if req == "GetSceneList":
-            return {"scenes": [{"sceneName": "stream vertical", "sceneUuid": "uuid-v"}]}
+            return {"currentProgramSceneName": None, "currentProgramSceneUuid": None,
+                    "scenes": [{"sceneName": "stream vertical", "sceneUuid": "uuid-v"}]}
         raise AssertionError(req)
 
     def tf(self, name, scene="stream"):

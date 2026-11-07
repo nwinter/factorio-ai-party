@@ -28,12 +28,17 @@ class OBS(HostOBS):
             self.scenes['V'][-1] = 'vertical overlay'
             self.ids['vertical overlay'] = 100
         self.program = 'stream'
+        self.vertical_program = 'stream vertical'
         self.fail_index = None
         self.moves = 0
         self.fail_read = False
         self.during_write = None
 
     def call(self, req, d=None):
+        if req == 'CallVendorRequest':
+            self.calls.append(req)
+            assert d['requestType'] == 'current_scene'
+            return {'responseData': {'scene': self.vertical_program, 'success': True}}
         if req == 'GetCurrentProgramScene':
             self.calls.append(req)
             if self.fail_read:
@@ -100,6 +105,8 @@ class VisibleIdentity(unittest.TestCase):
         with self.assertRaisesRegex(OBSError, 'partial reorder'):
             c.work(101)
         self.assertNotEqual(o.scenes, before, 'failure must occur after a real scene mutation')
+        self.assertEqual(o.scenes['stream'][-2], 'stream cam2')
+        self.assertEqual(o.scenes['V'][-2], 'stream cam1')
         self.assertIsNone(c.public()['on_air'])
         self.assertIsNone(selected(snapshot(c)))
         record('partial-reorder-unknown', c)
@@ -131,6 +138,11 @@ class VisibleIdentity(unittest.TestCase):
         o.fail_read = False
         c.work(116)
         self.assertTrue(c.public()['confirmed'])
+        o,c = self.make(vertical=True)
+        n = len(o.calls)
+        c.work(105)
+        self.assertEqual(o.calls[n:], ['GetCurrentProgramScene', 'GetSceneItemList',
+                                      'CallVendorRequest', 'GetSceneItemList'])
 
     def test_same_source_changed_surface_and_pending_send_hide_old_identity(self):
         o,c = self.make()
@@ -153,7 +165,7 @@ class VisibleIdentity(unittest.TestCase):
         self.assertIsNone(c.public()['on_air'])
 
     def test_transform_enable_capture_loss_program_scene_and_portrait_drift(self):
-        for drift in ('transform', 'disable', 'zero', 'scene', 'portrait', 'cover'):
+        for drift in ('transform', 'disable', 'zero', 'scene', 'portrait', 'portrait-scene', 'cover'):
             with self.subTest(drift=drift):
                 o,c = self.make(vertical=True)
                 if drift == 'transform':
@@ -161,6 +173,7 @@ class VisibleIdentity(unittest.TestCase):
                 elif drift == 'disable': o.enabled['stream cam1'] = False
                 elif drift == 'zero': o.sizes[o.ids['stream cam1']] = (0,0)
                 elif drift == 'scene': o.program = 'another scene'
+                elif drift == 'portrait-scene': o.vertical_program = 'another-uuid'
                 elif drift == 'portrait': o.scenes['V'][-3],o.scenes['V'][-2] = o.scenes['V'][-2],o.scenes['V'][-3]
                 else:
                     o.ids['unexpected capture'] = 101
@@ -175,6 +188,12 @@ class VisibleIdentity(unittest.TestCase):
                     self.assertEqual(o.program, 'another scene', 'readback cannot commandeer program selection')
                     self.assertIsNone(c.public()['on_air'])
                     o.program = 'stream'; c.work(107)
+                    self.assertTrue(c.public()['confirmed'])
+                elif drift == 'portrait-scene':
+                    c.work(106)
+                    self.assertEqual(o.vertical_program, 'another-uuid')
+                    self.assertIsNone(c.public()['on_air'])
+                    o.vertical_program = 'stream vertical'; c.work(107)
                     self.assertTrue(c.public()['confirmed'])
 
     def test_receipt_expiry_and_restart(self):

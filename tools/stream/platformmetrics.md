@@ -5,13 +5,15 @@ The main overlay shows a compact card for the platform on the acknowledged main-
 a pending metric sample from a different ship. The older small ship label yields to this card on the main view.
 
 With OBS cuts enabled, camera captions and cards require a confirmed composition in both configured scenes.
-`cuts.py` checks the current program scene and reads each scene's item list after writes and every five seconds
+`cuts.py` checks the current program scenes and reads each scene's item list after writes and every five seconds
 even without a cut (indices, enables, transforms and capture dimensions; no per-frame OBS or new game reads).
 Before any composition write it withdraws the published frames. Failed/partial writes, external drift or a receipt
 older than ten seconds keep identity hidden until readback succeeds. A source's label must also match its current
 acknowledged camera surface; pending sends and surface changes cannot reuse the old identity. Unknown visual
 sources above the main capture fail closed. Audio-only WASAPI sources do not obscure it. Drift in managed capture
 placement/order is repaired through the existing retry path; the program scene selection is never forced.
+Portrait selection uses Aitum's existing read-only `current_scene` request; its ordinary scene list returns null
+program-scene fields. An unchanged check uses two OBS requests for landscape, four with portrait.
 Ship-specific captions/cards stay empty through an uncertain-state reload, including a cached telemetry sample.
 The five-second check plus the ordinary snapshot delivery bounds drift detection, rather than making it instantaneous.
 

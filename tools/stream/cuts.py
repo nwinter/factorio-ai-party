@@ -192,7 +192,7 @@ class Cuts:
             return
         if uuid:
             self.targets.append({"name": v["scene"], "ref": {"sceneUuid": uuid}, "layout": json.load(open(v["layout"])),
-                                 "placed": {}})
+                                 "canvas": {"canvasUuid": cv["canvasUuid"]}, "placed": {}})
         self.status["vertical"] = "on" if uuid else "no scene " + v["scene"]
 
     def work(self, now=None):
@@ -257,6 +257,15 @@ class Cuts:
             if (program.get("currentProgramSceneName") or program.get("sceneName")) != self.targets[0]["name"]:
                 raise OBSError("program scene changed")
             for target in self.targets:
+                if target.get("canvas"):
+                    # Aitum's GetSceneList returns null currentProgramScene*, even when it is streaming.
+                    # Use its existing read-only current_scene request (also used by vertical.py check).
+                    w, h = target["layout"]["canvas"]
+                    result = self.obs.call("CallVendorRequest", {"vendorName": "aitum-vertical-canvas",
+                        "requestType": "current_scene", "requestData": {"width": w, "height": h}})
+                    vertical = result.get("responseData", result)
+                    if not vertical.get("success") or vertical.get("scene") != target["name"]:
+                        raise OBSError("vertical program scene changed")
                 items = self.obs.call("GetSceneItemList", target["ref"])["sceneItems"]
                 self.verify_target(target, want, items)
         except Exception as e:

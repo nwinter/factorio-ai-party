@@ -155,17 +155,23 @@ class FakeOBS:
                       [5, "stream overlay"]]
         self.calls = []
         self.on = {}
+        self.transforms = {}
 
     def call(self, req, data=None):
         data = data or {}
         self.calls.append((req, data))
+        if req == "GetCurrentProgramScene":
+            return {"currentProgramSceneName": "stream"}
         if req == "GetSceneItemList":
-            return {"sceneItems": [{"sceneItemId": i, "sourceName": n, "sceneItemIndex": k, "sceneItemEnabled": self.on.get(i, True)}
+            return {"sceneItems": [{"sceneItemId": i, "sourceName": n, "sceneItemIndex": k, "sceneItemEnabled": self.on.get(i, True),
+                                   "sceneItemTransform": dict(self.transforms.get(i, {}), sourceWidth=1920, sourceHeight=1080)}
                                    for k, (i, n) in enumerate(self.items)]}
         if req == "SetSceneItemEnabled":
             self.on[data["sceneItemId"]] = data["sceneItemEnabled"]
         if req == "GetSceneItemTransform":
             return {"sceneItemTransform": {"sourceWidth": 1920, "sourceHeight": 1080}}
+        if req == "SetSceneItemTransform":
+            self.transforms[data["sceneItemId"]] = data["sceneItemTransform"]
         if req == "SetSceneItemIndex":
             it = next(x for x in self.items if x[0] == data["sceneItemId"])
             self.items.remove(it)
