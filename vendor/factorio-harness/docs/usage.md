@@ -18823,3 +18823,17 @@ and describe text now match the idempotent behavior.
 - Describe and the building reference no longer claim that every inserter requires a full hand from a belt.
 - Tests: tests/d37_batch434.lua covers the four requested inserters, built/ghost wording, configure agreement,
   cached true/false/unknown reads, property precedence over names, and the 2.0.77 unavailable-property fallback.
+
+## d37 batch448: rotated railgun foundation (#2921, Astra)
+
+`place_ghosts dry_run` uses the rotated collision footprint for diagonal eight/sixteen-direction buildings.
+The dry run's `tiles.positions` and `tiles.needed`, live foundation placement, and `ghosts` foundation diagnostics
+use the same intersecting tiles. Existing floor and tile ghosts still count as supplied; enclosed-hole filling
+and foundation connection by a side or corner keep their existing checks. The dry run places nothing.
+
+In Factorio 2.0.77 a railgun has eight construction directions (0,2,...,14). Its unobstructed footprint needs 15
+foundation tiles cardinally and 17 diagonally; hull connections and enclosed regions can change the total new floor.
+The harness rejects odd construction directions. Native creation rounds them down to the preceding even direction.
+`tools/test_d37_batch448_private.py --imac` checks all 16 native inputs on a held private copy: one missing tile at a
+time, dry-run versus live tile ghosts, read-only behavior, ghost diagnostics, and native revival. Its no-argument
+invocation skips. `tests/d37_batch448.lua` retains the engine tile fixtures, including negative coordinates.
