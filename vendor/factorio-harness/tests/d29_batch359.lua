@@ -61,7 +61,7 @@ eq(#saturated,43); eq(s.intervals.min_ticks,171); eq(s.intervals.max_ticks,171)
 eq(s.intervals.mean_ticks,171); eq(s.intervals.sum_ticks,42*171)
 eq(s.intervals.histogram.exact_through_ticks,171); eq(s.intervals.histogram.ticks['171'],42)
 
--- The extrema are deliberately outside recent's final 24 records; only an all-shot accumulator can retain them.
+-- The interval endpoints are outside recent's newest 23 records (the first failure is pinned separately).
 local varied={1,36,936}
 for tick=1107,7198,171 do varied[#varied+1]=tick end
 local a
@@ -69,7 +69,7 @@ s,a=run(varied)
 eq(s.intervals.min_ticks,35); eq(s.intervals.max_ticks,900)
 eq(s.intervals.sum_ticks,varied[#varied]-varied[1])
 eq(s.intervals.mean_ticks,(varied[#varied]-varied[1])/(#varied-1))
-eq(a.recent[1].tick>T0+936,true); eq(s.intervals.histogram.wider[3].count,1)
+eq(a.recent[1],a.first_failure); eq(a.recent[2].tick>T0+936,true); eq(s.intervals.histogram.wider[3].count,1)
 
 -- Bucket boundaries and multiple items lost in one read (ambiguous, assigned the same detected tick).
 local w,j,e,target,inv,p=fixture(120)

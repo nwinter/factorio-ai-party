@@ -40,7 +40,7 @@ return function(api)
   M.FLOOR_ROWS, M.FLOOR_RECENT, M.FLOOR_CANDIDATES = 32, 128, 3
   M.FLOOR_AGE, M.FLOOR_RADIUS = 600, 32
   -- (d25 batch200 QM1) the watches an edit closed (mixed.lua), kept on the watch that followed: at most SEGMENTS, and
-  -- their tracked asteroids together at most SEGMENT_RECORDS (the newest always kept). A done 120 s watch of 1501 tracked
+  -- their tracked asteroids together at most SEGMENT_RECORDS (the first always kept). A done 120 s watch of 1501 tracked
   -- asteroids on a copy of world n held 12026 tables (726 KB as JSON), so the segments hold at most about one full watch.
   M.SEGMENTS, M.SEGMENT_RECORDS = 3, 3000
   -- (d25 batch200 QM2) a watch's seconds: the handler's check and a queue step's (runtime.lua step_ranges)
@@ -1160,8 +1160,9 @@ return function(api)
     job.segments_dropped = nil
     for _, g in ipairs(segs) do held = held + (g.nast or 0) end
     while #segs > 1 and (#segs > M.SEGMENTS or held > M.SEGMENT_RECORDS) do
-      held = held - (segs[1].nast or 0)
-      table.remove(segs, 1)
+      -- Keep the inbound window through cascades; the cap can leave only that first window.
+      held = held - (segs[2].nast or 0)
+      table.remove(segs, 2)
       dropped = dropped + 1
     end
     if new then new.segments, new.segments_dropped = segs, dropped > 0 and dropped or nil end
@@ -1178,7 +1179,7 @@ return function(api)
     end
     return rows
   end
-  M.SEG_NOTE = 'segments: the watches an edit on the platform (a turret built, destroyed, mined or configured; see mixed) closed before this one began, each with its full result and records: platform_defense {platform, asteroids: true, segment_start: its start tick} reads one (trajectory_page, trajectory_limit and asteroid_names as for the watch); at most ' .. M.SEGMENTS .. ', their tracked asteroids together at most ' .. M.SEGMENT_RECORDS .. ' (the newest always kept), the oldest dropped first (segments_dropped counts them)'
+  M.SEG_NOTE = 'segments: the watches an edit on the platform (a turret built, destroyed, mined or configured; see mixed) closed before this one began, each with its full result and records: platform_defense {platform, asteroids: true, segment_start: its start tick} reads one (trajectory_page, trajectory_limit and asteroid_names as for the watch); the first and newest two kept, at most ' .. M.SEGMENTS .. ', their tracked asteroids together at most ' .. M.SEGMENT_RECORDS .. '; the second oldest dropped first, even the newest if needed to keep the first within the record cap (segments_dropped counts them)'
 
   function M.tick(tick)
     local all = api.state().asteroid_watch
@@ -1285,6 +1286,6 @@ return function(api)
       .. 'floor_impacts (witnessed lost tiles, separate from entity hits, including excluded trajectories), floor_witnesses (newest 32: tick, tick_basis, tiles, after_tick, seen_tick, rebuilt_tick, cause unknown, candidates with inferred=true, name/unit/position/tick, kind death|fragment, inferred parent when retained), floor_witnesses_dropped, floor_note (bounds and evidence limits); '
       .. 'platform_hits and platform_hit_lines (what each asteroid that hit us hit, where, its damage, its approach and projection); turret_groups [{name, region (front|middle|rear third of the hull, west|east half), turrets, hits, kills (by class), damage, ammo_used}] and turret_group_lines (hits and kills on clear asteroids and on ones crossing no foundation); '
       .. 'turrets (those that fired: name, position, region, quality, range (its prototype\'s times its quality\'s range_multiplier), base_range (its prototype\'s), min_range, turn_range and facing (when under a full turn), hits, kills by class, damage, rounds_used, ammo_used (items), ammo_loaded (items), rounds_start, rounds_end, ammo (its items), reads, every (ticks between its reads), unsure_reads, exact, rounds_used_most (not exact: the most it can have fired) (ammo_note); up to 64, turret_rows_more past that); '
-      .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; segments [{segment_start, end_tick, seconds, closed_by, line}] (the watches an edit on the platform closed before this one began, at most 3 and 3000 tracked asteroids together, each read in full with segment_start), segments_dropped and segments_note; drift_tiles_per_s; line; note. Read only'}
+      .. 'platform_consumed [{ammo, consumed (the platform\'s item production statistics over the watch), turrets_used}] and platform_consumed_lines; capped, capped_at_tick, capped_at_s (the tracked set reached tracked_cap), untracked_unit; by_name rows also in_first_sample, later, later_fragments, later_other (cohort_note); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; segments [{segment_start, end_tick, seconds, closed_by, line}] (the watches an edit on the platform closed before this one began, first plus newest two, at most 3 and 3000 tracked asteroids together; second oldest evicted first under either cap, each read in full with segment_start), segments_dropped and segments_note; drift_tiles_per_s; line; note. Read only'}
   return M
 end

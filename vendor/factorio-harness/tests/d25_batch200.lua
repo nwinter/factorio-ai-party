@@ -10,7 +10,7 @@ local function fails(f,x) local ok,e=pcall(f); assert(not ok,'should fail: '..x)
 game={tick=1000}
 defines={inventory={turret_ammo=1},direction={north=0,east=4,south=8,west=12}}
 local box={collision_box={left_top={x=-1,y=-1},right_bottom={x=1,y=1}}}
-prototypes={entity={['medium-carbonic-asteroid']=box}}
+prototypes={entity={['medium-carbonic-asteroid']=box,['huge-metallic-asteroid']=box}}
 local function foundation(x,y) return x>=0 and x<=19 and y>=0 and y<=39 end
 local surface={index=7,name='platform-7',platform={name='Probe6'}}
 function surface.get_chunks()
@@ -60,6 +60,7 @@ local X=require('mixed'){state=function() return st end,player=function() return
 
 start({platform='Probe6',asteroids=true,seconds=60})
 for u=1,5 do asteroid(u,1+u*3,-20) end
+asts[1].name='huge-metallic-asteroid'
 A.tick(1000)
 for _,e in pairs(asts) do e.position={x=e.position.x,y=e.position.y+7.5} end
 game.tick=1015; A.tick(1015)
@@ -74,7 +75,7 @@ local first=st.asteroid_watch[1]
 -- the laser is destroyed at 1100: the watch starts again from there, the first one closed and kept whole
 game.tick=1100
 laser.valid=false
-eq(X.edit(setmetatable({valid=true},{__index=laser}),'destroyed by medium-carbonic-asteroid',true),1)
+eq(X.edit(setmetatable({valid=true},{__index=laser}),'destroyed by huge-metallic-asteroid',true),1)
 local new=st.asteroid_watch[1]
 assert(new~=first,'a new watch from the edit')
 eq(new.start,1100); eq(new.until_tick,1100+58*60)
@@ -86,18 +87,22 @@ has(new.mixed.parts[1].line,'watched Probe6 for 1.7s: 5 asteroids seen in view')
 -- batch400: further targets in the same tick preserve the original asteroid interval and its complete record.
 eq(X.edit(t1,'configure priority_targets by astra'),1)
 eq(X.edit(rail,'configure priority_targets by astra'),1)
+for k=1,8 do
+  local belt=setmetatable({unit_number=1000+k,name='transport-belt',type='transport-belt',position={x=k,y=10}},{__index=t1})
+  eq(X.edit(belt,'destroyed by huge-metallic-asteroid',true),1)
+end
 new=st.asteroid_watch[1]
 eq(#new.segments,1); eq(new.segments[1],first)
 eq(#new.mixed.parts,1); eq(new.mixed.parts[1].segment_start,1000)
-eq(new.mixed.parts[1].to_tick,1100); eq(#new.mixed.edits,3)
+eq(new.mixed.parts[1].to_tick,1100)
 
 -- the read lists the segment; segment_start reads it in full
 local r=A.handler(p,{platform='Probe6',asteroids=true})
 eq(#r.segments,1); eq(r.segments[1].segment_start,1000); eq(r.segments[1].end_tick,1100); eq(r.segments[1].seconds,1.7)
-has(r.segments[1].closed_by,'destroyed by medium-carbonic-asteroid on laser-turret (10,30)'); has(r.segments_note,'segment_start: its start tick')
+has(r.segments[1].closed_by,'destroyed by huge-metallic-asteroid on laser-turret (10,30)'); has(r.segments_note,'segment_start: its start tick')
 local g=A.handler(p,{platform='Probe6',asteroids=true,segment_start=1000})
 eq(g.done,true); eq(g.segment.segment_start,1000); eq(g.segment.end_tick,1100); eq(g.asteroids,5); eq(g.platform_hits,1)
-has(g.platform_hit_lines[1],'medium-carbonic-asteroid hit laser-turret (10,30) at +0.3s for 120')
+has(g.platform_hit_lines[1],'huge-metallic-asteroid hit laser-turret (10,30) at +0.3s for 120')
 eq(g.trajectory_page.total,5)
 local d
 for _,row in ipairs(g.trajectories) do if row.unit==2 then d=row end end
@@ -113,30 +118,38 @@ fails(function() A.handler(p,{platform='Probe6',asteroids=true,segment_start=105
 fails(function() A.handler(p,{platform='Probe6',asteroids=true,segment_start='x'}) end,'segment_start: a segment\'s start tick')
 fails(function() A.handler(p,{platform='Probe6',asteroids=true,seconds=30,segment_start=1000}) end,'segment_start is for the read')
 
--- three more edits: at most 3 segments, the oldest dropped; each closed watch kept whole
+-- Fallback edits after the same-tick deaths: the first and newest two segments stay whole.
 for k=1,3 do
   game.tick=1100+k*120
   A.tick(game.tick)
   eq(X.edit(t1,'configure priority_targets by astra'),1)
 end
 local w=st.asteroid_watch[1]
-eq(w.start,1460); eq(#w.segments,3); eq(w.segments[1].start,1100); eq(w.segments[3].start,1340)
+eq(w.start,1460); eq(#w.segments,3); eq(w.segments[1].start,1000); eq(w.segments[2].start,1220); eq(w.segments[3].start,1340)
 eq(#A.handler(p,{platform='Probe6',asteroids=true}).segments,3)
-fails(function() A.handler(p,{platform='Probe6',asteroids=true,segment_start=1000}) end,'(kept: 1100, 1220, 1340)')
+fails(function() A.handler(p,{platform='Probe6',asteroids=true,segment_start=1100}) end,'(kept: 1000, 1220, 1340)')
+local inbound=A.handler(p,{platform='Probe6',asteroids=true,segment_start=1000})
+eq(inbound.trajectory_page.total,5); eq(inbound.platform_hits,1)
+local impact
+for _,row in ipairs(inbound.trajectories) do if row.unit==1 then impact=row end end
+eq(impact.first_tick,1000); eq(impact.first_position.y,-20); eq(impact.outcome,'hit')
+eq(impact.name,'huge-metallic-asteroid'); eq(impact.last_position.y,-12.5)
+assert(#impact.points>0); eq(impact.points[1][1],1000); eq(impact.points[1][3],-20)
+has(A.SEG_NOTE,'the first and newest two kept')
 eq(w.segments_dropped,1); eq(A.handler(p,{platform='Probe6',asteroids=true}).segments_dropped,1)
--- the records bound: with 5 tracked asteroids at most, only the newest segment (4 tracked) stays
+-- The records bound is strict even when first + newest cannot fit: only the first stays.
 eq(w.segments[3].nast,4)
 A.SEGMENT_RECORDS=5
 A.tick(game.tick); game.tick=game.tick+60; A.tick(game.tick)
 eq(X.edit(t1,'configure priority_targets by astra'),1)
 w=st.asteroid_watch[1]
-eq(#w.segments,1); eq(w.segments[1].start,1460); eq(w.segments_dropped,4)
+eq(#w.segments,1); eq(w.segments[1].start,1000); eq(w.segments[1].nast,5); eq(w.segments_dropped,4)
 A.SEGMENT_RECORDS=3000
 -- the watch done at its end keeps its segments
 game.tick=1000+3600; A.tick(game.tick)
 local done=A.handler(p,{platform='Probe6',asteroids=true})
 eq(done.done,true); eq(#done.segments,1); eq(done.segments_dropped,4)
-eq(A.handler(p,{platform='Probe6',asteroids=true,segment_start=1460}).segment.end_tick,1520)
+eq(A.handler(p,{platform='Probe6',asteroids=true,segment_start=1000}).segment.end_tick,1100)
 -- a new watch of its own starts with none
 game.tick=5000
 local fresh=A.handler(p,{platform='Probe6',asteroids=true,seconds=10})

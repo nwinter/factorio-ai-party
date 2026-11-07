@@ -20,7 +20,7 @@
 return function(api)
   local M = {}
   M.MAX, M.MIN_S, M.MAX_S, M.KEEP_SHOTS, M.KEEP_TICKS = 8, 10, 120, 24, 216000
-  M.ARGS = {aim='optional true: a railgun aim watch on that platform instead (d29 batch332/359): with seconds (10..120) it starts one, without it reads yours: 1..8 railguns (positions, else the first 8 by position) read every tick: per railgun shots and ammo used, each shot\'s aimed target (the one it read the tick before) as exact when that shot hit it, else uncertain, aimed hits by size (killed or survived), the shot\'s other hits as collateral by size, hits on no seen shot (unattributed), the last 24 shots; all-shot interval count/min/max/mean and bounded tick histogram, shots by second and target size, prototype nominal cooldown and full-buffer/target-present sample shares; one watch an agent, a new one replaces it; read only'}
+  M.ARGS = {aim='optional true: a railgun aim watch on that platform instead (d29 batch332/359): with seconds (10..120) it starts one, without it reads yours: 1..8 railguns (positions, else the first 8 by position) read every tick: per railgun shots and ammo used, each shot\'s aimed target (the one it read the tick before) as exact when that shot hit it, else uncertain, aimed hits by size (killed or survived), the shot\'s other hits as collateral by size, hits on no seen shot (unattributed), at most 24 shot records: first_failure (first surviving aimed target or uncertain attribution) plus newest 23, else newest 24; all-shot interval count/min/max/mean and bounded tick histogram, shots by second and target size, prototype nominal cooldown and full-buffer/target-present sample shares; one watch an agent, a new one replaces it; read only'}
   local SIZES = {'small', 'medium', 'big', 'huge'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store() local s = api.state(); s.rail_aim = s.rail_aim or {}; return s.rail_aim end
@@ -38,7 +38,7 @@ return function(api)
     return #o > 0 and table.concat(o, ', ') or 'none'
   end
   -- Constant-size counters apart from at most 120 seconds and a bounded set of interval buckets. No shot history
-  -- beyond recent is retained. Prototype cooldown is a nominal value, not the turret's remaining cooldown/aim phase.
+  -- beyond recent is retained; its first non-kill/uncertain shot is pinned there. Prototype cooldown is nominal.
   local function statistics(t, tick)
     local nominal = try(function() return t.e.prototype.attack_parameters.cooldown end)
     if type(nominal) ~= 'number' or nominal < 0 then nominal = nil end
@@ -65,7 +65,7 @@ return function(api)
     return {i=i, e=e, un=e.unit_number, position={x=e.position.x, y=e.position.y}, quality=try(function() return e.quality.name end) or 'normal',
       inv=e.get_inventory(defines.inventory.turret_ammo), cap=try(function() return e.electric_buffer_size end) or 0,
       shots=0, ammo_used=0, exact=0, uncertain=0, no_target=0, aimed_by_size={}, aimed_killed=0, aimed_survived=0,
-      aimed_not_hit_alive=0, collateral_by_size={}, collateral_killed=0, hits=0, unattributed=0, pending={}, recent={}}
+      aimed_not_hit_alive=0, collateral_by_size={}, collateral_killed=0, hits=0, unattributed=0, pending={}, recent={}, failure_checked=true}
   end
   -- one tick's read of one railgun; t: its row
   function M.read(job, t, tick)
@@ -150,8 +150,19 @@ return function(api)
     end
     row.collateral = #coll > 0 and coll or nil
     local r = t.recent
+    -- A deployed watch can recover only the earliest failure still in its bounded history.
+    if not t.failure_checked then
+      for _, prior in ipairs(r) do
+        if prior.aimed_killed ~= true then t.first_failure = prior; break end
+      end
+      t.failure_checked = true
+    end
+    if not t.first_failure and row.aimed_killed ~= true then t.first_failure = row end
     r[#r+1] = row
-    if #r > M.KEEP_SHOTS then table.remove(r, 1); t.recent_more = (t.recent_more or 0) + 1 end
+    if #r > M.KEEP_SHOTS then
+      table.remove(r, r[1] == t.first_failure and 2 or 1)
+      t.recent_more = (t.recent_more or 0) + 1
+    end
   end
   -- on_entity_damaged: a watched railgun's hit, kept for the next read (the shot's tick)
   function M.on_damaged(event)
@@ -208,7 +219,8 @@ return function(api)
       rows[#rows+1] = {position=t.position, quality=t.quality, shots=t.shots, ammo_used=t.ammo_used, exact=t.exact, uncertain=t.uncertain,
         no_target=t.no_target, aimed_by_size=t.aimed_by_size, aimed_killed=t.aimed_killed, aimed_survived=t.aimed_survived,
         aimed_not_hit_alive=t.aimed_not_hit_alive, collateral_by_size=t.collateral_by_size, collateral_killed=t.collateral_killed,
-        hits=t.hits, unattributed=t.unattributed, gone_tick=t.gone, recent=t.recent, recent_more=t.recent_more, statistics=stats}
+        hits=t.hits, unattributed=t.unattributed, gone_tick=t.gone, recent=t.recent, recent_more=t.recent_more,
+        first_failure=t.first_failure, statistics=stats}
       lines[#lines+1] = string.format('railgun %s (%s): %d shots (%d ammo); aimed, exact %d: %s (killed %d, survived %d); uncertain %d; collateral hits: %s (killed %d)%s%s',
         at(t.position), t.quality, t.shots, t.ammo_used, t.exact, sizes(t.aimed_by_size), t.aimed_killed, t.aimed_survived, t.uncertain,
         sizes(t.collateral_by_size), t.collateral_killed, t.unattributed > 0 and string.format('; %d hits on no seen shot', t.unattributed) or '',
@@ -226,6 +238,7 @@ return function(api)
       tot.uncertain, sizes(tot.collateral_by_size), tot.hits, tot.unattributed))
     return {aim=true, platform=job.platform, start_tick=job.start, end_tick=job.until_tick, seconds=job.seconds, every_ticks=1, samples=job.samples,
       done=not job.live, picked=job.picked, railguns_total=job.total, railguns=rows, totals=tot, lines=lines, reason=job.reason,
+      recent_note='per railgun: at most 24 shot records, retaining first_failure plus the newest 23 other shots; before a failure, the newest 24. first_failure is the first shot with an aimed target surviving or uncertain attribution, not proof of a targeting error. Watches begun before this instrumentation can preserve only the earliest such shot still retained. recent_more counts evicted records.',
       attribution='per shot: exact when the target the railgun read the tick before the shot is among that shot\'s hits (on_entity_damaged with the railgun as cause); the other hits are collateral; uncertain otherwise (no target read, or it was not hit: changed target within the tick, or missed). ammo_used: items that left its ammo slots at a shot (one a shot)',
       statistics_note='all detected shots since statistics.since_tick, including ones dropped from recent; intervals use the detected shot tick (read tick minus 1), no interval before the first shot. Histogram: each integer tick 0..exact_through_ticks (ceil(prototype cooldown)+1, capped at 7200; 1 if unavailable), absent counts zero, then the three wider ranges. shots_by_second[1] covers start_tick..start_tick+59. shots_by_target_size uses the previous tick\'s target even when attribution is uncertain; unknown means none read. Multiple ammo items lost in one read are assigned that same tick (zero internal intervals); multi_shot_observations counts these ambiguous reads. Nominal cooldown excludes force/ammo modifiers, aim/turn time and power limits. Samples read once per valid turret tick; energy_ready means full electric buffer (2.0.77 railgun game data: 10 MJ buffer and 10 MJ/shot), target_present means shooting_target valid, ammo_present means inventory count > 0. These are independent sample shares, not causes of delay; remaining cooldown and ready-to-fire state are not exposed by 2.0.77.',
       not_given='the game\'s reason for a target choice; shots of railguns not watched'}
