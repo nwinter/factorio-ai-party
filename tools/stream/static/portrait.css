@@ -14,6 +14,11 @@ html body.portrait #subtitle { display: none; }
 html body.portrait #clock { font-size: 34px; }
 html body.portrait #clock-sub { font-size: 16px; }
 
+/* After the header's camera spacer, immediately above the agent grid. */
+html body.portrait #run-target { padding: 10px 22px; }
+html body.portrait #run-target .target-clock { font-size: 28px; }
+html body.portrait #run-target .target-goal { font-size: 23px; }
+
 html body.portrait #board, html body.portrait #sparks, html body.portrait .card.research { display: none !important; }
 
 /* agents: three columns, three lines each */

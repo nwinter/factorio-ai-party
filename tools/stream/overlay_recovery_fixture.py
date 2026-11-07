@@ -11,11 +11,13 @@ import time
 import wave
 from http.server import ThreadingHTTPServer
 from serve import AudioHub, Hub, Model, make_handler
+from target_countdown import facts as target_facts
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--target-run', type=Path, help='optional offline target.json directory')
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     hub, model = Hub(), Model({'agents': {}})
@@ -53,6 +55,7 @@ def main():
             s = model.snapshot(time.time())
             s.update(program={'layout': 'onecam'}, cameras={'main': {'agents': [], 'map': 'Nauvis recovery camera'}},
                      shift_recap=None, tour=[])
+            s['run_target'] = target_facts(a.target_run)
             with lock:
                 s.update(changes)
             hub.publish(s)

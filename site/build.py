@@ -2036,6 +2036,7 @@ def public_status(st):
 
 LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/static/mapview.js" defer></script>\n'
              '<script src="/static/shift-phase.js" defer></script>\n'
+             '<script src="/static/target-countdown.js" defer></script>\n'
              '<script src="/static/live.js" defer></script>\n<script src="/static/polls.js" defer></script>')
 
 
@@ -2053,6 +2054,7 @@ def live_app(heading, sample_href, below_player=""):
   <h1>{esc(heading)}</h1>
   <p class="live-head-meta"><span id="live-badge" class="fx-chip fx-chip--grey">Offline</span> <span id="watching" class="small" hidden></span> <span id="updated" class="muted small"></span></p>
 </div>
+<section id="run-target" class="live-target" aria-label="Final push" hidden></section>
 <div class="live-top">
   <div class="player-wrap" id="player">
     <div class="player-placeholder">
@@ -2419,6 +2421,7 @@ def main():
     write("static/factorio-ui.css", re.sub(r"^@import url\([^)]*\);\n", "", kit, flags=re.M))
     shutil.copy(ART / "avatar.js", out / "static" / "avatar.js")
     shutil.copy(ART / "shift-phase.js", out / "static" / "shift-phase.js")
+    shutil.copy(ART / "target-countdown.js", out / "static" / "target-countdown.js")
     for key in AGENTS:
         if archive() or not AGENTS[key].get("earlier"):  # agents of the earlier runs only with the archive
             write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))
