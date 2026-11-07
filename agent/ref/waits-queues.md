@@ -450,3 +450,17 @@
 `fraction` (0.01..1, default 1 when hp is absent) and/or `hp` (absolute HP) match a currently damaged entity strictly below either supplied threshold. Repair above the thresholds clears the match; fully repaired entities do not match. Exact health, max_health, name, unit_number, position and fraction for the worst 10 matches appear in `evidence.platform_health`, with count and read_tick; `saw` also names the values and tick. Lowest fraction first, or lowest HP with hp alone. Reads use damage events and re-read live HP each check (guards: every 10 ticks); the first hull read seeds the set, bounded at 32768 entities and refusing larger hulls without partial qualification. Positions use bounded direct reads.
 
 Available to waits and guards on body, remote and platform lanes, including all/any. Example guard condition: `{until:"damaged",platform:"Asterion",positions:[{x:0,y:0}],fraction:0.5}`. A not-met health guard says nothing about losses, empty guns, feed failures or clean-flight qualification; their existing separate guards remain unchanged. `platform_hit` continues to count cumulative damage, including repaired hits.
+
+## Guard priority
+
+`queue_submit` and `queue_edit` guards accept optional numeric `priority` (higher wins) and
+`exclusive_group` (1..64 bytes). A fired guard with priority protects its active/pending recovery steps
+from a met guard with lower explicit priority. Both groups set and different: no comparison; otherwise
+they share control scope within this lane. Equal priorities, or either priority omitted: existing replacement
+behavior. Suppressed guards are consumed once. Pausing/requeueing retains protection; finishing/removing
+the reaction steps ends it. Direct queue calls remain explicit overrides.
+
+`queue_status.guard_control` names the controlling guard, priority, group, firing tick and trigger reason.
+`guard_suppressed` keeps the newest eight suppressions, each with the suppressor and its firing tick/reason;
+history also records `guard_suppressed`. Submission/dry-run `guard_warnings` report differing reactions
+when neither guard has priority; these are potential conflicts, without predicting which conditions fire.

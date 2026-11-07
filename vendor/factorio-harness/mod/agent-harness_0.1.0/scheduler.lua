@@ -187,11 +187,56 @@ return function(api)
         if p and api.check_action then api.check_action(p.index,'wait_until',g.when) end
         assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
         assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
+        assert(g.priority==nil or (type(g.priority)=='number' and g.priority==g.priority and math.abs(g.priority)<math.huge),'guard priority must be a finite number (higher takes precedence)')
+        assert(g.exclusive_group==nil or (type(g.exclusive_group)=='string' and #g.exclusive_group>=1 and #g.exclusive_group<=64),'guard exclusive_group must be a string of 1..64 bytes')
         assert(g.scope==nil or g.scope=='plan' or g.scope=='standing','guard scope is "plan" (the default: retired when the lane has no step left) or "standing" (armed until it fires, is removed or the queue is cancelled)')
-        out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps},p) or nil,scope=g.scope}
+        out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps},p) or nil,scope=g.scope,priority=g.priority,exclusive_group=g.exclusive_group}
       end)
     end
     return out
+  end
+  -- Control lasts only for this reaction's surviving steps, including held/requeued work.
+  -- Legacy queues have no controller and take the constant-time exit. This is also a read-only status helper.
+  function M.guard_control(q)
+    local c=q.guard_control
+    if not c then return nil end
+    if q.current and q.current.guard_run==c.run then return c end
+    for _,step in ipairs(q.pending) do if step.guard_run==c.run then return c end end
+  end
+  local function same(a,b)
+    if type(a)~=type(b) then return false end
+    if type(a)~='table' then return a==b end
+    for k,v in pairs(a) do if not same(v,b[k]) then return false end end
+    for k in pairs(b) do if a[k]==nil then return false end end
+    return true
+  end
+  -- Conservative warning: differing reactions can replace/cancel one another, whatever their conditions.
+  -- Compare only action inputs, never guard baselines or assigned job ids.
+  local function same_reaction(a,b)
+    if a['goto']~=b['goto'] or (a.steps==nil)~=(b.steps==nil) then return false end
+    if not a.steps then return true end
+    if #a.steps~=#b.steps then return false end
+    for i,s in ipairs(a.steps) do
+      local t=b.steps[i]
+      for _,k in ipairs({'action','args','wait','label','on_fail','on_short','min_moved'}) do
+        if not same(s[k],t[k]) then return false end
+      end
+    end
+    return true
+  end
+  local function guard_warnings(list,kept)
+    local all,out={},{}
+    for _,g in ipairs(kept or {}) do all[#all+1]=g end
+    for _,g in ipairs(list or {}) do all[#all+1]=g end
+    for i,a in ipairs(all) do
+      for j=i+1,#all do
+        local b=all[j]
+        if a.priority==nil and b.priority==nil and not same_reaction(a,b) then
+          out[#out+1]=string.format('%s and %s have potentially conflicting guard actions in this lane with no priorities set; a later firing can replace or cancel the earlier reaction',a.id or 'guards['..i..']',b.id or 'guards['..j..']')
+        end
+      end
+    end
+    return #out>0 and out or nil
   end
   -- (d26 batch251 GL, Sol #2466: queue_submit and its dry run took on_fail goto:missing-label, and an Asterion draft
   -- at tick 68087211 passed with step 11's goto:sink-source-stop on no step; a goto that finds no pending step of its
@@ -411,7 +456,7 @@ return function(api)
       local text,since=baseline(g.when)
       rows[#rows+1]={id=g.id,['until']=g.when['until'],set_tick=g.set_tick,since_tick=since,baseline=text,edit=status and status[g.id] or nil,scope=g.scope or 'standing',
         deadline_tick=g.deadline,ticks_left=g.deadline and math.max(0,g.deadline-game.tick) or nil,
-        read_error=read_error_row(g),saw=g.saw,evidence=g.when.evidence,
+        read_error=read_error_row(g),saw=g.saw,evidence=g.when.evidence,priority=g.priority,exclusive_group=g.exclusive_group,
         reaction=g['goto'] and ('goto '..g['goto']) or g.steps and (#g.steps..' step'..(#g.steps==1 and '' or 's')) or 'abort (the queue pauses)'}
     end
     return rows
@@ -581,7 +626,7 @@ return function(api)
       orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
       history_total=trimmed and #q.history or nil,
       waiting=waiting,kept_wait=kept,wait_deadlines=wait_deadlines(q.current,q.pending),
-      guard_read_errors=M.guard_read_errors(q),guards=gl,last_failure=failure,after_direct=q.after_direct,
+      guard_read_errors=M.guard_read_errors(q),guards=gl,guard_control=M.guard_control(q),guard_suppressed=q.guard_suppressed,guard_warnings=guard_warnings(q.guards),last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       paused_why=q.paused and q.paused_why and string.format('%s (tick %d, %ds ago); queue_resume runs the rest',q.paused_why.line,q.paused_why.tick,math.floor((game.tick-q.paused_why.tick)/60)) or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
@@ -848,7 +893,23 @@ return function(api)
         elseif g.read_error and not g.read_error.cleared_tick then g.read_error.cleared_tick=game.tick end
       end
       if ok and met then
-        -- A guard fires once; its reaction replaces whatever was running.
+        -- A met lower-priority guard is consumed once, without stopping or changing the protected reaction.
+        local control=M.guard_control(q)
+        if control and g.priority~=nil and g.priority<control.priority and
+          (g.exclusive_group==nil or control.exclusive_group==nil or g.exclusive_group==control.exclusive_group) then
+          table.remove(q.guards,i)
+          local row={guard=g.id,priority=g.priority,exclusive_group=g.exclusive_group,condition=g.when['until'],saw=saw,
+            tick=game.tick,suppressed_by=control.guard,control_tick=control.tick,control_priority=control.priority,control_reason=control.reason,
+            reason=string.format('lower priority than %s (priority %g), which fired at tick %d: %s',control.guard,control.priority,control.tick,control.reason)}
+          q.guard_suppressed=q.guard_suppressed or {}
+          q.guard_suppressed[#q.guard_suppressed+1]=row
+          if #q.guard_suppressed>MAX_GUARDS then table.remove(q.guard_suppressed,1) end
+          q.history[#q.history+1]={action='guard_suppressed',ok=true,result=row,finished_tick=game.tick,plan=q.plan_seq}
+          if #q.history>MAX_HISTORY then table.remove(q.history,1) end
+          set_due(q); q.revision=q.revision+1
+          return
+        end
+        -- Equal/unset priorities and different explicit groups retain the original replacement behavior.
         table.remove(q.guards,i)
         -- (d22 batch92 BB2, BB3, Astra #1886, #1887) the trigger's evidence kept: platform_hit's first hits,
         -- platform_progress's progress and leg
@@ -878,7 +939,8 @@ return function(api)
         end
         if q.current then record(q,q.current,false,{reason='guard',condition=g.when['until'],saw=saw,evidence=evidence}); q.current=nil end
         api.stop(p)
-        q.history[#q.history+1]={action='guard',ok=true,result={condition=g.when['until'],saw=saw,evidence=evidence,guard=g.id},finished_tick=game.tick,plan=q.plan_seq}
+        local fired={condition=g.when['until'],saw=saw,evidence=evidence,guard=g.id,priority=g.priority,exclusive_group=g.exclusive_group}
+        q.history[#q.history+1]={action='guard',ok=true,result=fired,finished_tick=game.tick,plan=q.plan_seq}
         if #q.history>MAX_HISTORY then table.remove(q.history,1) end
         local resumed=false
         if g.steps then
@@ -887,6 +949,14 @@ return function(api)
           resumed=true
         elseif g['goto'] and jump(q,g['goto']) then resumed=true
         else q.paused=true; q.paused_why={tick=game.tick,line='a guard fired: '..tostring(g.when['until'])..(saw and ' ('..tostring(saw)..')' or '')} end
+        q.guard_control=nil
+        if resumed and g.priority~=nil then
+          q.guard_run=(q.guard_run or 0)+1
+          local c={guard=g.id,priority=g.priority,exclusive_group=g.exclusive_group,tick=game.tick,run=q.guard_run,
+            condition=g.when['until'],reason=tostring(g.when['until'])..(saw and ': '..tostring(saw) or '')}
+          for _,step in ipairs(q.pending) do step.guard_run=c.run end
+          q.guard_control=c; fired.control=c
+        end
         -- (d27 batch261 AD) a deadline that fires on a paused or held remote lane runs its reaction now
         if paused and resumed then
           q.paused=false; q.held=nil
@@ -1051,7 +1121,7 @@ return function(api)
         args=rest
       end
       if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan,ends_tick=ends,
-        pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals}) end
+        pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,guard_run=step.guard_run}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -1098,7 +1168,7 @@ return function(api)
     assert(#q.pending+#items<=MAX_PENDING,string.format('queue capacity exceeded: %d pending and %d more is over %d',#q.pending,#items,MAX_PENDING))
     assert(total(q.pending)+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     assign(q,items)
-    for _,step in ipairs(items) do step.plan=cur.plan; step.order=cur.order end
+    for _,step in ipairs(items) do step.plan=cur.plan; step.order=cur.order; step.guard_run=cur.guard_run end
     for i=#items,1,-1 do table.insert(q.pending,1,items[i]) end
     if q.plan and q.plan.id==cur.plan and q.plan.steps then q.plan.steps=q.plan.steps+#items end
     if cur.order and q.order and q.order.name==cur.order then q.order.total=q.order.total+#items end
@@ -1321,7 +1391,9 @@ return function(api)
       local new_guards=guards(a,p)
       assert(#items<=MAX_PENDING,'queue capacity exceeded')
       submit_checks((api.state()[QUEUES] or {})[p.index] or {pending={},guards={},revision=0},a,items,new_guards)
-      local out={dry_run=true,queued=false,steps=#items,wait_deadlines=wait_deadlines(nil,items)}
+      local stored=(api.state()[QUEUES] or {})[p.index]
+      local out={dry_run=true,queued=false,steps=#items,wait_deadlines=wait_deadlines(nil,items),
+        guard_warnings=guard_warnings(new_guards,a.mode~='replace' and stored and stored.guards or nil)}
       if api.simulate then
         local ok,sim=pcall(api.simulate,p,items)
         if ok then for k,v in pairs(sim) do out[k]=v end else out.simulate_error=api.reason and api.reason(sim) or tostring(sim) end
@@ -1855,7 +1927,7 @@ return function(api)
   M.schema={
     queue_status={snapshots='(d29 batch344) true: the snapshots taken when an ammo_below guard on a platform fired (on that tick: the lowest turret, its ammo and rounds, each inserter feeding it with status, held stack, hand settings, pickup and drop, its pickup belt\'s lane counts, power and circuit; the platform\'s leg and speed), newest first, 8 a page (from: next_from); the newest 32 a force kept',snapshot='a snapshot\'s id: that one in full',from='with snapshots: the first row (next_from of the page before)',args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',
-      returns='active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
+      returns='guard_control (active reaction guard, priority, exclusive_group, tick, reason), guard_suppressed (newest 8, with suppressor and firing tick), guard_warnings; active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
     queue_repeat={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       orders='which standing orders may run in the pause between rounds: triggers (default: orders with when, as they would while you are free), all (the default routine too) or none; an order that runs then finishes before the next round loads (the round waits for it, up to its max_ticks); its hold counts from your own last request, not the round\'s last step; queue_status says orders_between_rounds',
       name='optional 1..32 characters: names the loop in its round lines',
@@ -1882,7 +1954,7 @@ return function(api)
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it; the label is on a later step of the list, or a step pending behind it with mode next or ahead: a submit and its dry run refuse one on no such step); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
-    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the lane is not paused (every tick once a tick_at_least in its when is reached); each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan; scope: "plan" (default) retires the guard in the tick the lane has no step left (none running or pending, no repeating plan), with a guards_retired history row and a team block line; "standing" keeps it armed until it fires, is removed or the queue is cancelled (guards set before scopes existed are standing); queue_status guards_after_plan names guards armed with no step left; a guard whose when is tick_at_least (alone or in any) fires at its tick on a remote or platform lane even while it is paused or held, and its steps or goto run then; a guard whose read fails stays armed, read again at each check, said once (a guard_error history row and a team block line; queue_status guards read_error)',max=MAX_GUARDS}
+    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the lane is not paused (every tick once a tick_at_least in its when is reached); each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan; scope: "plan" (default) retires the guard in the tick the lane has no step left (none running or pending, no repeating plan), with a guards_retired history row and a team block line; "standing" keeps it armed until it fires, is removed or the queue is cancelled (guards set before scopes existed are standing); queue_status guards_after_plan names guards armed with no step left; a guard whose when is tick_at_least (alone or in any) fires at its tick on a remote or platform lane even while it is paused or held, and its steps or goto run then; a guard whose read fails stays armed, read again at each check, said once (a guard_error history row and a team block line; queue_status guards read_error). Optional priority: finite number, higher takes precedence; exclusive_group: 1..64 bytes, limits comparisons to that group within the lane (either guard ungrouped means lane-wide). While a prioritized reaction has active or pending steps, a met guard with a lower explicit priority in the same scope is consumed as suppressed, without stopping or replacing those steps. Equal priorities or either priority omitted keep existing behavior. Different explicit groups keep replacement behavior. Protection ends when those steps finish or are removed; pause/requeue retains it, direct queue edits/cancel remain explicit overrides. queue_status guard_control gives guard, priority, group, firing tick and reason; guard_suppressed keeps the newest 8 suppressions, also in guard_suppressed history rows. Submit and dry_run guard_warnings name differing reactions with no priorities.',max=MAX_GUARDS}
   }
   return M
 end

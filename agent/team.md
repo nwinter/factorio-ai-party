@@ -8,6 +8,7 @@
 
 Factory, research and power are shared. `./fh` controls your character and inventory.
 `queue_status {agent:"sol"}` reads a teammate's queues; writes stay owner-scoped (help waits-queues).
+Queue guards: optional `priority`/`exclusive_group`; `queue_status` shows control and suppressed guards (help waits-queues).
 `platform_supply {collection:true,agent:"opus"}` reads their newest completed tally; `id` selects one (help space-age).
 `technologies {name, level}`: cost. `platform_endurance` design.details: ammo effects (help space-age).
 `supply` / `platform_supply fuel`: native thruster, pipe-segment and machine stock (help analysis).

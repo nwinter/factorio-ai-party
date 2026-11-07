@@ -18150,6 +18150,7 @@ function M.queue_brief(q)
   if not q.guard_lines and q.guards and #q.guards>0 then ids={}; for _,g in ipairs(q.guards) do ids[#ids+1]=tostring(g.id)..' '..tostring(g.when and g.when['until'])..(g.scope=='standing' and ' (standing)' or '') end end
   return {lane=q.lane,revision=q.revision,state=q.state,staged=q.staged,line=q.guard_lines and q.line or nil,guard_lines=q.guard_lines,guard_ids=ids,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
     pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
+    guard_control=q.guard_control,guard_suppressed=q.guard_suppressed,guard_warnings=q.guard_warnings,
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guard_lines and q.guards or q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
