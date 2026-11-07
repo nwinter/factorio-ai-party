@@ -161,6 +161,21 @@ def sustained_encounter():
     assert 'ship survey' not in frames, frames
 
 
+def compact_featured_telemetry():
+    """The real director's public bow/action/detail shots must never expand the overlay card."""
+    d, _ = setup(slots=[{'slot': 'main', 'player': 3}])
+    ship = copy.deepcopy(SHIP)
+    ship['view'].update(guns=[dict(x=-20, y=-45, range=35), dict(x=20, y=-45, range=35)],
+                        machines=[dict(x=0, y=0, w=True)])
+    scenes = {}
+    for t, cameras in run(d, 1000, 1400, ship=ship):
+        if name(cameras) == 'Resolute':
+            scenes[cameras['main']['platform']['framing']] = {'cameras': cameras}
+    assert {'bow and approaching asteroids', 'bow guns', 'working production'} <= scenes.keys(), scenes.keys()
+    subprocess.run(['node', str(HERE / 'platformmetrics_dom_test.cjs'), '--featured-scenes'],
+                   input=json.dumps(list(scenes.values())), text=True, check=True)
+
+
 def failures():
     d,sent=setup();run(d,1000,1004)
     d.featured.finish('off',1004,cleared=True);run(d,1004,1010)
@@ -216,5 +231,5 @@ def model_contract():
 
 if __name__=='__main__':
     with contextlib.redirect_stdout(io.StringIO()) as captured:
-        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract();sustained_encounter()
+        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract();sustained_encounter();compact_featured_telemetry()
     print('featured: ok (share, dwell, framing, inset, urgent, repair, arrival, loss, reversal, time, restart, carry, clear, CLI, send failure)')
