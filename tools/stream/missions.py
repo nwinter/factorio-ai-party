@@ -149,7 +149,7 @@ def progress_meaning(s, m):
     goal = str((s.get('run_target') or {}).get('goal') or '').strip().rstrip('.')
     # The operator's run target is plain-language intent, not a prediction or a deadline.
     if goal and len(goal) <= 180:
-        return f"The run's stated goal is: {goal}. The ship is still on that outward leg."
+        return f"The run's stated goal is: {goal}. The ship is still on the current leg."
     negative = next((a for a in m.get('ammo') or [] if (a.get('net_min') or 0) < 0), None)
     if negative:
         return f"{negative['name'].replace('-', ' ').capitalize()} consumption exceeds production in this sample, so that stock is being drawn down during the flight."
