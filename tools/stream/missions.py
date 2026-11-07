@@ -24,6 +24,12 @@ def named(name, text):
     return bool(name and re.search(r'(?<![\w-])' + re.escape(name) + r'(?![\w-])', str(text or ''), re.I))
 
 
+def mission_claim(name, text):
+    """Keep provenance when the analyst uses 'the ship' instead of repeating its name."""
+    return named(name, text) or bool(re.search(
+        r'\b(?:ship|voyage|flight|leg|asteroids?|ammunition|ammo|thrusters?|railgun|repair|repairs)\b', str(text), re.I))
+
+
 def metric(s, now):
     m = s.get('mission_metrics') or s.get('platform_metrics') or {}
     # Missing acquisition time fails closed; never freshen an old snapshot at receipt.

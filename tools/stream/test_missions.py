@@ -169,6 +169,7 @@ def main():
     assert commentary_freshness.invalid({}, newer, START + 20) is None
     assert 'mission_source' not in commentary_freshness.scoped(src, 'Research finished')
     assert 'mission_source' in commentary_freshness.scoped(src, 'Asterion continues')
+    assert 'mission_source' in commentary_freshness.scoped(src, 'The ship has flown 10 percent of this leg')
     ctx = missions.context(s, START)
     assert ctx['goals'] and ctx['voyage_sample']
     assert 'voyage_sample' not in missions.context(s, START + 46)

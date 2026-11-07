@@ -46,8 +46,8 @@ def scoped(source, text, agents=()):
                 or re.search(r'(?<!\w)' + re.escape(k.split(':', 1)[1].lower()) + r'(?!\w)', text)}
     result = dict(source, subject_revision=selected)
     if result.get('mission_source'):
-        from missions import named
-        if not named(result['mission_source']['platform'], text):
+        from missions import mission_claim
+        if not mission_claim(result['mission_source']['platform'], text):
             result.pop('mission_source')
     return result
 

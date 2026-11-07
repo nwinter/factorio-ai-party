@@ -471,13 +471,13 @@ def cycle(a, dg, prev, logf):
     meta.update(digest_s=round(t_digest, 1), digest_chars=len(text), dropped=len(dropped))
     reply.update(game_minute=facts["game_minute"], tick=snap["tick"], meta=meta, t=time.time())
     reply.update(provenance)
-    from missions import analyst_source, named
+    from missions import analyst_source, mission_claim
     mission_source = analyst_source(feed or {}, t0)
     if mission_source:
         for point in reply.get("talking_points") or []:
-            if named(mission_source['platform'], str(point)):
+            if mission_claim(mission_source['platform'], str(point)):
                 point['mission_source'] = mission_source
-        if named(mission_source['platform'], str({k: reply.get(k) for k in
+        if mission_claim(mission_source['platform'], str({k: reply.get(k) for k in
                  ('headline', 'judgement', 'storylines', 'next', 'segments', 'corrections')})):
             reply['mission_source'] = mission_source
     if getattr(a, "viewer_questions", False):  # the hosts leave viewer questions to the analyst (analyst_board.questions_on)
