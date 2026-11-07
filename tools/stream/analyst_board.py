@@ -66,8 +66,6 @@ class AnalystBoard:
             self.latest = {k: cycle.get(k) for k in ("headline", "judgement", "storylines", "next", "segments",
                                                      "corrections", "game_minute", "meta", "viewer_questions")}
             self.latest["t"] = now
-            if cycle.get("mission_source"):
-                self.latest["mission_source"] = cycle["mission_source"]
             self.latest.update(provenance)
             self.latest = scoped(self.latest, str({k: self.latest.get(k) for k in TRANSIENT}))
             return {"ok": True, "cycle": self.cycles, "points": len(cycle.get("talking_points") or [])}
@@ -91,7 +89,7 @@ class AnalystBoard:
             pts = sorted(self.fresh(now), key=lambda p: (-int(p.get("priority") or 2), -p["t"]))[:10]
             return dict(current_analyst(self.latest, now=now), age_s=round(now - self.latest["source_t"]), answers=answers,
                         talking_points=[{k: p.get(k) for k in ("id", "kind", "topic", "text", "facts", "priority", "agents",
-                                                                "game_minute", "expires", "source_t", "source_tick", "subject_revision", "news", "mission_source") if k in p} for p in pts])
+                                                                "game_minute", "expires", "source_t", "source_tick", "subject_revision", "news") if k in p} for p in pts])
 
     def full(self, now=None):
         with self.lock:

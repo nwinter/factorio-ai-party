@@ -24,12 +24,6 @@ def named(name, text):
     return bool(name and re.search(r'(?<![\w-])' + re.escape(name) + r'(?![\w-])', str(text or ''), re.I))
 
 
-def mission_claim(name, text):
-    """Keep provenance when the analyst uses 'the ship' instead of repeating its name."""
-    return named(name, text) or bool(re.search(
-        r'\b(?:ship|voyage|flight|leg|asteroids?|ammunition|ammo|thrusters?|railgun|repair|repairs)\b', str(text), re.I))
-
-
 def metric(s, now):
     m = s.get('mission_metrics') or s.get('platform_metrics') or {}
     # Missing acquisition time fails closed; never freshen an old snapshot at receipt.
@@ -57,53 +51,6 @@ def metric(s, now):
 def identity(m):
     leg = m['leg']
     return json.dumps([m['platform'], leg.get('from'), leg.get('to'), leg.get('back'), leg['start_tick']])
-
-
-def context(s, now):
-    """Bounded current Goals, dated existing speech/work/chronicle, and fresh voyage facts for analyst/hosts."""
-    plan = (s.get('board') or {}).get('plan') or {}
-    out = {'goals': str(plan.get('goals') or '')[:1200], 'run_target': s.get('run_target'),
-           'projects': [{k: p[k] for k in ('name', 'agent', 'text', 'tick') if k in p}
-                        for p in (plan.get('doing') or [])[:12]],
-           'rule': 'Goals are intent, dated reports are history, not current telemetry. Never infer repair success.'}
-    m = metric(s, now)
-    if m:
-        out['voyage_sample'] = {k: copy.deepcopy(v) for k, v in m.items() if k != 'asteroids'}
-        out['voyage_sample']['age_s'] = round(now - m['sample_t'], 1)
-    feature = s.get('featured_platform') or {}
-    name = (m or {}).get('platform') or feature.get('name')
-    out['dated_mission_facts'] = [{k: r[k] for k in ('tick', 'game_time', 'platform', 'kind', 'line', 'title', 'text') if k in r}
-                                  for r in (s.get('chronicle') or {}).get('events', []) +
-                                  (s.get('chronicle') or {}).get('entries', [])
-                                  if r.get('tick') is not None and (r.get('platform') == name or
-                                     named(name, str(r.get('text') or '') + str(r.get('line') or ''))) ][-6:]
-    out['recent_speech'] = [{'agent': a.get('display_name') or a.get('name'), **a['last_said']}
-                            for a in s.get('agents') or [] if (a.get('last_said') or {}).get('text') and
-                            0 <= now - (a['last_said'].get('t') or 0) <= 180 and
-                            named(name, a['last_said']['text'])][-3:]
-    return out
-
-
-def analyst_source(s, now):
-    m = metric(s, now)
-    if not m:
-        return None
-    from commentary_freshness import fingerprint
-    return {'platform': m['platform'], 'sample_t': m['sample_t'],
-            'revision': fingerprint({k: v for k, v in m.items() if k not in ('age_s', 'sample_t', 'asteroids')})}
-
-
-def digest_context(s, now, limit=6000):
-    data = context(s, now)
-    # Bound the added input to existing analyst calls, retaining Goals and the sampled voyage first.
-    for key in ('projects', 'dated_mission_facts', 'recent_speech'):
-        while data.get(key) and len(json.dumps(data, ensure_ascii=False)) > limit:
-            data[key].pop()
-    text = json.dumps(data, ensure_ascii=False)
-    if len(text) > limit:
-        data.pop('voyage_sample', None)  # oversized/malformed observations are not a reason to grow prompts
-        text = json.dumps(data, ensure_ascii=False)
-    return text
 
 
 def cues(s, m, now):

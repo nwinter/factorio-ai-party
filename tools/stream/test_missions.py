@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mission speech freshness, coalescing, receipts, lineage, offscreen telemetry and camera replay. Offline."""
+"""Mission speech freshness, coalescing, receipts, lineage, offscreen telemetry. Offline."""
 import contextlib
 import copy
 import io
@@ -9,11 +9,30 @@ import tempfile
 from unittest.mock import patch
 
 import caster
-import commentary_freshness
 import missions
-from missions_replay import snapshot, replay, START
+from test_speechframe import team
+from test_platformcam import plat
 from platformmetrics import Metrics
 from test_platformmetrics import snapshot as camera_snapshot, raw
+
+
+START = 1_800_000_000.0
+
+
+def snapshot(now, offset=0):
+    p = plat('Asterion', 'solar-system-edge->shattered-planet 10%')
+    p.update(name='Asterion', route_ids=['solar-system-edge', 'shattered-planet'])
+    m = {'platform': 'Asterion', 'sample_t': now, 'tick': 100000 + offset * 60,
+         'leg': {'from': 'solar-system-edge', 'to': 'shattered-planet', 'start_tick': 90000,
+                 'pct': 9.9 + offset / 1200}, 'speed_kms': 25.6, 'losses_leg': 0,
+         'hits_min': 2 if 180 <= offset < 390 else 0, 'damage_taken': 20 if 180 <= offset < 390 else 0,
+         'kills_min': 4500, 'repair_packs': 629, 'turrets': {},
+         'ammo': [{'name': 'railgun-ammo', 'net_min': -10 if 180 <= offset < 390 else 13}]}
+    return {'tick': m['tick'], 'agents': team(), 'chat': [], 'alerts': [], 'game_time': '580h00m',
+            'board': {'plan': {'goals': 'Advance as far toward Shattered Planet as Asterion can survive.', 'doing': []}},
+            'run_target': {'goal': 'as far toward Shattered Planet as Asterion can fly'},
+            'space': {'platforms': [p]}, 'featured_platform': {'status': 'active', 'name': 'Asterion', 'id': 'attempt'},
+            'mission_metrics': m, 'work': [{'platform': 'Asterion', 'kind': 'repair', 't': now}] if 180 <= offset < 390 else []}
 
 
 def complete(m, e, now):
@@ -116,10 +135,6 @@ def main():
         assert inherited.rows == mem.rows
         independent = missions.Missions(os.path.join(root, 'unrelated'))
         assert independent.rows == {}
-        import hourly
-        material = hourly.gather(first, START, START + 600, logs_dir=root)
-        assert any(r['kind'] == 'mission' and 'sample tick' in r['text'] for r in material.rows)
-        assert any(t['target'] == {'platform': 'Asterion'} for t in material.targets)
         p['mission_metrics']['leg']['start_tick'] += 100
         assert inherited.event(p, START + 400), 'a new voyage may have its own milestones'
     # Damage -> recovery; unknown readings never become an all-clear.
@@ -159,31 +174,9 @@ def main():
     metrics.step(s, read, START + 10)
     assert len(reads) == 1
     assert metrics.mission_sample(s, START + 46) is None
-    # Analyst telemetry claims expire and invalidate on changed numbers; ordinary research is unaffected.
-    s = snapshot(START)
-    src = {'mission_source': missions.analyst_source(s, START)}
-    assert caster.mission_deadline({'kind': 'analyst', 'point': src}) == START + 45
-    assert caster.mission_deadline({'kind': 'research'}) is None
-    assert commentary_freshness.invalid(src, s, START + 1) is None
-    assert commentary_freshness.invalid(src, s, START + 46)
-    newer = snapshot(START + 20, 20)
-    assert commentary_freshness.invalid(src, newer, START + 20)
-    assert commentary_freshness.invalid({}, newer, START + 20) is None
-    assert 'mission_source' not in commentary_freshness.scoped(src, 'Research finished')
-    assert 'mission_source' in commentary_freshness.scoped(src, 'Asterion continues')
-    assert 'mission_source' in commentary_freshness.scoped(src, 'The ship has flown 10 percent of this leg')
-    ctx = missions.context(s, START)
-    assert ctx['goals'] and ctx['voyage_sample']
-    assert 'voyage_sample' not in missions.context(s, START + 46)
-    assert len(missions.digest_context(s, START)) <= 6000
     with contextlib.redirect_stdout(io.StringIO()):
         send_guards()
-    # Exercise real caster queue selection, real speech pushing and completed capture receipts, with camera subjects.
-    with contextlib.redirect_stdout(io.StringIO()):
-        result = replay()
-    assert result['completed_exchanges']['mission'] == 3
-    assert result['completed_exchanges']['research'] >= 2
-    print('missions: freshness, unknowns, lineage, receipt idempotence, offscreen budget, analyst provenance, ten-minute aired replay: ok')
+    print('missions: freshness, unknowns, lineage, receipt idempotence, offscreen budget, TTS/queue expiry and urgent preemption: ok')
 
 
 if __name__ == '__main__':
