@@ -27,7 +27,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `logistics_audit` storage: cargo, coverage, confirmed failures (help analysis).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
 `place_ghosts` dry runs check surface conditions and rotated railgun floor tiles; `check_inserters` refuses the whole batch on failure (help building).
-`platform_defense`: asteroid segments keep first + newest two; aim keeps first failure (help space-age).
+`platform_defense`: rail corridors give quality targeting range and shot reach (help space-age).
 `rearm {from}`: pickup then turret tour; no ammo taken or a refused tour reports failure with the reason.
 `load_silo first`: sources cover the manifest or refuse; native auto status and partial/OFF warning (help space-age).
 

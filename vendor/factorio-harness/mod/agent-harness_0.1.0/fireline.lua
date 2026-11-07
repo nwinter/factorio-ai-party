@@ -2,7 +2,9 @@
 -- the shots broke an ammo belt; Nick 07:10: placing a railgun shows every structure of ours it would shoot in red).
 -- The rule, from the 2.0.77 prototypes: a turret whose base has a direction aims within its attack_parameters'
 -- turn_range (a share of a full turn: railgun-turret 0.2, 72 degrees) centred on its facing, at targets up to its range
--- (40). Its ammunition's action is a line (railgun-ammo: 50 tiles long, 1 wide, from the shot's start 3.6 tiles out,
+-- (40 at normal quality). Both targeting range and ammunition line length scale by the turret quality's
+-- range_multiplier (measured in 2.0.77, d37 batch458); minimum range, shot start and width do not.
+-- Its ammunition's action is a line (railgun-ammo: base 50 tiles long, 1 wide, from the shot's start 3.6 tiles out,
 -- projectile_creation_distance) that damages every entity it crosses, ours too. So an entity of ours with health whose
 -- box such a line can cross, at any bearing of the arc, is hit when the turret fires along that bearing. Ghosts take no
 -- damage: they are named apart (hit once built). Read only; at most FIND entities looked at.
@@ -26,9 +28,9 @@ return function(api)
     return best
   end
   local arcs = {}
-  -- A turret prototype's line of fire: {arc (share of a turn), range, start, reach, width, ammo}, or false when its shots
+  -- A turret prototype's base line of fire: {arc (share of a turn), range, start, line_length, width, ammo}, or false when its shots
   -- are no line or it aims all round.
-  function M.arc(name)
+  local function base_arc(name)
     local c = arcs[name]
     if c ~= nil then return c or nil end
     c = false
@@ -40,11 +42,23 @@ return function(api)
       local line = line_of(cats)
       if line then
         local start = ap.projectile_creation_distance or 0
-        c = {arc=ap.turn_range, range=ap.range or 0, start=start, reach=start + line.range, width=line.width, ammo=line.ammo}
+        c = {arc=ap.turn_range, range=ap.range or 0, min_range=ap.min_range or 0, start=start, line_length=line.range, width=line.width, ammo=line.ammo}
       end
     end
     arcs[name] = c
     return c or nil
+  end
+  -- Keep only prototype facts in the name cache; a built gun, ghost or build preview supplies its own quality.
+  function M.arc(name, quality)
+    local b = base_arc(name)
+    if not b then return nil end
+    local q = type(quality) == 'string' and quality or try(function() return quality.name end) or 'normal'
+    local mult = try(function() return quality.range_multiplier end)
+      or try(function() return prototypes.quality[q].range_multiplier end) or 1
+    local length = b.line_length * mult
+    return {quality=q, range_multiplier=mult, arc=b.arc, range=b.range * mult, base_range=b.range,
+      min_range=b.min_range, start=b.start, reach=b.start + length, line_length=length,
+      base_line_length=b.line_length, width=b.width, ammo=b.ammo}
   end
   local atan2 = math.atan2 or math.atan
   local function wrap(x)
@@ -98,8 +112,8 @@ return function(api)
   end
   -- Our entities a turret of name at pos facing direction (0..15) would hit: {hits, ghosts, line, ...}, or nil when its
   -- shots are no line. skip: the turret itself (an entity); one of that name (or its ghost) within a tile of pos is it too.
-  function M.hits(surface, force, name, pos, direction, skip)
-    local c = M.arc(name)
+  function M.hits(surface, force, name, pos, direction, skip, quality)
+    local c = M.arc(name, quality or (skip and skip.quality))
     if not c then return nil end
     local face = (direction or 0) / 16 * 2 * math.pi
     local half = c.arc * math.pi
@@ -154,7 +168,7 @@ return function(api)
     local hit_text, hit_n = words(hits, by)
     local ghost_text, ghost_n = words(ghosts, gby)
     local head = string.format('%s %s facing %s aims within %g degrees of its facing (%g in all) at targets up to %g tiles; its shots (%s: a line %g wide to %g tiles from its centre) hit',
-      name, at(pos), COMPASS[direction or 0] or tostring(direction), math.floor(c.arc * 180 + 0.5), math.floor(c.arc * 360 + 0.5), c.range, c.ammo, c.width, c.reach)
+      (c.quality ~= 'normal' and c.quality .. ' ' or '') .. name, at(pos), COMPASS[direction or 0] or tostring(direction), math.floor(c.arc * 180 + 0.5), math.floor(c.arc * 360 + 0.5), c.range, c.ammo, c.width, c.reach)
     local line
     if hit_n == 0 and ghost_n == 0 then line = head .. ' none of ours'
     else
@@ -164,7 +178,7 @@ return function(api)
     if #found >= FIND then line = line .. string.format(' (cut: the first %d entities near its arc read, more there not read)', FIND) end
     local rows = {}
     for _, nm in ipairs(hits) do rows[#rows+1] = {name=nm, count=#by[nm], positions=by[nm]} end
-    return {line=line, hit=hit_n, ghosts=ghost_n > 0 and ghost_n or nil, entities=rows, cut=#found >= FIND or nil}
+    return {line=line, corridor=c, hit=hit_n, ghosts=ghost_n > 0 and ghost_n or nil, entities=rows, cut=#found >= FIND or nil}
   end
   -- Proposed footprints only: no entities, ghosts, watches or background jobs are created.
   M.PROPOSED_MAX, M.RAIL_MAX = 8, 64
@@ -212,24 +226,26 @@ return function(api)
     end
     local capped = #built + #ghosts > M.RAIL_MAX
     local rails = {}
-    local c = assert(M.arc('railgun-turret'), 'railgun-turret has no line ammunition')
+    local base = assert(M.arc('railgun-turret'), 'railgun-turret has no line ammunition')
     for _, group in ipairs({built,ghosts}) do
       for _, t in ipairs(group) do
         if #rails >= M.RAIL_MAX then break end
         rails[#rails+1] = {index=#rails+1, name='railgun-turret', position=t.position, direction=t.direction,
-          ghost=t.type == 'entity-ghost', unit_number=t.unit_number}
+          ghost=t.type == 'entity-ghost', unit_number=t.unit_number, corridor=M.arc('railgun-turret', t.quality)}
       end
     end
     -- Cheap necessary conditions before the shared corner/ray test. Each wedge edge defines a half-plane;
     -- reject only when the entire expanded box is outside one, or its nearest point is past the shot's reach.
     local edges = {}
     for j,t in ipairs(rails) do
+      local c = t.corridor
       local face, half = t.direction * math.pi / 8, c.arc * math.pi
       edges[j] = {math.cos(face-half), math.sin(face-half), -math.cos(face+half), -math.sin(face+half)}
     end
     local hits, matched, matched_index = 0, {}, {}
     for _, row in ipairs(rows) do
       for j, t in ipairs(rails) do
+        local c = t.corridor
         local b, w, e = boxes[row.index], c.width/2, edges[j]
         local x0, y0 = b.left_top.x-w-t.position.x, b.left_top.y-w-t.position.y
         local x1, y1 = b.right_bottom.x+w-t.position.x, b.right_bottom.y+w-t.position.y
@@ -250,8 +266,8 @@ return function(api)
       if #row.railguns > 0 then hits = hits + 1 end
     end
     return {entities=rows, railguns=matched, railguns_checked=#rails, complete=not capped, capped=capped,
-      limits={proposed_entities=M.PROPOSED_MAX,railguns=M.RAIL_MAX}, corridor=c,
-      note='Geometry only: rotated collision-box envelopes and the existing box/wedge rule (17 rays at radial boundaries; same-turret and origin-containing boxes excluded). Diagonal envelopes can overstate footprints. complete means all existing built and ghost railguns tested. Proposed railguns are not sources. No ammo, target-filter, placement or damage check.',
+      limits={proposed_entities=M.PROPOSED_MAX,railguns=M.RAIL_MAX}, corridor=base,
+      note='Each railgun corridor uses its own quality: range is targeting range; line_length is the damage line; reach is start + line_length. Top-level corridor is the normal-quality reference only. Geometry only: rotated collision-box envelopes and the existing box/wedge rule (17 rays at radial boundaries; same-turret and origin-containing boxes excluded). Diagonal envelopes can overstate footprints. complete means all existing built and ghost railguns tested. Proposed railguns are not sources. No ammo, target-filter, placement or damage check.',
       lines={string.format('proposed rail corridors: %d entities, %d existing railguns; %d entities intersect; complete=%s, capped=%s',#rows,#rails,hits,tostring(not capped),tostring(capped))}}
   end
   -- The same for a built turret or its ghost.
