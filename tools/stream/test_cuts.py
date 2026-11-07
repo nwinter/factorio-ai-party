@@ -37,9 +37,14 @@ class FakeOBS:
     def call(self, req, d=None):
         d = d or {}
         self.calls.append(req)
+        if req == "GetCurrentProgramScene":
+            return {"currentProgramSceneName": "stream"}
         if req == "GetSceneItemList":
             items = self.scenes[self.scene(d)]
-            return {"sceneItems": [{"sourceName": n, "sceneItemId": self.ids[n], "sceneItemIndex": i} for i, n in enumerate(items)]}
+            return {"sceneItems": [{"sourceName": n, "sceneItemId": self.ids[n], "sceneItemIndex": i,
+                    "sceneItemTransform": dict(self.transforms.get((self.scene(d), self.ids[n]), {}),
+                         sourceWidth=self.sizes.get(self.ids[n], (1920, 1080))[0],
+                         sourceHeight=self.sizes.get(self.ids[n], (1920, 1080))[1])} for i, n in enumerate(items)]}
         if req == "GetSceneItemTransform":
             w, h = self.sizes.get(d["sceneItemId"], (1920, 1080))
             return {"sceneItemTransform": {"sourceWidth": w, "sourceHeight": h}}
