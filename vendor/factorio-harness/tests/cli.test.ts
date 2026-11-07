@@ -364,6 +364,91 @@ test('fh wait exits nonzero when the action ended badly or is still running at t
     });
   });
 });
+test('batch455: plain wait reports fresh combat failure instead of old movement success',async()=>{
+  for (const format of ['json','compact']) {
+    let polls=0;
+    await engine(request=>{
+      if (request.action==='observe') return {ok:true,result:{player:{position:{x:0,y:0},inventory:[]}}};
+      polls++;
+      return {ok:true,tick:100+polls*10,result:{active:false,combat:polls===1?{kind:'shoot',until_tick:111}:false,
+        last:{kind:'move_to',outcome:'arrived',tick:50},
+        last_combat:polls===1?{outcome:'duration_elapsed',tick:40}:{outcome:'out_of_ammo',tick:120,ammo_used:2}}};
+    },async port=>{
+      await assert.rejects(cli(port,['wait','--format',format]),(error:any)=>{
+        assert.equal(error.code,1);
+        if (format==='json') {
+          const reply=JSON.parse(error.stdout);
+          assert.equal(reply.ok,false); assert.match(reply.error.message,/out_of_ammo/);
+          assert.equal(reply.result.last_combat.outcome,'out_of_ammo');
+        } else {
+          assert.match(error.stdout,/outcome(?:: |=)out_of_ammo/); assert.match(error.stdout,/action(?:: |=)shoot/);
+          assert.doesNotMatch(error.stdout,/outcome(?:: |=)arrived/);
+        }
+        return true;
+      });
+    });
+  }
+});
+test('batch455: plain wait judges both overlapping channels, in either completion order',async()=>{
+  const cases = [
+    {name:'combat fails first',body:'arrived',combat:'out_of_ammo',combatFirst:true,code:1,shown:'out_of_ammo'},
+    {name:'combat fails last',body:'arrived',combat:'out_of_ammo',combatFirst:false,code:1,shown:'out_of_ammo'},
+    {name:'movement fails first',body:'blocked',combat:'duration_elapsed',combatFirst:false,code:1,shown:'blocked'},
+    {name:'movement fails last',body:'blocked',combat:'duration_elapsed',combatFirst:true,code:1,shown:'blocked'},
+    {name:'both succeed, combat last',body:'arrived',combat:'duration_elapsed',combatFirst:false,code:0,shown:'duration_elapsed'},
+    {name:'both succeed, movement last',body:'arrived',combat:'duration_elapsed',combatFirst:true,code:0,shown:'arrived'},
+  ];
+  for (const c of cases) {
+    let polls=0;
+    await engine(request=>{
+      if (request.action==='observe') return {ok:true,result:{player:{position:{x:0,y:0},inventory:[]}}};
+      polls++;
+      const bodyDone=polls>=(c.combatFirst?3:2), combatDone=polls>=(c.combatFirst?2:3);
+      return {ok:true,tick:100+polls*10,result:{
+        active:bodyDone?false:{kind:'move_to',until_tick:111},combat:combatDone?false:{kind:'shoot',until_tick:111},
+        last:{kind:'move_to',outcome:bodyDone?c.body:'blocked',tick:bodyDone?(c.combatFirst?130:120):40},
+        last_combat:{outcome:combatDone?c.combat:'out_of_ammo',tick:combatDone?(c.combatFirst?120:130):50}}};
+    },async port=>{
+      const {code,stdout}=await compact(port,['wait']);
+      assert.equal(code,c.code,c.name+'\n'+stdout);
+      assert.match(stdout,new RegExp('outcome(?:: |=)'+c.shown),c.name);
+      assert.equal(polls,3,'both channels must end');
+    });
+  }
+});
+test('batch455: plain wait ignores stale unobserved channel failures and notices combat starting later',async()=>{
+  for (const lateCombat of [false,true]) {
+    let polls=0;
+    await engine(request=>{
+      if (request.action==='observe') return {ok:true,result:{player:{position:{x:0,y:0},inventory:[]}}};
+      polls++;
+      return {ok:true,tick:100+polls*10,result:{
+        active:polls<3?{kind:'move_to',until_tick:111}:false,
+        combat:lateCombat&&polls===2?{kind:'shoot',until_tick:111}:false,
+        last:{kind:'move_to',outcome:polls<3?'blocked':'arrived',tick:polls<3?40:130},
+        last_combat:{outcome:'out_of_ammo',tick:lateCombat&&polls>=3?130:50}}};
+    },async port=>{
+      const {code,stdout}=await compact(port,['wait']);
+      assert.equal(code,lateCombat?1:0,stdout);
+      assert.match(stdout,lateCombat?/outcome(?:: |=)out_of_ammo/:/outcome(?:: |=)arrived/);
+    });
+  }
+});
+test('batch455: a fresh failed completion stays failed if another action on that channel succeeds before idle',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if (request.action==='observe') return {ok:true,result:{player:{position:{x:0,y:0},inventory:[]}}};
+    polls++;
+    return {ok:true,tick:100+polls*10,result:{
+      active:polls<4?{kind:'move_to',until_tick:111}:false,
+      combat:polls===1||polls===3?{kind:'shoot',until_tick:111}:false,
+      last:polls<4?undefined:{kind:'move_to',outcome:'arrived',tick:140},
+      last_combat:polls===1?undefined:polls<4?{outcome:'out_of_ammo',tick:120}:{outcome:'duration_elapsed',tick:140}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['wait']);
+    assert.equal(code,1,stdout); assert.match(stdout,/outcome(?:: |=)out_of_ammo/); assert.match(stdout,/action(?:: |=)shoot/);
+  });
+});
 test('fh wait allows a feed short only when up_to was recorded on its completion',async()=>{
   for (const allowed of [true,false]) {
     await engine(()=>({ok:true,result:{active:false,last:{kind:'gather',op:'feed',outcome:'out_of_items',short_allowed:allowed,moved:100,left:1}}}),async port=>{
