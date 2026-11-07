@@ -13,6 +13,7 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
+  local rotatedbox = require('rotatedbox')
   local TC = require('tilecheck')()
   local undergroundplan = require('undergroundplan')(api)
   M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true, belt_route=true}
@@ -216,6 +217,8 @@ return function(api)
   function M.footprint(proto, pos, dir)
     local shape = RAILS[proto.type] and api.rail_box and api.rail_box(proto.name, pos, dir or 0)
     if shape then return {left_top=shape.left_top, right_bottom=shape.right_bottom}, shape end
+    local rotated = rotatedbox.shape(proto, pos, dir)
+    if rotated then return {left_top=rotated.left_top, right_bottom=rotated.right_bottom}, nil, rotated end
     local b = proto.collision_box or {left_top={x=-0.4, y=-0.4}, right_bottom={x=0.4, y=0.4}}
     return api.placewhy.box_at(b, pos, dir or 0)
   end
@@ -431,7 +434,8 @@ return function(api)
     local mask = layers(try(function() return proto.collision_mask end))
     if not next(mask) then return nil end
     remedy_cache, remedy2_cache = {}, {}
-    local x0, y0, x1, y1 = span(M.footprint(proto, pos, dir))
+    local box, _, rotated = M.footprint(proto, pos, dir)
+    local x0, y0, x1, y1 = span(box)
     -- (d20 batch61 W1) the game takes a rail support on deep oil ocean once Rail support foundations is researched
     local deep_ok = try(function() return proto.type end) == 'rail-support' and try(function() return force.rail_support_on_deep_oil_ocean end) == true
     local out
@@ -440,7 +444,8 @@ return function(api)
         local t = try(function() return surface.get_tile(x, y) end)
         local name = t and try(function() return t.name end)
         local tl = name and try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}
-        if collide(mask, tl) and not (deep_ok and name == 'oil-ocean-deep') then
+        if collide(mask, tl) and not (deep_ok and name == 'oil-ocean-deep')
+          and (not rotated or rotatedbox.overlaps(rotated, x, y, x+1, y+1)) then
           local laid = false
           for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
             local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
@@ -1176,7 +1181,7 @@ return function(api)
         local ramp = proto.type == 'rail-ramp'
         if ramp then rec.dir = math.floor(rec.dir / 4) * 4 end
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
-        rec.box, rec.shape = M.footprint(proto, rec.pos, rec.dir)
+        rec.box, rec.shape, rec.rotated = M.footprint(proto, rec.pos, rec.dir)
         local mask = rec.mask
         local rail = RAILS[proto.type]
         local chunk = {x=math.floor(rec.pos.x/32), y=math.floor(rec.pos.y/32)}
@@ -1314,7 +1319,8 @@ return function(api)
                     tile_bad[#tile_bad+1] = string.format('%s oil-ocean-deep (the game takes rail supports there once Rail support foundations is researched%s)',
                       tile_text(x, y), fix and '; or on '..fix..' laid there' or '')
                   end
-                elseif collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1)) then
+                elseif collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1))
+                  and (not rec.rotated or rotatedbox.overlaps(rec.rotated, x, y, x+1, y+1)) then
                   if t.layers.out_of_map then tile_bad[#tile_bad+1] = tile_text(x, y)..' is outside the map'
                   else
                     local fix = remedy(force, t.name, t.layers, mask)

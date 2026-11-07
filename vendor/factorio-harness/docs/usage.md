@@ -18895,3 +18895,16 @@ No existing guard is changed, and no route, schedule, or floor is written by thi
 `fraction` (0.01..1, default 1 when hp is absent) and/or `hp` (absolute HP) match a currently damaged entity strictly below either supplied threshold. Repair above the thresholds clears the match; fully repaired entities do not match. Exact health, max_health, name, unit_number, position and fraction for the worst 10 matches appear in `evidence.platform_health`, with count and read_tick; `saw` also names the values and tick. Lowest fraction first, or lowest HP with hp alone. Reads use damage events and re-read live HP each check (guards: every 10 ticks); the first hull read seeds the set, bounded at 32768 entities and refusing larger hulls without partial qualification. Positions use bounded direct reads.
 
 Available to waits and guards on body, remote and platform lanes, including all/any. Example guard condition: `{until:"damaged",platform:"Asterion",positions:[{x:0,y:0}],fraction:0.5}`. A not-met health guard says nothing about losses, empty guns, feed failures or clean-flight qualification; their existing separate guards remain unchanged. `platform_hit` continues to count cumulative damage, including repaired hits.
+## d37 batch448: rotated railgun foundation (#2921, Astra)
+
+`place_ghosts dry_run` uses the rotated collision footprint for diagonal eight/sixteen-direction buildings.
+The dry run's `tiles.positions` and `tiles.needed`, live foundation placement, and `ghosts` foundation diagnostics
+use the same intersecting tiles. Existing floor and tile ghosts still count as supplied; enclosed-hole filling
+and foundation connection by a side or corner keep their existing checks. The dry run places nothing.
+
+In Factorio 2.0.77 a railgun has eight construction directions (0,2,...,14). Its unobstructed footprint needs 15
+foundation tiles cardinally and 17 diagonally; hull connections and enclosed regions can change the total new floor.
+The harness rejects odd construction directions. Native creation rounds them down to the preceding even direction.
+`tools/test_d37_batch448_private.py --imac` checks all 16 native inputs on a held private copy: one missing tile at a
+time, dry-run versus live tile ghosts, read-only behavior, ghost diagnostics, and native revival. Its no-argument
+invocation skips. `tests/d37_batch448.lua` retains the engine tile fixtures, including negative coordinates.

@@ -6,6 +6,7 @@
 -- A summary counts them by name and by that verdict. Read only; bounded: 4000 ghosts, radius 256.
 return function(api)
   local M = {}
+  local rotatedbox = require('rotatedbox')
   local MAX, MAX_UNDER = 4000, 512
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
@@ -60,6 +61,8 @@ return function(api)
     local function is_empty(t) return t and t.name == 'empty-space' end
     -- the box: a tile in a rule's area follows the rule; the rest, the mask against the tile (by name when unread)
     local b = try(function() return g.bounding_box end)
+    local rotated = proto and rotatedbox.shape(proto, pos, dir)
+    if rotated then b = rotated end
     local n = 0
     if b then
       for x = math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1 do
@@ -78,7 +81,7 @@ return function(api)
             if tl and mask then for l in pairs(mask) do if tl[l] then ground = true end end
             else ground = is_empty(t) end
           end
-          if is_empty(t) then
+          if is_empty(t) and (not rotated or rotatedbox.overlaps(rotated, x, y, x+1, y+1)) then
             if ground then if tile_ghost(x, y) then out.ghosted = out.ghosted + 1 else out.bare = out.bare + 1 end
             else out.overhang = out.overhang + 1 end
           end
