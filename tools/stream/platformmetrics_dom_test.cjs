@@ -191,6 +191,17 @@ for (const store of [
   render(box, {...p, tick: 103, age_s: 2, asteroids: {...p.asteroids, huge: 1}}, 175);
   assert.equal(mode(box), "compact");
 }
+// A delayed event either gets three readable seconds or is discarded, never a subsecond flash.
+for (const age of [1, 1.1, 3.9, 4]) {
+  const {render, box, advance} = page();
+  render(box, p, 0);
+  render(box, {...p, tick: 101, age_s: age, asteroids: {...p.asteroids, huge: 1}}, 20);
+  assert.equal(mode(box), age <= 1 ? "beat" : "compact");
+  if (age <= 1) {
+    advance(22.99); assert.equal(mode(box), "beat");
+    advance(23.01); assert.equal(mode(box), "compact");
+  }
+}
 // Caption clearance uses the visible band's bottom plus 8px, returns to 14px for lower/absent captions.
 {
   const {render, box, elements} = page(), alert = new Element("div");

@@ -121,7 +121,8 @@
       const event = changed || (!reset && ((p.hits_min > 0 || p.damage_taken > 0) ||
         ["big", "huge"].some(k => finite(rocks[k]) && rocks[k] > (a.rocks[k] || 0))));
       if (changed) { a.until = -Infinity; a.warnings.clear(); a.clear = 0; a.dockFull = false; }
-      if (event && at + BEAT > now) eventAt = at;
+      // Do not flash details for a late sample: an uninterrupted beat needs at least three readable seconds.
+      if (event && now - at <= BEAT - 3) eventAt = at;
       for (const [key, reading] of warningReadings(p)) {
         if (reading) a.warnings.set(key, {row: reading, until: at + WARNING_HOLD, clean: 0});
         else if (a.warnings.has(key)) {

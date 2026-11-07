@@ -55,7 +55,8 @@ can start. The deadline persists in localStorage (`pog:platform-metrics:next-det
 changes and camera cuts, shared by landscape and portrait on the same origin. Each OBS origin preserves its own
 budget. Unavailable storage disables short beats; corrupt/future deadlines establish a fresh conservative gap.
 Events during that gap or suppressed shots are not queued. Repainting cannot restart a beat; a timer collapses it
-even between 20-second reads. Sample age is subtracted from the beat. Cold pages/ship selections establish a
+even between 20-second reads. Sample age is subtracted from the beat; events over one second old are discarded
+so an uninterrupted beat gets three to four readable seconds. Cold pages/ship selections establish a
 baseline, and reload never resumes detail. Bow/gun/action shots, work/follow closeups and featured production or
 repair detail suppress full telemetry immediately, using existing camera metadata. Interrupted beats do not resume.
 Outer-system routes and featured status alone never expand the card.
