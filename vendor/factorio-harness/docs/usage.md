@@ -18861,3 +18861,10 @@ The budget's `budget_basis` states this formula; no factor of two is applied to 
 Origin recovery keeps the existing factor of two. `budget_below` still compares `out_km_max < km`, including
 explicit window budgets; its `turnaround` accepts the same opt-in. Mode changes invalidate the cached read.
 No existing guard is changed, and no route, schedule, or floor is written by this read.
+### Current platform health
+
+`wait_until {until:"damaged",platform:"Asterion",fraction:0.5}` reads current damage on the whole hull. Optional `positions:[{x,y},...]` (1..64, any tile of each entity's footprint) or `area:[[x0,y0],[x1,y1]]` (centres inside, upper bounds excluded, at most 1024x1024) restricts it. Position/radius and combined positions/area are refused. Missing positions are read errors, not loss detection.
+
+`fraction` (0.01..1, default 1 when hp is absent) and/or `hp` (absolute HP) match a currently damaged entity strictly below either supplied threshold. Repair above the thresholds clears the match; fully repaired entities do not match. Exact health, max_health, name, unit_number, position and fraction for the worst 10 matches appear in `evidence.platform_health`, with count and read_tick; `saw` also names the values and tick. Lowest fraction first, or lowest HP with hp alone. Reads use damage events and re-read live HP each check (guards: every 10 ticks); the first hull read seeds the set, bounded at 32768 entities and refusing larger hulls without partial qualification. Positions use bounded direct reads.
+
+Available to waits and guards on body, remote and platform lanes, including all/any. Example guard condition: `{until:"damaged",platform:"Asterion",positions:[{x:0,y:0}],fraction:0.5}`. A not-met health guard says nothing about losses, empty guns, feed failures or clean-flight qualification; their existing separate guards remain unchanged. `platform_hit` continues to count cumulative damage, including repaired hits.
