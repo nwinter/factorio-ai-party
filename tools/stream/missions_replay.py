@@ -52,10 +52,12 @@ def replay(enabled=True):
             c.request_segment = lambda *a, **k: None
             c.previous = lambda: None
             c.tts = type('FakeTTS', (), {'backend': 'offline'})()
-            c.speak_clip = lambda *a, **k: (b'offline', 'audio/wav', 2, 0, {'voice': 'offline'})
+            # Match the caster's own 15-characters/second duration estimate, not fixed tiny clips.
+            c.speak_clip = lambda tts, text, *a, **k: (b'offline', 'audio/wav', max(1, len(text) / 15), 0, {'voice': 'offline'})
             receipts, aired = [], []
             d = director(auto_feature=False)
             warm(d, team())
+            d.featured.set('Asterion', arrival='shattered-planet', attempt_end=True, now=START)
             def status():
                 return {'listeners': 1, 'receipts': [r for r in receipts if r['t'] <= clock[0]]}
             c.status = status
@@ -65,11 +67,13 @@ def replay(enabled=True):
                 snap = copy.deepcopy(c.snap)
                 snap['speech'] = [speech]
                 d.step(snap, clock[0])
+                inset = d.state.get((d.inset or {}).get('slot')) or {}
                 row = {'at': round(clock[0] - START, 1), 'speaker': meta['speaker'], 'text': meta['text'],
                        'subjects': meta['subjects'], 'camera': main_subj(d), 'rank': meta['rank'],
-                       'camera_platform': ((d.state.get(d.onair) or {}).get('platform') or {}).get('name')}
+                       'camera_platform': ((d.state.get(d.onair) or {}).get('platform') or {}).get('name'),
+                       'camera_inset_platform': (inset.get('platform') or {}).get('name')}
                 aired.append(row)
-                receipts.append({'id': cid, 't': clock[0] + 2, 'state': 'end', 'completed': True})
+                receipts.append({'id': cid, 't': clock[0] + meta['duration'], 'state': 'end', 'completed': True})
                 return dict(meta, id=cid, expires=clock[0] + meta['expires_in'])
             c.push = push
             for offset in range(0, 601, 20):
@@ -97,8 +101,9 @@ def replay(enabled=True):
                 assert any(r['rank'] == 'urgent' and r['camera_platform'] == 'Asterion' for r in aired), aired
             for r in aired:
                 if {'platform': 'Asterion'} in r['subjects']:
-                    assert r['camera_platform'] == 'Asterion', r
+                    assert 'Asterion' in (r['camera_platform'], r['camera_inset_platform']), r
             return {'mode': 'synthetic offline capture receipts; no live audio', 'seconds': 600,
+                    'tts_duration_model': 'caster estimate: 15 characters per second',
                     'completed_exchanges': dict(counts), 'lines': aired,
                     'heard_milestones': Missions(root).heard, 'additional_host_writing_calls': 0}
 
