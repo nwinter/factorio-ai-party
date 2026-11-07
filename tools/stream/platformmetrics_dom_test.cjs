@@ -39,6 +39,16 @@ const parked = {...p, platform: "Asterion", at: "nauvis", leg: null, speed_kms: 
 const scene = {cameras: {main: {ship: {name: "Asterion"}, frame: {surface: "platform-16", position: {x: 0, y: 0}, zoom: .3, frac: .6576388889}}},
   space: {platforms: [{name: "Asterion", view: {surface: "platform-16", hull: {left: -6, top: -6, right: 8, bottom: 6}}}]}};
 const mode = b => b["data-mode"];
+// A failed OBS receipt removes main while a previous telemetry sample may still be cached.
+// Neither the current page nor a reload may resurrect that sample without a visible ship.
+for (const cameras of [{}, {main: null}, {main: {agents: []}}]) {
+  const first = page();
+  first.render(first.box, parked, 0, scene); assert(!first.box.hidden);
+  first.render(first.box, parked, 1, {cameras}); assert(first.box.hidden);
+  const reloaded = page(first.storage);
+  reloaded.render(reloaded.box, parked, 2, {cameras}); assert(reloaded.box.hidden);
+  reloaded.render(reloaded.box, parked, 3, scene); assert(!reloaded.box.hidden);
+}
 {
   const {render, box} = page();
   render(box, null); assert(box.hidden);

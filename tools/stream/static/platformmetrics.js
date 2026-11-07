@@ -139,7 +139,8 @@
     if (box._timer) window.clearTimeout(box._timer);
     const main = (scene.cameras || {}).main;
     const shown = main && ((main.ship || {}).name || (main.platform || {}).name);
-    if (scene.hostview || scene.show || scene.replay?.playing || (main && (main.map || !shown || shown !== p?.platform))) p = null;
+    if (scene.hostview || scene.show || scene.replay?.playing ||
+        (scene.cameras && (!main || main.map || !shown || shown !== p?.platform))) p = null;
     box._latest = {p, scene}; box.hidden = !p || !p.platform;
     if (box.hidden) {
       if (box._activity) box._activity.until = -Infinity;
