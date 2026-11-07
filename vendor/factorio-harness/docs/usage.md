@@ -7076,7 +7076,7 @@ fh watch    # deploy on every change
   - (d23 batch124b, Sol #2071: 16 lines of fire returned of Asterion's 23 railguns) `railguns_only: true` keeps, of
     the turrets picked, those whose shots are a line. The lines of fire of the picked turrets whose shots are a line
     come 16 a page: `line_page` 2, 3, ... (`lines_page {page, pages, per_page, total, returned, from, to, next, filter,
-    clear, hitting, hit, cut, unread}`; `lines_of_fire [{name, position, facing, engages, line, hit, ghosts, cut,
+    clear, hitting, hit, cut, unread}`; `lines_of_fire [{name, position, facing, engages, line, hit, ghosts, cut, corridor,
     entities, destroyed_ours, unread}]`). A turret row whose line is on another line page carries `line_page`.
     Every reply has two count lines, `turret rows: page 1 of 2, turrets 1-64 of the 120 picked (120 turrets read); 56
     more on page 2..2` and `lines of fire: line_page 1 of 2, turrets 1-16 of the 23 picked whose shots are a line: 15
@@ -8500,11 +8500,12 @@ fh watch    # deploy on every change
   (fireline.lua).
   - The rule, read from the 2.0.77 prototypes at runtime:
     - railgun-turret's base has a direction, and its attack_parameters give turn_range 0.2 of a turn (it aims within
-      36 degrees of its facing, 72 in all), range 40 and projectile_creation_distance 3.6.
+      36 degrees of its facing, 72 in all), base range 40 and projectile_creation_distance 3.6. Turret quality scales
+      both targeting range and line length by range_multiplier; start, minimum range and width stay fixed (batch458).
     - railgun-ammo's action is a `line` 50 long and 1 wide with force `all`, and its collision mask takes every object
       layer, belts included. It damages every entity it crosses, ours too.
     - An entity of ours with health whose box (widened by half the line) a ray at some bearing of the arc crosses
-      between 3.6 and 53.6 tiles is hit when the turret fires that way. The test uses the box corners' bearings and
+      between 3.6 and the quality-specific shot reach (53.6 at normal) is hit when the turret fires that way. The test uses the box corners' bearings and
       distances, and 17 rays where the box straddles the start or the reach.
     - Ghosts take no damage. They are named apart, as hit once built.
     - Any turret whose shots are a line and whose turn_range is under a full turn is read the same way.
@@ -18689,7 +18690,7 @@ axis-aligned envelope of the rotated prototype collision box. Diagonal envelopes
 The mode takes only `platform` and `planned_entities`; watch and ordinary defense options cannot combine with it.
 
 Output: `entities [{index,name,position,direction,railguns,complete,capped}]`; each `railguns` list has
-1-based indices into the top-level `railguns [{index,name,position,direction,ghost,unit_number}]`. `railguns_checked` counts all sources tested; only intersecting sources appear in `railguns`. Every intersecting
+1-based indices into the top-level `railguns [{index,name,position,direction,ghost,unit_number,corridor}]`. `railguns_checked` counts all sources tested; only intersecting sources appear in `railguns`. Every intersecting
 source read is returned, with no per-row hit truncation. Top-level `complete`, `capped`, `limits`, `corridor`, `note`
 and `lines` accompany the rows. At most 64 sources are tested, built first, with one extra source fetched to detect
 truncation; exactly 64 is complete, more is capped. A capped empty-hit row is incomplete too. More than 8 proposals
@@ -18697,7 +18698,7 @@ is refused: 106 proposals take thirteen batches of 8 and one of 2 entries. Input
 become corridor sources; only existing built and ghost railguns are sources.
 
 The shared predicate is `fireline.intersects`, extracted from `fireline.hits` without changing its box/wedge rule:
-prototype arc and longest line-ammo reach, expanded collision box by half the line width, corner bearings and
+prototype arc and longest line-ammo reach at each source gun's quality, expanded collision box by half the line width, corner bearings and
 nearest/farthest radii, then 17 slab-tested rays when a box straddles start/reach. Base railgun values are a 72-degree
 wedge, shot start 3.6, line length 50 and width 1, reach 53.6. The original same-turret and origin-containing-box
 exclusions remain. `complete` describes source enumeration, not exact geometry. Cheap half-plane and outer-radius
@@ -18949,3 +18950,30 @@ shots (newest 24 before a failure). This is observed evidence, not proof of a ta
 evictions; all-shot statistics remain unchanged. A running watch from before this instrumentation can preserve
 only the earliest such shot still in `recent` at its next shot. New watches reset this history. `recent_note` and
 `describe` state retention.
+
+## d37 batch458: quality railgun corridors (#2939)
+
+Every `lines_of_fire` row and every intersecting `planned_entities` source in `railguns` now returns
+`corridor {quality, range_multiplier, range, base_range, min_range, line_length, base_line_length, start, reach, width, arc, ammo}`.
+`range` is the quality-specific targeting range; `line_length` is the damage line from its shot start;
+`reach = start + line_length` is the distance from the gun centre used for corridor collision checks and the nearby-entity find.
+The top-level proposed `corridor` is a labelled normal-quality reference; each source row carries the geometry actually tested.
+Built guns, turret ghosts and build/place_ghosts previews use their own quality. Text names non-normal quality and
+gives the corresponding targeting range and shot reach. The minimum targeting range stays 3.5; shot start 3.6,
+line width 1 and aiming arc 72 degrees are unchanged.
+
+| Turret quality | Targeting range | Damage line length | Shot reach from centre |
+| --- | ---: | ---: | ---: |
+| normal | 40 | 50 | 53.6 |
+| uncommon | 44 | 55 | 58.6 |
+| rare | 48 | 60 | 63.6 |
+| epic | 52 | 65 | 68.6 |
+| legendary | 60 | 75 | 78.6 |
+
+Native Factorio 2.0.77 private-copy shots with normal railgun ammunition confirmed that line length scales with
+the turret quality range_multiplier, alongside targeting range. At each quality, aligned friendly chests
+53/58/63/68/78 tiles from the gun centre were destroyed, while chests at 54/59/64/69/79 survived.
+This distinguishes the growing line from a fixed 50-tile line and from multiplying the start offset too.
+The existing conservative box/wedge geometry, 17 boundary rays, result caps and read-only behavior remain.
+Tests: `tests/d37_batch458.lua` covers all five qualities, built and ghost sources, proposed footprints,
+platform rows, preview quality, mixed sources, radial hit/miss boundaries and unchanged angular limits.

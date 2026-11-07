@@ -20145,7 +20145,7 @@ do
         local d=en.direction
         if type(d)=='string' then d=directions[d] end
         if okp and (d==nil or type(d)=='number') then
-          local ok,r=pcall(M.fireline.hits,s,p.force,nm,pos,d or 0)
+          local ok,r=pcall(M.fireline.hits,s,p.force,nm,pos,d or 0,nil,en.quality)
           if ok and r then out[#out+1]=r.line end
         end
       end

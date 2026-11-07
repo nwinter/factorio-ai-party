@@ -351,6 +351,8 @@
   the rotated prototype collision box's axis-aligned envelope; nonrotatable prototypes use north. Direction is
   0..15 or a compass name, default north. Each `entities` row retains its input `index`, name/position/direction,
   and `railguns` (1-based indices into the returned railgun table with positions/directions/ghost status).
+  Each source's `corridor` gives its quality, targeting `range`, `line_length` and `reach` from the gun centre;
+  both range and line length scale with the gun's quality. Top-level `corridor` is the normal-quality reference.
   Only intersecting sources appear in `railguns`; `railguns_checked` counts all sources tested. Top-level and row
   `complete`/`capped` report enumeration completeness: an extra railgun detects truncation, including on rows with
   no hits. More than 8 entries is an error; 106 entries take fourteen calls. No other options combine with this mode.
@@ -373,7 +375,10 @@
   platform loss alert says `27 destroyed by our own railgun-turret at (-0.5,-21.5): 20, ...; 1 by enemies (...)`, and
   the platform's listeners get one tell on the first such loss of an incident. A big metallic asteroid resists physical 2000 flat, so a
   firearm round does almost nothing to it. A railgun's `line of fire` names the entities of ours its shots cross: it aims within 36 degrees of its facing
-  (72 in all), and its ammo's line (1 wide, to 53.6 tiles from its centre) damages ours too; with what it engages. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
+  (72 in all), and its ammo's line damages ours too; with what it engages. `lines_of_fire[].corridor` gives targeting
+  `range` (normal/uncommon/rare/epic/legendary: 40/44/48/52/60), `line_length` (50/55/60/65/75), and `reach`
+  (53.6/58.6/63.6/68.6/78.6 from its centre). Shot start stays 3.6, width 1 and minimum targeting range 3.5.
+  It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
   those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed
