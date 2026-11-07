@@ -162,6 +162,8 @@ def main():
     # Analyst telemetry claims expire and invalidate on changed numbers; ordinary research is unaffected.
     s = snapshot(START)
     src = {'mission_source': missions.analyst_source(s, START)}
+    assert caster.mission_deadline({'kind': 'analyst', 'point': src}) == START + 45
+    assert caster.mission_deadline({'kind': 'research'}) is None
     assert commentary_freshness.invalid(src, s, START + 1) is None
     assert commentary_freshness.invalid(src, s, START + 46)
     newer = snapshot(START + 20, 20)

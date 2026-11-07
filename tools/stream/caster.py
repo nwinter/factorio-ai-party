@@ -288,6 +288,16 @@ def subjects_of(facts, e=None):
     return out[:4]
 
 
+def mission_deadline(e):
+    """The same sample expiry for direct mission lines and analyst-derived voyage claims."""
+    dates = [e.get("sample_t")] if e.get("kind") == "mission" else []
+    for key in ("point", "_analyst_source"):
+        source = (e.get(key) or {}).get("mission_source") or {}
+        if source.get("sample_t") is not None:
+            dates.append(source["sample_t"])
+    return min(dates) + 45 if dates else None
+
+
 def clip_rank(e):
     """The page's playback rank for a host line (static/audio.js): urgent events and space moments interrupt an
     agent speaking aloud, which interrupts answers to viewers, which interrupt host banter."""
@@ -2678,7 +2688,7 @@ class Caster:
         # Keep an interrupted explanation in its original order. Withdraw later, still-unheard lines before
         # resuming; a line already playing is allowed to finish and will not be replayed.
         for gid, group in list(memory.groups.items()):
-            if group["event"].get("kind") == "mission" and any(r["state"] == "queued" for r in group["lines"]):
+            if mission_deadline(group["event"]) is not None and any(r["state"] == "queued" for r in group["lines"]):
                 why = self.claim_invalid(group["event"])
                 if why:
                     for i, row in enumerate(group["lines"]):
@@ -3370,8 +3380,9 @@ class Caster:
                 break
             # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
             try:
+                expires = mission_deadline(e)
                 pushed = self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": min(25, max(0, e["sample_t"] + 45 - time.time())) if e["kind"] == "mission" else 25,
+                       "expires_in": min(25, max(0, expires - time.time())) if expires is not None else 25,
                        "duration": round(dur, 2), "voice": spoke.get("voice"),
                        "rank": clip_rank(e), "exchange": base.get("exchange"), "line_id": line_ids[i],
                        "subjects": subjects_of(facts, e)}, audio, ctype)  # (batch324 SF) for the camera
