@@ -15127,7 +15127,8 @@ QN3 (Sol #2328): supply's residual. Nauvis agricultural science held 2801 then 2
   - Now mixed.lua closes the old watch through api.close.asteroid_watch (asteroidwatch.close): done at the edit tick,
     its full result made, its tracked records and who hit which kept (keep, as a watch done at its end), its turret
     and walk state dropped. It hangs on the new watch as `segments` (the oldest first), at most SEGMENTS 3 and
-    SEGMENT_RECORDS 3000 tracked asteroids together (the newest always kept; `segments_dropped` counts the rest).
+    SEGMENT_RECORDS 3000 tracked asteroids together (batch456: first plus newest two; second oldest evicted first,
+    even the newest if needed to keep the first within the record cap; `segments_dropped` counts the rest).
     Later splits carry them on; a watch the agent starts anew has none.
   - mixed.parts names the segment (`segment_start`); every read lists `segments` [{segment_start, end_tick, seconds,
     closed_by, line}]; `segment_start: <tick>` reads one in full (trajectory_page, trajectory_limit, asteroid_names).
@@ -18914,3 +18915,18 @@ The harness rejects odd construction directions. Native creation rounds them dow
 `tools/test_d37_batch448_private.py --imac` checks all 16 native inputs on a held private copy: one missing tile at a
 time, dry-run versus live tile ghosts, read-only behavior, ghost diagnostics, and native revival. Its no-argument
 invocation skips. `tests/d37_batch448.lua` retains the engine tile fixtures, including negative coordinates.
+
+## d37 batch456: preserve the first impact segment and aim failure (#2929)
+
+`platform_defense {asteroids:true}` retains the first closed segment and the newest two, carrying them across
+same-tick destruction cascades and subsequent edits. Whole segments stay within the existing 3000 tracked-record
+cap: the second oldest is evicted first, including the newest when only the first fits. The original inbound
+trajectory, impact evidence and full paged result remain readable with `segment_start`. A fresh watch resets this
+history; already evicted segments cannot be reconstructed. `segments_dropped` still counts evictions.
+
+`platform_defense {aim:true}` has no edit segments. Per railgun its existing 24-shot history now pins
+`first_failure`: the first shot with a surviving aimed target or uncertain attribution, plus the newest 23 other
+shots (newest 24 before a failure). This is observed evidence, not proof of a targeting error. `recent_more` counts
+evictions; all-shot statistics remain unchanged. A running watch from before this instrumentation can preserve
+only the earliest such shot still in `recent` at its next shot. New watches reset this history. `recent_note` and
+`describe` state retention.

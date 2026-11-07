@@ -331,7 +331,9 @@
   and each shot's aimed target, the one it read the tick before the shot: `exact` when that shot hit it (killed or
   survived, by size), else `uncertain` (no target read, or it was not hit: `aimed_not_hit_alive` when it lived on);
   the shot's other hits as collateral by size (a railgun's line hits everything on it at once); `unattributed`: its
-  hits on no seen shot; `recent`: the last 24 shots. Each railgun's `statistics` covers all detected shots:
+  hits on no seen shot; `recent`: at most 24 shots, preserving `first_failure` plus the newest 23 other shots
+  (newest 24 until a failure). `first_failure` is the first surviving aimed target or uncertain attribution,
+  not proof of a targeting error; older watches can recover only retained shots. Each railgun's `statistics` covers all detected shots:
   `intervals` count/min_ticks/max_ticks/mean_ticks and a bounded histogram, `shots_by_second` (entry 1 is the first
   watch second), `shots_by_target_size` (the previous tick's target, including uncertain; unknown if none).
   `nominal_cooldown` names the prototype's ticks and source; it excludes force/ammo modifiers, turning and recharge.
@@ -341,8 +343,9 @@
   reason for a target choice.
   Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
   legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
-  restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
-  closed_by, line}] (at most 3, 3000 tracked asteroids together); `segment_start: <tick>` reads one in full.
+  restarts the asteroid watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
+  closed_by, line}]: first plus newest two, at most 3 and 3000 tracked asteroids together. The second oldest is
+  evicted first; cap pressure can leave only the first. `segment_start: <tick>` reads one in full.
 - `platform_defense {platform, planned_entities:[{name,position:{x,y},direction?}]}` is a standalone read:
   1..8 proposed entities against up to 64 existing built/ghost railguns of the platform's force. The footprint is
   the rotated prototype collision box's axis-aligned envelope; nonrotatable prototypes use north. Direction is
