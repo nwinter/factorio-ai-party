@@ -16,6 +16,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `flight_watch`: arrival returns `previous_watch`, then arms the next (help space-age).
 `budget_below`: turnaround.km|fraction required; queue/lane guard errors include failed/empty cached reads.
 `supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
+`wait_until damaged`: platform live HP, fraction/hp, whole hull or positions/area; lanes/guards (help waits-queues).
 `inventory_free_slots`: pads; `platform_ammo_below` on_stale=met|wait (default met).
 `platform_arrived` remembers arrivals after wait start or `since_tick` (help space-age).
 `platform_schedule current:N`: already-current unpaused stops succeed unchanged; paused platforms unpause.

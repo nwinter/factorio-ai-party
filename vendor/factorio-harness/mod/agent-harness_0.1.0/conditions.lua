@@ -1115,7 +1115,8 @@ return function(api)
         ents and string.format(', %d entity ghost%s',ents,ents==1 and '' or 's') or '')
     end,
     -- Our buildings under a health fraction (default: any damage), the nearest named.
-    damaged=function(p,c)
+    damaged=function(p,c,estimate,record)
+      if c.platform then return api.platform_health(M.platform_named(p,c.platform),c,record) end
       local centre,radius=area(p,c)
       local below=c.fraction or 1
       local n,near,best=0,nil,nil
@@ -1426,7 +1427,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='entity_quality, inventory_free_slots, item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='entity_quality, inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_speed_above, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='damaged, entity_quality, inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_speed_above, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -1475,6 +1476,10 @@ return function(api)
       -- (C5: an area or a list of them on the platform, checked below)
     elseif c.area~=nil and kind=='ghosts_waiting' and c.platform~=nil then
       M.areas_of(c.area)
+    elseif c.area~=nil and kind=='damaged' and c.platform~=nil then
+      assert(type(c.area)=='table','damaged area: one {left_top, right_bottom} or [[x,y],[x,y]]')
+      local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
+      assert(r.x>l.x and r.y>l.y and r.x-l.x<=1024 and r.y-l.y<=1024,'damaged area must be nonempty and at most 1024x1024')
     elseif c.area~=nil and kind=='platform_ammo_below' then
       -- (d24 batch173 QP1) one area aboard, in platform coordinates
       assert(type(c.area)=='table' and (c.area.left_top or type(c.area[1])=='table'),'platform_ammo_below area: one {left_top, right_bottom} (or [[x,y],[x,y]]) aboard')
@@ -1689,7 +1694,21 @@ return function(api)
         string.format('tick_at_least tick is a whole game tick 0..%d (now %d, at most %d ticks, 6 game hours, ahead); one passed already is met at the first check',game.tick+M.TICK_AHEAD,game.tick,M.TICK_AHEAD))
       assert(c.position==nil and c.positions==nil and c.area==nil,'tick_at_least reads the game tick only: no position, positions or area')
     end
-    if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
+    if kind=='damaged' then
+      if c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
+      if c.platform~=nil then
+        assert(type(c.platform)=='string' and #c.platform>0,'damaged platform requires a platform name')
+        assert(c.position==nil and c.radius==nil,'damaged platform scope: whole hull, positions or area; no position or radius')
+        assert(c.positions==nil or c.area==nil,'damaged platform scope: positions or area, not both')
+        if c.hp~=nil then number(c.hp,0.01,1e9,'damaged hp') end
+        if c.positions~=nil then
+          assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'damaged positions takes 1..64 {x,y} in platform coordinates')
+          for _,pos in ipairs(c.positions) do api.position(pos) end
+        end
+      else
+        assert(c.positions==nil and c.hp==nil,'damaged positions and hp require platform')
+      end
+    end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
     if kind=='pod_landed' then
       assert(type(c.platform)=='string' and #c.platform>0,'pod_landed requires platform (the platform the pods come down from)')

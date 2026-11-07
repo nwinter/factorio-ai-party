@@ -93,7 +93,7 @@ return function(api)
   -- on_entity_damaged: a hit on one of our entities on a platform, by
   -- anything but our own force. Returns true when the hit was a platform's
   -- (threat.lua's planet incidents leave it alone).
-  M.DAMAGED_MAX = 512
+  M.DAMAGED_MAX = 32768
   -- (BF1) the platform's entities hit since its damaged list was seeded: {set unit_number -> entity, seeded, full}; and
   -- seed(pl, list) starts it from a read of every entity aboard (once, or again after the list filled).
   function M.damaged(pl)
@@ -104,7 +104,10 @@ return function(api)
     local r = rec(pl)
     r.damaged, r.damaged_n, r.damaged_full = {}, 0, nil
     for _, e in ipairs(list) do
-      if e.valid and e.unit_number and r.damaged_n < M.DAMAGED_MAX then r.damaged[e.unit_number] = e; r.damaged_n = r.damaged_n + 1 end
+      if e.valid and e.unit_number and not r.damaged[e.unit_number] then
+        if r.damaged_n < M.DAMAGED_MAX then r.damaged[e.unit_number] = e; r.damaged_n = r.damaged_n + 1
+        else r.damaged_full = true end
+      end
     end
   end
   -- (BF1) drop the ones healed or gone (a read found them so)
