@@ -16,11 +16,17 @@ class Element {
   getBoundingClientRect() { return this.rect || rect(40, 26 + parseFloat(this.style["--pm-top"] || 14), 360, this._parts?.details.hidden ? 75 : 600); }
 }
 const source = fs.readFileSync(path.join(__dirname, "static/platformmetrics.js"), "utf8");
-function page() {
-  const window = {}, elements = {}, document = {createElement: tag => new Element(tag), getElementById: id => elements[id], querySelectorAll: () => elements.alerts ? [elements.alerts] : []};
-  vm.runInNewContext(source, {window, document});
+function page(storage = new Map(), epoch = 0) {
+  let time = 0, serial = 0;
+  const timers = new Map();
+  const window = {localStorage: {getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value)},
+    setTimeout: (cb, ms) => { timers.set(++serial, {cb, at: time + ms / 1000}); return serial; },
+    clearTimeout: id => timers.delete(id)};
+  const elements = {}, document = {createElement: tag => new Element(tag), getElementById: id => elements[id], querySelectorAll: () => elements.alerts ? [elements.alerts] : []};
+  vm.runInNewContext(source, {window, document, Date: {now: () => (1700000000 + epoch + time) * 1000}, performance: {now: () => time * 1000}});
   const pane = new Element("div"), box = new Element("section"); pane.rect = rect(24, 24, 1208, 1032); pane.append(box);
-  return {render: window.PogPlatformMetrics.render, box, pane, elements};
+  return {render: (box, p, now = time, scene) => { time = now; window.PogPlatformMetrics.render(box, p, now, scene); }, box, pane, elements, storage,
+    advance: now => { time = now; for (const [id, timer] of timers) if (timer.at <= now) {timers.delete(id); timer.cb();} }};
 }
 const p = {platform: "Resolute <b>", featured: false, tick: 100, age_s: 0, speed_kms: 120, eta_wall_s: 3600,
   leg: {from: "solar-system-edge", to: "shattered-planet", pct: 20, flown_km: 800000, left_km: 3200000},
@@ -39,13 +45,13 @@ const mode = b => b["data-mode"];
   render(box, p, 0); assert.equal(mode(box), "compact"); // outer routes no longer force full
   assert(box._parts.header.textContent.includes("Resolute <b> · Solar System Edge → Shattered Planet"));
   assert(box._parts.details.hidden); assert(!box._parts.bar.hidden);
-  render(box, {...p, featured: true}, 1); assert.equal(mode(box), "attempt");
+  render(box, {...p, featured: true}, 1); assert.equal(mode(box), "compact");
   assert(box.textContent.includes("40 hub + guns") && box.textContent.includes("net -10") && box.textContent.includes("4 engaged"));
   const row = box._parts.combat._rows.get("kills_min");
   render(box, {...p, featured: true, kills_min: 140, ammo: [], asteroids: undefined, repair_packs: undefined}, 2);
   assert.equal(box._parts.combat._rows.get("kills_min"), row); assert.equal(row._value.textContent, "140");
   assert(box._parts.ammo.hidden && box._parts.rocks.hidden); assert(!box.textContent.includes("NaN"));
-  render(box, {...p, featured: true, tick: 101}, 1000); assert.equal(mode(box), "attempt");
+  render(box, {...p, featured: true, tick: 101}, 1000); assert.equal(mode(box), "compact");
   render(box, {platform: "Bare"}, 1001); assert(!box.hidden); assert.equal(box._parts.header.textContent, "Bare · Dock unknown");
 }
 // Full docked telemetry is vertical, only after two clear samples. Work/scene changes collapse immediately.
@@ -74,82 +80,116 @@ const mode = b => b["data-mode"];
   const invalid = JSON.parse(JSON.stringify(scene)); delete invalid.space.platforms[0].view.hull.left;
   render(box, {...parked, tick: 108}, 160, invalid); assert.equal(mode(box), "docked-compact");
 }
-// The gap is measured from the end of a beat, including when the next sample belongs to another ship.
-{
-  const {render, box} = page();
-  render(box, p, 0); render(box, {...p, tick: 101, hits_min: 1}, 20);
-  render(box, {...p, platform: "Petrel", tick: 102}, 30);
-  render(box, {...p, platform: "Petrel", tick: 103, hits_min: 1}, 57); assert.equal(mode(box), "compact");
-  render(box, {...p, platform: "Petrel", tick: 104, hits_min: 1}, 58); assert.equal(mode(box), "beat");
+// Four-second beats have 150 seconds after their end, across ships and page reloads.
+for (const featured of [false, true]) {
+  const store = new Map(), first = page(store), {render, box} = first;
+  const flight = {...p, featured}, rocks = {...flight, asteroids: {...p.asteroids, big: 1}};
+  render(box, flight, 0); render(box, {...rocks, tick: 101}, 20);
+  assert.equal(mode(box), "beat");
+  render(box, {...rocks, tick: 101, age_s: 3}, 23); assert.equal(mode(box), "beat");
+  first.advance(24.01); assert.equal(mode(box), "compact"); // timer, without new telemetry
+  render(box, {...flight, platform: "Petrel", tick: 102}, 30);
+  render(box, {...rocks, platform: "Petrel", tick: 103}, 173); assert.equal(mode(box), "compact");
+  render(box, {...flight, platform: "Petrel", tick: 104}, 173.5);
+  render(box, {...rocks, platform: "Petrel", tick: 105}, 174); assert.equal(mode(box), "beat");
+  const reload = page(store, 175);
+  reload.render(reload.box, rocks, 0); assert.equal(mode(reload.box), "compact");
+  reload.render(reload.box, {...flight, tick: 106}, 1);
+  reload.render(reload.box, {...rocks, tick: 107}, 20); assert.equal(mode(reload.box), "compact");
+  reload.render(reload.box, {...flight, tick: 108}, 152);
+  reload.render(reload.box, {...rocks, tick: 109}, 153); assert.equal(mode(reload.box), "beat");
 }
-// A persistent big asteroid count is one event, rather than an automatic repeating full-card hold.
+// A persistent asteroid count and high outgoing damage are not repeating detail triggers.
 {
   const {render, box} = page(), rocks = {...p, asteroids: {...p.asteroids, big: 1}};
   render(box, p, 0); render(box, {...rocks, tick: 101}, 20);
-  render(box, {...rocks, tick: 102}, 80); assert.equal(mode(box), "compact");
-  render(box, {...p, tick: 103, kills_min: 900, damage_dealt_min: 90000}, 100); assert.equal(mode(box), "compact");
+  render(box, {...rocks, tick: 102}, 180); assert.equal(mode(box), "compact");
+  render(box, {...p, tick: 103, kills_min: 900, damage_dealt_min: 90000}, 200); assert.equal(mode(box), "compact");
 }
-// Brief events expire without a new telemetry sample, do not extend, and have 30s between beats.
-for (const signal of [{hits_min: 3}, {damage_taken: 40}, {asteroids: {...p.asteroids, big: 1}}, {asteroids: {...p.asteroids, huge: 1}}]) {
-  const {render, box} = page();
-  render(box, p, 0);
-  const hot = {...p, ...signal, tick: 101};
-  render(box, hot, 20); assert.equal(mode(box), "beat");
-  const count = box.decisions;
-  render(box, {...hot, age_s: 7}, 27); assert.equal(mode(box), "beat"); assert.equal(box.decisions, count + 1);
-  render(box, {...hot, age_s: 8}, 28); assert.equal(mode(box), "compact");
-  render(box, {...p, ...signal, tick: 102}, 40); assert.equal(mode(box), "compact");
-  render(box, {...p, tick: 103}, 60); assert.equal(mode(box), "compact");
-  render(box, {...p, ...signal, tick: 104}, 80); assert.equal(mode(box), "beat");
-}
-// Warnings survive beat collapse and one clean sample. Missing values never manufacture an all-clear.
-{
-  const {render, box} = page();
-  render(box, p, 0); render(box, {...p, hits_min: 3, damage_taken: 9, tick: 101}, 20);
-  render(box, {...p, hits_min: 3, damage_taken: 9, tick: 101, age_s: 8}, 28);
+// Alerts stay compact, even during a beat and a featured attempt. Held warnings retain their clean-sample rule.
+for (const featured of [false, true]) {
+  const {render, box} = page(), flight = {...p, featured};
+  render(box, flight, 0);
+  render(box, {...flight, tick: 101, asteroids: {...p.asteroids, huge: 1}}, 20);
+  assert.equal(mode(box), "beat");
+  render(box, {...flight, hits_min: 3, damage_taken: 9, tick: 102}, 21);
   assert.equal(mode(box), "compact"); assert(box._parts.warnings.textContent.includes("Damage taken 9"));
-  render(box, {...p, tick: 102}, 40); assert(!box._parts.warnings.hidden);
-  render(box, {...p, hits_min: undefined, damage_taken: undefined, tick: 103}, 60); assert(!box._parts.warnings.hidden);
-  render(box, {...p, tick: 104}, 80); assert(box._parts.warnings.hidden);
-  render(box, {...p, tick: 105, ammo: [{...p.ammo[0], buffer_min: .5}], fuel: {"thruster-fuel": 0},
-    turrets: {"rocket-turret": {count: 8, empty: 1}}}, 100);
+  render(box, {...flight, tick: 103}, 40); assert(!box._parts.warnings.hidden);
+  render(box, {...flight, hits_min: undefined, damage_taken: undefined, tick: 104}, 60); assert(!box._parts.warnings.hidden);
+  render(box, {...flight, tick: 105}, 80); assert(box._parts.warnings.hidden);
+  render(box, {...flight, tick: 106, hits_min: 4, damage_taken: 20, losses_leg: 2,
+    ammo: [{...p.ammo[0], buffer_min: .5}], fuel: {"thruster-fuel": 0, "thruster-oxidizer": 0},
+    turrets: {"rocket-turret": {count: 8, empty: 1}}}, 200);
+  assert.equal(mode(box), "compact"); assert.equal(box._parts.warnings._rows.size, 3);
+  assert(box._parts.warnings.textContent.includes("Other alerts +5"));
+  for (const text of ["0.5", "Fuel tanks empty", "Rocket Turret empty", "Lost this leg: 2"])
+    assert(box._parts.warnings.title.includes(text), text);
+}
+// Closeups immediately interrupt a beat, and never queue one for the next camera cut.
+const detailShots = [
+  {platform: {why: "bow"}}, {platform: {why: "danger"}}, {platform: {why: "work"}},
+  ...["bow and approaching asteroids", "bow guns", "guns in action", "working production", "repair/build detail"]
+    .map(framing => ({platform: {why: "featured", framing}})),
+  {platform: {why: "visit", label: "Resolute · bow defense"}},
+  {work: "placing machines"}, {attention: {}}, {work_close: {}}, {frame: {follow: 3}},
+  {attack: "Incoming"}, {alert: "loss"}, {battle: "battle"}, {fight: {}}, {follow: "Sol"}
+];
+for (const shot of detailShots) {
+  const {render, box} = page(), flight = {...p, featured: true};
+  const close = {cameras: {main: {...shot, ship: {name: p.platform}}}};
+  render(box, flight, 0);
+  render(box, {...flight, tick: 101, asteroids: {...p.asteroids, big: 1}}, 20); assert.equal(mode(box), "beat");
+  render(box, {...flight, tick: 101}, 21, close); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 101}, 22); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 102, asteroids: {...p.asteroids, huge: 2}}, 180, close);
   assert.equal(mode(box), "compact");
-  for (const text of ["0.5", "Fuel tanks empty", "Rocket Turret empty"]) assert(box._parts.warnings.textContent.includes(text), text);
+  render(box, {...flight, tick: 102}, 181); assert.equal(mode(box), "compact");
+  render(box, {...parked, tick: 103}, 200, { ...scene, cameras: {main: {...scene.cameras.main, ...shot}}});
+  render(box, {...parked, tick: 104}, 220, { ...scene, cameras: {main: {...scene.cameras.main, ...shot}}});
+  assert.equal(mode(box), "docked-compact");
 }
-// Attempts keep current warning values highlighted without duplicating them; held history remains visible.
-{
-  const {render, box} = page(), hot = {...p, featured: true, damage_taken: 182, hits_min: 6, fuel: {"thruster-fuel": 0}};
-  render(box, hot, 0); assert.equal(mode(box), "attempt"); assert(box._parts.warnings.hidden);
-  assert.equal(box._parts.combat._rows.get("damage_taken")._value.textContent, "182");
-  assert(box._parts.combat._rows.get("hits_min").classList.contains("pm-bad"));
-  assert(box._parts.supplies._rows.get("thruster-fuel").classList.contains("pm-bad"));
-  render(box, {...p, featured: true, tick: 101}, 20);
-  assert(box._parts.warnings.textContent.includes("Damage taken 182"));
-  render(box, {...p, featured: true, tick: 102}, 40); assert(box._parts.warnings.hidden);
-}
-// Leg start, reversal, arrival and ship changes. Cooldown crosses legs; holds never cross ships/legs.
+// Leg start, reversal and arrival retain the gap. Parked details still require actual clearance.
 {
   const {render, box} = page();
   render(box, parked, 0, scene);
   render(box, {...p, platform: parked.platform, tick: 101}, 20, scene); assert.equal(mode(box), "beat");
   render(box, {...p, platform: parked.platform, tick: 102, leg: {...p.leg, back: true}}, 40, scene); assert.equal(mode(box), "compact");
-  render(box, {...parked, tick: 103}, 60, scene); assert.equal(mode(box), "docked-beat");
-  render(box, {...parked, tick: 103, age_s: 8}, 68, scene); assert.equal(mode(box), "docked-compact");
-  render(box, {...p, platform: "Petrel", hits_min: 3, tick: 104}, 69, {...scene, cameras: {main: {ship: {name: "Petrel"}}}}); assert.equal(mode(box), "compact");
-  assert(box._parts.header.textContent.startsWith("Petrel ·"));
-  render(box, {...p, tick: 1}, 70); assert.equal(mode(box), "compact");
+  render(box, {...parked, tick: 103}, 60, scene); assert.equal(mode(box), "docked-compact");
+  render(box, {...parked, tick: 104}, 80, scene); assert.equal(mode(box), "docked-full");
+  render(box, {...parked, tick: 105}, 300, scene); assert.equal(mode(box), "docked-full");
+  render(box, {...p, tick: 1}, 301); assert.equal(mode(box), "compact"); // new ship/tick reset is a baseline
 }
-// Scene away/back must not replay a cached beat; a page reload starts compact and retains current warnings/attempts.
+// Camera gaps cancel a beat; reload restores only the deadline, never the full card.
+{
+  const first = page(), {render, box} = first, hot = {...p, tick: 101, asteroids: {...p.asteroids, huge: 1}};
+  render(box, p, 0); render(box, hot, 20); assert.equal(mode(box), "beat");
+  render(box, null, 21); assert(box.hidden);
+  render(box, {...hot, age_s: 2}, 22); assert.equal(mode(box), "compact");
+  const reload = page(first.storage, 23); reload.render(reload.box, {...hot, featured: true, age_s: 3}, 0);
+  assert.equal(mode(reload.box), "compact");
+  reload.render(reload.box, {...p, tick: 102}, 1);
+  reload.render(reload.box, {...hot, tick: 103}, 20); assert.equal(mode(reload.box), "compact");
+  const aged = page(); aged.render(aged.box, p, 0); aged.render(aged.box, {...hot, age_s: 5}, 20);
+  assert.equal(mode(aged.box), "compact"); // don't replay an expired event on a late sample
+}
+// Blocked storage fails compact; corrupt/future state and backwards clocks establish a conservative gap.
+for (const store of [
+  {get: () => {throw Error("denied");}, set: () => {}},
+  {get: () => undefined, set: () => {throw Error("quota");}},
+  new Map([["pog:platform-metrics:next-detail:v1", "broken"]]),
+  new Map([["pog:platform-metrics:next-detail:v1", String(1700009999)]])
+]) {
+  const {render, box} = page(store);
+  render(box, p, 0); render(box, {...p, tick: 101, asteroids: {...p.asteroids, big: 1}}, 20);
+  assert.equal(mode(box), "compact");
+}
+// A fresh but delayed sample from inside the gap cannot replay just after the gap expires.
 {
   const {render, box} = page();
-  render(box, p, 0); const hot = {...p, tick: 101, damage_taken: 20}; render(box, hot, 20);
-  render(box, null, 22); assert(box.hidden);
-  render(box, {...hot, age_s: 10}, 30); assert.equal(mode(box), "compact");
-  const reload = page(); reload.render(reload.box, {...hot, age_s: 10}, 0);
-  assert.equal(mode(reload.box), "compact"); assert(!reload.box._parts.warnings.hidden);
-  reload.render(reload.box, {...hot, featured: true, age_s: 10}, 1); assert.equal(mode(reload.box), "attempt");
-  const aged = page(); aged.render(aged.box, p, 0); aged.render(aged.box, {...hot, age_s: 10}, 20);
-  assert.equal(mode(aged.box), "compact"); // don't replay an expired event on a late sample
+  render(box, p, 0); render(box, {...p, tick: 101, asteroids: {...p.asteroids, huge: 1}}, 20);
+  render(box, {...p, tick: 102}, 160);
+  render(box, {...p, tick: 103, age_s: 2, asteroids: {...p.asteroids, huge: 1}}, 175);
+  assert.equal(mode(box), "compact");
 }
 // Caption clearance uses the visible band's bottom plus 8px, returns to 14px for lower/absent captions.
 {
@@ -160,3 +200,19 @@ for (const signal of [{hits_min: 3}, {damage_taken: 40}, {asteroids: {...p.aster
   alert.rect = rect(600, 40, 100, 50); render(box, p, 2); assert.equal(box.style["--pm-top"], "14px");
 }
 console.log("platform metrics DOM: identity, anchored geometry, dock/work hysteresis, beats/gaps, warnings, attempts, scenes, reload and leg/ship isolation passed");
+
+// Real featured-director public snapshots supplied by test_featured.py, not hand-written framing labels.
+if (process.argv.includes("--featured-scenes")) {
+  const snapshots = JSON.parse(fs.readFileSync(0, "utf8"));
+  assert(snapshots.length > 0);
+  for (const scene of snapshots) {
+    const {render, box} = page(), flight = {...p, platform: "Resolute", featured: true};
+    render(box, flight, 0, scene);
+    render(box, {...flight, tick: 101, asteroids: {...p.asteroids, huge: 1}}, 20, scene);
+    assert.equal(mode(box), "compact", JSON.stringify(scene.cameras.main.platform));
+    assert(box._parts.details.hidden);
+    assert(box._parts.summary.textContent.includes("120 km/s"));
+    assert(box._parts.summary.textContent.includes("20% flown"));
+  }
+  console.log("real featured director shots: compact identity, route, speed and progress retained");
+}

@@ -1,9 +1,8 @@
 # Platform metrics
 
-The main overlay shows a compact card for the main-camera platform, or the active featured platform while the
-director shows something else. The main camera takes precedence if it shows a different ship. Host view hides
-the card. Selection uses `onair.platform.name`, `cameras.main.ship.name`, then active `featured_platform.name`,
-joined to `space.platforms`. The older small ship label yields to this card on the main view.
+The main overlay shows a compact card for the platform on the acknowledged main-camera surface, joined to
+`space.platforms`. An offscreen featured ship cannot select the card. Host, replay and map views hide it, as does
+a pending metric sample from a different ship. The older small ship label yields to this card on the main view.
 
 The service calls the operator read `platform_metrics` at most once per 20 wall seconds across all selections.
 The runtime must advertise it in `describe.operator_reads`; earlier runtimes show no card. It starts no watch,
@@ -42,28 +41,32 @@ updated runtime and stream process at the operator's deployment. It makes no OBS
 Offline checks: `python3 tools/stream/test_platformmetrics.py`, the harness `platformmetrics_test.lua`, and the
 ordinary npm/Python gates. The report records private dense-leg profiling and the private-run screenshot.
 
-## Card balance (batch391)
+## Card balance (batch444)
 
 Landscape and portrait use one 360px card, 14px from the game pane's left/top edges. A visible top caption raises
 it only to that caption's bottom plus 8px. Ship name and directed route/dock share the first line in every mode.
 The first line fits its text without truncation; padding, width and anchor do not depend on the mode.
 Panes shorter than 800px tighten detail-row whitespace and leading, retaining the same type sizes and width.
 
-Flight defaults to compact navigation. A newly observed departure, changed leg/reversal or arrival, a positive
-hit/damage window, or an increase in big/huge asteroids can start an **8 wall-second** detail beat. There must be
-**30 wall-seconds after the preceding beat ends** before another can start, across ship/leg changes. Events during
-that gap are not queued. Repainting a sample cannot restart a beat; a timer collapses it even between 20-second
-reads. Sample age is subtracted from the beat. Cold pages/ship selections establish a baseline rather than
-inventing a departure; reload shows current warnings and resumes full featured-flight telemetry immediately.
-Outer-system routes alone do not expand. An active featured attempt stays full throughout its flight.
+Flight, including featured attempts, defaults to compact name, route, speed and progress (plus ETA when known).
+A newly observed departure, changed leg/reversal or arrival, or an increase in big/huge asteroids can start a
+**4 wall-second** detail beat. There must be **150 wall-seconds after the preceding beat ends** before another
+can start. The deadline persists in localStorage (`pog:platform-metrics:next-detail:v1`) across reloads, ship/leg
+changes and camera cuts, shared by landscape and portrait on the same origin. Each OBS origin preserves its own
+budget. Unavailable storage disables short beats; corrupt/future deadlines establish a fresh conservative gap.
+Events during that gap or suppressed shots are not queued. Repainting cannot restart a beat; a timer collapses it
+even between 20-second reads. Sample age is subtracted from the beat. Cold pages/ship selections establish a
+baseline, and reload never resumes detail. Bow/gun/action shots, work/follow closeups and featured production or
+repair detail suppress full telemetry immediately, using existing camera metadata. Interrupted beats do not resume.
+Outer-system routes and featured status alone never expand the card.
 
 Warnings remain visible when details collapse: positive hits, damage and leg losses,
 empty guns, measured ammo buffers below two minutes, and fuel/oxidizer tanks at zero. There is no invented fuel
 percentage/low threshold. Each warning needs two known clean telemetry samples and at least 20 wall-seconds
 since its last positive reading to clear; unknowns are not an all-clear. Ammo stock with a measured nonnegative
 net rate also clears its buffer warning. Ship/leg changes discard unrelated warning history.
-Full telemetry highlights current warnings in their own rows; held historical warnings remain above it.
-Compact mode puts all held warnings directly below navigation, avoiding duplicate rows in the full card.
+Any held warning keeps the card compact. The warning strip shows at most two readings and an additional-alert
+count; its tooltip retains every held reading. Positive hits/damage therefore never open full telemetry.
 
 Docked details stack vertically. The candidate's actual DOM rectangle must fit above the bottom 58px caption
 reserve, clear visible captions by 8px, and clear the complete surveyed foundation rectangle by 12px. Projection
@@ -73,4 +76,5 @@ compact: their worksite is not bounded reliably. No camera framing or game read 
 telemetry samples expand; a new obstruction collapses immediately. Arrival may get a short beat only when clear.
 
 Offline DOM tests cover scene switches, reload, ship/leg changes, actual pane dimensions, caption clearance,
-hysteresis, held warnings, expired/cached samples, beat spacing and continuous featured attempts.
+hysteresis, bounded held warnings, expired/cached samples, four-second timers, persistent beat spacing and compact
+featured attempts. `test_featured.py` also feeds real director public shots into the DOM test.

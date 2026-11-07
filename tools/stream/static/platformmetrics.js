@@ -1,6 +1,7 @@
 /* One anchored ship card. Telemetry advances history once; repaints only expire wall-time beats. */
 (function () {
-  const BEAT = 8, GAP = 30, WARNING_HOLD = 20;
+  const BEAT = 4, GAP = 150, WARNING_HOLD = 20;
+  const BEAT_KEY = "pog:platform-metrics:next-detail:v1";
   const finite = v => typeof v === "number" && Number.isFinite(v);
   const num = v => finite(v) ? v.toLocaleString("en-US", {maximumFractionDigits: 1}) : "";
   const label = v => String(v || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -8,6 +9,32 @@
     "uranium-rounds-magazine": "Uranium", "railgun-ammo": "Railgun", "explosive-rocket": "Explosive rocket"})[v] || label(v);
   const duration = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s` : `${Math.ceil(s)}s`;
   const clock = () => typeof performance === "undefined" ? Date.now() / 1000 : performance.now() / 1000;
+  function reserveBeat(box, now, at) {
+    // One budget across ships, cuts and both pages on this origin. Only the deadline survives reload;
+    // a new page never resumes a full card. If persistence is unavailable, stay compact in flight.
+    if (at < (box._nextBeat ?? -Infinity)) return false;
+    try {
+      const wall = Date.now() / 1000, saved = window.localStorage.getItem(BEAT_KEY);
+      const next = Number(saved);
+      if (saved !== null && (!Number.isFinite(next) || next > wall + BEAT + GAP)) {
+        window.localStorage.setItem(BEAT_KEY, String(wall + GAP));
+        return false; // malformed data or a backwards wall clock: establish a conservative new gap
+      }
+      if (next > wall + at - now) return false;
+      window.localStorage.setItem(BEAT_KEY, String(wall + at + BEAT - now + GAP));
+      box._nextBeat = at + BEAT + GAP;
+      return true;
+    } catch (_) { return false; }
+  }
+  function detailBlocked(scene) {
+    const cam = (scene.cameras || {}).main || {}, p = cam.platform || {};
+    // Existing public shot metadata covers featured guns/bow and survey section captions too.
+    // Work/follow/detail views reserve the pane even without usable worksite bounds.
+    return !!(cam.work || cam.attention || cam.work_close || cam.attack || cam.alert || cam.battle ||
+      cam.fight || cam.incoming || cam.follow || cam.frame?.follow ||
+      ["bow", "danger", "work", "story", "cue"].includes(p.why) ||
+      /\b(bow|guns?|defen[cs]e|combat|action|detail|production|machinery)\b/i.test(`${p.framing || ""} ${p.label || ""}`));
+  }
   const total = values => values && values.length && values.every(finite) ? values.reduce((sum, v) => sum + v, 0) : null;
   function node(tag, cls) { const n = document.createElement(tag); n.className = cls; return n; }
   function put(n, value) { if (n.textContent !== value) n.textContent = value; }
@@ -88,12 +115,13 @@
       warnings: new Map(), clear: 0, dockFull: false, rocks: {}};
     const changed = a.key !== key;
     const fresh = changed || (finite(p.tick) && p.tick !== a.tick);
+    let eventAt = null;
     if (fresh) {
       const at = now - (finite(p.age_s) ? Math.max(0, p.age_s) : 0), rocks = p.asteroids || {};
       const event = changed || (!reset && ((p.hits_min > 0 || p.damage_taken > 0) ||
         ["big", "huge"].some(k => finite(rocks[k]) && rocks[k] > (a.rocks[k] || 0))));
       if (changed) { a.until = -Infinity; a.warnings.clear(); a.clear = 0; a.dockFull = false; }
-      if (event && at >= (box._nextBeat ?? -Infinity) && at + BEAT > now) { a.until = at + BEAT; box._nextBeat = a.until + GAP; }
+      if (event && at + BEAT > now) eventAt = at;
       for (const [key, reading] of warningReadings(p)) {
         if (reading) a.warnings.set(key, {row: reading, until: at + WARNING_HOLD, clean: 0});
         else if (a.warnings.has(key)) {
@@ -103,7 +131,7 @@
       }
       a.key = key; a.tick = p.tick; a.flying = flying; a.rocks = rocks;
     }
-    return {a, fresh};
+    return {a, fresh, eventAt};
   }
   function render(box, p, now = clock(), scene = {}) {
     if (!box) return;
@@ -112,7 +140,10 @@
     const shown = main && ((main.ship || {}).name || (main.platform || {}).name);
     if (scene.hostview || scene.show || scene.replay?.playing || (main && (main.map || !shown || shown !== p?.platform))) p = null;
     box._latest = {p, scene}; box.hidden = !p || !p.platform;
-    if (box.hidden) return; // retain history through scene gaps; a cached sample cannot replay a beat
+    if (box.hidden) {
+      if (box._activity) box._activity.until = -Infinity;
+      return; // retain history/budget through cuts, but never resume an interrupted detail beat
+    }
     if (!box._parts) {
       const header = node("strong", "pm-head"), summary = node("div", "pm-summary"), warnings = node("div", "pm-warnings");
       const details = node("div", "pm-details"), bar = node("div", "pm-progress"), fill = node("i", ""); bar.append(fill);
@@ -126,7 +157,10 @@
         for (const n of [box.parentElement, document.getElementById("alerts"), document.getElementById("voice")]) if (n) observer.observe(n);
       }
     }
-    const b = box._parts, l = p.leg || {}, {a, fresh} = sample(box, p, now), parked = !a.flying;
+    const b = box._parts, l = p.leg || {}, {a, fresh, eventAt} = sample(box, p, now), parked = !a.flying;
+    const blocked = detailBlocked(scene) || a.warnings.size > 0;
+    if (blocked) a.until = -Infinity;
+    else if (eventAt !== null && reserveBeat(box, now, eventAt)) a.until = eventAt + BEAT;
     // Trio scenes have a shorter main pane. Tighten vertical whitespace, retaining the same type sizes/width.
     const dense = box.parentElement && box.parentElement.getBoundingClientRect().height < 800;
     box.style.setProperty("--pm-leading", dense ? "1.15" : "1.35");
@@ -192,18 +226,19 @@
     b.details.hidden = false;
     clearCaption(box);
     if (parked) {
-      a.safe = clearsWorksite(box, p, scene);
+      a.safe = !blocked && clearsWorksite(box, p, scene);
       if (!a.safe) { a.clear = 0; a.dockFull = false; }
       else if (fresh) { a.clear++; if (a.clear >= 2) a.dockFull = true; }
     }
-    const full = parked ? a.dockFull || (a.safe && now < a.until) : !!p.featured || now < a.until;
-    const mode = parked ? full ? a.dockFull ? "docked-full" : "docked-beat" : "docked-compact" : p.featured ? "attempt" : full ? "beat" : "compact";
+    const full = parked ? a.dockFull || (a.safe && now < a.until) : !blocked && now < a.until;
+    const mode = parked ? full ? a.dockFull ? "docked-full" : "docked-beat" : "docked-compact" : full ? "beat" : "compact";
     box.setAttribute("data-mode", mode);
     b.details.hidden = !full;
-    // Current warnings are already highlighted in the full telemetry. Keep only held historical readings
-    // above it; duplicating every current warning would push attempts out of a shorter scene's game pane.
-    const currentWarnings = warningReadings(p);
-    rows(b.warnings, [...a.warnings.entries()].filter(([key]) => !full || !currentWarnings.get(key)).map(([, w]) => w.row));
+    // Urgency never opens a telemetry wall. Bound the warning strip, retaining all readings in its tooltip.
+    const warnings = [...a.warnings.values()].map(w => w.row), visibleWarnings = warnings.slice(0, 2);
+    const warningText = warnings.map(r => `${r[1]}: ${r[2]}`).join(" · ");
+    if (warnings.length > 2) visibleWarnings.push(["more", "Other alerts", `+${warnings.length - 2}`, warningText, true]);
+    rows(b.warnings, visibleWarnings); b.warnings.title = warningText;
     // Ship identity has priority over personal gear. Compact first, then yield if even that cannot fit.
     const collision = () => {
       const r = box.getBoundingClientRect(), pane = box.parentElement?.getBoundingClientRect();
@@ -212,7 +247,7 @@
     if (collision()) { b.details.hidden = true; box.setAttribute("data-mode", "compact"); }
     box.style.visibility = collision() ? "hidden" : "";
     // A beat must end even if telemetry arrives only every 20 seconds or the socket temporarily stalls.
-    if ((parked ? !a.dockFull : !p.featured) && now < a.until && window.setTimeout)
+    if (!a.dockFull && now < a.until && window.setTimeout)
       box._timer = window.setTimeout(() => { const v = box._latest; render(box, v.p, clock(), v.scene); }, (a.until - now) * 1000 + 1);
   }
   window.PogPlatformMetrics = {render};
