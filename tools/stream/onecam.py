@@ -814,6 +814,7 @@ class OneCam(Director):
         self.plat_rows = {}    # name -> the snapshot's platform row (model.platform_where: where, route, view)
         self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
         self.plat_shown = {}   # name -> when it was last on air
+        self.wide_context_shown = {}  # confirmed automatic wide ship context, at most once per ten minutes
         self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
         self.departure = None  # {"name", "t", "label", "until"?, "maiden"?, "news"?, "route"?, "why"?}: seen, not on air yet
         self.route_source = None  # (AS1) the model (serve.py): route_last and platform_visited across restarts
@@ -1030,6 +1031,12 @@ class OneCam(Director):
 
     def ready(self, slot, now):
         t = self.state.get(slot)
+        if t and t.get('train'):
+            import basetour
+            if not basetour.train_fresh(t['train'], now) or now >= t.get('until', 0):
+                if self.pending and self.pending['slot'] == slot:
+                    self.pending = None
+                return False  # a standby must not put an expired receipt on the program
         if t and (t.get("follow") or t.get("remote_work")):
             import remotework
             who = t.get("follow") or (t.get("agents") or [None])[0]
@@ -1143,7 +1150,7 @@ class OneCam(Director):
                 target = dict(target, zoom=fit, exact_zoom=True, fire_fit=fit, solo_zoom=target.get("solo_zoom", target["zoom"]))
                 reason = f"{reason} (zoom {fit}: {self.fire_text(a)})"
         old = self.state.get(slot["slot"]) or {}
-        if target and slot["slot"] == self.onair and not any(target.get(k) for k in ("survey", "pan", "move", "vehicle", "did")):
+        if target and slot["slot"] == self.onair and not any(target.get(k) for k in ("survey", "pan", "move", "vehicle", "did", "train", "tour")):
             changed = any(old.get(k) != target.get(k) for k in ("surface", "position", "zoom", "follow"))
             if changed:
                 target = dict(target, destination_since=now)
@@ -1160,6 +1167,8 @@ class OneCam(Director):
         t = self.state.get(self.onair) or {}
         if not t or t.get("subject") in ("@attack", "@incoming", "@look"):
             return False
+        if t.get('train'):
+            return now < t.get('until', 0) and self.fresh_train(t['train']['id'], now) is not None and now-self.onair_since < 8
         if ((t.get("platform") or {}).get("why") in ("operator", "follow") and t.get("until", 0) <= now) or (t.get("featured") and not self.featured.active):
             return False
         if t.get("swap") and now >= t.get("until", 0):
@@ -1173,6 +1182,7 @@ class OneCam(Director):
         return bool(starts) and now - max(starts) < 8
 
     def arrival_step(self, now):
+        self.tour_arrival_step(now)
         t = self.state.get(self.onair) or {}
         settle = t.get("settle")
         if not settle or settle.get("arrived") is not None or now >= settle["sent"] + 45:
@@ -1197,6 +1207,33 @@ class OneCam(Director):
             settle["arrived"] = now
             if t.get("until") is not None:
                 t["until"] = max(t["until"], now + 8)
+
+    def tour_arrival_step(self, now):
+        """Finish a quiet tour with a visible destination dwell, bounded if the camera never arrives."""
+        t = self.state.get(self.onair) or {}
+        tour, move = t.get('tour'), t.get('move')
+        if not tour or not move or t.get('tour_arrived') is not None:
+            return
+        last = move['segments'][-1]
+        elapsed = now-t.get('moved', now)
+        if elapsed < last['t1'] or elapsed >= tour['seconds']+45:
+            return
+        # Native paths run in game time. Low UPS must not turn the final closeup into a cut mid-travel.
+        t['until'] = max(t.get('until', 0), now+1)
+        aired = self.on_air.get(self.onair) or {}
+        if aired.get('tour') != tour or self.hosting(now) or self.hold_layout:
+            return
+        slot = self.slot(self.onair)
+        try:
+            r = self.sender(dict(player=slot['player'], panel=slot.get('panel', 0), observe=True))
+        except Exception:
+            return
+        goal = last['pts'][-1]
+        if (isinstance(r, dict) and r.get('ok') and r.get('connected') and r.get('visible') and
+                r.get('surface') == t['surface'] and r.get('position') and dist(r['position'], goal) <= 1 and
+                isinstance(r.get('zoom'), (int, float)) and abs(r['zoom']-goal['zoom']) <= .03):
+            t['tour_arrived'] = now
+            t['until'] = max(t['until'], now+max(8, tour['seconds']-last['t1']))
 
     def near_onair(self, subject, position, by_name):
         """Do viewers see this now: the agent on air is in it, or its position is inside the on-air frame."""
@@ -2003,6 +2040,8 @@ class OneCam(Director):
             train = shown.get("train")
             if train:
                 self.train_shown[train["id"]] = shown.get("since", now)
+            if shown.get('wide_context'):
+                self.wide_context_shown[shown['platform']['name']] = shown.get('since', now)
         self.tour_memory.observe(snapshot, now)
         self.train_rows = list(snapshot.get("trains") or [])
         cur_train = self.state.get(self.onair) or {}
@@ -2166,6 +2205,9 @@ class OneCam(Director):
             self.train_step(now)
         self.featured.inset(self, scores, now)
         self.release_maps(now)
+        self.wide_context_step(now)
+        if (self.state.get(self.onair) or {}).get('tour') and not self.hosting(now) and not self.hold_layout:
+            self.step_move(now)  # quiet tours share the existing native-move fallback used by explicit looks
         self.pan_step(now)
         self.closeup_step(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
@@ -2341,7 +2383,10 @@ class OneCam(Director):
         here = t.get("position") or {}
         d = math.hypot(x - here.get("x", x), y - here.get("y", y))
         target = {k: v for k, v in t.items() if k not in ("jump", "move")}
-        target.update(position={"x": round(x, 2), "y": round(y, 2)}, zoom=round(z, 3), glide=round(max(0.5, d / self.MOVE_LEAD), 2))
+        # Commands arrive MOVE_STEP apart. Dividing their delta by the longer look-ahead time made
+        # the camera lag the path, then crawl at .5 tiles/s throughout the destination dwell.
+        target.update(position={"x": round(x, 2), "y": round(y, 2)}, zoom=round(z, 3),
+                      glide=round(min(60, max(0.5, 2*d / self.MOVE_STEP)), 2))
         self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
         nt = self.state.get(self.onair)
         nt.update(move=t["move"], moved=since, move_ok=False)
@@ -3845,10 +3890,11 @@ class OneCam(Director):
         if not views:
             return
         order = ("train", "tour", "platform", "map")
-        kind, t = min(views, key=lambda kv: (self.quiet_shown.get(kv[0], -1e9), order.index(kv[0])))
+        # Train receipts have only seconds to live; reusable scenery can wait for the next quiet slot.
+        kind, t = min(views, key=lambda kv: (kv[0] != 'train', self.quiet_shown.get(kv[0], -1e9), order.index(kv[0])))
         if kind == "train":
-            self.quiet_log(kind, t["look"]["label"], why, now)
             self.urgent(t, f"train: {t['look']['label']} (quiet: {why})", scores, now)
+            self.quiet_log(kind, t["look"]["label"], why, now)
         elif kind == "tour":
             self.quiet_log(kind, t["tour"]["label"], why, now)
             self.show_tour(t, f"quiet: {why}", scores, now)
@@ -3867,19 +3913,20 @@ class OneCam(Director):
     def train_target(self, now):
         """A bounded quiet follow, ranked by known cargo and route; existing receipt positions only."""
         import basetour
-        rows = [r for r in self.train_rows if basetour.position(r.get("position")) and
-                0 <= now-r.get("t", 0) <= (3 if r.get("speed") else 12) and
+        reserve = 8 + (self.cfg['ready_s'] if self.next_slot() else 0)
+        rows = [r for r in self.train_rows if basetour.train_fresh(r, now, reserve=reserve) and
                 now-self.train_shown.get(r.get("id"), -1e9) >= 600]
         row = max(rows, key=lambda r: (bool(r.get("cargo")), bool(r.get("stop")), r["t"]), default=None)
         if not row:
             return None
         return dict(agents=[], subject="@tour", surface=row["surface"], position=dict(row["position"]),
-                    zoom=.5, exact_zoom=True, until=now+24, train=dict(row),
-                    look=dict(label=row["label"], by="director", surface=row["surface"], position=dict(row["position"])))
+                    zoom=.5 if row.get('speed') else .8, exact_zoom=True, until=now+24, train=dict(row),
+                    look=dict(label=row["label"] + ' · live', by="director", surface=row["surface"], position=dict(row["position"])))
 
     def fresh_train(self, identity, now):
+        import basetour
         return next((r for r in self.train_rows if r.get("id") == identity and
-                     0 <= now-r.get("t", 0) <= (3 if r.get("speed") else 12)), None)
+                     basetour.train_fresh(r, now)), None)
 
     def train_step(self, now):
         """Do not extend a follow's deadline or change its identity/zoom/caption during a shot."""
@@ -3892,8 +3939,14 @@ class OneCam(Director):
             cur["until"] = now
             return
         if row["t"] > train["t"] and not self.hosting(now) and not self.hold_layout:
-            updated = dict(cur, position=dict(row["position"]), train=dict(row), glide=40)
+            updated = {k: v for k, v in cur.items() if k not in ('jump', 'settle')}
+            updated.update(position=dict(row["position"]), train=dict(row), glide=40)
             self.apply(self.slot(self.onair), updated, "reframe", {}, now, quiet=True)
+
+    def train_retry_ok(self, target, now):
+        """Retry active reframes only; initial shots go through quiet selection again with fresh clocks."""
+        cur = self.state.get(self.onair) or {}
+        return (cur.get('train') or {}).get('id') == target['train']['id'] and now < cur.get('until', 0)
 
     def maybe_tour(self, scores, now, segment=None):
         """A base tour about every tour_every (tour_first after the start), with the base map's guards; one client too."""
@@ -4183,6 +4236,20 @@ class OneCam(Director):
             t["position"] = dict(t["position"], y=t["pan"]["y0"])
         if agent:
             t["platform"]["agent"] = agent
+        if overview and why in ('visit', 'featured') and t['zoom'] <= .31:
+            now = getattr(self, 'step_t', None) or self.started
+            cur = self.state.get(self.onair) or {}
+            opening = (cur.get('wide_context') and (cur.get('platform') or {}).get('name') == name and
+                       now-self.onair_since < 8)
+            if now-self.wide_context_shown.get(name, -1e9) < 600 and not opening:
+                detail = self.machinery(name) or dict(position=view.get('hub') or t['position'], zoom=.8)
+                t.pop('pan', None)
+                t.update(position=dict(detail['position']), zoom=max(.7, detail['zoom']), exact_zoom=True, quiet_detail=True)
+                t['platform'].update(label=f'{name} · machinery closeup', framing='machinery closeup')
+                return t
+            # Deliberately wide context is labelled and bounded; it cannot occupy a long automatic survey.
+            t['wide_context'] = True
+            t['platform'].update(label=f'{name} · wide ship overview', framing='wide ship overview')
         if overview and why in ("visit", "operator", "follow", "featured"):
             import camerapath
             # One controller owns overview motion and section details. Selection/priorities remain here.
@@ -4196,6 +4263,25 @@ class OneCam(Director):
             t["survey"]["reverse"] = bool(visits % 2)
             t["position"] = {k: t["survey"]["bow"][k] for k in ("x", "y")}
         return t
+
+    def wide_context_step(self, now):
+        t = self.state.get(self.onair) or {}
+        if not t.get('wide_context') or now-self.onair_since < 8 or self.hosting(now) or self.hold_layout:
+            return
+        p = t['platform']
+        if p['name'] not in self.wide_context_shown:
+            return  # only a compositor-confirmed view starts the context cooldown
+        # Ask for the same automatic overview policy; its already-shown context now yields to detail.
+        fresh = self.platform_target(p['name'], p['why'], t['until'], overview=True)
+        if not fresh or not fresh.get('quiet_detail'):
+            return
+        target = {k: v for k,v in t.items() if k not in ('survey','survey_key','survey_step','survey_status',
+                                                       'pan','move','move_ok','jump','wide_context')}
+        target.update(fresh)
+        if p['why'] == 'visit':
+            # A hull survey's extended travel budget must not become a long static detail hold.
+            target['until'] = min(target['until'], now + self.cfg['quiet_platform_hold'])
+        self.apply(self.slot(self.onair), target, 'reframe', {}, now, quiet=True)
 
     def platform_following(self, now):
         p = self.platform_follow
@@ -5607,7 +5693,7 @@ class OneCam(Director):
                 p = dict(t["platform"])
                 if visible_ship and p["name"] != visible_ship:
                     p.update(name=visible_ship, label=self.platform_label(visible_ship))
-                if p["why"] == "visit":
+                if p["why"] == "visit" and not (t.get('wide_context') or t.get('quiet_detail')):
                     p["label"] = self.platform_label(p["name"])
                 row["platform"] = p
                 if t.get("work"):

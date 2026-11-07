@@ -126,6 +126,21 @@ def fresh_and_progress():
 def quiet(cams):
     out = chart_dir()
     d, sent = world(cams)
+    # Quiet tours now finish on a visible arrival receipt; model the camera and compositor as well as sends.
+    import copy
+    from test_ship_survey import Camera
+    cameras = {s['player']: Camera() for s in d.slots}
+    def send(body):
+        sent.append(body)
+        return cameras[body['player']](body)
+    d.sender = send
+    original_step = d.step
+    def step(snapshot, now):
+        for camera in cameras.values():
+            camera.advance(now)
+        d.on_air = {key: copy.deepcopy(value) if key == d.onair else None for key,value in d.state.items()}
+        return original_step(snapshot, now)
+    d.step = step
     d.started = 1000  # (the periodic tour comes tour_first after this; the quiet one sooner)
     d.set_tours(basetour.Tours(out))
     team = [agent("luna", 0, 0, 3, activity="thinking", active=False),

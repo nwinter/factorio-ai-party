@@ -321,33 +321,60 @@ class Memory:
         return sorted(unique.values(), key=lambda c: (-self.score(c, now), c['region']))
 
 
-def varied_plan(surface, out_dir, charted, frac, pts, candidate, variant):
-    """Two endpoints give a straight eased path wholly inside a chart-checked frame envelope."""
+def varied_plan(surface, out_dir, charted, frac, pts, candidate, variant, labels=None):
+    """Travel between observed machines, with closeups and rests, inside a chart-checked envelope."""
     p = candidate['position']
     near = [q for q in pts if math.hypot(q[0] - p['x'], q[1] - p['y']) <= REACH]
-    ux, uy = axis(near) if len(near) >= 2 else (1, 0)
-    if variant % 3 == 2:
-        ux, uy = -uy, ux
-    z = (.4, .5, .6)[variant % 3]
-    span = (32, 24, 16)[variant % 3]
-    sign = -1 if variant % 2 else 1
-    stops = [dict(x=round(p['x'] + sign * s * ux, 1), y=round(p['y'] + sign * s * uy, 1), zoom=z)
-             for s in (-span / 2, span / 2)]
-    # Test the bounding rectangle: for two points this covers every interpolated frame, not just the knots.
-    from lookcam import frame_half, chunks
-    hw, hh = frame_half(z, frac)
-    x0, y0 = min(s['x'] for s in stops), min(s['y'] for s in stops)
-    x1, y1 = max(s['x'] for s in stops), max(s['y'] for s in stops)
-    cx0, cy0, cx1, cy1 = chunks((x0+x1)/2, (y0+y1)/2, hw+(x1-x0)/2, hh+(y1-y0)/2)
-    if not all(charted(surface, x, y) for x in range(cx0, cx1+1) for y in range(cy0, cy1+1)):
+    if not near:
         return None
-    rest, secs = (3, 5, 7)[variant % 3], (30, 34, 38)[variant % 3]
-    move = camerapath.check({'segments': [dict(pts=stops, t0=rest, t1=rest+secs, ease='inout')]})
+    first = min(near, key=lambda q: (math.hypot(q[0]-p['x'], q[1]-p['y']), q))
+    if candidate.get('identity') and math.hypot(first[0]-p['x'], first[1]-p['y']) > 16:
+        return None  # a fact about remote work must not caption unrelated machinery
+    destinations = [q for q in near if 32 <= math.dist(first, q) <= REACH]
+    # Prefer a readable journey to another machine; a compact cluster gets a stationary closeup.
+    span = (64, 96, 48)[variant % 3]
+    destinations.sort(key=lambda q: (abs(math.dist(first, q)-span), q))
+    if variant % 2:
+        destinations = sorted(destinations, key=lambda q: (abs(math.dist(first, q)-span), -q[0], -q[1]))
+    z = (.4, .5, .6)[variant % 3]
+    close = (.8, .9, .75)[variant % 3]
+    rest = (8, 10, 12)[variant % 3]
+    # Every leg has two points: its rectangle at the widest zoom contains every interpolated frame.
+    from lookcam import frame_half, chunks
+    def covered(a, b):
+        hw, hh = frame_half(z, frac)
+        cx0, cy0, cx1, cy1 = chunks((a[0]+b[0])/2, (a[1]+b[1])/2,
+                                   hw+abs(a[0]-b[0])/2, hh+abs(a[1]-b[1])/2)
+        return all(charted(surface, x, y) for x in range(cx0, cx1+1) for y in range(cy0, cy1+1))
+    if not covered(first, first):
+        return None
+    second = next((q for q in destinations if covered(first, q)), None)
+    def pose(q, zoom):
+        return dict(x=q[0], y=q[1], zoom=zoom)
+    a, detail = pose(first, z), pose(first, close)
+    segments = [dict(pts=[a, detail], t0=4, t1=8, ease='inout')]
+    if second:
+        b = pose(second, z)
+        travel = round(math.dist(first, second) / SPEED, 1)
+        depart = 8 + rest
+        arrive = depart + 4 + travel
+        segments += [dict(pts=[detail, a], t0=depart, t1=depart+4, ease='inout'),
+                     dict(pts=[a, b], t0=depart+4, t1=arrive, ease='inout'),
+                     dict(pts=[b, pose(second, close)], t0=arrive, t1=arrive+4, ease='inout')]
+        seconds = arrive + 4 + rest
+    else:
+        # No manufactured small drift where the chart has no second readable destination.
+        segments.append(dict(pts=[detail, a], t0=8+rest, t1=12+rest, ease='inout'))
+        seconds = max(30, 12 + 2*rest)
+    move = camerapath.check({'segments': segments})
+    route = [dict(position=dict(x=q[0], y=q[1]), label=(labels or {}).get(q) or 'machinery')
+             for q in ([first, second] if second else [first])]
     why = candidate.get('why') or 'quiet machinery'
-    label = f"{planet_label(surface)} · {why} near ({round(p['x'])}, {round(p['y'])})"
-    return dict(surface=surface, position={k: stops[0][k] for k in ('x', 'y')}, zoom=z, move=move,
-                seconds=secs+2*rest, label=label, machines=len(near),
-                scene=dict(candidate, composition=f'{variant % 6}:{z}:{rest}', why=why))
+    names = ' → '.join(r['label'] for r in route)
+    label = f"{planet_label(surface)} · {why} · {names}" + (' closeup' if not second else '')
+    return dict(surface=surface, position={k: a[k] for k in ('x', 'y')}, zoom=z, move=move,
+                seconds=seconds, label=label, machines=len(near),
+                scene=dict(candidate, composition=f'{variant % 6}:{z}:{rest}', why=why, route=route))
 
 
 def choose(tours, memory, now, frac=1.0):
@@ -355,7 +382,7 @@ def choose(tours, memory, now, frac=1.0):
     charted = store_charted(tours.chart, index_charted(tours.out_dir)) if tours.chart is not None else index_charted(tours.out_dir)
     choices = []
     for surface in tours.planets:
-        recipes, cells, pts = {}, {}, []
+        recipes, cells, pts, labels = {}, {}, [], {}
         complete = True
         for path in glob.glob(os.path.join(tours.out_dir, surface, '*.labels.json')):
             try:
@@ -369,6 +396,8 @@ def choose(tours, memory, now, frac=1.0):
                     continue
                 key = region(surface, dict(x=r[0], y=r[1]))
                 pts.append((r[0], r[1]))
+                if len(r) > 2 and isinstance(r[2], str):
+                    labels[(r[0], r[1])] = r[2].replace('-', ' ')[:45]
                 cells.setdefault(key, []).append((r[0], r[1]))
                 recipes.setdefault(key, []).append(r[:3])
         if not complete or len(pts) < MIN_MACHINES:
@@ -383,27 +412,36 @@ def choose(tours, memory, now, frac=1.0):
             if previous is not None and previous != fingerprint:
                 memory.note(surface, p, 'production layout changed', fingerprint, now, now)
             tours.recipe_memory[key] = fingerprint
-            choices.append((memory.score(candidate, now), candidate, pts))
+            choices.append((memory.score(candidate, now), candidate, pts, labels))
         for e in memory.events.values():
             if e['surface'] == surface:
-                choices.append((memory.score(e, now), dict(e), pts))
+                choices.append((memory.score(e, now), dict(e), pts, labels))
     # Tie fresh/unseen regions by surface recency, so a large planet cannot crowd out the others.
     def rank(row):
         surface = row[1]['surface']
         last = max((v[0] for k, v in memory.shown.items() if k.startswith(surface + ':')), default=-1e9)
         return (-row[0], last, PLANETS.index(surface) if surface in PLANETS else 99, row[1]['region'])
 
-    for _, c, pts in sorted(choices, key=rank):
+    for _, c, pts, labels in sorted(choices, key=rank):
         old = memory.shown.get(c['region'])
         variant = sum(v[3] for v in memory.shown.values()) + (old[3] if old else 0)
         # Unchanged regions rest for ten minutes even when every quiet slot is due.
         if old and now - old[0] < 600 and (not c.get('identity') or old[1] == c['identity']):
             continue
         for offset in range(3):
-            shot = varied_plan(c['surface'], tours.out_dir, charted, frac, pts, c, variant+offset)
+            shot = varied_plan(c['surface'], tours.out_dir, charted, frac, pts, c, variant+offset, labels)
             if shot:
                 return shot
     return None  # the director's calm agent/ship/map fallback remains in charge
+
+
+def train_fresh(row, now, reserve=0):
+    """Existing journal evidence only; reserve leaves time for an initial readable stationary shot."""
+    t, speed = row.get('t'), row.get('speed')
+    return (type(t) in (int, float) and math.isfinite(t) and
+            type(speed) in (int, float) and math.isfinite(speed) and
+            bool(row.get('surface')) and bool(position(row.get('position'))) and
+            0 <= now-t <= (3 if speed else 12-reserve))
 
 
 class Trains:
@@ -455,4 +493,4 @@ class Trains:
 
     def current(self, now):
         # At 100 km/h a train crosses a normal frame in seconds. Sparse journals cannot support a long follow.
-        return [dict(r) for r in self.rows.values() if 0 <= now-r['t'] <= (3 if r['speed'] else 12)]
+        return [dict(r) for r in self.rows.values() if train_fresh(r, now)]

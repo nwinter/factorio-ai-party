@@ -2813,17 +2813,23 @@ no page= (and replay.html when open): no overlay, which is why it stayed connect
   start; a blank page in watch, a failed round kept in the health line, and cleared by one that works).
 
 
-### Quiet tours and train receipts (batch406)
+### Quiet tours and train receipts (batch406, camera polish batch441)
 
 `basetour.choose` selects a new base scene at a shot boundary from 64-tile machine regions and the director's
 bounded, session-local `basetour.Memory`. Accepted builds, remote work, repair starts, damage/threat episodes,
 ship arrivals, changed chart recipe layouts and ship production changes sustained for 30 seconds supply facts.
 Activity scenes name and credit the engineer whose work is shown. Repeated inspections do not qualify as news. Unseen regions and fresh facts outrank unchanged
-regions; unchanged regions rest for ten minutes. Surface recency breaks ties. Compositions rotate through two
-pan directions, principal/perpendicular axes, .4/.5/.6 zoom and 36/44/52-second shots, with 3/5/7-second endpoint
-rests. The whole straight path's frame envelope must be charted. A selected path is immutable; if no region is
+regions; unchanged regions rest for ten minutes. Surface recency breaks ties. Tours begin at an observed machine,
+zoom from .4/.5/.6 to .8/.9/.75 for an 8/10/12-second closeup, pull back and travel 32–120 tiles to another
+observed machine, then zoom in and dwell again. Captions name the observed recipes. Compact clusters without
+a second charted destination get a stationary closeup. Each two-point leg's entire envelope at its widest zoom
+must be charted. A selected path is immutable; if no region is
 eligible, the director retains its ordinary calm agent/map/ship fallback. Logs include the scene's region,
 identity, composition and planned duration. Only a compositor-confirmed on-air scene earns shown credit.
+Quiet tours use the existing fallback movement path when native moves are unavailable. Its speed follows the
+command cadence so it reaches a destination instead of crawling during the dwell. At the final leg, the existing
+camera observation receipt confirms visible arrival before the final 8–12-second dwell. Waiting for arrival is
+bounded at 45 seconds beyond the planned tour; late arrival still gets its dwell. Urgent coverage may preempt.
 
 Ship surveys use the same fact/region memory for details, reconsidered between excursions. An active detail's
 position, zoom, caption and 8–14-second dwell stay fixed. Visible settled receipts earn credit. A later visit
@@ -2832,11 +2838,29 @@ host, operator and work priorities remain in charge.
 
 `WorkFeed.trains` consumes successful `train` replies in the journal tail already read by the service. `live.py`
 and `model.py` pass those receipts through to `onecam`; there is no train polling or new runtime camera mode.
-Quiet selection prefers a train with cargo and a named destination, then the freshest receipt. A train shot
+Within an already eligible quiet slot, fresh train receipts precede reusable scenery. Among trains, selection
+prefers cargo, a named destination, then the freshest receipt. A stationary receipt must have eight seconds of
+freshness left after any standby preparation; it starts at zoom .8, while moving receipts start at .5. The
+caption explicitly says “live”. A train shot
 holds its identity, zoom and caption for at most 24 seconds and follows only newly received positions. Moving
 receipts expire after 3 seconds, stationary ones after 12; missing/stale data ends the shot, and a shown train
 rests ten minutes. Sparse agent reads therefore cannot support continuous train coverage. No extrapolated
 position or cargo claim is generated. New train shots never displace urgent, host, operator or segment holds.
+Updates glide without replaying the opening jump, resetting an ordinary arrival hold or renewing the deadline.
+Stale receipts release immediately, even before the ordinary eight-second dwell. Expired standbys cannot cut
+onto the program. Failed initial shots re-enter quiet selection so an eventual success gets fresh clocks;
+only an already active train's reframes use the send retry path. A moving train's full dwell therefore still
+depends on naturally occurring fresh replies; TV never requests them.
+
+Ordinary ship views retain the rendered-world zoom floor (.3; inset panels .06), with .001 native-path headroom
+against floating-point interpolation dipping below the floor; these selectors create no ship
+map shots. Automatic visits and calm featured surveys at zoom .31 or below show a labelled “wide ship overview”
+for eight seconds, at most once per ship per ten minutes of confirmed on-air coverage, then use the existing
+machinery/hub detail at zoom .7 or closer. Visits then hold detail for at most 25 seconds; calm featured stints
+alternate machinery and bow/hub detail every 30 seconds. Manual surveys retain their existing coverage. This limits wide
+context independently of the renderer's pixel/map representation. Existing explicit base maps remain labelled,
+short (15 seconds) and infrequent (ten minutes, with
+unchanged-map backoff to an hour for the single-client program).
 
 ### Overlay recovery and browser health (batch408)
 

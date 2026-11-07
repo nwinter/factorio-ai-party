@@ -287,7 +287,21 @@ class Featured:
         flying = d.travelling(row)
         framing = "ship survey"
         shot = d.platform_target(name, "featured", now + MAIN_S + CONTEXT_S, overview=not flying and not danger and not active)
+        if shot:
+            framing = shot['platform'].get('framing', framing)
+        if shot and shot.get('quiet_detail'):
+            # A calm featured ship still travels between readable details during its long stint.
+            hub = (row.get('view') or {}).get('hub')
+            bow = d.bow_defense(name)
+            other = (bow, 'bow closeup') if bow else (dict(position=hub, zoom=.8) if hub else None, 'hub closeup')
+            details = [(x, label) for x, label in ((d.machinery(name), 'machinery closeup'), other) if x]
+            if details:
+                detail, framing = details[int(age // 30) % len(details)]
+                shot.update(position=dict(detail['position']), zoom=max(.7, detail['zoom']))
         if flying or danger or active or work:
+            if shot:
+                for key in ('wide_context', 'quiet_detail'):
+                    shot.pop(key, None)  # active coverage is not a quiet overview, even on a docked ship
             # Alternate orientation and readable guns. Working production gets one occasional beat in calm flight.
             beat = int(age // 30) % 5
             detail = d.machinery(name) if beat == 4 and not (danger or active) else None
@@ -344,6 +358,9 @@ class Featured:
             # Remove a previous pan when changing to a fixed defense view.
             if "pan" not in shot:
                 target.pop("pan", None)
+            for key in ('wide_context', 'quiet_detail'):
+                if key not in shot:
+                    target.pop(key, None)
             d.apply(slot, target, "reframe", scores, now, quiet=True)
         else:
             old["platform"].update(shot["platform"])
