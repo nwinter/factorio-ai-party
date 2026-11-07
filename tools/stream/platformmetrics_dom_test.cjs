@@ -176,7 +176,7 @@ for (const featured of [false, true]) {
 // Closeups immediately interrupt a beat, and never queue one for the next camera cut.
 const detailShots = [
   {platform: {why: "bow"}}, {platform: {why: "danger"}}, {platform: {why: "work"}},
-  ...["bow and approaching asteroids", "bow guns", "guns in action", "working production", "repair/build detail"]
+  ...["bow guns", "guns in action", "working production", "repair/build detail"]
     .map(framing => ({platform: {why: "featured", framing}})),
   {platform: {why: "visit", label: "Resolute · bow defense"}},
   {work: "placing machines"}, {attention: {}}, {work_close: {}}, {frame: {follow: 3}},
@@ -195,6 +195,39 @@ for (const shot of detailShots) {
   render(box, {...parked, tick: 103}, 200, { ...scene, cameras: {main: {...scene.cameras.main, ...shot}}});
   render(box, {...parked, tick: 104}, 220, { ...scene, cameras: {main: {...scene.cameras.main, ...shot}}});
   assert.equal(mode(box), "docked-compact");
+}
+// The actual featured flight cycle must have an eligible shot. Generic "bow" filtering used to block all of it.
+{
+  const flight = {...p, featured: true};
+  const main = {ship: {name: p.platform}, platform: {why: "featured", framing: "bow and approaching asteroids",
+    label: "Featured: Resolute · bow and approaching asteroids"}};
+  const orientation = {cameras: {main}};
+  const {render, box, advance} = page();
+  render(box, flight, 0, orientation);
+  render(box, {...flight, tick: 101}, 20, orientation); assert.equal(mode(box), "beat"); // no event
+  advance(31.99); assert.equal(mode(box), "beat");
+  advance(32.01); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 102}, 40, orientation); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 103}, 60, orientation); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 104}, 80, orientation); assert.equal(mode(box), "beat");
+  const guns = {cameras: {main: {...main, platform: {...main.platform, framing: "guns in action"}}}};
+  render(box, {...flight, tick: 104}, 81, guns); assert.equal(mode(box), "compact");
+  render(box, {...flight, tick: 104}, 82, orientation); assert.equal(mode(box), "compact");
+  // The exception is narrowly scoped to featured orientation, never work/alerts or non-featured bow shots.
+  for (const extra of [{work: "repair"}, {attention: {}}, {attack: "incoming"}, {alert: "loss"},
+                       {battle: "battle"}, {follow: "Sol"}, {frame: {follow: 3}}]) {
+    const q = page(), scene = {cameras: {main: {...main, ...extra}}};
+    q.render(q.box, flight, 0, scene);
+    q.render(q.box, {...flight, tick: 101}, 20, scene); assert.equal(mode(q.box), "compact");
+  }
+  for (const featured of [false, true]) {
+    const q = page(), scene = {cameras: {main: {...main, platform: {...main.platform, why: featured ? "bow" : "featured"}}}};
+    q.render(q.box, {...flight, featured}, 0, scene);
+    q.render(q.box, {...flight, featured, tick: 101, asteroids: {...p.asteroids, huge: 1}}, 20, scene);
+    assert.equal(mode(q.box), "compact");
+  }
+  const q = page(); q.render(q.box, flight, 0, orientation);
+  q.render(q.box, {...flight, tick: 101, hits_min: 3}, 20, orientation); assert.equal(mode(q.box), "compact");
 }
 // Leg start, reversal and arrival retain the gap. Parked details still require actual clearance.
 {
@@ -267,11 +300,12 @@ if (process.argv.includes("--featured-scenes")) {
   for (const scene of snapshots) {
     const {render, box} = page(), flight = {...p, platform: "Resolute", featured: true};
     render(box, flight, 0, scene);
-    render(box, {...flight, tick: 101, asteroids: {...p.asteroids, huge: 1}}, 20, scene);
-    assert.equal(mode(box), "compact", JSON.stringify(scene.cameras.main.platform));
-    assert(box._parts.details.hidden);
+    render(box, {...flight, tick: 101}, 20, scene); // real orientation must open without an event
+    const orientation = scene.cameras.main.platform.framing === "bow and approaching asteroids";
+    assert.equal(mode(box), orientation ? "beat" : "compact", JSON.stringify(scene.cameras.main.platform));
+    assert.equal(box._parts.details.hidden, !orientation);
     assert(box._parts.summary.textContent.includes("120 km/s"));
     assert(box._parts.summary.textContent.includes("20% flown"));
   }
-  console.log("real featured director shots: compact identity, route, speed and progress retained");
+  console.log("real featured director shots: orientation permits details; gun/work closeups stay compact");
 }

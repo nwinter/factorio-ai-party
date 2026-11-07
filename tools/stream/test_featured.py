@@ -161,8 +161,8 @@ def sustained_encounter():
     assert 'ship survey' not in frames, frames
 
 
-def compact_featured_telemetry():
-    """The real director's public bow/action/detail shots must never expand the overlay card."""
+def featured_telemetry_shots():
+    """Actual flight orientation permits telemetry; gun/action/work closeups still yield."""
     d, _ = setup(slots=[{'slot': 'main', 'player': 3}])
     ship = copy.deepcopy(SHIP)
     ship['view'].update(guns=[dict(x=-20, y=-45, range=35), dict(x=20, y=-45, range=35)],
@@ -231,5 +231,5 @@ def model_contract():
 
 if __name__=='__main__':
     with contextlib.redirect_stdout(io.StringIO()) as captured:
-        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract();sustained_encounter();compact_featured_telemetry()
+        share_dwell_inset();urgent_and_news();lifecycle();failures();model_contract();sustained_encounter();featured_telemetry_shots()
     print('featured: ok (share, dwell, framing, inset, urgent, repair, arrival, loss, reversal, time, restart, carry, clear, CLI, send failure)')
