@@ -27,14 +27,16 @@
       return true;
     } catch (_) { return false; }
   }
-  function detailBlocked(scene) {
+  function detailBlocked(scene, metrics) {
     const cam = (scene.cameras || {}).main || {}, p = cam.platform || {};
-    // Existing public shot metadata covers featured guns/bow and survey section captions too.
-    // Work/follow/detail views reserve the pane even without usable worksite bounds.
+    // The featured director's broad orientation shot contains "bow" too. It is the regular flight
+    // view, not a gun closeup; rejecting it would leave no eligible shot in the active flight cycle.
+    const orientation = metrics.featured && p.why === "featured" && p.framing === "bow and approaching asteroids";
+    // Explicit work/follow/urgent metadata still wins, including on an orientation shot.
     return !!(cam.work || cam.attention || cam.work_close || cam.attack || cam.alert || cam.battle ||
       cam.fight || cam.incoming || cam.follow || cam.frame?.follow ||
       ["bow", "danger", "work", "story", "cue"].includes(p.why) ||
-      /\b(bow|guns?|defen[cs]e|combat|action|detail|production|machinery)\b/i.test(`${p.framing || ""} ${p.label || ""}`));
+      (!orientation && /\b(bow|guns?|defen[cs]e|combat|action|detail|production|machinery)\b/i.test(`${p.framing || ""} ${p.label || ""}`)));
   }
   const total = values => values && values.length && values.every(finite) ? values.reduce((sum, v) => sum + v, 0) : null;
   function node(tag, cls) { const n = document.createElement(tag); n.className = cls; return n; }
@@ -161,7 +163,7 @@
       }
     }
     const b = box._parts, l = p.leg || {}, {a, fresh, eventAt, reset} = sample(box, p, now), parked = !a.flying;
-    const blocked = detailBlocked(scene) || a.warnings.size > 0;
+    const blocked = detailBlocked(scene, p) || a.warnings.size > 0;
     if (blocked) a.until = -Infinity;
     else if (now >= a.until) {
       // A fresh featured sample can open a regular beat without an event. Repaints/reloads cannot.

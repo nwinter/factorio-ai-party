@@ -88,8 +88,13 @@ corrupt/future deadlines establish a fresh conservative gap.
 Events during that gap or suppressed shots are not queued. Repainting cannot restart a beat; a timer collapses it
 even between 20-second reads. Sample age is subtracted from the beat; events over one second old are discarded
 so an uninterrupted event beat gets three to four readable seconds (eleven to twelve when featured).
-Cold pages/ship selections establish a baseline, and reload never resumes detail. Bow/gun/action shots, work/follow closeups and featured production or
-repair detail suppress full telemetry immediately, using existing camera metadata. Interrupted beats do not resume.
+Cold pages/ship selections establish a baseline, and reload never resumes detail. The featured director's
+`bow and approaching asteroids` framing is its broad flight orientation view and permits regular detail beats,
+including while turrets are firing. Matching the word "bow" alone used to reject this view and every other
+featured flight shot, leaving the timer no eligible shot (batch459 cp2). The exception requires featured metrics,
+`platform.why = featured` and that exact framing. Explicit work/follow/urgent metadata still suppresses it.
+Gun/action closeups, other bow shots, work/follow views and featured production or repair detail suppress full
+telemetry immediately. Warning, caption and collision yield remains unchanged. Interrupted beats do not resume.
 Outer-system routes alone never expand the card. Featured status enables the regular flight cadence above.
 
 Warnings remain visible when details collapse: positive hits, damage and leg losses,
