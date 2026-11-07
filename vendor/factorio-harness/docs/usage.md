@@ -2989,7 +2989,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   conditions `1 of 2 requests unmet (iron-plate 40/100)`. Arrivals are watched once a second; a stop under way before
   the harness first looked says `waited at least Ns`. The maximum time reads `the maximum (about 414 days)`.
 - With `platform` set, `thrust_inputs`: a line per thruster input under half full, with the chain behind it, as the
-  slow-flight alert gives it (below).
+  slow-flight alert gives it (below). The source trace follows connected same-fluid ports through other thrusters,
+  keeping each fluid box separate, and crosses pumps only toward their input side when they push toward the engine.
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
