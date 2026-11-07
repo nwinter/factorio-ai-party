@@ -828,7 +828,7 @@ return function(api)
     record(q,step,false,result)
     -- (d25 batch205 QR1, Sol #2337) a pod_landed wait keeps its start and its drop: the resume counts from them
     table.insert(q.pending,1,{action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,
-      min_moved=step.min_moved,plan=step.plan,id=step.id,pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals})
+      min_moved=step.min_moved,plan=step.plan,id=step.id,pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,guard_run=step.guard_run})
     local c=step.args or {}
     local what={tostring(c['until'])}
     for _,k in ipairs({'platform','item','at_least','below','location','surface','technology'}) do
@@ -1541,11 +1541,16 @@ return function(api)
       assert(not status[r.id],'guards.replace['..i..']: '..r.id..' is '..(status[r.id]=='removed' and 'removed in this call too' or 'replaced twice'))
       status[r.id]='replaced'
     end
-    local function specs(list) local out={}; for _,r in ipairs(list) do out[#out+1]={when=r.when,['goto']=r['goto'],steps=r.steps,scope=r.scope} end return out end
+    local function specs(list) local out={}; for _,r in ipairs(list) do out[#out+1]={when=r.when,['goto']=r['goto'],steps=r.steps,scope=r.scope,priority=r.priority,exclusive_group=r.exclusive_group} end return out end
     local added=checked('guards.add',function() return guards({guards=e.add},p) end)
     local swapped=checked('guards.replace',function() return guards({guards=specs(replace)},p) end)
-    -- (GR) a replaced guard keeps its scope unless the replacement gives one (one set before scopes: standing)
-    for i,r in ipairs(replace) do if swapped[i].scope==nil then swapped[i].scope=by[r.id].scope or 'standing' end end
+    -- A replacement keeps omitted policy fields (legacy scope: standing); supplied values were validated above.
+    for i,r in ipairs(replace) do
+      local g,old=swapped[i],by[r.id]
+      if g.scope==nil then g.scope=old.scope or 'standing' end
+      if g.priority==nil then g.priority=old.priority end
+      if g.exclusive_group==nil then g.exclusive_group=old.exclusive_group end
+    end
     local work=q.current~=nil or #q.pending>0 or q.loop~=nil
     plan_guards_idle(added,work,function(i) return 'guards.add['..i..']' end)
     plan_guards_idle(swapped,work,function(i) return 'guards.replace['..i..']' end)
@@ -1939,7 +1944,7 @@ return function(api)
       dry_run='true: check the plan as a submit does (each step\'s numeric arguments against the ranges its action takes when it runs, too) and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps; world_checks (platform_arrived waits name destination stops with no holding wait condition; each platform_schedule step read as the call reads it now: "refused if it ran now:" its own refusal, such as new waits holding now without go: true, and "when it runs:" what a refusal then turns on; the first 4 requests steps on a platform as their dry run: waits_unmet and sends_down; past them named, not read), world_checks_note (the tick; the steps before each are not applied); staging (lines: each item_count wait at one requester or buffer chest whose requests name the item, the chest\'s requests then (its own now, the plan\'s requests steps before it applied): the slots its waits need at once and its requests ask, each item and quality ceil(count / stack size), with what it holds unrequested, against its slots under its bar, and what takes from it), staging_refused (waits that need more slots at once than the chest has while nothing takes from it between them: a submit is refused the same)'},
     queue_edit={active_step='returned: the active step as read after the edit (still the active step, its action running), and that the edit changed pending steps only; a step interrupted while the queue ran reads interrupted in queue_status history with paused_by (what paused it) and, for a build not run again, left_undone {count, positions} and not_requeued',expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)',
-      guards='{remove=[guard ids], replace=[{id, when, goto|steps}], add=[guards as queue_submit takes them]} with expected_revision, nothing else: the guards only, all or none; the active step (its wait too) and the pending steps go on, and each guard not named keeps its baseline (platform_loss counts from the tick it did; one replaced or added counts from its since_tick or the edit). Returns revision, guards [{id, until, set_tick, since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines, line'},
+      guards='{remove=[guard ids], replace=[{id, when, goto|steps}], add=[guards as queue_submit takes them]} with expected_revision, nothing else: the guards only, all or none; the active step (its wait too) and the pending steps go on, and each guard not named keeps its baseline (platform_loss counts from the tick it did; one replaced or added counts from its since_tick or the edit; replacement keeps omitted priority and exclusive_group, supplied values replace them, remove and add to clear them). Returns revision, guards [{id, until, set_tick, since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines, line'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses (a running wait_ticks ends here; cancelled_wait says so)',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     queue_pause={expected_revision='optional',returns='the queue paused by you: the running step stops and goes back to the head of pending; it holds until queue_resume (or a queue_submit or queue_repeat that starts it); direct calls between never resume it (held)'},

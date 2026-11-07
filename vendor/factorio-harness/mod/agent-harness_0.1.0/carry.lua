@@ -160,7 +160,7 @@ return function(api)
         elseif step then
           -- Starts again from the head of the queue (as the pause would requeue it), and the queue goes on.
           table.insert(q.pending,1,{id=step.id,action=step.action,args=via_left(step.args,step.via_done),wait=step.wait,label=step.label,
-            on_fail=step.on_fail,on_short=step.on_short,order=step.order})
+            on_fail=step.on_fail,on_short=step.on_short,order=step.order,guard_run=step.guard_run})
           q.current=nil
           owned[index]='restart'
           line(index,string.format('your queue step %s (%s) was interrupted by a harness update; resumed',step.action,tostring(step.id)))
@@ -187,7 +187,7 @@ return function(api)
         if step and (waits(step) or dropping) then
           q.current=step
         elseif step then
-          table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short})
+          table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,guard_run=step.guard_run})
           q.current=nil
         end
         q.paused=false; q.revision=q.revision+1
