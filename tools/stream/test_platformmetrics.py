@@ -68,7 +68,9 @@ def main():
     assert "buffer_min" not in card(changed, old, 20)["ammo"][0]
     changed["ammo"][0].update(hub=None, made=510, used=130)
     assert "buffer_min" not in card(changed, old, 20)["ammo"][0]
-    assert "window_s" not in card(new, old, 100)
+    assert card(new, old, 100)["kills_min"] == 6  # long camera cuts retain honest wall averages
+    for seconds in (0, -1, float("inf"), float("nan")):
+        assert "window_s" not in card(new, old, seconds)
     m, s, reads = Metrics(), snapshot(), []
     def read(action, args):
         reads.append((action, args)); return (old if len(reads) == 1 else new), new["tick"]
@@ -103,6 +105,58 @@ def main():
         pass
     assert m.step(s, read, 161) is None
     assert m.step(s, read, 180, supported=False) is None
+    # Featured collection survives every kind of cut, but never publishes an offscreen card or camera area.
+    for change in ({"cameras": {}}, {"cameras": {"main": {"frame": {"surface": None}}}},
+                   {"hostview": True}, {"show": {"title": "Map"}}, {"replay": {"playing": True}},
+                   {"cameras": {"main": {"map": "nauvis"}}}):
+        collector, calls = Metrics(), []
+        def collect(action, args):
+            calls.append(args)
+            return (old if len(calls) == 1 else new), new["tick"]
+        collector.step(snapshot(), collect, 0)
+        away = dict(snapshot(), **change)
+        assert collector.step(away, collect, 20) is None
+        assert len(calls) == 2 and calls[-1] == {"platform": "Resolute"}
+        returned = collector.step(snapshot(), collect, 21)
+        assert returned["kills_min"] == 30 and returned["ammo"][0]["made_min"] == 30
+        assert "asteroids" not in returned and returned["eta_wall_s"] == 64000
+        assert len(calls) == 2
+    # Non-featured baselines survive gaps and other ships; the one-read budget is shared.
+    collector, calls = Metrics(), []
+    home = snapshot(); home["featured_platform"] = {}
+    petrel = dict(home["space"]["platforms"][0], name="Petrel", view={"surface": "platform-2"})
+    home["space"]["platforms"].append(petrel)
+    def collect(action, args):
+        calls.append(args)
+        value = copy.deepcopy(old if len(calls) == 1 else new)
+        value["platform"] = args["platform"]
+        return value, value["tick"]
+    collector.step(home, collect, 0)
+    away = dict(home, cameras={})
+    assert collector.step(away, collect, 20) is None and len(calls) == 1
+    other = dict(home, cameras={"main": {"ship": {"name": "Petrel"}}})
+    assert "kills_min" not in collector.step(other, collect, 21)
+    assert collector.step(home, collect, 22)["platform"] == "Resolute" and len(calls) == 2
+    assert collector.step(home, collect, 60)["kills_min"] == 10
+    # Active featured target wins even if another ship is on camera; never add a second read.
+    active = copy.deepcopy(other); active["featured_platform"] = snapshot()["featured_platform"]
+    collector.step(active, collect, 80)
+    assert calls[-1]["platform"] == "Resolute" and len(calls) == 4
+    # Observe offscreen route changes and global pauses, including an out-and-back route between reads.
+    for pause in (False, True):
+        collector, reset_reads = Metrics(), []
+        def reset_read(action, args):
+            reset_reads.append(args)
+            return (old if len(reset_reads) == 1 else new), new["tick"]
+        collector.step(home, reset_read, 0)
+        changed = copy.deepcopy(away)
+        if pause:
+            changed["paused"] = True
+        else:
+            changed["space"]["platforms"][0]["route_ids"].reverse()
+        assert collector.step(changed, reset_read, 10) is None
+        assert "kills_min" not in collector.step(home, reset_read, 20)
+        assert len(reset_reads) == 2
     assert "platform_metrics" in OPERATOR_READS
     h = object.__new__(Harness)
     sent = []

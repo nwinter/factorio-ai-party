@@ -22,8 +22,15 @@ Regression: `python3 tools/stream/test_visible_identity.py`; composed Chrome che
 `POG_TEST_CHROMIUM` for the existing Python environment and installed Chrome).
 
 The service calls the operator read `platform_metrics` at most once per 20 wall seconds across all selections.
+An active `featured_platform` owns that same read slot even during base/host/map/replay shots or shots of another
+ship; otherwise it reads the main-camera ship. Offscreen collection does not publish a card or sample asteroids.
+History is retained per ship name and directed route ids through camera cuts. Ordinary space polls invalidate a
+changed route even offscreen; raw leg identity, counters and turret rosters still guard each rate. Removed ships,
+unsupported runtimes and failed reads discard the affected history. A pause clears every ship's rate baseline.
+Fresh readings after longer non-featured camera gaps report the actual wall sampling interval (including the gap);
+45 seconds limits the age of displayed facts, not the interval between valid same-leg counter samples.
 The runtime must advertise it in `describe.operator_reads`; earlier runtimes show no card. It starts no watch,
-does no background work, and does not call endurance, hull coverage, ammunition-feed tracing or ingredient
+adds no runtime tick work, and does not call endurance, hull coverage, ammunition-feed tracing or ingredient
 planning. A failed read hides the card; successful readings expire after 45 seconds. Unknown fields are omitted.
 While the simulation is paused, the collector sends no metric reads, hides rates/ETA, and lets cached facts expire.
 Resume begins with a new baseline, so paused time does not dilute the rates.
@@ -58,25 +65,32 @@ updated runtime and stream process at the operator's deployment. It makes no OBS
 Offline checks: `python3 tools/stream/test_platformmetrics.py`, the harness `platformmetrics_test.lua`, and the
 ordinary npm/Python gates. The report records private dense-leg profiling and the private-run screenshot.
 
-## Card balance (batch444)
+## Card balance (batch444, featured cadence batch459)
 
 Landscape and portrait use one 360px card, 14px from the game pane's left/top edges. A visible top caption raises
 it only to that caption's bottom plus 8px. Ship name and directed route/dock share the first line in every mode.
 The first line fits its text without truncation; padding, width and anchor do not depend on the mode.
 Panes shorter than 800px tighten detail-row whitespace and leading, retaining the same type sizes and width.
 
-Flight, including featured attempts, defaults to compact name, route, speed and progress (plus ETA when known).
+Flight defaults to compact name, route, speed and progress (plus ETA when known).
 A newly observed departure, changed leg/reversal or arrival, or an increase in big/huge asteroids can start a
 **4 wall-second** detail beat. There must be **150 wall-seconds after the preceding beat ends** before another
-can start. The deadline persists in localStorage (`pog:platform-metrics:next-detail:v1`) across reloads, ship/leg
+can start for non-featured ships.
+Featured flight instead opens a **12 wall-second** beat on an eligible fresh telemetry sample without needing an
+event, with **48 wall-seconds after its end** before the next beat: normally once per 60 seconds with 20-second
+sampling, at most 20% detail time on clear shots. Events use the same featured duration and budget. Cold/reloaded
+pages first establish a baseline. Only samples at most one second old trigger a regular beat; repaints cannot.
+Warnings, closeups, unavailable telemetry and collisions can delay or interrupt it; a suppressed beat is not queued.
+The deadline persists in localStorage (`pog:platform-metrics:next-detail:v1`) across reloads, ship/leg
 changes and camera cuts, shared by landscape and portrait on the same origin. Each OBS origin preserves its own
-budget. Unavailable storage disables short beats; corrupt/future deadlines establish a fresh conservative gap.
+budget; a ship/status switch honors the preceding reservation. Unavailable storage disables timed beats;
+corrupt/future deadlines establish a fresh conservative gap.
 Events during that gap or suppressed shots are not queued. Repainting cannot restart a beat; a timer collapses it
 even between 20-second reads. Sample age is subtracted from the beat; events over one second old are discarded
-so an uninterrupted beat gets three to four readable seconds. Cold pages/ship selections establish a
-baseline, and reload never resumes detail. Bow/gun/action shots, work/follow closeups and featured production or
+so an uninterrupted event beat gets three to four readable seconds (eleven to twelve when featured).
+Cold pages/ship selections establish a baseline, and reload never resumes detail. Bow/gun/action shots, work/follow closeups and featured production or
 repair detail suppress full telemetry immediately, using existing camera metadata. Interrupted beats do not resume.
-Outer-system routes and featured status alone never expand the card.
+Outer-system routes alone never expand the card. Featured status enables the regular flight cadence above.
 
 Warnings remain visible when details collapse: positive hits, damage and leg losses,
 empty guns, measured ammo buffers below two minutes, and fuel/oxidizer tanks at zero. There is no invented fuel
@@ -94,5 +108,5 @@ compact: their worksite is not bounded reliably. No camera framing or game read 
 telemetry samples expand; a new obstruction collapses immediately. Arrival may get a short beat only when clear.
 
 Offline DOM tests cover scene switches, reload, ship/leg changes, actual pane dimensions, caption clearance,
-hysteresis, bounded held warnings, expired/cached samples, four-second timers, persistent beat spacing and compact
-featured attempts. `test_featured.py` also feeds real director public shots into the DOM test.
+hysteresis, bounded held warnings, expired/cached samples, four-/twelve-second timers, persistent shared beat spacing, regular
+featured attempts and suppressed featured closeups. `test_featured.py` also feeds real director public shots into the DOM test.

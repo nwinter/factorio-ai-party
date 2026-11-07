@@ -1,4 +1,4 @@
-"""One bounded platform read per 20 wall seconds, only for the ship viewers are following.
+"""One bounded platform read per 20 wall seconds, prioritizing the active featured ship.
 
 Rates compare matching legs and counter identities. They are per wall minute, including slow UPS; the first
 sample, a pause, reversal, arrival, counter reset, missing read or changed turret roster has no invented rate.
@@ -64,7 +64,8 @@ def card(raw, old, seconds):
     out = {k: copy.deepcopy(raw[k]) for k in ("platform", "tick", "leg", "at", "speed_kms", "asteroids", "turrets",
            "repair_packs", "fuel", "losses_leg", "paused", "platform_paused") if raw.get(k) is not None}
     out["ammo"] = [{k: v for k, v in r.items() if k in ("name", "hub", "turrets")} for r in raw.get("ammo") or []]
-    if not old or leg_key(raw) != leg_key(old) or not 0 < seconds <= MAX_AGE or raw.get("paused") or old.get("paused"):
+    if (not old or leg_key(raw) != leg_key(old) or not number(seconds) or seconds <= 0
+            or raw.get("paused") or old.get("paused")):
         return out
     ticks = delta(raw.get("tick"), old.get("tick"))
     if not ticks:
@@ -101,43 +102,60 @@ def card(raw, old, seconds):
 class Metrics:
     def __init__(self):
         self.next_read = 0
-        self.previous = None
-        self.value = None
-        self.observed = None
-        self.seen = 0
+        self.ships = {}
 
     def step(self, snapshot, read, now, supported=True):
-        row = selected(snapshot)
-        if not row or not supported:
-            self.previous = self.value = self.observed = None
+        if not supported:
+            self.ships.clear()
             return None
-        # Arrival/reversal noticed by the ordinary space poll invalidates the old leg even between metric reads.
-        observed = (row["name"], tuple(row.get("route_ids") or []), bool(row.get("route")))
-        if observed != self.observed:
-            self.previous = self.value = None
-            self.observed = observed
+        # Observe all routes even off camera, so a reversal and return cannot reuse an earlier leg.
+        rows = (snapshot.get("space") or {}).get("platforms") or []
+        self.ships = {p["name"]: self.ships.get(p["name"], {}) for p in rows}
+        for p in rows:
+            state = self.ships[p["name"]]
+            observed = (p["name"], tuple(p.get("route_ids") or []), bool(p.get("route")))
+            if state.get("observed") != observed:
+                state.clear()
+                state["observed"] = observed
+        row = selected(snapshot)
+        featured = snapshot.get("featured_platform") or {}
+        target = next((p for p in rows if featured.get("status") == "active" and
+                       p["name"] == featured.get("name")), None) or row
         if snapshot.get("paused"):
-            self.previous = None  # no repeated reads of a frozen game, and no rates across the pause
-        elif now >= self.next_read:
-            self.next_read = now + EVERY  # global limit also applies to rapid camera switches and read failures
-            args = {"platform": row["name"]}
-            area = view_area(snapshot, row)
+            # Invalidate every ship, including offscreen baselines. Cached facts may still expire normally.
+            for state in self.ships.values():
+                raw = state.pop("previous", None)
+                if raw:
+                    state["value"] = card(raw, None, 0)
+        elif target and now >= self.next_read:
+            self.next_read = now + EVERY  # one global budget, including camera switches and failures
+            state = self.ships[target["name"]]
+            args = {"platform": target["name"]}
+            area = view_area(snapshot, target) if row == target else None
             if area:
                 args["area"] = area
             try:
                 raw, _ = read("platform_metrics", args)
-                if raw.get("platform") != row["name"] or not number(raw.get("tick")):
+                if raw.get("platform") != target["name"] or not number(raw.get("tick")):
                     raise ValueError("platform_metrics returned a different platform or no tick")
-                self.value = card(raw, self.previous, now - self.seen)
-                self.previous, self.seen = raw, now
+                if not area:
+                    raw = dict(raw)
+                    raw.pop("asteroids", None)
+                state["value"] = card(raw, state.get("previous"), now - state.get("seen", now))
+                state.update(previous=raw, seen=now)
             except Exception:
-                self.previous = self.value = None
+                state.pop("previous", None)
+                state.pop("value", None)
                 raise
-        if self.value is None or now - self.seen > MAX_AGE:
+        # Collection can follow an offscreen attempt; publication still follows the acknowledged main camera.
+        if not row:
             return None
-        result = dict(self.value, age_s=max(0, round(now - self.seen)), featured=
-                    (snapshot.get("featured_platform") or {}).get("status") == "active" and
-                    (snapshot.get("featured_platform") or {}).get("name") == row["name"])
+        state = self.ships[row["name"]]
+        value, seen = state.get("value"), state.get("seen", now)
+        if value is None or now - seen > MAX_AGE:
+            return None
+        result = dict(value, age_s=max(0, round(now - seen)), featured=
+                      featured.get("status") == "active" and featured.get("name") == row["name"])
         if snapshot.get("paused"):
             result["paused"] = True
             for key in ("window_s", "eta_wall_s", "kills_min", "hits_min", "damage_taken", "damage_dealt_min"):
