@@ -3,6 +3,7 @@
 -- message mentioning the agent, a tell, board news, the agent's own queue
 -- finishing or stalling, an optional wait condition, or time up). Nothing
 -- here runs per tick: sleep is checked when the CLI asks (sleep_check).
+local member_record=require('conditionrecord')
 return function(api)
   local M = {handlers={}}
   local MAX_TICKS = 54000 -- 15 minutes
@@ -137,11 +138,20 @@ return function(api)
   end
   -- One predicate read per poll: its observation supplies both the wake test and the estimate, even when a
   -- higher-priority event wakes us. A final non-peek reply refreshes the estimate without changing the first wake.
+  local function read_condition(p,cond,record,index)
+    -- Sleep flattens any/list conditions; give those members the same isolation
+    -- as conditions.lua's all/any, including the final post-wake observation.
+    local child=record.conditions and #record.conditions>1 and member_record(record,index) or record
+    child.evidence,child.matched,child.member_errors=record.evidence,record.matched,record.member_errors
+    local ok,met,saw,row=pcall(api.condition,p,cond,child)
+    record.evidence,record.matched,record.member_errors=child.evidence,child.matched,child.member_errors
+    return ok,met,saw,row
+  end
   local function observe_conditions(p,record,out,initial)
     local rows,saws={},{}
     record.met_condition=nil
-    for _,cond in ipairs(record.conditions or (record.condition and {record.condition}) or {}) do
-      local ok,met,saw,row=pcall(api.condition,p,cond,record)
+    for i,cond in ipairs(record.conditions or (record.condition and {record.condition}) or {}) do
+      local ok,met,saw,row=read_condition(p,cond,record,i)
       if initial then assert(ok,met) end
       if ok then
         saws[#saws+1]=saw
@@ -586,8 +596,8 @@ return function(api)
     -- conditions as they read now, and for a platform condition where the platform is and its latest launch up
     if out.woke and out.woke ~= 'condition' and record.conditions and #record.conditions > 0 then
       local now = {}
-      for _, cond in ipairs(record.conditions) do
-        local ok, met, saw = pcall(api.condition, p, cond, record)
+      for i, cond in ipairs(record.conditions) do
+        local ok, met, saw = read_condition(p,cond,record,i)
         local text = texts_of(cond)
         if ok then
           local extra = cond.platform and api.platform_recent and select(2, pcall(api.platform_recent, cond.platform)) or nil

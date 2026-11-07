@@ -1,6 +1,7 @@
 local budgetrates = require('budgetrates')
 local budgetwindows = require('budgetwindows')
 local turnaround = require('turnaround')
+local member_record = require('conditionrecord')
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
@@ -1387,7 +1388,11 @@ return function(api)
   local function read_members(p,c,record)
     local out,errs={},nil
     for i,m in ipairs(c.conditions) do
-      local ok,met,saw=pcall(checks[m['until']],p,m,nil,record)
+      local child=member_record(record,i)
+      -- Evidence remains a shared diagnostic, as before; only baseline state is private.
+      if child then child.evidence=record.evidence end
+      local ok,met,saw=pcall(checks[m['until']],p,m,nil,child)
+      if child then record.evidence=child.evidence end
       if ok then out[i]={met=met,saw=saw}
       else
         out[i]={err=tostring(met)}
