@@ -828,7 +828,8 @@ return function(api)
     record(q,step,false,result)
     -- (d25 batch205 QR1, Sol #2337) a pod_landed wait keeps its start and its drop: the resume counts from them
     table.insert(q.pending,1,{action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,
-      min_moved=step.min_moved,plan=step.plan,id=step.id,pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,guard_run=step.guard_run})
+      min_moved=step.min_moved,plan=step.plan,id=step.id,pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,
+      condition_members=step.condition_members,guard_run=step.guard_run})
     local c=step.args or {}
     local what={tostring(c['until'])}
     for _,k in ipairs({'platform','item','at_least','below','location','surface','technology'}) do
@@ -1121,7 +1122,8 @@ return function(api)
         args=rest
       end
       if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan,ends_tick=ends,
-        pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,guard_run=step.guard_run}) end
+        pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,guard_run=step.guard_run,
+        condition_members=step.condition_members}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
