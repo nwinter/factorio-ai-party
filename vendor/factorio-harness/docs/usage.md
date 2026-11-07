@@ -6732,6 +6732,8 @@ fh watch    # deploy on every change
   and `rocket_parts` takes no `at_least` for every part: `--until "silo_parts>=40 at 14.5,140.5"`,
   `--until "rocket_parts at 14.5,140.5"`. A refused until now lists the names and says a sleep also takes queue_done.
   `{until: "all", conditions: [...]}` holds when every one does (B2 uses it).
+  Each `all`/`any` member keeps its own pod, research and platform baseline, including sleep's `any`/list members.
+  Hold/resume and reload retain those member baselines; the enclosing wait supplies timing and reports the combined diagnostics.
 - `silo {position, why: true}` (A2, Sonnet 22:50: low-density-structure, then plastic, then coal found by hand): the
   rocket-part ingredient the silo is shortest of (one it lacks for the next part first), each place its feeding
   inserters take from (what it holds of it; a requester: its request, what its logistic network holds and robots
