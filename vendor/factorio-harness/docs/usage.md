@@ -18855,6 +18855,12 @@ guard omits the group, the comparison covers the lane. Equal priorities, or eith
 the existing replacement behavior. Existing saved guards require no migration and keep their behavior.
 Direct queue edits, replacement and cancellation remain explicit overrides; this is guard-to-guard control.
 
+`queue_edit guards.replace` retains omitted `priority` and `exclusive_group`, as it retains omitted `scope`.
+Supplied values replace those fields and use the same validation as submission (including priority zero).
+Remove and add a guard to clear its priority or group. Timeout hold/resume and hot updates keep the reaction's
+identity and protection in body, remote and platform lanes, including steps restarted by an update. A completed
+or removed reaction still releases protection.
+
 `queue_status.guard_control` (also lane summaries) gives the controlling guard ID, priority, group, firing
 tick and trigger reason. Fired history rows include the control record. `guard_suppressed` retains the newest
 eight suppressions, with guard ID, trigger, priority, suppressor ID, its priority/firing tick/reason, and the

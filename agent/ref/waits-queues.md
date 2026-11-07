@@ -462,6 +462,10 @@ they share control scope within this lane. Equal priorities, or either priority 
 behavior. Suppressed guards are consumed once. Pausing/requeueing retains protection; finishing/removing
 the reaction steps ends it. Direct queue calls remain explicit overrides.
 
+Guard replacement retains omitted `priority` and `exclusive_group` fields; supplied values replace them.
+Remove and add a guard to clear its policy. Timeout hold/resume and harness updates retain recovery protection
+in body, remote and platform lanes.
+
 `queue_status.guard_control` names the controlling guard, priority, group, firing tick and trigger reason.
 `guard_suppressed` keeps the newest eight suppressions, each with the suppressor and its firing tick/reason;
 history also records `guard_suppressed`. Submission/dry-run `guard_warnings` report differing reactions
