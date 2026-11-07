@@ -372,7 +372,9 @@
   end tick and progress (`team: harness_updated`: `... (your collect carried over)`), the remote lane's waits too; a
   move_to or drive restarts (`resumed`).
 - A dropped game connection is ridden out: fh sends the call again with the same ID for up to 90 s (`retried`); the
-  game answers an ID it already ran from its record. `game_unreachable` means nothing was sent. When the game runs
+  game answers an ID it already ran from its record. An unknown outcome keeps its request ID and stays
+  `outcome_unknown` through failed reconnects until a verified reply arrives, including later `--id` retries.
+  `game_unreachable` means all attempts failed before sending a fresh request. When the game runs
   slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`, also on the clock
   line) and end `paused` when it stops. After a server restart from a save, one reply says `rolled_back` and lists in
   `redo` what you changed since, which is gone.
