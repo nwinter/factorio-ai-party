@@ -56,6 +56,11 @@
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
   `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: its cache is per leg and read arguments;
+  `turnaround.direct:true` opts into direct endpoint recovery: to the destination, remaining km minus the planned advance;
+  to the origin, the existing reversal. Default destination recovery still reverses via origin and warns with the direct distance.
+  Direct destination `out_km_max = usable / net * speed - direct_remaining_km`; `spare_km = out_km_max - turnaround.km`
+  is the whole plan's distance surplus/deficit. The guard still compares `out_km_max < km`, including window budgets.
+  Evidence keeps mode, from/to, direction, flown/remaining/out/reverse/via-origin/direct-remaining/total km and warning.
   a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
   met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
@@ -437,6 +442,14 @@
 
 - Remote/platform queue `upgrade` steps require explicit `platform` or `surface`. The direct planner checks run at submission and execution; submission makes no upgrade marks. Execution uses the direct call: ghosts change in place with wires/settings kept, built entities are marked for replacement.
 - `wait_until {until: "entity_quality", platform: "Asterion", position: {x: 1, y: 2}, name: "inserter", quality: "epic", timeout: 54000}`: true when an owned built entity at that position has exactly that quality. `name` is optional; `surface` replaces `platform` for a planet. Ghosts, missing entities and pending upgrade marks are false. Current sight is required, as for upgrade. The condition works in remote/platform lanes, including guards and all/any.
+
+### Current platform health
+
+`wait_until {until:"damaged",platform:"Asterion",fraction:0.5}` reads current damage on the whole hull. Optional `positions:[{x,y},...]` (1..64, any tile of each entity's footprint) or `area:[[x0,y0],[x1,y1]]` (centres inside, upper bounds excluded, at most 1024x1024) restricts it. Position/radius and combined positions/area are refused. Missing positions are read errors, not loss detection.
+
+`fraction` (0.01..1, default 1 when hp is absent) and/or `hp` (absolute HP) match a currently damaged entity strictly below either supplied threshold. Repair above the thresholds clears the match; fully repaired entities do not match. Exact health, max_health, name, unit_number, position and fraction for the worst 10 matches appear in `evidence.platform_health`, with count and read_tick; `saw` also names the values and tick. Lowest fraction first, or lowest HP with hp alone. Reads use damage events and re-read live HP each check (guards: every 10 ticks); the first hull read seeds the set, bounded at 32768 entities and refusing larger hulls without partial qualification. Positions use bounded direct reads.
+
+Available to waits and guards on body, remote and platform lanes, including all/any. Example guard condition: `{until:"damaged",platform:"Asterion",positions:[{x:0,y:0}],fraction:0.5}`. A not-met health guard says nothing about losses, empty guns, feed failures or clean-flight qualification; their existing separate guards remain unchanged. `platform_hit` continues to count cumulative damage, including repaired hits.
 
 ## Guard priority
 
