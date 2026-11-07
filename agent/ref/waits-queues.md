@@ -56,6 +56,11 @@
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
   `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: its cache is per leg and read arguments;
+  `turnaround.direct:true` opts into direct endpoint recovery: to the destination, remaining km minus the planned advance;
+  to the origin, the existing reversal. Default destination recovery still reverses via origin and warns with the direct distance.
+  Direct destination `out_km_max = usable / net * speed - direct_remaining_km`; `spare_km = out_km_max - turnaround.km`
+  is the whole plan's distance surplus/deficit. The guard still compares `out_km_max < km`, including window budgets.
+  Evidence keeps mode, from/to, direction, flown/remaining/out/reverse/via-origin/direct-remaining/total km and warning.
   a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
   met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
