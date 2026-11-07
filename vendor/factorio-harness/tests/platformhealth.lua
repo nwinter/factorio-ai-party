@@ -56,18 +56,19 @@ local many={}; for i=1,513 do many[i]=ent(100+i,10,100,20+i) end
 A.seed_damaged(pl,many); eq(A.damaged(pl).seeded,true); eq(C.check(p,when),true); eq(when.evidence.platform_health.count,513); eq(#when.evidence.platform_health.entities,10)
 for _,e in ipairs(many) do e.valid=false end
 A.seed_damaged(pl,{a,b}); a.health=100; b.health=400
+pl.valid=false; fails(function() C.check(p,when) end,'no platform of ours'); eq(when.evidence,nil); pl.valid=true
 -- Real scheduler and lanes, standalone and composite guards, exact evidence.
 setmetatable(p,nil)
 local cleanups=0
-local W=require('waiteta'){}
+local W=require('waiteta'){check=function(player,cond,record) return C.check(player,cond,true,record) end}
 local base={state=function() return state end,player=function() return p end,
  handlers={circuit_set=function() cleanups=cleanups+1; return {} end},
  busy=function() return false end,stop=function() end,stop_index=function() end,claim=function() end,direct_action=function() end,
+ wait_check=function(player,cond,record) return W.check(player,cond,record) end,
  condition=function(player,cond) return C.check(player,cond) end,validate_condition=function(cond,player) return C.validate(cond,player) end,
  wait_info=function(out,record) return W.info(out,record) end,outcome=function() return 'done' end,deadline=C.deadline}
 local make=require('scheduler'); local body={}; for k,v in pairs(base) do body[k]=v end
 local lanes=require('queue_lanes'){scheduler=make(body),factory=make,base=base,is_read=function() return false end}
-base.wait_check=function(player,cond,record) return C.check(player,cond,nil,record) end
 local h=lanes.handlers
 local function tick(n) for _=1,n do game.tick=game.tick+1; lanes.tick() end end
 for _,lane in ipairs({'body','remote','platform:Asterion'}) do
@@ -86,7 +87,7 @@ for _,lane in ipairs({'body','remote','platform:Asterion'}) do
  tick(20); eq(cleanups,0); a.health=40; A.on_damaged{entity=a,force=force,tick=game.tick}; tick(20); eq(cleanups,1)
  local st=h.queue_status(p,{lane=lane,history='all'}); local done
  for _,row in ipairs(st.history) do if row.action=='wait_until' then done=row end end
- has(done.result.saw,'health 40/100'); h.queue_cancel(p,{lane=lane})
+ has(done.result.saw,'health 40/100'); eq(done.result.evidence.platform_health.entities[1].health,40); h.queue_cancel(p,{lane=lane})
 end
 has(make(body).schema.wait_until.damaged,'read_tick'); has(make(body).schema.wait_until.damaged,'no clean qualification')
 print('platform live-health: exact fresh HP, repaired recovery, scopes, overflow, lanes, waits, guards and description ok')

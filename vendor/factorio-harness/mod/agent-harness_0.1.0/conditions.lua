@@ -1116,7 +1116,10 @@ return function(api)
     end,
     -- Our buildings under a health fraction (default: any damage), the nearest named.
     damaged=function(p,c,estimate,record)
-      if c.platform then return api.platform_health(M.platform_named(p,c.platform),c,record) end
+      if c.platform then
+        (record or c).evidence=nil
+        return api.platform_health(M.platform_named(p,c.platform),c,record)
+      end
       local centre,radius=area(p,c)
       local below=c.fraction or 1
       local n,near,best=0,nil,nil

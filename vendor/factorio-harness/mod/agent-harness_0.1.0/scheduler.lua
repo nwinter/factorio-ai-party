@@ -1658,7 +1658,6 @@ return function(api)
               step.saw=ok and saw or nil
               q.current=nil
               local result={saw=step.saw}
-              if step.evidence and step.evidence.platform_health then result.evidence=step.evidence end
               -- (GA) a wait whose deadline (a tick_at_least, alone or in any) is still ahead keeps waiting when a read
               -- fails: said once (wait_error), its saw the error, read again at each check; the deadline still ends it
               if not ok and step.due and game.tick<step.due and game.tick<step.until_tick then

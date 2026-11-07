@@ -41,7 +41,7 @@ return function(api)
           or ((c['until']=='rocket_ready' or c['until']=='rocket_parts' or SURFACE_WAITS[c['until']]) and type(c.surface)=='string' and c.surface~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, entity_quality, item_count or inventory_free_slots with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below or damaged with platform, platform_loss, platform_foundation_loss, platform_speed_above, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, entity_quality, item_count or inventory_free_slots with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, damaged with platform, platform_loss, platform_foundation_loss, platform_speed_above, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).

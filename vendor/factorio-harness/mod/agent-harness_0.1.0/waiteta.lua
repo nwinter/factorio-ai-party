@@ -159,6 +159,7 @@ return function(api)
     return to
   end
   function M.info(out,record)
+    if record.evidence and record.evidence.platform_health then out.evidence=record.evidence end
     out.idle_s=math.floor((record.idle_ticks or 0)/60)
     out.wait_estimates=record.wait_estimates
     out.matched=record.matched  -- (d23 batch127 CJ1) until=any: the member that held
