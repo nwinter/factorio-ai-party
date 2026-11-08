@@ -1212,9 +1212,9 @@ local POWER_PART={generator=true,['fusion-generator']=true,['solar-panel']=true,
       local mining=api.platform_mining()
       if not mining.ready() then
         for _,e in ipairs(list) do
-          if e.valid and mining.types[e.type] and (not filters.entity_types or filters.entity_types[e.type])
+          if e.valid and e.type~='entity-ghost' and e.type~='tile-ghost' and (not filters.entity_types or filters.entity_types[e.type])
             and (not filters.entity_names or filters.entity_names[e.name]) then
-            error('nothing marked: platform belt contents require the updated mod mining event handlers; server restart required',0)
+            error('nothing marked: platform item contents require the updated mod mining event handlers; server restart required',0)
           end
         end
       end

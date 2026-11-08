@@ -1,11 +1,10 @@
--- Factorio 2.0.77 discards transport-line contents during native platform mining
+-- Factorio 2.0.77 discards some item inventories and transport-line contents during native platform mining
 -- before on_space_platform_mined_entity. Move actual stacks out in pre_mined,
--- then hand them to the engine's dynamic mining buffer for normal hub delivery.
+-- then join the engine's dynamic mining buffer for hub delivery.
 -- No polling or inventory reconstruction; quality, spoilage and stack data survive.
 return function(api)
   local M = {}
   local TYPES={['transport-belt']=true,['underground-belt']=true,splitter=true}
-  M.types=TYPES
   function M.ready()
     return script.get_event_handler(defines.events.on_space_platform_pre_mined)~=nil
       and script.get_event_handler(defines.events.on_space_platform_mined_entity)~=nil
@@ -21,24 +20,47 @@ return function(api)
   end
   function M.on_event(event)
     local e=event.entity
-    if not (e and e.valid and TYPES[e.type]) then return end
+    if not (e and e.valid and event.platform) then return end
     local st=state()
     if event.name==defines.events.on_space_platform_pre_mined then
-      local lines,n={},0
-      for i=1,e.get_max_transport_line_index() do
-        local line=e.get_transport_line(i)
-        if line and line.valid then lines[#lines+1]=line; n=n+#line end
+      local lines,stacks,n={},{},0
+      if TYPES[e.type] then
+        for i=1,e.get_max_transport_line_index() do
+          local line=e.get_transport_line(i)
+          if line and line.valid then
+            lines[#lines+1]=line; n=n+#line
+          end
+        end
       end
+      -- Inventory indexes include fuel, burnt result, input, output, modules,
+      -- ammo, chests and collector storage. Empty slots are never reconstructed.
+      -- Move even inventories the engine normally returns: emptying them here
+      -- leaves exactly one owner, so native mining cannot duplicate the contents.
+      for i=1,e.get_max_inventory_index() do
+        local inventory=e.get_inventory(i)
+        if inventory then
+          for j=1,#inventory do
+            if inventory[j].valid_for_read then stacks[#stacks+1]=inventory[j] end
+          end
+        end
+      end
+      if e.type=='inserter' and e.held_stack.valid_for_read then stacks[#stacks+1]=e.held_stack end
+      n=n+#stacks
       if n==0 then return end
       local inv=game.create_inventory(n)
       st.pending[e.unit_number]=inv
       local slot=1
       for _,line in ipairs(lines) do
-        -- Taking from the end avoids shifting the remaining stack indexes.
+        -- Line stack references are valid only until the line changes: read
+        -- each anew, from the end so the remaining indexes do not shift.
         for i=#line,1,-1 do
           assert(inv[slot].transfer_stack(line[i]),'platform mining: stack transfer failed')
           slot=slot+1
         end
+      end
+      for _,stack in ipairs(stacks) do
+        assert(inv[slot].transfer_stack(stack),'platform mining: stack transfer failed')
+        slot=slot+1
       end
     else
       local inv=st.pending[e.unit_number]

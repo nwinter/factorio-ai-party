@@ -765,7 +765,7 @@
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
-- Platform belt deconstruction returns carried stacks through the native mining buffer to the hub, preserving quality and stack data. `where_is {item,surface}` includes recent platform returns in `deconstructed`: tick, entity, position and full item/quality/count manifest (last 32 belt removals, newest 6 matches). Hub overflow spills onto the platform, marked for native pickup when room is available. This records the mining return, not where those items are now.
+- Platform deconstruction returns all item inventories, inserter-held stacks and belt contents through the native mining buffer to the hub, preserving quality and stack data. This includes fuel, burnt results, machine inputs/outputs, ammo, chest/collector contents and modules. `where_is {item,surface}` includes recent platform returns in `deconstructed`: tick, entity, position and full item/quality/count manifest (last 32 entity removals, newest 6 matches). Hub overflow spills onto the platform, marked for native pickup when room is available. This records the mining return, not where those items are now.
 - `where_is {item, surface?, limit?, sort?, page?}`: where an item is on a surface: the total by kind (`kinds_line`:
   each kind's count and places) and each place holding it (landed cargo pods as kind `pod`, stacks on the
   ground in sight as kind `ground`; beacons and drills too, and `in_module_slots` where it sits in module slots), the
