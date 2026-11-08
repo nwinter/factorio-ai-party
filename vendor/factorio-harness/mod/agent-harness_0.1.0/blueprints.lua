@@ -1208,6 +1208,17 @@ local POWER_PART={generator=true,['fusion-generator']=true,['solar-panel']=true,
     end
     local list,owner,rows
     if at then list,owner,rows=at_positions(p,a,filters,dry) else list=candidates(p,box) end
+    if not cancel and not dry and p.surface.platform and api.platform_mining then
+      local mining=api.platform_mining()
+      if not mining.ready() then
+        for _,e in ipairs(list) do
+          if e.valid and mining.types[e.type] and (not filters.entity_types or filters.entity_types[e.type])
+            and (not filters.entity_names or filters.entity_names[e.name]) then
+            error('nothing marked: platform belt contents require the updated mod mining event handlers; server restart required',0)
+          end
+        end
+      end
+    end
     -- (DP) what was done to each position's entity, by its index in list: {status, why}; the first note stands
     local st=at and {} or nil
     local function note(i,s,why) if st and not st[i] then st[i]={s,why} end end

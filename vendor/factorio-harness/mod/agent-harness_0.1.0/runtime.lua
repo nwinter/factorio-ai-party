@@ -14531,6 +14531,7 @@ M.powerleft=require('powerleft'){typed=function(f,sf,t) return M.census and M.ce
   stats=function(id,sf) return M.networks.stats_of(id) or (sf.has_global_electric_network and sf.global_electric_network_statistics) or nil end}
 do local blueprint_handlers=blueprint_module{power_left=function(f,list,dry) return M.powerleft.after(f,list,dry) end,railrun=function() return M.railrun end,circuits=function() return M.circuits end,unwired_check=function(s,f) return M.unwired_check(s,f) end,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
   build_notes=function(p,ents) return M.build_notes(p,ents) end,
+  platform_mining=function() return M.platformmining end,
   heat_loss=function(surface,force,list) return M.heating.loss(surface,force,list) end,
   placed=function(p,e) pcall(M.ghostlog.placed,M.board.who(p),e); return M.efficiency.built(M.board.who(p),e) end,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
@@ -18247,7 +18248,8 @@ M.pods=require('pods'){state=state,podlog_sampled=function(pod,tick) return M.po
 M.landed=require('landed'){state=state,position=position}
 function handlers.pods(p,a) return M.landed.read(p,a) end
 -- where a deconstructed item went (deconwent.lua; d18 batch37 D3, Astra)
-M.deconwent=require('deconwent'){state=state}
+M.platformmining=require('platformmining'){state=state}
+M.deconwent=require('deconwent'){state=state,platform_lines=M.platformmining.lines}
 M.stores=require('stores'){spoil=function() return M.spoil end,where_index=function(f,s) return M.census and M.census.where_index(f,s) end,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,deconstructed=function(item,surface) return M.deconwent.lines(item,surface) end,pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
   character=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and p.character or nil end}
 function handlers.where_is(p,a) return M.stores.where_is(p,a) end
@@ -21886,6 +21888,7 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  if M.platformmining.events[event.name] then M.platformmining.on_event(event); return end
   -- (d29 batch356 DL) confirm the original damaged unit's removal before mined events return below.
   if M.damagelog.removal_events[event.name] then
     local ok,err=pcall(M.damagelog.on_removed,event)
