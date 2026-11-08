@@ -768,7 +768,7 @@ eq(cdr.check(cp, {kind='build', entities={entry(1, 'roboport', 10, 90), entry(2,
 local side = cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0, 'input'), entry(2, 'inserter', 7.5, 84.5, 4),
   entry(3, 'transport-belt', 5.5, 84.5, 4)}})
 eq(side.underground_side_feed[1], '#2 inserter (7.5,84.5) drops onto underground-belt (6.5,84.5), an entrance flowing north, from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it')
-eq(side.underground_side_feed[2], '#3 transport-belt (5.5,84.5) side-loads underground-belt (6.5,84.5), an entrance flowing north, from its west side: only the belt\'s north (left) lane goes in; its south (right) lane stops at the entrance')
+eq(side.underground_side_feed[2], '#3 transport-belt (5.5,84.5) side-loads underground-belt (6.5,84.5), an entrance flowing north, from its west side: only the belt\'s south (right) lane goes in; its north (left) lane stops at the entrance')
 -- An exit there: nothing. A build's undergrounds without type: the downstream one of a pair is the exit.
 eq(cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0, 'output'), entry(2, 'inserter', 7.5, 84.5, 4)}}).underground_side_feed, nil)
 local pair = cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0), entry(2, 'underground-belt', 6.5, 81.5, 0),
@@ -778,6 +778,34 @@ eq(#pair.underground_side_feed, 1); eq(pair.underground_side_feed[1]:match('^#4 
 local beside = cdr.check(cp, {kind='ghosts', entities={entry(1, 'underground-belt', 0.5, 90.5, 0)}})
 eq(beside.underground_side_feed[1], 'inserter (1.5,90.5) drops onto underground-belt (0.5,90.5), an entrance flowing north, from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it',
   'a ghost underground without type is an entrance')
+
+-- Recorded native transport-line results, 120 ticks, one iron on line 1 and
+-- one copper on line 2: four flows, both ends, both perpendicular approaches.
+local cases = {
+  {0, 'input', 4, 'south', 'right', 'north', 'left'},
+  {0, 'input', 12, 'south', 'left', 'north', 'right'},
+  {0, 'output', 4, 'north', 'left', 'south', 'right'},
+  {0, 'output', 12, 'north', 'right', 'south', 'left'},
+  {4, 'input', 8, 'west', 'right', 'east', 'left'},
+  {4, 'input', 0, 'west', 'left', 'east', 'right'},
+  {4, 'output', 8, 'east', 'left', 'west', 'right'},
+  {4, 'output', 0, 'east', 'right', 'west', 'left'},
+  {8, 'input', 12, 'north', 'right', 'south', 'left'},
+  {8, 'input', 4, 'north', 'left', 'south', 'right'},
+  {8, 'output', 12, 'south', 'left', 'north', 'right'},
+  {8, 'output', 4, 'south', 'right', 'north', 'left'},
+  {12, 'input', 0, 'east', 'right', 'west', 'left'},
+  {12, 'input', 8, 'east', 'left', 'west', 'right'},
+  {12, 'output', 0, 'west', 'left', 'east', 'right'},
+  {12, 'output', 8, 'west', 'right', 'east', 'left'},
+}
+local steps = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
+for _, q in ipairs(cases) do
+  local d = steps[q[3]]
+  local expected = "only the belt's "..q[4]..' ('..q[5]..') lane goes in; its '..q[6]..' ('..q[7]..') lane stops at the '..(q[2]=='input' and 'entrance' or 'exit')
+  local result = cdr.check(cp, {kind='ghosts', entities={entry(1, 'underground-belt', 6.5,84.5,q[1],q[2]), entry(2,'transport-belt',6.5-d[1],84.5-d[2],q[3])}})
+  eq(result.underground_side_feed[1]:find(expected,1,true) ~= nil, true, 'dryrun native lane '..q[1]..' '..q[2]..' '..q[3])
+end
 -- Tiles blocked by what stands on them (Sol, shift10: a slipstack on Gleba wetland kept landfill from three belt
 -- tiles; mined, they went in). A slipstack on water here: its mask has ground_tile, as landfill's does.
 prototypes.entity.slipstack = {name='slipstack', type='tree', collision_box={left_top={x=-1.2, y=-1.2}, right_bottom={x=1.2, y=1.2}},

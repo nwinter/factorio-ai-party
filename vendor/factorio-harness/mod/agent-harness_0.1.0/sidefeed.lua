@@ -6,7 +6,8 @@
 --     lane only, as on a belt: the near lane gets none from it (fed from both
 --     sides, both lanes fill);
 --   * a belt side-loading into an entrance passes only its lane on the
---     entrance's downstream side; its other lane stops at the entrance.
+--     entrance's upstream side; at an exit the downstream lane passes instead.
+-- Verified against native transport lines in all 16 orientations (batch462).
 -- Lanes are named by the side they run on and as the game counts them along
 -- the flow (left, right). The factory is pure so the same module can be
 -- bundled into a hot reload.
@@ -19,7 +20,8 @@ return function(api)
   -- The lane on a side of something flowing toward dir: left or right.
   local function lane(dir, side) return side == (dir+12)%16 and 'left' or 'right' end
   -- ug: {name, position, direction (its flow), kind = input | output}.
-  local function entrance_text(ug) return string.format('%s %s, an entrance flowing %s', ug.name, at(ug.position), SIDE[ug.direction%16] or '?') end
+  local function end_name(ug) return ug.kind == 'input' and 'entrance' or 'exit' end
+  local function end_text(ug) return string.format('%s %s, an %s flowing %s', ug.name, at(ug.position), end_name(ug), SIDE[ug.direction%16] or '?') end
   -- An inserter at pos dropping at drop: nil unless the drop is on the entrance's tile from one of its sides.
   function M.inserter(name, pos, drop, ug)
     if ug.kind ~= 'input' or not SIDE[ug.direction%16] then return nil end
@@ -33,11 +35,11 @@ return function(api)
     if from%8 == flow%8 then return nil end
     local far, near = (from+8)%16, from
     return string.format('%s %s drops onto %s, from its %s side: only its %s (%s) lane gets these items; its %s (%s) lane gets none from it',
-      name, at(pos), entrance_text(ug), SIDE[from], SIDE[far], lane(flow, far), SIDE[near], lane(flow, near))
+      name, at(pos), end_text(ug), SIDE[from], SIDE[far], lane(flow, far), SIDE[near], lane(flow, near))
   end
-  -- A belt at pos flowing dir: nil unless it runs into the entrance's tile from one of its sides.
+  -- A belt at pos flowing dir: nil unless it runs into an underground end from the side.
   function M.belt(name, pos, dir, ug)
-    if ug.kind ~= 'input' or not SIDE[ug.direction%16] then return nil end
+    if (ug.kind ~= 'input' and ug.kind ~= 'output') or not SIDE[ug.direction%16] then return nil end
     local s = STEP[(dir or 0)%16]
     if not s then return nil end
     local bx, by = tile(pos)
@@ -45,11 +47,12 @@ return function(api)
     if bx+s[1] ~= ux or by+s[2] ~= uy then return nil end
     local flow = ug.direction%16
     if dir%8 == flow%8 then return nil end
-    local pass, stop = flow, (flow+8)%16
-    return string.format('%s %s side-loads %s, from its %s side: only the belt\'s %s (%s) lane goes in; its %s (%s) lane stops at the entrance',
-      name, at(pos), entrance_text(ug), SIDE[(dir+8)%16], SIDE[pass], lane(dir, pass), SIDE[stop], lane(dir, stop))
+    local pass = ug.kind == 'input' and (flow+8)%16 or flow
+    local stop = (pass+8)%16
+    return string.format('%s %s side-loads %s, from its %s side: only the belt\'s %s (%s) lane goes in; its %s (%s) lane stops at the %s',
+      name, at(pos), end_text(ug), SIDE[(dir+8)%16], SIDE[pass], lane(dir, pass), SIDE[stop], lane(dir, stop), end_name(ug))
   end
-  -- Built entities: what feeds this one from the side, or what this one feeds (an inserter, a belt, an entrance).
+  -- Built entities: what feeds this one from the side, or what this one feeds.
   local function ug_of(e)
     local kind = api.try(function() return e.belt_to_ground_type end)
     return {name=e.name, position=e.position, direction=e.direction, kind=kind}
@@ -74,7 +77,7 @@ return function(api)
       if line then out[#out+1] = line end
     elseif e.type == 'underground-belt' then
       local ug = ug_of(e)
-      if ug.kind ~= 'input' then return out end
+      if ug.kind ~= 'input' and ug.kind ~= 'output' then return out end
       local x, y = e.position.x, e.position.y
       local ok, ins = pcall(s.find_entities_filtered, {area={{x-3.5, y-3.5}, {x+3.5, y+3.5}}, type='inserter', force=e.force})
       for _, i in ipairs(ok and ins or {}) do
