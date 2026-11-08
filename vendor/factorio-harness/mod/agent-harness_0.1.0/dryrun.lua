@@ -2842,8 +2842,8 @@ return function(api)
           local ug = st and ug_at({x=math.floor(r.pos.x)+st[1]+0.5, y=math.floor(r.pos.y)+st[2]+0.5})
           local line = ug and api.sidefeed.belt(r.name, r.pos, r.dir, ug)
           if line then add('#'..idx(r)..' '..line) end
-        elseif t == 'underground-belt' and kind_of(r) == 'input' then
-          local ug = {name=r.name, position=r.pos, direction=r.dir, kind='input'}
+        elseif t == 'underground-belt' then
+          local ug = {name=r.name, position=r.pos, direction=r.dir, kind=kind_of(r)}
           local x, y = r.pos.x, r.pos.y
           for _, i in ipairs(try(function() return s.find_entities_filtered{area={{x-3.5, y-3.5}, {x+3.5, y+3.5}}, type='inserter', force=force} end) or {}) do
             local drop = try(function() return i.drop_position end)

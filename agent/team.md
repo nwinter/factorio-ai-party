@@ -26,6 +26,7 @@ Platform `configure` returns recipe items to hub; `deliver` requests ingredients
 `platform_schedule current:N`: already-current unpaused stops succeed unchanged; paused platforms unpause.
 `logistics_audit` storage: cargo, coverage, confirmed failures (help analysis).
 `belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
+`build`/`place_ghosts` underground side-feed notes name the passing/stopped feeder lanes at entrances and exits.
 `place_ghosts` dry runs check surface conditions and rotated railgun floor tiles; `check_inserters` refuses the whole batch on failure (help building).
 `platform_defense`: rail corridors give quality targeting range and shot reach (help space-age).
 `rearm {from}`: pickup then turret tour; no ammo taken or a refused tour reports failure with the reason.

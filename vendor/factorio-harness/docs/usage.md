@@ -3785,13 +3785,14 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     one too). `build`, `place_ghosts` and `paste` replies list the chests they placed the same way.
   - `underground_side_feed` (Sol, shift10: an inserter side-feeding an underground entrance, long nutrient
     starvation): a planned inserter dropping onto an underground belt entrance from one of its sides, a planned belt
-    running into an entrance's side, or a planned entrance beside built ones. Read on a private 2.0.77 server
+    running into either underground end's side, or a planned end beside built feeders. Read on a private 2.0.77 server
     (burner inserters and belts into underground pairs): an inserter beside an entrance puts its items on the far lane
     only, as on a belt, so `#2 inserter (7.5,84.5) drops onto underground-belt (6.5,84.5), an entrance flowing north,
     from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it`; a belt
-    side-loading an entrance passes only its lane on the entrance's downstream side: `... side-loads underground-belt
-    (6.5,84.5), an entrance flowing north, from its west side: only the belt's north (left) lane goes in; its south
-    (right) lane stops at the entrance`. An underground without a `type` is an entrance for `place_ghosts`, and for
+    side-loading an entrance passes only its lane on the entrance's upstream side: `... side-loads underground-belt
+    (6.5,84.5), an entrance flowing north, from its west side: only the belt's south (right) lane goes in; its north
+    (left) lane stops at the entrance`. At an exit the feeder's downstream lane passes instead. These lane labels
+    match native transport lines 1 (left) and 2 (right), checked in all four directions at both ends. An underground without a `type` is an entrance for `place_ghosts`, and for
     `build` an exit when the nearest one of its kind upstream within reach is an entrance. A `build` reply says the
     same for what it built (an inserter, a belt, or an entrance beside standing ones).
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
