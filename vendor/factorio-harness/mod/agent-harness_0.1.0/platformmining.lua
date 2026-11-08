@@ -24,11 +24,15 @@ return function(api)
     local st=state()
     if event.name==defines.events.on_space_platform_pre_mined then
       local lines,stacks,n={},{},0
+      local function slots(stack)
+        return math.ceil(stack.count/stack.prototype.stack_size)
+      end
       if TYPES[e.type] then
         for i=1,e.get_max_transport_line_index() do
           local line=e.get_transport_line(i)
           if line and line.valid then
-            lines[#lines+1]=line; n=n+#line
+            lines[#lines+1]=line
+            for j=1,#line do n=n+slots(line[j]) end
           end
         end
       end
@@ -45,22 +49,32 @@ return function(api)
         end
       end
       if e.type=='inserter' and e.held_stack.valid_for_read then stacks[#stacks+1]=e.held_stack end
-      n=n+#stacks
+      for _,stack in ipairs(stacks) do n=n+slots(stack) end
       if n==0 then return end
       local inv=game.create_inventory(n)
       st.pending[e.unit_number]=inv
       local slot=1
+      -- Machine slots and stacked belts can exceed the item's normal stack
+      -- limit (e.g. two asteroid chunks in one crusher slot). transfer_stack
+      -- then moves only part and returns false: retain each actual split stack.
+      local function take(stack)
+        local before=stack.count
+        inv[slot].transfer_stack(stack)
+        local moved=inv[slot].valid_for_read and inv[slot].count or 0
+        assert(moved>0 and moved<=before,'platform mining: stack transfer failed')
+        slot=slot+1
+        return moved
+      end
       for _,line in ipairs(lines) do
         -- Line stack references are valid only until the line changes: read
         -- each anew, from the end so the remaining indexes do not shift.
         for i=#line,1,-1 do
-          assert(inv[slot].transfer_stack(line[i]),'platform mining: stack transfer failed')
-          slot=slot+1
+          local left=line[i].count
+          while left>0 do left=left-take(line[i]) end
         end
       end
       for _,stack in ipairs(stacks) do
-        assert(inv[slot].transfer_stack(stack),'platform mining: stack transfer failed')
-        slot=slot+1
+        while stack.valid_for_read do take(stack) end
       end
     else
       local inv=st.pending[e.unit_number]

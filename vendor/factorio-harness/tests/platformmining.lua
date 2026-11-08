@@ -2,11 +2,15 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local s={}
 defines={events={on_space_platform_pre_mined=1,on_space_platform_mined_entity=2}}
 local function stack(name,quality,count,tag)
-  local v={name=name,quality=quality,count=count or 0,valid_for_read=name~=nil,tag=tag}
+  local v={name=name,quality=quality,count=count or 0,valid_for_read=name~=nil,tag=tag,
+    prototype={stack_size=name=='carbonic-asteroid-chunk' and 1 or 50}}
   v.clear=function() v.valid_for_read=false; v.count=0 end
   v.transfer_stack=function(from)
-    v.name,v.quality,v.count,v.tag,v.valid_for_read=from.name,from.quality,from.count,from.tag,true
-    from.clear(); return true
+    local before=from.count
+    v.name,v.quality,v.count,v.tag,v.valid_for_read=from.name,from.quality,math.min(before,from.prototype.stack_size),from.tag,true
+    v.prototype=from.prototype
+    if v.count==before then from.clear() else from.count=before-v.count end
+    return v.count==before
   end
   return v
 end
@@ -29,7 +33,15 @@ assert(held[1].tag=='keep' and held[1].quality=='rare')
 local returned={{name='transport-belt',quality='normal',count=1}}
 event.name=2; event.buffer={insert=function(v)
   returned[#returned+1]={name=v.name,quality=v.quality,count=v.count,tag=v.tag}; return v.count
-end,get_contents=function() return returned end}
+end,get_contents=function()
+  local rows,by={},{}
+  for _,v in ipairs(returned) do
+    local key=v.name..'@'..v.quality
+    if not by[key] then by[key]={name=v.name,quality=v.quality,count=0}; rows[#rows+1]=by[key] end
+    by[key].count=by[key].count+v.count
+  end
+  return rows
+end}
 m.on_event(event)
 assert(held.destroyed and not s.platform_mining.pending[4])
 assert(#returned==3 and returned[2].tag=='keep' and returned[2].count==4)
@@ -61,16 +73,32 @@ for _,case in ipairs{
     e.get_inventory=function(i) return i==case[2] and source or nil end
     event.name=1; m.on_event(event)
     assert(not source[2].valid_for_read)
-    held=s.platform_mining.pending[4]; assert(#held==1 and held[1].tag=='exact metadata')
+    held=s.platform_mining.pending[4]
+    assert(#held==math.ceil(7/source[2].prototype.stack_size) and held[1].tag=='exact metadata')
     returned={{name=e.name,quality='normal',count=1}}
     event.name=2; m.on_event(event)
-    assert(#returned==2 and returned[2].count==7 and returned[2].quality==q and returned[2].tag=='exact metadata')
+    local count=0
+    for i=2,#returned do
+      count=count+returned[i].count
+      assert(returned[i].quality==q and returned[i].tag=='exact metadata')
+    end
+    assert(count==7)
     assert(held.destroyed and not s.platform_mining.pending[4])
     assert(m.lines(case[3])[1]:find('7 '..q..' '..case[3],1,true))
   end
 end
+-- A physical belt stack can also exceed the item's inventory stack limit.
+lanes={{valid=true,stack('carbonic-asteroid-chunk','epic',4,'stacked chunk')}}
+e.type='transport-belt'; e.name='transport-belt'; e.get_max_inventory_index=function() return 0 end
+e.get_max_transport_line_index=function() return 1 end
+event.name=1; m.on_event(event)
+assert(not lanes[1][1].valid_for_read and #s.platform_mining.pending[4]==4)
+returned={{name=e.name,quality='normal',count=1}}
+event.name=2; m.on_event(event)
+assert(#returned==5 and m.lines('carbonic-asteroid-chunk')[1]:find('4 epic carbonic-asteroid-chunk',1,true))
 -- Burner fuel and hand are independent owners, even when they carry the same item.
 e.type='inserter'; e.name='burner-inserter'; e.held_stack=stack('coal','rare',1,'hand')
+e.get_max_inventory_index=function() return 8 end
 local fuel={stack('coal','rare',9,'fuel')}
 e.get_inventory=function(i) return i==1 and fuel or nil end
 event.name=1; m.on_event(event)
