@@ -124,6 +124,7 @@ local belt={valid=true,minable=true,type='transport-belt',name='transport-belt',
 local surface={platform={force=force},find_entities_filtered=function() return {belt} end}
 local player={surface=surface,force=force,position={x=0,y=0}}
 local H=require('blueprints'){position=function(p) return p end,real=function(p) return p end,platform_mining=function() return m end}
+m.preflight=function() return {safe=true,lines={}} end -- capacity/atomicity exercised by platformmining_preflight.lua
 local args={positions={{x=0.5,y=0.5}},entity_names={'transport-belt'}}
 local ok,err=pcall(H.deconstruct,player,args)
 assert(not ok and tostring(err):find('server restart required',1,true) and not marked,tostring(err))

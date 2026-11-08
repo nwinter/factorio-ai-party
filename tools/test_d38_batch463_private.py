@@ -67,9 +67,16 @@ def main():
                   rcon.print(helpers.table_to_json({{expected=counts,slots=#hub,free=hub.count_empty_stacks()}}))''')
                 assert sum(before['expected'].values()) > 0, before
                 dry = call('deconstruct', dict(platform=platform_name, positions=[dict(x=1000.5,y=1000.5)], entity_names=[kind], dry_run=True))
-                assert dry['would_mark'] == 1, dry
-                marked = call('deconstruct', dict(platform=platform_name, positions=[dict(x=1000.5,y=1000.5)], entity_names=[kind]))
-                assert marked['changed'] == 1, marked
+                if full:
+                    assert dry['would_refuse'] and dry['would_mark'] == 0, dry
+                    request = dict(id='b463-full-'+uuid.uuid4().hex, bot='sol', action='deconstruct', args=dict(platform=platform_name, positions=[dict(x=1000.5,y=1000.5)], entity_names=[kind]))
+                    refused = lua('rcon.print(remote.call("agent_harness","dispatch",'+json.dumps(json.dumps(request))+'))')
+                    assert not refused['ok'], refused
+                    lua(base + "local e=s.find_entities_filtered{position={1000.5,1000.5},name='"+kind+"'}[1]; assert(e and not e.to_be_deconstructed('player')); assert(e.order_deconstruction('player')); rcon.print(true)")
+                else:
+                    assert dry['would_mark'] == 1, dry
+                    marked = call('deconstruct', dict(platform=platform_name, positions=[dict(x=1000.5,y=1000.5)], entity_names=[kind]))
+                    assert marked['changed'] == 1, marked
                 step()
                 after = lua(base + '''local cells={}; for _,v in ipairs(hub.get_contents()) do if v.name=='fusion-power-cell' then cells[v.quality]=v.count end end;
                   rcon.print(helpers.table_to_json({cells=cells,belt=s.count_entities_filtered{area={{999,999},{1002,1002}},type={'transport-belt','underground-belt','splitter'}},slots=#hub}))''')
