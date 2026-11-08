@@ -1195,9 +1195,8 @@ local POWER_PART={generator=true,['fusion-generator']=true,['solar-panel']=true,
     end
     assert(not (dry and a.items_on_ground),'dry_run goes with entities and tiles, not items_on_ground')
     if out.tiles and not cancel then spans_cut(p,a,box,dry,out) end
-    if a.items_on_ground then
-      api.ground_mark(p,box,cancel,out)
-      if not others then return out end
+    if a.items_on_ground and not others then
+      api.ground_mark(p,box,cancel,out); return out
     end
     -- With tiles, entities are taken only when entity filters name them;
     -- they go first, so a tile under one marked now is not counted blocked.
@@ -1208,17 +1207,40 @@ local POWER_PART={generator=true,['fusion-generator']=true,['solar-panel']=true,
     end
     local list,owner,rows
     if at then list,owner,rows=at_positions(p,a,filters,dry) else list=candidates(p,box) end
-    if not cancel and not dry and p.surface.platform and api.platform_mining then
+    if not cancel and p.surface.platform and api.platform_mining then
       local mining=api.platform_mining()
-      if not mining.ready() then
-        for _,e in ipairs(list) do
-          if e.valid and mining.types[e.type] and (not filters.entity_types or filters.entity_types[e.type])
-            and (not filters.entity_names or filters.entity_names[e.name]) then
-            error('nothing marked: platform belt contents require the updated mod mining event handlers; server restart required',0)
+      local targets={}
+      for _,e in ipairs(list) do
+        if e.valid and e.minable and (e.force==p.force or e.force.name=='neutral') and e.type~='character'
+          and e.type~='entity-ghost' and e.type~='tile-ghost' and e.type~='item-entity'
+          and (not filters.entity_types or filters.entity_types[e.type]) and (not filters.entity_names or filters.entity_names[e.name]) then
+          targets[#targets+1]=e
+        end
+      end
+      if #targets>0 then
+        if not dry and not mining.ready() then
+          error('nothing marked: platform item contents require the updated mod mining event handlers; server restart required',0)
+        end
+        local preview=mining.preflight(p.surface.platform,targets)
+        out.platform_returns=preview
+        out.platform_return_lines=preview.lines
+        if not dry and not preview.safe then
+          error('nothing marked: '..preview.reason..'; contents: '..table.concat(preview.lines,'; ',1,math.min(4,#preview.lines)),0)
+        end
+        if dry and not preview.safe then
+          out.changed=nil; out.would_mark=0; out.would_refuse=true; out.reason=preview.reason
+          if rows then
+            for _,row in ipairs(rows) do
+              if row.entity then row.status='refused'; row.why='whole batch: '..preview.reason end
+            end
+            out.positions=rows
           end
+          return out
         end
       end
     end
+    -- Ground orders in a mixed batch must wait for the entity preflight too.
+    if a.items_on_ground then api.ground_mark(p,box,cancel,out) end
     -- (DP) what was done to each position's entity, by its index in list: {status, why}; the first note stands
     local st=at and {} or nil
     local function note(i,s,why) if st and not st[i] then st[i]={s,why} end end

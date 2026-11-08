@@ -15,7 +15,7 @@ Queue guards: `priority`/`exclusive_group` survive replacement; recovery control
 `supply` / `platform_supply fuel`: native thruster, pipe-segment and machine stock (help analysis).
 `platform thrust_inputs`: source traces pass through other thrusters' same-fluid ports; pumps retain their direction.
 Platform `configure` returns recipe items to hub; `deliver` requests ingredients. Stream: ship metrics.
-Platform belt mining preserves carried stacks (hub, overflow on platform); `where_is` lists recent returns by quality.
+Platform `deconstruct` previews items and refuses unsafe returns; mining preserves items (`where_is`).
 `configure`/`inspect`: splitter quality/comparator, outlet lanes; inserter pickup size vs fixed full-hand wait.
 `flight_watch`: arrival returns `previous_watch`, then arms the next (help space-age).
 `budget_below`: optional turnaround.direct:true; turnaround.km|fraction required (help waits-queues).
