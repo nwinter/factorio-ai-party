@@ -33,7 +33,7 @@ esac''')
         stub(d, 'sleep', 'exit 0')
         stub(d, 'python3', f'''case "$*" in
 *pog.py*) echo "rcon $POG_RCON_HOST $*" >> '{log}'
-  case "$*" in *active_mods*) echo '{{"base":"2.1.24","harness":"0.1.0","recycler":"2.1.24","interface":true}}';; *) echo 'tick 1';; esac; exit 0;;
+  case "$*" in *active_mods*) echo '{{"base":"2.1.24","harness":"0.1.0","recycler":"2.1.24","interface":true}}';; *) [ "${{EMPTY_TICK:-0}}" = 1 ] || echo 'tick 1';; esac; exit 0;;
 esac
 exec '{sys.executable}' "$@"''')
         run = lambda *args, **env: subprocess.run([str(ROOT / 'tools/port21-copy.sh'), *args],
@@ -54,6 +54,8 @@ exec '{sys.executable}' "$@"''')
         assert 'codesign --verify --deep --strict' in calls
         assert calls.index('codesign') < calls.index('nohup')
         assert 'active_mods' in calls and 'rmdir' in calls
+        r = run('start', 'port21/test', 'imac:/private/reference.zip', EMPTY_TICK='1')
+        assert r.returncode == 1 and 'up:' not in r.stdout, r
         stub(d, 'node', 'echo "$FACTORIO_RCON_HOST $FACTORIO_RCON_PORT ${FH_SOCKET:-none}"')
         r = run('fh', 'status', POG_FH_SOCKET='/shared/socket', FH_SOCKET='/other', POG_WORLD='n')
         assert r.stdout.strip() == 'imac.local 27478 none', r
